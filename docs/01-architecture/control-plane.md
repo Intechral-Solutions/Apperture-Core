@@ -4,8 +4,8 @@ The control plane manages the Instance. See [ADR-0001](../02-decisions/ADR-0001-
 
 ## Components
 
-- **Management API** — ASP.NET Core REST API
-- **Management UI** — Blazor WASM (mirrors Integration Center patterns)
+- **Management API** — ASP.NET Core REST API (includes `GET /api/menus` for Control Panel navigation)
+- **Management UI** — Blazor WASM with icon rail + Control Panel (see [control-panel-ui.md](control-panel-ui.md))
 - **Management Client** — Typed client for CLI, agents
 
 ## Responsibilities

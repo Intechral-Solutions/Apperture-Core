@@ -1,0 +1,97 @@
+@using Apperture.Management.Ui.Client.Services
+@using Apperture.Management.Ui.Shared.Models
+@inject DomainMenuService DomainMenuService
+
+<div id="control-panel" class="h-full w-54 bg-surface transition-transform duration-300 z-20 flex flex-col relative overflow-auto border-r border-default text-body @(IsOpen ? "translate-x-0" : "-translate-x-full")">
+    @if (Definition is null)
+    {
+        <div class="p-4 text-sm text-muted">
+            Loading…<br />
+            <strong>Domain:</strong> @DomainName<br />
+            <strong>Known domains:</strong>
+            @foreach (var name in DomainMenuService.GetValidDomains())
+            {
+                <span class="inline-block px-1">@name</span>
+            }
+        </div>
+    }
+    else
+    {
+        @if (TitleToShow is not null)
+        {
+            <div class="flex items-center px-3 pt-6 pb-3">
+                <span class="text-lg font-semibold text-heading">
+                    @TitleToShow
+                </span>
+            </div>
+        }
+
+        <ul class="flex flex-col">
+            @foreach (var item in Definition.Items)
+            {
+                <li>
+                    @if (item.Children != null && item.Children.Count > 0)
+                    {
+                        <div class="flex cursor-pointer items-center justify-between px-3 py-2 text-sm text-body hover:bg-surface-muted"
+                             @onclick="() => Toggle(item.Text)">
+                            <span>@item.Text</span>
+                            <svg class="h-4 w-4 transform transition-transform duration-200 @(_expanded.Contains(item.Text) ? "rotate-90" : "")"
+                                 xmlns="http://www.w3.org/2000/svg"
+                                 fill="none" viewBox="0 0 24 24"
+                                 stroke="currentColor" stroke-width="2">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
+                            </svg>
+                        </div>
+
+                        <ul class="@(_expanded.Contains(item.Text) ? "block" : "hidden") ml-4 border-l border-default">
+                            @foreach (var child in item.Children)
+                            {
+                                <li>
+                                    <a href="@child.Href"
+                                       class="block rounded px-3 py-2 text-sm text-body hover:bg-surface-muted">
+                                        @child.Text
+                                    </a>
+                                </li>
+                            }
+                        </ul>
+                    }
+                    else
+                    {
+                        <a href="@item.Href"
+                           class="block rounded px-3 py-2 text-sm text-body hover:bg-surface-muted">
+                            @item.Text
+                        </a>
+                    }
+                </li>
+            }
+        </ul>
+    }
+</div>
+
+@code {
+    [Parameter] public bool IsOpen { get; set; }
+    [Parameter] public string DomainName { get; set; } = "";
+
+    private DomainMenu? Definition => DomainMenuService.GetDomain(DomainName);
+
+    private string? TitleToShow
+    {
+        get
+        {
+            if (Definition == null) return null;
+            if (Definition.Title == null) return DomainName;
+            if (Definition.Title == string.Empty) return null;
+            return Definition.Title;
+        }
+    }
+
+    private readonly HashSet<string> _expanded = new();
+
+    private void Toggle(string key)
+    {
+        if (_expanded.Contains(key))
+            _expanded.Remove(key);
+        else
+            _expanded.Add(key);
+    }
+}

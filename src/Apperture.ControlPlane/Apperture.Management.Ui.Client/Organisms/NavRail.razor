@@ -1,0 +1,111 @@
+@using Blazor.Heroicons.Solid
+@using Apperture.Management.Ui.Shared.Models
+@inject NavigationManager NavManager
+@inject DomainMenuService DomainMenuService
+
+<div id="nav-rail" class="fixed z-60 flex min-h-0 flex-row h-full print:hidden start-0 top-0 @(IsControlPanelOpen ? "" : "w-18")">
+    <div class="w-17 flex-none flex flex-col h-full relative border-r border-dashed border-default bg-surface text-body duration-300 z-40">
+        <a href="/" class="logo-link group mt-0.5 mb-8 block p-3 text-muted transition-all duration-200 cursor-pointer">
+            <AppertureLogo WrapperClass="" ShapeClass="w-full" />
+        </a>
+        <nav class="flex flex-1 flex-col">
+            <div class="flex flex-col space-y-4">
+                @foreach (var m in _menuItems)
+                {
+                    <NavRailItem @attributes="GetParameters(m)" />
+                }
+            </div>
+            <div class="mt-auto flex justify-center">
+                <NavRailItem Href="/config" IconType="@typeof(CogIcon)" Tooltip="Configuration" ContainerStyle="group relative inline-block -translate-y-5" NavButtonStyle="h-12 w-12 flex items-center" IconStyle="h-10 w-10 translate-x-1 text-body opacity-60 group-hover:opacity-90" OnItemClick="HandleNavItemClick" />
+            </div>
+        </nav>
+    </div>
+    <ControlPanel IsOpen="@IsControlPanelOpen" DomainName="@CurrentDomainName" />
+</div>
+
+@code {
+    [Parameter] public bool IsControlPanelOpen { get; set; }
+    [Parameter] public bool IsControlPanelLocked { get; set; }
+    [Parameter] public string CurrentDomainName { get; set; } = "";
+    [Parameter] public EventCallback<string> OnControlPanelOpen { get; set; }
+    [Parameter] public EventCallback OnControlPanelClose { get; set; }
+
+    private List<(Type Icon, string Tooltip, string? Href, string? Domain)> _menuItems = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await DomainMenuService.LoadMenusAsync();
+        BuildMenuItems();
+    }
+
+    private void BuildMenuItems()
+    {
+        var iconMap = new Dictionary<string, Type>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["Catalog"] = typeof(Squares2X2Icon),
+            ["Integrations"] = typeof(PuzzlePieceIcon),
+            ["Environments"] = typeof(BuildingOffice2Icon),
+            ["Connections"] = typeof(ServerStackIcon),
+            ["Clients"] = typeof(CubeIcon),
+            ["Tools"] = typeof(WrenchIcon),
+            ["Schedules"] = typeof(ClockIcon),
+            ["Runs"] = typeof(PlayIcon),
+            ["Settings"] = typeof(CogIcon),
+            ["Users"] = typeof(UsersIcon)
+        };
+
+        _menuItems = new List<(Type Icon, string Tooltip, string? Href, string? Domain)>();
+
+        foreach (var domainName in DomainMenuService.GetValidDomains())
+        {
+            var domain = DomainMenuService.GetDomain(domainName);
+            if (domain == null) continue;
+
+            var icon = iconMap.TryGetValue(domainName, out var mappedIcon)
+                ? mappedIcon
+                : typeof(Squares2X2Icon);
+
+            if (domain.Items?.Count == 1 && !string.IsNullOrEmpty(domain.Items[0].Href))
+            {
+                _menuItems.Add((icon, domainName, domain.Items[0].Href, null));
+            }
+            else if (domain.Items?.Count > 0)
+            {
+                _menuItems.Add((icon, domainName, null, domainName));
+            }
+        }
+    }
+
+    private IDictionary<string, object> GetParameters(
+        (Type Icon, string Tooltip, string? Href, string? Domain) m)
+    {
+        var p = new Dictionary<string, object>
+        {
+            ["IconType"] = m.Icon,
+            ["Tooltip"] = m.Tooltip,
+            ["OnItemClick"] = EventCallback.Factory.Create<DomainNavClickArgs>(this, HandleNavItemClick),
+            ["CurrentDomain"] = CurrentDomainName,
+            ["CurrentPageUri"] = NavManager.Uri
+        };
+
+        if (!string.IsNullOrEmpty(m.Href)) p["Href"] = m.Href!;
+        if (!string.IsNullOrEmpty(m.Domain)) p["Domain"] = m.Domain!;
+
+        return p;
+    }
+
+    private async Task HandleNavItemClick(DomainNavClickArgs args)
+    {
+        if (!string.IsNullOrEmpty(args.Href))
+        {
+            if (OnControlPanelClose.HasDelegate)
+                await OnControlPanelClose.InvokeAsync();
+            NavManager.NavigateTo(args.Href);
+        }
+        else if (!string.IsNullOrEmpty(args.Domain))
+        {
+            if (OnControlPanelOpen.HasDelegate)
+                await OnControlPanelOpen.InvokeAsync(args.Domain);
+        }
+    }
+}

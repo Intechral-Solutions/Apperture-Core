@@ -10,6 +10,9 @@
   <Folder Name="/src/Apperture.ControlPlane/">
     <Project Path="src/Apperture.ControlPlane/Apperture.Management.Api/Apperture.Management.Api.csproj" />
     <Project Path="src/Apperture.ControlPlane/Apperture.Management.Client/Apperture.Management.Client.csproj" />
+    <Project Path="src/Apperture.ControlPlane/Apperture.Management.Ui.Client/Apperture.Management.Ui.Client.csproj" />
+    <Project Path="src/Apperture.ControlPlane/Apperture.Management.Ui.Server/Apperture.Management.Ui.Server.csproj" />
+    <Project Path="src/Apperture.ControlPlane/Apperture.Management.Ui.Shared/Apperture.Management.Ui.Shared.csproj" />
   </Folder>
   <Folder Name="/src/Apperture.ModuleSdk/">
     <Project Path="src/Apperture.ModuleSdk/Apperture.ModuleSdk.Abstractions/Apperture.ModuleSdk.Abstractions.csproj" />

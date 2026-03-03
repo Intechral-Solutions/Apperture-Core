@@ -1,7 +1,53 @@
 @inherits LayoutComponentBase
 
-<div class="page">
-    <main>
-        @Body
-    </main>
+<div id="main" class="flex h-screen bg-surface-elevated">
+    <NavRail IsControlPanelOpen="@isControlPanelOpen"
+             IsControlPanelLocked="@isControlPanelLocked"
+             CurrentDomainName="@currentDomainName"
+             OnControlPanelOpen="HandleControlPanelOpen"
+             OnControlPanelClose="HandleControlPanelClose" />
+
+    <div class="flex min-h-0 flex-1 flex-col @(isControlPanelOpen ? "ml-70" : "ml-17")">
+        <TopBar IsControlPanelOpen="@isControlPanelOpen"
+                IsControlPanelLocked="@isControlPanelLocked"
+                OnHamburgerClick="HandleHamburgerClick" />
+        <div id="content-wrapper" class="flex-1 overflow-y-auto">
+            <main class="px-1">
+                @Body
+            </main>
+        </div>
+    </div>
 </div>
+
+@code {
+    private bool isControlPanelOpen;
+    private bool isControlPanelLocked;
+    private string currentDomainName = "";
+
+    private void HandleControlPanelOpen(string domainName)
+    {
+        currentDomainName = domainName;
+        isControlPanelOpen = true;
+        isControlPanelLocked = true;
+    }
+
+    private void HandleControlPanelClose()
+    {
+        isControlPanelOpen = false;
+        isControlPanelLocked = false;
+    }
+
+    private void HandleHamburgerClick(bool _)
+    {
+        if (isControlPanelLocked)
+        {
+            isControlPanelLocked = false;
+            isControlPanelOpen = false;
+        }
+        else
+        {
+            isControlPanelOpen = true;
+            isControlPanelLocked = true;
+        }
+    }
+}
