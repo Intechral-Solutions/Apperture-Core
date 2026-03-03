@@ -1,0 +1,15 @@
+# Auto detect text files and normalize line endings
+* text=auto eol=lf
+
+# C#
+*.cs text diff=csharp
+*.csx text diff=csharp
+*.vb text
+*.vbx text
+
+# Config and docs
+*.json text
+*.yml text
+*.yaml text
+*.md text
+*.xml text
