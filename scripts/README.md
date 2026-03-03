@@ -10,24 +10,21 @@ From repo root:
 .\scripts\Start-Dev.ps1
 ```
 
-Or from `scripts/`:
+First time: set the SQL password with `dotnet user-secrets set "SqlServer:Password" "<password>" --project src/Apperture.ControlPlane/Apperture.Management.Host` and copy `appsettings.Development.example.json` to `appsettings.Development.json` in the Host folder. See [deploy/README.md](../deploy/README.md).
 
-```powershell
-.\Start-Dev.ps1
-```
-
-This starts the **Management API** at http://localhost:9000 and the **Management UI** at http://localhost:9001 in separate console windows. Stop them by closing those windows or running `.\scripts\dev\down.ps1`.
+This starts **SQL Server** (Docker), the **Management API** (port 9000), and the **Management UI** (port 9001). Stop with `.\scripts\dev\down.ps1`; run `docker compose down` to stop SQL Server.
 
 ---
 
 ## Dev (`dev/`)
 
-| Script        | Description |
-|---------------|-------------|
-| **up.ps1**    | Start the platform in dev mode (API + UI Server). Use `-NoBrowser` to avoid launching the browser. |
-| **down.ps1**  | Stop processes on ports 9000 and 9001 (dev servers). |
-| **logs.ps1**  | Show which processes are listening on dev ports. Log output appears in the windows started by `up.ps1`. |
-| **seed.ps1**  | Placeholder: seed dev database (implement when persistence is added). |
+| Script | Description |
+|--------|-------------|
+| **up.ps1** | Start the platform (syncs User Secrets to .env, starts SQL Server, API, UI). Use `-NoBrowser` to avoid launching the browser. |
+| **Sync-EnvFromUserSecrets.ps1** | Copy `SqlServer:Password` from User Secrets to `.env` for Docker Compose. Called automatically by up.ps1. |
+| **down.ps1** | Stop API and UI processes on ports 9000 and 9001. |
+| **logs.ps1** | Show which processes are listening on dev ports. |
+| **seed.ps1** | Placeholder: seed dev database (implement when persistence is added). |
 | **reset-db.ps1** | Placeholder: reset dev database (implement when EF Core is configured). |
 
 ---
@@ -54,4 +51,5 @@ This starts the **Management API** at http://localhost:9000 and the **Management
 ## Requirements
 
 - **.NET SDK 10** (see `global.json`)
+- **Docker** (for SQL Server in dev)
 - **PowerShell** 5.1 or PowerShell Core (Windows or cross-platform)

@@ -9,6 +9,7 @@
   </Folder>
   <Folder Name="/src/Apperture.ControlPlane/">
     <Project Path="src/Apperture.ControlPlane/Apperture.Management.Api/Apperture.Management.Api.csproj" />
+    <Project Path="src/Apperture.ControlPlane/Apperture.Management.Host/Apperture.Management.Host.csproj" />
     <Project Path="src/Apperture.ControlPlane/Apperture.Management.Client/Apperture.Management.Client.csproj" />
     <Project Path="src/Apperture.ControlPlane/Apperture.Management.Ui.Client/Apperture.Management.Ui.Client.csproj" />
     <Project Path="src/Apperture.ControlPlane/Apperture.Management.Ui.Server/Apperture.Management.Ui.Server.csproj" />

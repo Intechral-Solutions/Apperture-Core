@@ -16,6 +16,14 @@ From the repo root:
 
 Or use `dotnet build Apperture.slnx` and `dotnet test Apperture.slnx`. Use `.\scripts\ci\test.ps1 -Filter "UnitTests"` to run a subset of tests by name.
 
+## Local dev with SQL Server
+
+See [deploy/README.md](deploy/README.md). Quick setup:
+
+1. `dotnet user-secrets set "SqlServer:Password" "<password>" --project src/Apperture.ControlPlane/Apperture.Management.Host`
+2. Copy `appsettings.Development.example.json` to `appsettings.Development.json` in the Host folder.
+3. `.\scripts\Start-Dev.ps1`
+
 ## Architecture and decisions
 
 - Read [docs/01-architecture/](docs/01-architecture/) for control plane, instance plane, workflows, and runtime.

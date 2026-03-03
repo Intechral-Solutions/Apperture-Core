@@ -3,6 +3,7 @@
     <TargetFramework>net10.0</TargetFramework>
     <RootNamespace>Apperture.Management.Host</RootNamespace>
     <Nullable>enable</Nullable>
+    <UserSecretsId>a1b2c3d4-5e6f-4a5b-8c9d-0e1f2a3b4c5d</UserSecretsId>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" />

@@ -1,0 +1,38 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Management API",
+      "type": "coreclr",
+      "request": "launch",
+      "preLaunchTask": "build",
+      "projectPath": "${workspaceFolder}/src/Apperture.ControlPlane/Apperture.Management.Api/Apperture.Management.Api.csproj",
+      "cwd": "${workspaceFolder}/src/Apperture.ControlPlane/Apperture.Management.Api"
+    },
+    {
+      "name": "Management Host (SQL-backed)",
+      "type": "coreclr",
+      "request": "launch",
+      "preLaunchTask": "build",
+      "projectPath": "${workspaceFolder}/src/Apperture.ControlPlane/Apperture.Management.Host/Apperture.Management.Host.csproj",
+      "cwd": "${workspaceFolder}/src/Apperture.ControlPlane/Apperture.Management.Host",
+      "env": {
+        "ASPNETCORE_ENVIRONMENT": "Development"
+      }
+    },
+    {
+      "name": "Management UI Server",
+      "type": "coreclr",
+      "request": "launch",
+      "preLaunchTask": "build",
+      "projectPath": "${workspaceFolder}/src/Apperture.ControlPlane/Apperture.Management.Ui.Server/Apperture.Management.Ui.Server.csproj",
+      "cwd": "${workspaceFolder}/src/Apperture.ControlPlane/Apperture.Management.Ui.Server"
+    }
+  ],
+  "compounds": [
+    {
+      "name": "API + UI Server",
+      "configurations": ["Management API", "Management UI Server"]
+    }
+  ]
+}
