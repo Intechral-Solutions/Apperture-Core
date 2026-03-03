@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Apperture.Management.Host</RootNamespace>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Apperture.Management.Api\Apperture.Management.Api.csproj" />
+    <ProjectReference Include="..\..\Apperture.Runtime\Apperture.Runtime.DTFx\Apperture.Runtime.DTFx.csproj" />
+    <ProjectReference Include="..\..\Apperture.Runtime\Apperture.Runtime.Persistence.SqlServer\Apperture.Runtime.Persistence.SqlServer.csproj" />
+  </ItemGroup>
+</Project>
