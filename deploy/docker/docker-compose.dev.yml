@@ -1,0 +1,8 @@
+# Dev stack — add services (API, UI, DB, etc.) here.
+# Included from repo root via docker-compose.yml.
+services:
+  # Placeholder so this file is valid; remove when real services exist.
+  _placeholder:
+    image: alpine:latest
+    profiles:
+      - never

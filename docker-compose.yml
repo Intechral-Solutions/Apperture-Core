@@ -1,0 +1,9 @@
+# Root compose shim — run from repo root:
+#   docker compose up -d
+#   docker compose down
+#   docker compose ps
+# Nested compose files live in deploy/docker/; add or remove includes as needed.
+name: apperture
+
+include:
+  - deploy/docker/docker-compose.dev.yml

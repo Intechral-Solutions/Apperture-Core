@@ -13,5 +13,6 @@ builder.Services.AddCors(options =>
 
 var app = builder.Build();
 app.UseCors();
+app.MapGet("/", () => Results.Ok(new { service = "Apperture Management API", status = "running" }));
 app.MapControllers();
 app.Run();
