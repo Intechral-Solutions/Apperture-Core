@@ -70,6 +70,11 @@ Thumbs.db
 # Secrets and local config
 *.secret
 *.secrets
+!src/Apperture.Core/Apperture.Core.Security.Secrets/
+!src/Apperture.Core/Apperture.Core.Security.Secrets/**/*.cs
+!src/Apperture.Core/Apperture.Core.Security.Secrets/**/*.csproj
+src/Apperture.Core/Apperture.Core.Security.Secrets/bin/
+src/Apperture.Core/Apperture.Core.Security.Secrets/obj/
 .env
 .env.local
 .env.*.local

@@ -1,5 +1,9 @@
 namespace Apperture.Runtime.Abstractions;
 
+/// <summary>
+/// Executes workflow steps.
+/// Step parameter contracts should pass secret references and resolve them inside worker execution boundaries.
+/// </summary>
 public interface IWorkflowExecutor
 {
     ValueTask<object?> ExecuteStepAsync(

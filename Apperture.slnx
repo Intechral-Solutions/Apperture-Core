@@ -7,6 +7,9 @@
     <Project Path="src/Apperture.Cloud/Apperture.Cloud.Shared/Apperture.Cloud.Shared.csproj" />
     <Project Path="src/Apperture.Cloud/Apperture.FunctionApp.Template/Apperture.FunctionApp.Template.csproj" />
   </Folder>
+  <Folder Name="/src/Apperture.Core/">
+    <Project Path="src/Apperture.Core/Apperture.Core.Security.Secrets/Apperture.Core.Security.Secrets.csproj" />
+  </Folder>
   <Folder Name="/src/Apperture.ControlPlane/">
     <Project Path="src/Apperture.ControlPlane/Apperture.Management.Api/Apperture.Management.Api.csproj" />
     <Project Path="src/Apperture.ControlPlane/Apperture.Management.Host/Apperture.Management.Host.csproj" />
