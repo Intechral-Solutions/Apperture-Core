@@ -9,4 +9,4 @@ Canonical reference for AI agents and contributors.
 | [prompts/](prompts/) | Templates: architecture review, PR review, module scaffold, incident postmortem |
 | [agents/](agents/) | Role definitions: coding, docs, QA |
 
-See [agent.md](../agent.md) for entry-point instructions.
+See [AGENTS.md](../AGENTS.md) for entry-point instructions.

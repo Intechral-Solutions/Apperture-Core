@@ -35,7 +35,7 @@ Apperture-Core/
 | [04-api](docs/04-api/) | API contracts, OpenAPI |
 | [05-modules](docs/05-modules/) | Module authoring guide, manifest spec, module types |
 
-For AI agents and contributors: see [agent.md](agent.md) and [.ai/playbooks/](.ai/playbooks/).
+For AI agents and contributors: see [AGENTS.md](AGENTS.md) and [.ai/playbooks/](.ai/playbooks/).
 
 ## Contributing
 

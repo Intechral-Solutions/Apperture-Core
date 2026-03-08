@@ -7,7 +7,7 @@ alwaysApply: true
 
 When working in this repository:
 
-- **Agent instructions and non-negotiables:** Follow [agent.md](agent.md) at the repo root. Do not design around message handlers or a message bus; orchestration is workflow-centric. Single-tenant instance, one module per process, portable workflow model.
+- **Agent instructions and non-negotiables:** Follow [AGENTS.md](AGENTS.md) at the repo root. Do not design around message handlers or a message bus; orchestration is workflow-centric. Single-tenant instance, one module per process, portable workflow model.
 - **Principles and anti-patterns:** See [.ai/playbooks/](.ai/playbooks/) for project map, principles, anti-patterns, module SDK, management service, and runtime portability.
 - **Architecture:** Use [docs/01-architecture/](docs/01-architecture/) for control plane, instance plane, tenancy, workflows, and runtime backends.
 - **Repo layout:** `src/` by product area (Apperture.Cli, Apperture.Cloud, Apperture.ControlPlane, Apperture.ModuleSdk, Apperture.Runtime, Apperture.Shared). `tests/` contains unit, integration, arch, and e2e tests. `scripts/` holds dev and CI scripts. Add new code in the appropriate area; record decisions in `docs/02-decisions/` using the ADR template.

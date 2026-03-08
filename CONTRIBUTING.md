@@ -31,7 +31,7 @@ See [deploy/README.md](deploy/README.md). Quick setup:
 
 ## AI agents
 
-Follow [agent.md](agent.md) and the playbooks in [.ai/playbooks/](.ai/playbooks/) (principles, anti-patterns, project map).
+Follow [AGENTS.md](AGENTS.md) and the playbooks in [.ai/playbooks/](.ai/playbooks/) (principles, anti-patterns, project map).
 
 ## Pull requests
 
