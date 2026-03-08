@@ -29,4 +29,4 @@ We need clear separation between management concerns (control plane) and workflo
 
 ### Neutral
 
-- Scheduler may run in Management Host initially or as separate Scheduler Host
+- Scheduling ownership and placement are defined by [ADR-0004](./ADR-0004-instance-owned-scheduling.md): schedule evaluation/dispatch are instance-plane responsibilities (for example, Scheduler Host), not management-host runtime execution.

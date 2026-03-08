@@ -7,5 +7,6 @@
 | [tenancy-model.md](tenancy-model.md) | Single-tenant Instance, auditability |
 | [durable-workflows.md](durable-workflows.md) | Portable workflow model, persistence |
 | [runtime-backends.md](runtime-backends.md) | DTFx vs Durable Functions adapters |
+| [instance-owned-scheduling.md](instance-owned-scheduling.md) | Portable scheduling model with instance-owned execution |
 | [c4/](c4/) | C4 diagrams |
 | [diagrams/](diagrams/) | Architecture diagrams |
