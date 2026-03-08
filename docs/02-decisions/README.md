@@ -6,5 +6,12 @@
 | [ADR-0002](ADR-0002-single-tenant-instance.md) | Single-tenant instance deployment boundary |
 | [ADR-0003](ADR-0003-runtime-portability.md) | Runtime portability (portable workflow model, DTFx + Durable Functions adapters) |
 | [ADR-0004](ADR-0004-instance-owned-scheduling.md) | Instance-owned scheduling (control-plane-managed, host-portable execution) |
+| [ADR-0005](ADR-0005-federated-external-instance-relationships.md) | Federated external instance relationships |
+| [ADR-0006](ADR-0006-entra-backed-platform-trust-for-instance-authentication.md) | Entra-backed platform trust for instance authentication |
+| [ADR-0007](ADR-0007-separation-of-human-auth-service-auth-and-relationship-authorization.md) | Separation of human auth, service auth, and relationship authorization |
+| [ADR-0008](ADR-0008-parent-child-first-on-generalized-relationship-model.md) | Parent-child first on generalized relationship model |
+| [ADR-0009](ADR-0009-constrained-cross-instance-management-api-boundary.md) | Constrained cross-instance management API boundary |
+| [ADR-0010](ADR-0010-signed-reliable-child-to-parent-notifications.md) | Signed reliable child-to-parent notifications |
+| [ADR-0011](ADR-0011-delegated-capability-model-for-remote-instance-administration.md) | Delegated capability model for remote instance administration |
 
 Use [adr-template.md](adr-template.md) when creating new ADRs.

@@ -1,5 +1,73 @@
 # Roadmap
 
+## Federated External Instance Collaboration Phases
+
+### Phase 1: Parent-child relationship MVP (observe-first)
+
+Scope:
+
+- Add generalized external relationship domain records (`ExternalInstance`, `InstanceRelationship`, lifecycle state).
+- Implement parent-child handshake with Entra-backed machine authentication bootstrap.
+- Add explicit child-side approval and delegated observe-only capability grants.
+- Expose constrained read-only cross-instance endpoints (metadata, health summary, module inventory).
+- Emit basic upward notifications for failures/degraded health with relationship audit.
+
+Acceptance criteria:
+
+- Child can activate/suspend/revoke a parent relationship with auditable state transitions.
+- Parent cannot perform operations unless relationship is `Active` and capability grants allow it.
+- Parent access is limited to management API boundary; no direct child internal access paths.
+- Failure and degraded-health notifications are delivered with correlation IDs and auditable delivery outcomes.
+
+### Phase 2: Delegated operations and reliable subscriptions
+
+Scope:
+
+- Add delegated action scopes for approved remote operations.
+- Add notification subscription management (event class + severity filtering).
+- Implement retries, idempotency keys, replay protection, and delivery backoff for notifications.
+- Implement relationship credential rotation with overlap windows and expiry policy.
+- Expand health/workflow APIs for bounded remote operations (for example retry/acknowledge).
+
+Acceptance criteria:
+
+- Remote operations enforce deny-by-default policy with module/resource/operation scopes.
+- Subscription filters are enforced and can be enabled/disabled without history loss.
+- Notification delivery is at-least-once with duplicate-safe processing.
+- Credential rotation does not require relationship teardown and is fully auditable.
+
+### Phase 3: Generalized relationship expansion
+
+Scope:
+
+- Support additional relationship types (observer, peer, provider/customer, auditor).
+- Add module/resource-granular delegation patterns and policy templates.
+- Add event reconciliation APIs (watermark-based replay/history).
+- Harden compatibility/version negotiation and contract downgrade behavior.
+- Add policy controls for time-bound grants and conditional constraints.
+
+Acceptance criteria:
+
+- Relationship model supports non-parent-child types without schema redesign.
+- Compatibility checks prevent unsupported cross-version operation calls.
+- Reconciliation APIs allow parent recovery from missed notifications.
+- Policy templates reduce manual configuration while preserving explicit grants.
+
+### Phase 4: Advanced federation patterns
+
+Scope:
+
+- Support advanced topologies such as multi-parent observers where business-approved.
+- Add external compliance/auditor relationship profiles with strict read-only controls.
+- Add richer cross-instance orchestration patterns built only on bounded management contracts.
+- Add governance tooling for large relationship graphs and lifecycle reporting.
+
+Acceptance criteria:
+
+- Advanced topology support does not bypass child authorization enforcement.
+- Auditor/compliance profiles are strongly constrained and fully auditable.
+- Federated orchestration patterns remain API-bound and do not introduce direct plane bypass.
+
 ## Secrets and Key Management Phases
 
 ### Phase 1: DB Secret Store + Protector + Resolver (interfaces first)
