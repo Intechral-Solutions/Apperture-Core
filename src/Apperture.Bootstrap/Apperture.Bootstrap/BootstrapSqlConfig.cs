@@ -1,7 +1,10 @@
+using Apperture.Bootstrap.Models;
+
 namespace Apperture.Bootstrap;
 
 /// <summary>
-/// Bootstrap SQL Server configuration. Credentials come from config or environment, not from operational secret store.
+/// Bootstrap SQL Server configuration. For production, use <see cref="CredentialReference"/> with
+/// <see cref="IBootstrapCredentialResolver"/>. Plaintext User/Password are allowed only in Development.
 /// </summary>
 public sealed class BootstrapSqlConfig
 {
@@ -18,12 +21,14 @@ public sealed class BootstrapSqlConfig
     public string? Database { get; set; }
 
     /// <summary>
-    /// SQL authentication user. When set with Password, uses SQL auth instead of Integrated Security.
+    /// SQL authentication user. DEV ONLY: when set with Password, uses SQL auth.
+    /// In Production, use <see cref="CredentialReference"/> instead.
     /// </summary>
     public string? User { get; set; }
 
     /// <summary>
-    /// SQL authentication password. When set with User, uses SQL auth.
+    /// SQL authentication password. DEV ONLY: when set with User, uses SQL auth.
+    /// In Production, use <see cref="CredentialReference"/> instead.
     /// </summary>
     public string? Password { get; set; }
 
@@ -31,4 +36,10 @@ public sealed class BootstrapSqlConfig
     /// When true, skips server certificate validation (dev only).
     /// </summary>
     public bool TrustServerCertificate { get; set; } = true;
+
+    /// <summary>
+    /// Reference to credential source (Key Vault URI, cert thumbprint, etc.). Preferred for production.
+    /// Resolved via <see cref="IBootstrapCredentialResolver"/>; no plaintext in config.
+    /// </summary>
+    public BootstrapCredentialReference? CredentialReference { get; set; }
 }

@@ -5,7 +5,9 @@ using Microsoft.Extensions.Configuration;
 namespace Apperture.Persistence.SqlServer;
 
 /// <summary>
-/// Design-time factory for EF migrations. Uses localdb by default; overridable via environment.
+/// Design-time factory for EF migrations (dotnet ef migrations add, etc.).
+/// Bypasses bootstrap; reads connection string from config/env directly. Use only for tooling.
+/// At runtime, the host uses IBootstrapConnectionProfile via AddApperturePersistence.
 /// </summary>
 internal sealed class DesignTimeDbContextFactory : IDesignTimeDbContextFactory<AppertureDbContext>
 {

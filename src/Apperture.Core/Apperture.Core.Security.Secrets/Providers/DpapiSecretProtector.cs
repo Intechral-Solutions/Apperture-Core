@@ -1,3 +1,4 @@
+using System.Runtime.Versioning;
 using System.Security.Cryptography;
 
 namespace Apperture.Core.Security.Secrets.Providers;
@@ -6,6 +7,7 @@ namespace Apperture.Core.Security.Secrets.Providers;
 /// DPAPI-backed protector for envelope encryption. Windows only; throws PlatformNotSupportedException on non-Windows.
 /// Uses LocalMachine scope; keyId is used as optional entropy.
 /// </summary>
+[SupportedOSPlatform("windows")]
 public sealed class DpapiSecretProtector : Abstractions.ISecretProtector
 {
     private static readonly DataProtectionScope Scope = DataProtectionScope.LocalMachine;

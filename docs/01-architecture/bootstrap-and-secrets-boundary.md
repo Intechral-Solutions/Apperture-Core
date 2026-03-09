@@ -10,9 +10,23 @@ This document defines the boundary between bootstrap configuration, operational 
 - The operational secret store lives in the same SQL database but is initialized only after bootstrap succeeds.
 - Bootstrap credentials come from config, environment, or a dedicated credential source—never from `ISecretStore` or `ISecretResolver`.
 
-## No Plaintext Passwords in Config
+## Dual-Path Credential Resolution
 
-Do not store plaintext SQL passwords in ordinary config (appsettings, environment). Use `SqlConnectionBootstrapProfile` (non-secret) plus `BootstrapCredentialReference`; resolve credentials via `IBootstrapCredentialResolver`. Transient update requests (`BootstrapUpdateRequest`) may carry sensitive payloads for CLI/operator flows; use and discard—never persist.
+`BootstrapConnectionProfile` resolves credentials in two ways:
+
+### Production path (preferred)
+
+1. Configure `SqlServer.CredentialReference` (SourceType, Reference) in config—no plaintext.
+2. Register a non-stub `IBootstrapCredentialResolver` (from `Apperture.Bootstrap.Windows`, `Apperture.Bootstrap.Azure`, or custom).
+3. Resolver returns connection string from Key Vault, Managed Identity, certificate, etc.
+
+### Development-only fallback
+
+1. In Development environment only: `SqlServer.User`/`Password` or `ConnectionStrings.DefaultConnection` allowed.
+2. `BootstrapConnectionProfile` logs a security warning when config-based credentials are used.
+3. In Production, config-based credentials throw—no fallback.
+
+**Do not store plaintext SQL passwords in config for Production.** Use `BootstrapCredentialReference` plus `IBootstrapCredentialResolver`. Transient update requests (`BootstrapUpdateRequest`) may carry sensitive payloads for CLI/operator flows; use and discard—never persist.
 
 ## Bootstrap Configuration
 
@@ -85,3 +99,4 @@ Bootstrap never depends on Operational Secrets or Runtime Trust. Operational Sec
 - [Persistence Foundation](persistence-foundation.md)
 - [Secrets and key management](secrets-and-key-management.md)
 - [Foundational layers](foundational-layers.md)
+- [Tracked issues (Phase 1)](../02-decisions/tracked-issues-bootstrap-secrets-phase1.md)
