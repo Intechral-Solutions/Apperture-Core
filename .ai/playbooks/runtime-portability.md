@@ -16,7 +16,7 @@ This model must be implementable by both on-prem and cloud adapters.
 
 ## On-prem: DTFx adapter
 
-- **Apperture.Runtime.DTFx** — Uses DTFx for durable orchestration
+- **Apperture.RuntimePlane.DTFx** — Uses DTFx for durable orchestration
 - Hosted in Worker Service
 - SQL Server is the persistence store (first-class)
 - Worker runs polling/execution loops as needed
@@ -24,7 +24,7 @@ This model must be implementable by both on-prem and cloud adapters.
 
 ## Cloud: Durable Functions adapter
 
-- **Apperture.Runtime.DurableFunctions** — Maps workflow definitions to Durable Functions orchestrators + activity functions
+- **Apperture.RuntimePlane.DurableFunctions** — Maps workflow definitions to Durable Functions orchestrators + activity functions
 - Each module maps to one Azure Function App
 - Persistence is Durable Functions backing store (Azure Storage by default)
 - Apperture still emits consistent telemetry/audit events to the instance database or a telemetry sink

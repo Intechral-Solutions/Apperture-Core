@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk.Worker">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Apperture.RuntimeHost.Windows.WorkerHost</RootNamespace>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Hosting" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\Apperture.RuntimePlane\Apperture.RuntimePlane.DTFx\Apperture.RuntimePlane.DTFx.csproj" />
+    <ProjectReference Include="..\..\..\Apperture.RuntimePlane\Apperture.RuntimePlane.Persistence.SqlServer\Apperture.RuntimePlane.Persistence.SqlServer.csproj" />
+    <ProjectReference Include="..\..\..\Apperture.ModuleSdk\Apperture.ModuleSdk\Apperture.ModuleSdk.csproj" />
+    <ProjectReference Include="..\Apperture.RuntimeHost.Windows.ModuleHost\Apperture.RuntimeHost.Windows.ModuleHost.csproj" />
+  </ItemGroup>
+</Project>

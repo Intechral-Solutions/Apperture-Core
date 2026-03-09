@@ -18,4 +18,4 @@ See [ADR-0003](../02-decisions/ADR-0003-runtime-portability.md) and [.ai/playboo
 
 ## Adapter strategy
 
-`Apperture.Runtime.DTFx` and `Apperture.Runtime.DurableFunctions` are adapters. They map the portable workflow model to each backend. The portable model lives in `Apperture.Runtime.Abstractions` and `Apperture.Runtime.Engine`.
+`Apperture.RuntimePlane.DTFx` and `Apperture.RuntimePlane.DurableFunctions` are adapters. They map the portable workflow model to each backend. The portable model lives in `Apperture.RuntimePlane.Abstractions` and `Apperture.RuntimePlane.Engine`.

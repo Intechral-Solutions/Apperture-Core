@@ -141,8 +141,8 @@ All placeholders must include XML docs with TODO behavior constraints and securi
 
 Document where `SecretRef` belongs now/future:
 
-- `src/Apperture.Runtime/Apperture.Runtime.Abstractions/StartWorkflowRequest.cs`
-- `src/Apperture.Runtime/Apperture.Runtime.Abstractions/IWorkflowExecutor.cs`
+- `src/Apperture.RuntimePlane/Apperture.RuntimePlane.Abstractions/StartWorkflowRequest.cs`
+- `src/Apperture.RuntimePlane/Apperture.RuntimePlane.Abstractions/IWorkflowExecutor.cs`
 - `src/Apperture.ModuleSdk/Apperture.ModuleSdk.Abstractions/ModuleManifest.cs`
 - `docs/05-modules/module-manifest-spec.md`
 

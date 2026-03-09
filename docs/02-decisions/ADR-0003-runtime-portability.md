@@ -10,9 +10,9 @@ Apperture must run on-prem (DTFx + SQL Server) and in the cloud (Azure Durable F
 
 ## Decision
 
-1. **Portable workflow model** — Workflow definitions, step graphs, and operational attributes are backend-agnostic. They live in `Apperture.Runtime.Abstractions` and `Apperture.Runtime.Engine`.
+1. **Portable workflow model** — Workflow definitions, step graphs, and operational attributes are backend-agnostic. They live in `Apperture.RuntimePlane.Abstractions` and `Apperture.RuntimePlane.Engine`.
 
-2. **Adapters** — `Apperture.Runtime.DTFx` and `Apperture.Runtime.DurableFunctions` implement the portable model for each backend. They handle persistence, orchestration mechanics, and execution loops.
+2. **Adapters** — `Apperture.RuntimePlane.DTFx` and `Apperture.RuntimePlane.DurableFunctions` implement the portable model for each backend. They handle persistence, orchestration mechanics, and execution loops.
 
 3. **Consistent observability** — Both backends emit consistent `WorkflowInstance`, `WorkflowStepInstance`, `OperationRun`, `AuditLog`, `TelemetryEvent` records. Cloud may store durable state in Azure Storage but must emit to instance/telemetry store.
 

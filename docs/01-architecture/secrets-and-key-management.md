@@ -137,8 +137,8 @@ Consumers remain unchanged because they resolve via `ISecretResolver`.
 
 The following surfaces should carry `SecretRef` instead of plaintext secret values:
 
-- `src/Apperture.Runtime/Apperture.Runtime.Abstractions/StartWorkflowRequest.cs`
-- `src/Apperture.Runtime/Apperture.Runtime.Abstractions/IWorkflowExecutor.cs`
+- `src/Apperture.RuntimePlane/Apperture.RuntimePlane.Abstractions/StartWorkflowRequest.cs`
+- `src/Apperture.RuntimePlane/Apperture.RuntimePlane.Abstractions/IWorkflowExecutor.cs`
 - `src/Apperture.ModuleSdk/Apperture.ModuleSdk.Abstractions/ModuleManifest.cs`
 - `docs/05-modules/module-manifest-spec.md`
 

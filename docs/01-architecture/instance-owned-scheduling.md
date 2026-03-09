@@ -239,13 +239,13 @@ V1 should be pragmatic and deliver end-to-end behavior without overengineering:
 ## Suggested project placement
 
 - Portable contracts:
-  - `src/Apperture.Runtime/Apperture.Runtime.Abstractions`
+  - `src/Apperture.RuntimePlane/Apperture.RuntimePlane.Abstractions`
 - Runtime scheduling engine services:
-  - `src/Apperture.Runtime/Apperture.Runtime.Engine`
+  - `src/Apperture.RuntimePlane/Apperture.RuntimePlane.Engine`
 - Windows/on-prem host adapter:
-  - `src/Apperture.InstancePlane/Apperture.Scheduler.Host`
+  - `src/Apperture.RuntimeHost/Apperture.RuntimeHost.Windows/Apperture.RuntimeHost.Windows.SchedulerHost`
 - SQL persistence adapter:
-  - `src/Apperture.Runtime/Apperture.Runtime.Persistence.SqlServer`
+  - `src/Apperture.RuntimePlane/Apperture.RuntimePlane.Persistence.SqlServer`
 
 ## Tradeoffs and future evolution
 
