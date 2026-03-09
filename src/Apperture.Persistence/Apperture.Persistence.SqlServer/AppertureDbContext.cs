@@ -33,6 +33,7 @@ public class AppertureDbContext : DbContext
             e.Property(x => x.Status).HasMaxLength(32);
             e.Property(x => x.CorrelationKey).HasMaxLength(256);
             e.Property(x => x.CurrentStepName).HasMaxLength(128);
+            e.Property<byte[]>("RowVersion").IsRowVersion();
         });
 
         modelBuilder.Entity<WorkflowStepInstanceEntity>(e =>
@@ -80,6 +81,7 @@ public class AppertureDbContext : DbContext
             e.Property(x => x.Name).HasMaxLength(256);
             e.Property(x => x.Provider).HasMaxLength(128);
             e.Property(x => x.ActiveVersion).HasMaxLength(64);
+            e.Property<byte[]>("RowVersion").IsRowVersion();
         });
 
         modelBuilder.Entity<SecretVersionEntity>(e =>
