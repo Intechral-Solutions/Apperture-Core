@@ -19,8 +19,10 @@
     <Project Path="src/Apperture.Core/Apperture.Core.Domain/Apperture.Core.Domain.csproj" />
     <Project Path="src/Apperture.Core/Apperture.Core.Application/Apperture.Core.Application.csproj" />
     <Project Path="src/Apperture.Core/Apperture.Core.Security.Secrets/Apperture.Core.Security.Secrets.csproj" />
+    <Project Path="src/Apperture.Core/Apperture.Core.Security.Trust/Apperture.Core.Security.Trust.csproj" />
   </Folder>
   <Folder Name="/src/Apperture.ControlPlane/">
+    <Project Path="src/Apperture.ControlPlane/Apperture.ControlPlane.Security/Apperture.ControlPlane.Security.csproj" />
     <Project Path="src/Apperture.ControlPlane/Apperture.Management.Api/Apperture.Management.Api.csproj" />
     <Project Path="src/Apperture.ControlPlane/Apperture.Management.Host/Apperture.Management.Host.csproj" />
     <Project Path="src/Apperture.ControlPlane/Apperture.Management.Client/Apperture.Management.Client.csproj" />
@@ -32,6 +34,12 @@
     <Project Path="src/Apperture.ModuleSdk/Apperture.ModuleSdk.Abstractions/Apperture.ModuleSdk.Abstractions.csproj" />
     <Project Path="src/Apperture.ModuleSdk/Apperture.ModuleSdk.Testing/Apperture.ModuleSdk.Testing.csproj" />
     <Project Path="src/Apperture.ModuleSdk/Apperture.ModuleSdk/Apperture.ModuleSdk.csproj" />
+  </Folder>
+  <Folder Name="/src/Apperture.Persistence/">
+    <Project Path="src/Apperture.Persistence/Apperture.Persistence.SqlServer/Apperture.Persistence.SqlServer.csproj" />
+  </Folder>
+  <Folder Name="/src/Apperture.Bootstrap/">
+    <Project Path="src/Apperture.Bootstrap/Apperture.Bootstrap/Apperture.Bootstrap.csproj" />
   </Folder>
   <Folder Name="/src/Apperture.RuntimePlane/">
     <Project Path="src/Apperture.RuntimePlane/Apperture.RuntimePlane.Abstractions/Apperture.RuntimePlane.Abstractions.csproj" />

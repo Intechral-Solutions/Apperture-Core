@@ -8,6 +8,7 @@
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\..\Apperture.Core\Apperture.Core.Security.Trust\Apperture.Core.Security.Trust.csproj" />
     <ProjectReference Include="..\Apperture.Management.Ui.Shared\Apperture.Management.Ui.Shared.csproj" />
     <ProjectReference Include="..\..\Apperture.Core\Apperture.Core.Application\Apperture.Core.Application.csproj" />
     <ProjectReference Include="..\..\Apperture.RuntimePlane\Apperture.RuntimePlane.Abstractions\Apperture.RuntimePlane.Abstractions.csproj" />
