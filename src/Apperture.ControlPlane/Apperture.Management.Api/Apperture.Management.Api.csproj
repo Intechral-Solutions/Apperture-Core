@@ -9,6 +9,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Apperture.Management.Ui.Shared\Apperture.Management.Ui.Shared.csproj" />
+    <ProjectReference Include="..\..\Apperture.Core\Apperture.Core.Application\Apperture.Core.Application.csproj" />
     <ProjectReference Include="..\..\Apperture.RuntimePlane\Apperture.RuntimePlane.Abstractions\Apperture.RuntimePlane.Abstractions.csproj" />
     <ProjectReference Include="..\..\Apperture.ModuleSdk\Apperture.ModuleSdk.Abstractions\Apperture.ModuleSdk.Abstractions.csproj" />
     <ProjectReference Include="..\..\Apperture.Shared\Apperture.Shared.Kernel\Apperture.Shared.Kernel.csproj" />

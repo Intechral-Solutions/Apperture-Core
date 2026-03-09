@@ -1,5 +1,5 @@
 using Apperture.Management.Client;
-using Apperture.Shared.Kernel;
+using Apperture.RuntimePlane.Abstractions;
 
 namespace Apperture.Cli.Core;
 

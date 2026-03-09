@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Apperture.Core.Domain</RootNamespace>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\Apperture.Shared\Apperture.Shared.Kernel\Apperture.Shared.Kernel.csproj" />
+  </ItemGroup>
+</Project>

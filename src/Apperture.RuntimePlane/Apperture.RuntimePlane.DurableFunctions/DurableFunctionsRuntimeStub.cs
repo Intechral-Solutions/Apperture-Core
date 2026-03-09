@@ -1,5 +1,4 @@
 using Apperture.RuntimePlane.Abstractions;
-using Apperture.Shared.Kernel;
 
 namespace Apperture.RuntimePlane.DurableFunctions;
 

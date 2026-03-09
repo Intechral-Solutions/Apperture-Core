@@ -16,6 +16,8 @@
     </Folder>
   </Folder>
   <Folder Name="/src/Apperture.Core/">
+    <Project Path="src/Apperture.Core/Apperture.Core.Domain/Apperture.Core.Domain.csproj" />
+    <Project Path="src/Apperture.Core/Apperture.Core.Application/Apperture.Core.Application.csproj" />
     <Project Path="src/Apperture.Core/Apperture.Core.Security.Secrets/Apperture.Core.Security.Secrets.csproj" />
   </Folder>
   <Folder Name="/src/Apperture.ControlPlane/">

@@ -2,8 +2,11 @@
 
 See [.ai/memory/glossary.md](../../.ai/memory/glossary.md) for the canonical glossary. Key terms:
 
-- **Instance** — Single-tenant deployment boundary; one customer per Instance
-- **Module** — Installable capability bundle (workflows, steps, connectors, UI)
+- **Environment** — Full deployed platform boundary for a tenant/org; one customer per Environment
+- **Runtime Plane** — Execution/data-plane within an Environment
+- **Module** — Installable capability type (catalog entry)
+- **Module Installation** — Module enabled in an Environment
+- **Module Instance** — Configured executable occurrence of a Module Installation (e.g. one worker or Function App)
 - **Workflow** — Durable procedure with step graph and persisted state
 - **Step** — Unit of execution within a workflow
 - **Control plane** — Management API, UI, registry, schedules, audit

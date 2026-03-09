@@ -10,6 +10,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Apperture.Management.Api\Apperture.Management.Api.csproj" />
+    <ProjectReference Include="..\..\Apperture.Core\Apperture.Core.Application\Apperture.Core.Application.csproj" />
     <ProjectReference Include="..\..\Apperture.RuntimePlane\Apperture.RuntimePlane.DTFx\Apperture.RuntimePlane.DTFx.csproj" />
     <ProjectReference Include="..\..\Apperture.RuntimePlane\Apperture.RuntimePlane.Persistence.SqlServer\Apperture.RuntimePlane.Persistence.SqlServer.csproj" />
   </ItemGroup>

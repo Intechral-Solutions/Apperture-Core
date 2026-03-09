@@ -1,4 +1,4 @@
-using Apperture.Shared.Kernel;
+using Apperture.RuntimePlane.Abstractions;
 using System.Net.Http.Json;
 
 namespace Apperture.Management.Client;

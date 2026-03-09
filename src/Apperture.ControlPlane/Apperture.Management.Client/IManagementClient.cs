@@ -1,4 +1,4 @@
-using Apperture.Shared.Kernel;
+using Apperture.RuntimePlane.Abstractions;
 
 namespace Apperture.Management.Client;
 
