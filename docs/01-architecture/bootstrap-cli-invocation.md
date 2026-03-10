@@ -59,7 +59,7 @@ The following are **stubbed** or **not yet implemented**:
 
 | Area | Status | Notes |
 |------|--------|-------|
-| `IBootstrapConfigurationStore` | Stub throws | No file- or DB-backed persistence. `bootstrap show` will fail until implemented. |
+| `IBootstrapConfigurationStore` | Stub: GetAsync returns null; SaveAsync throws | bootstrap show / validate succeed with "no configuration" until a real store is wired. |
 | `IBootstrapCredentialManager` | Stub throws | No credential storage or rotation. |
 | `ISqlConnectionBootstrapProfileManager` | Stub throws | No profile persistence. |
 | `IBootstrapCredentialResolver` | Stub | Key Vault, Managed Identity, DPAPI not implemented. |

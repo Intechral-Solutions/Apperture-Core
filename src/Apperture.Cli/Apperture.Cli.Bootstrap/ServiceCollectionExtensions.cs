@@ -40,7 +40,7 @@ public static class ServiceCollectionExtensions
 
     /// <summary>
     /// Registers BootstrapCliService with Bootstrap scaffolding only (no config binding).
-    /// Uses empty configuration; IBootstrapConnectionProfile will use LocalDB fallback.
+    /// Uses empty configuration. In Development, IBootstrapConnectionProfile may use LocalDB fallback. Not for production.
     /// </summary>
     public static IServiceCollection AddBootstrapCliScaffolding(this IServiceCollection services)
     {

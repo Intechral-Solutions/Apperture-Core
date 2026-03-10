@@ -25,5 +25,6 @@
     <ProjectReference Include="..\..\src\Apperture.RuntimePlane\Apperture.RuntimePlane.Engine\Apperture.RuntimePlane.Engine.csproj" />
     <ProjectReference Include="..\..\src\Apperture.ModuleSdk\Apperture.ModuleSdk.Abstractions\Apperture.ModuleSdk.Abstractions.csproj" />
     <ProjectReference Include="..\..\src\Apperture.RuntimeHost\Apperture.RuntimeHost.Azure\Apperture.RuntimeHost.Azure.Secrets\Apperture.RuntimeHost.Azure.Secrets.csproj" />
+    <ProjectReference Include="..\..\src\Apperture.ControlPlane\Apperture.Management.Api\Apperture.Management.Api.csproj" />
   </ItemGroup>
 </Project>

@@ -104,6 +104,32 @@ public sealed class BootstrapCliServiceTests
     }
 
     [Fact]
+    public async Task ShowAsync_with_real_stub_config_store_does_not_throw()
+    {
+        var configStore = new Apperture.Bootstrap.Stubs.StubBootstrapConfigurationStore();
+        var service = CreateService(configStore);
+        var result = await service.ShowAsync();
+
+        result.Should().NotBeNull();
+        result.Success.Should().BeTrue();
+        result.Message.Should().Be("No bootstrap configuration found.");
+    }
+
+    [Fact]
+    public async Task ValidateAsync_when_no_config_returns_failure_with_message()
+    {
+        var configStore = new Mock<IBootstrapConfigurationStore>();
+        configStore.Setup(x => x.GetAsync(It.IsAny<CancellationToken>())).ReturnsAsync((BootstrapConfigurationDocument?)null);
+
+        var service = CreateService(configStore: configStore.Object);
+        var result = await service.ValidateAsync();
+
+        result.Should().NotBeNull();
+        result.Success.Should().BeFalse();
+        result.Errors.Should().Contain("No configuration document found.");
+    }
+
+    [Fact]
     public async Task ValidateAsync_returns_BootstrapValidationResult()
     {
         var doc = new BootstrapConfigurationDocument

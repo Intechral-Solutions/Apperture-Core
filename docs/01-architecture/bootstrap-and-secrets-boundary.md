@@ -97,8 +97,13 @@ Bootstrap never depends on Operational Secrets or Runtime Trust. Operational Sec
 - Use one credential for bootstrap, operational auth, and DEK protection—keep them separate.
 - Store encryption keys (DEK, root) in appsettings or config.
 
+## Next stage: platform auth
+
+Platform auth (operator/authn/authz) will build on the current boundaries without collapsing them. See [Next Stage: Platform Auth Readiness](next-stage-platform-auth.md) for plug-in points and constraints. Do not conflate bootstrap, runtime trust, or operational secrets with platform auth.
+
 ## Related
 
+- [Next Stage: Platform Auth Readiness](next-stage-platform-auth.md) — Plug-in points for the next phase (no implementation)
 - [Bootstrap Recovery and Break-Glass](bootstrap-recovery-and-break-glass.md) — Recovery-only path, audit, security expectations
 - [Bootstrap CLI Invocation](bootstrap-cli-invocation.md) — CLI integration, invocation model, deferred implementation
 - [Persistence Foundation](persistence-foundation.md)
