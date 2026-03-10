@@ -18,6 +18,8 @@ Persistence Foundation does **not** own:
 - Secret metadata or enrollment tokens (those are stored in the shared schema but owned by other subsystems)
 - Runtime trust or operational auth
 
+**Dependency direction:** Persistence does not reference RuntimePlane or Bootstrap. It only receives a connection string from the host and uses `Apperture.Core.Security.Secrets` for secret store/resolver contracts. Connection string resolution belongs to Bootstrap (or the host).
+
 ## What Belongs to Bootstrap
 
 Bootstrap (or the host) owns:

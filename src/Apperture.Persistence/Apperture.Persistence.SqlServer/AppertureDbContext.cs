@@ -1,11 +1,10 @@
-using Apperture.RuntimePlane.Abstractions;
-using Apperture.Shared.Kernel;
 using Microsoft.EntityFrameworkCore;
 
 namespace Apperture.Persistence.SqlServer;
 
 /// <summary>
 /// Shared EF Core DbContext for platform data: workflow instances, audit, telemetry, and future control-plane schema.
+/// Used by Control Plane and Windows runtime; does not depend on workflow engine abstractions (RuntimePlane).
 /// </summary>
 public class AppertureDbContext : DbContext
 {
