@@ -7,13 +7,17 @@ namespace Apperture.Cli.Bootstrap;
 /// Orchestration service for bootstrap CLI commands. Thin; routes to Bootstrap interfaces.
 /// Never returns or logs secrets.
 /// </summary>
+/// <remarks>
+/// Routine operations (SetProfileAsync, RotateSqlCredentialAsync, SetPasswordAsync, BindKeyVaultAsync, RepairAsync)
+/// do not require and must not use recovery authorization. Only RecoveryUnlockAsync is the break-glass path.
+/// </remarks>
 public sealed class BootstrapCliService
 {
     private readonly IBootstrapCredentialManager _credentialManager;
     private readonly ISqlConnectionBootstrapProfileManager _profileManager;
     private readonly IBootstrapConnectionProfile _connectionProfile;
     private readonly IBootstrapConfigurationValidator _validator;
-    private readonly IBootstrapRecoveryAuthorizer _recoveryAuthorizer;
+    private readonly IBootstrapRecoveryService _recoveryService;
     private readonly IBootstrapAuditWriter _auditWriter;
     private readonly IBootstrapConfigurationStore _configStore;
 
@@ -22,7 +26,7 @@ public sealed class BootstrapCliService
         ISqlConnectionBootstrapProfileManager profileManager,
         IBootstrapConnectionProfile connectionProfile,
         IBootstrapConfigurationValidator validator,
-        IBootstrapRecoveryAuthorizer recoveryAuthorizer,
+        IBootstrapRecoveryService recoveryService,
         IBootstrapAuditWriter auditWriter,
         IBootstrapConfigurationStore configStore)
     {
@@ -30,7 +34,7 @@ public sealed class BootstrapCliService
         _profileManager = profileManager;
         _connectionProfile = connectionProfile;
         _validator = validator;
-        _recoveryAuthorizer = recoveryAuthorizer;
+        _recoveryService = recoveryService;
         _auditWriter = auditWriter;
         _configStore = configStore;
     }
@@ -141,12 +145,15 @@ public sealed class BootstrapCliService
         };
     }
 
-    /// <summary>Recovery only; calls IBootstrapRecoveryAuthorizer.</summary>
+    /// <summary>Recovery only; break-glass path. Calls IBootstrapRecoveryService (authorize, audit, execute).</summary>
     public async Task<BootstrapCommandResult> RecoveryUnlockAsync(BootstrapRecoveryRequest request, CancellationToken cancellationToken = default)
     {
-        var auth = await _recoveryAuthorizer.AuthorizeAsync(request, cancellationToken).ConfigureAwait(false);
-        if (!auth.Authorized)
-            return new BootstrapCommandResult { Success = false, Message = auth.Reason ?? "Recovery not authorized." };
-        return new BootstrapCommandResult { Success = true, Message = "Recovery unlock completed.", RestartRecommended = true };
+        var result = await _recoveryService.ExecuteRecoveryAsync(request, cancellationToken).ConfigureAwait(false);
+        return new BootstrapCommandResult
+        {
+            Success = result.Success,
+            Message = result.Message ?? (result.Success ? "Recovery unlock completed." : "Recovery not authorized."),
+            RestartRecommended = result.Success
+        };
     }
 }

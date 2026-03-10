@@ -42,6 +42,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IBootstrapConfigurationValidator, StubBootstrapConfigurationValidator>();
         services.AddSingleton<IBootstrapRecoveryAuthorizer, StubBootstrapRecoveryAuthorizer>();
         services.AddSingleton<IBootstrapAuditWriter, StubBootstrapAuditWriter>();
+        services.AddSingleton<IBootstrapRecoveryService, StubBootstrapRecoveryService>();
         services.AddSingleton<IBootstrapEnvironmentStrategy, DefaultBootstrapEnvironmentStrategy>();
         return services;
     }

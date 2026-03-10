@@ -9,4 +9,7 @@ public sealed class StubBootstrapAuditWriter : IBootstrapAuditWriter
 {
     public Task WriteAsync(BootstrapChangeAuditRecord record, CancellationToken cancellationToken = default) =>
         Task.CompletedTask;
+
+    public Task WriteRecoveryAsync(BootstrapRecoveryAuditRecord record, CancellationToken cancellationToken = default) =>
+        Task.CompletedTask;
 }

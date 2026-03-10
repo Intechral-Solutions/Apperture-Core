@@ -37,8 +37,8 @@ Bootstrap owns:
 - Credential source (`BootstrapCredentialSourceType`: ManagedIdentity, WindowsIntegrated, KeyVaultReference, DpapiProtectedLocal, CertificateBackedLocal, DeploymentInjected)
 - Validation-before-commit (test connection on startup)
 - Secure post-deployment update support
-- Recovery repair path
-- Bootstrap audit
+- Recovery repair path (break-glass only); see [Bootstrap Recovery and Break-Glass](bootstrap-recovery-and-break-glass.md)
+- Bootstrap audit (change and recovery audit records)
 
 ### Bootstrap Abstractions
 
@@ -51,7 +51,8 @@ Bootstrap owns:
 | `ISqlConnectionBootstrapProfileManager` | Manage SQL profile |
 | `IBootstrapConfigurationValidator` | Validate config before commit |
 | `IBootstrapRecoveryAuthorizer` | Authorize recovery actions (break-glass only) |
-| `IBootstrapAuditWriter` | Write bootstrap change audit records |
+| `IBootstrapRecoveryService` | Execute recovery flow: authorize, audit, then perform recovery action |
+| `IBootstrapAuditWriter` | Write bootstrap change and recovery audit records |
 | `IBootstrapEnvironmentStrategy` | Environment-specific credential resolution (Windows vs Azure) |
 
 ### Models (non-secret)
@@ -60,7 +61,7 @@ Bootstrap owns:
 - `BootstrapCredentialReference` — SourceType, Reference; no raw secret
 - `BootstrapConfigurationDocument` — Profile + CredentialReference + Version
 - `BootstrapUpdateRequest` — Transient; may carry `SensitivePayload`; do not persist
-- `BootstrapValidationResult`, `BootstrapRecoveryRequest`, `BootstrapRecoveryAuthorizationResult`, `BootstrapChangeAuditRecord`
+- `BootstrapValidationResult`, `BootstrapRecoveryRequest`, `BootstrapRecoveryAuthorizationResult`, `BootstrapRecoveryResult`, `BootstrapChangeAuditRecord`, `BootstrapRecoveryAuditRecord`, `BootstrapRecoveryAction`
 
 Bootstrap does **not** own:
 
@@ -98,6 +99,7 @@ Bootstrap never depends on Operational Secrets or Runtime Trust. Operational Sec
 
 ## Related
 
+- [Bootstrap Recovery and Break-Glass](bootstrap-recovery-and-break-glass.md) — Recovery-only path, audit, security expectations
 - [Bootstrap CLI Invocation](bootstrap-cli-invocation.md) — CLI integration, invocation model, deferred implementation
 - [Persistence Foundation](persistence-foundation.md)
 - [Secrets and key management](secrets-and-key-management.md)

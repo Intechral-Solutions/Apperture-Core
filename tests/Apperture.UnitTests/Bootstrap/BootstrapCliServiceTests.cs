@@ -18,7 +18,7 @@ public sealed class BootstrapCliServiceTests
         IBootstrapConnectionProfile? connectionProfile = null,
         IBootstrapCredentialManager? credentialManager = null,
         ISqlConnectionBootstrapProfileManager? profileManager = null,
-        IBootstrapRecoveryAuthorizer? recoveryAuthorizer = null,
+        IBootstrapRecoveryService? recoveryService = null,
         IBootstrapAuditWriter? auditWriter = null)
     {
         var configStoreMock = configStore != null
@@ -36,9 +36,9 @@ public sealed class BootstrapCliServiceTests
         var profileManagerMock = profileManager != null
             ? (Mock<ISqlConnectionBootstrapProfileManager>?)null
             : new Mock<ISqlConnectionBootstrapProfileManager>();
-        var recoveryAuthorizerMock = recoveryAuthorizer != null
-            ? (Mock<IBootstrapRecoveryAuthorizer>?)null
-            : new Mock<IBootstrapRecoveryAuthorizer>();
+        var recoveryServiceMock = recoveryService != null
+            ? (Mock<IBootstrapRecoveryService>?)null
+            : new Mock<IBootstrapRecoveryService>();
         var auditWriterMock = auditWriter != null
             ? (Mock<IBootstrapAuditWriter>?)null
             : new Mock<IBootstrapAuditWriter>();
@@ -48,7 +48,7 @@ public sealed class BootstrapCliServiceTests
             profileManager ?? profileManagerMock!.Object,
             connectionProfile ?? connectionProfileMock!.Object,
             validator ?? validatorMock!.Object,
-            recoveryAuthorizer ?? recoveryAuthorizerMock!.Object,
+            recoveryService ?? recoveryServiceMock!.Object,
             auditWriter ?? auditWriterMock!.Object,
             configStore ?? configStoreMock!.Object);
     }
@@ -177,5 +177,60 @@ public sealed class BootstrapCliServiceTests
         result.Message.Should().Contain("Connection failed");
         // Ensure we don't leak connection string or password in error message
         result.Message.ToUpperInvariant().Should().NotContain("PASSWORD=");
+    }
+
+    [Fact]
+    public async Task RepairAsync_does_not_call_RecoveryService()
+    {
+        var recoveryServiceMock = new Mock<IBootstrapRecoveryService>();
+        var credentialManager = new Mock<IBootstrapCredentialManager>();
+        credentialManager
+            .Setup(x => x.ValidateAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new BootstrapValidationResult { Success = true, Errors = [] });
+
+        var service = CreateService(credentialManager: credentialManager.Object, recoveryService: recoveryServiceMock.Object);
+        await service.RepairAsync();
+
+        recoveryServiceMock.Verify(x => x.ExecuteRecoveryAsync(It.IsAny<BootstrapRecoveryRequest>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task RecoveryUnlockAsync_calls_RecoveryService_returns_result()
+    {
+        var request = new BootstrapRecoveryRequest
+        {
+            ActionType = BootstrapRecoveryAction.RebindCredentialSource,
+            Reason = "Test recovery"
+        };
+        var recoveryResult = new BootstrapRecoveryResult { Success = true, Message = "Recovery completed." };
+        var recoveryServiceMock = new Mock<IBootstrapRecoveryService>();
+        recoveryServiceMock
+            .Setup(x => x.ExecuteRecoveryAsync(It.IsAny<BootstrapRecoveryRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(recoveryResult);
+
+        var service = CreateService(recoveryService: recoveryServiceMock.Object);
+        var result = await service.RecoveryUnlockAsync(request);
+
+        result.Should().NotBeNull();
+        result.Success.Should().BeTrue();
+        result.Message.Should().Be("Recovery completed.");
+        recoveryServiceMock.Verify(x => x.ExecuteRecoveryAsync(request, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task RecoveryUnlockAsync_when_denied_returns_failure()
+    {
+        var request = new BootstrapRecoveryRequest { ActionType = BootstrapRecoveryAction.RestorePlatformAccess, Reason = "Test" };
+        var recoveryServiceMock = new Mock<IBootstrapRecoveryService>();
+        recoveryServiceMock
+            .Setup(x => x.ExecuteRecoveryAsync(It.IsAny<BootstrapRecoveryRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new BootstrapRecoveryResult { Success = false, Message = "Recovery not authorized." });
+
+        var service = CreateService(recoveryService: recoveryServiceMock.Object);
+        var result = await service.RecoveryUnlockAsync(request);
+
+        result.Should().NotBeNull();
+        result.Success.Should().BeFalse();
+        result.Message.Should().Be("Recovery not authorized.");
     }
 }
