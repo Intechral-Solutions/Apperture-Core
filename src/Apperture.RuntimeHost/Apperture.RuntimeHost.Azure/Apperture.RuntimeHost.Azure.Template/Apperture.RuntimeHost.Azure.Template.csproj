@@ -15,5 +15,6 @@
   <ItemGroup>
     <ProjectReference Include="..\..\..\Apperture.RuntimePlane\Apperture.RuntimePlane.Abstractions\Apperture.RuntimePlane.Abstractions.csproj" />
     <ProjectReference Include="..\..\..\Apperture.RuntimePlane\Apperture.RuntimePlane.DurableFunctions\Apperture.RuntimePlane.DurableFunctions.csproj" />
+    <ProjectReference Include="..\Apperture.RuntimeHost.Azure.Secrets\Apperture.RuntimeHost.Azure.Secrets.csproj" />
   </ItemGroup>
 </Project>

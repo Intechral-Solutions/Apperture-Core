@@ -4,6 +4,10 @@ namespace Apperture.RuntimePlane.Abstractions;
 /// Workflow start request.
 /// Parameters that require credentials should carry a secret reference contract, not plaintext values.
 /// </summary>
+/// <remarks>
+/// Parameters must not contain ResolvedSecret or SecretMaterial. Use SecretRef-shaped values only.
+/// Orchestration state must never persist resolved secret material (e.g. in Durable Functions history).
+/// </remarks>
 public sealed record StartWorkflowRequest(
     WorkflowDefinitionId WorkflowDefinitionId,
     IReadOnlyDictionary<string, object?>? Parameters,

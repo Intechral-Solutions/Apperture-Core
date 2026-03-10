@@ -5,6 +5,10 @@ namespace Apperture.RuntimePlane.DurableFunctions;
 /// <summary>
 /// Stub for Azure Durable Functions adapter. Full implementation deferred until cloud phase.
 /// </summary>
+/// <remarks>
+/// When implemented: orchestrator state and history may contain only SecretRef (e.g. kv:name or Key Vault URI), never ResolvedSecret or secret material.
+/// Activities must resolve secrets just-in-time via ISecretResolver and return only non-secret outputs.
+/// </remarks>
 public sealed class DurableFunctionsRuntimeStub : IWorkflowRuntime
 {
     public ValueTask<WorkflowInstanceId> StartAsync(StartWorkflowRequest request, CancellationToken cancellationToken = default) =>

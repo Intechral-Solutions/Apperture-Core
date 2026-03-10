@@ -4,6 +4,9 @@ namespace Apperture.RuntimePlane.Abstractions;
 /// Executes workflow steps.
 /// Step parameter contracts should pass secret references and resolve them inside worker execution boundaries.
 /// </summary>
+/// <remarks>
+/// Resolve SecretRef inside the step via ISecretResolver; never return ResolvedSecret or secret material from ExecuteStepAsync.
+/// </remarks>
 public interface IWorkflowExecutor
 {
     ValueTask<object?> ExecuteStepAsync(

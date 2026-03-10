@@ -72,14 +72,23 @@ The Windows WorkerHost uses the same SQL-backed store and DPAPI protector as the
 
 WorkerHost must run on Windows for the default DPAPI protector. On Linux, provide a custom `ISecretProtector` (e.g. cert-backed) to `AddAppertureSqlSecrets` or use the Azure Key Vault store. The runtime host does not depend on the Control Plane; it uses Bootstrap and Persistence only.
 
+## Azure runtime secret path
+
+The Azure Functions host (RuntimeHost.Azure.Template) uses Key Vault and Managed Identity for operational secret resolution. It does **not** use SQL-backed secret storage or Bootstrap:
+
+- **Host** wires `AddAppertureAzureKeyVaultSecrets(configuration)` in `Program.cs`. Requires `KeyVault:VaultUri` in configuration (e.g. `local.settings.json` or App Configuration).
+- **Resolution:** `ISecretResolver` → `CompositeSecretResolver` → `AzureSecretResolverRegistry` → `AzureKeyVaultSecretResolver` for `kv:`-prefixed or full Key Vault secret URIs.
+- **Identity:** `DefaultAzureCredential` (Managed Identity in Azure; local dev fallbacks). No local vault; secrets are resolved just-in-time from Key Vault.
+- **Orchestration boundary:** Only `SecretRef` may cross Durable Functions orchestrator state or history; never `ResolvedSecret` or secret material. Activities resolve secrets at execution time and return non-secret outputs. See [durable-functions-secret-boundary.md](durable-functions-secret-boundary.md).
+
 ## SecretRef resolution contract
 
 `CompositeSecretResolver` routes by `SecretRef.Value` format:
 
 | Value format | Resolver | Notes |
 |--------------|----------|-------|
-| GUID string (e.g. `550e8400-e29b-41d4-a716-446655440000`) | SQL-backed store | `SqlSecretResolver` via `ISecretResolverRegistry` |
-| `kv:`-prefixed or Key Vault URI | Azure Key Vault | Future `AzureKeyVaultSecretResolver` |
+| GUID string (e.g. `550e8400-e29b-41d4-a716-446655440000`) | SQL-backed store | `SqlSecretResolver` via `ISecretResolverRegistry` (Windows host) |
+| `kv:`-prefixed or Key Vault URI | Azure Key Vault | `AzureKeyVaultSecretResolver` in `Apperture.RuntimeHost.Azure.Secrets` (Azure host) |
 | Other | None | Throws; no resolver available |
 
 Consumers pass `SecretRef`; resolution routing is transparent.
@@ -157,11 +166,9 @@ Audit records should include timestamp, actor identity, operation, target `Secre
 
 ## Key Vault adapter seam
 
-The following provide the seam for future Azure Key Vault integration:
-
 - **`AzureKeyVaultSecretStore`** (Core.Security.Secrets) — Placeholder; implements `ISecretStore`. Map `SecretId` to vault secret name; use workload identity for access.
-- **`AzureKeyVaultSecretResolver`** — Not yet implemented. Resolve `kv:`-prefixed or full Key Vault URI refs via Azure SDK. Register in `ISecretResolverRegistry` to route from `CompositeSecretResolver`.
-- **`ISecretResolverRegistry`** — Implementations (e.g. `SqlSecretResolverRegistry`) return the appropriate resolver for a given `SecretRef`. Extend to include Key Vault resolver when implemented.
+- **`AzureKeyVaultSecretResolver`** (Apperture.RuntimeHost.Azure.Secrets) — Resolves `kv:`-prefixed or full Key Vault URI refs via Azure SDK and `DefaultAzureCredential`. Used by the Azure Functions host; registered via `AzureSecretResolverRegistry` and `AddAppertureAzureKeyVaultSecrets`.
+- **`ISecretResolverRegistry`** — `SqlSecretResolverRegistry` (Windows) and `AzureSecretResolverRegistry` (Azure) return the appropriate resolver for a given `SecretRef`; `CompositeSecretResolver` routes from the registry.
 
 ## What remains
 
@@ -171,8 +178,8 @@ The following provide the seam for future Azure Key Vault integration:
 | DpapiSecretProtector | Done | Windows-only |
 | CompositeSecretResolver, ISecretResolverRegistry | Done | Route by SecretRef format |
 | CertSecretProtector | Placeholder | Needed for Linux/Azure; cert-based KEK |
-| AzureKeyVaultSecretStore | Placeholder | Implement with Azure SDK |
-| AzureKeyVaultSecretResolver | Not yet | Resolve `kv:` or URI refs |
+| AzureKeyVaultSecretStore | Placeholder | Implement with Azure SDK for control-plane secret management |
+| AzureKeyVaultSecretResolver | Done | In Apperture.RuntimeHost.Azure.Secrets; resolves `kv:` or URI refs for Azure runtime |
 | ISecretAuditActorProvider | Done | Optional audit actor injection |
 | Key Vault migration | Future | Per migration strategy below |
 
@@ -241,4 +248,5 @@ The example intentionally logs only reference and type metadata, not secret cont
 ## Related
 
 - [Bootstrap and Secrets Boundary](bootstrap-and-secrets-boundary.md)
+- [Durable Functions Secret Boundary](durable-functions-secret-boundary.md)
 - [Persistence Foundation](persistence-foundation.md)
