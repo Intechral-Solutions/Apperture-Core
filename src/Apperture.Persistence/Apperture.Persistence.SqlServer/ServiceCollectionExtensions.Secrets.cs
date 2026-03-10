@@ -12,6 +12,7 @@ public static class SecretsServiceCollectionExtensions
 {
     /// <summary>
     /// Adds SQL-backed ISecretStore, ISecretResolver, and ISecretProtector to the service collection.
+    /// Used by both Control Plane and Windows runtime; shared SQL store with host-appropriate protector (e.g. DPAPI on Windows).
     /// When <paramref name="protector"/> is null, registers DpapiSecretProtector on Windows only;
     /// on non-Windows, throws. For Azure Linux, provide a custom protector or use Azure Key Vault store.
     /// Requires AppertureDbContext and AddApperturePersistence to be registered first.

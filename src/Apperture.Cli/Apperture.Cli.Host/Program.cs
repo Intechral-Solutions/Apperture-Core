@@ -10,8 +10,9 @@ var config = new ConfigurationBuilder()
     .AddEnvironmentVariables()
     .Build();
 
+var environmentName = CliEnvironmentResolver.GetEnvironmentName();
 var services = new ServiceCollection();
-services.AddBootstrapCli(config);
+services.AddBootstrapCli(config, environmentName);
 var provider = services.BuildServiceProvider();
 
 try
@@ -77,7 +78,6 @@ static async Task RunBootstrapAsync(BootstrapCliService bootstrapCli, string[] s
             break;
         case "set-profile":
         case "set-auth-mode":
-        case "set-password":
         case "bind-keyvault-secret":
         case "bind-managed-identity":
         case "bind-integrated-security":
@@ -85,6 +85,10 @@ static async Task RunBootstrapAsync(BootstrapCliService bootstrapCli, string[] s
         case "repair":
         case "recovery-unlock":
             Console.WriteLine($"Bootstrap subcommand '{cmd}' - not implemented (scaffolding).");
+            break;
+        case "set-password":
+            // When implementing: obtain payload via SensitiveInputHelper.ReadSensitivePayloadFromStdinAsync or secure prompt only; never from subArgs or argv.
+            Console.WriteLine("Bootstrap subcommand 'set-password' - not implemented (scaffolding). Password must not be passed on the command line.");
             break;
         default:
             Console.Error.WriteLine($"Unknown bootstrap subcommand: {cmd}");
@@ -107,6 +111,7 @@ static void PrintHelp()
     Console.WriteLine("  bootstrap validate       - validate config");
     Console.WriteLine("  bootstrap sql test       - test SQL connection");
     Console.WriteLine("  bootstrap set-profile    - set server/database (not implemented)");
+    Console.WriteLine("  bootstrap set-password   - set SQL credential via stdin or prompt; never pass password on command line (not implemented)");
     Console.WriteLine("  bootstrap repair         - repair path (not implemented)");
     Console.WriteLine("  bootstrap recovery-unlock - recovery only (not implemented)");
 }
@@ -116,4 +121,5 @@ static void PrintBootstrapHelp()
     Console.WriteLine("bootstrap show | validate | sql test | set-profile | set-auth-mode | set-password |");
     Console.WriteLine("  bind-keyvault-secret | bind-managed-identity | bind-integrated-security |");
     Console.WriteLine("  rotate-sql-credential | repair | recovery-unlock");
+    Console.WriteLine("  set-password: obtain credential via stdin or secure prompt; do not use command-line arguments.");
 }

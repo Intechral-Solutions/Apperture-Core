@@ -8,6 +8,7 @@ namespace Apperture.RuntimePlane.DurableFunctions;
 /// <remarks>
 /// When implemented: orchestrator state and history may contain only SecretRef (e.g. kv:name or Key Vault URI), never ResolvedSecret or secret material.
 /// Activities must resolve secrets just-in-time via ISecretResolver and return only non-secret outputs.
+/// Before persisting to orchestration state or history, call OrchestrationSafeValidator.ValidateParameters and ValidateSignalPayload.
 /// </remarks>
 public sealed class DurableFunctionsRuntimeStub : IWorkflowRuntime
 {

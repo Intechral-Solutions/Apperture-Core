@@ -14,11 +14,14 @@ public static class ServiceCollectionExtensions
     /// <summary>
     /// Registers BootstrapCliService and Bootstrap scaffolding.
     /// Use IConfiguration for config-based bootstrap (e.g. appsettings) or pass empty configuration for scaffolding only.
+    /// When <paramref name="environmentName"/> is null, resolves from DOTNET_ENVIRONMENT or ASPNETCORE_ENVIRONMENT (default Production).
     /// </summary>
-    public static IServiceCollection AddBootstrapCli(this IServiceCollection services, IConfiguration configuration)
+    /// <param name="environmentName">Optional. When null, uses <see cref="CliEnvironmentResolver.GetEnvironmentName"/> so production safeguards apply when env is Production.</param>
+    public static IServiceCollection AddBootstrapCli(this IServiceCollection services, IConfiguration configuration, string? environmentName = null)
     {
+        var env = environmentName ?? CliEnvironmentResolver.GetEnvironmentName();
         services.AddSingleton<IConfiguration>(configuration);
-        services.AddSingleton<IHostEnvironment>(new HostingEnvironment { EnvironmentName = Environments.Development });
+        services.AddSingleton<IHostEnvironment>(new HostingEnvironment { EnvironmentName = env });
         services.AddLogging();
         services.Configure<BootstrapSqlConfig>(configuration.GetSection(BootstrapSqlConfig.SectionName));
         services.AddSingleton<IBootstrapConnectionProfile, BootstrapConnectionProfile>();
@@ -29,7 +32,7 @@ public static class ServiceCollectionExtensions
 
     private sealed class HostingEnvironment : IHostEnvironment
     {
-        public string EnvironmentName { get; set; } = Environments.Development;
+        public string EnvironmentName { get; set; } = "Production";
         public string ApplicationName { get; set; } = "Apperture.Cli";
         public string ContentRootPath { get; set; } = AppContext.BaseDirectory;
         public Microsoft.Extensions.FileProviders.IFileProvider ContentRootFileProvider { get; set; } = new Microsoft.Extensions.FileProviders.NullFileProvider();
