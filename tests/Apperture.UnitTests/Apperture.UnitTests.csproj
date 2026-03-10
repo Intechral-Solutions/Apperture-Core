@@ -12,7 +12,11 @@
     <PackageReference Include="xunit.runner.visualstudio" />
   </ItemGroup>
   <ItemGroup>
+    <PackageReference Include="Moq" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="..\..\src\Apperture.Bootstrap\Apperture.Bootstrap\Apperture.Bootstrap.csproj" />
+    <ProjectReference Include="..\..\src\Apperture.Cli\Apperture.Cli.Bootstrap\Apperture.Cli.Bootstrap.csproj" />
     <ProjectReference Include="..\..\src\Apperture.Shared\Apperture.Shared.Kernel\Apperture.Shared.Kernel.csproj" />
     <ProjectReference Include="..\..\src\Apperture.RuntimePlane\Apperture.RuntimePlane.Abstractions\Apperture.RuntimePlane.Abstractions.csproj" />
     <ProjectReference Include="..\..\src\Apperture.RuntimePlane\Apperture.RuntimePlane.Engine\Apperture.RuntimePlane.Engine.csproj" />

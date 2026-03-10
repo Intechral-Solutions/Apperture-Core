@@ -96,6 +96,7 @@ Bootstrap never depends on Operational Secrets or Runtime Trust. Operational Sec
 
 ## Related
 
+- [Bootstrap CLI Invocation](bootstrap-cli-invocation.md) — CLI integration, invocation model, deferred implementation
 - [Persistence Foundation](persistence-foundation.md)
 - [Secrets and key management](secrets-and-key-management.md)
 - [Foundational layers](foundational-layers.md)
