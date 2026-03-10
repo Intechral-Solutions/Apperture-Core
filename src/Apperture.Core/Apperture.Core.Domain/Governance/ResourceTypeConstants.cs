@@ -1,0 +1,43 @@
+namespace Apperture.Core.Domain.Governance;
+
+/// <summary>
+/// Well-known resource type names for authorization. Use PascalCase.
+/// Extensible via registration; these are the initial platform types.
+/// </summary>
+public static class ResourceTypeConstants
+{
+    // Core / Environment
+    public const string Environment = "Environment";
+    public const string RuntimeInstance = "RuntimeInstance";
+    public const string Module = "Module";
+    public const string ModuleInstallation = "ModuleInstallation";
+    public const string ModuleInstance = "ModuleInstance";
+
+    // Identity
+    public const string User = "User";
+    public const string Role = "Role";
+    public const string ServiceAccount = "ServiceAccount";
+
+    // Administrative
+    public const string Schedule = "Schedule";
+    public const string SecretDescriptor = "SecretDescriptor";
+    public const string AuditPolicy = "AuditPolicy";
+
+    // Trust / Relationship
+    public const string TrustRelationship = "TrustRelationship";
+    public const string ExternalInstance = "ExternalInstance";
+    public const string GrantedCapability = "GrantedCapability";
+
+    // Connector family
+    public const string ConnectorDefinition = "ConnectorDefinition";
+    public const string Connection = "Connection";
+    public const string CapabilityRegistration = "CapabilityRegistration";
+    public const string CapabilitySlot = "CapabilitySlot";
+    public const string Binding = "Binding";
+    public const string MappingDefinition = "MappingDefinition";
+
+    // Operational
+    public const string OperationDefinition = "OperationDefinition";
+    public const string OperationRun = "OperationRun";
+    public const string WorkflowInstance = "WorkflowInstance";
+}

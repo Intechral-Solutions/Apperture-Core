@@ -1,29 +1,35 @@
+using Apperture.Core.Domain.Governance;
 using Apperture.Shared.Kernel;
 
 namespace Apperture.Core.Application.Services;
 
 /// <summary>
 /// Registers and resolves resource/permission descriptors (core + modules). Used by authorization and UI.
+/// Supports optional ResourceFamily grouping for taxonomy.
 /// </summary>
 public interface IResourceDescriptorRegistry
 {
     /// <summary>
     /// Registers a resource descriptor.
     /// </summary>
-    void RegisterResource(ResourceDescriptor descriptor);
+    /// <param name="descriptor">The resource descriptor.</param>
+    /// <param name="family">Optional resource family for taxonomy grouping.</param>
+    void RegisterResource(ResourceDescriptor descriptor, ResourceFamily? family = null);
 
     /// <summary>
     /// Registers a permission descriptor.
     /// </summary>
-    void RegisterPermission(PermissionDescriptor descriptor);
+    /// <param name="descriptor">The permission descriptor.</param>
+    /// <param name="family">Optional resource family for taxonomy grouping.</param>
+    void RegisterPermission(PermissionDescriptor descriptor, ResourceFamily? family = null);
 
     /// <summary>
-    /// Gets all registered resource descriptors.
+    /// Gets all registered resource descriptors, optionally filtered by family.
     /// </summary>
-    IReadOnlyList<ResourceDescriptor> GetResourceDescriptors();
+    IReadOnlyList<ResourceDescriptor> GetResourceDescriptors(ResourceFamily? family = null);
 
     /// <summary>
-    /// Gets all registered permission descriptors.
+    /// Gets all registered permission descriptors, optionally filtered by family.
     /// </summary>
-    IReadOnlyList<PermissionDescriptor> GetPermissionDescriptors();
+    IReadOnlyList<PermissionDescriptor> GetPermissionDescriptors(ResourceFamily? family = null);
 }

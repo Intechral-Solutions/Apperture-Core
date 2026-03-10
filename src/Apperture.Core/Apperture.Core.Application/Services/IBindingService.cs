@@ -1,0 +1,42 @@
+using Apperture.Core.Domain.Connector;
+
+namespace Apperture.Core.Application.Services;
+
+/// <summary>
+/// Manages bindings: create/delete slot-to-connection delegations; resolve slot to bound connection/capability.
+/// </summary>
+public interface IBindingService
+{
+    /// <summary>
+    /// Creates a binding from a slot to a connection.
+    /// </summary>
+    ValueTask<Binding> CreateBindingAsync(
+        string moduleId,
+        string slotName,
+        string contractType,
+        ConnectionId connectionId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Creates a binding from a slot to a module-provided capability.
+    /// </summary>
+    ValueTask<Binding> CreateCapabilityBindingAsync(
+        string moduleId,
+        string slotName,
+        string contractType,
+        string capabilityId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Deletes (revokes) a binding.
+    /// </summary>
+    ValueTask DeleteBindingAsync(BindingId bindingId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Resolves the binding for a slot. Returns null if no active binding exists.
+    /// </summary>
+    ValueTask<Binding?> GetBindingAsync(
+        string moduleId,
+        string slotName,
+        CancellationToken cancellationToken = default);
+}
