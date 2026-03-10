@@ -61,6 +61,17 @@ This subsystem is for **operational secrets** (API keys, connector credentials, 
 - **Persistence boundary:** Operational secrets use the shared `AppertureDbContext` and tables (`SecretDescriptors`, `SecretVersions`, `SecretAudits`). Persistence does not reference Bootstrap; connection string resolution belongs to the host.
 - **Core.Security.Secrets** holds abstractions and models; implementations (`SqlSecretStore`, `SqlSecretResolver`) live in `Apperture.Persistence.SqlServer`. Core must not depend on Bootstrap or Persistence.
 
+## Windows runtime secret path
+
+The Windows WorkerHost uses the same SQL-backed store and DPAPI protector as the Control Plane:
+
+- **WorkerHost** wires `AddAppertureBootstrap`, `AddApperturePersistence`, and `AddAppertureSqlSecrets`.
+- **Storage:** Shared SQL tables (`SecretDescriptors`, `SecretVersions`, `SecretAudits`); no separate local file store.
+- **Protection:** DPAPI (`DataProtectionScope.LocalMachine`) via `DpapiSecretProtector`; envelope-encrypted payloads in DB.
+- **Resolution:** `ISecretResolver` → `CompositeSecretResolver` → `SqlSecretResolver` for GUID refs.
+
+WorkerHost must run on Windows for the default DPAPI protector. On Linux, provide a custom `ISecretProtector` (e.g. cert-backed) to `AddAppertureSqlSecrets` or use the Azure Key Vault store. The runtime host does not depend on the Control Plane; it uses Bootstrap and Persistence only.
+
 ## SecretRef resolution contract
 
 `CompositeSecretResolver` routes by `SecretRef.Value` format:
@@ -132,6 +143,17 @@ Audit records should include timestamp, actor identity, operation, target `Secre
 | HashiCorp Vault KV v2 | Metadata + Vault path/version mapping | Worker resolves via Vault API | Supports versioned key-value retrieval. |
 | HashiCorp Vault Transit (future) | Ciphertext in app store, key ops in Vault Transit | Worker unwrap/sign/encrypt through Vault Transit | Keeps key material external to app. |
 | Vault dynamic secrets (future) | Lease-bound credentials generated on demand | Resolver returns `ExpiresAt` and `LeaseId` | Requires renewal/revocation workflow integration. |
+
+## Certificate-backed protection migration
+
+**Current:** DPAPI (`DataProtectionScope.LocalMachine`) — machine-bound; adequate for single-box Windows. `DpapiSecretProtector` uses the Windows Data Protection API.
+
+**Future:** `CertSecretProtector` (placeholder) — X.509 certificate private key for envelope encryption. Use when:
+- Running on Linux or non-Windows
+- Multi-machine deployments (DPAPI is machine-local)
+- Compliance requires cert-backed KEK
+
+**Migration:** Re-protect existing payloads with the new protector, or extend `SecretVersions.KeyId` to support multiple protectors during transition. No migration tooling in this phase. Pass a custom `ISecretProtector` to `AddAppertureSqlSecrets(protector: myCertProtector)` when ready.
 
 ## Key Vault adapter seam
 
