@@ -17,5 +17,9 @@ public enum ActorKind
 {
     Human,
     Machine,
-    System
+    System,
+    /// <summary>
+    /// Relationship-bound principal from a federated external instance (ADR-0007, ADR-0011).
+    /// </summary>
+    RemoteInstance
 }

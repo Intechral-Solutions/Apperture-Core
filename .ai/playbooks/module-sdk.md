@@ -10,6 +10,17 @@ A module provides:
 - Optional UI metadata (nav links, screens)
 - Permission/resource declarations
 
+## Resource and permission registration
+
+Modules receive `IResourceDescriptorRegistry` from host DI at startup and must call `RegisterResource` and `RegisterPermission` for any module-contributed resource types and permissions. Use `ActionConstants` and `ResourceTypeConstants` from Core.Domain.Governance for consistency; see ADR-0013 for naming conventions.
+
+**Constraints:**
+- Do not browse arbitrary global resources at runtime.
+- Resolve only explicitly declared and bound dependencies (slots, connections).
+- Binding is an explicit delegation mechanism; do not bypass it.
+
+See auth and resource governance plan Section 7.2 (Forbidden) and 7.3 (Anti-Patterns).
+
 ## Metadata (manifest)
 
 - Id, Name, Version, Description

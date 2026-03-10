@@ -1,4 +1,5 @@
 using Apperture.Bootstrap;
+using Apperture.ControlPlane.Security;
 using Apperture.Persistence.SqlServer;
 using Apperture.RuntimePlane.DTFx;
 
@@ -13,6 +14,7 @@ builder.Services.AddApperturePersistence(
 builder.Services.AddAppertureSqlSecrets();
 builder.Services.AddScoped<Apperture.Core.Security.Trust.IRuntimeEnrollmentService, Apperture.ControlPlane.Security.SqlRuntimeEnrollmentService>();
 builder.Services.AddScoped<Apperture.Core.Security.Trust.IRuntimeIdentityService, Apperture.ControlPlane.Security.SqlRuntimeIdentityService>();
+builder.Services.AddAppertureGovernance();
 
 var app = builder.Build();
 app.MapControllers();

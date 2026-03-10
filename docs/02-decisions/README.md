@@ -13,5 +13,7 @@
 | [ADR-0009](ADR-0009-constrained-cross-instance-management-api-boundary.md) | Constrained cross-instance management API boundary |
 | [ADR-0010](ADR-0010-signed-reliable-child-to-parent-notifications.md) | Signed reliable child-to-parent notifications |
 | [ADR-0011](ADR-0011-delegated-capability-model-for-remote-instance-administration.md) | Delegated capability model for remote instance administration |
+| [ADR-0012](ADR-0012-authorization-evaluation-model.md) | Authorization evaluation model (ResourceDescriptor vs IGovernedResourceIdentity) |
+| [ADR-0013](ADR-0013-action-and-scope-naming-conventions.md) | Action and scope naming conventions |
 
 Use [adr-template.md](adr-template.md) when creating new ADRs.
