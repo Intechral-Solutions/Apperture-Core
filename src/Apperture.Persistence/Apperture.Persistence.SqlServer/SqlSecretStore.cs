@@ -12,11 +12,16 @@ public sealed class SqlSecretStore : ISecretStore
 {
     private readonly AppertureDbContext _db;
     private readonly ISecretProtector _protector;
+    private readonly Core.Security.Secrets.Abstractions.ISecretAuditActorProvider _auditActorProvider;
 
-    public SqlSecretStore(AppertureDbContext db, ISecretProtector protector)
+    public SqlSecretStore(
+        AppertureDbContext db,
+        ISecretProtector protector,
+        Core.Security.Secrets.Abstractions.ISecretAuditActorProvider auditActorProvider)
     {
         _db = db;
         _protector = protector;
+        _auditActorProvider = auditActorProvider;
     }
 
     public async ValueTask<SecretDescriptor> CreateAsync(SecretCreateRequest request, CancellationToken cancellationToken = default)
@@ -33,7 +38,7 @@ public sealed class SqlSecretStore : ISecretStore
         };
         _db.SecretDescriptors.Add(entity);
         await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-        await AppendAuditAsync(entity.Id, null, "Create", "system", "Success", cancellationToken).ConfigureAwait(false);
+        await AppendAuditAsync(entity.Id, null, "Create", _auditActorProvider.GetActor(), "Success", cancellationToken).ConfigureAwait(false);
         return ToDescriptor(entity);
     }
 
@@ -72,7 +77,7 @@ public sealed class SqlSecretStore : ISecretStore
         _db.SecretVersions.Add(versionEntity);
         descriptor.UpdatedAt = DateTimeOffset.UtcNow;
         await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-        await AppendAuditAsync(secretId.Value, version, "AddVersion", "system", "Success", cancellationToken).ConfigureAwait(false);
+        await AppendAuditAsync(secretId.Value, version, "AddVersion", _auditActorProvider.GetActor(), "Success", cancellationToken).ConfigureAwait(false);
         return version;
     }
 
@@ -93,7 +98,7 @@ public sealed class SqlSecretStore : ISecretStore
             descriptor.UpdatedAt = DateTimeOffset.UtcNow;
             await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
             await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
-            await AppendAuditAsync(secretId.Value, version, "ActivateVersion", "system", "Success", cancellationToken).ConfigureAwait(false);
+            await AppendAuditAsync(secretId.Value, version, "ActivateVersion", _auditActorProvider.GetActor(), "Success", cancellationToken).ConfigureAwait(false);
         }
         catch
         {
@@ -109,7 +114,7 @@ public sealed class SqlSecretStore : ISecretStore
         descriptor.State = (int)SecretState.Disabled;
         descriptor.UpdatedAt = DateTimeOffset.UtcNow;
         await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-        await AppendAuditAsync(secretId.Value, null, "Disable", "system", "Success", cancellationToken).ConfigureAwait(false);
+        await AppendAuditAsync(secretId.Value, null, "Disable", _auditActorProvider.GetActor(), "Success", cancellationToken).ConfigureAwait(false);
     }
 
     public async ValueTask RevokeVersionAsync(SecretId secretId, string version, CancellationToken cancellationToken = default)
@@ -124,7 +129,7 @@ public sealed class SqlSecretStore : ISecretStore
             descriptor.UpdatedAt = DateTimeOffset.UtcNow;
         }
         await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-        await AppendAuditAsync(secretId.Value, version, "RevokeVersion", "system", "Success", cancellationToken).ConfigureAwait(false);
+        await AppendAuditAsync(secretId.Value, version, "RevokeVersion", _auditActorProvider.GetActor(), "Success", cancellationToken).ConfigureAwait(false);
     }
 
     public async ValueTask<SecretAuditPage> GetAuditAsync(SecretAuditQuery query, CancellationToken cancellationToken = default)

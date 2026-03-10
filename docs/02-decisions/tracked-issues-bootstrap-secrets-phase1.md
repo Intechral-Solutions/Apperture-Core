@@ -16,9 +16,8 @@ Issues deferred from the Phase 1–3 scaffolding. Address before or during later
 
 ## DbSecretStore vs SqlSecretStore
 
-- **Status:** Deferred
-- **Description:** `Core.Security.Secrets` has placeholder `DbSecretStore`; `Persistence.SqlServer` has real `SqlSecretStore`. Naming may cause confusion. Consider deprecating `DbSecretStore` or clarifying roles.
-- **Risk:** Low; compile-time clarity only.
+- **Status:** Resolved
+- **Description:** `DbSecretStore` marked obsolete; consumers should use `SqlSecretStore` via `AddAppertureSqlSecrets()` in `Apperture.Persistence.SqlServer`.
 
 ## Bootstrap persistence and rotation
 

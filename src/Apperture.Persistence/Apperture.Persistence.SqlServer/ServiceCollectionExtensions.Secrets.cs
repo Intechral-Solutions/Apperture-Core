@@ -18,7 +18,11 @@ public static class SecretsServiceCollectionExtensions
     /// </summary>
     /// <param name="services">The service collection.</param>
     /// <param name="protector">Optional. If null, uses DpapiSecretProtector on Windows; fails on non-Windows.</param>
-    public static IServiceCollection AddAppertureSqlSecrets(this IServiceCollection services, ISecretProtector? protector = null)
+    /// <param name="auditActorProvider">Optional. If null, uses DefaultSecretAuditActorProvider ("system"). Provide custom to pass authenticated user/service identity.</param>
+    public static IServiceCollection AddAppertureSqlSecrets(
+        this IServiceCollection services,
+        ISecretProtector? protector = null,
+        ISecretAuditActorProvider? auditActorProvider = null)
     {
         if (protector is not null)
         {
@@ -36,9 +40,13 @@ public static class SecretsServiceCollectionExtensions
                 "or use the Azure Key Vault secret store instead.");
         }
 
+        services.AddScoped<ISecretAuditActorProvider>(_ => auditActorProvider ?? new DefaultSecretAuditActorProvider());
         services.AddScoped<SqlSecretStore>();
         services.AddScoped<ISecretStore>(sp => sp.GetRequiredService<SqlSecretStore>());
-        services.AddScoped<ISecretResolver, SqlSecretResolver>();
+        services.AddScoped<SqlSecretResolver>();
+        services.AddScoped<ISecretResolverRegistry, SqlSecretResolverRegistry>();
+        services.AddScoped<CompositeSecretResolver>();
+        services.AddScoped<ISecretResolver>(sp => sp.GetRequiredService<CompositeSecretResolver>());
         return services;
     }
 }

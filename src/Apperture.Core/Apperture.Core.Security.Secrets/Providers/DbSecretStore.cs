@@ -4,9 +4,9 @@ using Apperture.Core.Security.Secrets.Models;
 namespace Apperture.Core.Security.Secrets.Providers;
 
 /// <summary>
-/// Placeholder DB-backed secret store.
-/// TODO: persist descriptor metadata, encrypted version payloads, and audit records.
+/// Placeholder DB-backed secret store. Obsolete; use SqlSecretStore via AddAppertureSqlSecrets() in Apperture.Persistence.SqlServer.
 /// </summary>
+[Obsolete("DbSecretStore is a placeholder. Use SqlSecretStore via AddAppertureSqlSecrets() in Apperture.Persistence.SqlServer.")]
 public sealed class DbSecretStore : ISecretStore
 {
     public ValueTask<SecretDescriptor> CreateAsync(SecretCreateRequest request, CancellationToken cancellationToken = default)

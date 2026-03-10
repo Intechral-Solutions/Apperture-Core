@@ -53,6 +53,26 @@ This document defines the architecture contract before provider implementation.
 
 This split keeps store concerns (governance/audit) separate from runtime material resolution and cryptographic protection.
 
+## Operational Secret Subsystem Fit
+
+This subsystem is for **operational secrets** (API keys, connector credentials, certificates), **not** bootstrap SQL credentials.
+
+- **Bootstrap boundary:** Bootstrap credential resolution uses `IBootstrapCredentialResolver`; it never uses `ISecretStore` or `ISecretResolver`. See [bootstrap-and-secrets-boundary.md](bootstrap-and-secrets-boundary.md).
+- **Persistence boundary:** Operational secrets use the shared `AppertureDbContext` and tables (`SecretDescriptors`, `SecretVersions`, `SecretAudits`). Persistence does not reference Bootstrap; connection string resolution belongs to the host.
+- **Core.Security.Secrets** holds abstractions and models; implementations (`SqlSecretStore`, `SqlSecretResolver`) live in `Apperture.Persistence.SqlServer`. Core must not depend on Bootstrap or Persistence.
+
+## SecretRef resolution contract
+
+`CompositeSecretResolver` routes by `SecretRef.Value` format:
+
+| Value format | Resolver | Notes |
+|--------------|----------|-------|
+| GUID string (e.g. `550e8400-e29b-41d4-a716-446655440000`) | SQL-backed store | `SqlSecretResolver` via `ISecretResolverRegistry` |
+| `kv:`-prefixed or Key Vault URI | Azure Key Vault | Future `AzureKeyVaultSecretResolver` |
+| Other | None | Throws; no resolver available |
+
+Consumers pass `SecretRef`; resolution routing is transparent.
+
 ## Secret model and reference policy
 
 - Secrets are passed and persisted as `SecretRef`.
@@ -112,6 +132,27 @@ Audit records should include timestamp, actor identity, operation, target `Secre
 | HashiCorp Vault KV v2 | Metadata + Vault path/version mapping | Worker resolves via Vault API | Supports versioned key-value retrieval. |
 | HashiCorp Vault Transit (future) | Ciphertext in app store, key ops in Vault Transit | Worker unwrap/sign/encrypt through Vault Transit | Keeps key material external to app. |
 | Vault dynamic secrets (future) | Lease-bound credentials generated on demand | Resolver returns `ExpiresAt` and `LeaseId` | Requires renewal/revocation workflow integration. |
+
+## Key Vault adapter seam
+
+The following provide the seam for future Azure Key Vault integration:
+
+- **`AzureKeyVaultSecretStore`** (Core.Security.Secrets) — Placeholder; implements `ISecretStore`. Map `SecretId` to vault secret name; use workload identity for access.
+- **`AzureKeyVaultSecretResolver`** — Not yet implemented. Resolve `kv:`-prefixed or full Key Vault URI refs via Azure SDK. Register in `ISecretResolverRegistry` to route from `CompositeSecretResolver`.
+- **`ISecretResolverRegistry`** — Implementations (e.g. `SqlSecretResolverRegistry`) return the appropriate resolver for a given `SecretRef`. Extend to include Key Vault resolver when implemented.
+
+## What remains
+
+| Item | Status | Notes |
+|------|--------|-------|
+| SqlSecretStore / SqlSecretResolver | Done | Envelope encryption, lifecycle, audit |
+| DpapiSecretProtector | Done | Windows-only |
+| CompositeSecretResolver, ISecretResolverRegistry | Done | Route by SecretRef format |
+| CertSecretProtector | Placeholder | Needed for Linux/Azure; cert-based KEK |
+| AzureKeyVaultSecretStore | Placeholder | Implement with Azure SDK |
+| AzureKeyVaultSecretResolver | Not yet | Resolve `kv:` or URI refs |
+| ISecretAuditActorProvider | Done | Optional audit actor injection |
+| Key Vault migration | Future | Per migration strategy below |
 
 ## Migration strategy
 
@@ -173,4 +214,9 @@ public sealed class ConnectorStep
 }
 ```
 
-The example intentionally logs only reference and type metadata, not secret content.
+The example intentionally logs only reference and type metadata, not secret content. `SecretMaterial` and `ResolvedSecret` override `ToString()` to redact sensitive fields for accidental log interpolation.
+
+## Related
+
+- [Bootstrap and Secrets Boundary](bootstrap-and-secrets-boundary.md)
+- [Persistence Foundation](persistence-foundation.md)

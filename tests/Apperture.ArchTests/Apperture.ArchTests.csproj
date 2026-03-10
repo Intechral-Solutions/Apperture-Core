@@ -13,6 +13,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\Apperture.Bootstrap\Apperture.Bootstrap\Apperture.Bootstrap.csproj" />
+    <ProjectReference Include="..\..\src\Apperture.Core\Apperture.Core.Security.Secrets\Apperture.Core.Security.Secrets.csproj" />
     <ProjectReference Include="..\..\src\Apperture.Core\Apperture.Core.Domain\Apperture.Core.Domain.csproj" />
     <ProjectReference Include="..\..\src\Apperture.Persistence\Apperture.Persistence.SqlServer\Apperture.Persistence.SqlServer.csproj" />
     <ProjectReference Include="..\..\src\Apperture.RuntimePlane\Apperture.RuntimePlane.Abstractions\Apperture.RuntimePlane.Abstractions.csproj" />
