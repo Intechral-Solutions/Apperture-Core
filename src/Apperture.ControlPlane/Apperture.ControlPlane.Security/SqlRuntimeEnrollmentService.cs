@@ -40,10 +40,35 @@ public sealed class SqlRuntimeEnrollmentService : IRuntimeEnrollmentService
         return new EnrollmentInvitation(token, enrollmentUrl, expiresAt);
     }
 
+    public async ValueTask<EnrollmentTokenValidationResult> ValidateTokenAsync(
+        string enrollmentToken,
+        CancellationToken cancellationToken = default)
+    {
+        var entity = await _db.EnrollmentTokens.AsNoTracking()
+            .FirstOrDefaultAsync(x => x.Token == enrollmentToken, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (entity is null)
+        {
+            return new EnrollmentTokenValidationResult(false, FailureReason: "Invalid or expired enrollment token.");
+        }
+
+        if (entity.Used)
+        {
+            return new EnrollmentTokenValidationResult(false, entity.ExpiresAt, "Enrollment token has already been used.");
+        }
+
+        if (entity.ExpiresAt < DateTimeOffset.UtcNow)
+        {
+            return new EnrollmentTokenValidationResult(false, entity.ExpiresAt, "Enrollment token has expired.");
+        }
+
+        return new EnrollmentTokenValidationResult(true, entity.ExpiresAt);
+    }
+
     public async ValueTask<EnrollmentResult> EnrollAsync(
         string enrollmentToken,
-        string runtimeName,
-        string publicKeyOrThumbprint,
+        RuntimeIdentityRegistration registration,
         CancellationToken cancellationToken = default)
     {
         var entity = await _db.EnrollmentTokens
@@ -56,9 +81,10 @@ public sealed class SqlRuntimeEnrollmentService : IRuntimeEnrollmentService
         _db.RuntimeIdentities.Add(new RuntimeIdentityEntity
         {
             Id = entity.RuntimeId,
-            DisplayName = runtimeName,
-            CredentialType = "publicKey",
-            PublicKeyOrThumbprint = publicKeyOrThumbprint,
+            DisplayName = registration.RuntimeName,
+            CredentialType = registration.CredentialType,
+            PublicKeyOrThumbprint = registration.PublicKeyOrThumbprint,
+            ManagedIdentityPrincipalId = registration.ManagedIdentityPrincipalId,
             RegisteredAt = DateTimeOffset.UtcNow
         });
         await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);

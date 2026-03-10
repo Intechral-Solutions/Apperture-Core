@@ -19,6 +19,7 @@
     <ProjectReference Include="..\..\src\Apperture.Cli\Apperture.Cli.Bootstrap\Apperture.Cli.Bootstrap.csproj" />
     <ProjectReference Include="..\..\src\Apperture.Core\Apperture.Core.Application\Apperture.Core.Application.csproj" />
     <ProjectReference Include="..\..\src\Apperture.Core\Apperture.Core.Security.Secrets\Apperture.Core.Security.Secrets.csproj" />
+    <ProjectReference Include="..\..\src\Apperture.Core\Apperture.Core.Security.Trust\Apperture.Core.Security.Trust.csproj" />
     <ProjectReference Include="..\..\src\Apperture.Shared\Apperture.Shared.Kernel\Apperture.Shared.Kernel.csproj" />
     <ProjectReference Include="..\..\src\Apperture.RuntimePlane\Apperture.RuntimePlane.Abstractions\Apperture.RuntimePlane.Abstractions.csproj" />
     <ProjectReference Include="..\..\src\Apperture.RuntimePlane\Apperture.RuntimePlane.Engine\Apperture.RuntimePlane.Engine.csproj" />

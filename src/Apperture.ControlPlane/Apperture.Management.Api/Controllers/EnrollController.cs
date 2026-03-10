@@ -42,10 +42,15 @@ public sealed class EnrollController : ControllerBase
         [FromBody] EnrollRequest request,
         CancellationToken cancellationToken)
     {
+        var registration = new RuntimeIdentityRegistration(
+            request.RuntimeName,
+            request.CredentialType ?? "PublicKey",
+            request.PublicKeyOrThumbprint,
+            request.ManagedIdentityPrincipalId);
+
         var result = await _enrollment.EnrollAsync(
             request.Token,
-            request.RuntimeName,
-            request.PublicKeyOrThumbprint,
+            registration,
             cancellationToken).ConfigureAwait(false);
         return result.Success ? Ok(result) : BadRequest(result);
     }
@@ -65,4 +70,6 @@ public sealed record CreateInvitationRequest(
 public sealed record EnrollRequest(
     string Token,
     string RuntimeName,
-    string PublicKeyOrThumbprint);
+    string PublicKeyOrThumbprint,
+    string? CredentialType = null,
+    string? ManagedIdentityPrincipalId = null);

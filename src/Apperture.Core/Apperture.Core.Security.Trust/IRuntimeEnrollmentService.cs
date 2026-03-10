@@ -16,11 +16,17 @@ public interface IRuntimeEnrollmentService
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Validates an enrollment token without consuming it.
+    /// </summary>
+    ValueTask<EnrollmentTokenValidationResult> ValidateTokenAsync(
+        string enrollmentToken,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Validates an enrollment token, marks it used, and registers the runtime identity.
     /// </summary>
     ValueTask<EnrollmentResult> EnrollAsync(
         string enrollmentToken,
-        string runtimeName,
-        string publicKeyOrThumbprint,
+        RuntimeIdentityRegistration registration,
         CancellationToken cancellationToken = default);
 }

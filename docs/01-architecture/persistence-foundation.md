@@ -89,7 +89,8 @@ The shared DbContext contains:
 
 - `WorkflowInstances`, `WorkflowStepInstances`, `OperationRuns` — Runtime plane workflow state
 - `AuditLogs`, `TelemetryEvents` — Cross-cutting audit and telemetry
-- `SecretDescriptors`, `SecretVersions`, enrollment tables (owned by other subsystems)
+- `SecretDescriptors`, `SecretVersions` — Operational secret store
+- `EnrollmentTokens`, `RuntimeIdentities` — Runtime Trust enrollment/bootstrap artifacts
 
 ## Migrations
 

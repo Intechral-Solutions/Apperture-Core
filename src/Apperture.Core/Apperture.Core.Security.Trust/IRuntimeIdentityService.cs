@@ -14,5 +14,15 @@ public interface IRuntimeIdentityService
     /// <summary>
     /// Validates that the presented credential matches the registered runtime identity.
     /// </summary>
-    ValueTask<bool> ValidateAsync(string runtimeId, string presentedCredential, CancellationToken cancellationToken = default);
+    ValueTask<RuntimeTrustValidationResult> ValidateAsync(
+        string runtimeId,
+        string presentedCredential,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Requests a runtime credential rollover (e.g. new public key or Managed Identity principal).
+    /// </summary>
+    ValueTask<EnrollmentResult> RequestCredentialRolloverAsync(
+        RuntimeCredentialRolloverRequest request,
+        CancellationToken cancellationToken = default);
 }

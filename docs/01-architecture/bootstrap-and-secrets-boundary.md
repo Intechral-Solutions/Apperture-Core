@@ -68,6 +68,8 @@ Bootstrap does **not** own:
 - Runtime identity
 - Resolving `SecretRef`
 
+Runtime identity and enrollment tokens are part of the **Runtime Trust** subsystem; see [runtime-trust-and-authentication.md](runtime-trust-and-authentication.md).
+
 ## Operational Secret Management
 
 Operational secrets are managed by `Apperture.Core.Security.Secrets`:
@@ -83,7 +85,7 @@ Secrets are stored in the shared persistence schema (`SecretDescriptors`, `Secre
 ```
 Bootstrap → Persistence Foundation
 Operational Secrets → Persistence Foundation
-Runtime Trust → Operational Secrets (for enrollment token storage) OR Persistence Foundation (dedicated enrollment table)
+Runtime Trust → Persistence Foundation (dedicated enrollment tables for enrollment tokens and runtime identities)
 ```
 
 Bootstrap never depends on Operational Secrets or Runtime Trust. Operational Secrets never depends on Bootstrap for SQL credentials.
