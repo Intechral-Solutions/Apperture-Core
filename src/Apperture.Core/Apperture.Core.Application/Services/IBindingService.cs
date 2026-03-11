@@ -39,4 +39,13 @@ public interface IBindingService
         string moduleId,
         string slotName,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Gets connections eligible for binding to the slot. Requires binding.assign permission.
+    /// </summary>
+    ValueTask<IReadOnlyList<Connection>> GetEligibleConnectionsAsync(
+        string moduleId,
+        string slotName,
+        string contractType,
+        CancellationToken cancellationToken = default);
 }

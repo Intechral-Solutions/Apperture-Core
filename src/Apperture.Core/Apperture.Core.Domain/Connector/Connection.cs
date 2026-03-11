@@ -14,7 +14,8 @@ public sealed record Connection(
     IReadOnlyDictionary<string, string> Config,
     IReadOnlyDictionary<string, string> SecretRefs,
     string? ScopeKey,
-    string? OwnerId) : IConnectionResource
+    string? OwnerId,
+    ConnectionState State = ConnectionState.Active) : IConnectionResource
 {
     /// <inheritdoc />
     public IGovernedResourceIdentity GetIdentity() =>

@@ -15,6 +15,7 @@ builder.Services.AddAppertureSqlSecrets();
 builder.Services.AddScoped<Apperture.Core.Security.Trust.IRuntimeEnrollmentService, Apperture.ControlPlane.Security.SqlRuntimeEnrollmentService>();
 builder.Services.AddScoped<Apperture.Core.Security.Trust.IRuntimeIdentityService, Apperture.ControlPlane.Security.SqlRuntimeIdentityService>();
 builder.Services.AddAppertureGovernance();
+builder.Services.AddAppertureConnectorWorkflows();
 
 var app = builder.Build();
 app.MapControllers();

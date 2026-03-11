@@ -20,6 +20,9 @@ public class AppertureDbContext : DbContext
     public DbSet<SecretAuditEntity> SecretAudits => Set<SecretAuditEntity>();
     public DbSet<EnrollmentTokenEntity> EnrollmentTokens => Set<EnrollmentTokenEntity>();
     public DbSet<RuntimeIdentityEntity> RuntimeIdentities => Set<RuntimeIdentityEntity>();
+    public DbSet<ConnectionEntity> Connections => Set<ConnectionEntity>();
+    public DbSet<BindingEntity> Bindings => Set<BindingEntity>();
+    public DbSet<ConnectorDefinitionEntity> ConnectorDefinitions => Set<ConnectorDefinitionEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -118,6 +121,44 @@ public class AppertureDbContext : DbContext
             e.Property(x => x.CredentialType).HasMaxLength(64);
             e.Property(x => x.PublicKeyOrThumbprint).HasMaxLength(512);
             e.Property(x => x.ManagedIdentityPrincipalId).HasMaxLength(256);
+        });
+
+        modelBuilder.Entity<ConnectionEntity>(e =>
+        {
+            e.ToTable("Connections");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasMaxLength(64);
+            e.Property(x => x.ConnectorDefinitionId).HasMaxLength(64);
+            e.Property(x => x.Name).HasMaxLength(256);
+            e.Property(x => x.ConfigJson).HasMaxLength(4096);
+            e.Property(x => x.SecretRefsJson).HasMaxLength(4096);
+            e.Property(x => x.ScopeKey).HasMaxLength(256);
+            e.Property(x => x.OwnerId).HasMaxLength(256);
+            e.Property(x => x.State);
+            e.Property(x => x.RowVersion).IsRowVersion();
+        });
+
+        modelBuilder.Entity<BindingEntity>(e =>
+        {
+            e.ToTable("Bindings");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasMaxLength(64);
+            e.Property(x => x.ModuleId).HasMaxLength(128);
+            e.Property(x => x.SlotName).HasMaxLength(128);
+            e.Property(x => x.ContractType).HasMaxLength(512);
+            e.Property(x => x.ConnectionId).HasMaxLength(64);
+            e.Property(x => x.CapabilityId).HasMaxLength(128);
+            e.Property(x => x.State);
+        });
+
+        modelBuilder.Entity<ConnectorDefinitionEntity>(e =>
+        {
+            e.ToTable("ConnectorDefinitions");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasMaxLength(64);
+            e.Property(x => x.Name).HasMaxLength(256);
+            e.Property(x => x.ModuleId).HasMaxLength(128);
+            e.Property(x => x.RequiredInputSchemaJson).HasMaxLength(4096);
         });
     }
 }

@@ -42,19 +42,56 @@ The optional `resourceIdentity` enables instance-level and future ownership chec
 - **Binding/delegation** — binding.assign, binding.revoke. Explicit delegation of a resource to a slot.
 - **Operational** — capability.consume. Using a bound connection during module execution.
 
+## Control-Plane Application Workflows (Implemented)
+
+The control plane can govern connector-related resources through these application services:
+
+### Connection Management
+- **IConnectionManagementService** — List, get, create, update, retire connections
+- Auth: connection.read, connection.create, connection.update, connection.delete
+- Persistence: IConnectionRepository, SqlConnectionRepository
+
+### Slot Inspection
+- **IModuleSlotRegistry** — Register and list capability slots per module
+- **IBindingService.GetBindingAsync** — Get binding for a slot (auth: binding.read)
+
+### Binding Workflows
+- **IBindingService** — Create binding (connection or capability to slot), delete binding, get eligible connections
+- Auth: binding.assign, binding.revoke, binding.read
+- **IBindingEligibilityService** — Filters connections by active state and connector definition
+- Persistence: IBindingRepository, SqlBindingRepository
+
+### Where Auth Checks Occur
+- Every workflow method resolves actor via IPrincipalContext, calls IAuthorizationService.EvaluateAsync before proceeding
+- UnauthorizedAccessException thrown when actor is null or permission denied
+
+### API Endpoints
+- `GET/POST/PATCH/DELETE /connections` — Connection CRUD and retire
+- `GET/POST/DELETE /modules/{moduleId}/slots/{slotName}/binding` — Binding get, create, revoke
+- `GET /modules/{moduleId}/slots/{slotName}/eligible-connections?contractType=X` — List eligible connections
+
+### Eligibility Rules (Minimal)
+- Connection.State == Active
+- Connector definition must exist (permissive contract-type matching for now)
+
+## Connection Lifecycle
+
+Connections have **ConnectionState**: Active or Retired. Retired connections are excluded from binding eligibility.
+
 ## Scaffolded vs Deferred
 
-**Scaffolded (this phase):**
-- Connector definition, connection, binding, mapping domain types implementing IGovernedResource
-- IConnectorDefinitionRegistry, IConnectionResolver, IBindingService contracts
-- StubConnectorDefinitionRegistry for wiring
-- resourceIdentity pass-through in IAuthorizationService
+**Implemented:**
+- EF persistence for Connection, Binding, ConnectorDefinition
+- IConnectionRepository, IBindingRepository, Sql implementations
+- IConnectionManagementService, IBindingService (full implementations with auth)
+- IBindingEligibilityService, IModuleSlotRegistry
+- Minimal Connections and Bindings API endpoints
 
 **Deferred:**
-- EF persistence for Connection, Binding, ConnectorDefinition, MappingDefinition
-- Full IBindingService and IConnectionResolver implementations
+- IConnectionResolver (live client resolution)
 - Secret resolution, live client creation
-- Connector management UI and API surface
+- Connector management UI (beyond minimal API)
+- Module slot discovery from manifests
 
 ## Related
 
