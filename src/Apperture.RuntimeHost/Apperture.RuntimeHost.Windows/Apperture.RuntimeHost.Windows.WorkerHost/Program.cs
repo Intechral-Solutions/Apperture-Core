@@ -1,4 +1,5 @@
 using Apperture.Bootstrap;
+using Apperture.ConnectorResolution;
 using Apperture.Persistence.SqlServer;
 using Apperture.RuntimeHost.Windows.WorkerHost;
 
@@ -11,6 +12,9 @@ builder.Services.AddAppertureBootstrap(builder.Configuration);
 builder.Services.AddApperturePersistence(
     sp => sp.GetRequiredService<IBootstrapConnectionProfile>().ConnectionString);
 builder.Services.AddAppertureSqlSecrets();
+builder.Services.AddConnectorRepositories();
+builder.Services.AddConnectorResolution();
+builder.Services.AddPlatformSqlConnector();
 
 builder.Services.AddHostedService<WorkerStub>();
 

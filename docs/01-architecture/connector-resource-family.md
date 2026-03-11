@@ -74,6 +74,10 @@ The control plane can govern connector-related resources through these applicati
 - Connection.State == Active
 - Connector definition must exist (permissive contract-type matching for now)
 
+## Runtime Resolution
+
+Live client resolution at runtime is **slot-bound only**. The runtime does not resolve by connection id; it resolves by (moduleId, slotName) via `IRuntimeSlotResolver.ResolveSlotAsync<T>(moduleId, slotName)`. Binding is the gate: only an active connection binding for the slot yields a resolved client. The resolution pipeline uses `IConnectionResolver` internally (binding → connection → secret/config material → connector factory → live client). See [Runtime Connection Resolution](runtime-connection-resolution.md) for the full flow, contracts, and secret/config boundary.
+
 ## Connection Lifecycle
 
 Connections have **ConnectionState**: Active or Retired. Retired connections are excluded from binding eligibility.
@@ -87,11 +91,16 @@ Connections have **ConnectionState**: Active or Retired. Retired connections are
 - IBindingEligibilityService, IModuleSlotRegistry
 - Minimal Connections and Bindings API endpoints
 
+**Implemented (runtime resolution):**
+- IRuntimeSlotResolver, IConnectionResolver (slot-bound resolution path)
+- ResolvedConnectionMaterial, IConnectorClientFactory&lt;T&gt;, IConnectorClientFactoryRegistry
+- Platform SQL connector (Apperture.Platform.Sql) and IConnectorClientFactory&lt;IDbConnection&gt;
+- Secret/material resolution inside pipeline; connector factories receive material only
+
 **Deferred:**
-- IConnectionResolver (live client resolution)
-- Secret resolution, live client creation
 - Connector management UI (beyond minimal API)
 - Module slot discovery from manifests
+- Audit emission for resolution events; capability.consume at resolution time
 
 ## Related
 

@@ -9,6 +9,7 @@
 | [authorization-and-governance-foundation.md](authorization-and-governance-foundation.md) | Auth/governance scaffolding — principal, role, permission, IGovernedResource; RBAC + scope containment; Phase 4 readiness |
 | [connector-resource-family.md](connector-resource-family.md) | First governed resource family — connectors, connections, slots, bindings; auth participation |
 | [control-plane-connector-workflows.md](control-plane-connector-workflows.md) | Connection/binding application workflows; auth enforcement; eligibility |
+| [runtime-connection-resolution.md](runtime-connection-resolution.md) | Runtime slot-bound resolution; binding → connection → material → factory → client; secret boundary |
 | [control-plane.md](control-plane.md) | Management API, UI, responsibilities |
 | [instance-plane.md](instance-plane.md) | Worker, DTFx, one module per process |
 | [tenancy-model.md](tenancy-model.md) | Single-tenant Instance, auditability |

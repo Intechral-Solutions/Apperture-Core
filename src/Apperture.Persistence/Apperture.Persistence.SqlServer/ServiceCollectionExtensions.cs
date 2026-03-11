@@ -1,3 +1,4 @@
+using Apperture.Core.Application.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -80,5 +81,17 @@ public static class ServiceCollectionExtensions
         SqlPersistenceOptions? options = null)
     {
         return services.AddApperturePersistence(_ => connectionString, options);
+    }
+
+    /// <summary>
+    /// Registers connector repositories only (IConnectionRepository, IBindingRepository).
+    /// For runtime hosts that need slot-bound resolution without the full control-plane connector workflows.
+    /// Requires AddApperturePersistence (DbContext) to be registered first.
+    /// </summary>
+    public static IServiceCollection AddConnectorRepositories(this IServiceCollection services)
+    {
+        services.AddScoped<IConnectionRepository, SqlConnectionRepository>();
+        services.AddScoped<IBindingRepository, SqlBindingRepository>();
+        return services;
     }
 }
