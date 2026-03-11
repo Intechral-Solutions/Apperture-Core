@@ -37,7 +37,7 @@ Runtime dependency resolution is **slot-bound only**. The single entry point for
 
 - **Where** — Secret and config material are resolved inside the resolution pipeline (e.g. `ResolvedConnectionMaterialBuilder` used by `DefaultConnectionResolver`).
 - **What** — For each key in `Connection.SecretRefs`, a `SecretRef` is built and `ISecretResolver.ResolveAsync` is called; results are merged with `Connection.Config` into `ResolvedConnectionMaterial`.
-- **Abstraction** — Callers and connector factories never see `ISecretResolver`. They receive only `Connection` (metadata) and `ResolvedConnectionMaterial` (opaque key-value for building the client).
+- **Abstraction** — Callers and connector factories never see `ISecretResolver`. They receive only `Connection` (metadata) and `ResolvedConnectionMaterial` (opaque key-value for building the client). Step handlers receive only the resolved client, not ISecretResolver or secret material.
 - **Platform SQL and module connectors** — Same model. Platform SQL factory reads Server, Database, UserId, Password from material; other connectors use the same pipeline.
 
 ## Platform SQL Alignment

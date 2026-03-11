@@ -28,9 +28,13 @@ Step code does not receive connection ids or the slot resolver directly. It rece
 
 The executor creates **StepExecutionContext(IRuntimeSlotResolver, definition.ModuleId)**, looks up the handler for (moduleId, stepName), and invokes **handler.ExecuteAsync(context, parameters, ct)**. Step code uses only the context to resolve dependencies.
 
+## Step Contract and Secrets
+
+Steps do **not** receive **ISecretResolver**. Connection secrets are resolved inside the resolution pipeline (before the step runs); step code sees only the resolved client or dependency object. Step results must not return ResolvedSecret or secret material.
+
 ## Disposal Expectations
 
-When the resolved client type **T** is **IDisposable** or **IAsyncDisposable**, the **caller** (step/handler) owns the instance and must dispose it (e.g. `using` or `await using`). The runtime does not take ownership. An optional **ExecuteWithSlotAsync&lt;T&gt;** extension on IStepExecutionContext (in RuntimePlane.Engine) implements “resolve, use callback, dispose” for IDisposable T and throws SlotNotBoundException if the slot is not bound.
+When the resolved client type **T** is **IDisposable** or **IAsyncDisposable**, the **caller** (step/handler) owns the instance and must dispose it (e.g. `using` or `await using`). The runtime does not take ownership. The **ExecuteWithSlotAsync&lt;T&gt;** extension (for **IDisposable**) and **ExecuteWithSlotAndDisposeAsync&lt;T&gt;** (for **IAsyncDisposable**) on IStepExecutionContext (RuntimePlane.Engine) implement “resolve, use callback, dispose” and throw SlotNotBoundException if the slot is not bound. When using **ResolveSlotAsync** directly, the step owns disposal.
 
 ## Resolution Failure Behavior
 
@@ -40,7 +44,12 @@ When the resolved client type **T** is **IDisposable** or **IAsyncDisposable**, 
 
 ## No Auth at Resolution (Current Phase)
 
-Resolution performs **no authorization check**. **Binding is the sole gate**. The **capability.consume** permission at resolution time is **deferred**. See [Runtime Connection Resolution](runtime-connection-resolution.md).
+No authorization is performed at resolution in this phase. **Binding is the sole gate**. The **capability.consume** permission at resolution time is **deferred**. See [Runtime Connection Resolution](runtime-connection-resolution.md).
+
+## Deferred
+
+- Slot name validation against declared module slots.
+- Runtime principal / execution identity in step context.
 
 ## Worker Host Wiring
 

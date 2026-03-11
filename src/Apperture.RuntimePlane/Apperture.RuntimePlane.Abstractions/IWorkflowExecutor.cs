@@ -1,11 +1,12 @@
 namespace Apperture.RuntimePlane.Abstractions;
 
 /// <summary>
-/// Executes workflow steps.
-/// Step parameter contracts should pass secret references and resolve them inside worker execution boundaries.
+/// Executes workflow steps by creating an IStepExecutionContext (with ModuleId from the definition), looking up the step handler, and invoking it with that context.
+/// Steps obtain slot-bound dependencies only via context.ResolveSlotAsync(slotName).
 /// </summary>
 /// <remarks>
-/// Resolve SecretRef inside the step via ISecretResolver; never return ResolvedSecret or secret material from ExecuteStepAsync.
+/// Steps do not receive ISecretResolver; connection secrets are resolved inside the resolution pipeline, not in step code.
+/// Steps receive only IStepExecutionContext. Step results must not return ResolvedSecret or secret material.
 /// </remarks>
 public interface IWorkflowExecutor
 {
