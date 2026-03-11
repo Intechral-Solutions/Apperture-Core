@@ -13,6 +13,7 @@ public sealed class StubAuthorizationService : IAuthorizationService
         IActor actor,
         PermissionDescriptor permission,
         ResourceDescriptor? resource,
+        IGovernedResourceIdentity? resourceIdentity = null,
         CancellationToken cancellationToken = default) =>
         ValueTask.FromResult(false);
 }

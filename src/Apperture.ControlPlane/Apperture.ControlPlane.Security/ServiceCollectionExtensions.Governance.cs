@@ -26,6 +26,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IAuthorizationPolicyEvaluator, RbacAuthorizationPolicyEvaluator>();
         services.AddScoped<IAuthorizationService, DelegatingAuthorizationService>();
         services.AddScoped<IPrincipalContext, StubPrincipalContext>();
+        services.AddSingleton<IConnectorDefinitionRegistry, StubConnectorDefinitionRegistry>();
         return services;
     }
 }

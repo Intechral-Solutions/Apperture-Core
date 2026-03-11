@@ -7,6 +7,7 @@
 | [persistence-foundation.md](persistence-foundation.md) | Shared SQL substrate, migrations, retry/resilience, schema conventions |
 | [bootstrap-and-secrets-boundary.md](bootstrap-and-secrets-boundary.md) | Bootstrap vs operational secrets, dependency direction, do-not-do list |
 | [authorization-and-governance-foundation.md](authorization-and-governance-foundation.md) | Auth/governance scaffolding — principal, role, permission, IGovernedResource; RBAC + scope containment; Phase 4 readiness |
+| [connector-resource-family.md](connector-resource-family.md) | First governed resource family — connectors, connections, slots, bindings; auth participation |
 | [control-plane.md](control-plane.md) | Management API, UI, responsibilities |
 | [instance-plane.md](instance-plane.md) | Worker, DTFx, one module per process |
 | [tenancy-model.md](tenancy-model.md) | Single-tenant Instance, auditability |

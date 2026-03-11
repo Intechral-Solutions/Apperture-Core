@@ -65,7 +65,7 @@ This document captures the status of the auth/governance scaffolding (Phases 1�
 
 ### Authorization Evaluation
 
-- **IAuthorizationService** — EvaluateAsync(actor, permission, resource)
+- **IAuthorizationService** — EvaluateAsync(actor, permission, resource, resourceIdentity?) — passes resourceIdentity to policy evaluator for ownership/instance checks
 - **IAuthorizationPolicyEvaluator** — EvaluateAsync(actor, permission, resource, resourceIdentity)
 - **IScopeContainmentEvaluator** — IsContained(innerScopeKey, outerScopeKey)
 - **DelegatingAuthorizationService** — Forwards to policy evaluator
@@ -84,7 +84,7 @@ This document captures the status of the auth/governance scaffolding (Phases 1�
 | Auth remains generic | Yes — no connector types in IAuthorizationService, IAuthorizationPolicyEvaluator, IScopeContainmentEvaluator |
 | Governed-resource participation generic | Yes — IGovernedResource, IGovernedResourceIdentity are string-based |
 | No connector-specific abstractions in auth core | Yes — Connector types are in Core.Domain.Connector; auth uses ResourceType constants |
-| No service-locator patterns | Yes — explicit DI; callers pass actor, permission, resource |
+| No service-locator patterns | Yes — explicit DI; callers pass actor, permission, resource, resourceIdentity |
 | No resource-browsing loopholes | Yes — modules resolve via declared slots and bindings; no global browse |
 
 ## Seed Naming Guidance
@@ -94,11 +94,29 @@ This document captures the status of the auth/governance scaffolding (Phases 1�
 - **Scope keys:** instance, module:{id}, connection:{id}, operation:{id}, module:{id}:slot:{name} (ScopeKeyConstants)
 - **Principal categories:** ActorKind — Human, Machine, System, RemoteInstance
 
+## Audit Items Addressed or Deferred
+
+| Item | Status | Notes |
+|------|--------|-------|
+| resourceIdentity never flows to policy | **Addressed** | IAuthorizationService.EvaluateAsync now accepts optional `IGovernedResourceIdentity? resourceIdentity` and passes it through to the policy evaluator. Callers with `IGovernedResource` pass `resource.GetIdentity()`. |
+| AuthorizationEvaluationContext never produced | **Deferred** | Intentionally deferred until broader audit integration. No code change. |
+| PermissionDescriptor vs domain Permission | **Documented** | `PermissionDescriptor` (Shared.Kernel) is the auth API shape and what `Role.Permissions` uses. Domain `Permission` (Core.Domain.Identity) is a separate record; Role uses PermissionDescriptor to avoid auth depending on domain persistence shape. |
+| Ownership checks | **Reserved** | resourceIdentity path enables them; RbacAuthorizationPolicyEvaluator does not yet implement owner checks. Documented as reserved for later. |
+
 ## Remaining Gaps (Optional, Not Blocking)
 
 - **AuthorizationEvaluationContext** is defined but not yet populated during evaluation. Populating it would enable future audit emission. Defer until audit integration.
 - **Access-denied reasoning** — Current API returns bool. A richer result type (Allow/Deny + reason) could be added later if needed.
-- **IAuthorizationService** does not accept IGovernedResource directly; callers use GovernedResourceDescriptor.FromIdentity. This is intentional and documented.
+- **IAuthorizationService** does not accept IGovernedResource directly; callers use GovernedResourceDescriptor.FromIdentity for resource and resource.GetIdentity() for resourceIdentity. This is intentional and documented.
+
+## Connector Resource Family Integration
+
+The first concrete governed resource family (connectors, connections, slots, bindings) participates in auth via `IGovernedResource` and `IGovernedResourceIdentity`. See [Connector Resource Family](connector-resource-family.md) for details.
+
+- **Resource types:** ConnectorDefinition, Connection, Binding, MappingDefinition, CapabilitySlot (ResourceTypeConstants)
+- **Actions:** connection.create/read/update/delete, connector.manage, binding.create/read/delete/assign/revoke, capability.consume, mapping.manage (ActionConstants)
+- **Where checks belong:** connector definitions (connector.manage); connection CRUD (connection.*); binding (binding.assign/revoke); slot resolution (capability.consume)
+- **Distinctions:** Administrative (connection CRUD, connector.manage), binding/delegation (binding.assign/revoke), operational (capability.consume)
 
 ## Deferred Items
 
