@@ -13,12 +13,15 @@ public static class ServiceCollectionExtensions
     /// </summary>
     public static IServiceCollection AddAppertureGovernance(this IServiceCollection services)
     {
-        services.AddSingleton<IResourceDescriptorRegistry>(_ =>
+        services.AddSingleton<IPlatformPermissionSeeder, PlatformPermissionSeederService>();
+        services.AddSingleton<IResourceDescriptorRegistry>(sp =>
         {
             var registry = new InMemoryResourceDescriptorRegistry();
-            PlatformPermissionSeeder.Seed(registry);
+            sp.GetRequiredService<IPlatformPermissionSeeder>().Seed(registry);
             return registry;
         });
+        services.AddSingleton<IScopeContainmentEvaluator, ScopeContainmentEvaluator>();
+        services.AddScoped<IAuthorizationPolicyEvaluator, StubAuthorizationPolicyEvaluator>();
         services.AddScoped<IAuthorizationService, StubAuthorizationService>();
         services.AddScoped<IPrincipalContext, StubPrincipalContext>();
         return services;

@@ -1,12 +1,12 @@
 namespace Apperture.Core.Domain.Governance;
 
 /// <summary>
-/// Well-known action strings for authorization. Use lowercase, dot-separated.
-/// Canonical set for Phase 1 per ADR-0013.
+/// Well-known action names for authorization. Format: {resourceType}.{action}, lowercase, dot-separated.
+/// Per ADR-0013.
 /// </summary>
 public static class ActionConstants
 {
-    // Connection (administrative)
+    // Connection
     public const string ConnectionCreate = "connection.create";
     public const string ConnectionRead = "connection.read";
     public const string ConnectionUpdate = "connection.update";
@@ -39,12 +39,14 @@ public static class ActionConstants
     // Mapping
     public const string MappingManage = "mapping.manage";
 
-    // Operation / Workflow
+    // Operation
     public const string OperationExecute = "operation.execute";
     public const string OperationRead = "operation.read";
+
+    // Workflow
     public const string WorkflowStart = "workflow.start";
 
-    // Governance
+    // Governance / Policy
     public const string RoleManage = "role.manage";
     public const string PermissionAssign = "permission.assign";
     public const string AuditRead = "audit.read";
