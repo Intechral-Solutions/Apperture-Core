@@ -4,12 +4,12 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Apperture.ControlPlane.Security;
 
 /// <summary>
-/// Registers governance services for Phase 1 scaffolding: registry, stub auth, stub principal context.
+/// Registers governance services: registry, authorization (Phase 3 RBAC wiring), stub principal context.
 /// </summary>
 public static class ServiceCollectionExtensions
 {
     /// <summary>
-    /// Adds platform authorization and resource governance services (Phase 1 scaffolding).
+    /// Adds platform authorization and resource governance services.
     /// </summary>
     public static IServiceCollection AddAppertureGovernance(this IServiceCollection services)
     {
@@ -21,8 +21,10 @@ public static class ServiceCollectionExtensions
             return registry;
         });
         services.AddSingleton<IScopeContainmentEvaluator, ScopeContainmentEvaluator>();
-        services.AddScoped<IAuthorizationPolicyEvaluator, StubAuthorizationPolicyEvaluator>();
-        services.AddScoped<IAuthorizationService, StubAuthorizationService>();
+        services.AddScoped<IPrincipalToUserResolver, StubPrincipalToUserResolver>();
+        services.AddScoped<IRoleProvider, StubRoleProvider>();
+        services.AddScoped<IAuthorizationPolicyEvaluator, RbacAuthorizationPolicyEvaluator>();
+        services.AddScoped<IAuthorizationService, DelegatingAuthorizationService>();
         services.AddScoped<IPrincipalContext, StubPrincipalContext>();
         return services;
     }
