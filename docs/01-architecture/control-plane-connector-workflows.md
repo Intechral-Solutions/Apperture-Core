@@ -50,8 +50,8 @@ Binding eligibility (IBindingEligibilityService) filters connections by:
 
 ## Deferred to Runtime Phase
 
-- IConnectionResolver (live client resolution)
-- Secret retrieval for connection config
+Runtime resolution (IConnectionResolver, slot-bound resolution, secret/material pipeline) is implemented; see [Runtime Connection Resolution](runtime-connection-resolution.md) and [Runtime Step Execution](runtime-step-execution.md). The following remain deferred:
+
 - capability.consume at resolution time
 - Runtime-created connections
 

@@ -50,11 +50,29 @@ The platform-managed SQL connector participates in the same resolution model:
 
 SQL is not a special-case bypass; it uses the same slot → binding → connection → material → factory → client flow.
 
+## Worker Host Requirements
+
+Worker hosts that perform slot-bound resolution must register:
+
+- **ISecretResolver** (e.g. via `AddAppertureSqlSecrets()` or another resolver implementation) so the resolution pipeline can resolve `Connection.SecretRefs`.
+- Persistence and connector repositories (`AddApperturePersistence`, `AddConnectorRepositories()`).
+- Connector resolution and platform SQL as needed (`AddConnectorResolution()`, `AddPlatformSqlConnector()`).
+
+Without `ISecretResolver`, resolution will fail when a connection has secret refs. See the worker host `Program.cs` for an example registration.
+
+## No Auth at Resolution (Current Phase)
+
+Resolution performs **no authorization check** in this phase. **Binding is the sole gate**: only an active connection binding for the slot yields a resolved client. The **capability.consume** permission at resolution time is deferred; future phases may evaluate it with a runtime principal.
+
+## Disposal
+
+When the resolved client type `T` is **IDisposable** or **IAsyncDisposable**, the **caller** owns the instance and must dispose it (e.g. `using` or `await using`). The runtime does not take ownership or dispose on the caller’s behalf.
+
 ## Who May Request Resolution
 
 - Runtime worker/service in the context of module execution.
 - Control-plane initiated execution paths where the host has registered the resolution stack.
-- Future: workflow/job execution context requesting a slot by name.
+- Workflow/step execution context requesting a slot by name via `IStepExecutionContext` (see [Runtime Step Execution](runtime-step-execution.md)).
 
 **Forbidden:** Resolving by connection id from module code; browsing arbitrary global connections; bypassing the binding gate.
 
@@ -77,6 +95,7 @@ SQL is not a special-case bypass; it uses the same slot → binding → connecti
 
 ## Related
 
+- [Runtime Step Execution](runtime-step-execution.md) — How steps request slot-bound dependencies via execution context.
 - [Connector Resource Family](connector-resource-family.md)
 - [Control-Plane Connector Workflows](control-plane-connector-workflows.md)
 - [Authorization and Governance Foundation](authorization-and-governance-foundation.md)

@@ -11,6 +11,7 @@
     <ProjectReference Include="..\..\..\Apperture.Bootstrap\Apperture.Bootstrap\Apperture.Bootstrap.csproj" />
     <ProjectReference Include="..\..\..\Apperture.ConnectorResolution\Apperture.ConnectorResolution.csproj" />
     <ProjectReference Include="..\..\..\Apperture.Persistence\Apperture.Persistence.SqlServer\Apperture.Persistence.SqlServer.csproj" />
+    <ProjectReference Include="..\..\..\Apperture.RuntimePlane\Apperture.RuntimePlane.Engine\Apperture.RuntimePlane.Engine.csproj" />
     <ProjectReference Include="..\..\..\Apperture.RuntimePlane\Apperture.RuntimePlane.DTFx\Apperture.RuntimePlane.DTFx.csproj" />
     <ProjectReference Include="..\..\..\Apperture.RuntimePlane\Apperture.RuntimePlane.Persistence.SqlServer\Apperture.RuntimePlane.Persistence.SqlServer.csproj" />
     <ProjectReference Include="..\..\..\Apperture.ModuleSdk\Apperture.ModuleSdk\Apperture.ModuleSdk.csproj" />

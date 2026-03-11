@@ -10,6 +10,7 @@
 | [connector-resource-family.md](connector-resource-family.md) | First governed resource family — connectors, connections, slots, bindings; auth participation |
 | [control-plane-connector-workflows.md](control-plane-connector-workflows.md) | Connection/binding application workflows; auth enforcement; eligibility |
 | [runtime-connection-resolution.md](runtime-connection-resolution.md) | Runtime slot-bound resolution; binding → connection → material → factory → client; secret boundary |
+| [runtime-step-execution.md](runtime-step-execution.md) | Step execution context; slot-bound dependency resolution in workflow steps; disposal and failure semantics |
 | [control-plane.md](control-plane.md) | Management API, UI, responsibilities |
 | [instance-plane.md](instance-plane.md) | Worker, DTFx, one module per process |
 | [tenancy-model.md](tenancy-model.md) | Single-tenant Instance, auditability |
