@@ -1,3 +1,5 @@
+using Apperture.Core.Application;
+using Apperture.Core.Application.Services;
 using Apperture.Core.Security.Trust;
 using Microsoft.AspNetCore.Mvc;
 
@@ -11,20 +13,43 @@ namespace Apperture.Management.Api.Controllers;
 public sealed class EnrollController : ControllerBase
 {
     private readonly IRuntimeEnrollmentService _enrollment;
+    private readonly IPrincipalContext _principalContext;
+    private readonly IPrincipalToUserResolver _principalToUserResolver;
+    private readonly IRoleProvider _roleProvider;
 
-    public EnrollController(IRuntimeEnrollmentService enrollment)
+    public EnrollController(
+        IRuntimeEnrollmentService enrollment,
+        IPrincipalContext principalContext,
+        IPrincipalToUserResolver principalToUserResolver,
+        IRoleProvider roleProvider)
     {
         _enrollment = enrollment;
+        _principalContext = principalContext;
+        _principalToUserResolver = principalToUserResolver;
+        _roleProvider = roleProvider;
     }
 
     /// <summary>
-    /// Creates an enrollment invitation for a runtime.
+    /// Creates an enrollment invitation for a runtime. Requires an authenticated platform administrator.
     /// </summary>
     [HttpPost("invitation")]
     public async ValueTask<ActionResult<EnrollmentInvitation>> CreateInvitation(
         [FromBody] CreateInvitationRequest request,
         CancellationToken cancellationToken)
     {
+        var actor = await _principalContext.GetCurrentActorAsync(cancellationToken);
+        if (actor is null)
+            return Unauthorized();
+
+        var userId = await _principalToUserResolver.ResolveUserIdAsync(actor, cancellationToken);
+        if (userId is null)
+            return Forbid();
+
+        var roles = await _roleProvider.GetRolesForUserAsync(userId!, cancellationToken);
+        var isPlatformAdmin = roles.Any(r => r.Id.Value == BootstrapConstants.PlatformAdminRoleId);
+        if (!isPlatformAdmin)
+            return Forbid();
+
         var ttl = request.TtlHours.HasValue ? TimeSpan.FromHours(request.TtlHours.Value) : (TimeSpan?)null;
         var invitation = await _enrollment.CreateInvitationAsync(
             request.RuntimeId,

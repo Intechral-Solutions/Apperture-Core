@@ -23,6 +23,10 @@ public class AppertureDbContext : DbContext
     public DbSet<ConnectionEntity> Connections => Set<ConnectionEntity>();
     public DbSet<BindingEntity> Bindings => Set<BindingEntity>();
     public DbSet<ConnectorDefinitionEntity> ConnectorDefinitions => Set<ConnectorDefinitionEntity>();
+    public DbSet<UserEntity> Users => Set<UserEntity>();
+    public DbSet<IdentityLinkEntity> IdentityLinks => Set<IdentityLinkEntity>();
+    public DbSet<RoleEntity> Roles => Set<RoleEntity>();
+    public DbSet<UserRoleEntity> UserRoles => Set<UserRoleEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -159,6 +163,49 @@ public class AppertureDbContext : DbContext
             e.Property(x => x.Name).HasMaxLength(256);
             e.Property(x => x.ModuleId).HasMaxLength(128);
             e.Property(x => x.RequiredInputSchemaJson).HasMaxLength(4096);
+        });
+
+        modelBuilder.Entity<UserEntity>(e =>
+        {
+            e.ToTable("Users");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasMaxLength(64);
+            e.Property(x => x.DisplayName).HasMaxLength(256);
+            e.Property<byte[]>("RowVersion").IsRowVersion();
+        });
+
+        modelBuilder.Entity<IdentityLinkEntity>(e =>
+        {
+            e.ToTable("IdentityLinks");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasMaxLength(64);
+            e.Property(x => x.UserId).HasMaxLength(64);
+            e.Property(x => x.ExternalId).HasMaxLength(256);
+            e.Property<byte[]>("RowVersion").IsRowVersion();
+            e.HasIndex(x => new { x.Source, x.ExternalId }).IsUnique();
+            e.HasOne<UserEntity>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<RoleEntity>(e =>
+        {
+            e.ToTable("Roles");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasMaxLength(64);
+            e.Property(x => x.Name).HasMaxLength(256);
+            e.Property(x => x.Description).HasMaxLength(512);
+            e.Property(x => x.PermissionsJson).HasColumnType("nvarchar(max)");
+            e.Property(x => x.RowVersion).IsRowVersion();
+            e.HasIndex(x => x.Name).IsUnique();
+        });
+
+        modelBuilder.Entity<UserRoleEntity>(e =>
+        {
+            e.ToTable("UserRoles");
+            e.HasKey(x => new { x.UserId, x.RoleId });
+            e.Property(x => x.UserId).HasMaxLength(64);
+            e.Property(x => x.RoleId).HasMaxLength(64);
+            e.HasOne<UserEntity>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<RoleEntity>().WithMany().HasForeignKey(x => x.RoleId).OnDelete(DeleteBehavior.Restrict);
         });
     }
 }

@@ -1,10 +1,12 @@
 using Apperture.Core.Application.Services;
+using Apperture.Persistence.SqlServer;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Apperture.ControlPlane.Security;
 
 /// <summary>
-/// Registers governance services: registry, authorization (Phase 3 RBAC wiring), stub principal context.
+/// Registers governance services: registry, authorization (RBAC), principal context, and identity persistence.
+/// Requires AddApperturePersistence (DbContext) to be registered first.
 /// </summary>
 public static class ServiceCollectionExtensions
 {
@@ -21,11 +23,15 @@ public static class ServiceCollectionExtensions
             return registry;
         });
         services.AddSingleton<IScopeContainmentEvaluator, ScopeContainmentEvaluator>();
-        services.AddScoped<IPrincipalToUserResolver, StubPrincipalToUserResolver>();
-        services.AddScoped<IRoleProvider, StubRoleProvider>();
+        services.AddScoped<IUserRepository, SqlUserRepository>();
+        services.AddScoped<IRoleRepository, SqlRoleRepository>();
+        services.AddScoped<IPrincipalToUserResolver, SqlPrincipalToUserResolver>();
+        services.AddScoped<IRoleProvider, SqlRoleProvider>();
         services.AddScoped<IAuthorizationPolicyEvaluator, RbacAuthorizationPolicyEvaluator>();
         services.AddScoped<IAuthorizationService, DelegatingAuthorizationService>();
-        services.AddScoped<IPrincipalContext, StubPrincipalContext>();
+        services.AddScoped<IPrincipalContext, HostPrincipalContext>();
+        services.AddScoped<IIdentityResolutionService, PrincipalContextIdentityResolutionService>();
+        services.AddScoped<IFirstAdminBootstrapService, FirstAdminBootstrapService>();
         services.AddSingleton<IConnectorDefinitionRegistry, StubConnectorDefinitionRegistry>();
         return services;
     }

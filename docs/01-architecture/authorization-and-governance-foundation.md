@@ -14,14 +14,16 @@ This document captures the status of the auth/governance scaffolding (Phases 1â€
 
 | Area | Status | Location |
 |------|--------|----------|
-| Principal/identity | Done | IActor, ActorKind, ActorId, IPrincipalContext, IIdentityResolutionService, StubPrincipalContext |
-| Role/permission | Done | Role, Permission, IRoleProvider, PermissionDescriptor, StubRoleProvider |
+| Principal/identity | Done | IActor, ActorKind, ActorId, IPrincipalContext, IIdentityResolutionService, **HostPrincipalContext** (resolves ClaimsPrincipal â†’ IActor) |
+| Role/permission | Done | Role, Permission, IRoleProvider, PermissionDescriptor, **SqlRoleProvider** (persisted roles and user-role assignments) |
 | Governed resource vocabulary | Done | IGovernedResource, IGovernedResourceIdentity, GovernedResourceIdentity, ResourceTypeConstants, ActionConstants, ScopeKeyConstants, GovernedResourceDescriptor |
 | Authorization evaluation | Done | IAuthorizationService, IAuthorizationPolicyEvaluator, DelegatingAuthorizationService, RbacAuthorizationPolicyEvaluator, IScopeContainmentEvaluator |
-| Principal-to-user bridge | Done | IPrincipalToUserResolver, StubPrincipalToUserResolver |
+| Principal-to-user bridge | Done | IPrincipalToUserResolver, **SqlPrincipalToUserResolver** (resolves Human actor â†’ UserId via persisted IdentityLinks) |
+| Platform identity persistence | Done | Users, Roles, IdentityLinks, UserRoles tables (AppertureDbContext); IUserRepository, IRoleRepository; SqlUserRepository, SqlRoleRepository |
 | Audit context | Done | AuthorizationEvaluationContext, AuthorizationEvaluationResult, AuthorizationEvaluationPath |
 | Permission catalog | Done | IPlatformPermissionSeeder, PlatformPermissionSeeder, IResourceDescriptorRegistry |
 | Connector domain (Phase 1) | Done | Connection, Binding, ConnectorDefinition, MappingDefinition, ICapabilitySlot, CapabilityVisibility |
+| Host auth scaffolding | Done | Management.Host: AddAuthentication (placeholder scheme), AddAuthorization, UseAuthentication, UseAuthorization; replace with Entra/local in later epics |
 
 ## Project/Layer Placement
 
@@ -33,7 +35,8 @@ This document captures the status of the auth/governance scaffolding (Phases 1â€
 | Governance vocabulary | Core.Domain | Governance/ |
 | Connector domain types | Core.Domain | Connector/ |
 | Application contracts | Core.Application | Services/, Authorization/ |
-| Implementations | ControlPlane.Security | ServiceCollectionExtensions.Governance.cs, RbacAuthorizationPolicyEvaluator, DelegatingAuthorizationService, stubs |
+| Implementations | ControlPlane.Security | ServiceCollectionExtensions.Governance.cs, RbacAuthorizationPolicyEvaluator, DelegatingAuthorizationService, HostPrincipalContext, SqlRoleProvider, SqlPrincipalToUserResolver |
+| Identity persistence | Persistence.SqlServer | UserEntity, IdentityLinkEntity, RoleEntity, UserRoleEntity; SqlUserRepository, SqlRoleRepository; migration AddPlatformIdentityTables |
 
 ## Core Types and Contracts
 
@@ -118,27 +121,27 @@ The first concrete governed resource family (connectors, connections, slots, bin
 - **Where checks belong:** connector definitions (connector.manage); connection CRUD (connection.*); binding (binding.assign/revoke); slot resolution (capability.consume)
 - **Distinctions:** Administrative (connection CRUD, connector.manage), binding/delegation (binding.assign/revoke), operational (capability.consume)
 
+## Principal resolution (Epic 1)
+
+- **Where persisted user/role/identity-link data lives:** SQL Server tables `Users`, `Roles`, `IdentityLinks`, `UserRoles` (see migration `AddPlatformIdentityTables`). AppertureDbContext in Persistence.SqlServer.
+- **How principal resolution works:** For the Management Host, `HostPrincipalContext` reads `HttpContext.User` (ClaimsPrincipal). `ClaimsPrincipalToActorMapper` maps standard claims (NameIdentifier/sub, name/preferred_username) to a Human `IActor`. `SqlPrincipalToUserResolver` then looks up `IdentityLinks` by (IdentitySource, ExternalId) where ExternalId = actor.Id, and returns the linked platform `UserId`. Role lookup uses `SqlRoleProvider` and `UserRoles` + `Roles` tables. Host auth is currently a **placeholder scheme** (no login); replace with Entra or local auth in a later epic.
+
 ## Deferred Items
 
-- Entra/local identity resolution
-- Role and User persistence
-- Break-glass and relationship evaluation
+- **Full Entra interactive flow** and **full local username/password auth** (login UI, token handling, password hashing)
+- Break-glass policy execution in the evaluator
+- Relationship and resource-ownership evaluation
 - Machine/System actor role resolution
-- Connector resolution, IBindingService implementation
-- IConnectionResolver implementation
 - Full audit emission of auth decisions
 - Connector management UI
 - Policy authoring, ABAC
 
 ## Next Phase: Connector/Connection Integration
 
-1. **Persistence:** Add EF entities for Connection, Binding, ConnectorDefinition, MappingDefinition; migrations.
-2. **IBindingService:** Implement create/delete bindings; resolve slot to connection.
-3. **IConnectionResolver:** Implement resolution for platform SQL connector (first concrete connector).
-4. **API boundaries:** Use IAuthorizationService at connection/binding endpoints (connection.create, binding.assign).
-5. **Optional:** Implement IPrincipalToUserResolver and IRoleProvider with persistence for Management API auth.
+Connector persistence and workflows are in place. Remaining auth-related follow-on:
 
-The auth core is ready. Connectors plug in via IGovernedResource; Connection and Binding already implement it. No changes to the auth core are required for Phase 4.
+1. **Replace placeholder auth:** Add Entra or local auth scheme in Management.Host; set as DefaultAuthenticateScheme so HostPrincipalContext resolves a real user.
+2. **First platform user:** Insert a row into `Users`, one or more into `IdentityLinks` (Source + ExternalId matching the auth providerâ€™s subject/id), and assign a role via `UserRoles` (e.g. `role-platform-administrator`). No first-run wizard in this epic; document or provide a small admin API/CLI in a later epic.
 
 ## Related
 
