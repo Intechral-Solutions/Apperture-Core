@@ -1,6 +1,7 @@
 using Apperture.Core.Application;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Security.Trust;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Apperture.Management.Api.Controllers;
@@ -10,6 +11,7 @@ namespace Apperture.Management.Api.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/[controller]")]
+[Authorize]
 public sealed class EnrollController : ControllerBase
 {
     private readonly IRuntimeEnrollmentService _enrollment;
@@ -60,9 +62,10 @@ public sealed class EnrollController : ControllerBase
     }
 
     /// <summary>
-    /// Enrolls a runtime using an enrollment token. Registers runtime identity.
+    /// Enrolls a runtime using an enrollment token. Registers runtime identity. Anonymous so runtimes can enroll with a token.
     /// </summary>
     [HttpPost]
+    [AllowAnonymous]
     public async ValueTask<ActionResult<EnrollmentResult>> Enroll(
         [FromBody] EnrollRequest request,
         CancellationToken cancellationToken)

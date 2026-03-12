@@ -23,7 +23,9 @@ This document captures the status of the auth/governance scaffolding (Phases 1â€
 | Audit context | Done | AuthorizationEvaluationContext, AuthorizationEvaluationResult, AuthorizationEvaluationPath |
 | Permission catalog | Done | IPlatformPermissionSeeder, PlatformPermissionSeeder, IResourceDescriptorRegistry |
 | Connector domain (Phase 1) | Done | Connection, Binding, ConnectorDefinition, MappingDefinition, ICapabilitySlot, CapabilityVisibility |
-| Host auth scaffolding | Done | Management.Host: AddAuthentication (placeholder scheme), AddAuthorization, UseAuthentication, UseAuthorization; replace with Entra/local in later epics |
+| Host auth scaffolding | Done | Management.Host: AddAppertureAuthentication (Cookie + OpenIdConnect when Entra enabled), AddAuthorization, UseAuthentication, UseAuthorization; GET /signin, /signout; real Entra OIDC and local POST /api/auth/local/login |
+| Endpoint protection | Done | [Authorize] on Connections, Bindings, Enroll, Workflows, Runs, Modules; [AllowAnonymous] on Bootstrap first-admin, Enroll POST, Auth local/login and local/logout |
+| Auth audit baseline | Done | IAuditService â†’ SqlAuditService; auth events (auth.entra.login.success, auth.local.login.success/failed, auth.unlinked_principal) persisted to AuditLogs |
 
 ## Project/Layer Placement
 
@@ -36,7 +38,7 @@ This document captures the status of the auth/governance scaffolding (Phases 1â€
 | Connector domain types | Core.Domain | Connector/ |
 | Application contracts | Core.Application | Services/, Authorization/ |
 | Implementations | ControlPlane.Security | ServiceCollectionExtensions.Governance.cs, RbacAuthorizationPolicyEvaluator, DelegatingAuthorizationService, HostPrincipalContext, SqlRoleProvider, SqlPrincipalToUserResolver |
-| Identity persistence | Persistence.SqlServer | UserEntity, IdentityLinkEntity, RoleEntity, UserRoleEntity; SqlUserRepository, SqlRoleRepository; migration AddPlatformIdentityTables |
+| Identity persistence | Persistence.SqlServer | UserEntity, IdentityLinkEntity, RoleEntity, UserRoleEntity, LocalCredentialEntity; SqlUserRepository, SqlRoleRepository, SqlLocalCredentialRepository, SqlAuditService; migrations AddPlatformIdentityTables, AddLocalCredentialsTable |
 
 ## Core Types and Contracts
 

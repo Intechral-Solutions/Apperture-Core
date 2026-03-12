@@ -31,6 +31,9 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IAuthorizationService, DelegatingAuthorizationService>();
         services.AddScoped<IPrincipalContext, HostPrincipalContext>();
         services.AddScoped<IIdentityResolutionService, PrincipalContextIdentityResolutionService>();
+        services.AddScoped<IAuditService, SqlAuditService>();
+        services.AddScoped<ILocalCredentialRepository, SqlLocalCredentialRepository>();
+        services.AddSingleton<ILocalPasswordHasher, LocalPasswordHasher>();
         services.AddScoped<IFirstAdminBootstrapService, FirstAdminBootstrapService>();
         services.AddSingleton<IConnectorDefinitionRegistry, StubConnectorDefinitionRegistry>();
         return services;

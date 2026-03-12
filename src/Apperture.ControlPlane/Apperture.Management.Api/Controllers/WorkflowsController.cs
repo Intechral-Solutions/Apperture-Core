@@ -1,12 +1,14 @@
 using Apperture.Core.Application;
 using Apperture.Management.Api.Models;
 using Apperture.RuntimePlane.Abstractions;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Apperture.Management.Api.Controllers;
 
 [ApiController]
 [Route("workflows")]
+[Authorize]
 public sealed class WorkflowsController : ControllerBase
 {
     [HttpPost("{workflowId}/start")]

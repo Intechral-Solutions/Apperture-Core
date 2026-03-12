@@ -1,10 +1,12 @@
 using Apperture.RuntimePlane.Abstractions;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Apperture.Management.Api.Controllers;
 
 [ApiController]
 [Route("modules")]
+[Authorize]
 public sealed class ModulesController : ControllerBase
 {
     [HttpGet]

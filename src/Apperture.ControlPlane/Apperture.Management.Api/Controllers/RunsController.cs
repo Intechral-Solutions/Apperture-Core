@@ -1,9 +1,11 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Apperture.Management.Api.Controllers;
 
 [ApiController]
 [Route("runs")]
+[Authorize]
 public sealed class RunsController : ControllerBase
 {
     [HttpGet]

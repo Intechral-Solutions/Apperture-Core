@@ -27,6 +27,7 @@ public class AppertureDbContext : DbContext
     public DbSet<IdentityLinkEntity> IdentityLinks => Set<IdentityLinkEntity>();
     public DbSet<RoleEntity> Roles => Set<RoleEntity>();
     public DbSet<UserRoleEntity> UserRoles => Set<UserRoleEntity>();
+    public DbSet<LocalCredentialEntity> LocalCredentials => Set<LocalCredentialEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -206,6 +207,18 @@ public class AppertureDbContext : DbContext
             e.Property(x => x.RoleId).HasMaxLength(64);
             e.HasOne<UserEntity>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Restrict);
             e.HasOne<RoleEntity>().WithMany().HasForeignKey(x => x.RoleId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<LocalCredentialEntity>(e =>
+        {
+            e.ToTable("LocalCredentials");
+            e.HasKey(x => x.UserId);
+            e.Property(x => x.UserId).HasMaxLength(64);
+            e.Property(x => x.PasswordHash).IsRequired().HasMaxLength(512);
+            e.Property(x => x.Salt).IsRequired().HasMaxLength(256);
+            e.Property(x => x.Algorithm).IsRequired().HasMaxLength(64);
+            e.Property(x => x.RowVersion).IsRowVersion();
+            e.HasOne<UserEntity>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Restrict);
         });
     }
 }

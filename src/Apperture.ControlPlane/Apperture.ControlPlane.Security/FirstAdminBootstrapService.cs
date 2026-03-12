@@ -6,16 +6,25 @@ namespace Apperture.ControlPlane.Security;
 
 /// <summary>
 /// First-admin bootstrap only; succeeds when zero platform users exist. Creates one user, one identity link, and assigns platform administrator role in a single transaction.
+/// For Local source, externalId is normalized (trim, lowercase). Optional password creates local credential when source is Local.
 /// </summary>
 public sealed class FirstAdminBootstrapService : IFirstAdminBootstrapService
 {
     private readonly IUserRepository _userRepository;
     private readonly IRoleRepository _roleRepository;
+    private readonly ILocalCredentialRepository? _localCredentialRepository;
+    private readonly ILocalPasswordHasher? _passwordHasher;
 
-    public FirstAdminBootstrapService(IUserRepository userRepository, IRoleRepository roleRepository)
+    public FirstAdminBootstrapService(
+        IUserRepository userRepository,
+        IRoleRepository roleRepository,
+        ILocalCredentialRepository? localCredentialRepository = null,
+        ILocalPasswordHasher? passwordHasher = null)
     {
         _userRepository = userRepository;
         _roleRepository = roleRepository;
+        _localCredentialRepository = localCredentialRepository;
+        _passwordHasher = passwordHasher;
     }
 
     /// <inheritdoc />
@@ -23,6 +32,7 @@ public sealed class FirstAdminBootstrapService : IFirstAdminBootstrapService
         string displayName,
         IdentitySource source,
         string externalId,
+        string? password = null,
         CancellationToken cancellationToken = default)
     {
         var count = await _userRepository.GetUserCountAsync(cancellationToken);
@@ -33,7 +43,12 @@ public sealed class FirstAdminBootstrapService : IFirstAdminBootstrapService
         if (role is null)
             return FirstAdminBootstrapResult.RoleNotFound;
 
-        var existing = await _userRepository.GetByIdentityLinkAsync(source, externalId, cancellationToken);
+        // For Local, use normalized username as IdentityLink.ExternalId (canonical for login).
+        var linkExternalId = source == IdentitySource.Local
+            ? LocalAuthHelpers.NormalizeUsername(externalId)
+            : externalId.Trim();
+
+        var existing = await _userRepository.GetByIdentityLinkAsync(source, linkExternalId, cancellationToken);
         if (existing is not null)
             return FirstAdminBootstrapResult.DuplicateIdentityLink;
 
@@ -41,11 +56,27 @@ public sealed class FirstAdminBootstrapService : IFirstAdminBootstrapService
         var user = new User(
             userId,
             displayName,
-            new[] { new IdentityLink(source, externalId, LastAuthenticatedAt: null) },
+            new[] { new IdentityLink(source, linkExternalId, LastAuthenticatedAt: null) },
             new[] { new RoleId(BootstrapConstants.PlatformAdminRoleId) },
             IsBreakGlassEligible: false);
 
         await _userRepository.AddAsync(user, cancellationToken);
+
+        if (source == IdentitySource.Local && !string.IsNullOrEmpty(password) &&
+            _localCredentialRepository is not null && _passwordHasher is not null)
+        {
+            var (hash, salt) = _passwordHasher.HashPassword(password);
+            await _localCredentialRepository.SetPasswordAsync(userId, hash, salt, _passwordHasher.AlgorithmName, cancellationToken);
+        }
+
         return FirstAdminBootstrapResult.Success(userId);
     }
+}
+
+/// <summary>
+/// Helpers for local auth. Normalized username is trim + lowercase (canonical for IdentityLink.ExternalId when source is Local).
+/// </summary>
+public static class LocalAuthHelpers
+{
+    public static string NormalizeUsername(string username) => username.Trim().ToLowerInvariant();
 }

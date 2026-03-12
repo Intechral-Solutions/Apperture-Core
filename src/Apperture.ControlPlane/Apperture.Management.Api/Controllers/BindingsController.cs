@@ -1,11 +1,13 @@
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Connector;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Apperture.Management.Api.Controllers;
 
 [ApiController]
 [Route("modules/{moduleId}/slots/{slotName}")]
+[Authorize]
 public sealed class BindingsController : ControllerBase
 {
     private readonly IBindingService _bindingService;

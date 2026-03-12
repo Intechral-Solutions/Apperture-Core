@@ -4,6 +4,9 @@ using Apperture.Management.Host;
 using Apperture.Persistence.SqlServer;
 using Apperture.RuntimePlane.DTFx;
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Authentication.OpenIdConnect;
+using Microsoft.Extensions.Options;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -18,21 +21,23 @@ builder.Services.AddScoped<Apperture.Core.Security.Trust.IRuntimeEnrollmentServi
 builder.Services.AddScoped<Apperture.Core.Security.Trust.IRuntimeIdentityService, Apperture.ControlPlane.Security.SqlRuntimeIdentityService>();
 builder.Services.AddAppertureGovernance();
 builder.Services.AddAppertureConnectorWorkflows();
-
-// Auth scaffolding (Epic 1): placeholder scheme so pipeline runs; replace with Entra/local in later epics.
-builder.Services.AddAuthentication(options =>
-{
-    options.DefaultAuthenticateScheme = PlaceholderAuthHandler.SchemeName;
-    options.DefaultScheme = PlaceholderAuthHandler.SchemeName;
-})
-.AddScheme<Microsoft.AspNetCore.Authentication.AuthenticationSchemeOptions, PlaceholderAuthHandler>(
-    PlaceholderAuthHandler.SchemeName,
-    "Placeholder; replace with real auth in Epic 2.",
-    _ => { });
+builder.Services.AddAppertureAuthentication(builder.Configuration);
 builder.Services.AddAuthorization();
 
 var app = builder.Build();
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
+
+// Entra: redirect to IdP. Local-only: return 401 (client uses POST /api/auth/local/login).
+app.MapGet("/signin", async (HttpContext ctx, IOptions<EntraAuthOptions> entra) =>
+{
+    if (entra.Value.Enabled)
+        await ctx.ChallengeAsync(OpenIdConnectDefaults.AuthenticationScheme);
+    else
+        ctx.Response.StatusCode = StatusCodes.Status401Unauthorized;
+});
+
+app.MapGet("/signout", (HttpContext ctx) => ctx.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme));
+
 app.Run();

@@ -13,12 +13,14 @@ public interface IFirstAdminBootstrapService
     /// </summary>
     /// <param name="displayName">Display name for the new user.</param>
     /// <param name="source">Identity source (Entra or Local) for the link.</param>
-    /// <param name="externalId">Stable external id for the link (e.g. Entra oid/sub, or local username).</param>
+    /// <param name="externalId">Stable external id for the link (e.g. Entra oid/sub, or local username). For Local, use normalized username.</param>
+    /// <param name="password">Optional. When source is Local, if provided the local credential is created with this password (hashed).</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Success with UserId, or AlreadyExists, RoleNotFound, or DuplicateIdentityLink.</returns>
     Task<FirstAdminBootstrapResult> TryCreateFirstAdminAsync(
         string displayName,
         IdentitySource source,
         string externalId,
+        string? password = null,
         CancellationToken cancellationToken = default);
 }

@@ -1,6 +1,7 @@
 using Apperture.Core.Application;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Identity;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Apperture.Management.Api.Controllers;
@@ -10,6 +11,7 @@ namespace Apperture.Management.Api.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/[controller]")]
+[AllowAnonymous]
 public sealed class BootstrapController : ControllerBase
 {
     private readonly IFirstAdminBootstrapService _bootstrap;
@@ -38,6 +40,7 @@ public sealed class BootstrapController : ControllerBase
             request.DisplayName.Trim(),
             source,
             request.ExternalId.Trim(),
+            request.Password,
             cancellationToken);
 
         return result.Kind switch
@@ -54,9 +57,9 @@ public sealed class BootstrapController : ControllerBase
 }
 
 /// <summary>
-/// Request to create the first platform administrator.
+/// Request to create the first platform administrator. When IdentitySource is Local, optional Password creates the local credential.
 /// </summary>
-public sealed record FirstAdminRequest(string DisplayName, string IdentitySource, string ExternalId);
+public sealed record FirstAdminRequest(string DisplayName, string IdentitySource, string ExternalId, string? Password = null);
 
 /// <summary>
 /// Response when first admin is created (userId only; no secrets).
