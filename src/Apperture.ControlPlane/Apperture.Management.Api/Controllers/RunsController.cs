@@ -1,3 +1,5 @@
+using Apperture.ControlPlane.Security;
+using Apperture.RuntimePlane.Abstractions;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -8,15 +10,40 @@ namespace Apperture.Management.Api.Controllers;
 [Authorize]
 public sealed class RunsController : ControllerBase
 {
-    [HttpGet]
-    public ActionResult<IEnumerable<object>> GetRuns()
+    private readonly IRunQueryService _runs;
+
+    public RunsController(IRunQueryService runs)
     {
-        return Ok(Array.Empty<object>());
+        _runs = runs;
+    }
+
+    [HttpGet]
+    public async Task<ActionResult<IReadOnlyList<RunSummaryDto>>> GetRuns(CancellationToken cancellationToken)
+    {
+        try
+        {
+            var list = await _runs.ListRunsAsync(cancellationToken);
+            return Ok(list);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return Forbid();
+        }
     }
 
     [HttpGet("{id}")]
-    public ActionResult<object> GetRun(string id)
+    public async Task<ActionResult<RunDetailDto>> GetRun(string id, CancellationToken cancellationToken)
     {
-        return NotFound();
+        try
+        {
+            var run = await _runs.GetRunAsync(new OperationRunId(id), cancellationToken);
+            if (run is null)
+                return NotFound();
+            return Ok(run);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return Forbid();
+        }
     }
 }

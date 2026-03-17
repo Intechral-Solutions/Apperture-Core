@@ -13,10 +13,12 @@ namespace Apperture.Management.Api.Controllers;
 public sealed class WorkflowsController : ControllerBase
 {
     private readonly IWorkflowStartAuthorizationService _workflowStartAuth;
+    private readonly IWorkflowStartDispatchService _dispatch;
 
-    public WorkflowsController(IWorkflowStartAuthorizationService workflowStartAuth)
+    public WorkflowsController(IWorkflowStartAuthorizationService workflowStartAuth, IWorkflowStartDispatchService dispatch)
     {
         _workflowStartAuth = workflowStartAuth;
+        _dispatch = dispatch;
     }
 
     [HttpPost("{workflowId}/start")]
@@ -40,8 +42,17 @@ public sealed class WorkflowsController : ControllerBase
             body?.IdempotencyKey,
             body?.CorrelationId);
 
-        _ = request; // Not yet passed to runtime (501); when implemented, call IWorkflowRuntime.StartAsync(request).
-        return StatusCode(501, new { message = "Not implemented" });
+        var dispatchResult = await _dispatch.StartAsync(request, cancellationToken);
+        if (dispatchResult is null)
+            return NotFound(new { error = $"Workflow definition {workflowId} not found." });
+
+        return Accepted(new
+        {
+            runId = dispatchResult.RunId.Value,
+            workflowInstanceId = dispatchResult.WorkflowInstanceId.Value,
+            workflowDefinitionId = dispatchResult.WorkflowDefinitionId.Value,
+            status = dispatchResult.Status
+        });
     }
 
     // Future: POST workflows/{instanceId}/signal — must call OrchestrationSafeValidator.ValidateSignalPayload(payload) at entry before persisting to orchestration state/history.

@@ -584,6 +584,41 @@ namespace Apperture.Persistence.SqlServer.Migrations
                     b.ToTable("WorkflowInstances", (string)null);
                 });
 
+            modelBuilder.Entity("Apperture.Persistence.SqlServer.WorkflowStartRequestEntity", b =>
+                {
+                    b.Property<string>("RunId")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("CorrelationId")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("IdempotencyKey")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("ParametersJson")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("WorkflowDefinitionId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("WorkflowInstanceId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.HasKey("RunId");
+
+                    b.ToTable("WorkflowStartRequests", (string)null);
+                });
+
             modelBuilder.Entity("Apperture.Persistence.SqlServer.WorkflowStepInstanceEntity", b =>
                 {
                     b.Property<string>("WorkflowInstanceId")

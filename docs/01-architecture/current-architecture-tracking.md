@@ -59,7 +59,7 @@ flowchart TB
     API --> Secrets
     API --> RuntimeTrust
 
-    IWorkflowRuntime[IWorkflowRuntime] -.->|Stub / 501| InstancePlane
+    IWorkflowRuntime[IWorkflowRuntime] -.->|Stub runtime execution| InstancePlane
 
     WorkerHost --> Persistence
     WorkerHost --> Secrets
@@ -91,7 +91,7 @@ flowchart TB
 | **Operational Secrets** | Partially | SqlSecretStore/Resolver done; Azure KV resolver done; KV store placeholder |
 | **Runtime Trust** | Partially | EnrollController, SqlRuntimeIdentityService (stub validation) |
 | **Runtime Plane** | Abstractions + Stubs | Engine exists; DTFx/DurableFunctions adapters stubbed |
-| **Control Plane** | Partially | API, Menus, Modules, Runs, Workflows (501), Enroll; UI shell |
+| **Control Plane** | Partially | API, Menus, Modules, Runs, Workflows (start persists handoff; execution deferred), Enroll; UI shell |
 | **Instance Plane** | Stubbed | WorkerHost/ModuleHost/SchedulerHost stubs; Azure template has HTTP stub |
 | **CLI** | Partially | Bootstrap CLI scaffolding; PowerShell; invokes stubs |
 | **Module SDK** | Implemented | Abstractions, SDK, test harness (stub) |
@@ -112,8 +112,8 @@ flowchart LR
         
         MenusController --> |200 OK| DomainMenus
         ModulesController --> |200 OK| Empty/stub
-        RunsController --> |200 OK| Empty/stub
-        WorkflowsController --> |501| "Not implemented"
+        RunsController --> |200/404/403| SQL-backed runs
+        WorkflowsController --> |202/404/403| Persisted start handoff
         EnrollController --> IRuntimeEnrollmentService
     end
 

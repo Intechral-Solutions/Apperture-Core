@@ -13,6 +13,7 @@ public class AppertureDbContext : DbContext
     public DbSet<WorkflowInstanceEntity> WorkflowInstances => Set<WorkflowInstanceEntity>();
     public DbSet<WorkflowStepInstanceEntity> WorkflowStepInstances => Set<WorkflowStepInstanceEntity>();
     public DbSet<OperationRunEntity> OperationRuns => Set<OperationRunEntity>();
+    public DbSet<WorkflowStartRequestEntity> WorkflowStartRequests => Set<WorkflowStartRequestEntity>();
     public DbSet<AuditLogEntity> AuditLogs => Set<AuditLogEntity>();
     public DbSet<TelemetryEventEntity> TelemetryEvents => Set<TelemetryEventEntity>();
     public DbSet<SecretDescriptorEntity> SecretDescriptors => Set<SecretDescriptorEntity>();
@@ -61,6 +62,18 @@ public class AppertureDbContext : DbContext
             e.Property(x => x.DefinitionId).HasMaxLength(128);
             e.Property(x => x.Status).HasMaxLength(32);
             e.Property(x => x.CorrelationKey).HasMaxLength(256);
+        });
+
+        modelBuilder.Entity<WorkflowStartRequestEntity>(e =>
+        {
+            e.ToTable("WorkflowStartRequests");
+            e.HasKey(x => x.RunId);
+            e.Property(x => x.RunId).HasMaxLength(64);
+            e.Property(x => x.WorkflowInstanceId).HasMaxLength(64);
+            e.Property(x => x.WorkflowDefinitionId).HasMaxLength(128);
+            e.Property(x => x.IdempotencyKey).HasMaxLength(128);
+            e.Property(x => x.CorrelationId).HasMaxLength(128);
+            e.Property(x => x.ParametersJson).HasColumnType("nvarchar(max)");
         });
 
         modelBuilder.Entity<AuditLogEntity>(e =>
