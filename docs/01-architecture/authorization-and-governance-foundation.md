@@ -24,8 +24,10 @@ This document captures the status of the auth/governance scaffolding (Phases 1�
 | Permission catalog | Done | IPlatformPermissionSeeder, PlatformPermissionSeeder, IResourceDescriptorRegistry |
 | Connector domain (Phase 1) | Done | Connection, Binding, ConnectorDefinition, MappingDefinition, ICapabilitySlot, CapabilityVisibility |
 | Host auth scaffolding | Done | Management.Host: AddAppertureAuthentication (Cookie + OpenIdConnect when Entra enabled), AddAuthorization, UseAuthentication, UseAuthorization; GET /signin, /signout; real Entra OIDC and local POST /api/auth/local/login |
-| Endpoint protection | Done | [Authorize] on Connections, Bindings, Enroll, Workflows, Runs, Modules; [AllowAnonymous] on Bootstrap first-admin, Enroll POST, Auth local/login and local/logout |
-| Auth audit baseline | Done | IAuditService → SqlAuditService; auth events (auth.entra.login.success, auth.local.login.success/failed, auth.unlinked_principal) persisted to AuditLogs |
+| Endpoint protection | Done | [Authorize] on Connections, Bindings, Enroll, Workflows, Runs, Modules; [AllowAnonymous] on Bootstrap first-admin, Enroll POST, Auth local/login, local/logout, auth/break-glass |
+| Auth audit baseline | Done | IAuditService → SqlAuditService; auth events (auth.entra.login.success, auth.local.login.success/failed, auth.break_glass.login.success/failed, auth.unlinked_principal, auth_admin.blocked.*) persisted to AuditLogs |
+| Break-glass path | Done | Human session with break-glass claim; RbacAuthorizationPolicyEvaluator grants all permission checks when actor is Human and IsBreakGlassSession is true. Local-auth-only; dedicated endpoint. |
+| Lockout prevention | Done | UserManagementService blocks removal of last platform admin role and disabling last admin’s only local credential; blocked attempts audited. |
 
 ## Project/Layer Placement
 
@@ -74,7 +76,7 @@ This document captures the status of the auth/governance scaffolding (Phases 1�
 - **IAuthorizationPolicyEvaluator** — EvaluateAsync(actor, permission, resource, resourceIdentity)
 - **IScopeContainmentEvaluator** — IsContained(innerScopeKey, outerScopeKey)
 - **DelegatingAuthorizationService** — Forwards to policy evaluator
-- **RbacAuthorizationPolicyEvaluator** — RBAC + scope containment
+- **RbacAuthorizationPolicyEvaluator** — RBAC + scope containment; when actor is Human and session is break-glass (IsBreakGlassSession), grants all permission checks
 
 ### Audit-Aware Context
 
@@ -131,7 +133,7 @@ The first concrete governed resource family (connectors, connections, slots, bin
 ## Deferred Items
 
 - **Full Entra interactive flow** and **full local username/password auth** (login UI, token handling, password hashing)
-- Break-glass policy execution in the evaluator
+- Break-glass policy execution in the evaluator — **Implemented (Epic 4):** evaluator grants when Human actor has break-glass session; lockout-prevention guards in UserManagementService
 - Relationship and resource-ownership evaluation
 - Machine/System actor role resolution
 - Full audit emission of auth decisions

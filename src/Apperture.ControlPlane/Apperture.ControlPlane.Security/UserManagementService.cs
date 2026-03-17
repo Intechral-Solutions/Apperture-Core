@@ -1,3 +1,4 @@
+using Apperture.Core.Application;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Audit;
 using Apperture.Core.Domain.Governance;
@@ -15,6 +16,7 @@ public sealed class UserManagementService : IUserManagementService
     private const string AuditOutcome = "auth-admin";
 
     private readonly IPrincipalContext _principalContext;
+    private readonly IPrincipalToUserResolver _principalToUserResolver;
     private readonly IAuthorizationService _auth;
     private readonly IUserRepository _userRepository;
     private readonly IRoleRepository _roleRepository;
@@ -25,6 +27,7 @@ public sealed class UserManagementService : IUserManagementService
 
     public UserManagementService(
         IPrincipalContext principalContext,
+        IPrincipalToUserResolver principalToUserResolver,
         IAuthorizationService auth,
         IUserRepository userRepository,
         IRoleRepository roleRepository,
@@ -34,6 +37,7 @@ public sealed class UserManagementService : IUserManagementService
         IOptions<LocalAuthOptions> localOptions)
     {
         _principalContext = principalContext;
+        _principalToUserResolver = principalToUserResolver;
         _auth = auth;
         _userRepository = userRepository;
         _roleRepository = roleRepository;
@@ -68,6 +72,7 @@ public sealed class UserManagementService : IUserManagementService
     public async ValueTask<UserId> CreateUserAsync(string displayName, IdentitySource source, string externalId, string? password = null, CancellationToken cancellationToken = default)
     {
         var actorId = await RequireUserManageAsync(cancellationToken);
+        ValidateEntraExternalId(source, externalId);
         var linkExternalId = source == IdentitySource.Local
             ? LocalAuthHelpers.NormalizeUsername(externalId)
             : externalId.Trim();
@@ -100,6 +105,7 @@ public sealed class UserManagementService : IUserManagementService
     public async ValueTask AddIdentityLinkAsync(UserId userId, IdentitySource source, string externalId, CancellationToken cancellationToken = default)
     {
         var actorId = await RequireUserManageAsync(cancellationToken);
+        ValidateEntraExternalId(source, externalId);
         var linkExternalId = source == IdentitySource.Local
             ? LocalAuthHelpers.NormalizeUsername(externalId)
             : externalId.Trim();
@@ -146,6 +152,16 @@ public sealed class UserManagementService : IUserManagementService
         if (role is null)
             throw new InvalidOperationException($"Role {roleId.Value} not found.");
 
+        if (roleId.Value == BootstrapConstants.PlatformAdminRoleId)
+        {
+            var count = await _roleRepository.CountUserAssignmentsAsync(roleId, cancellationToken);
+            if (count <= 1)
+            {
+                await AppendAuditAsync("auth_admin.blocked.last_platform_admin_removal", actorId, userId.Value, $"userId={userId.Value} roleId={roleId.Value}", cancellationToken);
+                throw new InvalidOperationException("Cannot remove the last platform administrator role assignment.");
+            }
+        }
+
         await _roleRepository.RemoveFromUserAsync(userId, roleId, cancellationToken);
         await AppendAuditAsync("role.removed", actorId, userId.Value, $"userId={userId.Value} roleId={roleId.Value}", cancellationToken);
     }
@@ -181,6 +197,19 @@ public sealed class UserManagementService : IUserManagementService
         var cred = await _localCredentialRepository.GetByUserIdAsync(userId, cancellationToken);
         if (cred is null)
             throw new InvalidOperationException("User has no local credential row; set a password first.");
+
+        if (disabled)
+        {
+            var platformAdminRoleId = new RoleId(BootstrapConstants.PlatformAdminRoleId);
+            var adminCount = await _roleRepository.CountUserAssignmentsAsync(platformAdminRoleId, cancellationToken);
+            var userHasPlatformAdmin = user.AssignedRoleIds.Any(r => r.Value == BootstrapConstants.PlatformAdminRoleId);
+            var onlyLocalLink = user.IdentityLinks.Count == 1 && user.IdentityLinks[0].Source == IdentitySource.Local;
+            if (adminCount == 1 && userHasPlatformAdmin && onlyLocalLink)
+            {
+                await AppendAuditAsync("auth_admin.blocked.last_admin_credential_disabled", actorId, userId.Value, $"userId={userId.Value}", cancellationToken);
+                throw new InvalidOperationException("Cannot disable the only local credential for the last platform administrator who has no other sign-in path.");
+            }
+        }
 
         await _localCredentialRepository.SetDisabledAsync(userId, disabled, cancellationToken);
         var action = disabled ? "credential.disabled" : "credential.enabled";
@@ -240,6 +269,16 @@ public sealed class UserManagementService : IUserManagementService
         if (!allowed)
             throw new UnauthorizedAccessException("Not authorized to manage credentials.");
         return new ActorId(actor.Id.Value);
+    }
+
+    private static void ValidateEntraExternalId(IdentitySource source, string externalId)
+    {
+        if (source != IdentitySource.Entra)
+            return;
+        if (string.IsNullOrWhiteSpace(externalId))
+            throw new InvalidOperationException("Entra external id must not be null or empty. Use the stable subject (oid or sub) from the token.");
+        if (externalId.Contains('@'))
+            throw new InvalidOperationException("Entra external id must be the stable subject (oid or sub), not an email or UPN.");
     }
 
     private async ValueTask AppendAuditAsync(string action, ActorId actorId, string? resourceId, string? details, CancellationToken cancellationToken)

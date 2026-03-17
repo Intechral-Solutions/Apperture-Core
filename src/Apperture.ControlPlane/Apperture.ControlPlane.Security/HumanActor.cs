@@ -19,10 +19,16 @@ public sealed class HumanActor : IActor
     /// </summary>
     public IdentitySource? PreferredIdentitySource { get; }
 
-    public HumanActor(ActorId id, string? displayName = null, IdentitySource? preferredIdentitySource = null)
+    /// <summary>
+    /// True when the session was established via the break-glass login endpoint. The authorization evaluator grants all permission checks for such sessions.
+    /// </summary>
+    public bool IsBreakGlassSession { get; }
+
+    public HumanActor(ActorId id, string? displayName = null, IdentitySource? preferredIdentitySource = null, bool isBreakGlassSession = false)
     {
         Id = id;
         DisplayName = displayName;
         PreferredIdentitySource = preferredIdentitySource;
+        IsBreakGlassSession = isBreakGlassSession;
     }
 }

@@ -23,15 +23,18 @@ This document describes the **platform authentication** foundation (Epic 1) and 
 - **First-admin bootstrap:** `POST /api/Bootstrap/first-admin` (no auth) creates the first platform user, one identity link, and assigns `role-platform-administrator` when zero users exist. Request: `{ "displayName", "identitySource": "Entra"|"Local", "externalId" [, "password" ] }`. When `identitySource` is **Local**, optional **password** creates the local credential (hashed); if omitted, first local admin has no password until a future "set password" path exists. For Local, `externalId` is normalized (trim, lowercase) before creating the link.
 - **Enrollment protection:** `POST /api/Enroll/invitation` requires an authenticated principal that resolves to a platform user with the platform administrator role; otherwise 401/403. **Endpoint protection:** `[Authorize]` on ConnectionsController, BindingsController, EnrollController, WorkflowsController, RunsController, ModulesController; `[AllowAnonymous]` on Bootstrap first-admin, Enroll POST (token), Auth local/login, local/logout. GET `/api/auth/me` returns current user (userId, displayName, roles) or 403 if unlinked.
 - **Auth audit:** `IAuditService` implemented as `SqlAuditService` (writes to AuditLogs). Auth events: `auth.entra.login.success`, `auth.local.login.success`, `auth.local.login.failed`, `auth.unlinked_principal`. See [Epic 2 implementation summary](../02-decisions/Epic2-human-auth-implementation-summary.md).
+- **Break-glass (Epic 4):** User-based, local-auth-only recovery path. Users with `User.IsBreakGlassEligible == true` can sign in via `POST /api/auth/break-glass` (username, password). On success, the session receives a break-glass claim; the RBAC evaluator grants all permission checks for that session. Audit: `auth.break_glass.login.success`, `auth.break_glass.login.failed` (no user-existence hint on failure). Use only for recovery; monitor usage.
+- **Recovery (Epic 4):** Real `IBootstrapRecoveryAuthorizer` (config token: `Auth:RecoveryToken` or `Bootstrap:RecoveryToken`) and `IBootstrapRecoveryService` in ControlPlane.Security. For action `RestorePlatformAccess`, request proof must match configured token; then the service assigns `role-platform-administrator` to the target user (identified by `TargetUserId` or `TargetExternalId` + `TargetIdentitySource`). Bootstrap recovery audit plus optional platform audit `recovery.restore_platform_access.executed`. See [Epic 4 implementation summary](../02-decisions/Epic4-recovery-break-glass-implementation-summary.md).
+- **Lockout prevention (Epic 4):** In `UserManagementService`: removing the last platform administrator role assignment is blocked and audited (`auth_admin.blocked.last_platform_admin_removal`). Disabling the only local credential for the last platform admin who has no other sign-in path is blocked and audited (`auth_admin.blocked.last_admin_credential_disabled`). API returns 400 with a clear message.
 
 ## What remains (later)
 
-- **Break-glass execution** — Policy path reserved; not implemented in evaluator.
 - **Full audit emission** of authorization evaluations (AuthorizationEvaluationContext populated and emitted).
 - **Module permission registration** runtime pipeline.
 - **CLI operator identity** — Bootstrap CLI and future operator CLI caller identity.
 - **Broader admin APIs** — General user/link/role management; "set local password" for existing users (deferred).
 - **Self-service password reset, MFA, Entra group/tenant sync, SCIM** — Out of scope for Epic 2.
+- **Epic 4 completed:** Permission seed repair (startup), lockout guards, break-glass sign-in, recovery authorization and RestorePlatformAccess execution, audit hardening, narrow Entra external-id validation. See [Epic 4 summary](../02-decisions/Epic4-recovery-break-glass-implementation-summary.md).
 
 ## Establishing the first platform user
 

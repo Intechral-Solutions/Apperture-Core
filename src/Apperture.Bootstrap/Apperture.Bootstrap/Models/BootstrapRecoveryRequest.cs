@@ -22,4 +22,13 @@ public sealed record BootstrapRecoveryRequest
 
     /// <summary>Optional recovery profile for SwitchToRecoveryProfile. No credentials.</summary>
     public SqlConnectionBootstrapProfile? RecoveryProfile { get; init; }
+
+    /// <summary>For RestorePlatformAccess: target user by platform UserId (Value).</summary>
+    public string? TargetUserId { get; init; }
+
+    /// <summary>For RestorePlatformAccess: target user by external id (identity link). Use with TargetIdentitySource.</summary>
+    public string? TargetExternalId { get; init; }
+
+    /// <summary>For RestorePlatformAccess: identity source when resolving by TargetExternalId (e.g. "Local", "Entra").</summary>
+    public string? TargetIdentitySource { get; init; }
 }

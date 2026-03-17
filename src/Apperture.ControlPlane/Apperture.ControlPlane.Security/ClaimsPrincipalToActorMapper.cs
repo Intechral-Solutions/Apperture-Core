@@ -32,6 +32,11 @@ public static class ClaimsPrincipalToActorMapper
     public const string IdentitySourceClaimType = "http://schemas.apperture/identity_source";
 
     /// <summary>
+    /// Claim set when the session was established via break-glass login. Value "1" indicates break-glass session; evaluator grants all permission checks.
+    /// </summary>
+    public const string BreakGlassClaimType = "http://schemas.apperture/break_glass";
+
+    /// <summary>
     /// Maps an authenticated ClaimsPrincipal to a Human IActor, or returns null if not authenticated.
     /// Id (used as ExternalId for lookup): oid first (Entra stable), then NameIdentifier, sub, name, preferred_username.
     /// Epic 2: set identity_source claim so resolution is unambiguous.
@@ -61,6 +66,9 @@ public static class ClaimsPrincipalToActorMapper
         else if (string.Equals(sourceClaim, "Local", StringComparison.OrdinalIgnoreCase))
             preferredSource = IdentitySource.Local;
 
-        return new HumanActor(new ActorId(id), displayName, preferredSource);
+        var breakGlassClaim = principal.FindFirst(BreakGlassClaimType)?.Value;
+        var isBreakGlassSession = string.Equals(breakGlassClaim, "1", StringComparison.Ordinal);
+
+        return new HumanActor(new ActorId(id), displayName, preferredSource, isBreakGlassSession);
     }
 }

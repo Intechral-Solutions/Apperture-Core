@@ -36,7 +36,10 @@ public sealed class RbacAuthorizationPolicyEvaluator : IAuthorizationPolicyEvalu
         if (actor is null)
             return false;
 
-        // Break-glass slot: reserved, no-op
+        // Break-glass: human session established via break-glass login grants all permission checks
+        if (actor.Kind == ActorKind.Human && actor is HumanActor human && human.IsBreakGlassSession)
+            return true;
+
         // Relationship slot: reserved, no-op
 
         // RBAC path for Human actors

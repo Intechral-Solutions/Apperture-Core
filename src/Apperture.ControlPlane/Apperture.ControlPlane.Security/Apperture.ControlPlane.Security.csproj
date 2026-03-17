@@ -10,9 +10,11 @@
     <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" />
     <PackageReference Include="Microsoft.Extensions.Configuration.Binder" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" />
     <PackageReference Include="Microsoft.Extensions.Options" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\..\Apperture.Bootstrap\Apperture.Bootstrap\Apperture.Bootstrap.csproj" />
     <ProjectReference Include="..\..\Apperture.Core\Apperture.Core.Application\Apperture.Core.Application.csproj" />
     <ProjectReference Include="..\..\Apperture.Core\Apperture.Core.Security.Trust\Apperture.Core.Security.Trust.csproj" />
     <ProjectReference Include="..\..\Apperture.Persistence\Apperture.Persistence.SqlServer\Apperture.Persistence.SqlServer.csproj" />

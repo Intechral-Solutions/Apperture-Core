@@ -52,6 +52,10 @@ public sealed class SqlRoleRepository : IRoleRepository
     }
 
     /// <inheritdoc />
+    public async ValueTask<int> CountUserAssignmentsAsync(RoleId roleId, CancellationToken cancellationToken = default) =>
+        await _db.UserRoles.CountAsync(ur => ur.RoleId == roleId.Value, cancellationToken);
+
+    /// <inheritdoc />
     public async ValueTask AssignToUserAsync(UserId userId, RoleId roleId, CancellationToken cancellationToken = default)
     {
         var exists = await _db.UserRoles.AnyAsync(ur => ur.UserId == userId.Value && ur.RoleId == roleId.Value, cancellationToken);
@@ -74,6 +78,15 @@ public sealed class SqlRoleRepository : IRoleRepository
             return;
 
         _db.UserRoles.Remove(entity);
+        await _db.SaveChangesAsync(cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public async ValueTask UpdatePermissionsAsync(RoleId roleId, IReadOnlyList<PermissionDescriptor> permissions, CancellationToken cancellationToken = default)
+    {
+        var entity = await _db.Roles.FirstOrDefaultAsync(e => e.Id == roleId.Value, cancellationToken)
+            ?? throw new InvalidOperationException($"Role {roleId.Value} not found.");
+        entity.PermissionsJson = SerializePermissions(permissions);
         await _db.SaveChangesAsync(cancellationToken);
     }
 
@@ -112,5 +125,21 @@ public sealed class SqlRoleRepository : IRoleRepository
     {
         public string ResourceType { get; set; } = "";
         public string ScopeKey { get; set; } = "";
+    }
+
+    private static string SerializePermissions(IReadOnlyList<PermissionDescriptor> permissions)
+    {
+        if (permissions is null || permissions.Count == 0)
+            return "[]";
+        var dtos = permissions.Select(p => new PermissionDescriptorDto
+        {
+            Action = p.Action,
+            Resource = p.Resource is null ? null : new ResourceDescriptorDto
+            {
+                ResourceType = p.Resource.ResourceType,
+                ScopeKey = p.Resource.ScopeKey
+            }
+        }).ToList();
+        return JsonSerializer.Serialize(dtos, JsonOptions);
     }
 }

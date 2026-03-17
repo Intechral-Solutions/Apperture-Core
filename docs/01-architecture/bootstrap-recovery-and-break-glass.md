@@ -22,7 +22,7 @@ Well-known recovery actions (see `BootstrapRecoveryAction`):
 
 1. **Authorize** — All recovery flows go through `IBootstrapRecoveryAuthorizer.AuthorizeAsync(BootstrapRecoveryRequest)`.
 2. **Audit** — Every recovery attempt (authorized or denied) is recorded via `IBootstrapAuditWriter.WriteRecoveryAsync(BootstrapRecoveryAuditRecord)`. No secret values in audit.
-3. **Execute** — If authorized, `IBootstrapRecoveryService.ExecuteRecoveryAsync` performs the requested action (stub implementation may defer actual rebind/profile switch).
+3. **Execute** — If authorized, `IBootstrapRecoveryService.ExecuteRecoveryAsync` performs the requested action. **Epic 4:** Real authorizer and recovery service are implemented in ControlPlane.Security. For `RestorePlatformAccess`, the service assigns the platform administrator role to the target user (from request `TargetUserId` or `TargetExternalId` + `TargetIdentitySource`). Token-based authorization via `Auth:RecoveryToken` or `Bootstrap:RecoveryToken`. Break-glass sign-in (dedicated endpoint, local-auth-only, eligible users) is implemented; see [Epic 4 implementation summary](../02-decisions/Epic4-recovery-break-glass-implementation-summary.md).
 
 Routine bootstrap updates (set profile, rotate credential, bind Key Vault) never call the recovery authorizer. Repair (validate) does not require recovery auth.
 
@@ -45,3 +45,4 @@ Routine bootstrap updates (set profile, rotate credential, bind Key Vault) never
 
 - [Bootstrap and Secrets Boundary](bootstrap-and-secrets-boundary.md) — Bootstrap vs operational secrets; lists recovery authorizer and audit.
 - [Bootstrap CLI Invocation](bootstrap-cli-invocation.md) — CLI recovery-unlock command.
+- [Epic 4 implementation summary](../02-decisions/Epic4-recovery-break-glass-implementation-summary.md) — Recovery authorization, RestorePlatformAccess execution, break-glass sign-in, lockout guards.

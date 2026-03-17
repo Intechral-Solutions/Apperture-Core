@@ -22,6 +22,8 @@ public sealed class AuthController : ControllerBase
     private const string AuthActionLocalLoginSuccess = "auth.local.login.success";
     private const string AuthActionLocalLoginFailed = "auth.local.login.failed";
     private const string AuthActionUnlinkedPrincipal = "auth.unlinked_principal";
+    private const string AuthActionBreakGlassLoginSuccess = "auth.break_glass.login.success";
+    private const string AuthActionBreakGlassLoginFailed = "auth.break_glass.login.failed";
 
     private readonly IUserRepository _userRepository;
     private readonly ILocalCredentialRepository _localCredentialRepository;
@@ -141,6 +143,75 @@ public sealed class AuthController : ControllerBase
         await HttpContext.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, principal, props);
 
         await AppendAuthAuditAsync(AuthActionLocalLoginSuccess, new ActorId(user.Id.Value), null, cancellationToken);
+        return Ok(new LocalLoginResponse(user.Id.Value, user.DisplayName));
+    }
+
+    /// <summary>
+    /// Break-glass login: local-auth-only recovery path. Same credentials as local login but requires the user to be break-glass eligible.
+    /// On success, the session is granted all permission checks. Do not reveal whether the username exists or why login failed.
+    /// </summary>
+    [HttpPost("break-glass")]
+    [AllowAnonymous]
+    [ProducesResponseType(typeof(LocalLoginResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    public async Task<ActionResult<LocalLoginResponse>> BreakGlassLogin(
+        [FromBody] LocalLoginRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (!_localOptions.Enabled)
+        {
+            await AppendAuthAuditAsync(AuthActionBreakGlassLoginFailed, new ActorId("anonymous"), null, cancellationToken);
+            return Unauthorized();
+        }
+
+        if (string.IsNullOrWhiteSpace(request.Username) || request.Password is null)
+        {
+            await AppendAuthAuditAsync(AuthActionBreakGlassLoginFailed, new ActorId("anonymous"), null, cancellationToken);
+            return Unauthorized();
+        }
+
+        var normalizedUsername = LocalAuthHelpers.NormalizeUsername(request.Username);
+        var user = await _userRepository.GetByIdentityLinkAsync(IdentitySource.Local, normalizedUsername, cancellationToken);
+        if (user is null)
+        {
+            await AppendAuthAuditAsync(AuthActionBreakGlassLoginFailed, new ActorId("anonymous"), null, cancellationToken);
+            return Unauthorized();
+        }
+
+        var credential = await _localCredentialRepository.GetByUserIdAsync(user.Id, cancellationToken);
+        if (credential is null || credential.IsDisabled)
+        {
+            await AppendAuthAuditAsync(AuthActionBreakGlassLoginFailed, new ActorId("anonymous"), null, cancellationToken);
+            return Unauthorized();
+        }
+
+        if (!_passwordHasher.VerifyPassword(request.Password, credential.PasswordHash, credential.Salt))
+        {
+            await AppendAuthAuditAsync(AuthActionBreakGlassLoginFailed, new ActorId("anonymous"), null, cancellationToken);
+            return Unauthorized();
+        }
+
+        if (!user.IsBreakGlassEligible)
+        {
+            await AppendAuthAuditAsync(AuthActionBreakGlassLoginFailed, new ActorId("anonymous"), null, cancellationToken);
+            return Unauthorized();
+        }
+
+        var identity = new ClaimsIdentity(CookieAuthenticationDefaults.AuthenticationScheme);
+        identity.AddClaim(new Claim(ClaimTypes.NameIdentifier, normalizedUsername));
+        identity.AddClaim(new Claim(ClaimTypes.Name, user.DisplayName));
+        identity.AddClaim(new Claim(ClaimsPrincipalToActorMapper.IdentitySourceClaimType, "Local"));
+        identity.AddClaim(new Claim(ClaimsPrincipalToActorMapper.BreakGlassClaimType, "1"));
+
+        var principal = new ClaimsPrincipal(identity);
+        var props = new AuthenticationProperties
+        {
+            IsPersistent = true,
+            ExpiresUtc = DateTimeOffset.UtcNow.AddHours(12)
+        };
+        await HttpContext.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, principal, props);
+
+        await AppendAuthAuditAsync(AuthActionBreakGlassLoginSuccess, new ActorId(user.Id.Value), null, cancellationToken);
         return Ok(new LocalLoginResponse(user.Id.Value, user.DisplayName));
     }
 
