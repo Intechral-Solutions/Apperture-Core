@@ -91,7 +91,7 @@ flowchart TB
 | **Operational Secrets** | Partially | SqlSecretStore/Resolver done; Azure KV resolver done; KV store placeholder |
 | **Runtime Trust** | Partially | EnrollController, SqlRuntimeIdentityService (stub validation) |
 | **Runtime Plane** | Abstractions + Stubs | Engine exists; DTFx/DurableFunctions adapters stubbed |
-| **Control Plane** | Partially | API, Menus, Modules, Runs, Workflows (start persists handoff; execution deferred), Enroll; UI shell |
+| **Control Plane** | Partially | API, Menus, Modules, Runs, Workflows (start persists transactional handoff; execution deferred), Enroll; UI shell |
 | **Instance Plane** | Partially | WorkerHost consumes persisted workflow start requests and executes minimal lifecycle; other hosts remain stubbed |
 | **CLI** | Partially | Bootstrap CLI scaffolding; PowerShell; invokes stubs |
 | **Module SDK** | Implemented | Abstractions, SDK, test harness (stub) |

@@ -21,6 +21,9 @@ public sealed class WorkflowStartRequestProcessor
     private const string CompletedStatus = "completed";
     private const string FailedStatus = "failed";
 
+    // Baseline-safety lease: if a worker crashes after claiming, another worker may reclaim after this timeout.
+    private static readonly TimeSpan ClaimLeaseTimeout = TimeSpan.FromMinutes(10);
+
     private readonly AppertureDbContext _db;
     private readonly IWorkflowExecutor _executor;
     private readonly ILogger? _logger;
@@ -41,13 +44,17 @@ public sealed class WorkflowStartRequestProcessor
     public async Task<bool> TryClaimAsync(string runId, CancellationToken cancellationToken = default)
     {
         var now = DateTimeOffset.UtcNow;
+        var staleBefore = now - ClaimLeaseTimeout;
 
         if (_db.Database.IsRelational())
         {
             var affected = await _db.Database.ExecuteSqlInterpolatedAsync($@"
 UPDATE WorkflowStartRequests
 SET Status = {RunningStatus}, ClaimedAt = {now}, ClaimedBy = {_workerId}
-WHERE RunId = {runId} AND Status = {RequestedStatus} AND ClaimedAt IS NULL
+WHERE RunId = {runId} AND (
+    (Status = {RequestedStatus} AND ClaimedAt IS NULL) OR
+    (Status = {RunningStatus} AND ClaimedAt IS NOT NULL AND ClaimedAt < {staleBefore})
+)
 ", cancellationToken);
 
             return affected == 1;
@@ -57,7 +64,11 @@ WHERE RunId = {runId} AND Status = {RequestedStatus} AND ClaimedAt IS NULL
         var entity = await _db.WorkflowStartRequests.FirstOrDefaultAsync(x => x.RunId == runId, cancellationToken);
         if (entity is null)
             return false;
-        if (!string.Equals(entity.Status, RequestedStatus, StringComparison.Ordinal) || entity.ClaimedAt is not null)
+
+        var eligible =
+            (string.Equals(entity.Status, RequestedStatus, StringComparison.Ordinal) && entity.ClaimedAt is null) ||
+            (string.Equals(entity.Status, RunningStatus, StringComparison.Ordinal) && entity.ClaimedAt is not null && entity.ClaimedAt < staleBefore);
+        if (!eligible)
             return false;
 
         entity.Status = RunningStatus;

@@ -27,6 +27,11 @@ Epic 7 Prompt 2 makes the **instance plane** consume the persisted workflow star
 5. Resolve the workflow definition and execute each step via `IWorkflowExecutor`.
 6. Persist `completed` or `failed` status across request/run/instance.
 
+## Corrective pass notes (baseline safety)
+
+- **Recoverable claiming**: a claimed request is now treated as a lease. If a worker crashes after claiming, the request becomes eligible for reclaim after a timeout and another worker can pick it up.
+- **Discovery includes stale running**: the poll loop now considers both unclaimed `requested` requests and stale `running` requests with expired leases.
+
 ## Current scope / limitations
 
 - **Definition resolution is minimal**: the processor currently recognizes `Sample.HelloWorld.HelloWorld` to prove the end-to-end slice. This should be replaced with a real module-based definition resolver when module hosting is wired into the worker host.

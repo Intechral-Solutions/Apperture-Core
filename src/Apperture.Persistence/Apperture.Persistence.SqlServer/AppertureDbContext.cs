@@ -78,6 +78,9 @@ public class AppertureDbContext : DbContext
             e.Property(x => x.ClaimedBy).HasMaxLength(128);
             e.Property(x => x.LastError).HasMaxLength(2048);
             e.Property<byte[]>("RowVersion").IsRowVersion();
+            e.HasIndex(x => x.IdempotencyKey)
+                .IsUnique()
+                .HasFilter("[IdempotencyKey] IS NOT NULL");
         });
 
         modelBuilder.Entity<AuditLogEntity>(e =>

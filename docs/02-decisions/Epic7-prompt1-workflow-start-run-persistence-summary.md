@@ -20,6 +20,11 @@ Flow:
 
 The management host does **not** execute steps (ADR-0001). Runtime consumption/execution remains deferred.
 
+### Corrective pass notes (post–Epic 7)
+
+- **Transactional handoff**: The control-plane dispatch now persists `WorkflowInstance` + `OperationRun` + `WorkflowStartRequestEntity` in a single database transaction to avoid orphaned/partial state on failures.
+- **Idempotency safety**: `WorkflowStartRequests.IdempotencyKey` is now protected by a unique index (non-null) so concurrent identical idempotency requests converge on one persisted run.
+
 ## SQL-backed persistence implemented
 
 - Implemented `SqlWorkflowPersistence : IWorkflowPersistence` mapping runtime abstractions to:

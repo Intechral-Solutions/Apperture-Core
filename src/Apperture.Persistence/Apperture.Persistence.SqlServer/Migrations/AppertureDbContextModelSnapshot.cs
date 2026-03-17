@@ -637,6 +637,10 @@ namespace Apperture.Persistence.SqlServer.Migrations
 
                     b.HasKey("RunId");
 
+                    b.HasIndex("IdempotencyKey")
+                        .IsUnique()
+                        .HasFilter("[IdempotencyKey] IS NOT NULL");
+
                     b.ToTable("WorkflowStartRequests", (string)null);
                 });
 

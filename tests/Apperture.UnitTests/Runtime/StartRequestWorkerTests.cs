@@ -30,6 +30,55 @@ public sealed class StartRequestWorkerTests
     }
 
     [Fact]
+    public async Task TryClaimAsync_AllowsReclaimWhenLeaseIsStale()
+    {
+        var db = NewDb();
+        db.WorkflowStartRequests.Add(new WorkflowStartRequestEntity
+        {
+            RunId = "r1",
+            WorkflowInstanceId = "i1",
+            WorkflowDefinitionId = "Sample.HelloWorld.HelloWorld",
+            CreatedAt = DateTimeOffset.UtcNow.AddMinutes(-30),
+            Status = "running",
+            ClaimedAt = DateTimeOffset.UtcNow.AddMinutes(-30),
+            ClaimedBy = "dead-worker"
+        });
+        await db.SaveChangesAsync();
+
+        var executor = new NoOpExecutor();
+        var processor = new WorkflowStartRequestProcessor(db, executor, "new-worker");
+
+        (await processor.TryClaimAsync("r1")).Should().BeTrue();
+
+        var req = await db.WorkflowStartRequests.SingleAsync(x => x.RunId == "r1");
+        req.ClaimedBy.Should().Be("new-worker");
+        req.ClaimedAt.Should().NotBeNull();
+        req.Status.Should().Be("running");
+    }
+
+    [Fact]
+    public async Task TryClaimAsync_DoesNotStealActiveLease()
+    {
+        var db = NewDb();
+        db.WorkflowStartRequests.Add(new WorkflowStartRequestEntity
+        {
+            RunId = "r1",
+            WorkflowInstanceId = "i1",
+            WorkflowDefinitionId = "Sample.HelloWorld.HelloWorld",
+            CreatedAt = DateTimeOffset.UtcNow.AddMinutes(-5),
+            Status = "running",
+            ClaimedAt = DateTimeOffset.UtcNow.AddMinutes(-5),
+            ClaimedBy = "active-worker"
+        });
+        await db.SaveChangesAsync();
+
+        var executor = new NoOpExecutor();
+        var processor = new WorkflowStartRequestProcessor(db, executor, "other-worker");
+
+        (await processor.TryClaimAsync("r1")).Should().BeFalse();
+    }
+
+    [Fact]
     public async Task ProcessClaimedAsync_Success_UpdatesLifecycleToCompleted()
     {
         var db = NewDb();

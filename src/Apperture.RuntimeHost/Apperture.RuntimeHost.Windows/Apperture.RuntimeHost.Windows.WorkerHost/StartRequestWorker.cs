@@ -12,6 +12,7 @@ namespace Apperture.RuntimeHost.Windows.WorkerHost;
 public sealed class StartRequestWorker : BackgroundService
 {
     private const string RequestedStatus = "requested";
+    private const string RunningStatus = "running";
 
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<StartRequestWorker> _logger;
@@ -40,8 +41,12 @@ public sealed class StartRequestWorker : BackgroundService
                 var processor = new WorkflowStartRequestProcessor(db, executor, _workerId, _logger);
 
                 // Best-effort: attempt a small batch each poll.
+                var now = DateTimeOffset.UtcNow;
+                var staleBefore = now - TimeSpan.FromMinutes(10);
                 var pending = await db.WorkflowStartRequests.AsNoTracking()
-                    .Where(x => x.Status == RequestedStatus && x.ClaimedAt == null)
+                    .Where(x =>
+                        (x.Status == RequestedStatus && x.ClaimedAt == null) ||
+                        (x.Status == RunningStatus && x.ClaimedAt != null && x.ClaimedAt < staleBefore))
                     .OrderBy(x => x.CreatedAt)
                     .Select(x => x.RunId)
                     .Take(10)
