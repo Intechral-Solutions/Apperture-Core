@@ -590,6 +590,13 @@ namespace Apperture.Persistence.SqlServer.Migrations
                         .HasMaxLength(64)
                         .HasColumnType("nvarchar(64)");
 
+                    b.Property<DateTimeOffset?>("ClaimedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("ClaimedBy")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
                     b.Property<string>("CorrelationId")
                         .HasMaxLength(128)
                         .HasColumnType("nvarchar(128)");
@@ -601,8 +608,22 @@ namespace Apperture.Persistence.SqlServer.Migrations
                         .HasMaxLength(128)
                         .HasColumnType("nvarchar(128)");
 
+                    b.Property<string>("LastError")
+                        .HasMaxLength(2048)
+                        .HasColumnType("nvarchar(2048)");
+
                     b.Property<string>("ParametersJson")
                         .HasColumnType("nvarchar(max)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
 
                     b.Property<string>("WorkflowDefinitionId")
                         .IsRequired()

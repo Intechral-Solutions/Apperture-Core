@@ -86,7 +86,11 @@ public sealed class WorkflowStartDispatchService : IWorkflowStartDispatchService
             ParametersJson = SerializeParameters(request.Parameters),
             IdempotencyKey = request.IdempotencyKey,
             CorrelationId = request.CorrelationId,
-            CreatedAt = now
+            CreatedAt = now,
+            Status = RequestedStatus,
+            ClaimedAt = null,
+            ClaimedBy = null,
+            LastError = null
         });
         await _db.SaveChangesAsync(cancellationToken);
 

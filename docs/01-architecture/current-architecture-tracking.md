@@ -59,7 +59,7 @@ flowchart TB
     API --> Secrets
     API --> RuntimeTrust
 
-    IWorkflowRuntime[IWorkflowRuntime] -.->|Stub runtime execution| InstancePlane
+    IWorkflowRuntime[IWorkflowRuntime] -.->|Start persisted; runtime executes via worker| InstancePlane
 
     WorkerHost --> Persistence
     WorkerHost --> Secrets
@@ -92,7 +92,7 @@ flowchart TB
 | **Runtime Trust** | Partially | EnrollController, SqlRuntimeIdentityService (stub validation) |
 | **Runtime Plane** | Abstractions + Stubs | Engine exists; DTFx/DurableFunctions adapters stubbed |
 | **Control Plane** | Partially | API, Menus, Modules, Runs, Workflows (start persists handoff; execution deferred), Enroll; UI shell |
-| **Instance Plane** | Stubbed | WorkerHost/ModuleHost/SchedulerHost stubs; Azure template has HTTP stub |
+| **Instance Plane** | Partially | WorkerHost consumes persisted workflow start requests and executes minimal lifecycle; other hosts remain stubbed |
 | **CLI** | Partially | Bootstrap CLI scaffolding; PowerShell; invokes stubs |
 | **Module SDK** | Implemented | Abstractions, SDK, test harness (stub) |
 

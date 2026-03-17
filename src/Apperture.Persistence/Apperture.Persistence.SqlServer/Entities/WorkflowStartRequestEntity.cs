@@ -13,5 +13,10 @@ public sealed class WorkflowStartRequestEntity
     public string? IdempotencyKey { get; set; }
     public string? CorrelationId { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
+
+    public string Status { get; set; } = "requested";
+    public DateTimeOffset? ClaimedAt { get; set; }
+    public string? ClaimedBy { get; set; }
+    public string? LastError { get; set; }
 }
 

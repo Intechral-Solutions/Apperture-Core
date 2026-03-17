@@ -74,6 +74,10 @@ public class AppertureDbContext : DbContext
             e.Property(x => x.IdempotencyKey).HasMaxLength(128);
             e.Property(x => x.CorrelationId).HasMaxLength(128);
             e.Property(x => x.ParametersJson).HasColumnType("nvarchar(max)");
+            e.Property(x => x.Status).HasMaxLength(32);
+            e.Property(x => x.ClaimedBy).HasMaxLength(128);
+            e.Property(x => x.LastError).HasMaxLength(2048);
+            e.Property<byte[]>("RowVersion").IsRowVersion();
         });
 
         modelBuilder.Entity<AuditLogEntity>(e =>

@@ -28,7 +28,7 @@ builder.Services.AddSingleton<IStepHandlerRegistry>(_ =>
 });
 builder.Services.AddScoped<IWorkflowExecutor, DefaultWorkflowExecutor>();
 
-builder.Services.AddHostedService<WorkerStub>();
+builder.Services.AddHostedService<StartRequestWorker>();
 
 var host = builder.Build();
 host.Run();
