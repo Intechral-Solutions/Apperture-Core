@@ -36,4 +36,20 @@ public interface IUserRepository
     /// Updates the last authenticated timestamp for the identity link with the given source and external id.
     /// </summary>
     ValueTask UpdateLastAuthenticatedAtAsync(IdentitySource source, string externalId, DateTimeOffset at, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Gets a page of users with their identity links and role ids. For auth-admin listing.
+    /// </summary>
+    ValueTask<(IReadOnlyList<User> Page, int TotalCount)> GetPageAsync(int skip, int take, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Adds an identity link to an existing user. ExternalId for Local must be normalized (trim, lowercase) by the caller.
+    /// Throws if (Source, ExternalId) already exists for any user.
+    /// </summary>
+    ValueTask AddIdentityLinkAsync(UserId userId, IdentitySource source, string externalId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Removes an identity link from a user. Throws if this is the user's last link.
+    /// </summary>
+    ValueTask RemoveIdentityLinkAsync(UserId userId, IdentitySource source, string externalId, CancellationToken cancellationToken = default);
 }

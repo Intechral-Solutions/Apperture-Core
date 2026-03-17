@@ -35,6 +35,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ILocalCredentialRepository, SqlLocalCredentialRepository>();
         services.AddSingleton<ILocalPasswordHasher, LocalPasswordHasher>();
         services.AddScoped<IFirstAdminBootstrapService, FirstAdminBootstrapService>();
+        services.AddScoped<IUserManagementService, UserManagementService>();
         services.AddSingleton<IConnectorDefinitionRegistry, StubConnectorDefinitionRegistry>();
         return services;
     }

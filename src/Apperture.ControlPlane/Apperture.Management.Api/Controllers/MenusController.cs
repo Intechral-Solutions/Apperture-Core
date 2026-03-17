@@ -1,4 +1,5 @@
 using Apperture.Management.Ui.Shared.Models;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Apperture.Management.Api.Controllers;
@@ -8,6 +9,7 @@ namespace Apperture.Management.Api.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/[controller]")]
+[Authorize]
 public class MenusController : ControllerBase
 {
     private readonly ILogger<MenusController> _logger;

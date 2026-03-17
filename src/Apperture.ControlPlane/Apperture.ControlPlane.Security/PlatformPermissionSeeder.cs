@@ -47,6 +47,12 @@ public static class PlatformPermissionSeeder
         Register(registry, ActionConstants.PermissionAssign, ResourceTypeConstants.Role, ScopeKeyConstants.Instance, ResourceFamily.Core);
         Register(registry, ActionConstants.AuditRead, ResourceTypeConstants.AuditPolicy, ScopeKeyConstants.Instance, ResourceFamily.Administrative);
         Register(registry, ActionConstants.RelationshipManage, ResourceTypeConstants.TrustRelationship, ScopeKeyConstants.Instance, ResourceFamily.Trust);
+
+        // Auth administration (Epic 3)
+        Register(registry, ActionConstants.UserRead, ResourceTypeConstants.User, ScopeKeyConstants.Instance, ResourceFamily.Core);
+        Register(registry, ActionConstants.UserManage, ResourceTypeConstants.User, ScopeKeyConstants.Instance, ResourceFamily.Core);
+        Register(registry, ActionConstants.RoleAssign, ResourceTypeConstants.Role, ScopeKeyConstants.Instance, ResourceFamily.Core);
+        Register(registry, ActionConstants.CredentialManage, ResourceTypeConstants.User, ScopeKeyConstants.Instance, ResourceFamily.Core);
     }
 
     private static void Register(

@@ -51,4 +51,10 @@ public static class ActionConstants
     public const string PermissionAssign = "permission.assign";
     public const string AuditRead = "audit.read";
     public const string RelationshipManage = "relationship.manage";
+
+    // Auth administration (Epic 3)
+    public const string UserRead = "user.read";
+    public const string UserManage = "user.manage";
+    public const string RoleAssign = "role.assign";
+    public const string CredentialManage = "credential.manage";
 }

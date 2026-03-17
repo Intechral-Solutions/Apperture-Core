@@ -105,6 +105,77 @@ public sealed class SqlUserRepository : IUserRepository
         }
     }
 
+    /// <inheritdoc />
+    public async ValueTask<(IReadOnlyList<User> Page, int TotalCount)> GetPageAsync(int skip, int take, CancellationToken cancellationToken = default)
+    {
+        var totalCount = await _db.Users.CountAsync(cancellationToken);
+        var userEntities = await _db.Users.AsNoTracking()
+            .OrderBy(u => u.Id)
+            .Skip(skip)
+            .Take(take)
+            .ToListAsync(cancellationToken);
+        if (userEntities.Count == 0)
+            return (Array.Empty<User>(), totalCount);
+
+        var userIds = userEntities.Select(u => u.Id).ToList();
+        var links = await _db.IdentityLinks.AsNoTracking()
+            .Where(l => userIds.Contains(l.UserId))
+            .ToListAsync(cancellationToken);
+        var userRoles = await _db.UserRoles.AsNoTracking()
+            .Where(ur => userIds.Contains(ur.UserId))
+            .ToListAsync(cancellationToken);
+
+        var linkByUser = links.GroupBy(l => l.UserId).ToDictionary(g => g.Key, g => g.ToList());
+        var roleIdsByUser = userRoles.GroupBy(ur => ur.UserId).ToDictionary(g => g.Key, g => g.Select(x => x.RoleId).ToList());
+
+        var page = userEntities.ConvertAll(e =>
+        {
+            var userLinks = linkByUser.GetValueOrDefault(e.Id) ?? new List<IdentityLinkEntity>();
+            var roleIds = roleIdsByUser.GetValueOrDefault(e.Id) ?? new List<string>();
+            return ToDomain(e, userLinks, roleIds);
+        });
+        return (page, totalCount);
+    }
+
+    /// <inheritdoc />
+    public async ValueTask AddIdentityLinkAsync(UserId userId, IdentitySource source, string externalId, CancellationToken cancellationToken = default)
+    {
+        var exists = await _db.IdentityLinks.AnyAsync(
+            l => l.Source == (int)source && l.ExternalId == externalId, cancellationToken);
+        if (exists)
+            throw new InvalidOperationException("An identity link with this source and external id already exists.");
+
+        var userExists = await _db.Users.AnyAsync(u => u.Id == userId.Value, cancellationToken);
+        if (!userExists)
+            throw new InvalidOperationException($"User {userId.Value} not found.");
+
+        _db.IdentityLinks.Add(new IdentityLinkEntity
+        {
+            Id = Guid.NewGuid().ToString("N")[..24],
+            UserId = userId.Value,
+            Source = (int)source,
+            ExternalId = externalId,
+            LastAuthenticatedAt = null
+        });
+        await _db.SaveChangesAsync(cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public async ValueTask RemoveIdentityLinkAsync(UserId userId, IdentitySource source, string externalId, CancellationToken cancellationToken = default)
+    {
+        var link = await _db.IdentityLinks
+            .FirstOrDefaultAsync(l => l.UserId == userId.Value && l.Source == (int)source && l.ExternalId == externalId, cancellationToken);
+        if (link is null)
+            return;
+
+        var linkCount = await _db.IdentityLinks.CountAsync(l => l.UserId == userId.Value, cancellationToken);
+        if (linkCount <= 1)
+            throw new InvalidOperationException("Cannot remove the last identity link from a user.");
+
+        _db.IdentityLinks.Remove(link);
+        await _db.SaveChangesAsync(cancellationToken);
+    }
+
     private static User ToDomain(UserEntity userEntity, List<IdentityLinkEntity> links, List<string> roleIds)
     {
         var identityLinks = links
