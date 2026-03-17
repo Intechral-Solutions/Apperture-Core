@@ -25,6 +25,29 @@ This document captures the status of the auth/governance scaffolding (Phases 1�
 | Connector domain (Phase 1) | Done | Connection, Binding, ConnectorDefinition, MappingDefinition, ICapabilitySlot, CapabilityVisibility |
 | Host auth scaffolding | Done | Management.Host: AddAppertureAuthentication (Cookie + OpenIdConnect when Entra enabled), AddAuthorization, UseAuthentication, UseAuthorization; GET /signin, /signout; real Entra OIDC and local POST /api/auth/local/login |
 | Endpoint protection | Done | [Authorize] on Connections, Bindings, Enroll, Workflows, Runs, Modules; service-layer permission checks (IAuthorizationService) on Connections, Bindings, module list/workflow list, workflow start; 403 on deny. [AllowAnonymous] on Bootstrap first-admin, Enroll POST, Auth local/login, local/logout, auth/break-glass |
+
+## Executable required-permissions (Epic 6)
+
+Workflows and operations can declare **definition-level required permissions**. Semantics are shared:
+
+- **If `RequiredPermissions` is non-empty:** ALL listed permissions are required (logical AND).
+- **If `RequiredPermissions` is null/empty:** fall back to the executable’s coarse permission model.
+
+### Workflows
+
+- **Model:** `WorkflowDefinition.RequiredPermissions` (optional list of `PermissionDescriptor`).
+- **Start authorization:** `WorkflowStartAuthorizationService` resolves the workflow definition; if it declares required permissions, it evaluates ALL of them via `IAuthorizationService`. If it declares none (or the definition cannot be resolved), it falls back to the prior behavior:
+  - module-owned workflow → `workflow.execute` at `module:{moduleId}`
+  - otherwise → `workflow.start` at instance
+
+### Operations
+
+- **Model:** `OperationDefinition.RequiredPermissions` (already present).
+- **Execution:** full operation execution remains deferred; Epic 6 establishes the shared semantics so future operation dispatch evaluates ALL required permissions when present and otherwise uses a coarse operation permission model.
+
+### Catalog coherence
+
+Definition-level permissions must remain coherent with the grantable catalog. If a definition references a permission that is not present in the active `IResourceDescriptorRegistry`, authorization denies (403 path), rather than silently allowing execution.
 | Auth audit baseline | Done | IAuditService → SqlAuditService; auth events (auth.entra.login.success, auth.local.login.success/failed, auth.break_glass.login.success/failed, auth.unlinked_principal, auth_admin.blocked.*) persisted to AuditLogs |
 | Break-glass path | Done | Human session with break-glass claim; RbacAuthorizationPolicyEvaluator grants all permission checks when actor is Human and IsBreakGlassSession is true. Local-auth-only; dedicated endpoint. |
 | Lockout prevention | Done | UserManagementService blocks removal of last platform admin role and disabling last admin’s only local credential; blocked attempts audited. |

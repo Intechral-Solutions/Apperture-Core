@@ -1,5 +1,6 @@
 using Apperture.ModuleSdk.Abstractions;
 using Apperture.RuntimePlane.Abstractions;
+using Apperture.Shared.Kernel;
 
 namespace Sample.HelloWorld;
 
@@ -23,7 +24,11 @@ public sealed class HelloWorldModule : IModule
             "HelloWorld",
             ModuleId,
             new[] { "Validate", "DoWork", "Complete" },
-            WorkflowCategory.Command);
+            WorkflowCategory.Command,
+            RequiredPermissions:
+            [
+                new PermissionDescriptor("workflow.execute", new ResourceDescriptor("WorkflowInstance", $"module:{ModuleId}"))
+            ]);
         await Task.CompletedTask.ConfigureAwait(false);
     }
 }

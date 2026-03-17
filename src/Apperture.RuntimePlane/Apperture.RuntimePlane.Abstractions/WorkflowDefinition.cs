@@ -1,3 +1,5 @@
+using Apperture.Shared.Kernel;
+
 namespace Apperture.RuntimePlane.Abstractions;
 
 public sealed record WorkflowDefinition(
@@ -5,7 +7,8 @@ public sealed record WorkflowDefinition(
     string Name,
     string ModuleId,
     IReadOnlyList<string> StepNames,
-    WorkflowCategory Category = WorkflowCategory.Command);
+    WorkflowCategory Category = WorkflowCategory.Command,
+    IReadOnlyList<PermissionDescriptor>? RequiredPermissions = null);
 
 public enum WorkflowCategory
 {

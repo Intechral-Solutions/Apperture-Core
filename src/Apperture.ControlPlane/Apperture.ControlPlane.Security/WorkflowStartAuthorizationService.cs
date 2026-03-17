@@ -16,15 +16,21 @@ public sealed class WorkflowStartAuthorizationService : IWorkflowStartAuthorizat
     private readonly IPrincipalContext _principalContext;
     private readonly IAuthorizationService _auth;
     private readonly IWorkflowModuleResolver _workflowModuleResolver;
+    private readonly IWorkflowDefinitionResolver _workflowDefinitionResolver;
+    private readonly IExecutablePermissionEvaluator _executablePermissionEvaluator;
 
     public WorkflowStartAuthorizationService(
         IPrincipalContext principalContext,
         IAuthorizationService auth,
-        IWorkflowModuleResolver workflowModuleResolver)
+        IWorkflowModuleResolver workflowModuleResolver,
+        IWorkflowDefinitionResolver workflowDefinitionResolver,
+        IExecutablePermissionEvaluator executablePermissionEvaluator)
     {
         _principalContext = principalContext;
         _auth = auth;
         _workflowModuleResolver = workflowModuleResolver;
+        _workflowDefinitionResolver = workflowDefinitionResolver;
+        _executablePermissionEvaluator = executablePermissionEvaluator;
     }
 
     /// <inheritdoc />
@@ -34,24 +40,35 @@ public sealed class WorkflowStartAuthorizationService : IWorkflowStartAuthorizat
         if (actor is null)
             throw new UnauthorizedAccessException("No authenticated actor.");
 
+        var definition = await _workflowDefinitionResolver.GetByIdAsync(workflowDefinitionId, cancellationToken);
+        if (definition?.RequiredPermissions is { Count: > 0 } requiredPermissions)
+        {
+            var allowedByDefinition = await _executablePermissionEvaluator.EvaluateAllAsync(actor, requiredPermissions, cancellationToken);
+            if (!allowedByDefinition)
+                throw new UnauthorizedAccessException("Not authorized to start this workflow.");
+            return;
+        }
+
         var moduleId = await _workflowModuleResolver.GetModuleIdForWorkflowAsync(workflowDefinitionId, cancellationToken);
         bool allowed;
         if (moduleId is not null)
         {
             var moduleScopeKey = ScopeKeyConstants.Module(moduleId);
+            var permission = new PermissionDescriptor(WorkflowExecuteAction, new ResourceDescriptor(ResourceTypeConstants.WorkflowInstance, moduleScopeKey));
             allowed = await _auth.EvaluateAsync(
                 actor,
-                new PermissionDescriptor(WorkflowExecuteAction, new ResourceDescriptor(ResourceTypeConstants.WorkflowInstance, moduleScopeKey)),
-                null,
+                permission,
+                permission.Resource,
                 null,
                 cancellationToken);
         }
         else
         {
+            var permission = new PermissionDescriptor(ActionConstants.WorkflowStart, new ResourceDescriptor(ResourceTypeConstants.WorkflowInstance, ScopeKeyConstants.Instance));
             allowed = await _auth.EvaluateAsync(
                 actor,
-                new PermissionDescriptor(ActionConstants.WorkflowStart, new ResourceDescriptor(ResourceTypeConstants.WorkflowInstance, ScopeKeyConstants.Instance)),
-                null,
+                permission,
+                permission.Resource,
                 null,
                 cancellationToken);
         }

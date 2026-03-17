@@ -57,6 +57,8 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IModuleManifestProvider, KnownModuleManifestProvider>();
         services.AddSingleton<IConnectorDefinitionRegistry, StubConnectorDefinitionRegistry>();
         services.AddSingleton<IWorkflowModuleResolver, WorkflowModuleResolver>();
+        services.AddScoped<IWorkflowDefinitionResolver, WorkflowDefinitionResolver>();
+        services.AddScoped<IExecutablePermissionEvaluator, ExecutablePermissionEvaluator>();
         services.AddScoped<IModuleWorkflowListingService, ModuleWorkflowListingService>();
         services.AddScoped<IWorkflowStartAuthorizationService, WorkflowStartAuthorizationService>();
         return services;
