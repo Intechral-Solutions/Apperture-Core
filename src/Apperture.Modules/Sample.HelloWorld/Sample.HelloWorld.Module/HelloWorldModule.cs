@@ -8,7 +8,13 @@ public sealed class HelloWorldModule : IModule
     private static readonly WorkflowDefinitionId DefinitionId = new("Sample.HelloWorld.HelloWorld");
     private const string ModuleId = "Sample.HelloWorld";
 
-    public ModuleManifest GetManifest() => new(ModuleId, "Hello World", "1.0.0", "Sample workflow: Validate → DoWork → Complete");
+    public ModuleManifest GetManifest() => new(ModuleId, "Hello World", "1.0.0", "Sample workflow: Validate → DoWork → Complete")
+    {
+        Permissions =
+        [
+            new ModulePermissionDeclaration("workflow.execute", "WorkflowInstance")
+        ]
+    };
 
     public async IAsyncEnumerable<WorkflowDefinition> GetDefinitionsAsync([System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
     {

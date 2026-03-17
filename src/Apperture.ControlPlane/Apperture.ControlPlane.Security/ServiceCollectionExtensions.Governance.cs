@@ -1,5 +1,6 @@
 using Apperture.Bootstrap;
 using Apperture.Core.Application.Services;
+using Apperture.ModuleSdk.Abstractions;
 using Apperture.Persistence.SqlServer;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -51,7 +52,27 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IFirstAdminBootstrapService, FirstAdminBootstrapService>();
         services.AddScoped<IUserManagementService, UserManagementService>();
         services.AddHostedService<PlatformAdminRoleRepairService>();
+        services.AddHostedService<ModulePermissionRegistrationHostedService>();
+        services.AddSingleton<IEnumerable<IModule>>(Array.Empty<IModule>());
+        services.AddSingleton<IModuleManifestProvider, KnownModuleManifestProvider>();
         services.AddSingleton<IConnectorDefinitionRegistry, StubConnectorDefinitionRegistry>();
+        services.AddSingleton<IWorkflowModuleResolver, WorkflowModuleResolver>();
+        services.AddScoped<IModuleWorkflowListingService, ModuleWorkflowListingService>();
+        services.AddScoped<IWorkflowStartAuthorizationService, WorkflowStartAuthorizationService>();
+        return services;
+    }
+
+    /// <summary>
+    /// Registers known modules and the manifest provider for module permission registration at startup.
+    /// Call before or after AddAppertureGovernance. Module-declared permissions will be registered into IResourceDescriptorRegistry when the host starts.
+    /// </summary>
+    /// <param name="services">The service collection.</param>
+    /// <param name="modules">The set of known modules (e.g. from referenced module projects).</param>
+    public static IServiceCollection AddKnownModules(this IServiceCollection services, IEnumerable<IModule> modules)
+    {
+        var list = modules?.ToList() ?? [];
+        services.AddSingleton<IEnumerable<IModule>>(list);
+        services.AddSingleton<IModuleManifestProvider, KnownModuleManifestProvider>();
         return services;
     }
 }

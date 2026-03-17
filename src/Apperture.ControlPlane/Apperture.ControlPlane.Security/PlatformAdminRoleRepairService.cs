@@ -33,6 +33,7 @@ public sealed class PlatformAdminRoleRepairService : IHostedService
     {
         using var scope = _scopeFactory.CreateScope();
         var roleRepository = scope.ServiceProvider.GetRequiredService<IRoleRepository>();
+        var registry = scope.ServiceProvider.GetRequiredService<IResourceDescriptorRegistry>();
         var roleId = new RoleId(BootstrapConstants.PlatformAdminRoleId);
         var role = await roleRepository.GetAsync(roleId, cancellationToken);
         if (role is null)
@@ -40,10 +41,11 @@ public sealed class PlatformAdminRoleRepairService : IHostedService
 
         var deduped = DeduplicateByActionResourceScope(role.Permissions);
         var withAuthAdmin = EnsureAuthAdminPermissions(deduped);
-        if (withAuthAdmin.Count == deduped.Count && deduped.Count == role.Permissions.Count)
+        var withModulePermissions = EnsureModuleScopedPermissions(withAuthAdmin, registry);
+        if (withModulePermissions.Count == withAuthAdmin.Count && withAuthAdmin.Count == deduped.Count && deduped.Count == role.Permissions.Count)
             return;
 
-        await roleRepository.UpdatePermissionsAsync(roleId, withAuthAdmin, cancellationToken);
+        await roleRepository.UpdatePermissionsAsync(roleId, withModulePermissions, cancellationToken);
     }
 
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
@@ -76,6 +78,22 @@ public sealed class PlatformAdminRoleRepairService : IHostedService
             var k = Key(required);
             if (!byKey.ContainsKey(k))
                 byKey[k] = required;
+        }
+        return byKey.Values.ToList();
+    }
+
+    private static List<PermissionDescriptor> EnsureModuleScopedPermissions(
+        List<PermissionDescriptor> current,
+        IResourceDescriptorRegistry registry)
+    {
+        var byKey = current.ToDictionary(Key, p => p, StringComparer.Ordinal);
+        var moduleScoped = registry.GetPermissionDescriptors(null)
+            .Where(p => p.Resource?.ScopeKey?.StartsWith("module:", StringComparison.Ordinal) == true);
+        foreach (var p in moduleScoped)
+        {
+            var k = Key(p);
+            if (!byKey.ContainsKey(k))
+                byKey[k] = p;
         }
         return byKey.Values.ToList();
     }

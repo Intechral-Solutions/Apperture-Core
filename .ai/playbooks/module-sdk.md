@@ -10,9 +10,11 @@ A module provides:
 - Optional UI metadata (nav links, screens)
 - Permission/resource declarations
 
-## Resource and permission registration
+## Resource and permission registration (implemented)
 
-Modules receive `IResourceDescriptorRegistry` from host DI at startup and must call `RegisterResource` and `RegisterPermission` for any module-contributed resource types and permissions. Use `ActionConstants` and `ResourceTypeConstants` from Core.Domain.Governance for consistency; see ADR-0013 for naming conventions.
+Modules **declare** permissions in the **manifest** via the optional `Permissions` property (list of `ModulePermissionDeclaration`: Action, optional ResourceType). The host discovers known modules (e.g. DI-registered `IModule` instances), reads each manifest’s declared permissions, validates them per ADR-0013, and registers them at startup into the single `IResourceDescriptorRegistry` with scope `module:{moduleId}`. Modules do not receive the registry or call `RegisterPermission` themselves; registration is host-driven from manifest data.
+
+**Module permission declaration:** Add a `Permissions` list to your `ModuleManifest` (e.g. in `GetManifest()`). Each entry must have a valid Action (lowercase, at least two dot-separated segments). ResourceType is optional. Registration is automatic for modules that are registered with the host (e.g. via `AddKnownModules`). **Runtime enforcement:** Registered permissions are enforced on module/workflow API operations (e.g. listing workflows for a module, starting a workflow). The same `IAuthorizationService` and RBAC model apply; see [module-manifest-spec](../../docs/05-modules/module-manifest-spec.md) and [Epic 5 Prompt 2 summary](../../docs/02-decisions/Epic5-prompt2-module-workflow-enforcement-summary.md).
 
 **Constraints:**
 - Do not browse arbitrary global resources at runtime.
@@ -24,8 +26,8 @@ See auth and resource governance plan Section 7.2 (Forbidden) and 7.3 (Anti-Patt
 ## Metadata (manifest)
 
 - Id, Name, Version, Description
-- Capabilities
-- Required Permissions / Resources
+- Permissions (optional) — list of ModulePermissionDeclaration; registered at host startup
+- Capabilities (future)
 - Configuration schema (future UI-driven config)
 
 ## Workflow registration

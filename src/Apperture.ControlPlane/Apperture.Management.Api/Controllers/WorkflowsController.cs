@@ -1,3 +1,4 @@
+using Apperture.ControlPlane.Security;
 using Apperture.Core.Application;
 using Apperture.Management.Api.Models;
 using Apperture.RuntimePlane.Abstractions;
@@ -11,9 +12,25 @@ namespace Apperture.Management.Api.Controllers;
 [Authorize]
 public sealed class WorkflowsController : ControllerBase
 {
-    [HttpPost("{workflowId}/start")]
-    public ActionResult Start([FromRoute] string workflowId, [FromBody] StartWorkflowRequestBody? body)
+    private readonly IWorkflowStartAuthorizationService _workflowStartAuth;
+
+    public WorkflowsController(IWorkflowStartAuthorizationService workflowStartAuth)
     {
+        _workflowStartAuth = workflowStartAuth;
+    }
+
+    [HttpPost("{workflowId}/start")]
+    public async Task<ActionResult> Start([FromRoute] string workflowId, [FromBody] StartWorkflowRequestBody? body, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _workflowStartAuth.EnsureCanStartWorkflowAsync(new WorkflowDefinitionId(workflowId), cancellationToken);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return Forbid();
+        }
+
         var parameters = body?.Parameters;
         OrchestrationSafeValidator.ValidateParameters(parameters);
 
