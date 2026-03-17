@@ -11,7 +11,7 @@ public sealed class RunsControllerTests
     [Fact]
     public async Task GetRun_WhenMissing_Returns404()
     {
-        var controller = new RunsController(new StubRunQueryService(get: _ => null));
+        var controller = new RunsController(new StubRunQueryService(get: _ => null), new StubCancelService());
         var result = await controller.GetRun("missing", CancellationToken.None);
         result.Result.Should().BeOfType<NotFoundResult>();
     }
@@ -20,7 +20,8 @@ public sealed class RunsControllerTests
     public async Task GetRuns_ReturnsList()
     {
         var controller = new RunsController(new StubRunQueryService(
-            list: new[] { new RunSummaryDto("run-1", "inst-1", "wf-1", "requested", DateTimeOffset.UtcNow, null, null) }));
+            list: new[] { new RunSummaryDto("run-1", "inst-1", "wf-1", "requested", DateTimeOffset.UtcNow, null, null) }),
+            new StubCancelService());
         var result = await controller.GetRuns(CancellationToken.None);
         result.Result.Should().BeOfType<OkObjectResult>();
     }
@@ -41,6 +42,13 @@ public sealed class RunsControllerTests
 
         public ValueTask<RunDetailDto?> GetRunAsync(Apperture.RuntimePlane.Abstractions.OperationRunId id, CancellationToken cancellationToken = default) =>
             ValueTask.FromResult(_get(id.Value));
+    }
+
+    private sealed class StubCancelService : IWorkflowCancelService
+    {
+        public ValueTask<bool> RequestCancelAsync(
+            Apperture.RuntimePlane.Abstractions.OperationRunId runId,
+            CancellationToken cancellationToken = default) => ValueTask.FromResult(true);
     }
 }
 

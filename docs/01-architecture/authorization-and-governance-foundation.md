@@ -40,6 +40,17 @@ Workflows and operations can declare **definition-level required permissions**. 
   - module-owned workflow → `workflow.execute` at `module:{moduleId}`
   - otherwise → `workflow.start` at instance
 
+### Workflow cancel (cancel control surface)
+
+Cancellation reuses the **same executable permission model** as workflow start/read for the first iteration:
+
+- **If `WorkflowDefinition.RequiredPermissions` is non-empty:** ALL listed permissions are required to request cancel.
+- **If `WorkflowDefinition.RequiredPermissions` is null/empty:** fall back to coarse workflow permissions:
+  - module-owned workflow → `workflow.execute` at `module:{moduleId}`
+  - otherwise → `workflow.start` at instance
+
+Control plane persists durable cancel intent (`POST /api/runs/{runId}/cancel`); the instance-plane worker observes intent and transitions run/instance to the terminal `cancelled` state cooperatively at safe execution boundaries.
+
 ### Operations
 
 - **Model:** `OperationDefinition.RequiredPermissions` (already present).

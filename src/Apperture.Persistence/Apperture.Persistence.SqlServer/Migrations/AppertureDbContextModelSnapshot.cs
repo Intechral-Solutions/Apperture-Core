@@ -541,6 +541,34 @@ namespace Apperture.Persistence.SqlServer.Migrations
                     b.ToTable("UserRoles", (string)null);
                 });
 
+            modelBuilder.Entity("Apperture.Persistence.SqlServer.WorkflowCancelRequestEntity", b =>
+                {
+                    b.Property<string>("RunId")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<DateTimeOffset>("RequestedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("RequestedBy")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("WorkflowDefinitionId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("WorkflowInstanceId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.HasKey("RunId");
+
+                    b.ToTable("WorkflowCancelRequests", (string)null);
+                });
+
             modelBuilder.Entity("Apperture.Persistence.SqlServer.WorkflowInstanceEntity", b =>
                 {
                     b.Property<string>("Id")

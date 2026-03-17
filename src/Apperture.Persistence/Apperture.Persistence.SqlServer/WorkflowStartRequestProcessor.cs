@@ -23,6 +23,7 @@ public sealed class WorkflowStartRequestProcessor
     private const string RunningStatus = "running";
     private const string CompletedStatus = "completed";
     private const string FailedStatus = "failed";
+    private const string CancelledStatus = "cancelled";
 
     private readonly AppertureDbContext _db;
     private readonly IWorkflowExecutor _executor;
@@ -156,6 +157,16 @@ WHERE RunId = {runId} AND Status = {RunningStatus} AND ClaimedBy = {_workerId} A
 
         try
         {
+            // Cooperative cancel: if cancel was requested before execution begins, mark cancelled and stop.
+            if (await IsCancelRequestedAsync(runId, cancellationToken))
+            {
+                ApplyCancelled(request, instance, run);
+                await _db.SaveChangesAsync(cancellationToken);
+                if (tx is not null)
+                    await tx.CommitAsync(cancellationToken);
+                return;
+            }
+
             var definition = await ResolveDefinitionOrThrowAsync(request.WorkflowDefinitionId, cancellationToken);
             var parameters = DeserializeParameters(request.ParametersJson);
 
@@ -164,6 +175,16 @@ WHERE RunId = {runId} AND Status = {RunningStatus} AND ClaimedBy = {_workerId} A
                 // Heartbeat at step boundary: ensure we still own the lease before mutating authoritative state.
                 if (!await TryRenewLeaseAsync(runId, cancellationToken))
                     return;
+
+                // Cooperative cancel: stop before executing the next step.
+                if (await IsCancelRequestedAsync(runId, cancellationToken))
+                {
+                    ApplyCancelled(request, instance, run);
+                    await _db.SaveChangesAsync(cancellationToken);
+                    if (tx is not null)
+                        await tx.CommitAsync(cancellationToken);
+                    return;
+                }
 
                 instance.CurrentStepName = stepName;
                 instance.Version += 1;
@@ -186,6 +207,16 @@ WHERE RunId = {runId} AND Status = {RunningStatus} AND ClaimedBy = {_workerId} A
                 // Heartbeat after step completion: detect ownership loss (e.g. reclaim) and stop safely.
                 if (!await TryRenewLeaseAsync(runId, cancellationToken))
                     return;
+            }
+
+            // Cancel can arrive right as the last step completes; prefer cancelled over completed.
+            if (await IsCancelRequestedAsync(runId, cancellationToken))
+            {
+                ApplyCancelled(request, instance, run);
+                await _db.SaveChangesAsync(cancellationToken);
+                if (tx is not null)
+                    await tx.CommitAsync(cancellationToken);
+                return;
             }
 
             instance.CurrentStepName = null;
@@ -215,6 +246,26 @@ WHERE RunId = {runId} AND Status = {RunningStatus} AND ClaimedBy = {_workerId} A
             if (tx is not null)
                 await tx.CommitAsync(cancellationToken);
         }
+    }
+
+    private async ValueTask<bool> IsCancelRequestedAsync(string runId, CancellationToken cancellationToken)
+    {
+        return await _db.WorkflowCancelRequests.AsNoTracking()
+            .AnyAsync(x => x.RunId == runId, cancellationToken);
+    }
+
+    private static void ApplyCancelled(
+        WorkflowStartRequestEntity request,
+        WorkflowInstanceEntity instance,
+        OperationRunEntity run)
+    {
+        request.Status = CancelledStatus;
+        request.LastError = null;
+        instance.Status = CancelledStatus;
+        instance.CurrentStepName = null;
+        instance.UpdatedAt = DateTimeOffset.UtcNow;
+        run.Status = CancelledStatus;
+        run.CompletedAt = DateTimeOffset.UtcNow;
     }
 
     private async ValueTask<WorkflowDefinition> ResolveDefinitionOrThrowAsync(string workflowDefinitionId, CancellationToken cancellationToken)

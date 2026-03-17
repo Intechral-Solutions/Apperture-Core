@@ -63,6 +63,8 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IWorkflowPersistence, SqlWorkflowPersistence>();
         services.AddScoped<IWorkflowStartDispatchService, WorkflowStartDispatchService>();
         services.AddScoped<IWorkflowRunReadAuthorizationService, WorkflowRunReadAuthorizationService>();
+        services.AddScoped<IWorkflowRunCancelAuthorizationService, WorkflowRunCancelAuthorizationService>();
+        services.AddScoped<IWorkflowCancelService, WorkflowCancelService>();
         services.AddScoped<IRunQueryService, RunQueryService>();
         services.AddScoped<IModuleWorkflowListingService, ModuleWorkflowListingService>();
         services.AddScoped<IWorkflowStartAuthorizationService, WorkflowStartAuthorizationService>();

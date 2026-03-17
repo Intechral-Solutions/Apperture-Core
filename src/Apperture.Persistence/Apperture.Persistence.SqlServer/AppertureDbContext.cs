@@ -14,6 +14,7 @@ public class AppertureDbContext : DbContext
     public DbSet<WorkflowStepInstanceEntity> WorkflowStepInstances => Set<WorkflowStepInstanceEntity>();
     public DbSet<OperationRunEntity> OperationRuns => Set<OperationRunEntity>();
     public DbSet<WorkflowStartRequestEntity> WorkflowStartRequests => Set<WorkflowStartRequestEntity>();
+    public DbSet<WorkflowCancelRequestEntity> WorkflowCancelRequests => Set<WorkflowCancelRequestEntity>();
     public DbSet<AuditLogEntity> AuditLogs => Set<AuditLogEntity>();
     public DbSet<TelemetryEventEntity> TelemetryEvents => Set<TelemetryEventEntity>();
     public DbSet<SecretDescriptorEntity> SecretDescriptors => Set<SecretDescriptorEntity>();
@@ -81,6 +82,16 @@ public class AppertureDbContext : DbContext
             e.HasIndex(x => x.IdempotencyKey)
                 .IsUnique()
                 .HasFilter("[IdempotencyKey] IS NOT NULL");
+        });
+
+        modelBuilder.Entity<WorkflowCancelRequestEntity>(e =>
+        {
+            e.ToTable("WorkflowCancelRequests");
+            e.HasKey(x => x.RunId);
+            e.Property(x => x.RunId).HasMaxLength(64);
+            e.Property(x => x.WorkflowInstanceId).HasMaxLength(64);
+            e.Property(x => x.WorkflowDefinitionId).HasMaxLength(128);
+            e.Property(x => x.RequestedBy).HasMaxLength(256);
         });
 
         modelBuilder.Entity<AuditLogEntity>(e =>

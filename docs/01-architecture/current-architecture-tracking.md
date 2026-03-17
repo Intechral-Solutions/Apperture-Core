@@ -110,6 +110,15 @@ flowchart TB
 - **Step handlers:** modules register handlers via `IModuleStepHandlerRegistrar` into `IStepHandlerRegistry` (no demo-only handler wiring in the host).
 - **Guardrails:** WorkerHost validates at startup that workflow definition ids are unique across loaded modules and that each `WorkflowDefinition.ModuleId` matches the owning module manifest id; handler registrations are module-scoped and collisions fail fast.
 
+### Workflow cancellation (cancel control surface baseline)
+
+- **API surface:** `POST /api/runs/{runId}/cancel` persists durable cancel intent and returns `202 Accepted` (idempotent) when the run exists and the caller is authorized.
+- **Persistence:** cancel intent is stored in `WorkflowCancelRequests` keyed by `RunId` (one row per run).
+- **Worker behavior:** `WorkflowStartRequestProcessor` checks for cancel intent at safe boundaries (before execution begins, before each step, and just before writing terminal success). When observed for a non-terminal run/instance, it writes `cancelled` terminal status for:
+  - `WorkflowStartRequestEntity.Status`
+  - `OperationRunEntity.Status` (+ `CompletedAt`)
+  - `WorkflowInstanceEntity.Status` (+ clears `CurrentStepName`)
+
 ---
 
 ## Control Plane (Detail)
@@ -121,12 +130,14 @@ flowchart LR
         MenusController["MenusController<br/>GET /api/menus"]
         ModulesController["ModulesController<br/>GET /api/modules"]
         RunsController["RunsController<br/>GET /api/runs"]
+        RunsCancel["RunsController<br/>POST /api/runs/{id}/cancel"]
         WorkflowsController["WorkflowsController<br/>POST /workflows/{id}/start"]
         EnrollController["EnrollController<br/>POST /enroll"]
         
         MenusController --> |200 OK| DomainMenus
         ModulesController --> |200 OK| Empty/stub
         RunsController --> |200/404/403| SQL-backed runs
+        RunsCancel --> |202/404/403| Persisted cancel intent
         WorkflowsController --> |202/404/403| Persisted start handoff
         EnrollController --> IRuntimeEnrollmentService
     end
@@ -137,12 +148,12 @@ flowchart LR
 
 **Implemented:**
 - Menus API for Control Panel navigation
-- Modules, Runs return empty/stub data
-- WorkflowsController: parameter validation (rejects secret-bearing params), returns 501
+- Runs API: list/detail from SQL with executable-permission-based read authorization
+- Runs API: cancel persists durable intent (`POST /api/runs/{id}/cancel`)
+- WorkflowsController: start persists a durable handoff and returns `202 Accepted`
 - EnrollController: enrollment endpoint
 
 **Not implemented:**
-- Workflow start not wired to runtime
 - Signal endpoint
 - Schedule management API
 - Audit/telemetry browse API
