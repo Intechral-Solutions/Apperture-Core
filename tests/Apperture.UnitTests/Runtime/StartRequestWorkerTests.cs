@@ -1,7 +1,9 @@
 using Apperture.Persistence.SqlServer;
+using Apperture.Persistence.SqlServer.Options;
 using Apperture.RuntimePlane.Abstractions;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using Xunit;
 
 namespace Apperture.UnitTests.Runtime;
@@ -23,7 +25,7 @@ public sealed class StartRequestWorkerTests
         await db.SaveChangesAsync();
 
         var executor = new NoOpExecutor();
-        var processor = new WorkflowStartRequestProcessor(db, executor, "test-worker");
+        var processor = new WorkflowStartRequestProcessor(db, executor, "test-worker", DefaultLeaseOptions());
 
         (await processor.TryClaimAsync("r1")).Should().BeTrue();
         (await processor.TryClaimAsync("r1")).Should().BeFalse();
@@ -46,7 +48,7 @@ public sealed class StartRequestWorkerTests
         await db.SaveChangesAsync();
 
         var executor = new NoOpExecutor();
-        var processor = new WorkflowStartRequestProcessor(db, executor, "new-worker");
+        var processor = new WorkflowStartRequestProcessor(db, executor, "new-worker", DefaultLeaseOptions());
 
         (await processor.TryClaimAsync("r1")).Should().BeTrue();
 
@@ -73,7 +75,7 @@ public sealed class StartRequestWorkerTests
         await db.SaveChangesAsync();
 
         var executor = new NoOpExecutor();
-        var processor = new WorkflowStartRequestProcessor(db, executor, "other-worker");
+        var processor = new WorkflowStartRequestProcessor(db, executor, "other-worker", DefaultLeaseOptions());
 
         (await processor.TryClaimAsync("r1")).Should().BeFalse();
     }
@@ -110,7 +112,7 @@ public sealed class StartRequestWorkerTests
         await db.SaveChangesAsync();
 
         var executor = new NoOpExecutor();
-        var processor = new WorkflowStartRequestProcessor(db, executor, "test-worker");
+        var processor = new WorkflowStartRequestProcessor(db, executor, "test-worker", DefaultLeaseOptions());
 
         (await processor.TryClaimAsync("r1")).Should().BeTrue();
         await processor.ProcessClaimedAsync("r1");
@@ -159,7 +161,7 @@ public sealed class StartRequestWorkerTests
         await db.SaveChangesAsync();
 
         var executor = new ThrowingExecutor();
-        var processor = new WorkflowStartRequestProcessor(db, executor, "test-worker");
+        var processor = new WorkflowStartRequestProcessor(db, executor, "test-worker", DefaultLeaseOptions());
 
         (await processor.TryClaimAsync("r1")).Should().BeTrue();
         await processor.ProcessClaimedAsync("r1");
@@ -175,6 +177,99 @@ public sealed class StartRequestWorkerTests
         instance.Status.Should().Be("failed");
     }
 
+    [Fact]
+    public async Task ProcessClaimedAsync_RenewsLeaseDuringStepBoundaries()
+    {
+        var db = NewDb();
+        db.WorkflowStartRequests.Add(new WorkflowStartRequestEntity
+        {
+            RunId = "r1",
+            WorkflowInstanceId = "i1",
+            WorkflowDefinitionId = "Sample.HelloWorld.HelloWorld",
+            CreatedAt = DateTimeOffset.UtcNow,
+            Status = "requested"
+        });
+        db.WorkflowInstances.Add(new WorkflowInstanceEntity
+        {
+            Id = "i1",
+            DefinitionId = "Sample.HelloWorld.HelloWorld",
+            Status = "requested",
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow,
+            Version = 0
+        });
+        db.OperationRuns.Add(new OperationRunEntity
+        {
+            Id = "r1",
+            WorkflowInstanceId = "i1",
+            DefinitionId = "Sample.HelloWorld.HelloWorld",
+            Status = "requested",
+            CreatedAt = DateTimeOffset.UtcNow
+        });
+        await db.SaveChangesAsync();
+
+        var executor = new NoOpExecutor();
+        var processor = new WorkflowStartRequestProcessor(db, executor, "test-worker", DefaultLeaseOptions());
+        (await processor.TryClaimAsync("r1")).Should().BeTrue();
+
+        var before = (await db.WorkflowStartRequests.SingleAsync(x => x.RunId == "r1")).ClaimedAt;
+        await Task.Delay(5);
+
+        await processor.ProcessClaimedAsync("r1");
+
+        var after = (await db.WorkflowStartRequests.SingleAsync(x => x.RunId == "r1")).ClaimedAt;
+        after.Should().NotBeNull();
+        before.Should().NotBeNull();
+        after!.Value.Should().BeAfter(before!.Value);
+    }
+
+    [Fact]
+    public async Task ProcessClaimedAsync_StopsSafelyWhenOwnershipIsLost()
+    {
+        var db = NewDb();
+        db.WorkflowStartRequests.Add(new WorkflowStartRequestEntity
+        {
+            RunId = "r1",
+            WorkflowInstanceId = "i1",
+            WorkflowDefinitionId = "Sample.HelloWorld.HelloWorld",
+            CreatedAt = DateTimeOffset.UtcNow,
+            Status = "requested"
+        });
+        db.WorkflowInstances.Add(new WorkflowInstanceEntity
+        {
+            Id = "i1",
+            DefinitionId = "Sample.HelloWorld.HelloWorld",
+            Status = "requested",
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow,
+            Version = 0
+        });
+        db.OperationRuns.Add(new OperationRunEntity
+        {
+            Id = "r1",
+            WorkflowInstanceId = "i1",
+            DefinitionId = "Sample.HelloWorld.HelloWorld",
+            Status = "requested",
+            CreatedAt = DateTimeOffset.UtcNow
+        });
+        await db.SaveChangesAsync();
+
+        var executor = new OwnershipStealingExecutor(db);
+        var processor = new WorkflowStartRequestProcessor(db, executor, "worker-a", DefaultLeaseOptions());
+        (await processor.TryClaimAsync("r1")).Should().BeTrue();
+
+        await processor.ProcessClaimedAsync("r1");
+
+        var request = await db.WorkflowStartRequests.SingleAsync(x => x.RunId == "r1");
+        var instance = await db.WorkflowInstances.SingleAsync(x => x.Id == "i1");
+        var run = await db.OperationRuns.SingleAsync(x => x.Id == "r1");
+
+        // Must not write terminal state solely due to ownership loss.
+        request.Status.Should().Be("running");
+        run.Status.Should().Be("running");
+        instance.Status.Should().Be("running");
+    }
+
     private static AppertureDbContext NewDb()
     {
         var opts = new DbContextOptionsBuilder<AppertureDbContext>()
@@ -182,6 +277,9 @@ public sealed class StartRequestWorkerTests
             .Options;
         return new AppertureDbContext(opts);
     }
+
+    private static IOptions<WorkflowStartRequestLeaseOptions> DefaultLeaseOptions() =>
+        Options.Create(new WorkflowStartRequestLeaseOptions { LeaseTimeout = TimeSpan.FromMinutes(10) });
 }
 
 internal sealed class NoOpExecutor : IWorkflowExecutor
@@ -204,5 +302,33 @@ internal sealed class ThrowingExecutor : IWorkflowExecutor
         IReadOnlyDictionary<string, object?>? parameters,
         CancellationToken cancellationToken = default)
         => throw new InvalidOperationException("boom");
+}
+
+internal sealed class OwnershipStealingExecutor : IWorkflowExecutor
+{
+    private readonly AppertureDbContext _db;
+    private bool _stolen;
+
+    public OwnershipStealingExecutor(AppertureDbContext db) => _db = db;
+
+    public async ValueTask<object?> ExecuteStepAsync(
+        WorkflowDefinition definition,
+        string stepName,
+        WorkflowInstance instance,
+        IReadOnlyDictionary<string, object?>? parameters,
+        CancellationToken cancellationToken = default)
+    {
+        // Simulate a reclaim by another worker while a step is executing.
+        if (!_stolen)
+        {
+            var req = await _db.WorkflowStartRequests.SingleAsync(x => x.RunId == "r1", cancellationToken);
+            req.ClaimedBy = "worker-b";
+            req.ClaimedAt = DateTimeOffset.UtcNow;
+            await _db.SaveChangesAsync(cancellationToken);
+            _stolen = true;
+        }
+
+        return null;
+    }
 }
 

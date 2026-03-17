@@ -2,6 +2,7 @@ using Apperture.Bootstrap;
 using Apperture.ConnectorResolution;
 using Apperture.Core.Application.Execution;
 using Apperture.Persistence.SqlServer;
+using Apperture.Persistence.SqlServer.Options;
 using Apperture.RuntimeHost.Windows.WorkerHost;
 using Apperture.RuntimePlane.Abstractions;
 using Apperture.RuntimePlane.Engine;
@@ -10,6 +11,9 @@ using Apperture.RuntimePlane.Engine;
 // There is no separate local-only runtime secret store in the current design.
 
 var builder = Host.CreateApplicationBuilder(args);
+
+builder.Services.Configure<WorkflowStartRequestLeaseOptions>(
+    builder.Configuration.GetSection("WorkflowStartRequestLease"));
 
 builder.Services.AddAppertureBootstrap(builder.Configuration);
 builder.Services.AddApperturePersistence(

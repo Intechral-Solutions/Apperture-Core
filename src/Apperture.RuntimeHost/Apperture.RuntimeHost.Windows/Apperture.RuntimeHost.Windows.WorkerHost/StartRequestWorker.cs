@@ -1,8 +1,10 @@
 using Apperture.Persistence.SqlServer;
+using Apperture.Persistence.SqlServer.Options;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace Apperture.RuntimeHost.Windows.WorkerHost;
 
@@ -18,13 +20,18 @@ public sealed class StartRequestWorker : BackgroundService
     private readonly ILogger<StartRequestWorker> _logger;
     private readonly TimeSpan _pollInterval;
     private readonly string _workerId;
+    private readonly IOptions<WorkflowStartRequestLeaseOptions> _leaseOptions;
 
-    public StartRequestWorker(IServiceScopeFactory scopeFactory, ILogger<StartRequestWorker> logger)
+    public StartRequestWorker(
+        IServiceScopeFactory scopeFactory,
+        ILogger<StartRequestWorker> logger,
+        IOptions<WorkflowStartRequestLeaseOptions> leaseOptions)
     {
         _scopeFactory = scopeFactory;
         _logger = logger;
         _pollInterval = TimeSpan.FromSeconds(2);
         _workerId = $"windows-worker:{Environment.MachineName}:{Guid.NewGuid():N}"[..64];
+        _leaseOptions = leaseOptions;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -38,11 +45,11 @@ public sealed class StartRequestWorker : BackgroundService
                 using var scope = _scopeFactory.CreateScope();
                 var db = scope.ServiceProvider.GetRequiredService<AppertureDbContext>();
                 var executor = scope.ServiceProvider.GetRequiredService<Apperture.RuntimePlane.Abstractions.IWorkflowExecutor>();
-                var processor = new WorkflowStartRequestProcessor(db, executor, _workerId, _logger);
+                var processor = new WorkflowStartRequestProcessor(db, executor, _workerId, _leaseOptions, _logger);
 
                 // Best-effort: attempt a small batch each poll.
                 var now = DateTimeOffset.UtcNow;
-                var staleBefore = now - TimeSpan.FromMinutes(10);
+                var staleBefore = now - _leaseOptions.Value.LeaseTimeout;
                 var pending = await db.WorkflowStartRequests.AsNoTracking()
                     .Where(x =>
                         (x.Status == RequestedStatus && x.ClaimedAt == null) ||

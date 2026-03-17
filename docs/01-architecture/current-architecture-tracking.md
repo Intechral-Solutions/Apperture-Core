@@ -96,6 +96,13 @@ flowchart TB
 | **CLI** | Partially | Bootstrap CLI scaffolding; PowerShell; invokes stubs |
 | **Module SDK** | Implemented | Abstractions, SDK, test harness (stub) |
 
+### WorkflowStartRequests lease and ownership (current baseline)
+
+- **Lease model:** `WorkflowStartRequests` uses `ClaimedAt`/`ClaimedBy` as a lease. A request may be reclaimed when `Status == running` and `ClaimedAt` is older than the configured lease timeout.
+- **Renewal / heartbeat:** the active worker renews the lease by refreshing `ClaimedAt` at **step boundaries** (before and after each step) while executing.
+- **Ownership enforcement:** processing is valid only for the current owner (`ClaimedBy`). If ownership is lost (another worker successfully reclaims), the old worker **stops safely** and does not write terminal `completed/failed` status.
+- **Configuration:** lease timeout is configured via a single options seam (`WorkflowStartRequestLeaseOptions.LeaseTimeout`) consumed by both worker discovery and processor claim/reclaim/renewal.
+
 ---
 
 ## Control Plane (Detail)

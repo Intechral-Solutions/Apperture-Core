@@ -2,6 +2,8 @@ using System.Text.Json;
 using Apperture.RuntimePlane.Abstractions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using Apperture.Persistence.SqlServer.Options;
 
 namespace Apperture.Persistence.SqlServer;
 
@@ -21,30 +23,30 @@ public sealed class WorkflowStartRequestProcessor
     private const string CompletedStatus = "completed";
     private const string FailedStatus = "failed";
 
-    // Baseline-safety lease: if a worker crashes after claiming, another worker may reclaim after this timeout.
-    private static readonly TimeSpan ClaimLeaseTimeout = TimeSpan.FromMinutes(10);
-
     private readonly AppertureDbContext _db;
     private readonly IWorkflowExecutor _executor;
     private readonly ILogger? _logger;
     private readonly string _workerId;
+    private readonly WorkflowStartRequestLeaseOptions _leaseOptions;
 
     public WorkflowStartRequestProcessor(
         AppertureDbContext db,
         IWorkflowExecutor executor,
         string workerId,
+        IOptions<WorkflowStartRequestLeaseOptions> leaseOptions,
         ILogger? logger = null)
     {
         _db = db;
         _executor = executor;
         _workerId = workerId;
+        _leaseOptions = leaseOptions.Value;
         _logger = logger;
     }
 
     public async Task<bool> TryClaimAsync(string runId, CancellationToken cancellationToken = default)
     {
         var now = DateTimeOffset.UtcNow;
-        var staleBefore = now - ClaimLeaseTimeout;
+        var staleBefore = now - _leaseOptions.LeaseTimeout;
 
         if (_db.Database.IsRelational())
         {
@@ -78,6 +80,36 @@ WHERE RunId = {runId} AND (
         return true;
     }
 
+    private async Task<bool> TryRenewLeaseAsync(string runId, CancellationToken cancellationToken)
+    {
+        var now = DateTimeOffset.UtcNow;
+
+        if (_db.Database.IsRelational())
+        {
+            var affected = await _db.Database.ExecuteSqlInterpolatedAsync($@"
+UPDATE WorkflowStartRequests
+SET ClaimedAt = {now}
+WHERE RunId = {runId} AND Status = {RunningStatus} AND ClaimedBy = {_workerId} AND ClaimedAt IS NOT NULL
+", cancellationToken);
+            return affected == 1;
+        }
+
+        // Fallback path for in-memory provider (tests)
+        var entity = await _db.WorkflowStartRequests.FirstOrDefaultAsync(x => x.RunId == runId, cancellationToken);
+        if (entity is null)
+            return false;
+        if (!string.Equals(entity.Status, RunningStatus, StringComparison.Ordinal))
+            return false;
+        if (!string.Equals(entity.ClaimedBy, _workerId, StringComparison.Ordinal))
+            return false;
+        if (entity.ClaimedAt is null)
+            return false;
+
+        entity.ClaimedAt = now;
+        await _db.SaveChangesAsync(cancellationToken);
+        return true;
+    }
+
     public async Task ProcessClaimedAsync(string runId, CancellationToken cancellationToken = default)
     {
         await using var tx = _db.Database.IsRelational()
@@ -89,8 +121,13 @@ WHERE RunId = {runId} AND (
         if (request is null)
             return;
 
-        // If another worker already completed it (shouldn't happen post-claim), bail.
+        // Ownership enforcement: processing is valid only for the current lease owner.
+        // Ownership loss is a coordination event; stop safely without writing terminal lifecycle state.
         if (!string.Equals(request.Status, RunningStatus, StringComparison.Ordinal))
+            return;
+        if (request.ClaimedAt is null)
+            return;
+        if (!string.Equals(request.ClaimedBy, _workerId, StringComparison.Ordinal))
             return;
 
         var instance = await _db.WorkflowInstances
@@ -120,6 +157,10 @@ WHERE RunId = {runId} AND (
 
             foreach (var stepName in definition.StepNames)
             {
+                // Heartbeat at step boundary: ensure we still own the lease before mutating authoritative state.
+                if (!await TryRenewLeaseAsync(runId, cancellationToken))
+                    return;
+
                 instance.CurrentStepName = stepName;
                 instance.Version += 1;
                 instance.UpdatedAt = DateTimeOffset.UtcNow;
@@ -137,6 +178,10 @@ WHERE RunId = {runId} AND (
                     instance.Version);
 
                 await _executor.ExecuteStepAsync(definition, stepName, domainInstance, parameters, cancellationToken);
+
+                // Heartbeat after step completion: detect ownership loss (e.g. reclaim) and stop safely.
+                if (!await TryRenewLeaseAsync(runId, cancellationToken))
+                    return;
             }
 
             instance.CurrentStepName = null;

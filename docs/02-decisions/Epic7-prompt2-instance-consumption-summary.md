@@ -31,6 +31,8 @@ Epic 7 Prompt 2 makes the **instance plane** consume the persisted workflow star
 
 - **Recoverable claiming**: a claimed request is now treated as a lease. If a worker crashes after claiming, the request becomes eligible for reclaim after a timeout and another worker can pick it up.
 - **Discovery includes stale running**: the poll loop now considers both unclaimed `requested` requests and stale `running` requests with expired leases.
+- **Lease renewal (Epic 8 Prompt A)**: while executing, the lease owner renews `ClaimedAt` at step boundaries so long-running execution does not become reclaimable solely due to elapsed time.
+- **Ownership enforcement (Epic 8 Prompt A)**: processing enforces `ClaimedBy` ownership; if a worker loses ownership (successful reclaim by another worker), the old worker stops safely without writing terminal `completed/failed` state.
 
 ## Current scope / limitations
 
@@ -43,4 +45,5 @@ Epic 7 Prompt 2 makes the **instance plane** consume the persisted workflow star
 - Richer lifecycle and retries/backoff/poison-queue behavior
 - Cloud runtime adapters (Durable Functions) beyond the current stubbed path
 - Rich execution telemetry and UI surfaces
+- Prompt B: generic worker-side definition resolution and module-driven step handler registration
 
