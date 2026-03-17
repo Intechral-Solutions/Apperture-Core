@@ -47,6 +47,7 @@ public sealed class RealBootstrapRecoveryService : IBootstrapRecoveryService
                 Outcome = "Denied",
                 Details = auth.Reason
             }, cancellationToken).ConfigureAwait(false);
+            await AppendRecoveryToPlatformAuditAsync("recovery.restore_platform_access.denied", auth.Reason ?? "Recovery not authorized.", cancellationToken).ConfigureAwait(false);
             return new BootstrapRecoveryResult { Success = false, Message = auth.Reason ?? "Recovery not authorized." };
         }
 
@@ -79,6 +80,19 @@ public sealed class RealBootstrapRecoveryService : IBootstrapRecoveryService
                 Outcome = "Failed",
                 Details = "Target user not found."
             }, cancellationToken).ConfigureAwait(false);
+            if (platformAudit is not null)
+            {
+                var failedRecord = new AuditRecord(
+                    new AuditRecordId(Guid.NewGuid().ToString("N")),
+                    new ActorId("recovery"),
+                    "recovery.restore_platform_access.failed",
+                    new ResourceDescriptor(ResourceTypeConstants.User, ScopeKeyConstants.Instance),
+                    "recovery",
+                    DateTimeOffset.UtcNow,
+                    new CorrelationId(null),
+                    "Target user not found.");
+                await platformAudit.AppendAsync(failedRecord, cancellationToken).ConfigureAwait(false);
+            }
             return new BootstrapRecoveryResult { Success = false, Message = "Target user not found. Specify TargetUserId or TargetExternalId and TargetIdentitySource." };
         }
 
@@ -132,6 +146,27 @@ public sealed class RealBootstrapRecoveryService : IBootstrapRecoveryService
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Writes a recovery outcome to platform audit (durable). No secrets or proof. Used for denied and optionally other outcomes.
+    /// </summary>
+    private async Task AppendRecoveryToPlatformAuditAsync(string action, string? details, CancellationToken cancellationToken)
+    {
+        await using var scope = _scopeFactory.CreateAsyncScope();
+        var platformAudit = scope.ServiceProvider.GetService<IAuditService>();
+        if (platformAudit is null)
+            return;
+        var record = new AuditRecord(
+            new AuditRecordId(Guid.NewGuid().ToString("N")),
+            new ActorId("recovery"),
+            action,
+            new ResourceDescriptor(ResourceTypeConstants.User, ScopeKeyConstants.Instance),
+            "recovery",
+            DateTimeOffset.UtcNow,
+            new CorrelationId(null),
+            details);
+        await platformAudit.AppendAsync(record, cancellationToken).ConfigureAwait(false);
     }
 
     private static IdentitySource? ParseIdentitySource(string value)

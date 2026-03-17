@@ -72,6 +72,7 @@ public sealed class UserManagementService : IUserManagementService
     public async ValueTask<UserId> CreateUserAsync(string displayName, IdentitySource source, string externalId, string? password = null, CancellationToken cancellationToken = default)
     {
         var actorId = await RequireUserManageAsync(cancellationToken);
+        await AppendBreakGlassUseAuditIfNeededAsync("user.create", actorId, cancellationToken);
         ValidateEntraExternalId(source, externalId);
         var linkExternalId = source == IdentitySource.Local
             ? LocalAuthHelpers.NormalizeUsername(externalId)
@@ -105,6 +106,7 @@ public sealed class UserManagementService : IUserManagementService
     public async ValueTask AddIdentityLinkAsync(UserId userId, IdentitySource source, string externalId, CancellationToken cancellationToken = default)
     {
         var actorId = await RequireUserManageAsync(cancellationToken);
+        await AppendBreakGlassUseAuditIfNeededAsync("identity_link.add", actorId, cancellationToken);
         ValidateEntraExternalId(source, externalId);
         var linkExternalId = source == IdentitySource.Local
             ? LocalAuthHelpers.NormalizeUsername(externalId)
@@ -118,6 +120,7 @@ public sealed class UserManagementService : IUserManagementService
     public async ValueTask RemoveIdentityLinkAsync(UserId userId, IdentitySource source, string externalId, CancellationToken cancellationToken = default)
     {
         var actorId = await RequireUserManageAsync(cancellationToken);
+        await AppendBreakGlassUseAuditIfNeededAsync("identity_link.remove", actorId, cancellationToken);
         var linkExternalId = source == IdentitySource.Local
             ? LocalAuthHelpers.NormalizeUsername(externalId)
             : externalId.Trim();
@@ -130,6 +133,7 @@ public sealed class UserManagementService : IUserManagementService
     public async ValueTask AssignRoleAsync(UserId userId, RoleId roleId, CancellationToken cancellationToken = default)
     {
         var actorId = await RequireRoleAssignAsync(cancellationToken);
+        await AppendBreakGlassUseAuditIfNeededAsync("role.assign", actorId, cancellationToken);
         var user = await _userRepository.GetByIdAsync(userId, cancellationToken);
         if (user is null)
             throw new InvalidOperationException($"User {userId.Value} not found.");
@@ -145,6 +149,7 @@ public sealed class UserManagementService : IUserManagementService
     public async ValueTask RemoveRoleAsync(UserId userId, RoleId roleId, CancellationToken cancellationToken = default)
     {
         var actorId = await RequireRoleAssignAsync(cancellationToken);
+        await AppendBreakGlassUseAuditIfNeededAsync("role.remove", actorId, cancellationToken);
         var user = await _userRepository.GetByIdAsync(userId, cancellationToken);
         if (user is null)
             throw new InvalidOperationException($"User {userId.Value} not found.");
@@ -170,6 +175,7 @@ public sealed class UserManagementService : IUserManagementService
     public async ValueTask SetLocalPasswordAsync(UserId userId, string newPassword, CancellationToken cancellationToken = default)
     {
         var actorId = await RequireCredentialManageAsync(cancellationToken);
+        await AppendBreakGlassUseAuditIfNeededAsync("credential.password_set", actorId, cancellationToken);
         var user = await _userRepository.GetByIdAsync(userId, cancellationToken);
         if (user is null)
             throw new InvalidOperationException($"User {userId.Value} not found.");
@@ -188,6 +194,7 @@ public sealed class UserManagementService : IUserManagementService
     public async ValueTask SetLocalCredentialDisabledAsync(UserId userId, bool disabled, CancellationToken cancellationToken = default)
     {
         var actorId = await RequireCredentialManageAsync(cancellationToken);
+        await AppendBreakGlassUseAuditIfNeededAsync(disabled ? "credential.disabled" : "credential.enabled", actorId, cancellationToken);
         var user = await _userRepository.GetByIdAsync(userId, cancellationToken);
         if (user is null)
             throw new InvalidOperationException($"User {userId.Value} not found.");
@@ -279,6 +286,26 @@ public sealed class UserManagementService : IUserManagementService
             throw new InvalidOperationException("Entra external id must not be null or empty. Use the stable subject (oid or sub) from the token.");
         if (externalId.Contains('@'))
             throw new InvalidOperationException("Entra external id must be the stable subject (oid or sub), not an email or UPN.");
+    }
+
+    /// <summary>
+    /// If the current session is break-glass, appends a durable audit record for the auth-admin operation (visibility only; no secrets).
+    /// </summary>
+    private async ValueTask AppendBreakGlassUseAuditIfNeededAsync(string operation, ActorId actorId, CancellationToken cancellationToken)
+    {
+        var actor = await _principalContext.GetCurrentActorAsync(cancellationToken);
+        if (actor is not HumanActor human || !human.IsBreakGlassSession)
+            return;
+        var record = new AuditRecord(
+            new AuditRecordId(Guid.NewGuid().ToString("N")),
+            actorId,
+            "auth.break_glass.admin_operation",
+            new ResourceDescriptor(ResourceTypeConstants.User, ScopeKeyConstants.Instance),
+            "auth",
+            DateTimeOffset.UtcNow,
+            new CorrelationId(null),
+            $"operation={operation}");
+        await _audit.AppendAsync(record, cancellationToken);
     }
 
     private async ValueTask AppendAuditAsync(string action, ActorId actorId, string? resourceId, string? details, CancellationToken cancellationToken)

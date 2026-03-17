@@ -38,8 +38,8 @@ Implemented (Epic 4). Idempotent platform-admin permission seed repair at startu
 ## Audit events (new or updated)
 
 - **Blocked operations:** `auth_admin.blocked.last_platform_admin_removal`, `auth_admin.blocked.last_admin_credential_disabled` (IAuditService.AppendAsync, Outcome auth-admin; minimal details).
-- **Break-glass:** `auth.break_glass.login.success`, `auth.break_glass.login.failed` (no user-existence hint on failure).
-- **Recovery:** Existing `IBootstrapAuditWriter.WriteRecoveryAsync` (Outcome: Denied, Authorized, Executed, Failed). Optional platform audit `recovery.restore_platform_access.executed` when assignment succeeds.
+- **Break-glass:** `auth.break_glass.login.success`, `auth.break_glass.login.failed` (no user-existence hint on failure). **Corrective pass:** `auth.break_glass.admin_operation` when a break-glass session performs an auth-admin mutation (user create, identity-link add/remove, role assign/remove, credential set/disable); emitted by UserManagementService, Outcome auth.
+- **Recovery:** Existing `IBootstrapAuditWriter.WriteRecoveryAsync` (Outcome: Denied, Authorized, Executed, Failed). Platform audit (durable): `recovery.restore_platform_access.executed`, **corrective pass** `recovery.restore_platform_access.denied`, and `recovery.restore_platform_access.failed` so all outcomes are visible in AuditLogs even when the bootstrap audit writer is stubbed.
 
 ## Entra external-id validation
 
@@ -55,6 +55,15 @@ Implemented (Epic 4). Idempotent platform-admin permission seed repair at startu
 - **Management.Host:** Program.cs (AddAppertureRecovery).
 - **Docs:** next-stage-platform-auth.md, authorization-and-governance-foundation.md, bootstrap-recovery-and-break-glass.md, Epic4-recovery-break-glass-implementation-summary.md (this file).
 
+## Corrective pass (post–Epic 4)
+
+A narrow visibility pass was completed after Epic 4:
+
+- **Durable recovery audit:** Denied and failed recovery attempts are now written to **platform audit** (IAuditService) in addition to IBootstrapAuditWriter. Actions: `recovery.restore_platform_access.denied` (details = authorizer reason, no proof), `recovery.restore_platform_access.failed` (target user not found). Executed continued to use `recovery.restore_platform_access.executed`. All three outcomes are thus durably visible in AuditLogs.
+- **Break-glass-use visibility:** When a break-glass session performs an auth-admin mutation in UserManagementService (user create, identity-link add/remove, role assign/remove, credential set/disable), the service appends `auth.break_glass.admin_operation` with details `operation={name}`. Reads and non–auth-admin operations do not emit this event.
+
+**Remains deferred:** Real IBootstrapAuditWriter implementation; per-request or platform-wide authorization audit; break-glass visibility for non–auth-admin operations; shorter break-glass session lifetime or step-up reauth. See [Epic 4 corrective pass summary](Epic4-corrective-pass-summary.md).
+
 ## Remaining for later
 
 - Broad admin UI, self-service password reset, SCIM/Entra sync, module permission contribution, broad observability dashboards, advanced federation, runtime trust redesign, relationship authorization expansion, reauth UX for all sensitive actions, full Entra external-id validation beyond the narrow check. CLI recovery-unlock wiring (build request with target user and proof from config/env) when running with DB.
@@ -64,3 +73,4 @@ Implemented (Epic 4). Idempotent platform-admin permission seed repair at startu
 - [Next Stage: Platform Auth Readiness](../01-architecture/next-stage-platform-auth.md)
 - [Authorization and Governance Foundation](../01-architecture/authorization-and-governance-foundation.md)
 - [Bootstrap Recovery and Break-Glass](../01-architecture/bootstrap-recovery-and-break-glass.md)
+- [Epic 4 corrective pass summary](Epic4-corrective-pass-summary.md)
