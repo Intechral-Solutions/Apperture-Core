@@ -60,6 +60,56 @@ public sealed class WorkflowCancelServiceTests
             .Should().ThrowAsync<UnauthorizedAccessException>();
     }
 
+    [Fact]
+    public async Task RequestCancelAsync_OnCompletedRun_PersistsCancelIntentWithoutRewritingTerminalStatus()
+    {
+        var db = NewDb();
+        db.OperationRuns.Add(new OperationRunEntity
+        {
+            Id = "r1",
+            WorkflowInstanceId = "i1",
+            DefinitionId = "Sample.HelloWorld.HelloWorld",
+            Status = "completed",
+            CreatedAt = DateTimeOffset.UtcNow,
+            CompletedAt = DateTimeOffset.UtcNow
+        });
+        await db.SaveChangesAsync();
+
+        var svc = new WorkflowCancelService(db, new AllowAuthz());
+
+        (await svc.RequestCancelAsync(new OperationRunId("r1"))).Should().BeTrue();
+
+        var run = await db.OperationRuns.SingleAsync(x => x.Id == "r1");
+        run.Status.Should().Be("completed");
+        var cancel = await db.WorkflowCancelRequests.SingleAsync(x => x.RunId == "r1");
+        cancel.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task RequestCancelAsync_OnFailedRun_PersistsCancelIntentWithoutRewritingTerminalStatus()
+    {
+        var db = NewDb();
+        db.OperationRuns.Add(new OperationRunEntity
+        {
+            Id = "r1",
+            WorkflowInstanceId = "i1",
+            DefinitionId = "Sample.HelloWorld.HelloWorld",
+            Status = "failed",
+            CreatedAt = DateTimeOffset.UtcNow,
+            CompletedAt = DateTimeOffset.UtcNow
+        });
+        await db.SaveChangesAsync();
+
+        var svc = new WorkflowCancelService(db, new AllowAuthz());
+
+        (await svc.RequestCancelAsync(new OperationRunId("r1"))).Should().BeTrue();
+
+        var run = await db.OperationRuns.SingleAsync(x => x.Id == "r1");
+        run.Status.Should().Be("failed");
+        var cancel = await db.WorkflowCancelRequests.SingleAsync(x => x.RunId == "r1");
+        cancel.Should().NotBeNull();
+    }
+
     private static AppertureDbContext NewDb()
     {
         var opts = new DbContextOptionsBuilder<AppertureDbContext>()
