@@ -1,5 +1,6 @@
 using Apperture.Persistence.SqlServer;
 using Apperture.Persistence.SqlServer.Options;
+using Apperture.ModuleSdk.Abstractions;
 using Apperture.RuntimePlane.Abstractions;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
@@ -25,7 +26,7 @@ public sealed class StartRequestWorkerTests
         await db.SaveChangesAsync();
 
         var executor = new NoOpExecutor();
-        var processor = new WorkflowStartRequestProcessor(db, executor, "test-worker", DefaultLeaseOptions());
+        var processor = new WorkflowStartRequestProcessor(db, executor, DefaultDefinitionResolver(), "test-worker", DefaultLeaseOptions());
 
         (await processor.TryClaimAsync("r1")).Should().BeTrue();
         (await processor.TryClaimAsync("r1")).Should().BeFalse();
@@ -48,7 +49,7 @@ public sealed class StartRequestWorkerTests
         await db.SaveChangesAsync();
 
         var executor = new NoOpExecutor();
-        var processor = new WorkflowStartRequestProcessor(db, executor, "new-worker", DefaultLeaseOptions());
+        var processor = new WorkflowStartRequestProcessor(db, executor, DefaultDefinitionResolver(), "new-worker", DefaultLeaseOptions());
 
         (await processor.TryClaimAsync("r1")).Should().BeTrue();
 
@@ -75,7 +76,7 @@ public sealed class StartRequestWorkerTests
         await db.SaveChangesAsync();
 
         var executor = new NoOpExecutor();
-        var processor = new WorkflowStartRequestProcessor(db, executor, "other-worker", DefaultLeaseOptions());
+        var processor = new WorkflowStartRequestProcessor(db, executor, DefaultDefinitionResolver(), "other-worker", DefaultLeaseOptions());
 
         (await processor.TryClaimAsync("r1")).Should().BeFalse();
     }
@@ -112,7 +113,7 @@ public sealed class StartRequestWorkerTests
         await db.SaveChangesAsync();
 
         var executor = new NoOpExecutor();
-        var processor = new WorkflowStartRequestProcessor(db, executor, "test-worker", DefaultLeaseOptions());
+        var processor = new WorkflowStartRequestProcessor(db, executor, DefaultDefinitionResolver(), "test-worker", DefaultLeaseOptions());
 
         (await processor.TryClaimAsync("r1")).Should().BeTrue();
         await processor.ProcessClaimedAsync("r1");
@@ -161,7 +162,7 @@ public sealed class StartRequestWorkerTests
         await db.SaveChangesAsync();
 
         var executor = new ThrowingExecutor();
-        var processor = new WorkflowStartRequestProcessor(db, executor, "test-worker", DefaultLeaseOptions());
+        var processor = new WorkflowStartRequestProcessor(db, executor, DefaultDefinitionResolver(), "test-worker", DefaultLeaseOptions());
 
         (await processor.TryClaimAsync("r1")).Should().BeTrue();
         await processor.ProcessClaimedAsync("r1");
@@ -209,7 +210,7 @@ public sealed class StartRequestWorkerTests
         await db.SaveChangesAsync();
 
         var executor = new NoOpExecutor();
-        var processor = new WorkflowStartRequestProcessor(db, executor, "test-worker", DefaultLeaseOptions());
+        var processor = new WorkflowStartRequestProcessor(db, executor, DefaultDefinitionResolver(), "test-worker", DefaultLeaseOptions());
         (await processor.TryClaimAsync("r1")).Should().BeTrue();
 
         var before = (await db.WorkflowStartRequests.SingleAsync(x => x.RunId == "r1")).ClaimedAt;
@@ -255,7 +256,7 @@ public sealed class StartRequestWorkerTests
         await db.SaveChangesAsync();
 
         var executor = new OwnershipStealingExecutor(db);
-        var processor = new WorkflowStartRequestProcessor(db, executor, "worker-a", DefaultLeaseOptions());
+        var processor = new WorkflowStartRequestProcessor(db, executor, DefaultDefinitionResolver(), "worker-a", DefaultLeaseOptions());
         (await processor.TryClaimAsync("r1")).Should().BeTrue();
 
         await processor.ProcessClaimedAsync("r1");
@@ -280,6 +281,13 @@ public sealed class StartRequestWorkerTests
 
     private static IOptions<WorkflowStartRequestLeaseOptions> DefaultLeaseOptions() =>
         Options.Create(new WorkflowStartRequestLeaseOptions { LeaseTimeout = TimeSpan.FromMinutes(10) });
+
+    private static IWorkflowDefinitionResolver DefaultDefinitionResolver() =>
+        new SingleDefinitionResolver(new WorkflowDefinition(
+            new WorkflowDefinitionId("Sample.HelloWorld.HelloWorld"),
+            "HelloWorld",
+            "Sample.HelloWorld",
+            new[] { "Validate", "DoWork", "Complete" }));
 }
 
 internal sealed class NoOpExecutor : IWorkflowExecutor
@@ -330,5 +338,15 @@ internal sealed class OwnershipStealingExecutor : IWorkflowExecutor
 
         return null;
     }
+}
+
+internal sealed class SingleDefinitionResolver : IWorkflowDefinitionResolver
+{
+    private readonly WorkflowDefinition _definition;
+
+    public SingleDefinitionResolver(WorkflowDefinition definition) => _definition = definition;
+
+    public ValueTask<WorkflowDefinition?> GetByIdAsync(WorkflowDefinitionId id, CancellationToken cancellationToken = default) =>
+        ValueTask.FromResult<WorkflowDefinition?>(string.Equals(id.Value, _definition.Id.Value, StringComparison.Ordinal) ? _definition : null);
 }
 

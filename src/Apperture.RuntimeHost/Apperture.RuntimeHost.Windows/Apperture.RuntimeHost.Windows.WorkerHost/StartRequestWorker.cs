@@ -1,5 +1,6 @@
 using Apperture.Persistence.SqlServer;
 using Apperture.Persistence.SqlServer.Options;
+using Apperture.ModuleSdk.Abstractions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -45,7 +46,8 @@ public sealed class StartRequestWorker : BackgroundService
                 using var scope = _scopeFactory.CreateScope();
                 var db = scope.ServiceProvider.GetRequiredService<AppertureDbContext>();
                 var executor = scope.ServiceProvider.GetRequiredService<Apperture.RuntimePlane.Abstractions.IWorkflowExecutor>();
-                var processor = new WorkflowStartRequestProcessor(db, executor, _workerId, _leaseOptions, _logger);
+                var definitionResolver = scope.ServiceProvider.GetRequiredService<IWorkflowDefinitionResolver>();
+                var processor = new WorkflowStartRequestProcessor(db, executor, definitionResolver, _workerId, _leaseOptions, _logger);
 
                 // Best-effort: attempt a small batch each poll.
                 var now = DateTimeOffset.UtcNow;

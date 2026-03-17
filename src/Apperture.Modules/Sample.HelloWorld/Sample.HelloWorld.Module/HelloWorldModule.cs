@@ -1,10 +1,11 @@
 using Apperture.ModuleSdk.Abstractions;
 using Apperture.RuntimePlane.Abstractions;
 using Apperture.Shared.Kernel;
+using Apperture.Core.Application.Execution;
 
 namespace Sample.HelloWorld;
 
-public sealed class HelloWorldModule : IModule
+public sealed class HelloWorldModule : IModule, IModuleStepHandlerRegistrar
 {
     private static readonly WorkflowDefinitionId DefinitionId = new("Sample.HelloWorld.HelloWorld");
     private const string ModuleId = "Sample.HelloWorld";
@@ -30,5 +31,10 @@ public sealed class HelloWorldModule : IModule
                 new PermissionDescriptor("workflow.execute", new ResourceDescriptor("WorkflowInstance", $"module:{ModuleId}"))
             ]);
         await Task.CompletedTask.ConfigureAwait(false);
+    }
+
+    public void RegisterStepHandlers(IStepHandlerRegistry registry)
+    {
+        registry.Register(ModuleId, "DoWork", new HelloWorldDoWorkStepHandler());
     }
 }

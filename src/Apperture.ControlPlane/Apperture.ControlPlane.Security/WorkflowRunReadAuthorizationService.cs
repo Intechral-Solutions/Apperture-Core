@@ -1,5 +1,6 @@
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Governance;
+using Apperture.ModuleSdk.Abstractions;
 using Apperture.RuntimePlane.Abstractions;
 using Apperture.Shared.Kernel;
 

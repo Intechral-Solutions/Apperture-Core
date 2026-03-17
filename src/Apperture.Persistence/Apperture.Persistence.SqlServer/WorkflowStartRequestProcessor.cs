@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Apperture.ModuleSdk.Abstractions;
 using Apperture.RuntimePlane.Abstractions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -25,6 +26,7 @@ public sealed class WorkflowStartRequestProcessor
 
     private readonly AppertureDbContext _db;
     private readonly IWorkflowExecutor _executor;
+    private readonly IWorkflowDefinitionResolver _definitionResolver;
     private readonly ILogger? _logger;
     private readonly string _workerId;
     private readonly WorkflowStartRequestLeaseOptions _leaseOptions;
@@ -32,12 +34,14 @@ public sealed class WorkflowStartRequestProcessor
     public WorkflowStartRequestProcessor(
         AppertureDbContext db,
         IWorkflowExecutor executor,
+        IWorkflowDefinitionResolver definitionResolver,
         string workerId,
         IOptions<WorkflowStartRequestLeaseOptions> leaseOptions,
         ILogger? logger = null)
     {
         _db = db;
         _executor = executor;
+        _definitionResolver = definitionResolver;
         _workerId = workerId;
         _leaseOptions = leaseOptions.Value;
         _logger = logger;
@@ -152,7 +156,7 @@ WHERE RunId = {runId} AND Status = {RunningStatus} AND ClaimedBy = {_workerId} A
 
         try
         {
-            var definition = ResolveDefinitionOrThrow(request.WorkflowDefinitionId);
+            var definition = await ResolveDefinitionOrThrowAsync(request.WorkflowDefinitionId, cancellationToken);
             var parameters = DeserializeParameters(request.ParametersJson);
 
             foreach (var stepName in definition.StepNames)
@@ -213,20 +217,13 @@ WHERE RunId = {runId} AND Status = {RunningStatus} AND ClaimedBy = {_workerId} A
         }
     }
 
-    private static WorkflowDefinition ResolveDefinitionOrThrow(string workflowDefinitionId)
+    private async ValueTask<WorkflowDefinition> ResolveDefinitionOrThrowAsync(string workflowDefinitionId, CancellationToken cancellationToken)
     {
-        // Minimal resolver for the first end-to-end slice.
-        // Expand later to a real module-based definition resolver.
-        if (string.Equals(workflowDefinitionId, "Sample.HelloWorld.HelloWorld", StringComparison.Ordinal))
-        {
-            return new WorkflowDefinition(
-                new WorkflowDefinitionId("Sample.HelloWorld.HelloWorld"),
-                "HelloWorld",
-                "Sample.HelloWorld",
-                new[] { "Validate", "DoWork", "Complete" });
-        }
-
-        throw new InvalidOperationException($"Unknown workflow definition id '{workflowDefinitionId}'.");
+        var id = new WorkflowDefinitionId(workflowDefinitionId);
+        var definition = await _definitionResolver.GetByIdAsync(id, cancellationToken);
+        if (definition is null)
+            throw new InvalidOperationException($"Unknown workflow definition id '{workflowDefinitionId}'.");
+        return definition;
     }
 
     private static IReadOnlyDictionary<string, object?>? DeserializeParameters(string? parametersJson)

@@ -103,6 +103,13 @@ flowchart TB
 - **Ownership enforcement:** processing is valid only for the current owner (`ClaimedBy`). If ownership is lost (another worker successfully reclaims), the old worker **stops safely** and does not write terminal `completed/failed` status.
 - **Configuration:** lease timeout is configured via a single options seam (`WorkflowStartRequestLeaseOptions.LeaseTimeout`) consumed by both worker discovery and processor claim/reclaim/renewal.
 
+### WorkerHost module-driven execution (Prompt B baseline)
+
+- **Module set:** WorkerHost uses an explicit, host-controlled `IEnumerable<IModule>` list to define which modules are executable in that process. Intended deployment remains one primary module per process (ADR-0001), but multiple modules are allowed for dev/testing and constrained composition.
+- **Definition resolution:** Worker-side definition resolution is module-driven via `IWorkflowDefinitionResolver` (enumerates DI-registered `IModule` and `GetDefinitionsAsync()`), not hard-coded to a sample workflow id.
+- **Step handlers:** modules register handlers via `IModuleStepHandlerRegistrar` into `IStepHandlerRegistry` (no demo-only handler wiring in the host).
+- **Guardrails:** WorkerHost validates at startup that workflow definition ids are unique across loaded modules and that each `WorkflowDefinition.ModuleId` matches the owning module manifest id; handler registrations are module-scoped and collisions fail fast.
+
 ---
 
 ## Control Plane (Detail)

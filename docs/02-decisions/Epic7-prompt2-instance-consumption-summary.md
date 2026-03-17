@@ -37,6 +37,7 @@ Epic 7 Prompt 2 makes the **instance plane** consume the persisted workflow star
 ## Current scope / limitations
 
 - **Definition resolution is minimal**: the processor currently recognizes `Sample.HelloWorld.HelloWorld` to prove the end-to-end slice. This should be replaced with a real module-based definition resolver when module hosting is wired into the worker host.
+- **Prompt B update**: worker-side definition resolution now enumerates DI-registered `IModule` definitions (via `GetDefinitionsAsync()`), and step handler registration is module-driven via `IModuleStepHandlerRegistrar`. WorkerHost also validates collisions/ownership at startup for safety under multi-module dev/test composition.
 
 ## Deferred beyond Epic 7
 

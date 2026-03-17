@@ -1,11 +1,9 @@
-using Apperture.ModuleSdk.Abstractions;
 using Apperture.RuntimePlane.Abstractions;
 
-namespace Apperture.ControlPlane.Security;
+namespace Apperture.ModuleSdk.Abstractions;
 
 /// <summary>
-/// Resolves workflow definitions from the known modules set (DI-registered IModule instances).
-/// This keeps definition resolution aligned with module discovery without requiring a full registry implementation.
+/// Default implementation of <see cref="IWorkflowDefinitionResolver"/> that enumerates known modules.
 /// </summary>
 public sealed class WorkflowDefinitionResolver : IWorkflowDefinitionResolver
 {
