@@ -1,0 +1,267 @@
+@page "/workflows/start"
+@using System.Text.Json
+@using Apperture.Management.Client
+@inject IManagementClient Client
+@inject NavigationManager Nav
+
+<div class="p-4">
+    <div class="flex items-center justify-between">
+        <h1 class="text-xl font-semibold text-heading">Start workflow</h1>
+        <button class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface"
+                disabled="@_loading"
+                @onclick="LoadModulesAsync">
+            Refresh
+        </button>
+    </div>
+
+    @if (!string.IsNullOrEmpty(_error))
+    {
+        <div class="mt-4 rounded border border-default bg-surface px-3 py-2 text-sm text-body">
+            <div class="font-semibold">Error</div>
+            <div class="text-muted">@_error</div>
+        </div>
+    }
+
+    <div class="mt-4 grid gap-4 md:grid-cols-2">
+        <div class="rounded border border-default bg-surface p-3">
+            <div class="text-sm font-semibold text-heading">Catalog</div>
+            <div class="text-xs text-muted">Modules and their workflows (from the API).</div>
+
+            @if (_modules is null)
+            {
+                <div class="mt-2 text-sm text-muted">Loading…</div>
+            }
+            else if (_modules.Count == 0)
+            {
+                <div class="mt-2 text-sm text-muted">No modules found.</div>
+            }
+            else
+            {
+                <div class="mt-2">
+                    <label class="text-xs text-muted">Module</label>
+                    <select class="mt-1 w-full rounded border border-default bg-surface px-2 py-2 text-sm"
+                            @onchange="OnModuleChanged">
+                        <option value="">Select…</option>
+                        @foreach (var m in _modules)
+                        {
+                            <option value="@m.Id" selected="@(m.Id == _selectedModuleId)">@m.Name (@m.Id)</option>
+                        }
+                    </select>
+                </div>
+
+                <div class="mt-3">
+                    <label class="text-xs text-muted">Workflow</label>
+                    <select class="mt-1 w-full rounded border border-default bg-surface px-2 py-2 text-sm"
+                            disabled="@(_workflows is null)"
+                            @onchange="OnWorkflowChanged">
+                        <option value="">Select…</option>
+                        @if (_workflows is not null)
+                        {
+                            foreach (var w in _workflows)
+                            {
+                                <option value="@w.Id" selected="@(w.Id == _selectedWorkflowId)">@w.Name (@w.Id)</option>
+                            }
+                        }
+                    </select>
+                </div>
+            }
+        </div>
+
+        <div class="rounded border border-default bg-surface p-3">
+            <div class="text-sm font-semibold text-heading">Start request</div>
+            <div class="text-xs text-muted">Parameters are raw JSON object (or empty). Idempotency and correlation are passed only if provided.</div>
+
+            <div class="mt-3 grid gap-3">
+                <div>
+                    <label class="text-xs text-muted">Workflow ID</label>
+                    <input class="mt-1 w-full rounded border border-default bg-surface px-2 py-2 text-sm font-mono"
+                           value="@_selectedWorkflowId"
+                           readonly />
+                </div>
+                <div>
+                    <label class="text-xs text-muted">Idempotency key (optional)</label>
+                    <input class="mt-1 w-full rounded border border-default bg-surface px-2 py-2 text-sm font-mono"
+                           @bind="_idempotencyKey" />
+                </div>
+                <div>
+                    <label class="text-xs text-muted">Correlation ID (optional)</label>
+                    <input class="mt-1 w-full rounded border border-default bg-surface px-2 py-2 text-sm font-mono"
+                           @bind="_correlationId" />
+                </div>
+                <div>
+                    <label class="text-xs text-muted">Parameters (JSON object)</label>
+                    <textarea class="mt-1 w-full rounded border border-default bg-surface px-2 py-2 text-sm font-mono"
+                              rows="8"
+                              @bind="_parametersJson"></textarea>
+                </div>
+
+                <button class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface"
+                        disabled="@_loading || string.IsNullOrEmpty(_selectedWorkflowId)"
+                        @onclick="StartAsync">
+                    Start
+                </button>
+
+                @if (!string.IsNullOrEmpty(_startMessage))
+                {
+                    <div class="rounded border border-default bg-surface px-3 py-2 text-sm text-body">
+                        <div class="font-semibold">Result</div>
+                        <div class="text-muted">@_startMessage</div>
+                        @if (!string.IsNullOrEmpty(_startedRunId))
+                        {
+                            <div class="mt-2">
+                                <a class="underline font-mono text-xs" href="@($"/runs/{_startedRunId}")">Open run: @_startedRunId</a>
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private IReadOnlyList<ModuleDto>? _modules;
+    private IReadOnlyList<WorkflowDto>? _workflows;
+    private string? _selectedModuleId;
+    private string? _selectedWorkflowId;
+    private string _parametersJson = "{}";
+    private string? _idempotencyKey;
+    private string? _correlationId;
+    private bool _loading;
+    private string? _error;
+    private string? _startMessage;
+    private string? _startedRunId;
+
+    protected override Task OnInitializedAsync() => LoadModulesAsync();
+
+    private async Task LoadModulesAsync()
+    {
+        _loading = true;
+        _error = null;
+        try
+        {
+            _modules = await Client.GetModulesAsync();
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Forbidden)
+        {
+            _modules = Array.Empty<ModuleDto>();
+            _error = "Not authorized to list modules (403).";
+        }
+        catch (Exception ex)
+        {
+            _modules = Array.Empty<ModuleDto>();
+            _error = ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task OnModuleChanged(ChangeEventArgs e)
+    {
+        _selectedModuleId = e.Value?.ToString();
+        _selectedWorkflowId = null;
+        _workflows = null;
+        _startMessage = null;
+        _startedRunId = null;
+
+        if (string.IsNullOrEmpty(_selectedModuleId))
+            return;
+
+        _loading = true;
+        _error = null;
+        try
+        {
+            _workflows = await Client.GetWorkflowsAsync(_selectedModuleId);
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Forbidden)
+        {
+            _workflows = Array.Empty<WorkflowDto>();
+            _error = "Not authorized to list workflows (403).";
+        }
+        catch (Exception ex)
+        {
+            _workflows = Array.Empty<WorkflowDto>();
+            _error = ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private void OnWorkflowChanged(ChangeEventArgs e)
+    {
+        _selectedWorkflowId = e.Value?.ToString();
+        _startMessage = null;
+        _startedRunId = null;
+    }
+
+    private async Task StartAsync()
+    {
+        _loading = true;
+        _error = null;
+        _startMessage = null;
+        _startedRunId = null;
+        try
+        {
+            var parameters = ParseParameters(_parametersJson);
+            var result = await Client.StartWorkflowAsync(
+                _selectedWorkflowId!,
+                parameters,
+                string.IsNullOrWhiteSpace(_idempotencyKey) ? null : _idempotencyKey,
+                string.IsNullOrWhiteSpace(_correlationId) ? null : _correlationId);
+
+            _startedRunId = result.RunId;
+            _startMessage = $"Accepted. Run {result.RunId} is {result.Status}.";
+        }
+        catch (JsonException ex)
+        {
+            _error = $"Invalid parameters JSON: {ex.Message}";
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Forbidden)
+        {
+            _error = "Not authorized to start this workflow (403).";
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private static IReadOnlyDictionary<string, object?>? ParseParameters(string json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+            return null;
+
+        var trimmed = json.Trim();
+        if (trimmed == "{}")
+            return null;
+
+        var doc = JsonDocument.Parse(trimmed);
+        if (doc.RootElement.ValueKind != JsonValueKind.Object)
+            throw new JsonException("Parameters must be a JSON object.");
+
+        var dict = new Dictionary<string, object?>(StringComparer.Ordinal);
+        foreach (var p in doc.RootElement.EnumerateObject())
+        {
+            dict[p.Name] = p.Value.ValueKind switch
+            {
+                JsonValueKind.String => p.Value.GetString(),
+                JsonValueKind.Number => p.Value.TryGetInt64(out var l) ? l : p.Value.GetDouble(),
+                JsonValueKind.True => true,
+                JsonValueKind.False => false,
+                JsonValueKind.Null => null,
+                _ => p.Value.GetRawText() // keep arrays/objects as raw json text for now
+            };
+        }
+
+        return dict;
+    }
+}
+

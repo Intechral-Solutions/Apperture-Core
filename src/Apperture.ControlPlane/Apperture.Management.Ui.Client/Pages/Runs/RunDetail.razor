@@ -1,0 +1,413 @@
+@page "/runs/{RunId}"
+@using Apperture.Management.Client
+@inject IManagementClient Client
+@inject NavigationManager Nav
+@implements IDisposable
+
+<div class="p-4">
+    <div class="flex items-center justify-between gap-3">
+        <div class="min-w-0">
+            <h1 class="text-xl font-semibold text-heading">Run</h1>
+            <div class="mt-1 font-mono text-xs text-muted break-all">@RunId</div>
+        </div>
+        <div class="flex items-center gap-2">
+            <button class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface"
+                    disabled="@_loading"
+                    @onclick="CancelAsync">
+                Cancel
+            </button>
+            <button class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface"
+                    disabled="@_loading"
+                    @onclick="RetryAsync">
+                Retry (new run)
+            </button>
+            <button class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface"
+                    disabled="@_loading"
+                    @onclick="ParkAsync">
+                Park
+            </button>
+            <button class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface"
+                    disabled="@_loading"
+                    @onclick="ResumeAsync">
+                Resume
+            </button>
+            <label class="flex items-center gap-2 text-sm text-body">
+                <input type="checkbox" class="h-4 w-4" @bind="_pollingEnabled" />
+                Poll
+            </label>
+            <button class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface"
+                    disabled="@_loading"
+                    @onclick="LoadAsync">
+                Refresh
+            </button>
+        </div>
+    </div>
+
+    @if (_error is not null)
+    {
+        <div class="mt-4 rounded border border-default bg-surface px-3 py-2 text-sm text-body">
+            <div class="font-semibold">Error</div>
+            <div class="text-muted">@_error</div>
+        </div>
+    }
+    else if (_detail is null)
+    {
+        <div class="mt-4 text-sm text-muted">Loading…</div>
+    }
+    else
+    {
+        @if (!string.IsNullOrEmpty(_actionMessage))
+        {
+            <div class="mt-4 rounded border border-default bg-surface px-3 py-2 text-sm text-body">
+                <div class="font-semibold">Action</div>
+                <div class="text-muted">@_actionMessage</div>
+                @if (!string.IsNullOrEmpty(_newRunId))
+                {
+                    <div class="mt-2">
+                        <a class="underline font-mono text-xs" href="@($"/runs/{_newRunId}")">Open new run: @_newRunId</a>
+                    </div>
+                }
+            </div>
+        }
+
+        <div class="mt-4 grid gap-4">
+            <div class="rounded border border-default bg-surface p-3">
+                <div class="grid grid-cols-1 gap-2 md:grid-cols-2">
+                    <div>
+                        <div class="text-xs text-muted">Status</div>
+                        <div class="text-sm text-body">@_detail.Status</div>
+                    </div>
+                    <div>
+                        <div class="text-xs text-muted">Workflow definition</div>
+                        <div class="text-sm font-mono break-all">@_detail.WorkflowDefinitionId</div>
+                    </div>
+                    <div>
+                        <div class="text-xs text-muted">Workflow instance</div>
+                        <div class="text-sm font-mono break-all">@_detail.WorkflowInstanceId</div>
+                    </div>
+                    <div>
+                        <div class="text-xs text-muted">Created</div>
+                        <div class="text-sm text-body">@_detail.CreatedAt.ToLocalTime().ToString("u")</div>
+                    </div>
+                    <div>
+                        <div class="text-xs text-muted">Completed</div>
+                        <div class="text-sm text-body">@((_detail.CompletedAt is null) ? "" : _detail.CompletedAt.Value.ToLocalTime().ToString("u"))</div>
+                    </div>
+                    <div>
+                        <div class="text-xs text-muted">Correlation key</div>
+                        <div class="text-sm text-body">@_detail.CorrelationKey</div>
+                    </div>
+                    <div>
+                        <div class="text-xs text-muted">Retry of</div>
+                        <div class="text-sm font-mono break-all">
+                            @if (!string.IsNullOrEmpty(_detail.RetryOfRunId))
+                            {
+                                <a class="underline" href="@($"/runs/{_detail.RetryOfRunId}")">@_detail.RetryOfRunId</a>
+                            }
+                        </div>
+                    </div>
+                    <div>
+                        <div class="text-xs text-muted">@CurrentStepLabel</div>
+                        <div class="text-sm font-mono">@_detail.CurrentStepName</div>
+                        <div class="text-xs text-muted">
+                            @CurrentStepHelp
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="rounded border border-default bg-surface p-3">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <div class="text-sm font-semibold text-heading">Lifecycle</div>
+                        <div class="text-xs text-muted">Truthful event trail (ordered).</div>
+                    </div>
+                </div>
+
+                @if (_detail.LifecycleEvents.Count == 0)
+                {
+                    <div class="mt-2 text-sm text-muted">No lifecycle events.</div>
+                }
+                else
+                {
+                    <div class="mt-2 overflow-x-auto">
+                        <table class="min-w-full text-left text-sm text-body">
+                            <thead class="border-b border-default text-xs text-muted">
+                                <tr>
+                                    <th class="px-2 py-2">At</th>
+                                    <th class="px-2 py-2">Event</th>
+                                    <th class="px-2 py-2">From</th>
+                                    <th class="px-2 py-2">To</th>
+                                    <th class="px-2 py-2">Step</th>
+                                    <th class="px-2 py-2">Details</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var e in _detail.LifecycleEvents)
+                                {
+                                    <tr class="border-b border-default">
+                                        <td class="px-2 py-2">@e.OccurredAt.ToLocalTime().ToString("u")</td>
+                                        <td class="px-2 py-2 font-mono text-xs">@e.EventType</td>
+                                        <td class="px-2 py-2">@e.FromStatus</td>
+                                        <td class="px-2 py-2">@e.ToStatus</td>
+                                        <td class="px-2 py-2 font-mono text-xs">@e.StepName</td>
+                                        <td class="px-2 py-2 font-mono text-xs break-all">@e.DetailsJson</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            </div>
+
+            <div class="rounded border border-default bg-surface p-3">
+                <div class="text-sm font-semibold text-heading">Step history</div>
+                <div class="text-xs text-muted">Per-step execution trail (ordered by step/attempt).</div>
+
+                @if (_detail.StepInstances.Count == 0)
+                {
+                    <div class="mt-2 text-sm text-muted">No step instances.</div>
+                }
+                else
+                {
+                    <div class="mt-2 overflow-x-auto">
+                        <table class="min-w-full text-left text-sm text-body">
+                            <thead class="border-b border-default text-xs text-muted">
+                                <tr>
+                                    <th class="px-2 py-2">Step</th>
+                                    <th class="px-2 py-2">Attempt</th>
+                                    <th class="px-2 py-2">Status</th>
+                                    <th class="px-2 py-2">Started</th>
+                                    <th class="px-2 py-2">Ended</th>
+                                    <th class="px-2 py-2">Error</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var s in _detail.StepInstances)
+                                {
+                                    <tr class="border-b border-default">
+                                        <td class="px-2 py-2 font-mono text-xs">@s.StepName</td>
+                                        <td class="px-2 py-2">@s.Attempt</td>
+                                        <td class="px-2 py-2">@s.Status</td>
+                                        <td class="px-2 py-2">@Fmt(s.StartedAt)</td>
+                                        <td class="px-2 py-2">@Fmt(s.EndedAt)</td>
+                                        <td class="px-2 py-2 text-xs break-all">@s.Error</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            </div>
+
+            <div class="rounded border border-default bg-surface p-3">
+                <div class="text-sm font-semibold text-heading">External control requests</div>
+                <div class="text-xs text-muted">Park/resume requests are queued and applied by the worker at safe boundaries.</div>
+
+                @if (_detail.ControlRequests.Count == 0)
+                {
+                    <div class="mt-2 text-sm text-muted">No external control requests.</div>
+                }
+                else
+                {
+                    <div class="mt-2 overflow-x-auto">
+                        <table class="min-w-full text-left text-sm text-body">
+                            <thead class="border-b border-default text-xs text-muted">
+                                <tr>
+                                    <th class="px-2 py-2">Kind</th>
+                                    <th class="px-2 py-2">Status</th>
+                                    <th class="px-2 py-2">Requested</th>
+                                    <th class="px-2 py-2">Requested by</th>
+                                    <th class="px-2 py-2">Applied</th>
+                                    <th class="px-2 py-2">Applied by</th>
+                                    <th class="px-2 py-2">Last error</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var c in _detail.ControlRequests)
+                                {
+                                    <tr class="border-b border-default">
+                                        <td class="px-2 py-2 font-mono text-xs">@c.ControlKind</td>
+                                        <td class="px-2 py-2">@c.Status</td>
+                                        <td class="px-2 py-2">@c.RequestedAt.ToLocalTime().ToString("u")</td>
+                                        <td class="px-2 py-2">@c.RequestedBy</td>
+                                        <td class="px-2 py-2">@Fmt(c.AppliedAt)</td>
+                                        <td class="px-2 py-2">@c.AppliedBy</td>
+                                        <td class="px-2 py-2 text-xs break-all">@c.LastError</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public string RunId { get; set; } = "";
+
+    private RunDetailDto? _detail;
+    private bool _loading;
+    private string? _error;
+    private string? _actionMessage;
+    private string? _newRunId;
+    private bool _pollingEnabled;
+    private PeriodicTimer? _timer;
+    private CancellationTokenSource? _pollingCts;
+
+    protected override Task OnParametersSetAsync() => LoadAsync();
+    protected override Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_pollingEnabled && _pollingCts is null)
+            StartPolling();
+        if (!_pollingEnabled && _pollingCts is not null)
+            StopPolling();
+        return Task.CompletedTask;
+    }
+
+    public void Dispose()
+    {
+        StopPolling();
+    }
+
+    private string CurrentStepLabel =>
+        string.Equals(_detail?.Status, "parked", StringComparison.OrdinalIgnoreCase)
+            ? "Next step (after resume)"
+            : "Current step";
+
+    private string CurrentStepHelp =>
+        string.Equals(_detail?.Status, "parked", StringComparison.OrdinalIgnoreCase)
+            ? "When parked, CurrentStepName is the saved resume pointer (the next step that will run after resume)."
+            : "While running, CurrentStepName reflects current step progression.";
+
+    private async Task LoadAsync()
+    {
+        if (string.IsNullOrWhiteSpace(RunId))
+            return;
+
+        _loading = true;
+        _error = null;
+        _actionMessage = null;
+        _newRunId = null;
+        try
+        {
+            _detail = await Client.GetRunAsync(RunId);
+            if (_detail is null)
+                _error = "Run not found (404).";
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Forbidden)
+        {
+            _error = "Not authorized to view this run (403).";
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private static string Fmt(DateTimeOffset? value) =>
+        value is null ? "" : value.Value.ToLocalTime().ToString("u");
+
+    private void StartPolling()
+    {
+        StopPolling();
+        _pollingCts = new CancellationTokenSource();
+        _timer = new PeriodicTimer(TimeSpan.FromSeconds(2));
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                while (await _timer.WaitForNextTickAsync(_pollingCts.Token))
+                {
+                    await InvokeAsync(LoadAsync);
+                }
+            }
+            catch (OperationCanceledException)
+            {
+            }
+        });
+    }
+
+    private void StopPolling()
+    {
+        try { _pollingCts?.Cancel(); } catch { }
+        _pollingCts?.Dispose();
+        _pollingCts = null;
+        _timer?.Dispose();
+        _timer = null;
+    }
+
+    private async Task CancelAsync()
+    {
+        await InvokeActionAsync(
+            () => Client.CancelRunAsync(RunId),
+            ok: _ => "Cancel requested (cooperative). Refresh to observe applied outcome.");
+    }
+
+    private async Task RetryAsync()
+    {
+        await InvokeActionAsync(
+            () => Client.RetryRunAsync(RunId),
+            ok: r =>
+            {
+                _newRunId = r.RunId;
+                return $"Retry accepted. New run created: {r.RunId}. The original run remains unchanged.";
+            });
+    }
+
+    private async Task ParkAsync()
+    {
+        await InvokeActionAsync(
+            () => Client.ParkRunAsync(RunId),
+            ok: _ => "Park request queued. The worker will apply park at the next safe boundary.");
+    }
+
+    private async Task ResumeAsync()
+    {
+        await InvokeActionAsync(
+            () => Client.ResumeRunAsync(RunId),
+            ok: _ => "Resume request queued. The worker will apply resume after it claims the run.");
+    }
+
+    private async Task InvokeActionAsync<T>(Func<Task<T>> action, Func<T, string> ok)
+    {
+        _loading = true;
+        _actionMessage = null;
+        _newRunId = null;
+        try
+        {
+            var result = await action();
+            _actionMessage = ok(result);
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Forbidden)
+        {
+            _actionMessage = "Not authorized for this action (403).";
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Conflict)
+        {
+            _actionMessage = "Action rejected (409). The run is not eligible for that control in its current state.";
+        }
+        catch (HttpRequestException ex)
+        {
+            _actionMessage = ex.Message;
+        }
+        catch (Exception ex)
+        {
+            _actionMessage = ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+
+        await LoadAsync();
+        StateHasChanged();
+    }
+}
+

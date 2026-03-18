@@ -35,6 +35,15 @@ public class MenusController : ControllerBase
     {
         return new Dictionary<string, DomainMenu>(StringComparer.OrdinalIgnoreCase)
         {
+            ["Runs"] = new DomainMenu
+            {
+                Title = null,
+                Items =
+                {
+                    new DomainMenuItem { Text = "Runs Console", Href = "/runs" },
+                    new DomainMenuItem { Text = "Start Workflow", Href = "/workflows/start" },
+                }
+            },
             ["Catalog"] = new DomainMenu
             {
                 Title = null,
@@ -83,15 +92,6 @@ public class MenusController : ControllerBase
                 {
                     new DomainMenuItem { Text = "View All", Href = "/schedules" },
                     new DomainMenuItem { Text = "Create Schedule", Href = "/schedules/new" }
-                }
-            },
-            ["Runs"] = new DomainMenu
-            {
-                Title = null,
-                Items =
-                {
-                    new DomainMenuItem { Text = "Execution History", Href = "/runs" },
-                    new DomainMenuItem { Text = "Dead Letter Queue", Href = "/runs/dlq" }
                 }
             },
             ["Tools"] = new DomainMenu

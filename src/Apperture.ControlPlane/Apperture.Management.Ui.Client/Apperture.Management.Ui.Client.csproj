@@ -12,6 +12,7 @@
     <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\Apperture.Management.Client\Apperture.Management.Client.csproj" />
     <ProjectReference Include="..\Apperture.Management.Ui.Shared\Apperture.Management.Ui.Shared.csproj" />
   </ItemGroup>
 </Project>

@@ -1,0 +1,105 @@
+@page "/runs"
+@using Apperture.Management.Client
+@inject IManagementClient Client
+@inject NavigationManager Nav
+
+<div class="p-4">
+    <div class="flex items-center justify-between">
+        <h1 class="text-xl font-semibold text-heading">Runs</h1>
+        <div class="flex items-center gap-2">
+            <button class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface"
+                    disabled="@_loading"
+                    @onclick="LoadAsync">
+                Refresh
+            </button>
+        </div>
+    </div>
+
+    @if (_error is not null)
+    {
+        <div class="mt-4 rounded border border-default bg-surface px-3 py-2 text-sm text-body">
+            <div class="font-semibold">Error</div>
+            <div class="text-muted">@_error</div>
+        </div>
+    }
+    else if (_runs is null)
+    {
+        <div class="mt-4 text-sm text-muted">Loading…</div>
+    }
+    else if (_runs.Count == 0)
+    {
+        <div class="mt-4 text-sm text-muted">No runs found.</div>
+    }
+    else
+    {
+        <div class="mt-4 overflow-x-auto rounded border border-default bg-surface">
+            <table class="min-w-full text-left text-sm text-body">
+                <thead class="border-b border-default text-xs text-muted">
+                    <tr>
+                        <th class="px-3 py-2">Run</th>
+                        <th class="px-3 py-2">Workflow</th>
+                        <th class="px-3 py-2">Status</th>
+                        <th class="px-3 py-2">Created</th>
+                        <th class="px-3 py-2">Completed</th>
+                        <th class="px-3 py-2">Correlation</th>
+                        <th class="px-3 py-2">Retry of</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var r in _runs)
+                    {
+                        <tr class="border-b border-default hover:bg-surface-muted cursor-pointer"
+                            @onclick="() => Open(r.RunId)">
+                            <td class="px-3 py-2 font-mono text-xs">@r.RunId</td>
+                            <td class="px-3 py-2 font-mono text-xs">@r.WorkflowDefinitionId</td>
+                            <td class="px-3 py-2">@r.Status</td>
+                            <td class="px-3 py-2">@r.CreatedAt.ToLocalTime().ToString("u")</td>
+                            <td class="px-3 py-2">@((r.CompletedAt is null) ? "" : r.CompletedAt.Value.ToLocalTime().ToString("u"))</td>
+                            <td class="px-3 py-2">@r.CorrelationKey</td>
+                            <td class="px-3 py-2 font-mono text-xs">@r.RetryOfRunId</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+
+        <div class="mt-2 text-xs text-muted">
+            This list is intentionally simple (recent runs only). Use refresh to observe queued/applied control outcomes.
+        </div>
+    }
+</div>
+
+@code {
+    private IReadOnlyList<RunSummaryDto>? _runs;
+    private bool _loading;
+    private string? _error;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _error = null;
+        try
+        {
+            _runs = await Client.GetRunsAsync();
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Forbidden)
+        {
+            _runs = Array.Empty<RunSummaryDto>();
+            _error = "Not authorized to view runs (403).";
+        }
+        catch (Exception ex)
+        {
+            _runs = Array.Empty<RunSummaryDto>();
+            _error = ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private void Open(string runId) => Nav.NavigateTo($"/runs/{runId}");
+}
+

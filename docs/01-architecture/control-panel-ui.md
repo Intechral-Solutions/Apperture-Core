@@ -28,3 +28,10 @@ The Control Panel UI provides the navigation shell for the Apperture Management 
 - **Endpoint:** `GET /api/menus`
 - **Response:** `Dictionary<string, DomainMenu>` where `DomainMenu` = `{ Title?, Items: DomainMenuItem[] }`, `DomainMenuItem` = `{ Text, Href?, Icon?, Children? }`
 - **Configuration:** `ControlPanelMenuOptions.JsonSource` (default: `/api/menus`)
+
+## Operator console (current baseline)
+
+- **Default landing view:** `/` redirects to `/runs` (thin operator entry point).
+- **Runs console:** `/runs` list + `/runs/{id}` detail. Detail renders backend truth only: lifecycle events, step history, and external-control request trail.
+- **Control actions:** cancel/retry/park/resume are issued via the existing Management API endpoints and are shown as cooperative/queued until the worker applies them (operator observes outcomes via refresh/poll).
+- **Workflow start:** `/workflows/start` provides a minimal workflow start surface using the existing modules/workflows listing endpoints and `POST /workflows/{id}/start`.

@@ -13,6 +13,15 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("UiDev", policy =>
+        policy
+            .WithOrigins("http://localhost:9001", "https://localhost:9001")
+            .AllowAnyHeader()
+            .AllowAnyMethod()
+            .AllowCredentials());
+});
 builder.Services.AddAppertureBootstrap(builder.Configuration);
 builder.Services.AddAppertureDTFx();
 builder.Services.AddApperturePersistence(
@@ -28,6 +37,7 @@ builder.Services.AddAppertureAuthentication(builder.Configuration);
 builder.Services.AddAuthorization();
 
 var app = builder.Build();
+app.UseCors("UiDev");
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();

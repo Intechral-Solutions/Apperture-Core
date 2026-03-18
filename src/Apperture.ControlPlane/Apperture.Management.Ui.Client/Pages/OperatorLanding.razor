@@ -1,0 +1,11 @@
+@using Microsoft.AspNetCore.Components.Routing
+@inject NavigationManager Nav
+
+@code {
+    protected override void OnInitialized()
+    {
+        // Default operator landing is the Runs console.
+        Nav.NavigateTo("/runs", replace: true);
+    }
+}
+
