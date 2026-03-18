@@ -91,7 +91,7 @@ flowchart TB
 | **Operational Secrets** | Partially | SqlSecretStore/Resolver done; Azure KV resolver done; KV store placeholder |
 | **Runtime Trust** | Partially | EnrollController, SqlRuntimeIdentityService (stub validation) |
 | **Runtime Plane** | Abstractions + Stubs | Engine exists; DTFx/DurableFunctions adapters stubbed |
-| **Control Plane** | Partially | API, Menus, Modules, Runs, Workflows (start persists transactional handoff; execution deferred), Enroll; UI shell |
+| **Control Plane** | Partially | API, Menus, Modules, Runs, Workflows (start persists transactional handoff; execution deferred), Enroll; run detail now includes lifecycle and step history; UI shell |
 | **Instance Plane** | Partially | WorkerHost consumes persisted workflow start requests and executes minimal lifecycle; other hosts remain stubbed |
 | **CLI** | Partially | Bootstrap CLI scaffolding; PowerShell; invokes stubs |
 | **Module SDK** | Implemented | Abstractions, SDK, test harness (stub) |
@@ -128,6 +128,13 @@ flowchart TB
 - **Persistence:** the new `OperationRunEntity` stores `RetryOfRunId` so the lineage from retried run to original run is durable and queryable.
 - **Execution path:** retry reuses the existing start dispatch pipeline, which creates the new `WorkflowInstanceEntity`, `OperationRunEntity`, and `WorkflowStartRequestEntity` triple that the worker then consumes normally.
 
+### Workflow lifecycle refinement (current baseline)
+
+- **Lifecycle vocabulary:** the shared workflow lifecycle names are centralized in `WorkflowLifecycleStatusNames` and `WorkflowLifecycleEventNames`.
+- **Run/control history:** durable lifecycle events are now recorded for start dispatch, start, cancel request, cancel, retry request, completion, and failure in `WorkflowLifecycleEvents`.
+- **Step history:** worker step execution now populates `WorkflowStepInstances` so run detail can show per-step execution history instead of only the final run status.
+- **Query surface:** `RunQueryService.GetRunAsync` now returns both lifecycle events and step history for a run.
+
 ---
 
 ## Control Plane (Detail)
@@ -162,6 +169,7 @@ flowchart LR
 - Runs API: list/detail from SQL with executable-permission-based read authorization
 - Runs API: cancel persists durable intent (`POST /api/runs/{id}/cancel`)
 - Runs API: retry starts a brand-new run from a terminal run (`POST /api/runs/{id}/retry`)
+- Runs API: detail now returns lifecycle events and step history for the selected run
 - WorkflowsController: start persists a durable handoff and returns `202 Accepted`
 - EnrollController: enrollment endpoint
 

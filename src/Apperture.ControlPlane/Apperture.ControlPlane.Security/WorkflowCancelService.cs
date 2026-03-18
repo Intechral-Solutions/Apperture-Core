@@ -17,6 +17,7 @@ public sealed class WorkflowCancelService : IWorkflowCancelService
 
     public async ValueTask<bool> RequestCancelAsync(OperationRunId runId, CancellationToken cancellationToken = default)
     {
+        var now = DateTimeOffset.UtcNow;
         var run = await _db.OperationRuns
             .AsNoTracking()
             .FirstOrDefaultAsync(x => x.Id == runId.Value, cancellationToken);
@@ -37,8 +38,22 @@ public sealed class WorkflowCancelService : IWorkflowCancelService
             RunId = run.Id,
             WorkflowInstanceId = run.WorkflowInstanceId,
             WorkflowDefinitionId = run.DefinitionId,
-            RequestedAt = DateTimeOffset.UtcNow,
+            RequestedAt = now,
             RequestedBy = null
+        });
+
+        _db.WorkflowLifecycleEvents.Add(new WorkflowLifecycleEventEntity
+        {
+            RunId = run.Id,
+            WorkflowInstanceId = run.WorkflowInstanceId,
+            WorkflowDefinitionId = run.DefinitionId,
+            EventType = WorkflowLifecycleEventNames.CancelRequested,
+            FromStatus = run.Status,
+            ToStatus = run.Status,
+            OccurredAt = now,
+            RelatedRunId = null,
+            StepName = null,
+            DetailsJson = null
         });
 
         await _db.SaveChangesAsync(cancellationToken);

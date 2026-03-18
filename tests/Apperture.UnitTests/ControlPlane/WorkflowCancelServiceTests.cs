@@ -30,6 +30,8 @@ public sealed class WorkflowCancelServiceTests
         (await svc.RequestCancelAsync(new OperationRunId("r1"))).Should().BeTrue();
 
         (await db.WorkflowCancelRequests.CountAsync()).Should().Be(1);
+        (await db.WorkflowLifecycleEvents.CountAsync()).Should().Be(1);
+        (await db.WorkflowLifecycleEvents.SingleAsync()).EventType.Should().Be("workflow.cancel_requested");
     }
 
     [Fact]
@@ -83,6 +85,7 @@ public sealed class WorkflowCancelServiceTests
         run.Status.Should().Be("completed");
         var cancel = await db.WorkflowCancelRequests.SingleAsync(x => x.RunId == "r1");
         cancel.Should().NotBeNull();
+        (await db.WorkflowLifecycleEvents.SingleAsync(x => x.RunId == "r1")).EventType.Should().Be("workflow.cancel_requested");
     }
 
     [Fact]
@@ -108,6 +111,7 @@ public sealed class WorkflowCancelServiceTests
         run.Status.Should().Be("failed");
         var cancel = await db.WorkflowCancelRequests.SingleAsync(x => x.RunId == "r1");
         cancel.Should().NotBeNull();
+        (await db.WorkflowLifecycleEvents.SingleAsync(x => x.RunId == "r1")).EventType.Should().Be("workflow.cancel_requested");
     }
 
     private static AppertureDbContext NewDb()

@@ -14,9 +14,6 @@ namespace Apperture.RuntimeHost.Windows.WorkerHost;
 /// </summary>
 public sealed class StartRequestWorker : BackgroundService
 {
-    private const string RequestedStatus = "requested";
-    private const string RunningStatus = "running";
-
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<StartRequestWorker> _logger;
     private readonly TimeSpan _pollInterval;
@@ -54,8 +51,8 @@ public sealed class StartRequestWorker : BackgroundService
                 var staleBefore = now - _leaseOptions.Value.LeaseTimeout;
                 var pending = await db.WorkflowStartRequests.AsNoTracking()
                     .Where(x =>
-                        (x.Status == RequestedStatus && x.ClaimedAt == null) ||
-                        (x.Status == RunningStatus && x.ClaimedAt != null && x.ClaimedAt < staleBefore))
+                        (x.Status == WorkflowLifecycleStatusNames.Requested && x.ClaimedAt == null) ||
+                        (x.Status == WorkflowLifecycleStatusNames.Running && x.ClaimedAt != null && x.ClaimedAt < staleBefore))
                     .OrderBy(x => x.CreatedAt)
                     .Select(x => x.RunId)
                     .Take(10)

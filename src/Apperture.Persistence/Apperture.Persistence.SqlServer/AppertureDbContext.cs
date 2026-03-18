@@ -15,6 +15,7 @@ public class AppertureDbContext : DbContext
     public DbSet<OperationRunEntity> OperationRuns => Set<OperationRunEntity>();
     public DbSet<WorkflowStartRequestEntity> WorkflowStartRequests => Set<WorkflowStartRequestEntity>();
     public DbSet<WorkflowCancelRequestEntity> WorkflowCancelRequests => Set<WorkflowCancelRequestEntity>();
+    public DbSet<WorkflowLifecycleEventEntity> WorkflowLifecycleEvents => Set<WorkflowLifecycleEventEntity>();
     public DbSet<AuditLogEntity> AuditLogs => Set<AuditLogEntity>();
     public DbSet<TelemetryEventEntity> TelemetryEvents => Set<TelemetryEventEntity>();
     public DbSet<SecretDescriptorEntity> SecretDescriptors => Set<SecretDescriptorEntity>();
@@ -65,6 +66,24 @@ public class AppertureDbContext : DbContext
             e.Property(x => x.CorrelationKey).HasMaxLength(256);
             e.Property(x => x.RetryOfRunId).HasMaxLength(64);
             e.HasIndex(x => x.RetryOfRunId);
+        });
+
+        modelBuilder.Entity<WorkflowLifecycleEventEntity>(e =>
+        {
+            e.ToTable("WorkflowLifecycleEvents");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).ValueGeneratedOnAdd();
+            e.Property(x => x.RunId).HasMaxLength(64);
+            e.Property(x => x.WorkflowInstanceId).HasMaxLength(64);
+            e.Property(x => x.WorkflowDefinitionId).HasMaxLength(128);
+            e.Property(x => x.EventType).HasMaxLength(64);
+            e.Property(x => x.FromStatus).HasMaxLength(32);
+            e.Property(x => x.ToStatus).HasMaxLength(32);
+            e.Property(x => x.RelatedRunId).HasMaxLength(64);
+            e.Property(x => x.StepName).HasMaxLength(128);
+            e.Property(x => x.DetailsJson).HasColumnType("nvarchar(max)");
+            e.HasIndex(x => new { x.RunId, x.OccurredAt });
+            e.HasIndex(x => x.RelatedRunId);
         });
 
         modelBuilder.Entity<WorkflowStartRequestEntity>(e =>

@@ -18,8 +18,6 @@ public sealed class WorkflowStartDispatchService : IWorkflowStartDispatchService
         PropertyNameCaseInsensitive = true
     };
 
-    private const string RequestedStatus = "requested";
-
     private readonly IWorkflowDefinitionResolver _definitionResolver;
     private readonly IWorkflowPersistence _persistence;
     private readonly AppertureDbContext _db;
@@ -50,7 +48,7 @@ public sealed class WorkflowStartDispatchService : IWorkflowStartDispatchService
                     new OperationRunId(existing.RunId),
                     new WorkflowInstanceId(existing.WorkflowInstanceId),
                     new WorkflowDefinitionId(existing.WorkflowDefinitionId),
-                    RequestedStatus);
+                    WorkflowLifecycleStatusNames.Requested);
             }
         }
 
@@ -69,7 +67,7 @@ public sealed class WorkflowStartDispatchService : IWorkflowStartDispatchService
             {
                 Id = instanceId.Value,
                 DefinitionId = request.WorkflowDefinitionId.Value,
-                Status = RequestedStatus,
+                Status = WorkflowLifecycleStatusNames.Requested,
                 CreatedAt = now,
                 UpdatedAt = now,
                 CorrelationKey = request.CorrelationId,
@@ -82,7 +80,7 @@ public sealed class WorkflowStartDispatchService : IWorkflowStartDispatchService
                 Id = runId.Value,
                 WorkflowInstanceId = instanceId.Value,
                 DefinitionId = request.WorkflowDefinitionId.Value,
-                Status = RequestedStatus,
+                Status = WorkflowLifecycleStatusNames.Requested,
                 CreatedAt = now,
                 CompletedAt = null,
                 CorrelationKey = request.CorrelationId,
@@ -98,10 +96,24 @@ public sealed class WorkflowStartDispatchService : IWorkflowStartDispatchService
                 IdempotencyKey = request.IdempotencyKey,
                 CorrelationId = request.CorrelationId,
                 CreatedAt = now,
-                Status = RequestedStatus,
+                Status = WorkflowLifecycleStatusNames.Requested,
                 ClaimedAt = null,
                 ClaimedBy = null,
                 LastError = null
+            });
+
+            _db.WorkflowLifecycleEvents.Add(new WorkflowLifecycleEventEntity
+            {
+                RunId = runId.Value,
+                WorkflowInstanceId = instanceId.Value,
+                WorkflowDefinitionId = request.WorkflowDefinitionId.Value,
+                EventType = WorkflowLifecycleEventNames.Dispatched,
+                FromStatus = null,
+                ToStatus = WorkflowLifecycleStatusNames.Requested,
+                OccurredAt = now,
+                RelatedRunId = request.RetryOfRunId,
+                StepName = null,
+                DetailsJson = null
             });
 
             await _db.SaveChangesAsync(cancellationToken);
@@ -109,7 +121,7 @@ public sealed class WorkflowStartDispatchService : IWorkflowStartDispatchService
             if (tx is not null)
                 await tx.CommitAsync(cancellationToken);
 
-            return new WorkflowStartDispatchResult(runId, instanceId, request.WorkflowDefinitionId, RequestedStatus);
+            return new WorkflowStartDispatchResult(runId, instanceId, request.WorkflowDefinitionId, WorkflowLifecycleStatusNames.Requested);
         }
         catch (DbUpdateException ex) when (IsUniqueIdempotencyViolation(ex, request.IdempotencyKey))
         {
@@ -126,7 +138,7 @@ public sealed class WorkflowStartDispatchService : IWorkflowStartDispatchService
                 new OperationRunId(existing.RunId),
                 new WorkflowInstanceId(existing.WorkflowInstanceId),
                 new WorkflowDefinitionId(existing.WorkflowDefinitionId),
-                RequestedStatus);
+                WorkflowLifecycleStatusNames.Requested);
         }
     }
 

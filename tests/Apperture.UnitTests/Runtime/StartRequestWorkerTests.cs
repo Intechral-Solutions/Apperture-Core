@@ -128,6 +128,10 @@ public sealed class StartRequestWorkerTests
         instance.Status.Should().Be("completed");
         instance.CurrentStepName.Should().BeNull();
         instance.Version.Should().BeGreaterThan(0);
+
+        (await db.WorkflowStepInstances.CountAsync()).Should().Be(3);
+        (await db.WorkflowLifecycleEvents.Where(x => x.RunId == "r1").Select(x => x.EventType).ToListAsync())
+            .Should().ContainInOrder("workflow.started", "workflow.completed");
     }
 
     [Fact]
@@ -176,6 +180,10 @@ public sealed class StartRequestWorkerTests
         run.Status.Should().Be("failed");
         run.CompletedAt.Should().NotBeNull();
         instance.Status.Should().Be("failed");
+
+        (await db.WorkflowStepInstances.CountAsync()).Should().Be(1);
+        (await db.WorkflowLifecycleEvents.Where(x => x.RunId == "r1").Select(x => x.EventType).ToListAsync())
+            .Should().Contain("workflow.failed");
     }
 
     [Fact]
@@ -269,6 +277,7 @@ public sealed class StartRequestWorkerTests
         request.Status.Should().Be("running");
         run.Status.Should().Be("running");
         instance.Status.Should().Be("running");
+        (await db.WorkflowStepInstances.CountAsync()).Should().Be(1);
     }
 
     private static AppertureDbContext NewDb()

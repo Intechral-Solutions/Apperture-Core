@@ -58,6 +58,21 @@ public sealed class WorkflowRetryService : IWorkflowRetryService
         if (dispatchResult is null)
             throw new InvalidOperationException($"Workflow definition {originalRun.DefinitionId} could not be resolved for retry.");
 
+        _db.WorkflowLifecycleEvents.Add(new WorkflowLifecycleEventEntity
+        {
+            RunId = originalRun.Id,
+            WorkflowInstanceId = originalRun.WorkflowInstanceId,
+            WorkflowDefinitionId = originalRun.DefinitionId,
+            EventType = WorkflowLifecycleEventNames.RetryRequested,
+            FromStatus = originalRun.Status,
+            ToStatus = originalRun.Status,
+            OccurredAt = DateTimeOffset.UtcNow,
+            RelatedRunId = dispatchResult.RunId.Value,
+            StepName = null,
+            DetailsJson = null
+        });
+        await _db.SaveChangesAsync(cancellationToken);
+
         return new WorkflowRetryResult(
             new OperationRunId(originalRun.Id),
             dispatchResult.RunId,
@@ -67,8 +82,8 @@ public sealed class WorkflowRetryService : IWorkflowRetryService
     }
 
     private static bool IsRetryableStatus(string status) =>
-        string.Equals(status, "failed", StringComparison.Ordinal) ||
-        string.Equals(status, "cancelled", StringComparison.Ordinal);
+        string.Equals(status, WorkflowLifecycleStatusNames.Failed, StringComparison.Ordinal) ||
+        string.Equals(status, WorkflowLifecycleStatusNames.Cancelled, StringComparison.Ordinal);
 
     private static IReadOnlyDictionary<string, object?>? DeserializeParameters(string? parametersJson)
     {

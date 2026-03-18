@@ -75,7 +75,17 @@ public sealed class RunsControllerTests
         public StubRunQueryService(IReadOnlyList<RunSummaryDto>? list = null, Func<string, RunDetailDto?>? get = null)
         {
             _list = list ?? Array.Empty<RunSummaryDto>();
-            _get = get ?? (_ => new RunDetailDto("run-1", "inst-1", "wf-1", "requested", DateTimeOffset.UtcNow, null, null, null));
+            _get = get ?? (_ => new RunDetailDto(
+                "run-1",
+                "inst-1",
+                "wf-1",
+                "requested",
+                DateTimeOffset.UtcNow,
+                null,
+                null,
+                null,
+                Array.Empty<RunLifecycleEventDto>(),
+                Array.Empty<RunStepInstanceDto>()));
         }
 
         public ValueTask<IReadOnlyList<RunSummaryDto>> ListRunsAsync(CancellationToken cancellationToken = default) =>

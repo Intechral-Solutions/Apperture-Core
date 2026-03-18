@@ -19,12 +19,6 @@ public sealed class WorkflowStartRequestProcessor
         PropertyNameCaseInsensitive = true
     };
 
-    private const string RequestedStatus = "requested";
-    private const string RunningStatus = "running";
-    private const string CompletedStatus = "completed";
-    private const string FailedStatus = "failed";
-    private const string CancelledStatus = "cancelled";
-
     private readonly AppertureDbContext _db;
     private readonly IWorkflowExecutor _executor;
     private readonly IWorkflowDefinitionResolver _definitionResolver;
@@ -57,10 +51,10 @@ public sealed class WorkflowStartRequestProcessor
         {
             var affected = await _db.Database.ExecuteSqlInterpolatedAsync($@"
 UPDATE WorkflowStartRequests
-SET Status = {RunningStatus}, ClaimedAt = {now}, ClaimedBy = {_workerId}
+SET Status = {WorkflowLifecycleStatusNames.Running}, ClaimedAt = {now}, ClaimedBy = {_workerId}
 WHERE RunId = {runId} AND (
-    (Status = {RequestedStatus} AND ClaimedAt IS NULL) OR
-    (Status = {RunningStatus} AND ClaimedAt IS NOT NULL AND ClaimedAt < {staleBefore})
+    (Status = {WorkflowLifecycleStatusNames.Requested} AND ClaimedAt IS NULL) OR
+    (Status = {WorkflowLifecycleStatusNames.Running} AND ClaimedAt IS NOT NULL AND ClaimedAt < {staleBefore})
 )
 ", cancellationToken);
 
@@ -73,12 +67,12 @@ WHERE RunId = {runId} AND (
             return false;
 
         var eligible =
-            (string.Equals(entity.Status, RequestedStatus, StringComparison.Ordinal) && entity.ClaimedAt is null) ||
-            (string.Equals(entity.Status, RunningStatus, StringComparison.Ordinal) && entity.ClaimedAt is not null && entity.ClaimedAt < staleBefore);
+            (string.Equals(entity.Status, WorkflowLifecycleStatusNames.Requested, StringComparison.Ordinal) && entity.ClaimedAt is null) ||
+            (string.Equals(entity.Status, WorkflowLifecycleStatusNames.Running, StringComparison.Ordinal) && entity.ClaimedAt is not null && entity.ClaimedAt < staleBefore);
         if (!eligible)
             return false;
 
-        entity.Status = RunningStatus;
+        entity.Status = WorkflowLifecycleStatusNames.Running;
         entity.ClaimedAt = now;
         entity.ClaimedBy = _workerId;
         await _db.SaveChangesAsync(cancellationToken);
@@ -94,7 +88,7 @@ WHERE RunId = {runId} AND (
             var affected = await _db.Database.ExecuteSqlInterpolatedAsync($@"
 UPDATE WorkflowStartRequests
 SET ClaimedAt = {now}
-WHERE RunId = {runId} AND Status = {RunningStatus} AND ClaimedBy = {_workerId} AND ClaimedAt IS NOT NULL
+WHERE RunId = {runId} AND Status = {WorkflowLifecycleStatusNames.Running} AND ClaimedBy = {_workerId} AND ClaimedAt IS NOT NULL
 ", cancellationToken);
             return affected == 1;
         }
@@ -103,7 +97,7 @@ WHERE RunId = {runId} AND Status = {RunningStatus} AND ClaimedBy = {_workerId} A
         var entity = await _db.WorkflowStartRequests.FirstOrDefaultAsync(x => x.RunId == runId, cancellationToken);
         if (entity is null)
             return false;
-        if (!string.Equals(entity.Status, RunningStatus, StringComparison.Ordinal))
+        if (!string.Equals(entity.Status, WorkflowLifecycleStatusNames.Running, StringComparison.Ordinal))
             return false;
         if (!string.Equals(entity.ClaimedBy, _workerId, StringComparison.Ordinal))
             return false;
@@ -128,7 +122,7 @@ WHERE RunId = {runId} AND Status = {RunningStatus} AND ClaimedBy = {_workerId} A
 
         // Ownership enforcement: processing is valid only for the current lease owner.
         // Ownership loss is a coordination event; stop safely without writing terminal lifecycle state.
-        if (!string.Equals(request.Status, RunningStatus, StringComparison.Ordinal))
+        if (!string.Equals(request.Status, WorkflowLifecycleStatusNames.Running, StringComparison.Ordinal))
             return;
         if (request.ClaimedAt is null)
             return;
@@ -142,7 +136,7 @@ WHERE RunId = {runId} AND Status = {RunningStatus} AND ClaimedBy = {_workerId} A
 
         if (instance is null || run is null)
         {
-            request.Status = FailedStatus;
+            request.Status = WorkflowLifecycleStatusNames.Failed;
             request.LastError = "Missing WorkflowInstance or OperationRun record for start request.";
             await _db.SaveChangesAsync(cancellationToken);
             if (tx is not null)
@@ -151,16 +145,31 @@ WHERE RunId = {runId} AND Status = {RunningStatus} AND ClaimedBy = {_workerId} A
         }
 
         // Transition instance/run into running.
-        instance.Status = RunningStatus;
-        instance.UpdatedAt = DateTimeOffset.UtcNow;
-        run.Status = RunningStatus;
+        var runningAt = DateTimeOffset.UtcNow;
+        instance.Status = WorkflowLifecycleStatusNames.Running;
+        instance.UpdatedAt = runningAt;
+        run.Status = WorkflowLifecycleStatusNames.Running;
+        _db.WorkflowLifecycleEvents.Add(new WorkflowLifecycleEventEntity
+        {
+            RunId = run.Id,
+            WorkflowInstanceId = instance.Id,
+            WorkflowDefinitionId = instance.DefinitionId,
+            EventType = WorkflowLifecycleEventNames.Started,
+            FromStatus = WorkflowLifecycleStatusNames.Requested,
+            ToStatus = WorkflowLifecycleStatusNames.Running,
+            OccurredAt = runningAt,
+            RelatedRunId = run.RetryOfRunId,
+            StepName = null,
+            DetailsJson = null
+        });
+        WorkflowStepInstanceEntity? activeStep = null;
 
         try
         {
             // Cooperative cancel: if cancel was requested before execution begins, mark cancelled and stop.
             if (await IsCancelRequestedAsync(runId, cancellationToken))
             {
-                ApplyCancelled(request, instance, run);
+                ApplyCancelled(request, instance, run, null);
                 await _db.SaveChangesAsync(cancellationToken);
                 if (tx is not null)
                     await tx.CommitAsync(cancellationToken);
@@ -179,7 +188,7 @@ WHERE RunId = {runId} AND Status = {RunningStatus} AND ClaimedBy = {_workerId} A
                 // Cooperative cancel: stop before executing the next step.
                 if (await IsCancelRequestedAsync(runId, cancellationToken))
                 {
-                    ApplyCancelled(request, instance, run);
+                    ApplyCancelled(request, instance, run, stepName);
                     await _db.SaveChangesAsync(cancellationToken);
                     if (tx is not null)
                         await tx.CommitAsync(cancellationToken);
@@ -189,6 +198,18 @@ WHERE RunId = {runId} AND Status = {RunningStatus} AND ClaimedBy = {_workerId} A
                 instance.CurrentStepName = stepName;
                 instance.Version += 1;
                 instance.UpdatedAt = DateTimeOffset.UtcNow;
+                var stepStartedAt = DateTimeOffset.UtcNow;
+                activeStep = new WorkflowStepInstanceEntity
+                {
+                    WorkflowInstanceId = instance.Id,
+                    StepName = stepName,
+                    Attempt = 1,
+                    Status = WorkflowLifecycleStatusNames.Running,
+                    StartedAt = stepStartedAt,
+                    EndedAt = null,
+                    Error = null
+                };
+                _db.WorkflowStepInstances.Add(activeStep);
                 await _db.SaveChangesAsync(cancellationToken);
 
                 // Execute step; null result is acceptable (no-op handler).
@@ -204,6 +225,10 @@ WHERE RunId = {runId} AND Status = {RunningStatus} AND ClaimedBy = {_workerId} A
 
                 await _executor.ExecuteStepAsync(definition, stepName, domainInstance, parameters, cancellationToken);
 
+                activeStep.Status = WorkflowLifecycleStatusNames.Completed;
+                activeStep.EndedAt = DateTimeOffset.UtcNow;
+                activeStep.Error = null;
+
                 // Heartbeat after step completion: detect ownership loss (e.g. reclaim) and stop safely.
                 if (!await TryRenewLeaseAsync(runId, cancellationToken))
                     return;
@@ -212,7 +237,7 @@ WHERE RunId = {runId} AND Status = {RunningStatus} AND ClaimedBy = {_workerId} A
             // Cancel can arrive right as the last step completes; prefer cancelled over completed.
             if (await IsCancelRequestedAsync(runId, cancellationToken))
             {
-                ApplyCancelled(request, instance, run);
+                ApplyCancelled(request, instance, run, null);
                 await _db.SaveChangesAsync(cancellationToken);
                 if (tx is not null)
                     await tx.CommitAsync(cancellationToken);
@@ -220,12 +245,25 @@ WHERE RunId = {runId} AND Status = {RunningStatus} AND ClaimedBy = {_workerId} A
             }
 
             instance.CurrentStepName = null;
-            instance.Status = CompletedStatus;
+            instance.Status = WorkflowLifecycleStatusNames.Completed;
             instance.UpdatedAt = DateTimeOffset.UtcNow;
-            run.Status = CompletedStatus;
+            run.Status = WorkflowLifecycleStatusNames.Completed;
             run.CompletedAt = DateTimeOffset.UtcNow;
-            request.Status = CompletedStatus;
+            request.Status = WorkflowLifecycleStatusNames.Completed;
             request.LastError = null;
+            _db.WorkflowLifecycleEvents.Add(new WorkflowLifecycleEventEntity
+            {
+                RunId = run.Id,
+                WorkflowInstanceId = instance.Id,
+                WorkflowDefinitionId = instance.DefinitionId,
+                EventType = WorkflowLifecycleEventNames.Completed,
+                FromStatus = WorkflowLifecycleStatusNames.Running,
+                ToStatus = WorkflowLifecycleStatusNames.Completed,
+                OccurredAt = DateTimeOffset.UtcNow,
+                RelatedRunId = run.RetryOfRunId,
+                StepName = null,
+                DetailsJson = null
+            });
 
             await _db.SaveChangesAsync(cancellationToken);
             if (tx is not null)
@@ -235,12 +273,32 @@ WHERE RunId = {runId} AND Status = {RunningStatus} AND ClaimedBy = {_workerId} A
         {
             _logger?.LogError(ex, "Start request execution failed. RunId={RunId}", runId);
 
-            instance.Status = FailedStatus;
+            if (activeStep is not null)
+            {
+                activeStep.Status = WorkflowLifecycleStatusNames.Failed;
+                activeStep.EndedAt = DateTimeOffset.UtcNow;
+                activeStep.Error = Truncate(ex.Message, 2048);
+            }
+
+            instance.Status = WorkflowLifecycleStatusNames.Failed;
             instance.UpdatedAt = DateTimeOffset.UtcNow;
-            run.Status = FailedStatus;
+            run.Status = WorkflowLifecycleStatusNames.Failed;
             run.CompletedAt = DateTimeOffset.UtcNow;
-            request.Status = FailedStatus;
+            request.Status = WorkflowLifecycleStatusNames.Failed;
             request.LastError = Truncate(ex.Message, 2048);
+            _db.WorkflowLifecycleEvents.Add(new WorkflowLifecycleEventEntity
+            {
+                RunId = run.Id,
+                WorkflowInstanceId = instance.Id,
+                WorkflowDefinitionId = instance.DefinitionId,
+                EventType = WorkflowLifecycleEventNames.Failed,
+                FromStatus = WorkflowLifecycleStatusNames.Running,
+                ToStatus = WorkflowLifecycleStatusNames.Failed,
+                OccurredAt = DateTimeOffset.UtcNow,
+                RelatedRunId = run.RetryOfRunId,
+                StepName = activeStep?.StepName,
+                DetailsJson = JsonSerializer.Serialize(new { error = Truncate(ex.Message, 2048) })
+            });
 
             await _db.SaveChangesAsync(cancellationToken);
             if (tx is not null)
@@ -254,18 +312,33 @@ WHERE RunId = {runId} AND Status = {RunningStatus} AND ClaimedBy = {_workerId} A
             .AnyAsync(x => x.RunId == runId, cancellationToken);
     }
 
-    private static void ApplyCancelled(
+    private void ApplyCancelled(
         WorkflowStartRequestEntity request,
         WorkflowInstanceEntity instance,
-        OperationRunEntity run)
+        OperationRunEntity run,
+        string? stepName)
     {
-        request.Status = CancelledStatus;
+        request.Status = WorkflowLifecycleStatusNames.Cancelled;
         request.LastError = null;
-        instance.Status = CancelledStatus;
+        instance.Status = WorkflowLifecycleStatusNames.Cancelled;
         instance.CurrentStepName = null;
         instance.UpdatedAt = DateTimeOffset.UtcNow;
-        run.Status = CancelledStatus;
+        run.Status = WorkflowLifecycleStatusNames.Cancelled;
         run.CompletedAt = DateTimeOffset.UtcNow;
+        instance.Version += 1;
+        _db.WorkflowLifecycleEvents.Add(new WorkflowLifecycleEventEntity
+        {
+            RunId = run.Id,
+            WorkflowInstanceId = instance.Id,
+            WorkflowDefinitionId = instance.DefinitionId,
+            EventType = WorkflowLifecycleEventNames.Cancelled,
+            FromStatus = WorkflowLifecycleStatusNames.Running,
+            ToStatus = WorkflowLifecycleStatusNames.Cancelled,
+            OccurredAt = DateTimeOffset.UtcNow,
+            RelatedRunId = run.RetryOfRunId,
+            StepName = stepName,
+            DetailsJson = null
+        });
     }
 
     private async ValueTask<WorkflowDefinition> ResolveDefinitionOrThrowAsync(string workflowDefinitionId, CancellationToken cancellationToken)

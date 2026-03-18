@@ -26,5 +26,25 @@ public sealed record RunDetailDto(
     DateTimeOffset CreatedAt,
     DateTimeOffset? CompletedAt,
     string? CorrelationKey,
-    string? RetryOfRunId);
+    string? RetryOfRunId,
+    IReadOnlyList<RunLifecycleEventDto> LifecycleEvents,
+    IReadOnlyList<RunStepInstanceDto> StepInstances);
+
+public sealed record RunLifecycleEventDto(
+    int Id,
+    string EventType,
+    string? FromStatus,
+    string? ToStatus,
+    DateTimeOffset OccurredAt,
+    string? RelatedRunId,
+    string? StepName,
+    string? DetailsJson);
+
+public sealed record RunStepInstanceDto(
+    string StepName,
+    int Attempt,
+    string Status,
+    DateTimeOffset? StartedAt,
+    DateTimeOffset? EndedAt,
+    string? Error);
 

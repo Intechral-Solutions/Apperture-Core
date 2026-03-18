@@ -41,6 +41,14 @@ public sealed class WorkflowRetryServiceTests
         retryStart.ParametersJson.Should().Be(startRequest.ParametersJson);
         retryStart.CorrelationId.Should().Be(startRequest.CorrelationId);
         retryStart.IdempotencyKey.Should().BeNull();
+
+        var eventTypes = await db.WorkflowLifecycleEvents
+            .Where(x => x.RunId == "r1" || x.RunId == retryRun.Id)
+            .OrderBy(x => x.Id)
+            .Select(x => x.EventType)
+            .ToListAsync();
+        eventTypes.Should().Contain("workflow.retry_requested");
+        eventTypes.Should().Contain("workflow.dispatched");
     }
 
     [Fact]

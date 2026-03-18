@@ -42,6 +42,8 @@ public sealed class WorkflowCancelTests
         inst.CurrentStepName.Should().BeNull();
         run.Status.Should().Be("cancelled");
         run.CompletedAt.Should().NotBeNull();
+        (await db.WorkflowLifecycleEvents.Where(x => x.RunId == "r1").Select(x => x.EventType).ToListAsync())
+            .Should().Contain("workflow.cancelled");
     }
 
     [Fact]
@@ -83,6 +85,8 @@ public sealed class WorkflowCancelTests
         req.Status.Should().Be("cancelled");
         inst.Status.Should().Be("cancelled");
         run.Status.Should().Be("cancelled");
+        (await db.WorkflowLifecycleEvents.Where(x => x.RunId == "r1").Select(x => x.EventType).ToListAsync())
+            .Should().Contain("workflow.cancelled");
     }
 
     private static void SeedStartTriplet(AppertureDbContext db, string runId, string instanceId, string definitionId)

@@ -65,6 +65,16 @@ Control plane creates a brand-new run and workflow instance via the existing sta
 - **Non-idempotent by design:** repeated retry requests against the same original run create additional fresh runs.
 - **Not supported:** in-place restart, resume-from-step, reopening the original run, or signal-style semantics.
 
+### Workflow lifecycle refinement
+
+Lifecycle refinement does not change the executable-permission model. It makes the existing run/start/cancel/retry transitions explicit and queryable:
+
+- **Run/control history:** start dispatch, cancel request, cancel honor, retry request, completion, and failure are now recorded as durable lifecycle events.
+- **Step history:** worker execution persists `WorkflowStepInstances` so the control plane can explain where a run got to, not just the final status.
+- **Query visibility:** run detail can now surface both the transition trail and the step trail.
+
+The authorization rule stays the same: lifecycle-related control actions remain governed by the existing executable permissions and module/instance fallback logic. This stage is about making the lifecycle honest, not expanding who can do what.
+
 ### Operations
 
 - **Model:** `OperationDefinition.RequiredPermissions` (already present).

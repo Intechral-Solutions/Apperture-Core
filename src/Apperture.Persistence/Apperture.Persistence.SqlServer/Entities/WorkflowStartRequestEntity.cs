@@ -14,7 +14,7 @@ public sealed class WorkflowStartRequestEntity
     public string? CorrelationId { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
 
-    public string Status { get; set; } = "requested";
+    public string Status { get; set; } = Apperture.RuntimePlane.Abstractions.WorkflowLifecycleStatusNames.Requested;
     public DateTimeOffset? ClaimedAt { get; set; }
     public string? ClaimedBy { get; set; }
     public string? LastError { get; set; }
