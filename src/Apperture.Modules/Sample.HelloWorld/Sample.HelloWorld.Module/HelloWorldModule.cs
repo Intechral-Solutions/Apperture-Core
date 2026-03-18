@@ -35,6 +35,10 @@ public sealed class HelloWorldModule : IModule, IModuleStepHandlerRegistrar
 
     public void RegisterStepHandlers(IStepHandlerRegistry registry)
     {
+        // Register handlers for every step declared by the workflow definition so the sample
+        // truthfully exercises the worker-side step pipeline and step-instance recording.
+        registry.Register(ModuleId, "Validate", new HelloWorldValidateStepHandler());
         registry.Register(ModuleId, "DoWork", new HelloWorldDoWorkStepHandler());
+        registry.Register(ModuleId, "Complete", new HelloWorldCompleteStepHandler());
     }
 }

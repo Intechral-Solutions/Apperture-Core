@@ -18,6 +18,7 @@ $ErrorActionPreference = "Stop"
 $RepoRoot = if ($env:APPERTURE_REPO_ROOT) { $env:APPERTURE_REPO_ROOT } else { (Get-Item $PSScriptRoot).Parent.Parent.FullName }
 $HostProject = Join-Path $RepoRoot "src\Apperture.ControlPlane\Apperture.Management.Host\Apperture.Management.Host.csproj"
 $UiServerProject = Join-Path $RepoRoot "src\Apperture.ControlPlane\Apperture.Management.Ui.Server\Apperture.Management.Ui.Server.csproj"
+$WorkerHostProject = Join-Path $RepoRoot "src\Apperture.RuntimeHost\Apperture.RuntimeHost.Windows\Apperture.RuntimeHost.Windows.WorkerHost\Apperture.RuntimeHost.Windows.WorkerHost.csproj"
 $SyncScript = Join-Path $PSScriptRoot "Sync-EnvFromUserSecrets.ps1"
 
 if (-not (Test-Path $HostProject)) {
@@ -25,6 +26,9 @@ if (-not (Test-Path $HostProject)) {
 }
 if (-not (Test-Path $UiServerProject)) {
     Write-Error "Management UI Server project not found: $UiServerProject"
+}
+if (-not (Test-Path $WorkerHostProject)) {
+    Write-Error "Runtime WorkerHost project not found: $WorkerHostProject"
 }
 
 Write-Host "Starting Apperture dev environment (SQL-backed)..." -ForegroundColor Cyan
@@ -71,5 +75,10 @@ if ($NoBrowser) {
 Start-Process -FilePath "dotnet" -ArgumentList $hostArgs -WorkingDirectory $RepoRoot -WindowStyle Normal
 Start-Sleep -Seconds 2
 Start-Process -FilePath "dotnet" -ArgumentList $uiArgs -WorkingDirectory $RepoRoot -WindowStyle Normal
+Start-Sleep -Seconds 2
+
+# Start instance-plane worker so workflow runs actually execute steps and persist step instances.
+$workerArgs = @("run", "--project", $WorkerHostProject)
+Start-Process -FilePath "dotnet" -ArgumentList $workerArgs -WorkingDirectory $RepoRoot -WindowStyle Normal
 
 Write-Host "Dev servers started. Close their windows or run scripts\dev\down.ps1 to stop." -ForegroundColor Green

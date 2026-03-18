@@ -28,5 +28,6 @@
     <ProjectReference Include="..\..\src\Apperture.RuntimeHost\Apperture.RuntimeHost.Azure\Apperture.RuntimeHost.Azure.Secrets\Apperture.RuntimeHost.Azure.Secrets.csproj" />
     <ProjectReference Include="..\..\src\Apperture.ControlPlane\Apperture.ControlPlane.Security\Apperture.ControlPlane.Security.csproj" />
     <ProjectReference Include="..\..\src\Apperture.ControlPlane\Apperture.Management.Api\Apperture.Management.Api.csproj" />
+    <ProjectReference Include="..\..\src\Apperture.Modules\Sample.HelloWorld\Sample.HelloWorld.Module\Sample.HelloWorld.Module.csproj" />
   </ItemGroup>
 </Project>
