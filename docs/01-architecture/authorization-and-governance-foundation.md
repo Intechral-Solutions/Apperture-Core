@@ -62,6 +62,9 @@ Retry reuses the **same executable permission model** as workflow start/cancel f
 
 Control plane creates a brand-new run and workflow instance via the existing start dispatch pipeline. The original run remains terminal and unchanged; the new run records `RetryOfRunId` so lineage is durable and visible in run queries.
 
+- **Non-idempotent by design:** repeated retry requests against the same original run create additional fresh runs.
+- **Not supported:** in-place restart, resume-from-step, reopening the original run, or signal-style semantics.
+
 ### Operations
 
 - **Model:** `OperationDefinition.RequiredPermissions` (already present).

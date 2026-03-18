@@ -20,6 +20,8 @@ This stage adds a **durable, permission-aware workflow retry-as-new-run control 
 - Retry means **start the workflow again as a new run**
 - The original run remains terminal and unchanged
 - Retry is allowed only for terminal `failed` and `cancelled` runs
+- Retry is **non-idempotent by design**: repeated calls against the same original run create additional fresh runs
+- Retry is lineage-linked, not in-place restart, resume, or reopen
 - Retry does **not** mean resume or in-place restart
 
 ### Persistence / lineage

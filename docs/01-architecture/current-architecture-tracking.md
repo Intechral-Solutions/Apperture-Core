@@ -123,6 +123,8 @@ flowchart TB
 
 - **API surface:** `POST /api/runs/{runId}/retry` creates a brand-new run and instance for the same workflow definition.
 - **Semantics:** retry is “start again as a new run,” not resume/restart-in-place. The original run remains terminal and unchanged.
+- **Eligibility:** retry is currently allowed only for terminal `failed` and `cancelled` runs.
+- **Idempotency:** retry is non-idempotent by design; repeated retry calls against the same original run create additional fresh runs.
 - **Persistence:** the new `OperationRunEntity` stores `RetryOfRunId` so the lineage from retried run to original run is durable and queryable.
 - **Execution path:** retry reuses the existing start dispatch pipeline, which creates the new `WorkflowInstanceEntity`, `OperationRunEntity`, and `WorkflowStartRequestEntity` triple that the worker then consumes normally.
 
