@@ -30,6 +30,12 @@ This stage creates a real runtime-side recipient model for external control so l
 - Park/resume use the existing executable-permission fallback model
 - The new recipient model does not add signal semantics by itself
 
+## Hardening pass (recipient slice)
+
+- **Race-safe inbox:** duplicate queued park/resume for the same run resolves idempotently (unique constraint on queued rows); API does not return 500 for that race.
+- **Ownership at apply:** park and resume application paths re-check the worker lease so only the current claimant applies control.
+- **Pointer semantics:** `CurrentStepName` is documented as running vs parked (next-step pointer when parked). No new bookmark table or signal machinery.
+
 ## Deferred beyond this stage
 
 - Signal endpoints

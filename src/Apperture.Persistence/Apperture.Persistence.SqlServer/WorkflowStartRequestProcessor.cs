@@ -155,15 +155,21 @@ WHERE RunId = {runId} AND Status = {WorkflowLifecycleStatusNames.Running} AND Cl
         // Transition instance/run into running, or resume a parked run from its saved next step.
         var transitionAt = DateTimeOffset.UtcNow;
         var resuming = string.Equals(instance.Status, WorkflowLifecycleStatusNames.Parked, StringComparison.Ordinal);
-        instance.Status = WorkflowLifecycleStatusNames.Running;
-        instance.UpdatedAt = transitionAt;
-        run.Status = WorkflowLifecycleStatusNames.Running;
         if (resuming)
         {
-            var resumeControl = await GetQueuedControlRequestAsync(runId, WorkflowExternalControlKindNames.Resume, cancellationToken);
-            if (resumeControl is not null)
-                MarkControlApplied(resumeControl, transitionAt);
+            // Revalidate lease immediately before applying resume control (another worker may have claimed after we entered).
+            if (!await TryRenewLeaseAsync(runId, cancellationToken))
+                return;
 
+            var resumeControl = await GetQueuedControlRequestAsync(runId, WorkflowExternalControlKindNames.Resume, cancellationToken);
+            if (resumeControl is null)
+                return;
+
+            MarkControlApplied(resumeControl, transitionAt);
+
+            instance.Status = WorkflowLifecycleStatusNames.Running;
+            instance.UpdatedAt = transitionAt;
+            run.Status = WorkflowLifecycleStatusNames.Running;
             instance.Version += 1;
             request.LastError = null;
 
@@ -183,6 +189,9 @@ WHERE RunId = {runId} AND Status = {WorkflowLifecycleStatusNames.Running} AND Cl
         }
         else
         {
+            instance.Status = WorkflowLifecycleStatusNames.Running;
+            instance.UpdatedAt = transitionAt;
+            run.Status = WorkflowLifecycleStatusNames.Running;
             _db.WorkflowLifecycleEvents.Add(new WorkflowLifecycleEventEntity
             {
                 RunId = run.Id,
@@ -420,6 +429,10 @@ WHERE RunId = {runId} AND Status = {WorkflowLifecycleStatusNames.Running} AND Cl
     {
         var parkRequest = await GetQueuedControlRequestAsync(runId, WorkflowExternalControlKindNames.Park, cancellationToken);
         if (parkRequest is null)
+            return false;
+
+        // Revalidate lease at mutation time so a stale worker cannot park after losing the claim.
+        if (!await TryRenewLeaseAsync(runId, cancellationToken))
             return false;
 
         var now = DateTimeOffset.UtcNow;

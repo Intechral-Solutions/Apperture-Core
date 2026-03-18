@@ -86,6 +86,30 @@ public sealed class RunsControllerTests
         result.Should().BeOfType<AcceptedResult>();
     }
 
+    [Fact]
+    public async Task ParkRun_WhenUnauthorized_Returns403()
+    {
+        var controller = new RunsController(
+            new StubRunQueryService(),
+            new StubCancelService(),
+            new StubRetryService(),
+            new StubExternalControlService(throwParkUnauthorized: true));
+        var result = await controller.ParkRun("run-1", CancellationToken.None);
+        result.Should().BeOfType<ForbidResult>();
+    }
+
+    [Fact]
+    public async Task ResumeRun_WhenUnauthorized_Returns403()
+    {
+        var controller = new RunsController(
+            new StubRunQueryService(),
+            new StubCancelService(),
+            new StubRetryService(),
+            new StubExternalControlService(throwResumeUnauthorized: true));
+        var result = await controller.ResumeRun("run-1", CancellationToken.None);
+        result.Should().BeOfType<ForbidResult>();
+    }
+
     private sealed class StubRunQueryService : IRunQueryService
     {
         private readonly IReadOnlyList<RunSummaryDto> _list;
@@ -159,8 +183,20 @@ public sealed class RunsControllerTests
 
     private sealed class StubExternalControlService : IWorkflowExternalControlService
     {
-        public ValueTask<WorkflowExternalControlResult?> RequestParkAsync(Apperture.RuntimePlane.Abstractions.OperationRunId runId, CancellationToken cancellationToken = default) =>
-            ValueTask.FromResult<WorkflowExternalControlResult?>(new WorkflowExternalControlResult(
+        private readonly bool _throwParkUnauthorized;
+        private readonly bool _throwResumeUnauthorized;
+
+        public StubExternalControlService(bool throwParkUnauthorized = false, bool throwResumeUnauthorized = false)
+        {
+            _throwParkUnauthorized = throwParkUnauthorized;
+            _throwResumeUnauthorized = throwResumeUnauthorized;
+        }
+
+        public ValueTask<WorkflowExternalControlResult?> RequestParkAsync(Apperture.RuntimePlane.Abstractions.OperationRunId runId, CancellationToken cancellationToken = default)
+        {
+            if (_throwParkUnauthorized)
+                throw new UnauthorizedAccessException("deny");
+            return ValueTask.FromResult<WorkflowExternalControlResult?>(new WorkflowExternalControlResult(
                 runId,
                 new Apperture.RuntimePlane.Abstractions.WorkflowInstanceId("inst-1"),
                 new Apperture.RuntimePlane.Abstractions.WorkflowDefinitionId("wf-1"),
@@ -168,9 +204,13 @@ public sealed class RunsControllerTests
                 "queued",
                 WorkflowLifecycleStatusNames.Running,
                 "Step1"));
+        }
 
-        public ValueTask<WorkflowExternalControlResult?> RequestResumeAsync(Apperture.RuntimePlane.Abstractions.OperationRunId runId, CancellationToken cancellationToken = default) =>
-            ValueTask.FromResult<WorkflowExternalControlResult?>(new WorkflowExternalControlResult(
+        public ValueTask<WorkflowExternalControlResult?> RequestResumeAsync(Apperture.RuntimePlane.Abstractions.OperationRunId runId, CancellationToken cancellationToken = default)
+        {
+            if (_throwResumeUnauthorized)
+                throw new UnauthorizedAccessException("deny");
+            return ValueTask.FromResult<WorkflowExternalControlResult?>(new WorkflowExternalControlResult(
                 runId,
                 new Apperture.RuntimePlane.Abstractions.WorkflowInstanceId("inst-1"),
                 new Apperture.RuntimePlane.Abstractions.WorkflowDefinitionId("wf-1"),
@@ -178,6 +218,7 @@ public sealed class RunsControllerTests
                 "queued",
                 WorkflowLifecycleStatusNames.Parked,
                 "Step2"));
+        }
     }
 }
 

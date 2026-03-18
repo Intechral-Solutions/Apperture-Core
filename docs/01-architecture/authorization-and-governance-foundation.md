@@ -85,6 +85,8 @@ The recipient model adds parked/resumed workflow control without changing the ex
 
 This is still not signal. It is the runtime-side recipient shape that later signal semantics will need to reuse instead of inventing fake persistence-only behavior.
 
+- **Deny path:** `POST /api/runs/{id}/park` and `POST /api/runs/{id}/resume` surface `UnauthorizedAccessException` from `IWorkflowExternalControlAuthorizationService` as **403** (same pattern as retry/cancel).
+
 ### Operations
 
 - **Model:** `OperationDefinition.RequiredPermissions` (already present).

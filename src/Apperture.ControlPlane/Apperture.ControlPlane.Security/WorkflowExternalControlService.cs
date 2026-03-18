@@ -1,6 +1,7 @@
 using Apperture.Core.Application.Services;
 using Apperture.Persistence.SqlServer;
 using Apperture.RuntimePlane.Abstractions;
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 
 namespace Apperture.ControlPlane.Security;
@@ -76,7 +77,9 @@ public sealed class WorkflowExternalControlService : IWorkflowExternalControlSer
                     instance.CurrentStepName);
             }
 
-            await PersistControlRequestAsync(run, controlKind, WorkflowLifecycleEventNames.ParkRequested, cancellationToken);
+            if (!await TryPersistQueuedControlAsync(run, controlKind, WorkflowLifecycleEventNames.ParkRequested, cancellationToken))
+                return await BuildIdempotentQueuedResultAsync(runId, controlKind, cancellationToken);
+
             return new WorkflowExternalControlResult(
                 runId,
                 new WorkflowInstanceId(run.WorkflowInstanceId),
@@ -111,7 +114,9 @@ public sealed class WorkflowExternalControlService : IWorkflowExternalControlSer
                     instance.CurrentStepName);
             }
 
-            await PersistControlRequestAsync(run, controlKind, WorkflowLifecycleEventNames.ResumeRequested, cancellationToken);
+            if (!await TryPersistQueuedControlAsync(run, controlKind, WorkflowLifecycleEventNames.ResumeRequested, cancellationToken))
+                return await BuildIdempotentQueuedResultAsync(runId, controlKind, cancellationToken);
+
             return new WorkflowExternalControlResult(
                 runId,
                 new WorkflowInstanceId(run.WorkflowInstanceId),
@@ -125,7 +130,44 @@ public sealed class WorkflowExternalControlService : IWorkflowExternalControlSer
         throw new InvalidOperationException($"Unsupported control kind '{controlKind}'.");
     }
 
-    private async ValueTask PersistControlRequestAsync(
+    private async ValueTask<WorkflowExternalControlResult?> BuildIdempotentQueuedResultAsync(
+        OperationRunId runId,
+        string controlKind,
+        CancellationToken cancellationToken)
+    {
+        var queued = await _db.WorkflowExternalControlRequests.AsNoTracking()
+            .FirstOrDefaultAsync(x =>
+                x.RunId == runId.Value &&
+                x.ControlKind == controlKind &&
+                x.Status == WorkflowExternalControlStatusNames.Queued,
+                cancellationToken);
+        if (queued is null)
+            throw new InvalidOperationException(
+                $"Concurrent control request for run {runId.Value} did not resolve to a queued {controlKind} row.");
+
+        var run = await _db.OperationRuns.AsNoTracking()
+            .FirstOrDefaultAsync(x => x.Id == runId.Value, cancellationToken);
+        var instance = run is null
+            ? null
+            : await _db.WorkflowInstances.AsNoTracking()
+                .FirstOrDefaultAsync(x => x.Id == run.WorkflowInstanceId, cancellationToken);
+        if (run is null || instance is null)
+            throw new InvalidOperationException($"Run {runId.Value} could not be reloaded after concurrent control insert.");
+
+        return new WorkflowExternalControlResult(
+            runId,
+            new WorkflowInstanceId(run.WorkflowInstanceId),
+            new WorkflowDefinitionId(run.DefinitionId),
+            controlKind,
+            WorkflowExternalControlStatusNames.Queued,
+            run.Status,
+            instance.CurrentStepName);
+    }
+
+    /// <summary>
+    /// Returns true if insert + lifecycle event committed; false if another caller won the unique-index race (caller uses idempotent result).
+    /// </summary>
+    private async ValueTask<bool> TryPersistQueuedControlAsync(
         OperationRunEntity run,
         string controlKind,
         string requestedEventType,
@@ -163,6 +205,26 @@ public sealed class WorkflowExternalControlService : IWorkflowExternalControlSer
             DetailsJson = null
         });
 
-        await _db.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await _db.SaveChangesAsync(cancellationToken);
+            return true;
+        }
+        catch (DbUpdateException ex) when (IsUniqueQueuedControlViolation(ex))
+        {
+            _db.ChangeTracker.Clear();
+            return false;
+        }
+    }
+
+    private static bool IsUniqueQueuedControlViolation(DbUpdateException ex)
+    {
+        for (var inner = ex.InnerException; inner is not null; inner = inner.InnerException)
+        {
+            if (inner is SqlException sql && sql.Number is 2601 or 2627)
+                return true;
+        }
+
+        return false;
     }
 }

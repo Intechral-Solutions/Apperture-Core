@@ -82,6 +82,189 @@ public sealed class RunQueryServiceTests
         detail.ControlRequests[0].Status.Should().Be(WorkflowExternalControlStatusNames.Queued);
     }
 
+    [Fact]
+    public async Task GetRunAsync_ParkedRun_ReflectsNextStepPointerAndControlTrail()
+    {
+        var t0 = DateTimeOffset.UtcNow.AddHours(-2);
+        var db = NewDb();
+        db.WorkflowInstances.Add(new WorkflowInstanceEntity
+        {
+            Id = "i1",
+            DefinitionId = "Sample.HelloWorld.HelloWorld",
+            Status = WorkflowLifecycleStatusNames.Parked,
+            CreatedAt = t0,
+            UpdatedAt = t0.AddMinutes(30),
+            Version = 2,
+            CurrentStepName = "DoWork"
+        });
+        db.OperationRuns.Add(new OperationRunEntity
+        {
+            Id = "r1",
+            WorkflowInstanceId = "i1",
+            DefinitionId = "Sample.HelloWorld.HelloWorld",
+            Status = WorkflowLifecycleStatusNames.Parked,
+            CreatedAt = t0
+        });
+        db.WorkflowLifecycleEvents.AddRange(
+            new WorkflowLifecycleEventEntity
+            {
+                RunId = "r1",
+                WorkflowInstanceId = "i1",
+                WorkflowDefinitionId = "Sample.HelloWorld.HelloWorld",
+                EventType = WorkflowLifecycleEventNames.Started,
+                FromStatus = WorkflowLifecycleStatusNames.Requested,
+                ToStatus = WorkflowLifecycleStatusNames.Running,
+                OccurredAt = t0.AddMinutes(1),
+                RelatedRunId = null,
+                StepName = null
+            },
+            new WorkflowLifecycleEventEntity
+            {
+                RunId = "r1",
+                WorkflowInstanceId = "i1",
+                WorkflowDefinitionId = "Sample.HelloWorld.HelloWorld",
+                EventType = WorkflowLifecycleEventNames.Parked,
+                FromStatus = WorkflowLifecycleStatusNames.Running,
+                ToStatus = WorkflowLifecycleStatusNames.Parked,
+                OccurredAt = t0.AddMinutes(10),
+                RelatedRunId = null,
+                StepName = "DoWork"
+            });
+        db.WorkflowExternalControlRequests.AddRange(
+            new WorkflowExternalControlRequestEntity
+            {
+                RunId = "r1",
+                WorkflowInstanceId = "i1",
+                WorkflowDefinitionId = "Sample.HelloWorld.HelloWorld",
+                ControlKind = WorkflowExternalControlKindNames.Park,
+                Status = WorkflowExternalControlStatusNames.Applied,
+                RequestedAt = t0.AddMinutes(5),
+                RequestedBy = "op-1",
+                AppliedAt = t0.AddMinutes(10),
+                AppliedBy = "worker"
+            },
+            new WorkflowExternalControlRequestEntity
+            {
+                RunId = "r1",
+                WorkflowInstanceId = "i1",
+                WorkflowDefinitionId = "Sample.HelloWorld.HelloWorld",
+                ControlKind = WorkflowExternalControlKindNames.Resume,
+                Status = WorkflowExternalControlStatusNames.Queued,
+                RequestedAt = t0.AddMinutes(20),
+                RequestedBy = "op-2"
+            });
+        await db.SaveChangesAsync();
+
+        var detail = await new RunQueryService(db, new AllowReadAuthz()).GetRunAsync(new OperationRunId("r1"));
+
+        detail.Should().NotBeNull();
+        detail!.Status.Should().Be(WorkflowLifecycleStatusNames.Parked);
+        detail.CurrentStepName.Should().Be("DoWork");
+        detail.LifecycleEvents.Should().HaveCount(2);
+        detail.LifecycleEvents[^1].EventType.Should().Be(WorkflowLifecycleEventNames.Parked);
+        detail.ControlRequests.Should().HaveCount(2);
+        detail.ControlRequests[0].ControlKind.Should().Be(WorkflowExternalControlKindNames.Park);
+        detail.ControlRequests[0].Status.Should().Be(WorkflowExternalControlStatusNames.Applied);
+        detail.ControlRequests[1].ControlKind.Should().Be(WorkflowExternalControlKindNames.Resume);
+        detail.ControlRequests[1].Status.Should().Be(WorkflowExternalControlStatusNames.Queued);
+    }
+
+    [Fact]
+    public async Task GetRunAsync_AfterResume_ReflectsRunningStateAndAppliedControls()
+    {
+        var t0 = DateTimeOffset.UtcNow.AddHours(-3);
+        var db = NewDb();
+        db.WorkflowInstances.Add(new WorkflowInstanceEntity
+        {
+            Id = "i1",
+            DefinitionId = "Sample.HelloWorld.HelloWorld",
+            Status = WorkflowLifecycleStatusNames.Running,
+            CreatedAt = t0,
+            UpdatedAt = t0.AddHours(1),
+            Version = 4,
+            CurrentStepName = "DoWork"
+        });
+        db.OperationRuns.Add(new OperationRunEntity
+        {
+            Id = "r1",
+            WorkflowInstanceId = "i1",
+            DefinitionId = "Sample.HelloWorld.HelloWorld",
+            Status = WorkflowLifecycleStatusNames.Running,
+            CreatedAt = t0
+        });
+        db.WorkflowLifecycleEvents.AddRange(
+            new WorkflowLifecycleEventEntity
+            {
+                RunId = "r1",
+                WorkflowInstanceId = "i1",
+                WorkflowDefinitionId = "Sample.HelloWorld.HelloWorld",
+                EventType = WorkflowLifecycleEventNames.Started,
+                FromStatus = WorkflowLifecycleStatusNames.Requested,
+                ToStatus = WorkflowLifecycleStatusNames.Running,
+                OccurredAt = t0.AddMinutes(1),
+                RelatedRunId = null,
+                StepName = null
+            },
+            new WorkflowLifecycleEventEntity
+            {
+                RunId = "r1",
+                WorkflowInstanceId = "i1",
+                WorkflowDefinitionId = "Sample.HelloWorld.HelloWorld",
+                EventType = WorkflowLifecycleEventNames.Parked,
+                FromStatus = WorkflowLifecycleStatusNames.Running,
+                ToStatus = WorkflowLifecycleStatusNames.Parked,
+                OccurredAt = t0.AddMinutes(5),
+                RelatedRunId = null,
+                StepName = "DoWork"
+            },
+            new WorkflowLifecycleEventEntity
+            {
+                RunId = "r1",
+                WorkflowInstanceId = "i1",
+                WorkflowDefinitionId = "Sample.HelloWorld.HelloWorld",
+                EventType = WorkflowLifecycleEventNames.Resumed,
+                FromStatus = WorkflowLifecycleStatusNames.Parked,
+                ToStatus = WorkflowLifecycleStatusNames.Running,
+                OccurredAt = t0.AddMinutes(15),
+                RelatedRunId = null,
+                StepName = "DoWork"
+            });
+        db.WorkflowExternalControlRequests.AddRange(
+            new WorkflowExternalControlRequestEntity
+            {
+                RunId = "r1",
+                WorkflowInstanceId = "i1",
+                WorkflowDefinitionId = "Sample.HelloWorld.HelloWorld",
+                ControlKind = WorkflowExternalControlKindNames.Park,
+                Status = WorkflowExternalControlStatusNames.Applied,
+                RequestedAt = t0.AddMinutes(2),
+                AppliedAt = t0.AddMinutes(5)
+            },
+            new WorkflowExternalControlRequestEntity
+            {
+                RunId = "r1",
+                WorkflowInstanceId = "i1",
+                WorkflowDefinitionId = "Sample.HelloWorld.HelloWorld",
+                ControlKind = WorkflowExternalControlKindNames.Resume,
+                Status = WorkflowExternalControlStatusNames.Applied,
+                RequestedAt = t0.AddMinutes(10),
+                AppliedAt = t0.AddMinutes(15)
+            });
+        await db.SaveChangesAsync();
+
+        var detail = await new RunQueryService(db, new AllowReadAuthz()).GetRunAsync(new OperationRunId("r1"));
+
+        detail.Should().NotBeNull();
+        detail!.Status.Should().Be(WorkflowLifecycleStatusNames.Running);
+        detail.CurrentStepName.Should().Be("DoWork");
+        detail.LifecycleEvents.Select(e => e.EventType).Should().ContainInOrder(
+            WorkflowLifecycleEventNames.Started,
+            WorkflowLifecycleEventNames.Parked,
+            WorkflowLifecycleEventNames.Resumed);
+        detail.ControlRequests.Should().HaveCount(2);
+        detail.ControlRequests.Should().OnlyContain(c => c.Status == WorkflowExternalControlStatusNames.Applied);
+    }
+
     private static AppertureDbContext NewDb()
     {
         var opts = new DbContextOptionsBuilder<AppertureDbContext>()

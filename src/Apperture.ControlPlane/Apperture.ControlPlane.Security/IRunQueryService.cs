@@ -18,6 +18,9 @@ public sealed record RunSummaryDto(
     string? CorrelationKey,
     string? RetryOfRunId);
 
+/// <param name="CurrentStepName">
+/// Same field as <see cref="WorkflowInstanceEntity.CurrentStepName"/>: when <paramref name="Status"/> is <c>parked</c>, this is the next step to run after resume; when <c>running</c>, reflects current step progression.
+/// </param>
 public sealed record RunDetailDto(
     string RunId,
     string WorkflowInstanceId,

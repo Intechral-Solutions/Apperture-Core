@@ -141,6 +141,7 @@ flowchart TB
 - **External-control inbox:** `WorkflowExternalControlRequests` persists queued park/resume requests and tracks whether the worker applied or rejected them.
 - **Worker behavior:** the worker only resumes parked runs when a resume request is queued, and it parks only at safe step boundaries.
 - **Query surface:** `RunQueryService.GetRunAsync` now returns the current step pointer and external-control request history alongside lifecycle and step history.
+- **Hardening (recipient slice):** concurrent duplicate park/resume inserts against the filtered unique index are handled idempotently in `WorkflowExternalControlService` (no spurious 500). The worker re-validates the start-request lease immediately before applying park and before applying resume so a stale processor cannot flip state after another worker claims. **`CurrentStepName`** semantics: while **running**, it tracks current step progression; while **parked**, it is the saved **next** step to run after resume (documented on the instance entity and run-detail DTO).
 
 ---
 

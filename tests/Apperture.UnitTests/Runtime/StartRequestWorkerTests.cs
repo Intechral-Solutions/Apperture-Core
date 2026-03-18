@@ -341,6 +341,64 @@ public sealed class StartRequestWorkerTests
         executor.Calls.Should().Be(3);
     }
 
+    [Fact]
+    public async Task ProcessClaimedAsync_WrongWorker_DoesNotApplyResumeWhileParked()
+    {
+        var db = NewDb();
+        db.WorkflowStartRequests.Add(new WorkflowStartRequestEntity
+        {
+            RunId = "r1",
+            WorkflowInstanceId = "i1",
+            WorkflowDefinitionId = "Sample.HelloWorld.HelloWorld",
+            CreatedAt = DateTimeOffset.UtcNow,
+            Status = WorkflowLifecycleStatusNames.Parked,
+            ClaimedAt = null,
+            ClaimedBy = null
+        });
+        db.WorkflowInstances.Add(new WorkflowInstanceEntity
+        {
+            Id = "i1",
+            DefinitionId = "Sample.HelloWorld.HelloWorld",
+            Status = WorkflowLifecycleStatusNames.Parked,
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow,
+            Version = 2,
+            CurrentStepName = "DoWork"
+        });
+        db.OperationRuns.Add(new OperationRunEntity
+        {
+            Id = "r1",
+            WorkflowInstanceId = "i1",
+            DefinitionId = "Sample.HelloWorld.HelloWorld",
+            Status = WorkflowLifecycleStatusNames.Parked,
+            CreatedAt = DateTimeOffset.UtcNow
+        });
+        db.WorkflowExternalControlRequests.Add(new WorkflowExternalControlRequestEntity
+        {
+            RunId = "r1",
+            WorkflowInstanceId = "i1",
+            WorkflowDefinitionId = "Sample.HelloWorld.HelloWorld",
+            ControlKind = WorkflowExternalControlKindNames.Resume,
+            Status = WorkflowExternalControlStatusNames.Queued,
+            RequestedAt = DateTimeOffset.UtcNow
+        });
+        await db.SaveChangesAsync();
+
+        var processorB = new WorkflowStartRequestProcessor(db, new NoOpExecutor(), DefaultDefinitionResolver(), "worker-b", DefaultLeaseOptions());
+        (await processorB.TryClaimAsync("r1")).Should().BeTrue();
+
+        var processorA = new WorkflowStartRequestProcessor(db, new NoOpExecutor(), DefaultDefinitionResolver(), "worker-a", DefaultLeaseOptions());
+        await processorA.ProcessClaimedAsync("r1");
+
+        var instance = await db.WorkflowInstances.SingleAsync(x => x.Id == "i1");
+        var run = await db.OperationRuns.SingleAsync(x => x.Id == "r1");
+        instance.Status.Should().Be(WorkflowLifecycleStatusNames.Parked);
+        run.Status.Should().Be(WorkflowLifecycleStatusNames.Parked);
+        (await db.WorkflowLifecycleEvents.CountAsync(e => e.EventType == WorkflowLifecycleEventNames.Resumed)).Should().Be(0);
+        (await db.WorkflowExternalControlRequests.SingleAsync(x => x.ControlKind == WorkflowExternalControlKindNames.Resume))
+            .Status.Should().Be(WorkflowExternalControlStatusNames.Queued);
+    }
+
     private static AppertureDbContext NewDb()
     {
         var opts = new DbContextOptionsBuilder<AppertureDbContext>()
