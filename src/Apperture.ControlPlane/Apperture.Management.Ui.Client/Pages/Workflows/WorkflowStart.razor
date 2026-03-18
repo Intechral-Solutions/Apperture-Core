@@ -40,11 +40,12 @@
                 <div class="mt-2">
                     <label class="text-xs text-muted">Module</label>
                     <select class="mt-1 w-full rounded border border-default bg-surface px-2 py-2 text-sm"
+                            value="@(_selectedModuleId ?? "")"
                             @onchange="OnModuleChanged">
                         <option value="">Select…</option>
                         @foreach (var m in _modules)
                         {
-                            <option value="@m.Id" selected="@(m.Id == _selectedModuleId)">@m.Name (@m.Id)</option>
+                            <option value="@m.Id">@m.Name (@m.Id)</option>
                         }
                     </select>
                 </div>
@@ -53,13 +54,13 @@
                     <label class="text-xs text-muted">Workflow</label>
                     <select class="mt-1 w-full rounded border border-default bg-surface px-2 py-2 text-sm"
                             disabled="@(_workflows is null)"
-                            @onchange="OnWorkflowChanged">
+                            @bind="SelectedWorkflowId">
                         <option value="">Select…</option>
                         @if (_workflows is not null)
                         {
                             foreach (var w in _workflows)
                             {
-                                <option value="@w.Id" selected="@(w.Id == _selectedWorkflowId)">@w.Name (@w.Id)</option>
+                                <option value="@w.Id">@w.Name (@w.Id)</option>
                             }
                         }
                     </select>
@@ -96,7 +97,7 @@
                 </div>
 
                 <button class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface"
-                        disabled="@_loading || string.IsNullOrEmpty(_selectedWorkflowId)"
+                        disabled="@(string.IsNullOrEmpty(_selectedWorkflowId))"
                         @onclick="StartAsync">
                     Start
                 </button>
@@ -133,6 +134,20 @@
     private string? _startedRunId;
 
     protected override Task OnInitializedAsync() => LoadModulesAsync();
+
+    private string? SelectedWorkflowId
+    {
+        get => _selectedWorkflowId;
+        set
+        {
+            if (!string.Equals(_selectedWorkflowId, value, StringComparison.Ordinal))
+            {
+                _selectedWorkflowId = value;
+                _startMessage = null;
+                _startedRunId = null;
+            }
+        }
+    }
 
     private async Task LoadModulesAsync()
     {
@@ -174,6 +189,11 @@
         try
         {
             _workflows = await Client.GetWorkflowsAsync(_selectedModuleId);
+
+            // Preselect the first workflow so the Start button becomes enabled
+            // immediately after a module selection.
+            if (_workflows.Count > 0)
+                SelectedWorkflowId = _workflows[0].Id;
         }
         catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Forbidden)
         {
@@ -189,13 +209,6 @@
         {
             _loading = false;
         }
-    }
-
-    private void OnWorkflowChanged(ChangeEventArgs e)
-    {
-        _selectedWorkflowId = e.Value?.ToString();
-        _startMessage = null;
-        _startedRunId = null;
     }
 
     private async Task StartAsync()

@@ -1,5 +1,7 @@
 using Apperture.Management.Ui.Client.Services;
 using Apperture.Management.Ui.Shared.Options;
+using Apperture.Management.Client;
+using Microsoft.AspNetCore.StaticFiles;
 using Microsoft.Extensions.Options;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -14,9 +16,12 @@ if (!apiBaseUrl.EndsWith("/", StringComparison.Ordinal))
     apiBaseUrl += "/";
 var apiUri = new Uri(apiBaseUrl);
 
+builder.Services.AddScoped(_ => new HttpClient { BaseAddress = apiUri });
+builder.Services.AddScoped<IManagementClient>(sp => new ManagementClient(sp.GetRequiredService<HttpClient>()));
+
 builder.Services.AddScoped<DomainMenuService>(sp =>
 {
-    var httpClient = new HttpClient { BaseAddress = apiUri };
+    var httpClient = sp.GetRequiredService<HttpClient>();
     var options = sp.GetRequiredService<IOptions<ControlPanelMenuOptions>>();
     var logger = sp.GetRequiredService<ILogger<DomainMenuService>>();
     return new DomainMenuService(httpClient, options, logger);
@@ -28,7 +33,17 @@ if (!app.Environment.IsDevelopment())
     app.UseExceptionHandler("/Error");
 }
 app.UseBlazorFrameworkFiles();
-app.UseStaticFiles();
+app.UseStaticFiles(new StaticFileOptions
+{
+    OnPrepareResponse = ctx =>
+    {
+        // Prevent stale Blazor WASM asset caches during iterative development.
+        // Hashes can change across rebuilds, and a cached boot manifest can request
+        // a now-missing hashed asset => 404 => runtime fails to start.
+        if (ctx.Context.Request.Path.StartsWithSegments("/_framework", StringComparison.OrdinalIgnoreCase))
+            ctx.Context.Response.Headers["Cache-Control"] = "no-store, max-age=0";
+    }
+});
 app.UseRouting();
 app.MapRazorPages();
 app.MapFallbackToPage("/_Host");

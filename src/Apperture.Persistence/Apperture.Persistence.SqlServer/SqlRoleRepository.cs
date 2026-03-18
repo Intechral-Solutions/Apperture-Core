@@ -106,7 +106,17 @@ public sealed class SqlRoleRepository : IRoleRepository
         if (string.IsNullOrWhiteSpace(json) || json == "[]")
             return Array.Empty<PermissionDescriptor>();
 
-        var list = JsonSerializer.Deserialize<List<PermissionDescriptorDto>>(json, JsonOptions);
+        List<PermissionDescriptorDto>? list;
+        try
+        {
+            list = JsonSerializer.Deserialize<List<PermissionDescriptorDto>>(json, JsonOptions);
+        }
+        catch
+        {
+            // Defensive hardening: malformed role permissions should not take down API endpoints.
+            // Auth will evaluate as "no permissions" and callers will receive 401/403 instead of 500.
+            return Array.Empty<PermissionDescriptor>();
+        }
         if (list is null)
             return Array.Empty<PermissionDescriptor>();
 

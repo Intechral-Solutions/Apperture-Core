@@ -8,6 +8,7 @@
     <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.Server" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\Apperture.Management.Client\Apperture.Management.Client.csproj" />
     <ProjectReference Include="..\Apperture.Management.Ui.Client\Apperture.Management.Ui.Client.csproj" />
   </ItemGroup>
 </Project>

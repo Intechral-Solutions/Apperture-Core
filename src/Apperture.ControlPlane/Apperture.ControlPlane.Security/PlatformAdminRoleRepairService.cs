@@ -22,6 +22,15 @@ public sealed class PlatformAdminRoleRepairService : IHostedService
         new PermissionDescriptor(ActionConstants.CredentialManage, new ResourceDescriptor(ResourceTypeConstants.User, ScopeKeyConstants.Instance))
     ];
 
+    // Permissions required for the operator console surfaces (menus, module/workflow listing, workflow start).
+    // These are intentionally coarse "instance" scope permissions so they contain module-scoped targets.
+    private static readonly PermissionDescriptor[] RequiredOperatorUiPermissions =
+    [
+        new PermissionDescriptor(ActionConstants.ModuleConfigure, new ResourceDescriptor(ResourceTypeConstants.Module, ScopeKeyConstants.Instance)),
+        new PermissionDescriptor("workflow.execute", new ResourceDescriptor(ResourceTypeConstants.WorkflowInstance, ScopeKeyConstants.Instance)),
+        new PermissionDescriptor(ActionConstants.WorkflowStart, new ResourceDescriptor(ResourceTypeConstants.WorkflowInstance, ScopeKeyConstants.Instance))
+    ];
+
     private readonly IServiceScopeFactory _scopeFactory;
 
     public PlatformAdminRoleRepairService(IServiceScopeFactory scopeFactory)
@@ -42,10 +51,13 @@ public sealed class PlatformAdminRoleRepairService : IHostedService
         var deduped = DeduplicateByActionResourceScope(role.Permissions);
         var withAuthAdmin = EnsureAuthAdminPermissions(deduped);
         var withModulePermissions = EnsureModuleScopedPermissions(withAuthAdmin, registry);
-        if (withModulePermissions.Count == withAuthAdmin.Count && withAuthAdmin.Count == deduped.Count && deduped.Count == role.Permissions.Count)
+
+        var withOperatorUiPermissions = EnsureOperatorUiPermissions(withModulePermissions);
+
+        if (withOperatorUiPermissions.Count == role.Permissions.Count)
             return;
 
-        await roleRepository.UpdatePermissionsAsync(roleId, withModulePermissions, cancellationToken);
+        await roleRepository.UpdatePermissionsAsync(roleId, withOperatorUiPermissions, cancellationToken);
     }
 
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
@@ -94,6 +106,18 @@ public sealed class PlatformAdminRoleRepairService : IHostedService
             var k = Key(p);
             if (!byKey.ContainsKey(k))
                 byKey[k] = p;
+        }
+        return byKey.Values.ToList();
+    }
+
+    private static List<PermissionDescriptor> EnsureOperatorUiPermissions(List<PermissionDescriptor> current)
+    {
+        var byKey = current.ToDictionary(Key, p => p, StringComparer.Ordinal);
+        foreach (var required in RequiredOperatorUiPermissions)
+        {
+            var k = Key(required);
+            if (!byKey.ContainsKey(k))
+                byKey[k] = required;
         }
         return byKey.Values.ToList();
     }

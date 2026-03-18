@@ -31,8 +31,9 @@ Write-Host "Starting Apperture dev environment (SQL-backed)..." -ForegroundColor
 Write-Host ""
 
 # Sync User Secrets -> .env for Docker
+$LASTEXITCODE = 0
 & $SyncScript
-if ($LASTEXITCODE -ne 0) { throw "Failed to sync User Secrets to .env" }
+if (-not $?) { throw "Failed to sync User Secrets to .env" }
 
 # Start SQL Server
 Write-Host "Starting SQL Server (Docker)..." -ForegroundColor Cyan
@@ -47,6 +48,18 @@ Write-Host "  SQL Server: localhost:1433" -ForegroundColor Gray
 Write-Host "  API:        http://localhost:9000" -ForegroundColor Gray
 Write-Host "  UI:         http://localhost:9001" -ForegroundColor Gray
 Write-Host ""
+
+# Ensure the Apperture database exists before bootstrapping the host.
+# (Bootstrap validates opening the configured database; migrations run after startup.)
+$envPath = Join-Path $RepoRoot ".env"
+if (-not (Test-Path $envPath)) { throw ".env not found at repo root: $envPath" }
+$envLine = (Get-Content -Path $envPath | Select-String -Pattern "^MSSQL_SA_PASSWORD=").Line
+if (-not $envLine) { throw "MSSQL_SA_PASSWORD not found in .env" }
+$saPassword = $envLine.Split("=", 2)[1]
+
+Write-Host "Ensuring database 'Apperture' exists..." -ForegroundColor Cyan
+docker exec apperture-sqlserver /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "$saPassword" -C -Q "IF DB_ID(N'Apperture') IS NULL CREATE DATABASE [Apperture];" | Out-Null
+if ($LASTEXITCODE -ne 0) { throw "Failed to create Apperture database via sqlcmd." }
 
 $hostArgs = @("run", "--project", $HostProject, "--launch-profile", "http")
 $uiArgs = @("run", "--project", $UiServerProject, "--launch-profile", "Ui.Server")

@@ -17,10 +17,10 @@ namespace Apperture.Persistence.SqlServer.Migrations
                 SET [PermissionsJson] = JSON_MODIFY(
                     JSON_MODIFY(
                         JSON_MODIFY(
-                            JSON_MODIFY([PermissionsJson], 'append $', JSON_QUERY(N'{""action"":""user.read"",""resource"":{""resourceType"":""User"",""scopeKey"":""instance""}}')),
-                            'append $', JSON_QUERY(N'{""action"":""user.manage"",""resource"":{""resourceType"":""User"",""scopeKey"":""instance""}}')),
-                        'append $', JSON_QUERY(N'{""action"":""role.assign"",""resource"":{""resourceType"":""Role"",""scopeKey"":""instance""}}')),
-                    'append $', JSON_QUERY(N'{""action"":""credential.manage"",""resource"":{""resourceType"":""User"",""scopeKey"":""instance""}}'))
+                            JSON_MODIFY([PermissionsJson], 'append $', JSON_QUERY(N'{"action":"user.read","resource":{"resourceType":"User","scopeKey":"instance"}}')),
+                            'append $', JSON_QUERY(N'{"action":"user.manage","resource":{"resourceType":"User","scopeKey":"instance"}}')),
+                        'append $', JSON_QUERY(N'{"action":"role.assign","resource":{"resourceType":"Role","scopeKey":"instance"}}')),
+                    'append $', JSON_QUERY(N'{"action":"credential.manage","resource":{"resourceType":"User","scopeKey":"instance"}}'))
                 WHERE [Id] = N'role-platform-administrator';
                 """;
             migrationBuilder.Sql(sql);
