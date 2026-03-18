@@ -7,4 +7,5 @@ public sealed record OperationRun(
     string Status,
     DateTimeOffset CreatedAt,
     DateTimeOffset? CompletedAt,
-    string? CorrelationKey);
+    string? CorrelationKey,
+    string? RetryOfRunId = null);

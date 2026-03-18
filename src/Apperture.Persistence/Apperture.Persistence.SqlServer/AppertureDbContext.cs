@@ -63,6 +63,8 @@ public class AppertureDbContext : DbContext
             e.Property(x => x.DefinitionId).HasMaxLength(128);
             e.Property(x => x.Status).HasMaxLength(32);
             e.Property(x => x.CorrelationKey).HasMaxLength(256);
+            e.Property(x => x.RetryOfRunId).HasMaxLength(64);
+            e.HasIndex(x => x.RetryOfRunId);
         });
 
         modelBuilder.Entity<WorkflowStartRequestEntity>(e =>

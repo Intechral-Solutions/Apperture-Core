@@ -119,6 +119,13 @@ flowchart TB
   - `OperationRunEntity.Status` (+ `CompletedAt`)
   - `WorkflowInstanceEntity.Status` (+ clears `CurrentStepName`)
 
+### Workflow retry (retry-as-new-run baseline)
+
+- **API surface:** `POST /api/runs/{runId}/retry` creates a brand-new run and instance for the same workflow definition.
+- **Semantics:** retry is “start again as a new run,” not resume/restart-in-place. The original run remains terminal and unchanged.
+- **Persistence:** the new `OperationRunEntity` stores `RetryOfRunId` so the lineage from retried run to original run is durable and queryable.
+- **Execution path:** retry reuses the existing start dispatch pipeline, which creates the new `WorkflowInstanceEntity`, `OperationRunEntity`, and `WorkflowStartRequestEntity` triple that the worker then consumes normally.
+
 ---
 
 ## Control Plane (Detail)
@@ -131,6 +138,7 @@ flowchart LR
         ModulesController["ModulesController<br/>GET /api/modules"]
         RunsController["RunsController<br/>GET /api/runs"]
         RunsCancel["RunsController<br/>POST /api/runs/{id}/cancel"]
+        RunsRetry["RunsController<br/>POST /api/runs/{id}/retry"]
         WorkflowsController["WorkflowsController<br/>POST /workflows/{id}/start"]
         EnrollController["EnrollController<br/>POST /enroll"]
         
@@ -138,6 +146,7 @@ flowchart LR
         ModulesController --> |200 OK| Empty/stub
         RunsController --> |200/404/403| SQL-backed runs
         RunsCancel --> |202/404/403| Persisted cancel intent
+        RunsRetry --> |202/404/403/409| Reuses start dispatch
         WorkflowsController --> |202/404/403| Persisted start handoff
         EnrollController --> IRuntimeEnrollmentService
     end
@@ -150,6 +159,7 @@ flowchart LR
 - Menus API for Control Panel navigation
 - Runs API: list/detail from SQL with executable-permission-based read authorization
 - Runs API: cancel persists durable intent (`POST /api/runs/{id}/cancel`)
+- Runs API: retry starts a brand-new run from a terminal run (`POST /api/runs/{id}/retry`)
 - WorkflowsController: start persists a durable handoff and returns `202 Accepted`
 - EnrollController: enrollment endpoint
 

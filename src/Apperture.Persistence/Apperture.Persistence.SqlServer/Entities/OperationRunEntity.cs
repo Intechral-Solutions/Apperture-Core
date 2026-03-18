@@ -9,4 +9,5 @@ public sealed class OperationRunEntity
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset? CompletedAt { get; set; }
     public string? CorrelationKey { get; set; }
+    public string? RetryOfRunId { get; set; }
 }

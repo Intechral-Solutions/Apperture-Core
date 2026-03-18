@@ -12,11 +12,13 @@ public sealed class RunsController : ControllerBase
 {
     private readonly IRunQueryService _runs;
     private readonly IWorkflowCancelService _cancel;
+    private readonly IWorkflowRetryService _retry;
 
-    public RunsController(IRunQueryService runs, IWorkflowCancelService cancel)
+    public RunsController(IRunQueryService runs, IWorkflowCancelService cancel, IWorkflowRetryService retry)
     {
         _runs = runs;
         _cancel = cancel;
+        _retry = retry;
     }
 
     [HttpGet]
@@ -62,6 +64,35 @@ public sealed class RunsController : ControllerBase
         catch (UnauthorizedAccessException)
         {
             return Forbid();
+        }
+    }
+
+    [HttpPost("{id}/retry")]
+    public async Task<ActionResult> RetryRun(string id, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var result = await _retry.RequestRetryAsync(new OperationRunId(id), cancellationToken);
+            if (result is null)
+                return NotFound();
+
+            return Accepted(new
+            {
+                originalRunId = result.OriginalRunId.Value,
+                runId = result.RunId.Value,
+                workflowInstanceId = result.WorkflowInstanceId.Value,
+                workflowDefinitionId = result.WorkflowDefinitionId.Value,
+                status = result.Status,
+                retryOfRunId = result.OriginalRunId.Value
+            });
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return Forbid();
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Conflict(new { error = ex.Message });
         }
     }
 }

@@ -15,7 +15,8 @@ public sealed record RunSummaryDto(
     string Status,
     DateTimeOffset CreatedAt,
     DateTimeOffset? CompletedAt,
-    string? CorrelationKey);
+    string? CorrelationKey,
+    string? RetryOfRunId);
 
 public sealed record RunDetailDto(
     string RunId,
@@ -24,5 +25,6 @@ public sealed record RunDetailDto(
     string Status,
     DateTimeOffset CreatedAt,
     DateTimeOffset? CompletedAt,
-    string? CorrelationKey);
+    string? CorrelationKey,
+    string? RetryOfRunId);
 

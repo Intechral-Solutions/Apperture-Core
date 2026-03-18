@@ -85,7 +85,8 @@ public sealed class WorkflowStartDispatchService : IWorkflowStartDispatchService
                 Status = RequestedStatus,
                 CreatedAt = now,
                 CompletedAt = null,
-                CorrelationKey = request.CorrelationId
+                CorrelationKey = request.CorrelationId,
+                RetryOfRunId = request.RetryOfRunId
             });
 
             _db.WorkflowStartRequests.Add(new WorkflowStartRequestEntity

@@ -61,7 +61,7 @@ Updated controller boundary tests so start is no longer 501 and runs controller 
 
 - Worker/instance consumption loop (dequeue/claim start requests)\n
 - Actual workflow step execution and runtime status updates\n
-- Signal/cancel/retry endpoints\n
+- Signal endpoints\n
 - Richer run lifecycle, filtering/search/analytics\n
 - Operation execution runtime\n
 

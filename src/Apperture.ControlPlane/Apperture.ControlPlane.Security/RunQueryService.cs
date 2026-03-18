@@ -42,7 +42,8 @@ public sealed class RunQueryService : IRunQueryService
                 r.Status,
                 r.CreatedAt,
                 r.CompletedAt,
-                r.CorrelationKey));
+                r.CorrelationKey,
+                r.RetryOfRunId));
         }
 
         return result;
@@ -64,7 +65,8 @@ public sealed class RunQueryService : IRunQueryService
             r.Status,
             r.CreatedAt,
             r.CompletedAt,
-            r.CorrelationKey);
+            r.CorrelationKey,
+            r.RetryOfRunId);
     }
 }
 

@@ -12,7 +12,7 @@ The control plane manages the Instance. See [ADR-0001](../02-decisions/ADR-0001-
 
 - Module registry (installed/enabled modules)
 - Workflow definition discovery
-- Execution requests (start, signal, cancel)
+- Execution requests (start, retry, signal, cancel)
 - Run history and details
 - Schedule management
 - Audit logs

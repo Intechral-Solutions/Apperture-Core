@@ -51,6 +51,17 @@ Cancellation reuses the **same executable permission model** as workflow start/r
 
 Control plane persists durable cancel intent (`POST /api/runs/{runId}/cancel`); the instance-plane worker observes intent and transitions run/instance to the terminal `cancelled` state cooperatively at safe execution boundaries.
 
+### Workflow retry (retry-as-new-run control surface)
+
+Retry reuses the **same executable permission model** as workflow start/cancel for the first iteration:
+
+- **If `WorkflowDefinition.RequiredPermissions` is non-empty:** ALL listed permissions are required to request retry.
+- **If `WorkflowDefinition.RequiredPermissions` is null/empty:** fall back to coarse workflow permissions:
+  - module-owned workflow → `workflow.execute` at `module:{moduleId}`
+  - otherwise → `workflow.start` at instance
+
+Control plane creates a brand-new run and workflow instance via the existing start dispatch pipeline. The original run remains terminal and unchanged; the new run records `RetryOfRunId` so lineage is durable and visible in run queries.
+
 ### Operations
 
 - **Model:** `OperationDefinition.RequiredPermissions` (already present).

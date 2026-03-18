@@ -41,7 +41,7 @@ Epic 7 Prompt 2 makes the **instance plane** consume the persisted workflow star
 
 ## Deferred beyond Epic 7
 
-- Signal/cancel/retry
+- Signal
 - Operation execution runtime
 - Richer lifecycle and retries/backoff/poison-queue behavior
 - Cloud runtime adapters (Durable Functions) beyond the current stubbed path

@@ -105,7 +105,8 @@ public sealed class SqlWorkflowPersistence : IWorkflowPersistence
         e.Status,
         e.CreatedAt,
         e.CompletedAt,
-        e.CorrelationKey);
+        e.CorrelationKey,
+        e.RetryOfRunId);
 
     private static OperationRunEntity ToEntity(OperationRun r) => new()
     {
@@ -115,7 +116,8 @@ public sealed class SqlWorkflowPersistence : IWorkflowPersistence
         Status = r.Status,
         CreatedAt = r.CreatedAt,
         CompletedAt = r.CompletedAt,
-        CorrelationKey = r.CorrelationKey
+        CorrelationKey = r.CorrelationKey,
+        RetryOfRunId = r.RetryOfRunId
     };
 }
 

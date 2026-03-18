@@ -48,7 +48,6 @@ Cancel authorization reuses the executable permission semantics:
 ## Deferred beyond this stage
 
 - Workflow signal
-- Retry/restart semantics
 - Terminate as a separate concept
 - Operation execution surfaces
 - Cloud runtime adapters
