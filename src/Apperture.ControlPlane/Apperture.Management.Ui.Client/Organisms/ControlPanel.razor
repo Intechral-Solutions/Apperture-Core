@@ -6,12 +6,17 @@
     @if (Definition is null)
     {
         <div class="p-4 text-sm text-muted">
-            Loading…<br />
-            <strong>Domain:</strong> @DomainName<br />
-            <strong>Known domains:</strong>
-            @foreach (var name in DomainMenuService.GetValidDomains())
+            @if (DomainMenuService.LastLoaded is null)
             {
-                <span class="inline-block px-1">@name</span>
+                <span>Loading…</span>
+            }
+            else if (string.IsNullOrWhiteSpace(DomainName))
+            {
+                <span>Select a domain</span>
+            }
+            else
+            {
+                <span>No menu found for '@DomainName'</span>
             }
         </div>
     }

@@ -1,4 +1,8 @@
+@using Apperture.Management.Ui.Client.Services
 @inherits LayoutComponentBase
+
+@inject DomainMenuService DomainMenuService
+@inject NavigationManager NavManager
 
 <div id="main" class="flex h-screen bg-surface-elevated">
     <NavRail IsControlPanelOpen="@isControlPanelOpen"
@@ -37,7 +41,7 @@
         isControlPanelLocked = false;
     }
 
-    private void HandleHamburgerClick(bool _)
+    private async Task HandleHamburgerClick(bool _)
     {
         if (isControlPanelLocked)
         {
@@ -46,8 +50,37 @@
         }
         else
         {
+            // Ensure the control panel shows the submenu relevant to the current route.
+            await DomainMenuService.LoadMenusAsync();
+            var resolved = ResolveDomainForCurrentUri();
+            if (!string.IsNullOrWhiteSpace(resolved))
+                currentDomainName = resolved;
+
             isControlPanelOpen = true;
             isControlPanelLocked = true;
         }
+    }
+
+    private string ResolveDomainForCurrentUri()
+    {
+        var path = new Uri(NavManager.Uri).AbsolutePath;
+
+        foreach (var domainName in DomainMenuService.GetValidDomains())
+        {
+            var menu = DomainMenuService.GetDomain(domainName);
+            if (menu?.Items is null) continue;
+
+            foreach (var item in menu.Items)
+            {
+                var href = item.Href;
+                if (string.IsNullOrWhiteSpace(href)) continue;
+
+                // Allow prefix matching so routes like `/runs/{RunId}` still select `Runs`.
+                if (path.StartsWith(href, StringComparison.OrdinalIgnoreCase))
+                    return domainName;
+            }
+        }
+
+        return "";
     }
 }

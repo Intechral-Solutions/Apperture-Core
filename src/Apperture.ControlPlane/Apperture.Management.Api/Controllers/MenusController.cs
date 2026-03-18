@@ -1,4 +1,5 @@
 using Apperture.Management.Ui.Shared.Models;
+using Apperture.Management.Ui.Shared;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -27,78 +28,7 @@ public class MenusController : ControllerBase
     public IActionResult GetMenus()
     {
         _logger.LogDebug("GET /api/menus");
-        var menus = GetStaticMenuStructure();
+        var menus = ControlPanelMenuDefinitions.GetDefaultMenus();
         return Ok(menus);
-    }
-
-    private static Dictionary<string, DomainMenu> GetStaticMenuStructure()
-    {
-        return new Dictionary<string, DomainMenu>(StringComparer.OrdinalIgnoreCase)
-        {
-            ["Runs"] = new DomainMenu
-            {
-                Title = null,
-                Items =
-                {
-                    new DomainMenuItem { Text = "Runs Console", Href = "/runs" },
-                    new DomainMenuItem { Text = "Start Workflow", Href = "/workflows/start" },
-                }
-            },
-            ["Catalog"] = new DomainMenu
-            {
-                Title = null,
-                Items = { new DomainMenuItem { Text = "Browse Capabilities", Href = "/catalog" } }
-            },
-            ["Integrations"] = new DomainMenu
-            {
-                Title = null,
-                Items =
-                {
-                    new DomainMenuItem { Text = "View All", Href = "/integrations" },
-                    new DomainMenuItem { Text = "Create Integration", Href = "/integrations/new" }
-                }
-            },
-            ["Environments"] = new DomainMenu
-            {
-                Title = null,
-                Items =
-                {
-                    new DomainMenuItem { Text = "View All", Href = "/environments" },
-                    new DomainMenuItem { Text = "Settings", Href = "/environments/settings" }
-                }
-            },
-            ["Connections"] = new DomainMenu
-            {
-                Title = null,
-                Items =
-                {
-                    new DomainMenuItem { Text = "Active Connections", Href = "/connections" },
-                    new DomainMenuItem { Text = "Add Connection", Href = "/connections/new" }
-                }
-            },
-            ["Clients"] = new DomainMenu
-            {
-                Title = null,
-                Items =
-                {
-                    new DomainMenuItem { Text = "All Clients", Href = "/clients" },
-                    new DomainMenuItem { Text = "Create Client", Href = "/clients/new" }
-                }
-            },
-            ["Schedules"] = new DomainMenu
-            {
-                Title = null,
-                Items =
-                {
-                    new DomainMenuItem { Text = "View All", Href = "/schedules" },
-                    new DomainMenuItem { Text = "Create Schedule", Href = "/schedules/new" }
-                }
-            },
-            ["Tools"] = new DomainMenu
-            {
-                Title = null,
-                Items = { new DomainMenuItem { Text = "API Explorer", Href = "/tools/explorer" } }
-            }
-        };
     }
 }

@@ -1,7 +1,9 @@
 using Apperture.Management.Ui.Shared.Models;
+using Apperture.Management.Ui.Shared;
 using Apperture.Management.Ui.Shared.Options;
 using Microsoft.Extensions.Options;
 using System.Net.Http.Json;
+using System.Text.Json;
 
 namespace Apperture.Management.Ui.Client.Services;
 
@@ -37,7 +39,11 @@ public class DomainMenuService
         _isLoading = true;
         try
         {
-            var dict = await _http.GetFromJsonAsync<Dictionary<string, DomainMenu>>(_jsonSource);
+            // Allow case-insensitive matching because System.Text.Json may emit `camelCase`
+            // depending on server defaults.
+            var dict = await _http.GetFromJsonAsync<Dictionary<string, DomainMenu>>(
+                _jsonSource,
+                new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
 
             if (dict != null && dict.Count > 0)
             {
@@ -60,7 +66,7 @@ public class DomainMenuService
 
             if (_menus.Count == 0)
             {
-                _menus = GetFallbackMenus();
+                _menus = ControlPanelMenuDefinitions.GetDefaultMenus();
                 _logger.LogWarning("Using fallback menus due to load failure");
             }
         }
@@ -70,7 +76,7 @@ public class DomainMenuService
 
             if (_menus.Count == 0)
             {
-                _menus = GetFallbackMenus();
+                _menus = ControlPanelMenuDefinitions.GetDefaultMenus();
                 _logger.LogWarning("Using fallback menus due to error");
             }
         }
@@ -96,19 +102,4 @@ public class DomainMenuService
 
     public DomainMenu? GetDomain(string domainName) =>
         _menus.TryGetValue(domainName, out var def) ? def : null;
-
-    private static Dictionary<string, DomainMenu> GetFallbackMenus()
-    {
-        return new Dictionary<string, DomainMenu>(StringComparer.OrdinalIgnoreCase)
-        {
-            ["Catalog"] = new DomainMenu
-            {
-                Title = null,
-                Items =
-                {
-                    new DomainMenuItem { Text = "Browse Capabilities", Href = "/catalog" }
-                }
-            }
-        };
-    }
 }

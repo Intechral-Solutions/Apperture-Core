@@ -50,6 +50,7 @@
             ["Tools"] = typeof(WrenchIcon),
             ["Schedules"] = typeof(ClockIcon),
             ["Runs"] = typeof(PlayIcon),
+            ["Test Suite"] = typeof(PlayIcon),
             ["Settings"] = typeof(CogIcon),
             ["Users"] = typeof(UsersIcon)
         };
@@ -65,12 +66,10 @@
                 ? mappedIcon
                 : typeof(Squares2X2Icon);
 
-            if (domain.Items?.Count == 1 && !string.IsNullOrEmpty(domain.Items[0].Href))
+            if (domain.Items?.Count > 0)
             {
-                _menuItems.Add((icon, domainName, domain.Items[0].Href, null));
-            }
-            else if (domain.Items?.Count > 0)
-            {
+                // Treat every top-level domain icon as a domain selector.
+                // Submenu items (and the leaf navigation) are rendered by ControlPanel.
                 _menuItems.Add((icon, domainName, null, domainName));
             }
         }
