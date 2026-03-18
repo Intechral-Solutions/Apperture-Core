@@ -227,9 +227,9 @@ public sealed class StartRequestWorkerTests
         await processor.ProcessClaimedAsync("r1");
 
         var after = (await db.WorkflowStartRequests.SingleAsync(x => x.RunId == "r1")).ClaimedAt;
-        after.Should().NotBeNull();
+        after.Should().BeNull();
         before.Should().NotBeNull();
-        after!.Value.Should().BeAfter(before!.Value);
+        // A completed run now releases its lease metadata after terminal transition.
     }
 
     [Fact]
@@ -280,6 +280,67 @@ public sealed class StartRequestWorkerTests
         (await db.WorkflowStepInstances.CountAsync()).Should().Be(1);
     }
 
+    [Fact]
+    public async Task ProcessClaimedAsync_ParkThenResume_ContinuesFromSavedStep()
+    {
+        var db = NewDb();
+        SeedStartTriplet(db, runId: "r1", instanceId: "i1", definitionId: "Sample.HelloWorld.HelloWorld");
+        await db.SaveChangesAsync();
+
+        var executor = new ParkAfterFirstStepExecutor(db);
+        var processor = new WorkflowStartRequestProcessor(db, executor, DefaultDefinitionResolver(), "worker-a", DefaultLeaseOptions());
+
+        (await processor.TryClaimAsync("r1")).Should().BeTrue();
+        await processor.ProcessClaimedAsync("r1");
+
+        var parkedRequest = await db.WorkflowStartRequests.SingleAsync(x => x.RunId == "r1");
+        parkedRequest.Status.Should().Be(WorkflowLifecycleStatusNames.Parked);
+        parkedRequest.ClaimedAt.Should().BeNull();
+        parkedRequest.ClaimedBy.Should().BeNull();
+
+        var parkedInstance = await db.WorkflowInstances.SingleAsync(x => x.Id == "i1");
+        parkedInstance.Status.Should().Be(WorkflowLifecycleStatusNames.Parked);
+        parkedInstance.CurrentStepName.Should().Be("DoWork");
+        (await db.WorkflowExternalControlRequests.CountAsync()).Should().Be(1);
+        (await db.WorkflowExternalControlRequests.SingleAsync()).Status.Should().Be(WorkflowExternalControlStatusNames.Applied);
+        (await db.WorkflowLifecycleEvents.Where(x => x.RunId == "r1").Select(x => x.EventType).ToListAsync())
+            .Should().Contain(WorkflowLifecycleEventNames.Parked);
+
+        db.WorkflowExternalControlRequests.Add(new WorkflowExternalControlRequestEntity
+        {
+            RunId = "r1",
+            WorkflowInstanceId = "i1",
+            WorkflowDefinitionId = "Sample.HelloWorld.HelloWorld",
+            ControlKind = WorkflowExternalControlKindNames.Resume,
+            Status = WorkflowExternalControlStatusNames.Queued,
+            RequestedAt = DateTimeOffset.UtcNow
+        });
+        await db.SaveChangesAsync();
+
+        (await processor.TryClaimAsync("r1")).Should().BeTrue();
+        await processor.ProcessClaimedAsync("r1");
+
+        var resumedRequest = await db.WorkflowStartRequests.SingleAsync(x => x.RunId == "r1");
+        var resumedInstance = await db.WorkflowInstances.SingleAsync(x => x.Id == "i1");
+        var run = await db.OperationRuns.SingleAsync(x => x.Id == "r1");
+
+        resumedRequest.Status.Should().Be(WorkflowLifecycleStatusNames.Completed);
+        resumedRequest.ClaimedAt.Should().BeNull();
+        resumedRequest.ClaimedBy.Should().BeNull();
+        resumedInstance.Status.Should().Be(WorkflowLifecycleStatusNames.Completed);
+        resumedInstance.CurrentStepName.Should().BeNull();
+        run.Status.Should().Be(WorkflowLifecycleStatusNames.Completed);
+        (await db.WorkflowExternalControlRequests.OrderBy(x => x.Id).Select(x => x.Status).ToListAsync())
+            .Should().ContainInOrder(WorkflowExternalControlStatusNames.Applied, WorkflowExternalControlStatusNames.Applied);
+        (await db.WorkflowLifecycleEvents.Where(x => x.RunId == "r1").Select(x => x.EventType).ToListAsync())
+            .Should().ContainInOrder(
+                WorkflowLifecycleEventNames.Started,
+                WorkflowLifecycleEventNames.Parked,
+                WorkflowLifecycleEventNames.Resumed,
+                WorkflowLifecycleEventNames.Completed);
+        executor.Calls.Should().Be(3);
+    }
+
     private static AppertureDbContext NewDb()
     {
         var opts = new DbContextOptionsBuilder<AppertureDbContext>()
@@ -297,6 +358,68 @@ public sealed class StartRequestWorkerTests
             "HelloWorld",
             "Sample.HelloWorld",
             new[] { "Validate", "DoWork", "Complete" }));
+
+    private static void SeedStartTriplet(AppertureDbContext db, string runId, string instanceId, string definitionId)
+    {
+        db.WorkflowStartRequests.Add(new WorkflowStartRequestEntity
+        {
+            RunId = runId,
+            WorkflowInstanceId = instanceId,
+            WorkflowDefinitionId = definitionId,
+            CreatedAt = DateTimeOffset.UtcNow,
+            Status = WorkflowLifecycleStatusNames.Requested
+        });
+        db.WorkflowInstances.Add(new WorkflowInstanceEntity
+        {
+            Id = instanceId,
+            DefinitionId = definitionId,
+            Status = WorkflowLifecycleStatusNames.Requested,
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow,
+            Version = 0
+        });
+        db.OperationRuns.Add(new OperationRunEntity
+        {
+            Id = runId,
+            WorkflowInstanceId = instanceId,
+            DefinitionId = definitionId,
+            Status = WorkflowLifecycleStatusNames.Requested,
+            CreatedAt = DateTimeOffset.UtcNow
+        });
+    }
+
+    private sealed class ParkAfterFirstStepExecutor : IWorkflowExecutor
+    {
+        private readonly AppertureDbContext _db;
+        public int Calls { get; private set; }
+
+        public ParkAfterFirstStepExecutor(AppertureDbContext db) => _db = db;
+
+        public async ValueTask<object?> ExecuteStepAsync(
+            WorkflowDefinition definition,
+            string stepName,
+            WorkflowInstance instance,
+            IReadOnlyDictionary<string, object?>? parameters,
+            CancellationToken cancellationToken = default)
+        {
+            Calls++;
+            if (Calls == 1)
+            {
+                _db.WorkflowExternalControlRequests.Add(new WorkflowExternalControlRequestEntity
+                {
+                    RunId = "r1",
+                    WorkflowInstanceId = "i1",
+                    WorkflowDefinitionId = "Sample.HelloWorld.HelloWorld",
+                    ControlKind = WorkflowExternalControlKindNames.Park,
+                    Status = WorkflowExternalControlStatusNames.Queued,
+                    RequestedAt = DateTimeOffset.UtcNow
+                });
+                await _db.SaveChangesAsync(cancellationToken);
+            }
+
+            return null;
+        }
+    }
 }
 
 internal sealed class NoOpExecutor : IWorkflowExecutor

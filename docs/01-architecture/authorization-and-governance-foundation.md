@@ -63,7 +63,7 @@ Retry reuses the **same executable permission model** as workflow start/cancel f
 Control plane creates a brand-new run and workflow instance via the existing start dispatch pipeline. The original run remains terminal and unchanged; the new run records `RetryOfRunId` so lineage is durable and visible in run queries.
 
 - **Non-idempotent by design:** repeated retry requests against the same original run create additional fresh runs.
-- **Not supported:** in-place restart, resume-from-step, reopening the original run, or signal-style semantics.
+- **Not supported:** in-place restart, reopening the original run, or signal-style semantics.
 
 ### Workflow lifecycle refinement
 
@@ -74,6 +74,16 @@ Lifecycle refinement does not change the executable-permission model. It makes t
 - **Query visibility:** run detail can now surface both the transition trail and the step trail.
 
 The authorization rule stays the same: lifecycle-related control actions remain governed by the existing executable permissions and module/instance fallback logic. This stage is about making the lifecycle honest, not expanding who can do what.
+
+### Workflow external-control recipient model
+
+The recipient model adds parked/resumed workflow control without changing the executable-permission model:
+
+- **Run/control history:** park request, park application, resume request, and resume application are durably recorded.
+- **Recipient state:** a run can be parked at a safe step boundary and later resumed from the saved next step.
+- **Query visibility:** run detail now shows the current step pointer plus queued/applied external-control requests.
+
+This is still not signal. It is the runtime-side recipient shape that later signal semantics will need to reuse instead of inventing fake persistence-only behavior.
 
 ### Operations
 

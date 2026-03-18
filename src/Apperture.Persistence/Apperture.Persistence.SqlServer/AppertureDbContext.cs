@@ -15,6 +15,7 @@ public class AppertureDbContext : DbContext
     public DbSet<OperationRunEntity> OperationRuns => Set<OperationRunEntity>();
     public DbSet<WorkflowStartRequestEntity> WorkflowStartRequests => Set<WorkflowStartRequestEntity>();
     public DbSet<WorkflowCancelRequestEntity> WorkflowCancelRequests => Set<WorkflowCancelRequestEntity>();
+    public DbSet<WorkflowExternalControlRequestEntity> WorkflowExternalControlRequests => Set<WorkflowExternalControlRequestEntity>();
     public DbSet<WorkflowLifecycleEventEntity> WorkflowLifecycleEvents => Set<WorkflowLifecycleEventEntity>();
     public DbSet<AuditLogEntity> AuditLogs => Set<AuditLogEntity>();
     public DbSet<TelemetryEventEntity> TelemetryEvents => Set<TelemetryEventEntity>();
@@ -113,6 +114,26 @@ public class AppertureDbContext : DbContext
             e.Property(x => x.WorkflowInstanceId).HasMaxLength(64);
             e.Property(x => x.WorkflowDefinitionId).HasMaxLength(128);
             e.Property(x => x.RequestedBy).HasMaxLength(256);
+        });
+
+        modelBuilder.Entity<WorkflowExternalControlRequestEntity>(e =>
+        {
+            e.ToTable("WorkflowExternalControlRequests");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).ValueGeneratedOnAdd();
+            e.Property(x => x.RunId).HasMaxLength(64);
+            e.Property(x => x.WorkflowInstanceId).HasMaxLength(64);
+            e.Property(x => x.WorkflowDefinitionId).HasMaxLength(128);
+            e.Property(x => x.ControlKind).HasMaxLength(64);
+            e.Property(x => x.Status).HasMaxLength(32);
+            e.Property(x => x.RequestedBy).HasMaxLength(256);
+            e.Property(x => x.AppliedBy).HasMaxLength(256);
+            e.Property(x => x.LastError).HasMaxLength(2048);
+            e.HasIndex(x => new { x.RunId, x.ControlKind })
+                .IsUnique()
+                .HasFilter("[Status] = 'queued'");
+            e.HasIndex(x => new { x.RunId, x.RequestedAt });
+            e.HasIndex(x => x.Status);
         });
 
         modelBuilder.Entity<AuditLogEntity>(e =>

@@ -58,6 +58,9 @@ public sealed class RunQueryService : IRunQueryService
 
         await _authz.EnsureCanReadRunsAsync(new WorkflowDefinitionId(r.DefinitionId), cancellationToken);
 
+        var instance = await _db.WorkflowInstances.AsNoTracking()
+            .FirstOrDefaultAsync(x => x.Id == r.WorkflowInstanceId, cancellationToken);
+
         var lifecycleEvents = await _db.WorkflowLifecycleEvents.AsNoTracking()
             .Where(x => x.RunId == r.Id)
             .OrderBy(x => x.OccurredAt)
@@ -86,6 +89,21 @@ public sealed class RunQueryService : IRunQueryService
                 x.Error))
             .ToListAsync(cancellationToken);
 
+        var controlRequests = await _db.WorkflowExternalControlRequests.AsNoTracking()
+            .Where(x => x.RunId == r.Id)
+            .OrderBy(x => x.RequestedAt)
+            .ThenBy(x => x.Id)
+            .Select(x => new RunControlRequestDto(
+                x.Id,
+                x.ControlKind,
+                x.Status,
+                x.RequestedAt,
+                x.RequestedBy,
+                x.AppliedAt,
+                x.AppliedBy,
+                x.LastError))
+            .ToListAsync(cancellationToken);
+
         return new RunDetailDto(
             r.Id,
             r.WorkflowInstanceId,
@@ -95,8 +113,10 @@ public sealed class RunQueryService : IRunQueryService
             r.CompletedAt,
             r.CorrelationKey,
             r.RetryOfRunId,
+            instance?.CurrentStepName,
             lifecycleEvents,
-            stepInstances);
+            stepInstances,
+            controlRequests);
     }
 }
 

@@ -13,3 +13,5 @@ The Management API (control plane) exposes REST endpoints for module registry, w
 | POST | `/workflows/{workflowId}/start` | Start a workflow (parameters, idempotency key) |
 | GET | `/runs` | List operation runs |
 | GET | `/runs/{id}` | Get run details |
+| POST | `/runs/{id}/park` | Request that a run park at the next safe boundary |
+| POST | `/runs/{id}/resume` | Resume a parked run from the saved next step |

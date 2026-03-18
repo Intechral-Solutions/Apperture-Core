@@ -20,7 +20,8 @@ public sealed class RunQueryServiceTests
             Status = WorkflowLifecycleStatusNames.Running,
             CreatedAt = DateTimeOffset.UtcNow.AddMinutes(-5),
             UpdatedAt = DateTimeOffset.UtcNow.AddMinutes(-1),
-            Version = 1
+            Version = 1,
+            CurrentStepName = "Step2"
         });
         db.OperationRuns.Add(new OperationRunEntity
         {
@@ -43,6 +44,16 @@ public sealed class RunQueryServiceTests
             RelatedRunId = null,
             StepName = null
         });
+        db.WorkflowExternalControlRequests.Add(new WorkflowExternalControlRequestEntity
+        {
+            RunId = "r1",
+            WorkflowInstanceId = "i1",
+            WorkflowDefinitionId = "Sample.HelloWorld.HelloWorld",
+            ControlKind = WorkflowExternalControlKindNames.Park,
+            Status = WorkflowExternalControlStatusNames.Queued,
+            RequestedAt = DateTimeOffset.UtcNow.AddMinutes(-2),
+            RequestedBy = "actor-1"
+        });
         db.WorkflowStepInstances.Add(new WorkflowStepInstanceEntity
         {
             WorkflowInstanceId = "i1",
@@ -60,11 +71,15 @@ public sealed class RunQueryServiceTests
         var detail = await service.GetRunAsync(new OperationRunId("r1"));
 
         detail.Should().NotBeNull();
+        detail!.CurrentStepName.Should().Be("Step2");
         detail!.LifecycleEvents.Should().ContainSingle();
         detail.LifecycleEvents[0].EventType.Should().Be(WorkflowLifecycleEventNames.Started);
         detail.StepInstances.Should().ContainSingle();
         detail.StepInstances[0].StepName.Should().Be("Step1");
         detail.StepInstances[0].Status.Should().Be(WorkflowLifecycleStatusNames.Completed);
+        detail.ControlRequests.Should().ContainSingle();
+        detail.ControlRequests[0].ControlKind.Should().Be(WorkflowExternalControlKindNames.Park);
+        detail.ControlRequests[0].Status.Should().Be(WorkflowExternalControlStatusNames.Queued);
     }
 
     private static AppertureDbContext NewDb()

@@ -13,12 +13,14 @@ public sealed class RunsController : ControllerBase
     private readonly IRunQueryService _runs;
     private readonly IWorkflowCancelService _cancel;
     private readonly IWorkflowRetryService _retry;
+    private readonly IWorkflowExternalControlService _externalControl;
 
-    public RunsController(IRunQueryService runs, IWorkflowCancelService cancel, IWorkflowRetryService retry)
+    public RunsController(IRunQueryService runs, IWorkflowCancelService cancel, IWorkflowRetryService retry, IWorkflowExternalControlService externalControl)
     {
         _runs = runs;
         _cancel = cancel;
         _retry = retry;
+        _externalControl = externalControl;
     }
 
     [HttpGet]
@@ -84,6 +86,66 @@ public sealed class RunsController : ControllerBase
                 workflowDefinitionId = result.WorkflowDefinitionId.Value,
                 status = result.Status,
                 retryOfRunId = result.OriginalRunId.Value
+            });
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return Forbid();
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Conflict(new { error = ex.Message });
+        }
+    }
+
+    [HttpPost("{id}/park")]
+    public async Task<ActionResult> ParkRun(string id, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var result = await _externalControl.RequestParkAsync(new OperationRunId(id), cancellationToken);
+            if (result is null)
+                return NotFound();
+
+            return Accepted(new
+            {
+                runId = result.RunId.Value,
+                workflowInstanceId = result.WorkflowInstanceId.Value,
+                workflowDefinitionId = result.WorkflowDefinitionId.Value,
+                controlKind = result.ControlKind,
+                status = result.Status,
+                runStatus = result.RunStatus,
+                currentStepName = result.CurrentStepName
+            });
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return Forbid();
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Conflict(new { error = ex.Message });
+        }
+    }
+
+    [HttpPost("{id}/resume")]
+    public async Task<ActionResult> ResumeRun(string id, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var result = await _externalControl.RequestResumeAsync(new OperationRunId(id), cancellationToken);
+            if (result is null)
+                return NotFound();
+
+            return Accepted(new
+            {
+                runId = result.RunId.Value,
+                workflowInstanceId = result.WorkflowInstanceId.Value,
+                workflowDefinitionId = result.WorkflowDefinitionId.Value,
+                controlKind = result.ControlKind,
+                status = result.Status,
+                runStatus = result.RunStatus,
+                currentStepName = result.CurrentStepName
             });
         }
         catch (UnauthorizedAccessException)

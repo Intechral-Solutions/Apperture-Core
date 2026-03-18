@@ -131,9 +131,16 @@ flowchart TB
 ### Workflow lifecycle refinement (current baseline)
 
 - **Lifecycle vocabulary:** the shared workflow lifecycle names are centralized in `WorkflowLifecycleStatusNames` and `WorkflowLifecycleEventNames`.
-- **Run/control history:** durable lifecycle events are now recorded for start dispatch, start, cancel request, cancel, retry request, completion, and failure in `WorkflowLifecycleEvents`.
+- **Run/control history:** durable lifecycle events are now recorded for start dispatch, start, park request, park, resume request, resume, cancel request, cancel, retry request, completion, and failure in `WorkflowLifecycleEvents`.
 - **Step history:** worker step execution now populates `WorkflowStepInstances` so run detail can show per-step execution history instead of only the final run status.
 - **Query surface:** `RunQueryService.GetRunAsync` now returns both lifecycle events and step history for a run.
+
+### Workflow external-control recipient model (park/resume baseline)
+
+- **Recipient state:** workflow runs can now enter a durable `parked` state at a safe boundary and later resume from the saved next step.
+- **External-control inbox:** `WorkflowExternalControlRequests` persists queued park/resume requests and tracks whether the worker applied or rejected them.
+- **Worker behavior:** the worker only resumes parked runs when a resume request is queued, and it parks only at safe step boundaries.
+- **Query surface:** `RunQueryService.GetRunAsync` now returns the current step pointer and external-control request history alongside lifecycle and step history.
 
 ---
 
@@ -148,6 +155,8 @@ flowchart LR
         RunsController["RunsController<br/>GET /api/runs"]
         RunsCancel["RunsController<br/>POST /api/runs/{id}/cancel"]
         RunsRetry["RunsController<br/>POST /api/runs/{id}/retry"]
+        RunsPark["RunsController<br/>POST /api/runs/{id}/park"]
+        RunsResume["RunsController<br/>POST /api/runs/{id}/resume"]
         WorkflowsController["WorkflowsController<br/>POST /workflows/{id}/start"]
         EnrollController["EnrollController<br/>POST /enroll"]
         
@@ -156,6 +165,8 @@ flowchart LR
         RunsController --> |200/404/403| SQL-backed runs
         RunsCancel --> |202/404/403| Persisted cancel intent
         RunsRetry --> |202/404/403/409| Reuses start dispatch
+        RunsPark --> |202/404/403/409| Persists park intent
+        RunsResume --> |202/404/403/409| Resumes a parked run
         WorkflowsController --> |202/404/403| Persisted start handoff
         EnrollController --> IRuntimeEnrollmentService
     end
@@ -169,7 +180,8 @@ flowchart LR
 - Runs API: list/detail from SQL with executable-permission-based read authorization
 - Runs API: cancel persists durable intent (`POST /api/runs/{id}/cancel`)
 - Runs API: retry starts a brand-new run from a terminal run (`POST /api/runs/{id}/retry`)
-- Runs API: detail now returns lifecycle events and step history for the selected run
+- Runs API: park/resume persist durable external-control intent and toggle a run between `running` and `parked`
+- Runs API: detail now returns lifecycle events, step history, current step pointer, and external-control history for the selected run
 - WorkflowsController: start persists a durable handoff and returns `202 Accepted`
 - EnrollController: enrollment endpoint
 

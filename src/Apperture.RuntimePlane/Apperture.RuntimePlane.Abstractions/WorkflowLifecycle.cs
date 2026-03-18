@@ -7,6 +7,7 @@ public static class WorkflowLifecycleStatusNames
 {
     public const string Requested = "requested";
     public const string Running = "running";
+    public const string Parked = "parked";
     public const string Completed = "completed";
     public const string Failed = "failed";
     public const string Cancelled = "cancelled";
@@ -23,6 +24,10 @@ public static class WorkflowLifecycleEventNames
     public const string Failed = "workflow.failed";
     public const string CancelRequested = "workflow.cancel_requested";
     public const string Cancelled = "workflow.cancelled";
+    public const string ParkRequested = "workflow.park_requested";
+    public const string Parked = "workflow.parked";
+    public const string ResumeRequested = "workflow.resume_requested";
+    public const string Resumed = "workflow.resumed";
     public const string RetryRequested = "workflow.retry_requested";
     public const string StepStarted = "workflow.step_started";
     public const string StepCompleted = "workflow.step_completed";

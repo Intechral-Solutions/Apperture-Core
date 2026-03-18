@@ -52,7 +52,11 @@ public sealed class StartRequestWorker : BackgroundService
                 var pending = await db.WorkflowStartRequests.AsNoTracking()
                     .Where(x =>
                         (x.Status == WorkflowLifecycleStatusNames.Requested && x.ClaimedAt == null) ||
-                        (x.Status == WorkflowLifecycleStatusNames.Running && x.ClaimedAt != null && x.ClaimedAt < staleBefore))
+                        (x.Status == WorkflowLifecycleStatusNames.Running && x.ClaimedAt != null && x.ClaimedAt < staleBefore) ||
+                        (x.Status == WorkflowLifecycleStatusNames.Parked && db.WorkflowExternalControlRequests.Any(c =>
+                            c.RunId == x.RunId &&
+                            c.ControlKind == WorkflowExternalControlKindNames.Resume &&
+                            c.Status == WorkflowExternalControlStatusNames.Queued)))
                     .OrderBy(x => x.CreatedAt)
                     .Select(x => x.RunId)
                     .Take(10)

@@ -1,5 +1,6 @@
 using Apperture.ControlPlane.Security;
 using Apperture.Management.Api.Controllers;
+using Apperture.RuntimePlane.Abstractions;
 using FluentAssertions;
 using Microsoft.AspNetCore.Mvc;
 using Xunit;
@@ -11,7 +12,7 @@ public sealed class RunsControllerTests
     [Fact]
     public async Task GetRun_WhenMissing_Returns404()
     {
-        var controller = new RunsController(new StubRunQueryService(get: _ => null), new StubCancelService(), new StubRetryService());
+        var controller = new RunsController(new StubRunQueryService(get: _ => null), new StubCancelService(), new StubRetryService(), new StubExternalControlService());
         var result = await controller.GetRun("missing", CancellationToken.None);
         result.Result.Should().BeOfType<NotFoundResult>();
     }
@@ -22,7 +23,8 @@ public sealed class RunsControllerTests
         var controller = new RunsController(new StubRunQueryService(
             list: new[] { new RunSummaryDto("run-1", "inst-1", "wf-1", "requested", DateTimeOffset.UtcNow, null, null, null) }),
             new StubCancelService(),
-            new StubRetryService());
+            new StubRetryService(),
+            new StubExternalControlService());
         var result = await controller.GetRuns(CancellationToken.None);
         result.Result.Should().BeOfType<OkObjectResult>();
     }
@@ -30,7 +32,7 @@ public sealed class RunsControllerTests
     [Fact]
     public async Task RetryRun_WhenMissing_Returns404()
     {
-        var controller = new RunsController(new StubRunQueryService(), new StubCancelService(), new StubRetryService(returnNull: true));
+        var controller = new RunsController(new StubRunQueryService(), new StubCancelService(), new StubRetryService(returnNull: true), new StubExternalControlService());
         var result = await controller.RetryRun("missing", CancellationToken.None);
         result.Should().BeOfType<NotFoundResult>();
     }
@@ -46,7 +48,8 @@ public sealed class RunsControllerTests
                 new Apperture.RuntimePlane.Abstractions.OperationRunId("new-run"),
                 new Apperture.RuntimePlane.Abstractions.WorkflowInstanceId("new-instance"),
                 new Apperture.RuntimePlane.Abstractions.WorkflowDefinitionId("wf-1"),
-                "requested")));
+                "requested")),
+            new StubExternalControlService());
         var result = await controller.RetryRun("original", CancellationToken.None);
         result.Should().BeOfType<AcceptedResult>();
     }
@@ -54,7 +57,7 @@ public sealed class RunsControllerTests
     [Fact]
     public async Task RetryRun_WhenUnauthorized_Returns403()
     {
-        var controller = new RunsController(new StubRunQueryService(), new StubCancelService(), new StubRetryService(throwUnauthorized: true));
+        var controller = new RunsController(new StubRunQueryService(), new StubCancelService(), new StubRetryService(throwUnauthorized: true), new StubExternalControlService());
         var result = await controller.RetryRun("original", CancellationToken.None);
         result.Should().BeOfType<ForbidResult>();
     }
@@ -62,9 +65,25 @@ public sealed class RunsControllerTests
     [Fact]
     public async Task RetryRun_WhenIneligible_Returns409()
     {
-        var controller = new RunsController(new StubRunQueryService(), new StubCancelService(), new StubRetryService(throwConflict: true));
+        var controller = new RunsController(new StubRunQueryService(), new StubCancelService(), new StubRetryService(throwConflict: true), new StubExternalControlService());
         var result = await controller.RetryRun("original", CancellationToken.None);
         result.Should().BeOfType<ConflictObjectResult>();
+    }
+
+    [Fact]
+    public async Task ParkRun_WhenAuthorized_Returns202()
+    {
+        var controller = new RunsController(new StubRunQueryService(), new StubCancelService(), new StubRetryService(), new StubExternalControlService());
+        var result = await controller.ParkRun("run-1", CancellationToken.None);
+        result.Should().BeOfType<AcceptedResult>();
+    }
+
+    [Fact]
+    public async Task ResumeRun_WhenAuthorized_Returns202()
+    {
+        var controller = new RunsController(new StubRunQueryService(), new StubCancelService(), new StubRetryService(), new StubExternalControlService());
+        var result = await controller.ResumeRun("run-1", CancellationToken.None);
+        result.Should().BeOfType<AcceptedResult>();
     }
 
     private sealed class StubRunQueryService : IRunQueryService
@@ -84,8 +103,10 @@ public sealed class RunsControllerTests
                 null,
                 null,
                 null,
+                null,
                 Array.Empty<RunLifecycleEventDto>(),
-                Array.Empty<RunStepInstanceDto>()));
+                Array.Empty<RunStepInstanceDto>(),
+                Array.Empty<RunControlRequestDto>()));
         }
 
         public ValueTask<IReadOnlyList<RunSummaryDto>> ListRunsAsync(CancellationToken cancellationToken = default) =>
@@ -134,6 +155,29 @@ public sealed class RunsControllerTests
                 return ValueTask.FromResult<WorkflowRetryResult?>(null);
             return ValueTask.FromResult(_result);
         }
+    }
+
+    private sealed class StubExternalControlService : IWorkflowExternalControlService
+    {
+        public ValueTask<WorkflowExternalControlResult?> RequestParkAsync(Apperture.RuntimePlane.Abstractions.OperationRunId runId, CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult<WorkflowExternalControlResult?>(new WorkflowExternalControlResult(
+                runId,
+                new Apperture.RuntimePlane.Abstractions.WorkflowInstanceId("inst-1"),
+                new Apperture.RuntimePlane.Abstractions.WorkflowDefinitionId("wf-1"),
+                WorkflowExternalControlKindNames.Park,
+                "queued",
+                WorkflowLifecycleStatusNames.Running,
+                "Step1"));
+
+        public ValueTask<WorkflowExternalControlResult?> RequestResumeAsync(Apperture.RuntimePlane.Abstractions.OperationRunId runId, CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult<WorkflowExternalControlResult?>(new WorkflowExternalControlResult(
+                runId,
+                new Apperture.RuntimePlane.Abstractions.WorkflowInstanceId("inst-1"),
+                new Apperture.RuntimePlane.Abstractions.WorkflowDefinitionId("wf-1"),
+                WorkflowExternalControlKindNames.Resume,
+                "queued",
+                WorkflowLifecycleStatusNames.Parked,
+                "Step2"));
     }
 }
 

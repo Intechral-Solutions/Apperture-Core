@@ -55,6 +55,13 @@ SET Status = {WorkflowLifecycleStatusNames.Running}, ClaimedAt = {now}, ClaimedB
 WHERE RunId = {runId} AND (
     (Status = {WorkflowLifecycleStatusNames.Requested} AND ClaimedAt IS NULL) OR
     (Status = {WorkflowLifecycleStatusNames.Running} AND ClaimedAt IS NOT NULL AND ClaimedAt < {staleBefore})
+    OR (Status = {WorkflowLifecycleStatusNames.Parked} AND EXISTS (
+        SELECT 1
+        FROM WorkflowExternalControlRequests c
+        WHERE c.RunId = {runId}
+          AND c.ControlKind = {WorkflowExternalControlKindNames.Resume}
+          AND c.Status = {WorkflowExternalControlStatusNames.Queued}
+    ))
 )
 ", cancellationToken);
 
@@ -68,7 +75,8 @@ WHERE RunId = {runId} AND (
 
         var eligible =
             (string.Equals(entity.Status, WorkflowLifecycleStatusNames.Requested, StringComparison.Ordinal) && entity.ClaimedAt is null) ||
-            (string.Equals(entity.Status, WorkflowLifecycleStatusNames.Running, StringComparison.Ordinal) && entity.ClaimedAt is not null && entity.ClaimedAt < staleBefore);
+            (string.Equals(entity.Status, WorkflowLifecycleStatusNames.Running, StringComparison.Ordinal) && entity.ClaimedAt is not null && entity.ClaimedAt < staleBefore) ||
+            (string.Equals(entity.Status, WorkflowLifecycleStatusNames.Parked, StringComparison.Ordinal) && await HasPendingControlAsync(runId, WorkflowExternalControlKindNames.Resume, cancellationToken));
         if (!eligible)
             return false;
 
@@ -144,24 +152,51 @@ WHERE RunId = {runId} AND Status = {WorkflowLifecycleStatusNames.Running} AND Cl
             return;
         }
 
-        // Transition instance/run into running.
-        var runningAt = DateTimeOffset.UtcNow;
+        // Transition instance/run into running, or resume a parked run from its saved next step.
+        var transitionAt = DateTimeOffset.UtcNow;
+        var resuming = string.Equals(instance.Status, WorkflowLifecycleStatusNames.Parked, StringComparison.Ordinal);
         instance.Status = WorkflowLifecycleStatusNames.Running;
-        instance.UpdatedAt = runningAt;
+        instance.UpdatedAt = transitionAt;
         run.Status = WorkflowLifecycleStatusNames.Running;
-        _db.WorkflowLifecycleEvents.Add(new WorkflowLifecycleEventEntity
+        if (resuming)
         {
-            RunId = run.Id,
-            WorkflowInstanceId = instance.Id,
-            WorkflowDefinitionId = instance.DefinitionId,
-            EventType = WorkflowLifecycleEventNames.Started,
-            FromStatus = WorkflowLifecycleStatusNames.Requested,
-            ToStatus = WorkflowLifecycleStatusNames.Running,
-            OccurredAt = runningAt,
-            RelatedRunId = run.RetryOfRunId,
-            StepName = null,
-            DetailsJson = null
-        });
+            var resumeControl = await GetQueuedControlRequestAsync(runId, WorkflowExternalControlKindNames.Resume, cancellationToken);
+            if (resumeControl is not null)
+                MarkControlApplied(resumeControl, transitionAt);
+
+            instance.Version += 1;
+            request.LastError = null;
+
+            _db.WorkflowLifecycleEvents.Add(new WorkflowLifecycleEventEntity
+            {
+                RunId = run.Id,
+                WorkflowInstanceId = instance.Id,
+                WorkflowDefinitionId = instance.DefinitionId,
+                EventType = WorkflowLifecycleEventNames.Resumed,
+                FromStatus = WorkflowLifecycleStatusNames.Parked,
+                ToStatus = WorkflowLifecycleStatusNames.Running,
+                OccurredAt = transitionAt,
+                RelatedRunId = run.RetryOfRunId,
+                StepName = instance.CurrentStepName,
+                DetailsJson = null
+            });
+        }
+        else
+        {
+            _db.WorkflowLifecycleEvents.Add(new WorkflowLifecycleEventEntity
+            {
+                RunId = run.Id,
+                WorkflowInstanceId = instance.Id,
+                WorkflowDefinitionId = instance.DefinitionId,
+                EventType = WorkflowLifecycleEventNames.Started,
+                FromStatus = WorkflowLifecycleStatusNames.Requested,
+                ToStatus = WorkflowLifecycleStatusNames.Running,
+                OccurredAt = transitionAt,
+                RelatedRunId = run.RetryOfRunId,
+                StepName = null,
+                DetailsJson = null
+            });
+        }
         WorkflowStepInstanceEntity? activeStep = null;
 
         try
@@ -179,8 +214,16 @@ WHERE RunId = {runId} AND Status = {WorkflowLifecycleStatusNames.Running} AND Cl
             var definition = await ResolveDefinitionOrThrowAsync(request.WorkflowDefinitionId, cancellationToken);
             var parameters = DeserializeParameters(request.ParametersJson);
 
-            foreach (var stepName in definition.StepNames)
+            var startIndex = 0;
+            if (!string.IsNullOrWhiteSpace(instance.CurrentStepName))
             {
+                startIndex = FindStepIndex(definition.StepNames, instance.CurrentStepName);
+            }
+
+            for (var stepIndex = startIndex; stepIndex < definition.StepNames.Count; stepIndex++)
+            {
+                var stepName = definition.StepNames[stepIndex];
+
                 // Heartbeat at step boundary: ensure we still own the lease before mutating authoritative state.
                 if (!await TryRenewLeaseAsync(runId, cancellationToken))
                     return;
@@ -189,6 +232,14 @@ WHERE RunId = {runId} AND Status = {WorkflowLifecycleStatusNames.Running} AND Cl
                 if (await IsCancelRequestedAsync(runId, cancellationToken))
                 {
                     ApplyCancelled(request, instance, run, stepName);
+                    await _db.SaveChangesAsync(cancellationToken);
+                    if (tx is not null)
+                        await tx.CommitAsync(cancellationToken);
+                    return;
+                }
+
+                if (await TryApplyParkAsync(runId, request, instance, run, stepName, cancellationToken))
+                {
                     await _db.SaveChangesAsync(cancellationToken);
                     if (tx is not null)
                         await tx.CommitAsync(cancellationToken);
@@ -250,7 +301,10 @@ WHERE RunId = {runId} AND Status = {WorkflowLifecycleStatusNames.Running} AND Cl
             run.Status = WorkflowLifecycleStatusNames.Completed;
             run.CompletedAt = DateTimeOffset.UtcNow;
             request.Status = WorkflowLifecycleStatusNames.Completed;
+            request.ClaimedAt = null;
+            request.ClaimedBy = null;
             request.LastError = null;
+            await RejectQueuedParkRequestAsync(runId, cancellationToken);
             _db.WorkflowLifecycleEvents.Add(new WorkflowLifecycleEventEntity
             {
                 RunId = run.Id,
@@ -285,6 +339,8 @@ WHERE RunId = {runId} AND Status = {WorkflowLifecycleStatusNames.Running} AND Cl
             run.Status = WorkflowLifecycleStatusNames.Failed;
             run.CompletedAt = DateTimeOffset.UtcNow;
             request.Status = WorkflowLifecycleStatusNames.Failed;
+            request.ClaimedAt = null;
+            request.ClaimedBy = null;
             request.LastError = Truncate(ex.Message, 2048);
             _db.WorkflowLifecycleEvents.Add(new WorkflowLifecycleEventEntity
             {
@@ -312,6 +368,101 @@ WHERE RunId = {runId} AND Status = {WorkflowLifecycleStatusNames.Running} AND Cl
             .AnyAsync(x => x.RunId == runId, cancellationToken);
     }
 
+    private async ValueTask<bool> HasPendingControlAsync(string runId, string controlKind, CancellationToken cancellationToken)
+    {
+        return await _db.WorkflowExternalControlRequests.AsNoTracking()
+            .AnyAsync(x =>
+                x.RunId == runId &&
+                x.ControlKind == controlKind &&
+                x.Status == WorkflowExternalControlStatusNames.Queued,
+                cancellationToken);
+    }
+
+    private async ValueTask<WorkflowExternalControlRequestEntity?> GetQueuedControlRequestAsync(
+        string runId,
+        string controlKind,
+        CancellationToken cancellationToken)
+    {
+        return await _db.WorkflowExternalControlRequests
+            .FirstOrDefaultAsync(x =>
+                x.RunId == runId &&
+                x.ControlKind == controlKind &&
+                x.Status == WorkflowExternalControlStatusNames.Queued,
+                cancellationToken);
+    }
+
+    private static int FindStepIndex(IReadOnlyList<string> stepNames, string currentStepName)
+    {
+        for (var i = 0; i < stepNames.Count; i++)
+        {
+            if (string.Equals(stepNames[i], currentStepName, StringComparison.Ordinal))
+                return i;
+        }
+
+        throw new InvalidOperationException($"Workflow step '{currentStepName}' could not be recovered for resume.");
+    }
+
+    private void MarkControlApplied(WorkflowExternalControlRequestEntity controlRequest, DateTimeOffset appliedAt)
+    {
+        controlRequest.Status = WorkflowExternalControlStatusNames.Applied;
+        controlRequest.AppliedAt = appliedAt;
+        controlRequest.AppliedBy = _workerId;
+        controlRequest.LastError = null;
+    }
+
+    private async ValueTask<bool> TryApplyParkAsync(
+        string runId,
+        WorkflowStartRequestEntity request,
+        WorkflowInstanceEntity instance,
+        OperationRunEntity run,
+        string stepName,
+        CancellationToken cancellationToken)
+    {
+        var parkRequest = await GetQueuedControlRequestAsync(runId, WorkflowExternalControlKindNames.Park, cancellationToken);
+        if (parkRequest is null)
+            return false;
+
+        var now = DateTimeOffset.UtcNow;
+        MarkControlApplied(parkRequest, now);
+        request.Status = WorkflowLifecycleStatusNames.Parked;
+        request.LastError = null;
+        request.ClaimedAt = null;
+        request.ClaimedBy = null;
+        instance.Status = WorkflowLifecycleStatusNames.Parked;
+        instance.CurrentStepName = stepName;
+        instance.Version += 1;
+        instance.UpdatedAt = now;
+        run.Status = WorkflowLifecycleStatusNames.Parked;
+        run.CompletedAt = null;
+        _db.WorkflowLifecycleEvents.Add(new WorkflowLifecycleEventEntity
+        {
+            RunId = run.Id,
+            WorkflowInstanceId = instance.Id,
+            WorkflowDefinitionId = instance.DefinitionId,
+            EventType = WorkflowLifecycleEventNames.Parked,
+            FromStatus = WorkflowLifecycleStatusNames.Running,
+            ToStatus = WorkflowLifecycleStatusNames.Parked,
+            OccurredAt = now,
+            RelatedRunId = run.RetryOfRunId,
+            StepName = stepName,
+            DetailsJson = null
+        });
+
+        return true;
+    }
+
+    private async ValueTask RejectQueuedParkRequestAsync(string runId, CancellationToken cancellationToken)
+    {
+        var parkRequest = await GetQueuedControlRequestAsync(runId, WorkflowExternalControlKindNames.Park, cancellationToken);
+        if (parkRequest is null)
+            return;
+
+        parkRequest.Status = WorkflowExternalControlStatusNames.Rejected;
+        parkRequest.AppliedAt = DateTimeOffset.UtcNow;
+        parkRequest.AppliedBy = _workerId;
+        parkRequest.LastError = "Run completed before park control could be applied.";
+    }
+
     private void ApplyCancelled(
         WorkflowStartRequestEntity request,
         WorkflowInstanceEntity instance,
@@ -319,6 +470,8 @@ WHERE RunId = {runId} AND Status = {WorkflowLifecycleStatusNames.Running} AND Cl
         string? stepName)
     {
         request.Status = WorkflowLifecycleStatusNames.Cancelled;
+        request.ClaimedAt = null;
+        request.ClaimedBy = null;
         request.LastError = null;
         instance.Status = WorkflowLifecycleStatusNames.Cancelled;
         instance.CurrentStepName = null;

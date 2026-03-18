@@ -27,8 +27,10 @@ public sealed record RunDetailDto(
     DateTimeOffset? CompletedAt,
     string? CorrelationKey,
     string? RetryOfRunId,
+    string? CurrentStepName,
     IReadOnlyList<RunLifecycleEventDto> LifecycleEvents,
-    IReadOnlyList<RunStepInstanceDto> StepInstances);
+    IReadOnlyList<RunStepInstanceDto> StepInstances,
+    IReadOnlyList<RunControlRequestDto> ControlRequests);
 
 public sealed record RunLifecycleEventDto(
     int Id,
@@ -47,4 +49,14 @@ public sealed record RunStepInstanceDto(
     DateTimeOffset? StartedAt,
     DateTimeOffset? EndedAt,
     string? Error);
+
+public sealed record RunControlRequestDto(
+    long Id,
+    string ControlKind,
+    string Status,
+    DateTimeOffset RequestedAt,
+    string? RequestedBy,
+    DateTimeOffset? AppliedAt,
+    string? AppliedBy,
+    string? LastError);
 
