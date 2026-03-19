@@ -2,7 +2,6 @@ using Apperture.Management.Ui.Shared.Models;
 using Apperture.Management.Ui.Shared;
 using Apperture.Management.Ui.Shared.Options;
 using Microsoft.Extensions.Options;
-using System.Net.Http.Json;
 using System.Text.Json;
 
 namespace Apperture.Management.Ui.Client.Services;
@@ -19,7 +18,13 @@ public class DomainMenuService
 
     private Dictionary<string, DomainMenu> _menus = new(StringComparer.OrdinalIgnoreCase);
     private DateTime? _lastLoaded;
-    private bool _isLoading;
+
+    /// <summary>
+    /// Serializes menu loads so concurrent callers (e.g. NavRail init + MainLayout hamburger)
+    /// all await the same fetch. A plain "if loading return" caused the second caller to finish
+    /// immediately with empty menus while the first was still in flight.
+    /// </summary>
+    private readonly SemaphoreSlim _menuLoadLock = new(1, 1);
 
     public DomainMenuService(HttpClient http, IOptions<ControlPanelMenuOptions> options, ILogger<DomainMenuService> logger)
     {
@@ -33,19 +38,36 @@ public class DomainMenuService
     /// </summary>
     public async Task LoadMenusAsync(bool forceReload = false)
     {
-        if (_menus.Count > 0 && !forceReload) return;
-        if (_isLoading) return;
-
-        _isLoading = true;
+        await _menuLoadLock.WaitAsync();
         try
         {
-            // Allow case-insensitive matching because System.Text.Json may emit `camelCase`
-            // depending on server defaults.
-            var dict = await _http.GetFromJsonAsync<Dictionary<string, DomainMenu>>(
-                _jsonSource,
-                new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            if (forceReload)
+            {
+                _menus = new(StringComparer.OrdinalIgnoreCase);
+                _lastLoaded = null;
+            }
 
-            if (dict != null && dict.Count > 0)
+            if (_menus.Count > 0 && !forceReload)
+                return;
+
+            // Fetch and deserialize explicitly so we can fully control the JSON options and
+            // reliably detect "successful but useless" responses (e.g., domain entries that
+            // deserialize but end up with empty `Items` lists).
+            var json = await _http.GetStringAsync(_jsonSource);
+
+            var options = new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            };
+
+            var dict = JsonSerializer.Deserialize<Dictionary<string, DomainMenu>>(json, options);
+
+            var hasUsableItems =
+                dict is not null &&
+                dict.Count > 0 &&
+                dict.Values.Any(d => d is not null && d.Items.Count > 0);
+
+            if (hasUsableItems && dict is not null)
             {
                 _menus = dict;
                 _lastLoaded = DateTime.UtcNow;
@@ -55,8 +77,11 @@ public class DomainMenuService
             }
             else
             {
-                _logger.LogWarning("No menus returned from {Source}", _jsonSource);
-                _menus = new();
+                // The endpoint can return a structurally valid JSON payload, but if `Items`
+                // is empty due to deserialization mismatches we end up with no top-level icons.
+                // Treat that as a failed load and fall back to our default menu definitions.
+                _logger.LogWarning("Menus response from {Source} did not contain usable items; falling back to defaults.", _jsonSource);
+                _menus = ControlPanelMenuDefinitions.GetDefaultMenus();
             }
         }
         catch (HttpRequestException ex)
@@ -82,7 +107,7 @@ public class DomainMenuService
         }
         finally
         {
-            _isLoading = false;
+            _menuLoadLock.Release();
         }
     }
 
