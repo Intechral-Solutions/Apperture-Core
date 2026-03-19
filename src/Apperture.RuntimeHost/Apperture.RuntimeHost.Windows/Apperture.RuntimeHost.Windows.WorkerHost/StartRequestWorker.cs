@@ -1,5 +1,6 @@
 using Apperture.Persistence.SqlServer;
 using Apperture.Persistence.SqlServer.Options;
+using Apperture.Core.Application.Services;
 using Apperture.ModuleSdk.Abstractions;
 using Apperture.RuntimePlane.Abstractions;
 using Microsoft.EntityFrameworkCore;
@@ -20,11 +21,13 @@ public sealed class StartRequestWorker : BackgroundService
     private readonly TimeSpan _pollInterval;
     private readonly string _workerId;
     private readonly IOptions<WorkflowStartRequestLeaseOptions> _leaseOptions;
+    private readonly IOptions<OperationStartRequestLeaseOptions> _operationLeaseOptions;
 
     public StartRequestWorker(
         IServiceScopeFactory scopeFactory,
         ILogger<StartRequestWorker> logger,
-        IOptions<WorkflowStartRequestLeaseOptions> leaseOptions)
+        IOptions<WorkflowStartRequestLeaseOptions> leaseOptions,
+        IOptions<OperationStartRequestLeaseOptions> operationLeaseOptions)
     {
         _scopeFactory = scopeFactory;
         _logger = logger;
@@ -33,6 +36,7 @@ public sealed class StartRequestWorker : BackgroundService
         var rawWorkerId = $"windows-worker:{Environment.MachineName}:{Guid.NewGuid():N}";
         _workerId = rawWorkerId.Length <= 64 ? rawWorkerId : rawWorkerId[..64];
         _leaseOptions = leaseOptions;
+        _operationLeaseOptions = operationLeaseOptions;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -48,6 +52,14 @@ public sealed class StartRequestWorker : BackgroundService
                 var executor = scope.ServiceProvider.GetRequiredService<Apperture.RuntimePlane.Abstractions.IWorkflowExecutor>();
                 var definitionResolver = scope.ServiceProvider.GetRequiredService<IWorkflowDefinitionResolver>();
                 var processor = new WorkflowStartRequestProcessor(db, executor, definitionResolver, _workerId, _leaseOptions, _logger);
+                var operationRegistry = scope.ServiceProvider.GetRequiredService<IOperationRegistryService>();
+                var operationProcessor = new OperationStartRequestProcessor(
+                    db,
+                    executor,
+                    operationRegistry,
+                    _workerId,
+                    _operationLeaseOptions,
+                    _logger);
 
                 // Best-effort: attempt a small batch each poll.
                 var now = DateTimeOffset.UtcNow;
@@ -75,6 +87,29 @@ public sealed class StartRequestWorker : BackgroundService
                         continue;
 
                     await processor.ProcessClaimedAsync(runId, stoppingToken);
+                }
+
+                // Best-effort: attempt to process a small batch of operation starts each poll.
+                var operationStaleBefore = now - _operationLeaseOptions.Value.LeaseTimeout;
+                var pendingOperations = await db.OperationStartRequests.AsNoTracking()
+                    .Where(x =>
+                        (x.Status == WorkflowLifecycleStatusNames.Requested && x.ClaimedAt == null) ||
+                        (x.Status == WorkflowLifecycleStatusNames.Running && x.ClaimedAt != null && x.ClaimedAt < operationStaleBefore))
+                    .OrderBy(x => x.CreatedAt)
+                    .Select(x => x.RunId)
+                    .Take(10)
+                    .ToListAsync(stoppingToken);
+
+                foreach (var runId in pendingOperations)
+                {
+                    if (stoppingToken.IsCancellationRequested)
+                        break;
+
+                    var claimed = await operationProcessor.TryClaimAsync(runId, stoppingToken);
+                    if (!claimed)
+                        continue;
+
+                    await operationProcessor.ProcessClaimedAsync(runId, stoppingToken);
                 }
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)

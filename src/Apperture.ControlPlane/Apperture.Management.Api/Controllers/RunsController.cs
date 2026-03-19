@@ -11,11 +11,11 @@ namespace Apperture.Management.Api.Controllers;
 public sealed class RunsController : ControllerBase
 {
     private readonly IRunQueryService _runs;
-    private readonly IWorkflowCancelService _cancel;
+    private readonly IExecutionCancelService _cancel;
     private readonly IWorkflowRetryService _retry;
     private readonly IWorkflowExternalControlService _externalControl;
 
-    public RunsController(IRunQueryService runs, IWorkflowCancelService cancel, IWorkflowRetryService retry, IWorkflowExternalControlService externalControl)
+    public RunsController(IRunQueryService runs, IExecutionCancelService cancel, IWorkflowRetryService retry, IWorkflowExternalControlService externalControl)
     {
         _runs = runs;
         _cancel = cancel;

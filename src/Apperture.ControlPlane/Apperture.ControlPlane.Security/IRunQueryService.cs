@@ -16,7 +16,8 @@ public sealed record RunSummaryDto(
     DateTimeOffset CreatedAt,
     DateTimeOffset? CompletedAt,
     string? CorrelationKey,
-    string? RetryOfRunId);
+    string? RetryOfRunId,
+    string ExecutionKind = "workflow");
 
 /// <param name="CurrentStepName">
 /// Same field as <see cref="WorkflowInstanceEntity.CurrentStepName"/>: when <paramref name="Status"/> is <c>parked</c>, this is the next step to run after resume; when <c>running</c>, reflects current step progression.
@@ -33,7 +34,8 @@ public sealed record RunDetailDto(
     string? CurrentStepName,
     IReadOnlyList<RunLifecycleEventDto> LifecycleEvents,
     IReadOnlyList<RunStepInstanceDto> StepInstances,
-    IReadOnlyList<RunControlRequestDto> ControlRequests);
+    IReadOnlyList<RunControlRequestDto> ControlRequests,
+    string ExecutionKind = "workflow");
 
 public sealed record RunLifecycleEventDto(
     int Id,

@@ -37,7 +37,7 @@
                 <thead class="border-b border-default text-xs text-muted">
                     <tr>
                         <th class="px-3 py-2">Run</th>
-                        <th class="px-3 py-2">Workflow</th>
+                        <th class="px-3 py-2">Execution</th>
                         <th class="px-3 py-2">Status</th>
                         <th class="px-3 py-2">Created</th>
                         <th class="px-3 py-2">Completed</th>
@@ -51,7 +51,10 @@
                         <tr class="border-b border-default hover:bg-surface-muted cursor-pointer"
                             @onclick="() => Open(r.RunId)">
                             <td class="px-3 py-2 font-mono text-xs">@r.RunId</td>
-                            <td class="px-3 py-2 font-mono text-xs">@r.WorkflowDefinitionId</td>
+                            <td class="px-3 py-2">
+                                <div class="text-xs text-muted">@r.ExecutionKind</div>
+                                <div class="font-mono text-xs">@r.WorkflowDefinitionId</div>
+                            </td>
                             <td class="px-3 py-2">@r.Status</td>
                             <td class="px-3 py-2">@r.CreatedAt.ToLocalTime().ToString("u")</td>
                             <td class="px-3 py-2">@((r.CompletedAt is null) ? "" : r.CompletedAt.Value.ToLocalTime().ToString("u"))</td>

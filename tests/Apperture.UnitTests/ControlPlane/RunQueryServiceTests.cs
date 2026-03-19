@@ -1,5 +1,6 @@
 using Apperture.ControlPlane.Security;
 using Apperture.Persistence.SqlServer;
+using Apperture.Core.Domain.Operations;
 using Apperture.RuntimePlane.Abstractions;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
@@ -66,7 +67,7 @@ public sealed class RunQueryServiceTests
         });
         await db.SaveChangesAsync();
 
-        var service = new RunQueryService(db, new AllowReadAuthz());
+        var service = new RunQueryService(db, new AllowReadAuthz(), new AllowOperationReadAuthz());
 
         var detail = await service.GetRunAsync(new OperationRunId("r1"));
 
@@ -155,7 +156,7 @@ public sealed class RunQueryServiceTests
             });
         await db.SaveChangesAsync();
 
-        var detail = await new RunQueryService(db, new AllowReadAuthz()).GetRunAsync(new OperationRunId("r1"));
+        var detail = await new RunQueryService(db, new AllowReadAuthz(), new AllowOperationReadAuthz()).GetRunAsync(new OperationRunId("r1"));
 
         detail.Should().NotBeNull();
         detail!.Status.Should().Be(WorkflowLifecycleStatusNames.Parked);
@@ -252,7 +253,7 @@ public sealed class RunQueryServiceTests
             });
         await db.SaveChangesAsync();
 
-        var detail = await new RunQueryService(db, new AllowReadAuthz()).GetRunAsync(new OperationRunId("r1"));
+        var detail = await new RunQueryService(db, new AllowReadAuthz(), new AllowOperationReadAuthz()).GetRunAsync(new OperationRunId("r1"));
 
         detail.Should().NotBeNull();
         detail!.Status.Should().Be(WorkflowLifecycleStatusNames.Running);
@@ -276,6 +277,12 @@ public sealed class RunQueryServiceTests
     private sealed class AllowReadAuthz : IWorkflowRunReadAuthorizationService
     {
         public ValueTask EnsureCanReadRunsAsync(WorkflowDefinitionId workflowDefinitionId, CancellationToken cancellationToken = default) =>
+            ValueTask.CompletedTask;
+    }
+
+    private sealed class AllowOperationReadAuthz : IOperationRunReadAuthorizationService
+    {
+        public ValueTask EnsureCanReadRunsAsync(OperationId operationId, CancellationToken cancellationToken = default) =>
             ValueTask.CompletedTask;
     }
 }

@@ -17,17 +17,17 @@
                 Cancel
             </button>
             <button class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface"
-                    disabled="@_loading"
+                    disabled="@_loading || string.Equals(_detail?.ExecutionKind, "operation", StringComparison.OrdinalIgnoreCase)"
                     @onclick="RetryAsync">
                 Retry (new run)
             </button>
             <button class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface"
-                    disabled="@_loading"
+                    disabled="@_loading || string.Equals(_detail?.ExecutionKind, "operation", StringComparison.OrdinalIgnoreCase)"
                     @onclick="ParkAsync">
                 Park
             </button>
             <button class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface"
-                    disabled="@_loading"
+                    disabled="@_loading || string.Equals(_detail?.ExecutionKind, "operation", StringComparison.OrdinalIgnoreCase)"
                     @onclick="ResumeAsync">
                 Resume
             </button>
@@ -78,11 +78,11 @@
                         <div class="text-sm text-body">@_detail.Status</div>
                     </div>
                     <div>
-                        <div class="text-xs text-muted">Workflow definition</div>
+                        <div class="text-xs text-muted">@(_detail.ExecutionKind == "operation" ? "Operation definition" : "Workflow definition")</div>
                         <div class="text-sm font-mono break-all">@_detail.WorkflowDefinitionId</div>
                     </div>
                     <div>
-                        <div class="text-xs text-muted">Workflow instance</div>
+                        <div class="text-xs text-muted">@(_detail.ExecutionKind == "operation" ? "Operation instance" : "Workflow instance")</div>
                         <div class="text-sm font-mono break-all">@_detail.WorkflowInstanceId</div>
                     </div>
                     <div>

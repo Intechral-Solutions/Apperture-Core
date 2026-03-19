@@ -60,6 +60,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IWorkflowModuleResolver, WorkflowModuleResolver>();
         services.AddScoped<IWorkflowDefinitionResolver, Apperture.ModuleSdk.Abstractions.WorkflowDefinitionResolver>();
         services.AddScoped<IExecutablePermissionEvaluator, ExecutablePermissionEvaluator>();
+        services.AddSingleton<IOperationRegistryService, OperationRegistryService>();
         services.AddScoped<IWorkflowPersistence, SqlWorkflowPersistence>();
         services.AddScoped<IWorkflowStartDispatchService, WorkflowStartDispatchService>();
         services.AddScoped<IWorkflowRunReadAuthorizationService, WorkflowRunReadAuthorizationService>();
@@ -69,6 +70,12 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IWorkflowCancelService, WorkflowCancelService>();
         services.AddScoped<IWorkflowRetryService, WorkflowRetryService>();
         services.AddScoped<IWorkflowExternalControlService, WorkflowExternalControlService>();
+        services.AddScoped<IOperationRunReadAuthorizationService, OperationRunReadAuthorizationService>();
+        services.AddScoped<IOperationRunCancelAuthorizationService, OperationRunCancelAuthorizationService>();
+        services.AddScoped<IOperationCancelService, OperationCancelService>();
+        services.AddScoped<IExecutionCancelService, ExecutionCancelService>();
+        services.AddScoped<IOperationStartAuthorizationService, OperationStartAuthorizationService>();
+        services.AddScoped<IOperationStartDispatchService, OperationStartDispatchService>();
         services.AddScoped<IRunQueryService, RunQueryService>();
         services.AddScoped<IModuleWorkflowListingService, ModuleWorkflowListingService>();
         services.AddScoped<IWorkflowStartAuthorizationService, WorkflowStartAuthorizationService>();

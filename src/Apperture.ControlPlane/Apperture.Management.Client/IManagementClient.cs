@@ -36,7 +36,8 @@ public sealed record RunSummaryDto(
     DateTimeOffset CreatedAt,
     DateTimeOffset? CompletedAt,
     string? CorrelationKey,
-    string? RetryOfRunId);
+    string? RetryOfRunId,
+    string ExecutionKind = "workflow");
 
 public sealed record RunDetailDto(
     string RunId,
@@ -50,7 +51,8 @@ public sealed record RunDetailDto(
     string? CurrentStepName,
     IReadOnlyList<RunLifecycleEventDto> LifecycleEvents,
     IReadOnlyList<RunStepInstanceDto> StepInstances,
-    IReadOnlyList<RunControlRequestDto> ControlRequests);
+    IReadOnlyList<RunControlRequestDto> ControlRequests,
+    string ExecutionKind = "workflow");
 
 public sealed record RunLifecycleEventDto(
     int Id,

@@ -14,9 +14,14 @@ public class AppertureDbContext : DbContext
     public DbSet<WorkflowStepInstanceEntity> WorkflowStepInstances => Set<WorkflowStepInstanceEntity>();
     public DbSet<OperationRunEntity> OperationRuns => Set<OperationRunEntity>();
     public DbSet<WorkflowStartRequestEntity> WorkflowStartRequests => Set<WorkflowStartRequestEntity>();
+    public DbSet<OperationStartRequestEntity> OperationStartRequests => Set<OperationStartRequestEntity>();
     public DbSet<WorkflowCancelRequestEntity> WorkflowCancelRequests => Set<WorkflowCancelRequestEntity>();
+    public DbSet<OperationCancelRequestEntity> OperationCancelRequests => Set<OperationCancelRequestEntity>();
     public DbSet<WorkflowExternalControlRequestEntity> WorkflowExternalControlRequests => Set<WorkflowExternalControlRequestEntity>();
     public DbSet<WorkflowLifecycleEventEntity> WorkflowLifecycleEvents => Set<WorkflowLifecycleEventEntity>();
+    public DbSet<OperationLifecycleEventEntity> OperationLifecycleEvents => Set<OperationLifecycleEventEntity>();
+    public DbSet<OperationInstanceEntity> OperationInstances => Set<OperationInstanceEntity>();
+    public DbSet<OperationStepInstanceEntity> OperationStepInstances => Set<OperationStepInstanceEntity>();
     public DbSet<AuditLogEntity> AuditLogs => Set<AuditLogEntity>();
     public DbSet<TelemetryEventEntity> TelemetryEvents => Set<TelemetryEventEntity>();
     public DbSet<SecretDescriptorEntity> SecretDescriptors => Set<SecretDescriptorEntity>();
@@ -104,6 +109,74 @@ public class AppertureDbContext : DbContext
             e.HasIndex(x => x.IdempotencyKey)
                 .IsUnique()
                 .HasFilter("[IdempotencyKey] IS NOT NULL");
+        });
+
+        modelBuilder.Entity<OperationInstanceEntity>(e =>
+        {
+            e.ToTable("OperationInstances");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasMaxLength(64);
+            e.Property(x => x.DefinitionId).HasMaxLength(128);
+            e.Property(x => x.Status).HasMaxLength(32);
+            e.Property(x => x.CorrelationKey).HasMaxLength(256);
+            e.Property(x => x.CurrentStepName).HasMaxLength(128);
+            e.Property<byte[]>("RowVersion").IsRowVersion();
+        });
+
+        modelBuilder.Entity<OperationStepInstanceEntity>(e =>
+        {
+            e.ToTable("OperationStepInstances");
+            e.HasKey(x => new { x.OperationInstanceId, x.StepName, x.Attempt });
+            e.Property(x => x.OperationInstanceId).HasMaxLength(64);
+            e.Property(x => x.StepName).HasMaxLength(128);
+            e.Property(x => x.Status).HasMaxLength(32);
+        });
+
+        modelBuilder.Entity<OperationLifecycleEventEntity>(e =>
+        {
+            e.ToTable("OperationLifecycleEvents");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).ValueGeneratedOnAdd();
+            e.Property(x => x.RunId).HasMaxLength(64);
+            e.Property(x => x.OperationInstanceId).HasMaxLength(64);
+            e.Property(x => x.OperationDefinitionId).HasMaxLength(128);
+            e.Property(x => x.EventType).HasMaxLength(64);
+            e.Property(x => x.FromStatus).HasMaxLength(32);
+            e.Property(x => x.ToStatus).HasMaxLength(32);
+            e.Property(x => x.RelatedRunId).HasMaxLength(64);
+            e.Property(x => x.StepName).HasMaxLength(128);
+            e.Property(x => x.DetailsJson).HasColumnType("nvarchar(max)");
+            e.HasIndex(x => new { x.RunId, x.OccurredAt });
+            e.HasIndex(x => x.RelatedRunId);
+        });
+
+        modelBuilder.Entity<OperationStartRequestEntity>(e =>
+        {
+            e.ToTable("OperationStartRequests");
+            e.HasKey(x => x.RunId);
+            e.Property(x => x.RunId).HasMaxLength(64);
+            e.Property(x => x.OperationInstanceId).HasMaxLength(64);
+            e.Property(x => x.OperationDefinitionId).HasMaxLength(128);
+            e.Property(x => x.IdempotencyKey).HasMaxLength(128);
+            e.Property(x => x.CorrelationId).HasMaxLength(128);
+            e.Property(x => x.ParametersJson).HasColumnType("nvarchar(max)");
+            e.Property(x => x.Status).HasMaxLength(32);
+            e.Property(x => x.ClaimedBy).HasMaxLength(128);
+            e.Property(x => x.LastError).HasMaxLength(2048);
+            e.Property<byte[]>("RowVersion").IsRowVersion();
+            e.HasIndex(x => x.IdempotencyKey)
+                .IsUnique()
+                .HasFilter("[IdempotencyKey] IS NOT NULL");
+        });
+
+        modelBuilder.Entity<OperationCancelRequestEntity>(e =>
+        {
+            e.ToTable("OperationCancelRequests");
+            e.HasKey(x => x.RunId);
+            e.Property(x => x.RunId).HasMaxLength(64);
+            e.Property(x => x.OperationInstanceId).HasMaxLength(64);
+            e.Property(x => x.OperationDefinitionId).HasMaxLength(128);
+            e.Property(x => x.RequestedBy).HasMaxLength(256);
         });
 
         modelBuilder.Entity<WorkflowCancelRequestEntity>(e =>

@@ -1,4 +1,5 @@
 using Apperture.Persistence.SqlServer;
+using Apperture.Core.Domain.Operations;
 using Apperture.RuntimePlane.Abstractions;
 using Microsoft.EntityFrameworkCore;
 
@@ -7,12 +8,17 @@ namespace Apperture.ControlPlane.Security;
 public sealed class RunQueryService : IRunQueryService
 {
     private readonly AppertureDbContext _db;
-    private readonly IWorkflowRunReadAuthorizationService _authz;
+    private readonly IWorkflowRunReadAuthorizationService _workflowAuthz;
+    private readonly IOperationRunReadAuthorizationService _operationAuthz;
 
-    public RunQueryService(AppertureDbContext db, IWorkflowRunReadAuthorizationService authz)
+    public RunQueryService(
+        AppertureDbContext db,
+        IWorkflowRunReadAuthorizationService workflowAuthz,
+        IOperationRunReadAuthorizationService operationAuthz)
     {
         _db = db;
-        _authz = authz;
+        _workflowAuthz = workflowAuthz;
+        _operationAuthz = operationAuthz;
     }
 
     public async ValueTask<IReadOnlyList<RunSummaryDto>> ListRunsAsync(CancellationToken cancellationToken = default)
@@ -28,22 +34,45 @@ public sealed class RunQueryService : IRunQueryService
         {
             try
             {
-                await _authz.EnsureCanReadRunsAsync(new WorkflowDefinitionId(r.DefinitionId), cancellationToken);
+                var isWorkflow = await _db.WorkflowInstances.AsNoTracking()
+                    .AnyAsync(x => x.Id == r.WorkflowInstanceId, cancellationToken);
+                if (isWorkflow)
+                {
+                    await _workflowAuthz.EnsureCanReadRunsAsync(new WorkflowDefinitionId(r.DefinitionId), cancellationToken);
+                    result.Add(new RunSummaryDto(
+                        r.Id,
+                        r.WorkflowInstanceId,
+                        r.DefinitionId,
+                        r.Status,
+                        r.CreatedAt,
+                        r.CompletedAt,
+                        r.CorrelationKey,
+                        r.RetryOfRunId,
+                        ExecutionKind.Workflow));
+                    continue;
+                }
+
+                var hasOperationInstance = await _db.OperationInstances.AsNoTracking()
+                    .AnyAsync(x => x.Id == r.WorkflowInstanceId, cancellationToken);
+                if (!hasOperationInstance)
+                    continue;
+
+                await _operationAuthz.EnsureCanReadRunsAsync(new OperationId(r.DefinitionId), cancellationToken);
+                result.Add(new RunSummaryDto(
+                    r.Id,
+                    r.WorkflowInstanceId,
+                    r.DefinitionId,
+                    r.Status,
+                    r.CreatedAt,
+                    r.CompletedAt,
+                    r.CorrelationKey,
+                    r.RetryOfRunId,
+                    ExecutionKind.Operation));
             }
             catch (UnauthorizedAccessException)
             {
                 continue;
             }
-
-            result.Add(new RunSummaryDto(
-                r.Id,
-                r.WorkflowInstanceId,
-                r.DefinitionId,
-                r.Status,
-                r.CreatedAt,
-                r.CompletedAt,
-                r.CorrelationKey,
-                r.RetryOfRunId));
         }
 
         return result;
@@ -56,12 +85,83 @@ public sealed class RunQueryService : IRunQueryService
         if (r is null)
             return null;
 
-        await _authz.EnsureCanReadRunsAsync(new WorkflowDefinitionId(r.DefinitionId), cancellationToken);
+        var isWorkflow = await _db.WorkflowInstances.AsNoTracking()
+            .AnyAsync(x => x.Id == r.WorkflowInstanceId, cancellationToken);
 
-        var instance = await _db.WorkflowInstances.AsNoTracking()
+        if (isWorkflow)
+        {
+            await _workflowAuthz.EnsureCanReadRunsAsync(new WorkflowDefinitionId(r.DefinitionId), cancellationToken);
+
+            var instance = await _db.WorkflowInstances.AsNoTracking()
+                .FirstOrDefaultAsync(x => x.Id == r.WorkflowInstanceId, cancellationToken);
+
+            var lifecycleEvents = await _db.WorkflowLifecycleEvents.AsNoTracking()
+                .Where(x => x.RunId == r.Id)
+                .OrderBy(x => x.OccurredAt)
+                .ThenBy(x => x.Id)
+                .Select(x => new RunLifecycleEventDto(
+                    x.Id,
+                    x.EventType,
+                    x.FromStatus,
+                    x.ToStatus,
+                    x.OccurredAt,
+                    x.RelatedRunId,
+                    x.StepName,
+                    x.DetailsJson))
+                .ToListAsync(cancellationToken);
+
+            var stepInstances = await _db.WorkflowStepInstances.AsNoTracking()
+                .Where(x => x.WorkflowInstanceId == r.WorkflowInstanceId)
+                .OrderBy(x => x.StepName)
+                .ThenBy(x => x.Attempt)
+                .Select(x => new RunStepInstanceDto(
+                    x.StepName,
+                    x.Attempt,
+                    x.Status,
+                    x.StartedAt,
+                    x.EndedAt,
+                    x.Error))
+                .ToListAsync(cancellationToken);
+
+            var controlRequests = await _db.WorkflowExternalControlRequests.AsNoTracking()
+                .Where(x => x.RunId == r.Id)
+                .OrderBy(x => x.RequestedAt)
+                .ThenBy(x => x.Id)
+                .Select(x => new RunControlRequestDto(
+                    x.Id,
+                    x.ControlKind,
+                    x.Status,
+                    x.RequestedAt,
+                    x.RequestedBy,
+                    x.AppliedAt,
+                    x.AppliedBy,
+                    x.LastError))
+                .ToListAsync(cancellationToken);
+
+            return new RunDetailDto(
+                r.Id,
+                r.WorkflowInstanceId,
+                r.DefinitionId,
+                r.Status,
+                r.CreatedAt,
+                r.CompletedAt,
+                r.CorrelationKey,
+                r.RetryOfRunId,
+                instance?.CurrentStepName,
+                lifecycleEvents,
+                stepInstances,
+                controlRequests,
+                ExecutionKind.Workflow);
+        }
+
+        var operationInstance = await _db.OperationInstances.AsNoTracking()
             .FirstOrDefaultAsync(x => x.Id == r.WorkflowInstanceId, cancellationToken);
+        if (operationInstance is null)
+            return null;
 
-        var lifecycleEvents = await _db.WorkflowLifecycleEvents.AsNoTracking()
+        await _operationAuthz.EnsureCanReadRunsAsync(new OperationId(r.DefinitionId), cancellationToken);
+
+        var opLifecycleEvents = await _db.OperationLifecycleEvents.AsNoTracking()
             .Where(x => x.RunId == r.Id)
             .OrderBy(x => x.OccurredAt)
             .ThenBy(x => x.Id)
@@ -76,8 +176,8 @@ public sealed class RunQueryService : IRunQueryService
                 x.DetailsJson))
             .ToListAsync(cancellationToken);
 
-        var stepInstances = await _db.WorkflowStepInstances.AsNoTracking()
-            .Where(x => x.WorkflowInstanceId == r.WorkflowInstanceId)
+        var opStepInstances = await _db.OperationStepInstances.AsNoTracking()
+            .Where(x => x.OperationInstanceId == r.WorkflowInstanceId)
             .OrderBy(x => x.StepName)
             .ThenBy(x => x.Attempt)
             .Select(x => new RunStepInstanceDto(
@@ -89,21 +189,6 @@ public sealed class RunQueryService : IRunQueryService
                 x.Error))
             .ToListAsync(cancellationToken);
 
-        var controlRequests = await _db.WorkflowExternalControlRequests.AsNoTracking()
-            .Where(x => x.RunId == r.Id)
-            .OrderBy(x => x.RequestedAt)
-            .ThenBy(x => x.Id)
-            .Select(x => new RunControlRequestDto(
-                x.Id,
-                x.ControlKind,
-                x.Status,
-                x.RequestedAt,
-                x.RequestedBy,
-                x.AppliedAt,
-                x.AppliedBy,
-                x.LastError))
-            .ToListAsync(cancellationToken);
-
         return new RunDetailDto(
             r.Id,
             r.WorkflowInstanceId,
@@ -113,10 +198,17 @@ public sealed class RunQueryService : IRunQueryService
             r.CompletedAt,
             r.CorrelationKey,
             r.RetryOfRunId,
-            instance?.CurrentStepName,
-            lifecycleEvents,
-            stepInstances,
-            controlRequests);
+            operationInstance.CurrentStepName,
+            opLifecycleEvents,
+            opStepInstances,
+            Array.Empty<RunControlRequestDto>(),
+            ExecutionKind.Operation);
+    }
+
+    private static class ExecutionKind
+    {
+        public const string Workflow = "workflow";
+        public const string Operation = "operation";
     }
 }
 

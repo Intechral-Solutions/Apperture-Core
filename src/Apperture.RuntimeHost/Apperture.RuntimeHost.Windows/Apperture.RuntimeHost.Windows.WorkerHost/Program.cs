@@ -1,6 +1,7 @@
 using Apperture.Bootstrap;
 using Apperture.ConnectorResolution;
 using Apperture.Core.Application.Execution;
+using Apperture.Core.Application.Services;
 using Apperture.ModuleSdk.Abstractions;
 using Apperture.Persistence.SqlServer;
 using Apperture.Persistence.SqlServer.Options;
@@ -20,6 +21,8 @@ builder.Configuration.AddEnvironmentVariables();
 
 builder.Services.Configure<WorkflowStartRequestLeaseOptions>(
     builder.Configuration.GetSection("WorkflowStartRequestLease"));
+builder.Services.Configure<OperationStartRequestLeaseOptions>(
+    builder.Configuration.GetSection("OperationStartRequestLease"));
 
 builder.Services.AddAppertureBootstrap(builder.Configuration);
 builder.Services.AddApperturePersistence(
@@ -37,6 +40,7 @@ builder.Services.AddSingleton<IEnumerable<IModule>>(
     ]);
 
 builder.Services.AddSingleton<IWorkflowDefinitionResolver, WorkflowDefinitionResolver>();
+builder.Services.AddSingleton<IOperationRegistryService, OperationRegistryService>();
 
 // Step execution: registry populated by modules (no demo-only hard-coding).
 builder.Services.AddSingleton<IStepHandlerRegistry>(sp =>

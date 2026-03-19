@@ -140,7 +140,7 @@ public sealed class RunsControllerTests
             ValueTask.FromResult(_get(id.Value));
     }
 
-    private sealed class StubCancelService : IWorkflowCancelService
+    private sealed class StubCancelService : IExecutionCancelService
     {
         public ValueTask<bool> RequestCancelAsync(
             Apperture.RuntimePlane.Abstractions.OperationRunId runId,
