@@ -32,4 +32,10 @@ public interface IResourceDescriptorRegistry
     /// Gets all registered permission descriptors, optionally filtered by family.
     /// </summary>
     IReadOnlyList<PermissionDescriptor> GetPermissionDescriptors(ResourceFamily? family = null);
+
+    /// <summary>
+    /// Returns true if the given permission descriptor is registered in the canonical catalog.
+    /// Used to validate role-permission assignments before persistence.
+    /// </summary>
+    bool IsPermissionRegistered(PermissionDescriptor descriptor);
 }

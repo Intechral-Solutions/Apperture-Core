@@ -7,9 +7,9 @@ This document captures the status of the auth/governance scaffolding (Phases 1â€
 The platform governance cycle added cross-domain hardening beyond operations:
 
 - shared authorization seam: `IAuthorizationEvaluationService` with `AuthorizationEvaluationContext`
-- validated and deduplicated descriptor registration in `InMemoryResourceDescriptorRegistry`
-- module governance contributions in `ModuleManifest` (`GovernedResources`, `GovernedActions`)
-- minimum governance management APIs for descriptor listing, effective-permission inspection, and role-permission assignment
+- descriptor registration in `InMemoryResourceDescriptorRegistry`: exact duplicate (same descriptor + family) is idempotent; conflicting duplicate (same key, different descriptor) fails with clear diagnostics; identity validation enforced (ResourceType/ScopeKey/Action naming rules)
+- module governance contributions in `ModuleManifest` (`GovernedResources`, `GovernedActions`) require explicit `ResourceType`; generic contributions use `ResourceFamily.Core` (no operation-shaped defaults)
+- minimum governance management APIs for descriptor listing, effective-permission inspection, and role-permission assignment; role-permission updates validated against canonical descriptor catalog before persistence
 - schedule capability projection endpoint (`/api/schedules/capabilities`) aligned to governance checks
 - canonical privileged audit action names for role/permission governance operations
 

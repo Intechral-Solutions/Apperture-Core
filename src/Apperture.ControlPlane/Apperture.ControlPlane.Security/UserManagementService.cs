@@ -20,6 +20,7 @@ public sealed class UserManagementService : IUserManagementService
     private readonly IAuthorizationService _auth;
     private readonly IUserRepository _userRepository;
     private readonly IRoleRepository _roleRepository;
+    private readonly IResourceDescriptorRegistry _descriptorRegistry;
     private readonly ILocalCredentialRepository _localCredentialRepository;
     private readonly ILocalPasswordHasher _passwordHasher;
     private readonly IAuditService _audit;
@@ -31,6 +32,7 @@ public sealed class UserManagementService : IUserManagementService
         IAuthorizationService auth,
         IUserRepository userRepository,
         IRoleRepository roleRepository,
+        IResourceDescriptorRegistry descriptorRegistry,
         ILocalCredentialRepository localCredentialRepository,
         ILocalPasswordHasher passwordHasher,
         IAuditService audit,
@@ -41,6 +43,7 @@ public sealed class UserManagementService : IUserManagementService
         _auth = auth;
         _userRepository = userRepository;
         _roleRepository = roleRepository;
+        _descriptorRegistry = descriptorRegistry;
         _localCredentialRepository = localCredentialRepository;
         _passwordHasher = passwordHasher;
         _audit = audit;
@@ -81,9 +84,34 @@ public sealed class UserManagementService : IUserManagementService
     {
         var actorId = await RequirePermissionAssignAsync(cancellationToken);
         await AppendBreakGlassUseAuditIfNeededAsync("permission.assign", actorId, cancellationToken);
+
+        if (permissions is { Count: > 0 })
+        {
+            for (var i = 0; i < permissions.Count; i++)
+            {
+                var p = permissions[i];
+                try
+                {
+                    if (!_descriptorRegistry.IsPermissionRegistered(p))
+                        throw new InvalidOperationException(
+                            $"Permission at index {i} is not in the canonical governance catalog: Action={p.Action}, Resource={FormatResource(p.Resource)}. " +
+                            "Only permissions registered at platform or module startup may be assigned to roles.");
+                }
+                catch (InvalidOperationException ex) when (ex.Message.Contains("is not in the canonical") == false)
+                {
+                    throw new InvalidOperationException(
+                        $"Permission at index {i} is malformed: {ex.Message}. Action={p.Action}, Resource={FormatResource(p.Resource)}.",
+                        ex);
+                }
+            }
+        }
+
         await _roleRepository.UpdatePermissionsAsync(roleId, permissions, cancellationToken);
         await AppendAuditAsync(GovernanceAuditActionNames.PermissionAssignmentUpdated, actorId, roleId.Value, $"roleId={roleId.Value} permissionCount={permissions.Count}", cancellationToken);
     }
+
+    private static string FormatResource(ResourceDescriptor? r) =>
+        r is null ? "null" : $"{r.ResourceType}:{r.ScopeKey}";
 
     /// <inheritdoc />
     public async ValueTask<UserId> CreateUserAsync(string displayName, IdentitySource source, string externalId, string? password = null, CancellationToken cancellationToken = default)

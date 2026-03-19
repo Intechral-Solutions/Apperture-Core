@@ -85,6 +85,7 @@ public sealed class OperationRunReadAuthorizationServiceTests
         public void RegisterPermission(PermissionDescriptor descriptor, ResourceFamily? family = null) => throw new NotSupportedException();
         public IReadOnlyList<ResourceDescriptor> GetResourceDescriptors(ResourceFamily? family = null) => Array.Empty<ResourceDescriptor>();
         public IReadOnlyList<PermissionDescriptor> GetPermissionDescriptors(ResourceFamily? family = null) => _known;
+        public bool IsPermissionRegistered(PermissionDescriptor descriptor) => _known.Any(p => p.Equals(descriptor));
     }
 
     private sealed class StubOperationRegistry : IOperationRegistryService

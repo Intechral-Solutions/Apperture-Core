@@ -39,9 +39,7 @@ public static class ModulePermissionRegistrar
                     continue;
                 }
 
-                var resourceType = string.IsNullOrWhiteSpace(decl.ResourceType)
-                    ? ResourceTypeConstants.OperationDefinition
-                    : decl.ResourceType!.Trim();
+                var resourceType = decl.ResourceType!.Trim();
                 var scopeKey = ScopeKeyConstants.Module(moduleId);
                 var key = (decl.Action.Trim(), resourceType, scopeKey);
                 if (!seen.Add(key))
@@ -50,7 +48,7 @@ public static class ModulePermissionRegistrar
                 var descriptor = new PermissionDescriptor(
                     decl.Action.Trim(),
                     new ResourceDescriptor(resourceType, scopeKey));
-                registry.RegisterPermission(descriptor, ResourceFamily.Operation);
+                registry.RegisterPermission(descriptor, ResourceFamily.Core);
             }
         }
 
@@ -78,7 +76,7 @@ public static class ModulePermissionRegistrar
             var scope = string.IsNullOrWhiteSpace(resource.ScopeKey)
                 ? ScopeKeyConstants.Module(moduleId)
                 : resource.ScopeKey.Trim();
-            registry.RegisterResource(new ResourceDescriptor(resource.ResourceType.Trim(), scope), ResourceFamily.Operation);
+            registry.RegisterResource(new ResourceDescriptor(resource.ResourceType.Trim(), scope), ResourceFamily.Core);
         }
     }
 
@@ -116,7 +114,7 @@ public static class ModulePermissionRegistrar
                 new PermissionDescriptor(
                     actionKey,
                     new ResourceDescriptor(action.ResourceType.Trim(), scopeKey)),
-                ResourceFamily.Operation);
+                ResourceFamily.Core);
         }
     }
 
@@ -142,9 +140,14 @@ public static class ModulePermissionRegistrar
             return false;
         }
 
-        if (!string.IsNullOrWhiteSpace(decl.ResourceType) && decl.ResourceType.Trim().Length == 0)
+        if (string.IsNullOrWhiteSpace(decl.ResourceType))
         {
-            error = "ResourceType, if provided, must not be whitespace.";
+            error = "ResourceType is required. Declare explicitly (e.g. WorkflowInstance, OperationDefinition).";
+            return false;
+        }
+        if (decl.ResourceType.Trim().Length == 0)
+        {
+            error = "ResourceType must not be whitespace.";
             return false;
         }
 

@@ -18,15 +18,38 @@ public sealed class InMemoryResourceDescriptorRegistry : IResourceDescriptorRegi
     public void RegisterResource(ResourceDescriptor descriptor, ResourceFamily? family = null)
     {
         ValidateResource(descriptor);
-        _resources.TryAdd(ToResourceKey(descriptor), (descriptor, family));
+        var key = ToResourceKey(descriptor);
+        var entry = (descriptor, family);
+        if (!_resources.TryAdd(key, entry))
+        {
+            var existing = _resources[key];
+            if (!existing.Descriptor.Equals(descriptor) || !Equals(existing.Family, family))
+                throw new InvalidOperationException(
+                    $"Conflicting resource registration for key '{key}'. " +
+                    $"Existing: ResourceType={existing.Descriptor.ResourceType}, ScopeKey={existing.Descriptor.ScopeKey}, Family={existing.Family}. " +
+                    $"Incoming: ResourceType={descriptor.ResourceType}, ScopeKey={descriptor.ScopeKey}, Family={family}.");
+        }
     }
 
     /// <inheritdoc />
     public void RegisterPermission(PermissionDescriptor descriptor, ResourceFamily? family = null)
     {
         ValidatePermission(descriptor);
-        _permissions.TryAdd(ToPermissionKey(descriptor), (descriptor, family));
+        var key = ToPermissionKey(descriptor);
+        var entry = (descriptor, family);
+        if (!_permissions.TryAdd(key, entry))
+        {
+            var existing = _permissions[key];
+            if (!existing.Descriptor.Equals(descriptor) || !Equals(existing.Family, family))
+                throw new InvalidOperationException(
+                    $"Conflicting permission registration for key '{key}'. " +
+                    $"Existing: Action={existing.Descriptor.Action}, Resource={FormatResource(existing.Descriptor.Resource)}, Family={existing.Family}. " +
+                    $"Incoming: Action={descriptor.Action}, Resource={FormatResource(descriptor.Resource)}, Family={family}.");
+        }
     }
+
+    private static string FormatResource(ResourceDescriptor? r) =>
+        r is null ? "null" : $"{r.ResourceType}:{r.ScopeKey}";
 
     /// <inheritdoc />
     public IReadOnlyList<ResourceDescriptor> GetResourceDescriptors(ResourceFamily? family = null) =>
@@ -39,6 +62,14 @@ public sealed class InMemoryResourceDescriptorRegistry : IResourceDescriptorRegi
         family is null
             ? _permissions.Values.Select(p => p.Descriptor).ToList()
             : _permissions.Values.Where(p => p.Family == family).Select(p => p.Descriptor).ToList();
+
+    /// <inheritdoc />
+    public bool IsPermissionRegistered(PermissionDescriptor descriptor)
+    {
+        ValidatePermission(descriptor);
+        var key = ToPermissionKey(descriptor);
+        return _permissions.ContainsKey(key);
+    }
 
     private static string ToResourceKey(ResourceDescriptor descriptor) =>
         $"{descriptor.ResourceType}::{descriptor.ScopeKey}";
@@ -56,12 +87,20 @@ public sealed class InMemoryResourceDescriptorRegistry : IResourceDescriptorRegi
             throw new InvalidOperationException("ResourceType is required.");
         if (string.IsNullOrWhiteSpace(descriptor.ScopeKey))
             throw new InvalidOperationException("ScopeKey is required.");
+        if (descriptor.ResourceType != descriptor.ResourceType.Trim())
+            throw new InvalidOperationException("ResourceType must not have leading or trailing whitespace.");
+        if (descriptor.ScopeKey != descriptor.ScopeKey.Trim())
+            throw new InvalidOperationException("ScopeKey must not have leading or trailing whitespace.");
+        if (descriptor.ResourceType.Length > 0 && !char.IsLetter(descriptor.ResourceType[0]))
+            throw new InvalidOperationException($"ResourceType '{descriptor.ResourceType}' must start with a letter (PascalCase).");
     }
 
     private static void ValidatePermission(PermissionDescriptor descriptor)
     {
         if (string.IsNullOrWhiteSpace(descriptor.Action))
             throw new InvalidOperationException("Action is required.");
+        if (descriptor.Action != descriptor.Action.Trim())
+            throw new InvalidOperationException("Action must not have leading or trailing whitespace.");
         if (descriptor.Action != descriptor.Action.ToLowerInvariant())
             throw new InvalidOperationException($"Permission action '{descriptor.Action}' must be lowercase.");
         var segments = descriptor.Action.Split('.');

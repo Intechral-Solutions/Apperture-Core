@@ -32,25 +32,20 @@ public sealed class ModulePermissionRegistrarTests
     }
 
     [Fact]
-    public void Register_uses_default_resource_type_when_omitted()
+    public void Register_throws_when_resource_type_omitted()
     {
         var registry = new InMemoryResourceDescriptorRegistry();
         var manifests = new List<(string ModuleId, ModuleManifest Manifest)>
         {
             ("Test.Module", new ModuleManifest("Test.Module", "Test", "1.0.0", "Test")
             {
-                Permissions = [new ModulePermissionDeclaration("operation.execute")]
+                Permissions = [new ModulePermissionDeclaration("operation.execute", null)]
             })
         };
 
-        ModulePermissionRegistrar.Register(registry, manifests);
+        var act = () => ModulePermissionRegistrar.Register(registry, manifests);
 
-        var permissions = registry.GetPermissionDescriptors();
-        permissions.Should().Contain(p =>
-            p.Action == "operation.execute" &&
-            p.Resource != null &&
-            p.Resource.ResourceType == ResourceTypeConstants.OperationDefinition &&
-            p.Resource.ScopeKey == ScopeKeyConstants.Module("Test.Module"));
+        act.Should().Throw<InvalidOperationException>().WithMessage("*ResourceType*");
     }
 
     [Fact]

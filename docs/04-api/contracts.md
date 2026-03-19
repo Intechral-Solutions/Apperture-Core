@@ -20,11 +20,11 @@ The Management API (control plane) exposes REST endpoints for module registry, w
 | GET | `/runs/{id}` | Get run details |
 | POST | `/runs/{id}/park` | Request that a run park at the next safe boundary |
 | POST | `/runs/{id}/resume` | Resume a parked run from the saved next step |
-| GET | `/governance/descriptors` | List registered governed resource/action descriptors |
-| GET | `/governance/effective-permissions` | Inspect caller effective permissions |
-| GET | `/roles/{id}/permissions` | Read explicit role permission assignments |
-| PUT | `/roles/{id}/permissions` | Replace explicit role permission assignments |
-| GET | `/schedules/capabilities` | Schedule governance capability projection |
+| GET | `/api/governance/descriptors` | List registered governed resource/action descriptors |
+| GET | `/api/governance/effective-permissions` | Inspect caller effective permissions |
+| GET | `/api/roles/{id}/permissions` | Read explicit role permission assignments |
+| PUT | `/api/roles/{id}/permissions` | Replace explicit role permission assignments |
+| GET | `/api/schedules/capabilities` | Schedule governance capability projection |
 
 ## Operation definition and run contract notes
 
@@ -48,4 +48,6 @@ The Management API (control plane) exposes REST endpoints for module registry, w
 
 - Permission assignment endpoints are intentionally API-first; UI can remain thin while governance semantics stabilize.
 - Descriptor listing is sourced from `IResourceDescriptorRegistry` after platform seeding and module contribution registration.
-- Module governance contributions can extend descriptors via manifest declarations (`GovernedResources`, `GovernedActions`) and are validated at startup.
+- Module governance contributions require explicit `ResourceType` in manifest declarations (`GovernedResources`, `GovernedActions`); no operation-shaped defaults. Contributions use `ResourceFamily.Core` for generic module resources.
+- Registry collision semantics: exact duplicate (same descriptor + family) is idempotent; conflicting duplicate (same key, different descriptor) fails with clear diagnostics.
+- Role-permission assignment (`PUT /api/roles/{id}/permissions`) validates all requested permissions against the canonical descriptor catalog before persistence; unknown or malformed permissions return 400 with actionable error details.
