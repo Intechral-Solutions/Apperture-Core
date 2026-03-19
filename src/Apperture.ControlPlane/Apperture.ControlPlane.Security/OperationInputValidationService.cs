@@ -36,11 +36,22 @@ public sealed class OperationInputValidationService : IOperationInputValidationS
             if (!IsValueCompatible(field.Type, value))
                 throw new ArgumentException($"Invalid value type for field '{field.Key}'. Expected '{field.Type}'.");
 
+            if (field.MaxLength is not null && value is string text && text.Length > field.MaxLength.Value)
+                throw new ArgumentException($"Field '{field.Key}' exceeds maxLength {field.MaxLength.Value}.");
+
             if (field.AllowedValues is { Count: > 0 })
             {
                 var valueText = value.ToString();
                 if (!field.AllowedValues.Contains(valueText, StringComparer.Ordinal))
                     throw new ArgumentException($"Field '{field.Key}' must be one of: {string.Join(", ", field.AllowedValues)}.");
+            }
+
+            if (TryToDecimal(value, out var numeric))
+            {
+                if (field.Min is not null && numeric < field.Min.Value)
+                    throw new ArgumentException($"Field '{field.Key}' must be >= {field.Min.Value}.");
+                if (field.Max is not null && numeric > field.Max.Value)
+                    throw new ArgumentException($"Field '{field.Key}' must be <= {field.Max.Value}.");
             }
         }
     }
@@ -71,7 +82,11 @@ public sealed class OperationInputValidationService : IOperationInputValidationS
                 if (item.TryGetProperty("allowedValues", out var allowed) && allowed.ValueKind == JsonValueKind.Array)
                     values = allowed.EnumerateArray().Where(x => x.ValueKind == JsonValueKind.String).Select(x => x.GetString()!).ToList();
 
-                list.Add(new ParsedField(key, type, required, values));
+                decimal? min = item.TryGetProperty("min", out var minEl) && minEl.TryGetDecimal(out var minVal) ? minVal : null;
+                decimal? max = item.TryGetProperty("max", out var maxEl) && maxEl.TryGetDecimal(out var maxVal) ? maxVal : null;
+                int? maxLength = item.TryGetProperty("maxLength", out var lenEl) && lenEl.TryGetInt32(out var l) ? l : null;
+
+                list.Add(new ParsedField(key, type, required, values, min, max, maxLength));
             }
 
             fields = list;
@@ -99,6 +114,41 @@ public sealed class OperationInputValidationService : IOperationInputValidationS
         };
     }
 
-    private sealed record ParsedField(string Key, string Type, bool Required, IReadOnlyList<string>? AllowedValues);
+    private static bool TryToDecimal(object value, out decimal numeric)
+    {
+        switch (value)
+        {
+            case decimal d:
+                numeric = d;
+                return true;
+            case double db:
+                numeric = (decimal)db;
+                return true;
+            case float f:
+                numeric = (decimal)f;
+                return true;
+            case int i:
+                numeric = i;
+                return true;
+            case long l:
+                numeric = l;
+                return true;
+            case short s:
+                numeric = s;
+                return true;
+            default:
+                numeric = 0;
+                return false;
+        }
+    }
+
+    private sealed record ParsedField(
+        string Key,
+        string Type,
+        bool Required,
+        IReadOnlyList<string>? AllowedValues,
+        decimal? Min,
+        decimal? Max,
+        int? MaxLength);
 }
 

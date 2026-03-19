@@ -49,3 +49,11 @@ Per-field keys supported by current platform rendering/validation:
 - `min` / `max` / `maxLength`
 
 If schema metadata is unsupported or malformed, the platform falls back safely and may reject invalid input at API boundary.
+
+Current server-side enforcement for declared metadata includes:
+
+- required fields
+- type compatibility (`string`, `int`, `decimal`, `bool`, `datetime`, `enum`, `json`)
+- `allowedValues` (for enum-like constraints)
+- `maxLength` for string inputs
+- numeric `min` / `max` bounds

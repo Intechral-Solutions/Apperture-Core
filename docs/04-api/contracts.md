@@ -13,6 +13,8 @@ The Management API (control plane) exposes REST endpoints for module registry, w
 | GET | `/operations` | List operation definitions visible to caller |
 | GET | `/operations/{operationDefinitionId}` | Get one operation definition by stable id |
 | POST | `/operations/{operationDefinitionId}/start` | Start an operation |
+| GET | `/operations/runs` | List operation runs (operation-centric contract) |
+| GET | `/operations/runs/{runId}` | Get operation run detail (operation-centric contract) |
 | POST | `/workflows/{workflowId}/start` | Start a workflow (parameters, idempotency key) |
 | GET | `/runs` | List operation runs |
 | GET | `/runs/{id}` | Get run details |
@@ -23,6 +25,7 @@ The Management API (control plane) exposes REST endpoints for module registry, w
 
 - Operation API identity is `operationDefinitionId` (stable, persisted).
 - `OperationDefinition.Name` is execution-mapping metadata (single step-handler name), not API identity.
+- Definition visibility is governed by operation read permission; a visible definition may still have `CanStart=false` when execute permission is missing.
 - Run list supports operation-centric query filters via `/runs` query parameters:
   - `executionKind`
   - `operationDefinitionId`
@@ -31,3 +34,7 @@ The Management API (control plane) exposes REST endpoints for module registry, w
   - `createdTo`
   - `moduleId`
   - `correlationKey`
+- Run kind resolution is deterministic from durable start-request ownership:
+  - workflow run: present in `WorkflowStartRequests` only
+  - operation run: present in `OperationStartRequests` only
+  - ambiguous/unknown ownership is treated as non-projectable.

@@ -14,7 +14,8 @@ Operation execution MVP introduced first-class operation persistence and executi
 2. `OperationDefinition.Name` remains execution-mapping metadata for the current single-step handler model.
 3. Operator-facing operation discovery/start uses operation definition query contracts (`/operations`, `/operations/{operationDefinitionId}`).
 4. Run query/read supports operation-centric filtering while retaining shared run substrate.
-5. Run detail includes normalized result/error projection for operator clarity.
+5. Run kind resolution is deterministic from durable start-request ownership, not by probing instance tables per run row.
+6. Run detail includes normalized result/error projection for operator clarity.
 
 ## Consequences
 

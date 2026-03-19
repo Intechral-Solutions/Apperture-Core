@@ -11,6 +11,152 @@ namespace Apperture.UnitTests.ControlPlane;
 public sealed class RunQueryServiceTests
 {
     [Fact]
+    public async Task ListRunsAsync_UsesDeterministicStartRequestKindResolution()
+    {
+        var db = NewDb();
+        db.OperationRuns.AddRange(
+            new OperationRunEntity { Id = "rwf", WorkflowInstanceId = "i-wf", DefinitionId = "wf.def", Status = WorkflowLifecycleStatusNames.Running, CreatedAt = DateTimeOffset.UtcNow },
+            new OperationRunEntity { Id = "rop", WorkflowInstanceId = "i-op", DefinitionId = "op.def", Status = WorkflowLifecycleStatusNames.Completed, CreatedAt = DateTimeOffset.UtcNow });
+        db.WorkflowStartRequests.Add(new WorkflowStartRequestEntity
+        {
+            RunId = "rwf",
+            WorkflowInstanceId = "i-wf",
+            WorkflowDefinitionId = "wf.def",
+            CreatedAt = DateTimeOffset.UtcNow,
+            Status = WorkflowLifecycleStatusNames.Requested
+        });
+        db.OperationStartRequests.Add(new OperationStartRequestEntity
+        {
+            RunId = "rop",
+            OperationInstanceId = "i-op",
+            OperationDefinitionId = "op.def",
+            CreatedAt = DateTimeOffset.UtcNow,
+            Status = WorkflowLifecycleStatusNames.Requested
+        });
+        await db.SaveChangesAsync();
+
+        var service = new RunQueryService(db, new StubOperationRegistry(), new AllowReadAuthz(), new AllowOperationReadAuthz());
+        var all = await service.ListRunsAsync();
+
+        all.Should().HaveCount(2);
+        all.Should().Contain(x => x.RunId == "rwf" && x.ExecutionKind == "workflow");
+        all.Should().Contain(x => x.RunId == "rop" && x.ExecutionKind == "operation");
+    }
+
+    [Fact]
+    public async Task ListRunsAsync_WhenExecutionKindOperationFilter_ReturnsOnlyOperationRuns()
+    {
+        var db = NewDb();
+        db.OperationRuns.AddRange(
+            new OperationRunEntity { Id = "rwf", WorkflowInstanceId = "i-wf", DefinitionId = "wf.def", Status = WorkflowLifecycleStatusNames.Running, CreatedAt = DateTimeOffset.UtcNow },
+            new OperationRunEntity { Id = "rop", WorkflowInstanceId = "i-op", DefinitionId = "op.def", Status = WorkflowLifecycleStatusNames.Completed, CreatedAt = DateTimeOffset.UtcNow });
+        db.WorkflowStartRequests.Add(new WorkflowStartRequestEntity
+        {
+            RunId = "rwf",
+            WorkflowInstanceId = "i-wf",
+            WorkflowDefinitionId = "wf.def",
+            CreatedAt = DateTimeOffset.UtcNow,
+            Status = WorkflowLifecycleStatusNames.Requested
+        });
+        db.OperationStartRequests.Add(new OperationStartRequestEntity
+        {
+            RunId = "rop",
+            OperationInstanceId = "i-op",
+            OperationDefinitionId = "op.def",
+            CreatedAt = DateTimeOffset.UtcNow,
+            Status = WorkflowLifecycleStatusNames.Requested
+        });
+        await db.SaveChangesAsync();
+
+        var service = new RunQueryService(db, new StubOperationRegistry(), new AllowReadAuthz(), new AllowOperationReadAuthz());
+        var operationsOnly = await service.ListRunsAsync(new RunQueryFilter(ExecutionKind: "operation"));
+
+        operationsOnly.Should().ContainSingle();
+        operationsOnly[0].RunId.Should().Be("rop");
+        operationsOnly[0].ExecutionKind.Should().Be("operation");
+    }
+
+    [Fact]
+    public async Task ListRunsAsync_SkipsAmbiguousRunKind()
+    {
+        var db = NewDb();
+        db.OperationRuns.Add(new OperationRunEntity { Id = "r1", WorkflowInstanceId = "i1", DefinitionId = "d1", Status = WorkflowLifecycleStatusNames.Running, CreatedAt = DateTimeOffset.UtcNow });
+        db.WorkflowStartRequests.Add(new WorkflowStartRequestEntity
+        {
+            RunId = "r1",
+            WorkflowInstanceId = "i1",
+            WorkflowDefinitionId = "d1",
+            CreatedAt = DateTimeOffset.UtcNow,
+            Status = WorkflowLifecycleStatusNames.Requested
+        });
+        db.OperationStartRequests.Add(new OperationStartRequestEntity
+        {
+            RunId = "r1",
+            OperationInstanceId = "i1",
+            OperationDefinitionId = "d1",
+            CreatedAt = DateTimeOffset.UtcNow,
+            Status = WorkflowLifecycleStatusNames.Requested
+        });
+        await db.SaveChangesAsync();
+
+        var service = new RunQueryService(db, new StubOperationRegistry(), new AllowReadAuthz(), new AllowOperationReadAuthz());
+        var all = await service.ListRunsAsync();
+
+        all.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task GetRunAsync_OperationFailureExtractsErrorDetails()
+    {
+        var db = NewDb();
+        db.OperationRuns.Add(new OperationRunEntity
+        {
+            Id = "rop",
+            WorkflowInstanceId = "i-op",
+            DefinitionId = "op.def",
+            Status = WorkflowLifecycleStatusNames.Failed,
+            CreatedAt = DateTimeOffset.UtcNow
+        });
+        db.OperationStartRequests.Add(new OperationStartRequestEntity
+        {
+            RunId = "rop",
+            OperationInstanceId = "i-op",
+            OperationDefinitionId = "op.def",
+            CreatedAt = DateTimeOffset.UtcNow,
+            Status = WorkflowLifecycleStatusNames.Failed
+        });
+        db.OperationInstances.Add(new OperationInstanceEntity
+        {
+            Id = "i-op",
+            DefinitionId = "op.def",
+            Status = WorkflowLifecycleStatusNames.Failed,
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow,
+            Version = 1
+        });
+        db.OperationLifecycleEvents.Add(new OperationLifecycleEventEntity
+        {
+            RunId = "rop",
+            OperationInstanceId = "i-op",
+            OperationDefinitionId = "op.def",
+            EventType = OperationLifecycleEventNames.Failed,
+            FromStatus = WorkflowLifecycleStatusNames.Running,
+            ToStatus = WorkflowLifecycleStatusNames.Failed,
+            OccurredAt = DateTimeOffset.UtcNow,
+            DetailsJson = "{\"error\":\"boom\"}"
+        });
+        await db.SaveChangesAsync();
+
+        var service = new RunQueryService(db, new StubOperationRegistry(), new AllowReadAuthz(), new AllowOperationReadAuthz());
+        var detail = await service.GetRunAsync(new OperationRunId("rop"));
+
+        detail.Should().NotBeNull();
+        detail!.ExecutionKind.Should().Be("operation");
+        detail.Error.Should().NotBeNull();
+        detail.Error!.DetailsJson.Should().Contain("boom");
+    }
+
+    [Fact]
     public async Task GetRunAsync_ReturnsLifecycleAndStepHistory()
     {
         var db = NewDb();
@@ -32,6 +178,14 @@ public sealed class RunQueryServiceTests
             Status = WorkflowLifecycleStatusNames.Running,
             CreatedAt = DateTimeOffset.UtcNow.AddMinutes(-5),
             CorrelationKey = "corr-1"
+        });
+        db.WorkflowStartRequests.Add(new WorkflowStartRequestEntity
+        {
+            RunId = "r1",
+            WorkflowInstanceId = "i1",
+            WorkflowDefinitionId = "Sample.HelloWorld.HelloWorld",
+            CreatedAt = DateTimeOffset.UtcNow.AddMinutes(-5),
+            Status = WorkflowLifecycleStatusNames.Running
         });
         db.WorkflowLifecycleEvents.Add(new WorkflowLifecycleEventEntity
         {
@@ -105,6 +259,14 @@ public sealed class RunQueryServiceTests
             DefinitionId = "Sample.HelloWorld.HelloWorld",
             Status = WorkflowLifecycleStatusNames.Parked,
             CreatedAt = t0
+        });
+        db.WorkflowStartRequests.Add(new WorkflowStartRequestEntity
+        {
+            RunId = "r1",
+            WorkflowInstanceId = "i1",
+            WorkflowDefinitionId = "Sample.HelloWorld.HelloWorld",
+            CreatedAt = t0,
+            Status = WorkflowLifecycleStatusNames.Parked
         });
         db.WorkflowLifecycleEvents.AddRange(
             new WorkflowLifecycleEventEntity
@@ -192,6 +354,14 @@ public sealed class RunQueryServiceTests
             DefinitionId = "Sample.HelloWorld.HelloWorld",
             Status = WorkflowLifecycleStatusNames.Running,
             CreatedAt = t0
+        });
+        db.WorkflowStartRequests.Add(new WorkflowStartRequestEntity
+        {
+            RunId = "r1",
+            WorkflowInstanceId = "i1",
+            WorkflowDefinitionId = "Sample.HelloWorld.HelloWorld",
+            CreatedAt = t0,
+            Status = WorkflowLifecycleStatusNames.Running
         });
         db.WorkflowLifecycleEvents.AddRange(
             new WorkflowLifecycleEventEntity

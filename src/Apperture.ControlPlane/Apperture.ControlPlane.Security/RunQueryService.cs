@@ -42,6 +42,17 @@ public sealed class RunQueryService : IRunQueryService
         var runs = await query
             .OrderByDescending(r => r.CreatedAt)
             .ToListAsync(cancellationToken);
+        var runIds = runs.Select(r => r.Id).ToArray();
+        var workflowRunIds = await _db.WorkflowStartRequests.AsNoTracking()
+            .Where(x => runIds.Contains(x.RunId))
+            .Select(x => x.RunId)
+            .ToListAsync(cancellationToken);
+        var operationRunIds = await _db.OperationStartRequests.AsNoTracking()
+            .Where(x => runIds.Contains(x.RunId))
+            .Select(x => x.RunId)
+            .ToListAsync(cancellationToken);
+        var workflowSet = workflowRunIds.ToHashSet(StringComparer.Ordinal);
+        var operationSet = operationRunIds.ToHashSet(StringComparer.Ordinal);
 
         // Coarse-but-safe behavior: return only runs the caller is authorized to read.
         // (Do not leak existence or metadata for runs they can't read.)
@@ -50,9 +61,10 @@ public sealed class RunQueryService : IRunQueryService
         {
             try
             {
-                var isWorkflow = await _db.WorkflowInstances.AsNoTracking()
-                    .AnyAsync(x => x.Id == r.WorkflowInstanceId, cancellationToken);
-                if (isWorkflow)
+                var runKind = ResolveRunKind(r.Id, workflowSet, operationSet);
+                if (runKind is null)
+                    continue;
+                if (string.Equals(runKind, ExecutionKind.Workflow, StringComparison.Ordinal))
                 {
                     if (string.Equals(filter?.ExecutionKind, ExecutionKind.Operation, StringComparison.OrdinalIgnoreCase))
                         continue;
@@ -70,10 +82,6 @@ public sealed class RunQueryService : IRunQueryService
                     continue;
                 }
 
-                var hasOperationInstance = await _db.OperationInstances.AsNoTracking()
-                    .AnyAsync(x => x.Id == r.WorkflowInstanceId, cancellationToken);
-                if (!hasOperationInstance)
-                    continue;
                 if (string.Equals(filter?.ExecutionKind, ExecutionKind.Workflow, StringComparison.OrdinalIgnoreCase))
                     continue;
 
@@ -112,8 +120,12 @@ public sealed class RunQueryService : IRunQueryService
         if (r is null)
             return null;
 
-        var isWorkflow = await _db.WorkflowInstances.AsNoTracking()
-            .AnyAsync(x => x.Id == r.WorkflowInstanceId, cancellationToken);
+        var isWorkflow = await _db.WorkflowStartRequests.AsNoTracking()
+            .AnyAsync(x => x.RunId == r.Id, cancellationToken);
+        var isOperation = await _db.OperationStartRequests.AsNoTracking()
+            .AnyAsync(x => x.RunId == r.Id, cancellationToken);
+        if (isWorkflow == isOperation)
+            return null;
 
         if (isWorkflow)
         {
@@ -275,6 +287,15 @@ public sealed class RunQueryService : IRunQueryService
             Message: "Operation execution failed.",
             Code: null,
             DetailsJson: failed.DetailsJson);
+    }
+
+    private static string? ResolveRunKind(string runId, IReadOnlySet<string> workflowRunIds, IReadOnlySet<string> operationRunIds)
+    {
+        var isWorkflow = workflowRunIds.Contains(runId);
+        var isOperation = operationRunIds.Contains(runId);
+        if (isWorkflow == isOperation)
+            return null;
+        return isWorkflow ? ExecutionKind.Workflow : ExecutionKind.Operation;
     }
 }
 

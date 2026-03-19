@@ -30,7 +30,8 @@ public sealed class OperationsControllerTests
             new StubOperationDefinitionQueryService(),
             CreateAllowAllAuthService(),
             new StubOperationInputValidationService(),
-            CreateDispatchService(_ => throw new InvalidOperationException("dispatch should not be called")));
+            CreateDispatchService(_ => throw new InvalidOperationException("dispatch should not be called")),
+            new StubRunQueryService());
 
         var resolvedSecret = new ResolvedSecret(
             new SecretRef("x", null),
@@ -58,7 +59,8 @@ public sealed class OperationsControllerTests
                     new OperationRunId("run-1"),
                     new OperationInstanceId("inst-1"),
                     new Apperture.Core.Domain.Operations.OperationId(req.OperationDefinitionId),
-                    "requested")));
+                    "requested")),
+            new StubRunQueryService());
 
         var body = new StartOperationRequestBody
         {
@@ -83,7 +85,8 @@ public sealed class OperationsControllerTests
                     new OperationRunId("run-1"),
                     new OperationInstanceId("inst-1"),
                     new Apperture.Core.Domain.Operations.OperationId(req.OperationDefinitionId),
-                    "requested")));
+                    "requested")),
+            new StubRunQueryService());
 
         var result = await controller.Start("operation-1", null, CancellationToken.None);
 
@@ -120,6 +123,80 @@ public sealed class OperationsControllerTests
     {
         public ValueTask ValidateAsync(Apperture.Core.Domain.Operations.OperationId operationId, IReadOnlyDictionary<string, object?>? parameters, CancellationToken cancellationToken = default) =>
             ValueTask.CompletedTask;
+    }
+
+    [Fact]
+    public async Task GetOperations_WhenUnauthorized_Returns403()
+    {
+        var controller = new OperationsController(
+            new ThrowingOperationDefinitionQueryService(),
+            CreateAllowAllAuthService(),
+            new StubOperationInputValidationService(),
+            CreateDispatchService(_ => null),
+            new StubRunQueryService());
+
+        var result = await controller.GetOperations(CancellationToken.None);
+        result.Result.Should().BeOfType<ForbidResult>();
+    }
+
+    [Fact]
+    public async Task GetOperationRun_WhenRunIsWorkflow_Returns404()
+    {
+        var controller = new OperationsController(
+            new StubOperationDefinitionQueryService(),
+            CreateAllowAllAuthService(),
+            new StubOperationInputValidationService(),
+            CreateDispatchService(_ => null),
+            new StubRunQueryService(detail: new RunDetailDto(
+                "r1", "i1", "wf1", "running", DateTimeOffset.UtcNow, null, null, null, null,
+                new RunResultDto("in_progress", "Execution is still in progress.", null, null),
+                null,
+                Array.Empty<RunLifecycleEventDto>(),
+                Array.Empty<RunStepInstanceDto>(),
+                Array.Empty<RunControlRequestDto>(),
+                "workflow")));
+
+        var result = await controller.GetOperationRun("r1", CancellationToken.None);
+        result.Result.Should().BeOfType<NotFoundResult>();
+    }
+
+    [Fact]
+    public async Task GetOperationRun_WhenRunIsOperation_Returns200()
+    {
+        var controller = new OperationsController(
+            new StubOperationDefinitionQueryService(),
+            CreateAllowAllAuthService(),
+            new StubOperationInputValidationService(),
+            CreateDispatchService(_ => null),
+            new StubRunQueryService(detail: new RunDetailDto(
+                "r1", "oi1", "op1", "completed", DateTimeOffset.UtcNow, DateTimeOffset.UtcNow, null, null, null,
+                new RunResultDto("succeeded", "ok", null, null),
+                null,
+                Array.Empty<RunLifecycleEventDto>(),
+                Array.Empty<RunStepInstanceDto>(),
+                Array.Empty<RunControlRequestDto>(),
+                "operation")));
+
+        var result = await controller.GetOperationRun("r1", CancellationToken.None);
+        result.Result.Should().BeOfType<OkObjectResult>();
+    }
+
+    private sealed class ThrowingOperationDefinitionQueryService : IOperationDefinitionQueryService
+    {
+        public ValueTask<IReadOnlyList<OperationDefinitionDto>> ListAsync(CancellationToken cancellationToken = default) =>
+            throw new UnauthorizedAccessException();
+        public ValueTask<OperationDefinitionDto?> GetAsync(Apperture.Core.Domain.Operations.OperationId operationDefinitionId, CancellationToken cancellationToken = default) =>
+            throw new UnauthorizedAccessException();
+    }
+
+    private sealed class StubRunQueryService : IRunQueryService
+    {
+        private readonly RunDetailDto? _detail;
+        public StubRunQueryService(RunDetailDto? detail = null) => _detail = detail;
+        public ValueTask<IReadOnlyList<RunSummaryDto>> ListRunsAsync(RunQueryFilter? filter = null, CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult<IReadOnlyList<RunSummaryDto>>(Array.Empty<RunSummaryDto>());
+        public ValueTask<RunDetailDto?> GetRunAsync(OperationRunId id, CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(_detail);
     }
 }
 

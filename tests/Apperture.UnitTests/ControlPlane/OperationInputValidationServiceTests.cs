@@ -61,6 +61,42 @@ public sealed class OperationInputValidationServiceTests
         await act.Should().NotThrowAsync();
     }
 
+    [Fact]
+    public async Task ValidateAsync_WhenMaxLengthExceeded_Throws()
+    {
+        const string schema = """
+        {
+          "fields": [
+            { "key": "name", "type": "string", "required": true, "maxLength": 3 }
+          ]
+        }
+        """;
+        var svc = new OperationInputValidationService(new StubRegistry(new OperationDefinition(
+            new OperationId("op-1"), "One", "M", OperationCategory.Command, schema, Array.Empty<PermissionDescriptor>())));
+
+        Func<Task> act = async () => await svc.ValidateAsync(new OperationId("op-1"), new Dictionary<string, object?> { ["name"] = "toolong" });
+        await act.Should().ThrowAsync<ArgumentException>();
+    }
+
+    [Fact]
+    public async Task ValidateAsync_WhenOutsideMinMax_Throws()
+    {
+        const string schema = """
+        {
+          "fields": [
+            { "key": "count", "type": "int", "required": true, "min": 2, "max": 4 }
+          ]
+        }
+        """;
+        var svc = new OperationInputValidationService(new StubRegistry(new OperationDefinition(
+            new OperationId("op-1"), "One", "M", OperationCategory.Command, schema, Array.Empty<PermissionDescriptor>())));
+
+        Func<Task> actLow = async () => await svc.ValidateAsync(new OperationId("op-1"), new Dictionary<string, object?> { ["count"] = 1 });
+        await actLow.Should().ThrowAsync<ArgumentException>();
+        Func<Task> actHigh = async () => await svc.ValidateAsync(new OperationId("op-1"), new Dictionary<string, object?> { ["count"] = 5 });
+        await actHigh.Should().ThrowAsync<ArgumentException>();
+    }
+
     private sealed class StubRegistry : IOperationRegistryService
     {
         private readonly OperationDefinition _definition;

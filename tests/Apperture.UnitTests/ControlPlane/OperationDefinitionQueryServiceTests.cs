@@ -52,6 +52,22 @@ public sealed class OperationDefinitionQueryServiceTests
         dto.InputSchema!.Fields.Should().ContainSingle(f => f.Key == "name" && f.Required);
     }
 
+    [Fact]
+    public async Task ListAsync_ReadVisibleButNotStartable_DefinitionStillReturnedWithCanStartFalse()
+    {
+        var def = new OperationDefinition(new OperationId("op-1"), "One", "Module.A", OperationCategory.Command, null, Array.Empty<PermissionDescriptor>());
+        var service = new OperationDefinitionQueryService(
+            new StubRegistry(new[] { def }),
+            new StubReadAuthz(Array.Empty<string>()),
+            new StubStartAuthz(deniedIds: new[] { "op-1" }));
+
+        var list = await service.ListAsync();
+
+        list.Should().ContainSingle();
+        list[0].OperationDefinitionId.Should().Be("op-1");
+        list[0].CanStart.Should().BeFalse();
+    }
+
     private sealed class StubRegistry : IOperationRegistryService
     {
         private readonly IReadOnlyList<OperationDefinition> _defs;
