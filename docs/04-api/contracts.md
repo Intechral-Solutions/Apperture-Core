@@ -20,6 +20,11 @@ The Management API (control plane) exposes REST endpoints for module registry, w
 | GET | `/runs/{id}` | Get run details |
 | POST | `/runs/{id}/park` | Request that a run park at the next safe boundary |
 | POST | `/runs/{id}/resume` | Resume a parked run from the saved next step |
+| GET | `/governance/descriptors` | List registered governed resource/action descriptors |
+| GET | `/governance/effective-permissions` | Inspect caller effective permissions |
+| GET | `/roles/{id}/permissions` | Read explicit role permission assignments |
+| PUT | `/roles/{id}/permissions` | Replace explicit role permission assignments |
+| GET | `/schedules/capabilities` | Schedule governance capability projection |
 
 ## Operation definition and run contract notes
 
@@ -38,3 +43,9 @@ The Management API (control plane) exposes REST endpoints for module registry, w
   - workflow run: present in `WorkflowStartRequests` only
   - operation run: present in `OperationStartRequests` only
   - ambiguous/unknown ownership is treated as non-projectable.
+
+## Governance API notes
+
+- Permission assignment endpoints are intentionally API-first; UI can remain thin while governance semantics stabilize.
+- Descriptor listing is sourced from `IResourceDescriptorRegistry` after platform seeding and module contribution registration.
+- Module governance contributions can extend descriptors via manifest declarations (`GovernedResources`, `GovernedActions`) and are validated at startup.

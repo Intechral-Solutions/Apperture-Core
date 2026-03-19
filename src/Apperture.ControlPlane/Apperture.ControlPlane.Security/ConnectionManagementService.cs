@@ -12,18 +12,18 @@ namespace Apperture.ControlPlane.Security;
 public sealed class ConnectionManagementService : IConnectionManagementService
 {
     private readonly IPrincipalContext _principalContext;
-    private readonly IAuthorizationService _auth;
+    private readonly IAuthorizationEvaluationService _authorizationEvaluation;
     private readonly IConnectionRepository _connectionRepository;
     private readonly IConnectorDefinitionRegistry _connectorRegistry;
 
     public ConnectionManagementService(
         IPrincipalContext principalContext,
-        IAuthorizationService auth,
+        IAuthorizationEvaluationService authorizationEvaluation,
         IConnectionRepository connectionRepository,
         IConnectorDefinitionRegistry connectorRegistry)
     {
         _principalContext = principalContext;
-        _auth = auth;
+        _authorizationEvaluation = authorizationEvaluation;
         _connectionRepository = connectionRepository;
         _connectorRegistry = connectorRegistry;
     }
@@ -35,11 +35,11 @@ public sealed class ConnectionManagementService : IConnectionManagementService
         if (actor is null)
             throw new UnauthorizedAccessException("No authenticated actor.");
 
-        var allowed = await _auth.EvaluateAsync(
-            actor,
-            new PermissionDescriptor(ActionConstants.ConnectionRead, new ResourceDescriptor(ResourceTypeConstants.Connection, ScopeKeyConstants.Instance)),
-            null,
-            null,
+        var allowed = await _authorizationEvaluation.EvaluateAsync(
+            new AuthorizationEvaluationContext(
+                actor,
+                new PermissionDescriptor(ActionConstants.ConnectionRead, new ResourceDescriptor(ResourceTypeConstants.Connection, ScopeKeyConstants.Instance)),
+                null),
             cancellationToken);
         if (!allowed)
             throw new UnauthorizedAccessException("Not authorized to list connections.");
@@ -60,11 +60,12 @@ public sealed class ConnectionManagementService : IConnectionManagementService
             return null;
 
         var identity = connection.GetIdentity();
-        var allowed = await _auth.EvaluateAsync(
-            actor,
-            new PermissionDescriptor(ActionConstants.ConnectionRead, GovernedResourceDescriptor.FromIdentity(identity)),
-            GovernedResourceDescriptor.FromIdentity(identity),
-            identity,
+        var allowed = await _authorizationEvaluation.EvaluateAsync(
+            new AuthorizationEvaluationContext(
+                actor,
+                new PermissionDescriptor(ActionConstants.ConnectionRead, GovernedResourceDescriptor.FromIdentity(identity)),
+                GovernedResourceDescriptor.FromIdentity(identity),
+                identity),
             cancellationToken);
         if (!allowed)
             throw new UnauthorizedAccessException("Not authorized to view this connection.");
@@ -79,11 +80,11 @@ public sealed class ConnectionManagementService : IConnectionManagementService
         if (actor is null)
             throw new UnauthorizedAccessException("No authenticated actor.");
 
-        var allowed = await _auth.EvaluateAsync(
-            actor,
-            new PermissionDescriptor(ActionConstants.ConnectionCreate, new ResourceDescriptor(ResourceTypeConstants.Connection, request.ScopeKey ?? ScopeKeyConstants.Instance)),
-            null,
-            null,
+        var allowed = await _authorizationEvaluation.EvaluateAsync(
+            new AuthorizationEvaluationContext(
+                actor,
+                new PermissionDescriptor(ActionConstants.ConnectionCreate, new ResourceDescriptor(ResourceTypeConstants.Connection, request.ScopeKey ?? ScopeKeyConstants.Instance)),
+                null),
             cancellationToken);
         if (!allowed)
             throw new UnauthorizedAccessException("Not authorized to create connections.");
@@ -118,11 +119,12 @@ public sealed class ConnectionManagementService : IConnectionManagementService
             ?? throw new InvalidOperationException($"Connection {id.Value} not found.");
 
         var identity = existing.GetIdentity();
-        var allowed = await _auth.EvaluateAsync(
-            actor,
-            new PermissionDescriptor(ActionConstants.ConnectionUpdate, GovernedResourceDescriptor.FromIdentity(identity)),
-            GovernedResourceDescriptor.FromIdentity(identity),
-            identity,
+        var allowed = await _authorizationEvaluation.EvaluateAsync(
+            new AuthorizationEvaluationContext(
+                actor,
+                new PermissionDescriptor(ActionConstants.ConnectionUpdate, GovernedResourceDescriptor.FromIdentity(identity)),
+                GovernedResourceDescriptor.FromIdentity(identity),
+                identity),
             cancellationToken);
         if (!allowed)
             throw new UnauthorizedAccessException("Not authorized to update this connection.");
@@ -149,11 +151,12 @@ public sealed class ConnectionManagementService : IConnectionManagementService
             ?? throw new InvalidOperationException($"Connection {id.Value} not found.");
 
         var identity = existing.GetIdentity();
-        var allowed = await _auth.EvaluateAsync(
-            actor,
-            new PermissionDescriptor(ActionConstants.ConnectionDelete, GovernedResourceDescriptor.FromIdentity(identity)),
-            GovernedResourceDescriptor.FromIdentity(identity),
-            identity,
+        var allowed = await _authorizationEvaluation.EvaluateAsync(
+            new AuthorizationEvaluationContext(
+                actor,
+                new PermissionDescriptor(ActionConstants.ConnectionDelete, GovernedResourceDescriptor.FromIdentity(identity)),
+                GovernedResourceDescriptor.FromIdentity(identity),
+                identity),
             cancellationToken);
         if (!allowed)
             throw new UnauthorizedAccessException("Not authorized to retire this connection.");

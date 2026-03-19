@@ -15,20 +15,20 @@ public sealed class WorkflowStartAuthorizationService : IWorkflowStartAuthorizat
     private const string WorkflowExecuteAction = "workflow.execute";
 
     private readonly IPrincipalContext _principalContext;
-    private readonly IAuthorizationService _auth;
+    private readonly IAuthorizationEvaluationService _authorizationEvaluation;
     private readonly IWorkflowModuleResolver _workflowModuleResolver;
     private readonly IWorkflowDefinitionResolver _workflowDefinitionResolver;
     private readonly IExecutablePermissionEvaluator _executablePermissionEvaluator;
 
     public WorkflowStartAuthorizationService(
         IPrincipalContext principalContext,
-        IAuthorizationService auth,
+        IAuthorizationEvaluationService authorizationEvaluation,
         IWorkflowModuleResolver workflowModuleResolver,
         IWorkflowDefinitionResolver workflowDefinitionResolver,
         IExecutablePermissionEvaluator executablePermissionEvaluator)
     {
         _principalContext = principalContext;
-        _auth = auth;
+        _authorizationEvaluation = authorizationEvaluation;
         _workflowModuleResolver = workflowModuleResolver;
         _workflowDefinitionResolver = workflowDefinitionResolver;
         _executablePermissionEvaluator = executablePermissionEvaluator;
@@ -56,21 +56,15 @@ public sealed class WorkflowStartAuthorizationService : IWorkflowStartAuthorizat
         {
             var moduleScopeKey = ScopeKeyConstants.Module(moduleId);
             var permission = new PermissionDescriptor(WorkflowExecuteAction, new ResourceDescriptor(ResourceTypeConstants.WorkflowInstance, moduleScopeKey));
-            allowed = await _auth.EvaluateAsync(
-                actor,
-                permission,
-                permission.Resource,
-                null,
+            allowed = await _authorizationEvaluation.EvaluateAsync(
+                new AuthorizationEvaluationContext(actor, permission, permission.Resource),
                 cancellationToken);
         }
         else
         {
             var permission = new PermissionDescriptor(ActionConstants.WorkflowStart, new ResourceDescriptor(ResourceTypeConstants.WorkflowInstance, ScopeKeyConstants.Instance));
-            allowed = await _auth.EvaluateAsync(
-                actor,
-                permission,
-                permission.Resource,
-                null,
+            allowed = await _authorizationEvaluation.EvaluateAsync(
+                new AuthorizationEvaluationContext(actor, permission, permission.Resource),
                 cancellationToken);
         }
 

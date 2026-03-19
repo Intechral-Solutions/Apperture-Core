@@ -19,6 +19,7 @@ public sealed class OperationStartAuthorizationServiceTests
         var auth = new RecordingAuthorizationService(allowed: true);
         var registry = new StubRegistry(Array.Empty<PermissionDescriptor>());
         var execEvaluator = new ExecutablePermissionEvaluator(auth, registry);
+        var evaluation = new AuthorizationEvaluationService(auth);
         var operations = new StubOperationRegistry(new OperationDefinition(
             OperationId,
             "DoWork",
@@ -27,7 +28,7 @@ public sealed class OperationStartAuthorizationServiceTests
             ParameterSchema: null,
             RequiredPermissions: Array.Empty<PermissionDescriptor>()));
 
-        var svc = new OperationStartAuthorizationService(principal, auth, operations, execEvaluator);
+        var svc = new OperationStartAuthorizationService(principal, evaluation, operations, execEvaluator);
 
         Func<Task> act = async () => await svc.EnsureCanStartOperationAsync(OperationId);
         await act.Should().NotThrowAsync();
@@ -46,6 +47,7 @@ public sealed class OperationStartAuthorizationServiceTests
         };
         var registry = new StubRegistry(required);
         var execEvaluator = new ExecutablePermissionEvaluator(auth, registry);
+        var evaluation = new AuthorizationEvaluationService(auth);
         var operations = new StubOperationRegistry(new OperationDefinition(
             OperationId,
             "DoWork",
@@ -54,7 +56,7 @@ public sealed class OperationStartAuthorizationServiceTests
             ParameterSchema: null,
             RequiredPermissions: required));
 
-        var svc = new OperationStartAuthorizationService(principal, auth, operations, execEvaluator);
+        var svc = new OperationStartAuthorizationService(principal, evaluation, operations, execEvaluator);
 
         Func<Task> act = async () => await svc.EnsureCanStartOperationAsync(OperationId);
         await act.Should().ThrowAsync<UnauthorizedAccessException>();

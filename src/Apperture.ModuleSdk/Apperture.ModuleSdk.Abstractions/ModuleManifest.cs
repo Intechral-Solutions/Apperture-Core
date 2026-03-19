@@ -14,4 +14,14 @@ public sealed record ModuleManifest(string Id, string Name, string Version, stri
     /// Optional list of permissions this module declares. Registered at host startup into IResourceDescriptorRegistry with scope module:{Id}.
     /// </summary>
     public IReadOnlyList<ModulePermissionDeclaration>? Permissions { get; init; } = null;
+
+    /// <summary>
+    /// Optional governed resource type declarations contributed by this module.
+    /// </summary>
+    public IReadOnlyList<ModuleGovernedResourceDeclaration>? GovernedResources { get; init; } = null;
+
+    /// <summary>
+    /// Optional governed action declarations contributed by this module.
+    /// </summary>
+    public IReadOnlyList<ModuleGovernedActionDeclaration>? GovernedActions { get; init; } = null;
 }

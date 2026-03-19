@@ -1,4 +1,5 @@
 using Apperture.Core.Domain.Identity;
+using Apperture.Shared.Kernel;
 
 namespace Apperture.Core.Application.Services;
 
@@ -22,6 +23,16 @@ public interface IUserManagementService
     /// Gets all roles. Requires user.read.
     /// </summary>
     ValueTask<IReadOnlyList<Role>> GetRolesAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Gets the explicit permission assignments for a role. Requires user.read.
+    /// </summary>
+    ValueTask<IReadOnlyList<PermissionDescriptor>> GetRolePermissionsAsync(RoleId roleId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Replaces explicit permission assignments for a role. Requires permission.assign.
+    /// </summary>
+    ValueTask SetRolePermissionsAsync(RoleId roleId, IReadOnlyList<PermissionDescriptor> permissions, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Creates a new user with one initial identity link. Optional password when source is Local. Requires user.manage.

@@ -45,6 +45,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IRoleProvider, SqlRoleProvider>();
         services.AddScoped<IAuthorizationPolicyEvaluator, RbacAuthorizationPolicyEvaluator>();
         services.AddScoped<IAuthorizationService, DelegatingAuthorizationService>();
+        services.AddScoped<IAuthorizationEvaluationService, AuthorizationEvaluationService>();
         services.AddScoped<IPrincipalContext, HostPrincipalContext>();
         services.AddScoped<IIdentityResolutionService, PrincipalContextIdentityResolutionService>();
         services.AddScoped<IAuditService, SqlAuditService>();
@@ -82,6 +83,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IRunQueryService, RunQueryService>();
         services.AddScoped<IModuleWorkflowListingService, ModuleWorkflowListingService>();
         services.AddScoped<IWorkflowStartAuthorizationService, WorkflowStartAuthorizationService>();
+        services.AddScoped<IScheduleGovernanceService, ScheduleGovernanceService>();
         return services;
     }
 

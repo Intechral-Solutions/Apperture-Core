@@ -15,18 +15,18 @@ public sealed class ModuleWorkflowListingService : IModuleWorkflowListingService
     private const string WorkflowExecuteAction = "workflow.execute";
 
     private readonly IPrincipalContext _principalContext;
-    private readonly IAuthorizationService _auth;
+    private readonly IAuthorizationEvaluationService _authorizationEvaluation;
     private readonly IModuleManifestProvider _manifestProvider;
     private readonly IEnumerable<IModule> _modules;
 
     public ModuleWorkflowListingService(
         IPrincipalContext principalContext,
-        IAuthorizationService auth,
+        IAuthorizationEvaluationService authorizationEvaluation,
         IModuleManifestProvider manifestProvider,
         IEnumerable<IModule> modules)
     {
         _principalContext = principalContext;
-        _auth = auth;
+        _authorizationEvaluation = authorizationEvaluation;
         _manifestProvider = manifestProvider;
         _modules = modules ?? [];
     }
@@ -38,11 +38,11 @@ public sealed class ModuleWorkflowListingService : IModuleWorkflowListingService
         if (actor is null)
             throw new UnauthorizedAccessException("No authenticated actor.");
 
-        var allowed = await _auth.EvaluateAsync(
-            actor,
-            new PermissionDescriptor(ActionConstants.ModuleConfigure, new ResourceDescriptor(ResourceTypeConstants.Module, ScopeKeyConstants.Instance)),
-            null,
-            null,
+        var allowed = await _authorizationEvaluation.EvaluateAsync(
+            new AuthorizationEvaluationContext(
+                actor,
+                new PermissionDescriptor(ActionConstants.ModuleConfigure, new ResourceDescriptor(ResourceTypeConstants.Module, ScopeKeyConstants.Instance)),
+                null),
             cancellationToken);
         if (!allowed)
             throw new UnauthorizedAccessException("Not authorized to list modules.");
@@ -59,11 +59,11 @@ public sealed class ModuleWorkflowListingService : IModuleWorkflowListingService
             throw new UnauthorizedAccessException("No authenticated actor.");
 
         var moduleScopeKey = ScopeKeyConstants.Module(moduleId);
-        var allowed = await _auth.EvaluateAsync(
-            actor,
-            new PermissionDescriptor(WorkflowExecuteAction, new ResourceDescriptor(ResourceTypeConstants.WorkflowInstance, moduleScopeKey)),
-            null,
-            null,
+        var allowed = await _authorizationEvaluation.EvaluateAsync(
+            new AuthorizationEvaluationContext(
+                actor,
+                new PermissionDescriptor(WorkflowExecuteAction, new ResourceDescriptor(ResourceTypeConstants.WorkflowInstance, moduleScopeKey)),
+                null),
             cancellationToken);
         if (!allowed)
             throw new UnauthorizedAccessException("Not authorized to list workflows for this module.");

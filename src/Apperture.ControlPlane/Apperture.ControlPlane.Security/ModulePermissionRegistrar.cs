@@ -25,6 +25,9 @@ public static class ModulePermissionRegistrar
 
         foreach (var (moduleId, manifest) in manifests)
         {
+            RegisterGovernedResources(registry, moduleId, manifest, errors);
+            RegisterGovernedActions(registry, moduleId, manifest, errors);
+
             if (manifest.Permissions is null or { Count: 0 })
                 continue;
 
@@ -53,6 +56,68 @@ public static class ModulePermissionRegistrar
 
         if (errors.Count > 0)
             throw new InvalidOperationException($"Invalid module permission declaration(s): {string.Join("; ", errors)}");
+    }
+
+    private static void RegisterGovernedResources(
+        IResourceDescriptorRegistry registry,
+        string moduleId,
+        ModuleManifest manifest,
+        ICollection<string> errors)
+    {
+        if (manifest.GovernedResources is null or { Count: 0 })
+            return;
+
+        foreach (var resource in manifest.GovernedResources)
+        {
+            if (string.IsNullOrWhiteSpace(resource.ResourceType))
+            {
+                errors.Add($"Module {moduleId}: governed resource ResourceType is required.");
+                continue;
+            }
+
+            var scope = string.IsNullOrWhiteSpace(resource.ScopeKey)
+                ? ScopeKeyConstants.Module(moduleId)
+                : resource.ScopeKey.Trim();
+            registry.RegisterResource(new ResourceDescriptor(resource.ResourceType.Trim(), scope), ResourceFamily.Operation);
+        }
+    }
+
+    private static void RegisterGovernedActions(
+        IResourceDescriptorRegistry registry,
+        string moduleId,
+        ModuleManifest manifest,
+        ICollection<string> errors)
+    {
+        if (manifest.GovernedActions is null or { Count: 0 })
+            return;
+
+        foreach (var action in manifest.GovernedActions)
+        {
+            if (string.IsNullOrWhiteSpace(action.Action))
+            {
+                errors.Add($"Module {moduleId}: governed action Action is required.");
+                continue;
+            }
+            if (string.IsNullOrWhiteSpace(action.ResourceType))
+            {
+                errors.Add($"Module {moduleId}: governed action ResourceType is required.");
+                continue;
+            }
+
+            var actionKey = action.Action.Trim();
+            if (actionKey != actionKey.ToLowerInvariant())
+            {
+                errors.Add($"Module {moduleId}: governed action '{actionKey}' must be lowercase.");
+                continue;
+            }
+
+            var scopeKey = ScopeKeyConstants.Module(moduleId);
+            registry.RegisterPermission(
+                new PermissionDescriptor(
+                    actionKey,
+                    new ResourceDescriptor(action.ResourceType.Trim(), scopeKey)),
+                ResourceFamily.Operation);
+        }
     }
 
     private static bool TryValidate(ModulePermissionDeclaration decl, string moduleId, out string? error)

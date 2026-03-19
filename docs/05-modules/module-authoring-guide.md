@@ -57,3 +57,17 @@ Current server-side enforcement for declared metadata includes:
 - `allowedValues` (for enum-like constraints)
 - `maxLength` for string inputs
 - numeric `min` / `max` bounds
+
+## Governance Contributions
+
+Modules can contribute governance metadata in `ModuleManifest`:
+
+- `Permissions` for direct permission declarations (existing behavior).
+- `GovernedResources` for module-defined resource types and default scope keys.
+- `GovernedActions` for module-defined action keys mapped to resource types.
+
+Validation rules enforced at startup:
+
+- action keys must be lowercase and dot-separated.
+- resource type must be non-empty.
+- invalid declarations fail startup registration with explicit diagnostics.

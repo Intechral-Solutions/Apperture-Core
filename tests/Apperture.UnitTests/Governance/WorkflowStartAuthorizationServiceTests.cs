@@ -27,8 +27,9 @@ public sealed class WorkflowStartAuthorizationServiceTests
             new PermissionDescriptor("workflow.execute", new ResourceDescriptor(ResourceTypeConstants.WorkflowInstance, ScopeKeyConstants.Module("Sample.HelloWorld")))
         });
         var execEvaluator = new ExecutablePermissionEvaluator(auth, registry);
+        var evaluation = new AuthorizationEvaluationService(auth);
 
-        var svc = new WorkflowStartAuthorizationService(principal, auth, workflowModuleResolver, workflowDefinitionResolver, execEvaluator);
+        var svc = new WorkflowStartAuthorizationService(principal, evaluation, workflowModuleResolver, workflowDefinitionResolver, execEvaluator);
 
         Func<Task> act = async () => await svc.EnsureCanStartWorkflowAsync(WorkflowId);
         await act.Should().NotThrowAsync();
@@ -47,8 +48,9 @@ public sealed class WorkflowStartAuthorizationServiceTests
             WorkflowId, "HelloWorld", "Sample.HelloWorld", new[] { "s1" }, WorkflowCategory.Command, RequiredPermissions: new[] { required }));
         var registry = new StubRegistry(known: new[] { required });
         var execEvaluator = new ExecutablePermissionEvaluator(auth, registry);
+        var evaluation = new AuthorizationEvaluationService(auth);
 
-        var svc = new WorkflowStartAuthorizationService(principal, auth, workflowModuleResolver, workflowDefinitionResolver, execEvaluator);
+        var svc = new WorkflowStartAuthorizationService(principal, evaluation, workflowModuleResolver, workflowDefinitionResolver, execEvaluator);
 
         Func<Task> act = async () => await svc.EnsureCanStartWorkflowAsync(WorkflowId);
         await act.Should().NotThrowAsync();
@@ -68,8 +70,9 @@ public sealed class WorkflowStartAuthorizationServiceTests
             WorkflowId, "HelloWorld", "Sample.HelloWorld", new[] { "s1" }, WorkflowCategory.Command, RequiredPermissions: new[] { p1, p2 }));
         var registry = new StubRegistry(known: new[] { p1, p2 });
         var execEvaluator = new ExecutablePermissionEvaluator(auth, registry);
+        var evaluation = new AuthorizationEvaluationService(auth);
 
-        var svc = new WorkflowStartAuthorizationService(principal, auth, workflowModuleResolver, workflowDefinitionResolver, execEvaluator);
+        var svc = new WorkflowStartAuthorizationService(principal, evaluation, workflowModuleResolver, workflowDefinitionResolver, execEvaluator);
 
         Func<Task> act = async () => await svc.EnsureCanStartWorkflowAsync(WorkflowId);
         await act.Should().ThrowAsync<UnauthorizedAccessException>();
@@ -86,8 +89,9 @@ public sealed class WorkflowStartAuthorizationServiceTests
             WorkflowId, "HelloWorld", "Sample.HelloWorld", new[] { "s1" }, WorkflowCategory.Command, RequiredPermissions: new[] { unknown }));
         var registry = new StubRegistry(known: Array.Empty<PermissionDescriptor>());
         var execEvaluator = new ExecutablePermissionEvaluator(auth, registry);
+        var evaluation = new AuthorizationEvaluationService(auth);
 
-        var svc = new WorkflowStartAuthorizationService(principal, auth, workflowModuleResolver, workflowDefinitionResolver, execEvaluator);
+        var svc = new WorkflowStartAuthorizationService(principal, evaluation, workflowModuleResolver, workflowDefinitionResolver, execEvaluator);
 
         Func<Task> act = async () => await svc.EnsureCanStartWorkflowAsync(WorkflowId);
         await act.Should().ThrowAsync<UnauthorizedAccessException>();

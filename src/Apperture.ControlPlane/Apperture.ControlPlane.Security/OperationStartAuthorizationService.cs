@@ -15,18 +15,18 @@ public sealed class OperationStartAuthorizationService : IOperationStartAuthoriz
     private static readonly string ExecuteAction = ActionConstants.OperationExecute;
 
     private readonly IPrincipalContext _principalContext;
-    private readonly IAuthorizationService _auth;
+    private readonly IAuthorizationEvaluationService _authorizationEvaluation;
     private readonly IOperationRegistryService _operations;
     private readonly IExecutablePermissionEvaluator _executablePermissionEvaluator;
 
     public OperationStartAuthorizationService(
         IPrincipalContext principalContext,
-        IAuthorizationService auth,
+        IAuthorizationEvaluationService authorizationEvaluation,
         IOperationRegistryService operations,
         IExecutablePermissionEvaluator executablePermissionEvaluator)
     {
         _principalContext = principalContext;
-        _auth = auth;
+        _authorizationEvaluation = authorizationEvaluation;
         _operations = operations;
         _executablePermissionEvaluator = executablePermissionEvaluator;
     }
@@ -58,11 +58,8 @@ public sealed class OperationStartAuthorizationService : IOperationStartAuthoriz
             ExecuteAction,
             new ResourceDescriptor(ResourceTypeConstants.OperationDefinition, scopeKey));
 
-        var allowed = await _auth.EvaluateAsync(
-            actor,
-            permission,
-            permission.Resource,
-            resourceIdentity: null,
+        var allowed = await _authorizationEvaluation.EvaluateAsync(
+            new AuthorizationEvaluationContext(actor, permission, permission.Resource),
             cancellationToken);
 
         if (!allowed)

@@ -84,4 +84,29 @@ public sealed class ModulePermissionRegistrarTests
 
         act.Should().Throw<InvalidOperationException>().WithMessage("*Invalid*");
     }
+
+    [Fact]
+    public void Register_adds_module_governed_resource_and_action_contributions()
+    {
+        var registry = new InMemoryResourceDescriptorRegistry();
+        var manifests = new List<(string ModuleId, ModuleManifest Manifest)>
+        {
+            ("Sample.HelloWorld", new ModuleManifest("Sample.HelloWorld", "Hello World", "1.0.0", "Sample")
+            {
+                GovernedResources = [new ModuleGovernedResourceDeclaration("HelloWorldTask", ScopeKeyConstants.Module("Sample.HelloWorld"))],
+                GovernedActions = [new ModuleGovernedActionDeclaration("helloworld.execute", "HelloWorldTask")]
+            })
+        };
+
+        ModulePermissionRegistrar.Register(registry, manifests);
+
+        registry.GetResourceDescriptors().Should().Contain(r =>
+            r.ResourceType == "HelloWorldTask" &&
+            r.ScopeKey == ScopeKeyConstants.Module("Sample.HelloWorld"));
+        registry.GetPermissionDescriptors().Should().Contain(p =>
+            p.Action == "helloworld.execute" &&
+            p.Resource != null &&
+            p.Resource.ResourceType == "HelloWorldTask" &&
+            p.Resource.ScopeKey == ScopeKeyConstants.Module("Sample.HelloWorld"));
+    }
 }

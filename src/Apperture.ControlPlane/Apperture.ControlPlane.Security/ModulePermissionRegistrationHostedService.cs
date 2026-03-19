@@ -2,6 +2,7 @@ using Apperture.Core.Application.Services;
 using Apperture.ModuleSdk.Abstractions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 
 namespace Apperture.ControlPlane.Security;
 
@@ -12,10 +13,12 @@ namespace Apperture.ControlPlane.Security;
 public sealed class ModulePermissionRegistrationHostedService : IHostedService
 {
     private readonly IServiceScopeFactory _scopeFactory;
+    private readonly ILogger<ModulePermissionRegistrationHostedService> _logger;
 
-    public ModulePermissionRegistrationHostedService(IServiceScopeFactory scopeFactory)
+    public ModulePermissionRegistrationHostedService(IServiceScopeFactory scopeFactory, ILogger<ModulePermissionRegistrationHostedService> logger)
     {
         _scopeFactory = scopeFactory;
+        _logger = logger;
     }
 
     /// <inheritdoc />
@@ -25,7 +28,15 @@ public sealed class ModulePermissionRegistrationHostedService : IHostedService
         var registry = scope.ServiceProvider.GetRequiredService<IResourceDescriptorRegistry>();
         var manifestProvider = scope.ServiceProvider.GetRequiredService<IModuleManifestProvider>();
         var manifests = manifestProvider.GetManifests();
-        ModulePermissionRegistrar.Register(registry, manifests);
+        try
+        {
+            ModulePermissionRegistrar.Register(registry, manifests);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Module governance contribution registration failed at startup.");
+            throw;
+        }
         return Task.CompletedTask;
     }
 

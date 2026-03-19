@@ -69,6 +69,23 @@ public sealed class UserManagementService : IUserManagementService
     }
 
     /// <inheritdoc />
+    public async ValueTask<IReadOnlyList<PermissionDescriptor>> GetRolePermissionsAsync(RoleId roleId, CancellationToken cancellationToken = default)
+    {
+        await RequireUserReadAsync(cancellationToken);
+        var role = await _roleRepository.GetAsync(roleId, cancellationToken);
+        return role?.Permissions ?? Array.Empty<PermissionDescriptor>();
+    }
+
+    /// <inheritdoc />
+    public async ValueTask SetRolePermissionsAsync(RoleId roleId, IReadOnlyList<PermissionDescriptor> permissions, CancellationToken cancellationToken = default)
+    {
+        var actorId = await RequirePermissionAssignAsync(cancellationToken);
+        await AppendBreakGlassUseAuditIfNeededAsync("permission.assign", actorId, cancellationToken);
+        await _roleRepository.UpdatePermissionsAsync(roleId, permissions, cancellationToken);
+        await AppendAuditAsync(GovernanceAuditActionNames.PermissionAssignmentUpdated, actorId, roleId.Value, $"roleId={roleId.Value} permissionCount={permissions.Count}", cancellationToken);
+    }
+
+    /// <inheritdoc />
     public async ValueTask<UserId> CreateUserAsync(string displayName, IdentitySource source, string externalId, string? password = null, CancellationToken cancellationToken = default)
     {
         var actorId = await RequireUserManageAsync(cancellationToken);
@@ -142,7 +159,7 @@ public sealed class UserManagementService : IUserManagementService
             throw new InvalidOperationException($"Role {roleId.Value} not found.");
 
         await _roleRepository.AssignToUserAsync(userId, roleId, cancellationToken);
-        await AppendAuditAsync("role.assigned", actorId, userId.Value, $"userId={userId.Value} roleId={roleId.Value}", cancellationToken);
+        await AppendAuditAsync(GovernanceAuditActionNames.RoleAssigned, actorId, userId.Value, $"userId={userId.Value} roleId={roleId.Value}", cancellationToken);
     }
 
     /// <inheritdoc />
@@ -168,7 +185,7 @@ public sealed class UserManagementService : IUserManagementService
         }
 
         await _roleRepository.RemoveFromUserAsync(userId, roleId, cancellationToken);
-        await AppendAuditAsync("role.removed", actorId, userId.Value, $"userId={userId.Value} roleId={roleId.Value}", cancellationToken);
+        await AppendAuditAsync(GovernanceAuditActionNames.RoleRemoved, actorId, userId.Value, $"userId={userId.Value} roleId={roleId.Value}", cancellationToken);
     }
 
     /// <inheritdoc />
@@ -278,6 +295,20 @@ public sealed class UserManagementService : IUserManagementService
         return new ActorId(actor.Id.Value);
     }
 
+    private async ValueTask<ActorId> RequirePermissionAssignAsync(CancellationToken cancellationToken)
+    {
+        var actor = await _principalContext.GetCurrentActorAsync(cancellationToken);
+        if (actor is null)
+            throw new UnauthorizedAccessException("No authenticated actor.");
+        var allowed = await _auth.EvaluateAsync(
+            actor,
+            new PermissionDescriptor(ActionConstants.PermissionAssign, new ResourceDescriptor(ResourceTypeConstants.Role, ScopeKeyConstants.Instance)),
+            null, null, cancellationToken);
+        if (!allowed)
+            throw new UnauthorizedAccessException("Not authorized to assign permissions.");
+        return new ActorId(actor.Id.Value);
+    }
+
     private static void ValidateEntraExternalId(IdentitySource source, string externalId)
     {
         if (source != IdentitySource.Entra)
@@ -299,7 +330,7 @@ public sealed class UserManagementService : IUserManagementService
         var record = new AuditRecord(
             new AuditRecordId(Guid.NewGuid().ToString("N")),
             actorId,
-            "auth.break_glass.admin_operation",
+            GovernanceAuditActionNames.BreakGlassAdminOperation,
             new ResourceDescriptor(ResourceTypeConstants.User, ScopeKeyConstants.Instance),
             "auth",
             DateTimeOffset.UtcNow,

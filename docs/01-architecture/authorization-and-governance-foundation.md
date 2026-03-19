@@ -2,6 +2,17 @@
 
 This document captures the status of the auth/governance scaffolding (Phases 1–3): principles, implementation summary, project placement, core types, and the recommended next phase.
 
+## Platform Governance Cycle Updates
+
+The platform governance cycle added cross-domain hardening beyond operations:
+
+- shared authorization seam: `IAuthorizationEvaluationService` with `AuthorizationEvaluationContext`
+- validated and deduplicated descriptor registration in `InMemoryResourceDescriptorRegistry`
+- module governance contributions in `ModuleManifest` (`GovernedResources`, `GovernedActions`)
+- minimum governance management APIs for descriptor listing, effective-permission inspection, and role-permission assignment
+- schedule capability projection endpoint (`/api/schedules/capabilities`) aligned to governance checks
+- canonical privileged audit action names for role/permission governance operations
+
 ## Principles
 
 - **Authorization is central and generic** — Auth knows principals, resource types, actions, scopes; it does not know connector internals.
