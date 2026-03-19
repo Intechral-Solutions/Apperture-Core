@@ -14,7 +14,17 @@ public interface IManagementClient
         CancellationToken cancellationToken = default);
 
     Task<IReadOnlyList<RunSummaryDto>> GetRunsAsync(CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<RunSummaryDto>> GetRunsAsync(RunQueryFilter? filter, CancellationToken cancellationToken = default);
     Task<RunDetailDto?> GetRunAsync(string runId, CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<OperationDefinitionDto>> GetOperationsAsync(CancellationToken cancellationToken = default);
+    Task<OperationDefinitionDto?> GetOperationAsync(string operationDefinitionId, CancellationToken cancellationToken = default);
+    Task<StartOperationResult> StartOperationAsync(
+        string operationDefinitionId,
+        IReadOnlyDictionary<string, object?>? parameters,
+        string? idempotencyKey,
+        string? correlationId,
+        CancellationToken cancellationToken = default);
 
     Task<CancelRunResult> CancelRunAsync(string runId, CancellationToken cancellationToken = default);
     Task<RetryRunResult> RetryRunAsync(string runId, CancellationToken cancellationToken = default);
@@ -30,8 +40,8 @@ public sealed record StartWorkflowResult(
 
 public sealed record RunSummaryDto(
     string RunId,
-    string WorkflowInstanceId,
-    string WorkflowDefinitionId,
+    string ExecutionInstanceId,
+    string ExecutionDefinitionId,
     string Status,
     DateTimeOffset CreatedAt,
     DateTimeOffset? CompletedAt,
@@ -39,20 +49,43 @@ public sealed record RunSummaryDto(
     string? RetryOfRunId,
     string ExecutionKind = "workflow");
 
+public sealed record RunQueryFilter(
+    string? ExecutionKind = null,
+    string? OperationDefinitionId = null,
+    string? Status = null,
+    DateTimeOffset? CreatedFrom = null,
+    DateTimeOffset? CreatedTo = null,
+    string? ModuleId = null,
+    string? CorrelationKey = null);
+
 public sealed record RunDetailDto(
     string RunId,
-    string WorkflowInstanceId,
-    string WorkflowDefinitionId,
+    string ExecutionInstanceId,
+    string ExecutionDefinitionId,
     string Status,
     DateTimeOffset CreatedAt,
     DateTimeOffset? CompletedAt,
     string? CorrelationKey,
     string? RetryOfRunId,
     string? CurrentStepName,
+    RunResultDto? Result,
+    RunErrorDto? Error,
     IReadOnlyList<RunLifecycleEventDto> LifecycleEvents,
     IReadOnlyList<RunStepInstanceDto> StepInstances,
     IReadOnlyList<RunControlRequestDto> ControlRequests,
     string ExecutionKind = "workflow");
+
+public sealed record RunResultDto(
+    string Outcome,
+    string Summary,
+    string? PayloadJson,
+    string? DiagnosticsJson);
+
+public sealed record RunErrorDto(
+    string Category,
+    string Message,
+    string? Code,
+    string? DetailsJson);
 
 public sealed record RunLifecycleEventDto(
     int Id,
@@ -83,6 +116,37 @@ public sealed record RunControlRequestDto(
     string? LastError);
 
 public sealed record CancelRunResult(string RunId, string Status);
+
+public sealed record StartOperationResult(
+    string RunId,
+    string OperationInstanceId,
+    string OperationDefinitionId,
+    string Status);
+
+public sealed record OperationDefinitionDto(
+    string OperationDefinitionId,
+    string? ModuleId,
+    string InvariantName,
+    string DisplayName,
+    string? Description,
+    string Category,
+    bool CanStart,
+    OperationInputSchema? InputSchema);
+
+public sealed record OperationInputSchema(IReadOnlyList<OperationInputFieldDto> Fields);
+
+public sealed record OperationInputFieldDto(
+    string Key,
+    string Type,
+    string Label,
+    string? HelpText,
+    bool Required,
+    string? DefaultValue,
+    int Order,
+    IReadOnlyList<string>? AllowedValues,
+    decimal? Min,
+    decimal? Max,
+    int? MaxLength);
 
 public sealed record RetryRunResult(
     string OriginalRunId,

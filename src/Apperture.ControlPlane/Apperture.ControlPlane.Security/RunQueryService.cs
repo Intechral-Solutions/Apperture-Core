@@ -1,4 +1,5 @@
 using Apperture.Persistence.SqlServer;
+using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Operations;
 using Apperture.RuntimePlane.Abstractions;
 using Microsoft.EntityFrameworkCore;
@@ -8,22 +9,37 @@ namespace Apperture.ControlPlane.Security;
 public sealed class RunQueryService : IRunQueryService
 {
     private readonly AppertureDbContext _db;
+    private readonly IOperationRegistryService _operations;
     private readonly IWorkflowRunReadAuthorizationService _workflowAuthz;
     private readonly IOperationRunReadAuthorizationService _operationAuthz;
 
     public RunQueryService(
         AppertureDbContext db,
+        IOperationRegistryService operations,
         IWorkflowRunReadAuthorizationService workflowAuthz,
         IOperationRunReadAuthorizationService operationAuthz)
     {
         _db = db;
+        _operations = operations;
         _workflowAuthz = workflowAuthz;
         _operationAuthz = operationAuthz;
     }
 
-    public async ValueTask<IReadOnlyList<RunSummaryDto>> ListRunsAsync(CancellationToken cancellationToken = default)
+    public async ValueTask<IReadOnlyList<RunSummaryDto>> ListRunsAsync(RunQueryFilter? filter = null, CancellationToken cancellationToken = default)
     {
-        var runs = await _db.OperationRuns.AsNoTracking()
+        var query = _db.OperationRuns.AsNoTracking().AsQueryable();
+        if (!string.IsNullOrWhiteSpace(filter?.Status))
+            query = query.Where(r => r.Status == filter.Status);
+        if (!string.IsNullOrWhiteSpace(filter?.OperationDefinitionId))
+            query = query.Where(r => r.DefinitionId == filter.OperationDefinitionId);
+        if (!string.IsNullOrWhiteSpace(filter?.CorrelationKey))
+            query = query.Where(r => r.CorrelationKey == filter.CorrelationKey);
+        if (filter?.CreatedFrom is not null)
+            query = query.Where(r => r.CreatedAt >= filter.CreatedFrom.Value);
+        if (filter?.CreatedTo is not null)
+            query = query.Where(r => r.CreatedAt <= filter.CreatedTo.Value);
+
+        var runs = await query
             .OrderByDescending(r => r.CreatedAt)
             .ToListAsync(cancellationToken);
 
@@ -38,6 +54,8 @@ public sealed class RunQueryService : IRunQueryService
                     .AnyAsync(x => x.Id == r.WorkflowInstanceId, cancellationToken);
                 if (isWorkflow)
                 {
+                    if (string.Equals(filter?.ExecutionKind, ExecutionKind.Operation, StringComparison.OrdinalIgnoreCase))
+                        continue;
                     await _workflowAuthz.EnsureCanReadRunsAsync(new WorkflowDefinitionId(r.DefinitionId), cancellationToken);
                     result.Add(new RunSummaryDto(
                         r.Id,
@@ -56,6 +74,15 @@ public sealed class RunQueryService : IRunQueryService
                     .AnyAsync(x => x.Id == r.WorkflowInstanceId, cancellationToken);
                 if (!hasOperationInstance)
                     continue;
+                if (string.Equals(filter?.ExecutionKind, ExecutionKind.Workflow, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                if (!string.IsNullOrWhiteSpace(filter?.ModuleId))
+                {
+                    var definition = await _operations.GetOperationAsync(new OperationId(r.DefinitionId), cancellationToken);
+                    if (!string.Equals(definition?.ModuleId, filter.ModuleId, StringComparison.Ordinal))
+                        continue;
+                }
 
                 await _operationAuthz.EnsureCanReadRunsAsync(new OperationId(r.DefinitionId), cancellationToken);
                 result.Add(new RunSummaryDto(
@@ -148,6 +175,8 @@ public sealed class RunQueryService : IRunQueryService
                 r.CorrelationKey,
                 r.RetryOfRunId,
                 instance?.CurrentStepName,
+                BuildResultFromStatus(r.Status),
+                null,
                 lifecycleEvents,
                 stepInstances,
                 controlRequests,
@@ -189,6 +218,7 @@ public sealed class RunQueryService : IRunQueryService
                 x.Error))
             .ToListAsync(cancellationToken);
 
+        var opError = BuildOperationError(opLifecycleEvents);
         return new RunDetailDto(
             r.Id,
             r.WorkflowInstanceId,
@@ -199,6 +229,8 @@ public sealed class RunQueryService : IRunQueryService
             r.CorrelationKey,
             r.RetryOfRunId,
             operationInstance.CurrentStepName,
+            BuildResultFromStatus(r.Status),
+            opError,
             opLifecycleEvents,
             opStepInstances,
             Array.Empty<RunControlRequestDto>(),
@@ -209,6 +241,40 @@ public sealed class RunQueryService : IRunQueryService
     {
         public const string Workflow = "workflow";
         public const string Operation = "operation";
+    }
+
+    private static RunResultDto BuildResultFromStatus(string status)
+    {
+        var outcome = status.ToLowerInvariant() switch
+        {
+            WorkflowLifecycleStatusNames.Completed => "succeeded",
+            WorkflowLifecycleStatusNames.Cancelled => "cancelled",
+            WorkflowLifecycleStatusNames.Failed => "failed",
+            _ => "in_progress"
+        };
+
+        var summary = outcome switch
+        {
+            "succeeded" => "Execution completed successfully.",
+            "cancelled" => "Execution was cancelled.",
+            "failed" => "Execution failed.",
+            _ => "Execution is still in progress."
+        };
+
+        return new RunResultDto(outcome, summary, PayloadJson: null, DiagnosticsJson: null);
+    }
+
+    private static RunErrorDto? BuildOperationError(IReadOnlyList<RunLifecycleEventDto> lifecycleEvents)
+    {
+        var failed = lifecycleEvents.LastOrDefault(e => string.Equals(e.EventType, OperationLifecycleEventNames.Failed, StringComparison.Ordinal));
+        if (failed is null)
+            return null;
+
+        return new RunErrorDto(
+            Category: "execution",
+            Message: "Operation execution failed.",
+            Code: null,
+            DetailsJson: failed.DetailsJson);
     }
 }
 

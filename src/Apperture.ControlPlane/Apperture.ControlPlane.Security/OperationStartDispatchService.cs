@@ -7,7 +7,6 @@ using Apperture.RuntimePlane.Abstractions;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
-using Apperture.Persistence.SqlServer.Options;
 
 namespace Apperture.ControlPlane.Security;
 

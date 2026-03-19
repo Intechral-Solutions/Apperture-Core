@@ -25,7 +25,7 @@ public sealed class RunsControllerTests
             new StubCancelService(),
             new StubRetryService(),
             new StubExternalControlService());
-        var result = await controller.GetRuns(CancellationToken.None);
+        var result = await controller.GetRuns(null, null, null, null, null, null, null, CancellationToken.None);
         result.Result.Should().BeOfType<OkObjectResult>();
     }
 
@@ -128,12 +128,14 @@ public sealed class RunsControllerTests
                 null,
                 null,
                 null,
+                new RunResultDto("in_progress", "Execution is still in progress.", null, null),
+                null,
                 Array.Empty<RunLifecycleEventDto>(),
                 Array.Empty<RunStepInstanceDto>(),
                 Array.Empty<RunControlRequestDto>()));
         }
 
-        public ValueTask<IReadOnlyList<RunSummaryDto>> ListRunsAsync(CancellationToken cancellationToken = default) =>
+        public ValueTask<IReadOnlyList<RunSummaryDto>> ListRunsAsync(RunQueryFilter? filter = null, CancellationToken cancellationToken = default) =>
             ValueTask.FromResult(_list);
 
         public ValueTask<RunDetailDto?> GetRunAsync(Apperture.RuntimePlane.Abstractions.OperationRunId id, CancellationToken cancellationToken = default) =>

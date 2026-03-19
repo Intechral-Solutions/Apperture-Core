@@ -23,3 +23,29 @@ For the current MVP, operation execution reuses the existing step-handler execut
 3. Operation execution is direct and single-step; use workflows for multi-step durable orchestration.
 
 This contract is intentionally narrow to keep operations and workflows distinct while sharing the runtime substrate.
+
+### Operation identity and metadata conventions
+
+For operator/API surfaces:
+
+1. Use `OperationDefinition.Id` as the stable `OperationDefinitionId`.
+2. Treat `OperationDefinition.Name` as execution mapping metadata (single-step handler name), not external identity.
+3. Keep `OperationDefinition.Id` stable once published; changing display labels should not break API routes or persisted run references.
+
+### Input metadata contract
+
+Modules can provide a JSON `ParameterSchema` with a `fields` array to drive platform-generated start forms and validation.
+
+Per-field keys supported by current platform rendering/validation:
+
+- `key` (required)
+- `type` (`string`, `int`, `decimal`, `bool`, `datetime`, `enum`, `json`)
+- `label`
+- `helpText`
+- `required`
+- `defaultValue`
+- `order`
+- `allowedValues`
+- `min` / `max` / `maxLength`
+
+If schema metadata is unsupported or malformed, the platform falls back safely and may reject invalid input at API boundary.

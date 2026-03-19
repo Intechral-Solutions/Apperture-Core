@@ -91,6 +91,8 @@ public sealed class OperationRunReadAuthorizationServiceTests
     {
         private readonly OperationDefinition _definition;
         public StubOperationRegistry(OperationDefinition definition) => _definition = definition;
+        public ValueTask<IReadOnlyList<OperationDefinition>> ListAsync(CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult<IReadOnlyList<OperationDefinition>>(new[] { _definition });
         public ValueTask<OperationDefinition?> GetOperationAsync(OperationId operationId, CancellationToken cancellationToken = default) =>
             ValueTask.FromResult<OperationDefinition?>(_definition);
         public ValueTask<IReadOnlyList<OperationDefinition>> GetByModuleAsync(string moduleId, CancellationToken cancellationToken = default) =>

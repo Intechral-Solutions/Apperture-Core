@@ -24,11 +24,27 @@ public sealed class RunsController : ControllerBase
     }
 
     [HttpGet]
-    public async Task<ActionResult<IReadOnlyList<RunSummaryDto>>> GetRuns(CancellationToken cancellationToken)
+    public async Task<ActionResult<IReadOnlyList<RunSummaryDto>>> GetRuns(
+        [FromQuery] string? executionKind,
+        [FromQuery] string? operationDefinitionId,
+        [FromQuery] string? status,
+        [FromQuery] DateTimeOffset? createdFrom,
+        [FromQuery] DateTimeOffset? createdTo,
+        [FromQuery] string? moduleId,
+        [FromQuery] string? correlationKey,
+        CancellationToken cancellationToken)
     {
         try
         {
-            var list = await _runs.ListRunsAsync(cancellationToken);
+            var filter = new RunQueryFilter(
+                ExecutionKind: executionKind,
+                OperationDefinitionId: operationDefinitionId,
+                Status: status,
+                CreatedFrom: createdFrom,
+                CreatedTo: createdTo,
+                ModuleId: moduleId,
+                CorrelationKey: correlationKey);
+            var list = await _runs.ListRunsAsync(filter, cancellationToken);
             return Ok(list);
         }
         catch (UnauthorizedAccessException)

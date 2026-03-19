@@ -79,11 +79,11 @@
                     </div>
                     <div>
                         <div class="text-xs text-muted">@(_detail.ExecutionKind == "operation" ? "Operation definition" : "Workflow definition")</div>
-                        <div class="text-sm font-mono break-all">@_detail.WorkflowDefinitionId</div>
+                        <div class="text-sm font-mono break-all">@_detail.ExecutionDefinitionId</div>
                     </div>
                     <div>
                         <div class="text-xs text-muted">@(_detail.ExecutionKind == "operation" ? "Operation instance" : "Workflow instance")</div>
-                        <div class="text-sm font-mono break-all">@_detail.WorkflowInstanceId</div>
+                        <div class="text-sm font-mono break-all">@_detail.ExecutionInstanceId</div>
                     </div>
                     <div>
                         <div class="text-xs text-muted">Created</div>
@@ -114,6 +114,29 @@
                         </div>
                     </div>
                 </div>
+            </div>
+
+            <div class="rounded border border-default bg-surface p-3">
+                <div class="text-sm font-semibold text-heading">Result</div>
+                <div class="text-xs text-muted">Normalized outcome for this execution.</div>
+                <div class="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2">
+                    <div>
+                        <div class="text-xs text-muted">Outcome</div>
+                        <div class="text-sm text-body">@_detail.Result?.Outcome</div>
+                    </div>
+                    <div>
+                        <div class="text-xs text-muted">Summary</div>
+                        <div class="text-sm text-body">@_detail.Result?.Summary</div>
+                    </div>
+                </div>
+                @if (_detail.Error is not null)
+                {
+                    <div class="mt-2 rounded border border-default bg-surface-muted px-2 py-2">
+                        <div class="text-xs text-muted">Failure</div>
+                        <div class="text-sm text-body">@_detail.Error.Category: @_detail.Error.Message</div>
+                        <div class="text-xs font-mono break-all text-muted">@_detail.Error.DetailsJson</div>
+                    </div>
+                }
             </div>
 
             <div class="rounded border border-default bg-surface p-3">

@@ -8,6 +8,11 @@ namespace Apperture.Core.Application.Services;
 public interface IOperationRegistryService
 {
     /// <summary>
+    /// Gets all known operation definitions.
+    /// </summary>
+    ValueTask<IReadOnlyList<OperationDefinition>> ListAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Gets an operation definition by id.
     /// </summary>
     ValueTask<OperationDefinition?> GetOperationAsync(OperationId operationId, CancellationToken cancellationToken = default);

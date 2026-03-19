@@ -67,7 +67,7 @@ public sealed class RunQueryServiceTests
         });
         await db.SaveChangesAsync();
 
-        var service = new RunQueryService(db, new AllowReadAuthz(), new AllowOperationReadAuthz());
+        var service = new RunQueryService(db, new StubOperationRegistry(), new AllowReadAuthz(), new AllowOperationReadAuthz());
 
         var detail = await service.GetRunAsync(new OperationRunId("r1"));
 
@@ -156,7 +156,7 @@ public sealed class RunQueryServiceTests
             });
         await db.SaveChangesAsync();
 
-        var detail = await new RunQueryService(db, new AllowReadAuthz(), new AllowOperationReadAuthz()).GetRunAsync(new OperationRunId("r1"));
+        var detail = await new RunQueryService(db, new StubOperationRegistry(), new AllowReadAuthz(), new AllowOperationReadAuthz()).GetRunAsync(new OperationRunId("r1"));
 
         detail.Should().NotBeNull();
         detail!.Status.Should().Be(WorkflowLifecycleStatusNames.Parked);
@@ -253,7 +253,7 @@ public sealed class RunQueryServiceTests
             });
         await db.SaveChangesAsync();
 
-        var detail = await new RunQueryService(db, new AllowReadAuthz(), new AllowOperationReadAuthz()).GetRunAsync(new OperationRunId("r1"));
+        var detail = await new RunQueryService(db, new StubOperationRegistry(), new AllowReadAuthz(), new AllowOperationReadAuthz()).GetRunAsync(new OperationRunId("r1"));
 
         detail.Should().NotBeNull();
         detail!.Status.Should().Be(WorkflowLifecycleStatusNames.Running);
@@ -284,5 +284,19 @@ public sealed class RunQueryServiceTests
     {
         public ValueTask EnsureCanReadRunsAsync(OperationId operationId, CancellationToken cancellationToken = default) =>
             ValueTask.CompletedTask;
+    }
+
+    private sealed class StubOperationRegistry : Apperture.Core.Application.Services.IOperationRegistryService
+    {
+        public ValueTask<IReadOnlyList<OperationDefinition>> ListAsync(CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult<IReadOnlyList<OperationDefinition>>(Array.Empty<OperationDefinition>());
+
+        public ValueTask<OperationDefinition?> GetOperationAsync(OperationId operationId, CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult<OperationDefinition?>(new OperationDefinition(operationId, operationId.Value, "Sample.HelloWorld", OperationCategory.Command, null, Array.Empty<Apperture.Shared.Kernel.PermissionDescriptor>()));
+
+        public ValueTask<IReadOnlyList<OperationDefinition>> GetByModuleAsync(string moduleId, CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult<IReadOnlyList<OperationDefinition>>(Array.Empty<OperationDefinition>());
+
+        public ValueTask RegisterAsync(OperationDefinition definition, CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
     }
 }

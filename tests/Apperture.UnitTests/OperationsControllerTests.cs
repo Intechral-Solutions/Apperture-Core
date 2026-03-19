@@ -24,10 +24,12 @@ public sealed class OperationsControllerTests
         new MockOperationStartDispatchService(handler);
 
     [Fact]
-    public void Start_WhenBodyContainsSecretBearingParameter_ThrowsArgumentException()
+    public async Task Start_WhenBodyContainsSecretBearingParameter_Returns400BadRequest()
     {
         var controller = new OperationsController(
+            new StubOperationDefinitionQueryService(),
             CreateAllowAllAuthService(),
+            new StubOperationInputValidationService(),
             CreateDispatchService(_ => throw new InvalidOperationException("dispatch should not be called")));
 
         var resolvedSecret = new ResolvedSecret(
@@ -40,17 +42,17 @@ public sealed class OperationsControllerTests
             Parameters = new Dictionary<string, object?> { ["apiKey"] = resolvedSecret }
         };
 
-        Func<Task> act = () => controller.Start("operation-1", body, CancellationToken.None);
-
-        act.Should().ThrowAsync<ArgumentException>()
-            .WithMessage("*secret-bearing*");
+        var result = await controller.Start("operation-1", body, CancellationToken.None);
+        result.Should().BeOfType<BadRequestObjectResult>();
     }
 
     [Fact]
     public async Task Start_WhenBodyHasSafeParameters_Returns202Accepted()
     {
         var controller = new OperationsController(
+            new StubOperationDefinitionQueryService(),
             CreateAllowAllAuthService(),
+            new StubOperationInputValidationService(),
             CreateDispatchService(req =>
                 new OperationStartDispatchResult(
                     new OperationRunId("run-1"),
@@ -73,7 +75,9 @@ public sealed class OperationsControllerTests
     public async Task Start_WhenBodyIsNull_DoesNotThrow()
     {
         var controller = new OperationsController(
+            new StubOperationDefinitionQueryService(),
             CreateAllowAllAuthService(),
+            new StubOperationInputValidationService(),
             CreateDispatchService(req =>
                 new OperationStartDispatchResult(
                     new OperationRunId("run-1"),
@@ -101,6 +105,21 @@ public sealed class OperationsControllerTests
 
         public ValueTask<OperationStartDispatchResult?> StartAsync(StartOperationRequest request, CancellationToken cancellationToken = default) =>
             ValueTask.FromResult(_handler(request));
+    }
+
+    private sealed class StubOperationDefinitionQueryService : IOperationDefinitionQueryService
+    {
+        public ValueTask<IReadOnlyList<OperationDefinitionDto>> ListAsync(CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult<IReadOnlyList<OperationDefinitionDto>>(Array.Empty<OperationDefinitionDto>());
+
+        public ValueTask<OperationDefinitionDto?> GetAsync(Apperture.Core.Domain.Operations.OperationId operationDefinitionId, CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult<OperationDefinitionDto?>(null);
+    }
+
+    private sealed class StubOperationInputValidationService : IOperationInputValidationService
+    {
+        public ValueTask ValidateAsync(Apperture.Core.Domain.Operations.OperationId operationId, IReadOnlyDictionary<string, object?>? parameters, CancellationToken cancellationToken = default) =>
+            ValueTask.CompletedTask;
     }
 }
 

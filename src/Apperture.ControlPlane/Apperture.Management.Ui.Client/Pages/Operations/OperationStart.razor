@@ -1,0 +1,296 @@
+@page "/operations/start"
+@using System.Globalization
+@using Apperture.Management.Client
+@inject IManagementClient Client
+
+<div class="p-4">
+    <div class="flex items-center justify-between">
+        <h1 class="text-xl font-semibold text-heading">Start operation</h1>
+        <button class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface"
+                disabled="@_loading"
+                @onclick="LoadOperationsAsync">
+            Refresh
+        </button>
+    </div>
+
+    @if (!string.IsNullOrEmpty(_error))
+    {
+        <div class="mt-4 rounded border border-default bg-surface px-3 py-2 text-sm text-body">
+            <div class="font-semibold">Error</div>
+            <div class="text-muted">@_error</div>
+        </div>
+    }
+
+    <div class="mt-4 grid gap-4 md:grid-cols-2">
+        <div class="rounded border border-default bg-surface p-3">
+            <div class="text-sm font-semibold text-heading">Operations</div>
+            <div class="text-xs text-muted">Only operation definitions visible to you are listed.</div>
+
+            @if (_operations is null)
+            {
+                <div class="mt-2 text-sm text-muted">Loading…</div>
+            }
+            else if (_operations.Count == 0)
+            {
+                <div class="mt-2 text-sm text-muted">No operations found.</div>
+            }
+            else
+            {
+                <label class="mt-2 block text-xs text-muted">Operation definition</label>
+                <select class="mt-1 w-full rounded border border-default bg-surface px-2 py-2 text-sm"
+                        @onchange="OnOperationChanged"
+                        value="@(_selectedOperationId ?? "")">
+                    <option value="">Select…</option>
+                    @foreach (var op in _operations)
+                    {
+                        <option value="@op.OperationDefinitionId">@op.DisplayName (@op.OperationDefinitionId)</option>
+                    }
+                </select>
+            }
+
+            @if (_selected is not null)
+            {
+                <div class="mt-3 grid gap-2 text-sm">
+                    <div><span class="text-xs text-muted">Id:</span> <span class="font-mono">@_selected.OperationDefinitionId</span></div>
+                    <div><span class="text-xs text-muted">Module:</span> @_selected.ModuleId</div>
+                    <div><span class="text-xs text-muted">Category:</span> @_selected.Category</div>
+                    <div><span class="text-xs text-muted">Can start:</span> @_selected.CanStart</div>
+                    <div class="text-xs text-muted">@_selected.Description</div>
+                </div>
+            }
+        </div>
+
+        <div class="rounded border border-default bg-surface p-3">
+            <div class="text-sm font-semibold text-heading">Start request</div>
+            <div class="text-xs text-muted">Inputs are generated from operation metadata.</div>
+
+            @if (_selected is null)
+            {
+                <div class="mt-2 text-sm text-muted">Select an operation definition.</div>
+            }
+            else
+            {
+                <div class="mt-3 grid gap-3">
+                    <div>
+                        <label class="text-xs text-muted">Idempotency key (optional)</label>
+                        <input class="mt-1 w-full rounded border border-default bg-surface px-2 py-2 text-sm font-mono"
+                               @bind="_idempotencyKey" />
+                    </div>
+                    <div>
+                        <label class="text-xs text-muted">Correlation ID (optional)</label>
+                        <input class="mt-1 w-full rounded border border-default bg-surface px-2 py-2 text-sm font-mono"
+                               @bind="_correlationId" />
+                    </div>
+
+                    @if (_selected.InputSchema?.Fields is { Count: > 0 } fields)
+                    {
+                        @foreach (var field in fields)
+                        {
+                            <div>
+                                <label class="text-xs text-muted">@field.Label (@field.Type)</label>
+                                @if (string.Equals(field.Type, "bool", StringComparison.OrdinalIgnoreCase))
+                                {
+                                    <input class="mt-1 h-4 w-4"
+                                           type="checkbox"
+                                           checked="@GetBool(field.Key)"
+                                           @onchange="e => SetField(field.Key, e.Value?.ToString())" />
+                                }
+                                else
+                                {
+                                    <input class="mt-1 w-full rounded border border-default bg-surface px-2 py-2 text-sm"
+                                           value="@GetField(field.Key, field.DefaultValue)"
+                                           @onchange="e => SetField(field.Key, e.Value?.ToString())" />
+                                }
+                                @if (!string.IsNullOrWhiteSpace(field.HelpText))
+                                {
+                                    <div class="text-xs text-muted">@field.HelpText</div>
+                                }
+                            </div>
+                        }
+                    }
+                    else
+                    {
+                        <div class="text-xs text-muted">This operation has no declared input fields.</div>
+                    }
+
+                    <button class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface"
+                            disabled="@(_loading || !_selected.CanStart)"
+                            @onclick="StartAsync">
+                        Start operation
+                    </button>
+
+                    @if (!string.IsNullOrEmpty(_startMessage))
+                    {
+                        <div class="rounded border border-default bg-surface px-3 py-2 text-sm text-body">
+                            <div class="font-semibold">Result</div>
+                            <div class="text-muted">@_startMessage</div>
+                            @if (!string.IsNullOrEmpty(_startedRunId))
+                            {
+                                <div class="mt-2">
+                                    <a class="underline font-mono text-xs" href="@($"/runs/{_startedRunId}")">Open run: @_startedRunId</a>
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    private IReadOnlyList<OperationDefinitionDto>? _operations;
+    private OperationDefinitionDto? _selected;
+    private string? _selectedOperationId;
+    private readonly Dictionary<string, string?> _fieldValues = new(StringComparer.Ordinal);
+    private string? _idempotencyKey;
+    private string? _correlationId;
+    private bool _loading;
+    private string? _error;
+    private string? _startMessage;
+    private string? _startedRunId;
+
+    protected override Task OnInitializedAsync() => LoadOperationsAsync();
+
+    private async Task LoadOperationsAsync()
+    {
+        _loading = true;
+        _error = null;
+        try
+        {
+            _operations = await Client.GetOperationsAsync();
+            if (!string.IsNullOrWhiteSpace(_selectedOperationId))
+                _selected = _operations.FirstOrDefault(x => x.OperationDefinitionId == _selectedOperationId);
+        }
+        catch (Exception ex)
+        {
+            _operations = Array.Empty<OperationDefinitionDto>();
+            _error = ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task OnOperationChanged(ChangeEventArgs e)
+    {
+        _selectedOperationId = e.Value?.ToString();
+        _selected = null;
+        _fieldValues.Clear();
+        _startMessage = null;
+        _startedRunId = null;
+        if (string.IsNullOrWhiteSpace(_selectedOperationId))
+            return;
+
+        _loading = true;
+        _error = null;
+        try
+        {
+            _selected = await Client.GetOperationAsync(_selectedOperationId);
+            if (_selected?.InputSchema?.Fields is { Count: > 0 } fields)
+            {
+                foreach (var field in fields)
+                    _fieldValues[field.Key] = field.DefaultValue;
+            }
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private string? GetField(string key, string? fallback)
+    {
+        if (_fieldValues.TryGetValue(key, out var value))
+            return value ?? fallback;
+        return fallback;
+    }
+
+    private bool GetBool(string key)
+    {
+        if (!_fieldValues.TryGetValue(key, out var raw))
+            return false;
+        return string.Equals(raw, "true", StringComparison.OrdinalIgnoreCase) || string.Equals(raw, "on", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private void SetField(string key, string? value) => _fieldValues[key] = value;
+
+    private async Task StartAsync()
+    {
+        if (_selected is null)
+            return;
+
+        _loading = true;
+        _error = null;
+        _startMessage = null;
+        _startedRunId = null;
+        try
+        {
+            var parameters = BuildParameters(_selected);
+            var result = await Client.StartOperationAsync(
+                _selected.OperationDefinitionId,
+                parameters,
+                string.IsNullOrWhiteSpace(_idempotencyKey) ? null : _idempotencyKey,
+                string.IsNullOrWhiteSpace(_correlationId) ? null : _correlationId);
+
+            _startedRunId = result.RunId;
+            _startMessage = $"Accepted. Run {result.RunId} is {result.Status}.";
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private IReadOnlyDictionary<string, object?>? BuildParameters(OperationDefinitionDto definition)
+    {
+        if (definition.InputSchema?.Fields is not { Count: > 0 } fields)
+            return null;
+
+        var dict = new Dictionary<string, object?>(StringComparer.Ordinal);
+        foreach (var field in fields)
+        {
+            _fieldValues.TryGetValue(field.Key, out var raw);
+            raw ??= field.DefaultValue;
+            if (string.IsNullOrWhiteSpace(raw))
+            {
+                if (field.Required)
+                    throw new InvalidOperationException($"Field '{field.Label}' is required.");
+                continue;
+            }
+
+            dict[field.Key] = ParseValue(field.Type, raw, field.Label);
+        }
+
+        return dict.Count == 0 ? null : dict;
+    }
+
+    private static object ParseValue(string type, string raw, string label)
+    {
+        try
+        {
+            return type.ToLowerInvariant() switch
+            {
+                "int" => int.Parse(raw, CultureInfo.InvariantCulture),
+                "decimal" => decimal.Parse(raw, CultureInfo.InvariantCulture),
+                "bool" => bool.Parse(raw),
+                "datetime" => DateTimeOffset.Parse(raw, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal),
+                _ => raw
+            };
+        }
+        catch (Exception ex)
+        {
+            throw new InvalidOperationException($"Field '{label}' has invalid value '{raw}' for type '{type}'. {ex.Message}");
+        }
+    }
+}
+

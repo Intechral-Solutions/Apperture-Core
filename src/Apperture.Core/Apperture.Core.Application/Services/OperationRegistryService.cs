@@ -27,6 +27,15 @@ public sealed class OperationRegistryService : IOperationRegistryService
         return _byId.TryGetValue(operationId, out var def) ? def : null;
     }
 
+    public async ValueTask<IReadOnlyList<OperationDefinition>> ListAsync(CancellationToken cancellationToken = default)
+    {
+        await EnsureInitializedAsync(cancellationToken).ConfigureAwait(false);
+        return _byId.Values
+            .OrderBy(d => d.ModuleId, StringComparer.Ordinal)
+            .ThenBy(d => d.Id.Value, StringComparer.Ordinal)
+            .ToList();
+    }
+
     public async ValueTask<IReadOnlyList<OperationDefinition>> GetByModuleAsync(string moduleId, CancellationToken cancellationToken = default)
     {
         await EnsureInitializedAsync(cancellationToken).ConfigureAwait(false);
@@ -40,8 +49,12 @@ public sealed class OperationRegistryService : IOperationRegistryService
     {
         if (definition is null)
             throw new ArgumentNullException(nameof(definition));
+        Validate(definition);
 
         await EnsureInitializedAsync(cancellationToken).ConfigureAwait(false);
+
+        if (_byId.TryGetValue(definition.Id, out var existing) && !Equals(existing, definition))
+            throw new InvalidOperationException($"Duplicate operation definition id '{definition.Id.Value}' with conflicting metadata.");
 
         _byId[definition.Id] = definition;
 
@@ -78,6 +91,9 @@ public sealed class OperationRegistryService : IOperationRegistryService
 
                 await foreach (var def in provider.GetOperationsAsync(cancellationToken).ConfigureAwait(false))
                 {
+                    Validate(def);
+                    if (_byId.TryGetValue(def.Id, out var existing) && !Equals(existing, def))
+                        throw new InvalidOperationException($"Duplicate operation definition id '{def.Id.Value}' with conflicting metadata.");
                     _byId[def.Id] = def;
 
                     var moduleId = def.ModuleId;
@@ -101,6 +117,14 @@ public sealed class OperationRegistryService : IOperationRegistryService
         {
             _initGate.Release();
         }
+    }
+
+    private static void Validate(OperationDefinition definition)
+    {
+        if (string.IsNullOrWhiteSpace(definition.Id.Value))
+            throw new InvalidOperationException("Operation definition id is required.");
+        if (string.IsNullOrWhiteSpace(definition.Name))
+            throw new InvalidOperationException($"Operation '{definition.Id.Value}' must declare Name for single-step handler mapping.");
     }
 }
 

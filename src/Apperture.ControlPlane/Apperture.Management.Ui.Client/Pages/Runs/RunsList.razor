@@ -7,6 +7,14 @@
     <div class="flex items-center justify-between">
         <h1 class="text-xl font-semibold text-heading">Runs</h1>
         <div class="flex items-center gap-2">
+            <select class="rounded border border-default bg-surface px-2 py-2 text-sm"
+                    disabled="@_loading"
+                    @bind="_executionKindFilter"
+                    @onchange="async _ => await LoadAsync()">
+                <option value="">All executions</option>
+                <option value="operation">Operations</option>
+                <option value="workflow">Workflows</option>
+            </select>
             <button class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface"
                     disabled="@_loading"
                     @onclick="LoadAsync">
@@ -53,7 +61,7 @@
                             <td class="px-3 py-2 font-mono text-xs">@r.RunId</td>
                             <td class="px-3 py-2">
                                 <div class="text-xs text-muted">@r.ExecutionKind</div>
-                                <div class="font-mono text-xs">@r.WorkflowDefinitionId</div>
+                                <div class="font-mono text-xs">@r.ExecutionDefinitionId</div>
                             </td>
                             <td class="px-3 py-2">@r.Status</td>
                             <td class="px-3 py-2">@r.CreatedAt.ToLocalTime().ToString("u")</td>
@@ -74,6 +82,7 @@
 
 @code {
     private IReadOnlyList<RunSummaryDto>? _runs;
+    private string? _executionKindFilter;
     private bool _loading;
     private string? _error;
 
@@ -85,7 +94,7 @@
         _error = null;
         try
         {
-            _runs = await Client.GetRunsAsync();
+            _runs = await Client.GetRunsAsync(new RunQueryFilter(ExecutionKind: _executionKindFilter));
         }
         catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Forbidden)
         {

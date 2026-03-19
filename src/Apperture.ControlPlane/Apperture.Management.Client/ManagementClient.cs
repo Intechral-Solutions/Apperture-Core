@@ -39,7 +39,13 @@ public sealed class ManagementClient : IManagementClient
 
     public async Task<IReadOnlyList<RunSummaryDto>> GetRunsAsync(CancellationToken cancellationToken = default)
     {
-        var list = await _http.GetFromJsonAsync<RunSummaryDto[]>("runs", cancellationToken).ConfigureAwait(false);
+        return await GetRunsAsync(filter: null, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<IReadOnlyList<RunSummaryDto>> GetRunsAsync(RunQueryFilter? filter, CancellationToken cancellationToken = default)
+    {
+        var query = BuildRunsQuery(filter);
+        var list = await _http.GetFromJsonAsync<RunSummaryDto[]>($"runs{query}", cancellationToken).ConfigureAwait(false);
         return list ?? Array.Empty<RunSummaryDto>();
     }
 
@@ -78,5 +84,60 @@ public sealed class ManagementClient : IManagementClient
         response.EnsureSuccessStatusCode();
         var result = await response.Content.ReadFromJsonAsync<ExternalControlResult>(cancellationToken).ConfigureAwait(false);
         return result ?? new ExternalControlResult(runId, "unknown", "unknown", WorkflowExternalControlKindNames.Resume, "queued", "parked", null);
+    }
+
+    public async Task<IReadOnlyList<OperationDefinitionDto>> GetOperationsAsync(CancellationToken cancellationToken = default)
+    {
+        var list = await _http.GetFromJsonAsync<OperationDefinitionDto[]>("operations", cancellationToken).ConfigureAwait(false);
+        return list ?? Array.Empty<OperationDefinitionDto>();
+    }
+
+    public async Task<OperationDefinitionDto?> GetOperationAsync(string operationDefinitionId, CancellationToken cancellationToken = default)
+    {
+        return await _http.GetFromJsonAsync<OperationDefinitionDto>($"operations/{operationDefinitionId}", cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<StartOperationResult> StartOperationAsync(
+        string operationDefinitionId,
+        IReadOnlyDictionary<string, object?>? parameters,
+        string? idempotencyKey,
+        string? correlationId,
+        CancellationToken cancellationToken = default)
+    {
+        var response = await _http.PostAsJsonAsync(
+            $"operations/{operationDefinitionId}/start",
+            new { parameters, idempotencyKey, correlationId },
+            cancellationToken).ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+        var result = await response.Content.ReadFromJsonAsync<StartOperationResult>(cancellationToken).ConfigureAwait(false);
+        return result ?? new StartOperationResult(Guid.NewGuid().ToString("N"), "unknown", operationDefinitionId, "requested");
+    }
+
+    private static string BuildRunsQuery(RunQueryFilter? filter)
+    {
+        if (filter is null)
+            return string.Empty;
+
+        var pairs = new List<string>();
+        Add(pairs, "executionKind", filter.ExecutionKind);
+        Add(pairs, "operationDefinitionId", filter.OperationDefinitionId);
+        Add(pairs, "status", filter.Status);
+        Add(pairs, "moduleId", filter.ModuleId);
+        Add(pairs, "correlationKey", filter.CorrelationKey);
+        if (filter.CreatedFrom is not null)
+            Add(pairs, "createdFrom", filter.CreatedFrom.Value.ToString("o"));
+        if (filter.CreatedTo is not null)
+            Add(pairs, "createdTo", filter.CreatedTo.Value.ToString("o"));
+
+        if (pairs.Count == 0)
+            return string.Empty;
+        return "?" + string.Join("&", pairs);
+    }
+
+    private static void Add(List<string> pairs, string key, string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return;
+        pairs.Add($"{Uri.EscapeDataString(key)}={Uri.EscapeDataString(value)}");
     }
 }

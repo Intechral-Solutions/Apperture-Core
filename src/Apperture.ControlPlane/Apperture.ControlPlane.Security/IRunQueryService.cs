@@ -4,14 +4,23 @@ namespace Apperture.ControlPlane.Security;
 
 public interface IRunQueryService
 {
-    ValueTask<IReadOnlyList<RunSummaryDto>> ListRunsAsync(CancellationToken cancellationToken = default);
+    ValueTask<IReadOnlyList<RunSummaryDto>> ListRunsAsync(RunQueryFilter? filter = null, CancellationToken cancellationToken = default);
     ValueTask<RunDetailDto?> GetRunAsync(OperationRunId id, CancellationToken cancellationToken = default);
 }
 
+public sealed record RunQueryFilter(
+    string? ExecutionKind = null,
+    string? OperationDefinitionId = null,
+    string? Status = null,
+    DateTimeOffset? CreatedFrom = null,
+    DateTimeOffset? CreatedTo = null,
+    string? ModuleId = null,
+    string? CorrelationKey = null);
+
 public sealed record RunSummaryDto(
     string RunId,
-    string WorkflowInstanceId,
-    string WorkflowDefinitionId,
+    string ExecutionInstanceId,
+    string ExecutionDefinitionId,
     string Status,
     DateTimeOffset CreatedAt,
     DateTimeOffset? CompletedAt,
@@ -24,18 +33,32 @@ public sealed record RunSummaryDto(
 /// </param>
 public sealed record RunDetailDto(
     string RunId,
-    string WorkflowInstanceId,
-    string WorkflowDefinitionId,
+    string ExecutionInstanceId,
+    string ExecutionDefinitionId,
     string Status,
     DateTimeOffset CreatedAt,
     DateTimeOffset? CompletedAt,
     string? CorrelationKey,
     string? RetryOfRunId,
     string? CurrentStepName,
+    RunResultDto? Result,
+    RunErrorDto? Error,
     IReadOnlyList<RunLifecycleEventDto> LifecycleEvents,
     IReadOnlyList<RunStepInstanceDto> StepInstances,
     IReadOnlyList<RunControlRequestDto> ControlRequests,
     string ExecutionKind = "workflow");
+
+public sealed record RunResultDto(
+    string Outcome,
+    string Summary,
+    string? PayloadJson,
+    string? DiagnosticsJson);
+
+public sealed record RunErrorDto(
+    string Category,
+    string Message,
+    string? Code,
+    string? DetailsJson);
 
 public sealed record RunLifecycleEventDto(
     int Id,

@@ -19,6 +19,7 @@ public static class ControlPanelMenuDefinitions
                 Items =
                 {
                     new DomainMenuItem { Text = "Runs Console", Href = "/runs" },
+                    new DomainMenuItem { Text = "Start Operation", Href = "/operations/start" },
                     new DomainMenuItem { Text = "Start Workflow", Href = "/workflows/start" },
                 }
             },
@@ -30,6 +31,7 @@ public static class ControlPanelMenuDefinitions
                     // Reuse existing workflow execution pages for now.
                     // When new test-related pages are added, extend this in one place.
                     new DomainMenuItem { Text = "Runs", Href = "/runs" },
+                    new DomainMenuItem { Text = "Start Operation", Href = "/operations/start" },
                     new DomainMenuItem { Text = "Start Workflow", Href = "/workflows/start" },
                 }
             },

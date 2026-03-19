@@ -72,9 +72,12 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IWorkflowExternalControlService, WorkflowExternalControlService>();
         services.AddScoped<IOperationRunReadAuthorizationService, OperationRunReadAuthorizationService>();
         services.AddScoped<IOperationRunCancelAuthorizationService, OperationRunCancelAuthorizationService>();
+        services.AddScoped<IOperationDefinitionReadAuthorizationService, OperationDefinitionReadAuthorizationService>();
+        services.AddScoped<IOperationDefinitionQueryService, OperationDefinitionQueryService>();
         services.AddScoped<IOperationCancelService, OperationCancelService>();
         services.AddScoped<IExecutionCancelService, ExecutionCancelService>();
         services.AddScoped<IOperationStartAuthorizationService, OperationStartAuthorizationService>();
+        services.AddScoped<IOperationInputValidationService, OperationInputValidationService>();
         services.AddScoped<IOperationStartDispatchService, OperationStartDispatchService>();
         services.AddScoped<IRunQueryService, RunQueryService>();
         services.AddScoped<IModuleWorkflowListingService, ModuleWorkflowListingService>();
