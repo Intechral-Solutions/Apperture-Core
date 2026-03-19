@@ -22,11 +22,11 @@ function Stop-ProcessByPort {
     param([int]$Port)
     $conn = Get-NetTCPConnectionByPort -Port $Port
     if ($conn) {
-        $pid = $conn.OwningProcess
-        $proc = Get-Process -Id $pid -ErrorAction SilentlyContinue
+        $owningProcessId = $conn.OwningProcess
+        $proc = Get-Process -Id $owningProcessId -ErrorAction SilentlyContinue
         if ($proc) {
-            Write-Host "Stopping process on port $Port (PID $pid): $($proc.ProcessName)" -ForegroundColor Yellow
-            Stop-Process -Id $pid -Force -ErrorAction SilentlyContinue
+            Write-Host "Stopping process on port $Port (PID $owningProcessId): $($proc.ProcessName)" -ForegroundColor Yellow
+            Stop-Process -Id $owningProcessId -Force -ErrorAction SilentlyContinue
         }
     }
 }

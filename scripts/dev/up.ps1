@@ -68,8 +68,9 @@ if ($LASTEXITCODE -ne 0) { throw "Failed to create Apperture database via sqlcmd
 $hostArgs = @("run", "--project", $HostProject, "--launch-profile", "http")
 $uiArgs = @("run", "--project", $UiServerProject, "--launch-profile", "Ui.Server")
 if ($NoBrowser) {
-    $uiArgs = @("run", "--project", $UiServerProject, "--no-launch-profile")
-    $uiArgs += "--urls", "http://localhost:9001"
+    # Keep the Ui.Server launch profile so static web assets are wired correctly.
+    # Still run headless (no browser auto-open) by overriding only the URL.
+    $uiArgs = @("run", "--project", $UiServerProject, "--launch-profile", "Ui.Server", "--urls", "http://localhost:9001")
 }
 
 Start-Process -FilePath "dotnet" -ArgumentList $hostArgs -WorkingDirectory $RepoRoot -WindowStyle Normal
@@ -79,6 +80,9 @@ Start-Sleep -Seconds 2
 
 # Start instance-plane worker so workflow runs actually execute steps and persist step instances.
 $workerArgs = @("run", "--project", $WorkerHostProject)
+$env:DOTNET_ENVIRONMENT = "Development"
+$env:ASPNETCORE_ENVIRONMENT = "Development"
+$env:SqlServer__Password = $saPassword
 Start-Process -FilePath "dotnet" -ArgumentList $workerArgs -WorkingDirectory $RepoRoot -WindowStyle Normal
 
 Write-Host "Dev servers started. Close their windows or run scripts\dev\down.ps1 to stop." -ForegroundColor Green

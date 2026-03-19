@@ -70,6 +70,35 @@ public sealed class BootstrapConnectionProfile : IBootstrapConnectionProfile
             return BuildConnectionStringFromConfig();
         }
 
+        // 2.5 Dev-only hardening:
+        // Sometimes the dev scripts pass the SQL password via environment variables, but config binding may
+        // not populate BootstrapSqlConfig.Password (e.g., host builder differences). In that case, if we
+        // already have SqlServer.Server + SqlServer.User from appsettings.Development.json, allow the
+        // password to come from environment variables directly.
+        if (_hostEnvironment.IsDevelopment())
+        {
+            var envPassword =
+                Environment.GetEnvironmentVariable("SqlServer__Password") ??
+                Environment.GetEnvironmentVariable("MSSQL_SA_PASSWORD");
+
+            if (!string.IsNullOrWhiteSpace(envPassword) &&
+                !string.IsNullOrWhiteSpace(_config.Server) &&
+                !string.IsNullOrWhiteSpace(_config.User))
+            {
+                _logger.LogWarning(
+                    "Bootstrap SQL password is being read from environment variables (SqlServer__Password/MSSQL_SA_PASSWORD) in Development.");
+
+                return new SqlConnectionStringBuilder
+                {
+                    DataSource = _config.Server,
+                    InitialCatalog = _config.Database ?? "Apperture",
+                    UserID = _config.User,
+                    Password = envPassword,
+                    TrustServerCertificate = _config.TrustServerCertificate
+                }.ConnectionString;
+            }
+        }
+
         // 3. LocalDB default: allowed only in Development
         if (_hostEnvironment.IsDevelopment())
         {

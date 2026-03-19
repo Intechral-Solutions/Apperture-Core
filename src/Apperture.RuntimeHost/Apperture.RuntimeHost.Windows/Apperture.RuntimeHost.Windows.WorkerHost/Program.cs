@@ -14,6 +14,10 @@ using Sample.HelloWorld;
 
 var builder = Host.CreateApplicationBuilder(args);
 
+// In dev we pass bootstrap credentials via environment variables.
+// Explicitly register the env-var provider so BootstrapConnectionProfile can see SqlServer:* values.
+builder.Configuration.AddEnvironmentVariables();
+
 builder.Services.Configure<WorkflowStartRequestLeaseOptions>(
     builder.Configuration.GetSection("WorkflowStartRequestLease"));
 

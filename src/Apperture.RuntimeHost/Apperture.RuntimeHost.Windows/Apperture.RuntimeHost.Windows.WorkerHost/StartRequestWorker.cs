@@ -1,6 +1,7 @@
 using Apperture.Persistence.SqlServer;
 using Apperture.Persistence.SqlServer.Options;
 using Apperture.ModuleSdk.Abstractions;
+using Apperture.RuntimePlane.Abstractions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -28,7 +29,9 @@ public sealed class StartRequestWorker : BackgroundService
         _scopeFactory = scopeFactory;
         _logger = logger;
         _pollInterval = TimeSpan.FromSeconds(2);
-        _workerId = $"windows-worker:{Environment.MachineName}:{Guid.NewGuid():N}"[..64];
+        // Truncate safely: string length may be < 64 depending on machine name format.
+        var rawWorkerId = $"windows-worker:{Environment.MachineName}:{Guid.NewGuid():N}";
+        _workerId = rawWorkerId.Length <= 64 ? rawWorkerId : rawWorkerId[..64];
         _leaseOptions = leaseOptions;
     }
 
