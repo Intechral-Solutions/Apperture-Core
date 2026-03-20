@@ -162,7 +162,8 @@ public sealed class ControlAttentionQueryService : IControlAttentionQueryService
                 TargetId: rc.WorkflowDefinitionId,
                 Summary: $"Workflow external control request rejected (kind={rc.ControlKind}, runId={rc.RunId}).",
                 CreatedAtIso: rc.RequestedAt.ToString("o"),
-                RelatedActivityId: rc.Id.ToString(System.Globalization.CultureInfo.InvariantCulture))));
+                // Drill-down: open the run detail page for the rejected control.
+                RelatedActivityId: rc.RunId)));
         }
 
         // Unified ordering: newest first.

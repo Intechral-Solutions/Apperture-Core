@@ -1,5 +1,6 @@
 @page "/workflows/start"
 @using System.Text.Json
+@using Microsoft.AspNetCore.Components
 @using Apperture.Management.Client
 @inject IManagementClient Client
 @inject NavigationManager Nav
@@ -121,6 +122,12 @@
 </div>
 
 @code {
+    [SupplyParameterFromQuery(Name = "moduleId")]
+    private string? _moduleIdFromQuery { get; set; }
+
+    [SupplyParameterFromQuery(Name = "workflowId")]
+    private string? _workflowIdFromQuery { get; set; }
+
     private IReadOnlyList<ModuleDto>? _modules;
     private IReadOnlyList<WorkflowDto>? _workflows;
     private string? _selectedModuleId;
@@ -133,7 +140,44 @@
     private string? _startMessage;
     private string? _startedRunId;
 
-    protected override Task OnInitializedAsync() => LoadModulesAsync();
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadModulesAsync();
+
+        // Drill-down contract: preselect module/workflow when provided.
+        if (!string.IsNullOrWhiteSpace(_moduleIdFromQuery))
+        {
+            _selectedModuleId = _moduleIdFromQuery;
+            _workflows = null;
+            _startMessage = null;
+            _startedRunId = null;
+
+            _loading = true;
+            _error = null;
+            try
+            {
+                _workflows = await Client.GetWorkflowsAsync(_selectedModuleId);
+                if (!string.IsNullOrWhiteSpace(_workflowIdFromQuery))
+                {
+                    var wf = _workflows.FirstOrDefault(w => string.Equals(w.Id, _workflowIdFromQuery, StringComparison.Ordinal));
+                    SelectedWorkflowId = wf?.Id ?? (_workflows.Count > 0 ? _workflows[0].Id : null);
+                }
+                else if (_workflows.Count > 0)
+                {
+                    SelectedWorkflowId = _workflows[0].Id;
+                }
+            }
+            catch (Exception ex)
+            {
+                _workflows = Array.Empty<WorkflowDto>();
+                _error = ex.Message;
+            }
+            finally
+            {
+                _loading = false;
+            }
+        }
+    }
 
     private string? SelectedWorkflowId
     {

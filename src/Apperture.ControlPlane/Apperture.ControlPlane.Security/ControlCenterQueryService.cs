@@ -64,6 +64,7 @@ public sealed class ControlCenterQueryService : IControlCenterQueryService
                 TargetId: op.OperationDefinitionId,
                 DisplayName: op.DisplayName,
                 GroupKey: op.ModuleId,
+                DetailLink: $"/operations/start?operationDefinitionId={System.Uri.EscapeDataString(op.OperationDefinitionId)}",
                 AvailableActions: actions));
         }
 
@@ -80,6 +81,7 @@ public sealed class ControlCenterQueryService : IControlCenterQueryService
                     TargetId: wf.Id.Value,
                     DisplayName: wf.Name,
                     GroupKey: wf.ModuleId,
+                        DetailLink: $"/workflows/start?moduleId={System.Uri.EscapeDataString(wf.ModuleId)}&workflowId={System.Uri.EscapeDataString(wf.Id.Value)}",
                     AvailableActions: startActions));
             }
         }
@@ -107,16 +109,13 @@ public sealed class ControlCenterQueryService : IControlCenterQueryService
                 TargetId: runtime.Id,
                 DisplayName: runtime.DisplayName,
                 GroupKey: null,
+                DetailLink: $"/runtimes/{System.Uri.EscapeDataString(runtime.Id)}/controls/shutdown/requests",
                 AvailableActions: rtActions));
         }
 
         // Recent activity and attention items.
         var activity = await _activity.ListRecentActivityAsync(createdFromUtc, takeRecentActivity, cancellationToken).ConfigureAwait(false);
         var attention = await _attention.ListAttentionAsync(createdFromUtc, takeAttention, cancellationToken).ConfigureAwait(false);
-
-        // Minimal schedule targets projected from scheduled activity (overlay; schedule persistence not required for this cycle).
-        var scheduleTargets = ScheduleFacadeTargetProjection.ProjectScheduleTargets(activity);
-        targets.AddRange(scheduleTargets);
 
         return new ControlCenterDto(
             Targets: targets,

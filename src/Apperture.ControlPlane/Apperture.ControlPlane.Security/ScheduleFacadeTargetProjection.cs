@@ -25,6 +25,7 @@ public static class ScheduleFacadeTargetProjection
                 TargetId: id,
                 DisplayName: id,
                 GroupKey: null,
+                DetailLink: null,
                 AvailableActions: Array.Empty<ControlActionAvailabilityDto>())).ToList();
     }
 }

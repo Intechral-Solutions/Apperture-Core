@@ -1,0 +1,87 @@
+@page "/runtimes/{RuntimeId}/controls/shutdown/requests"
+@using Apperture.Management.Client
+@inject IManagementClient Client
+
+<div class="p-4">
+    <div class="flex items-center justify-between gap-3">
+        <div class="min-w-0">
+            <h1 class="text-xl font-semibold text-heading">Runtime Shutdown Requests</h1>
+            <div class="text-xs text-muted">
+                Runtime: <span class="font-mono">@RuntimeId</span>
+            </div>
+        </div>
+        <a class="underline text-sm" href="/control/center">Back</a>
+    </div>
+
+    @if (!string.IsNullOrEmpty(_error))
+    {
+        <div class="mt-4 rounded border border-default bg-surface px-3 py-2 text-sm text-body">
+            <div class="font-semibold">Error</div>
+            <div class="text-muted">@_error</div>
+        </div>
+    }
+    else if (_requests is null)
+    {
+        <div class="mt-4 text-sm text-muted">Loading...</div>
+    }
+    else
+    {
+        <div class="mt-4 overflow-x-auto rounded border border-default bg-surface">
+            <table class="min-w-full text-left text-sm text-body">
+                <thead class="border-b border-default text-xs text-muted">
+                    <tr>
+                        <th class="px-2 py-2">Id</th>
+                        <th class="px-2 py-2">Status</th>
+                        <th class="px-2 py-2">Requested</th>
+                        <th class="px-2 py-2">RequestedBy</th>
+                        <th class="px-2 py-2">Applied</th>
+                        <th class="px-2 py-2">AppliedBy</th>
+                        <th class="px-2 py-2">LastError</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var r in _requests)
+                    {
+                        <tr class="border-b border-default">
+                            <td class="px-2 py-2 font-mono text-xs">
+                                <a class="underline" href="@($"/runtimes/{RuntimeId}/controls/shutdown/requests/{r.Id}")">@r.Id</a>
+                            </td>
+                            <td class="px-2 py-2 font-semibold">@r.Status</td>
+                            <td class="px-2 py-2">@FmtWhen(r.RequestedAt)</td>
+                            <td class="px-2 py-2">@r.RequestedBy</td>
+                            <td class="px-2 py-2">@((r.AppliedAt is null) ? "" : FmtWhen(r.AppliedAt.Value))</td>
+                            <td class="px-2 py-2">@r.AppliedBy</td>
+                            <td class="px-2 py-2 text-xs break-all">@r.LastError</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public string RuntimeId { get; set; } = "";
+
+    private IReadOnlyList<RuntimeControlRequestDto>? _requests;
+    private string? _error;
+
+    protected override Task OnParametersSetAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _requests = null;
+        _error = null;
+        try
+        {
+            _requests = await Client.GetRuntimeShutdownRequestsAsync(RuntimeId);
+        }
+        catch (HttpRequestException ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private static string FmtWhen(DateTimeOffset dt) => dt.ToLocalTime().ToString("u");
+}
+

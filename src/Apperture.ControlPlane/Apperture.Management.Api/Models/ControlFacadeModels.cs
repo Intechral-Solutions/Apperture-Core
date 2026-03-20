@@ -58,9 +58,13 @@ public static class ControlFacadeModels
         if (string.IsNullOrWhiteSpace(correlationKey))
             return false;
 
-        // Intentionally strict: avoid false positives by requiring "schedule:" token.
-        // Examples: "schedule:sc-1", "foo schedule:sc-2 bar".
-        var match = Regex.Match(correlationKey, @"(?:^|\s|,|;|/|\\)schedule:([A-Za-z0-9_.-]+)", RegexOptions.CultureInvariant);
+        // Protective parsing: require the exact "schedule:" token, but allow common correlation-key
+        // separators/punctuation before it. Prevents false positives like "myschedule:..." by
+        // ensuring the preceding character is not alphanumeric/underscore.
+        var match = Regex.Match(
+            correlationKey,
+            @"(?<![A-Za-z0-9_])schedule:([A-Za-z0-9_.-]+)",
+            RegexOptions.CultureInvariant);
         if (!match.Success)
             return false;
 

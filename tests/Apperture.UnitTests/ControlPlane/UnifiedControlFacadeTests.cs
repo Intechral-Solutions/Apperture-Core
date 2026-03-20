@@ -1,3 +1,4 @@
+using System;
 using System.Globalization;
 using Apperture.Core.Application.ControlFacade;
 using Apperture.ControlPlane.Security;
@@ -16,11 +17,24 @@ namespace Apperture.UnitTests.ControlPlane;
 
 public sealed class UnifiedControlFacadeTests
 {
-    [Fact]
-    public void TryParseScheduleId_ExtractsScheduleId()
+    [Theory]
+    [InlineData("schedule:sc-1", true, "sc-1")]
+    [InlineData("foo schedule:sc-1 bar", true, "sc-1")]
+    [InlineData("foo,schedule:sc-1;bar", true, "sc-1")]
+    [InlineData("(schedule:sc-1)", true, "sc-1")]
+    [InlineData("key=schedule:sc-1", true, "sc-1")]
+    [InlineData("myschedule:sc-1", false, null)]
+    [InlineData("schedules:sc-1", false, null)]
+    [InlineData("schedule:", false, null)]
+    [InlineData("", false, null)]
+    [InlineData(null, false, null)]
+    [InlineData("Schedule:sc-1", false, null)]
+    public void TryParseScheduleId_ProtectsAgainstEdgeCases(string? correlationKey, bool expectedOk, string? expectedScheduleId)
     {
-        ControlFacade.TryParseScheduleId("foo schedule:sc-1 bar", out var id).Should().BeTrue();
-        id.Should().Be("sc-1");
+        var ok = ControlFacade.TryParseScheduleId(correlationKey, out var id);
+        ok.Should().Be(expectedOk);
+        if (expectedOk)
+            id.Should().Be(expectedScheduleId);
     }
 
     [Theory]
@@ -105,6 +119,138 @@ public sealed class UnifiedControlFacadeTests
     }
 
     [Fact]
+    public async Task ActionProjection_CancelAvailable_WhenRunning()
+    {
+        var projection = NewProjection(allowCancel: true, allowExternalControl: true, allowRetry: true);
+
+        var run = new RunSummaryDto(
+            RunId: "r1",
+            ExecutionInstanceId: "i1",
+            ExecutionDefinitionId: "wf-1",
+            Status: WorkflowLifecycleStatusNames.Running,
+            CreatedAt: DateTimeOffset.UtcNow,
+            CompletedAt: null,
+            CorrelationKey: null,
+            RetryOfRunId: null,
+            ExecutionKind: "workflow");
+
+        var actions = await projection.ProjectExecutionRunActionsAsync(run, hasQueuedPark: false, hasQueuedResume: false);
+        var cancel = actions.Single(a => a.ActionKind == ControlFacade.ActionKindCancel);
+        cancel.AvailabilityState.Should().Be(ControlFacade.ActionAvailabilityAvailable);
+        cancel.ReasonCode.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task ActionProjection_ParkNotEligible_WhenTerminal()
+    {
+        var projection = NewProjection(allowCancel: true, allowExternalControl: true, allowRetry: true);
+
+        var run = new RunSummaryDto(
+            RunId: "r1",
+            ExecutionInstanceId: "i1",
+            ExecutionDefinitionId: "wf-1",
+            Status: WorkflowLifecycleStatusNames.Completed,
+            CreatedAt: DateTimeOffset.UtcNow,
+            CompletedAt: DateTimeOffset.UtcNow,
+            CorrelationKey: null,
+            RetryOfRunId: null,
+            ExecutionKind: "workflow");
+
+        var actions = await projection.ProjectExecutionRunActionsAsync(run, hasQueuedPark: false, hasQueuedResume: false);
+        var park = actions.Single(a => a.ActionKind == ControlFacade.ActionKindPark);
+        park.AvailabilityState.Should().Be(ControlFacade.ActionAvailabilityNotEligible);
+        park.ReasonCode.Should().Be(ControlFacade.ReasonStateNotEligible);
+    }
+
+    [Fact]
+    public async Task ActionProjection_ParkAlreadyQueued_WhenQueued()
+    {
+        var projection = NewProjection(allowCancel: true, allowExternalControl: false, allowRetry: true);
+
+        var run = new RunSummaryDto(
+            RunId: "r1",
+            ExecutionInstanceId: "i1",
+            ExecutionDefinitionId: "wf-1",
+            Status: WorkflowLifecycleStatusNames.Running,
+            CreatedAt: DateTimeOffset.UtcNow,
+            CompletedAt: null,
+            CorrelationKey: null,
+            RetryOfRunId: null,
+            ExecutionKind: "workflow");
+
+        var actions = await projection.ProjectExecutionRunActionsAsync(run, hasQueuedPark: true, hasQueuedResume: false);
+        var park = actions.Single(a => a.ActionKind == ControlFacade.ActionKindPark);
+        park.AvailabilityState.Should().Be(ControlFacade.ActionAvailabilityAlreadyQueued);
+        park.ReasonCode.Should().Be(ControlFacade.ReasonAlreadyQueued);
+    }
+
+    [Fact]
+    public async Task ActionProjection_ParkAvailable_WhenEligible()
+    {
+        var projection = NewProjection(allowCancel: true, allowExternalControl: true, allowRetry: false);
+
+        var run = new RunSummaryDto(
+            RunId: "r1",
+            ExecutionInstanceId: "i1",
+            ExecutionDefinitionId: "wf-1",
+            Status: WorkflowLifecycleStatusNames.Running,
+            CreatedAt: DateTimeOffset.UtcNow,
+            CompletedAt: null,
+            CorrelationKey: null,
+            RetryOfRunId: null,
+            ExecutionKind: "workflow");
+
+        var actions = await projection.ProjectExecutionRunActionsAsync(run, hasQueuedPark: false, hasQueuedResume: false);
+        var park = actions.Single(a => a.ActionKind == ControlFacade.ActionKindPark);
+        park.AvailabilityState.Should().Be(ControlFacade.ActionAvailabilityAvailable);
+        park.ReasonCode.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task ActionProjection_ResumeAvailable_WhenParkedAndNotQueued()
+    {
+        var projection = NewProjection(allowCancel: true, allowExternalControl: true, allowRetry: false);
+
+        var run = new RunSummaryDto(
+            RunId: "r1",
+            ExecutionInstanceId: "i1",
+            ExecutionDefinitionId: "wf-1",
+            Status: WorkflowLifecycleStatusNames.Parked,
+            CreatedAt: DateTimeOffset.UtcNow,
+            CompletedAt: null,
+            CorrelationKey: null,
+            RetryOfRunId: null,
+            ExecutionKind: "workflow");
+
+        var actions = await projection.ProjectExecutionRunActionsAsync(run, hasQueuedPark: false, hasQueuedResume: false);
+        var resume = actions.Single(a => a.ActionKind == ControlFacade.ActionKindResume);
+        resume.AvailabilityState.Should().Be(ControlFacade.ActionAvailabilityAvailable);
+        resume.ReasonCode.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task ActionProjection_RetryAvailable_WhenFailedAndAuthorized()
+    {
+        var projection = NewProjection(allowCancel: true, allowExternalControl: true, allowRetry: true);
+
+        var run = new RunSummaryDto(
+            RunId: "r1",
+            ExecutionInstanceId: "i1",
+            ExecutionDefinitionId: "wf-1",
+            Status: WorkflowLifecycleStatusNames.Failed,
+            CreatedAt: DateTimeOffset.UtcNow,
+            CompletedAt: DateTimeOffset.UtcNow,
+            CorrelationKey: null,
+            RetryOfRunId: null,
+            ExecutionKind: "workflow");
+
+        var actions = await projection.ProjectExecutionRunActionsAsync(run, hasQueuedPark: false, hasQueuedResume: false);
+        var retry = actions.Single(a => a.ActionKind == ControlFacade.ActionKindRetry);
+        retry.AvailabilityState.Should().Be(ControlFacade.ActionAvailabilityAvailable);
+        retry.ReasonCode.Should().BeNull();
+    }
+
+    [Fact]
     public async Task ControlActivityQuery_SetsScheduleTarget_WhenCorrelationHasScheduleToken()
     {
         var db = NewDb();
@@ -143,6 +289,60 @@ public sealed class UnifiedControlFacadeTests
         item.Outcome.Should().Be("failed");
     }
 
+    [Theory]
+    [InlineData(Apperture.RuntimePlane.Abstractions.RuntimeControlStatusNames.Queued, ControlFacade.NormalizedRequested, "in_progress", "Runtime shutdown request is queued.")]
+    [InlineData(Apperture.RuntimePlane.Abstractions.RuntimeControlStatusNames.Applied, ControlFacade.NormalizedSucceeded, "succeeded", "Runtime shutdown applied.")]
+    [InlineData(Apperture.RuntimePlane.Abstractions.RuntimeControlStatusNames.Rejected, ControlFacade.NormalizedFailed, "failed", "Runtime shutdown request failed.")]
+    [InlineData(Apperture.RuntimePlane.Abstractions.RuntimeControlStatusNames.Failed, ControlFacade.NormalizedFailed, "failed", "Runtime shutdown request failed.")]
+    public async Task ControlActivityQuery_RuntimeShutdownNormalization_MapsStatuses(
+        string runtimeControlStatus,
+        string expectedNormalizedStatus,
+        string expectedOutcome,
+        string expectedOutcomeSummary)
+    {
+        var runtimeId = "rt-1";
+        var runtime = new Apperture.Core.Security.Trust.RuntimeIdentity(
+            Id: runtimeId,
+            DisplayName: "Runtime 1",
+            CredentialType: "Test",
+            PublicKeyOrThumbprint: null,
+            ManagedIdentityPrincipalId: null,
+            DeclaredScopes: Array.Empty<string>(),
+            RegisteredAt: DateTimeOffset.UtcNow.AddHours(-1));
+
+        var request = new Apperture.ControlPlane.Security.RuntimeControlRequestResult(
+            Id: 42,
+            RuntimeId: runtimeId,
+            ControlKind: Apperture.RuntimePlane.Abstractions.RuntimeControlKindNames.Shutdown,
+            Status: runtimeControlStatus,
+            RequestedAt: DateTimeOffset.UtcNow.AddMinutes(-10),
+            RequestedBy: "operator",
+            AppliedAt: runtimeControlStatus == Apperture.RuntimePlane.Abstractions.RuntimeControlStatusNames.Queued ? null : DateTimeOffset.UtcNow.AddMinutes(-5),
+            AppliedBy: runtimeControlStatus == Apperture.RuntimePlane.Abstractions.RuntimeControlStatusNames.Queued ? null : "worker",
+            LastError: runtimeControlStatus == Apperture.RuntimePlane.Abstractions.RuntimeControlStatusNames.Failed ? "boom" : null);
+
+        var db = NewDb();
+        var service = new ControlActivityQueryService(
+            runs: new StubRunQueryService(Array.Empty<RunSummaryDto>()),
+            runtimeIdentity: new StubRuntimeIdentityService(new[] { runtime }),
+            runtimeControl: new StubRuntimeControlServiceWithRequests(new[] { request }),
+            actions: new StubExecutionActionProjection(),
+            authorization: new AllowAuthorizationEvaluationService(),
+            principal: new StubPrincipal(),
+            environment: new StubEnvironment("env-1"),
+            db: db);
+
+        var items = await service.ListRecentActivityAsync(createdFromUtc: DateTimeOffset.UtcNow.AddHours(-1), take: 10);
+        items.Should().NotBeEmpty();
+
+        var item = items.Single();
+        item.TargetKind.Should().Be(ControlFacade.TargetKindRuntimeInstance);
+        item.TargetId.Should().Be(runtimeId);
+        item.CurrentNormalizedStatus.Should().Be(expectedNormalizedStatus);
+        item.Outcome.Should().Be(expectedOutcome);
+        item.OutcomeSummary.Should().Be(expectedOutcomeSummary);
+    }
+
     [Fact]
     public async Task ControlAttentionQuery_UsesScheduleTarget_ForFailedExecution()
     {
@@ -176,6 +376,170 @@ public sealed class UnifiedControlFacadeTests
         item.AttentionKind.Should().Be("executionFailed");
         item.TargetKind.Should().Be(ControlFacade.TargetKindSchedule);
         item.TargetId.Should().Be("sc-1");
+    }
+
+    [Fact]
+    public async Task ControlAttentionQuery_WorkflowControlRejected_UsesRunId_ForDrilldown()
+    {
+        var db = NewDb();
+
+        db.WorkflowExternalControlRequests.Add(new WorkflowExternalControlRequestEntity
+        {
+            Id = 1,
+            RunId = "run-99",
+            WorkflowInstanceId = "i-wf-1",
+            WorkflowDefinitionId = "wf-1",
+            ControlKind = Apperture.RuntimePlane.Abstractions.WorkflowExternalControlKindNames.Park,
+            Status = Apperture.RuntimePlane.Abstractions.WorkflowExternalControlStatusNames.Rejected,
+            RequestedAt = DateTimeOffset.UtcNow.AddMinutes(-5),
+            RequestedBy = "operator",
+            AppliedAt = null,
+            AppliedBy = null,
+            LastError = "rejected"
+        });
+        await db.SaveChangesAsync();
+
+        var service = new ControlAttentionQueryService(
+            runs: new StubRunQueryService(Array.Empty<RunSummaryDto>()),
+            authorization: new AllowAuthorizationEvaluationService(),
+            principal: new StubPrincipal(),
+            environment: new StubEnvironment("env-1"),
+            db: db,
+            workflowRunReadAuthz: new AllowWorkflowReadAuthz());
+
+        var items = await service.ListAttentionAsync(createdFromUtc: DateTimeOffset.UtcNow.AddHours(-1), take: 10);
+
+        var rejected = items.Single(i => i.AttentionKind == "workflowControlRejected");
+        rejected.TargetKind.Should().Be(ControlFacade.TargetKindWorkflow);
+        rejected.TargetId.Should().Be("wf-1");
+        // Drill-down: open run detail page.
+        rejected.RelatedActivityId.Should().Be("run-99");
+    }
+
+    [Fact]
+    public async Task ControlAttentionQuery_WorkflowControlRejected_SkipsUnauthorizedDefinitions()
+    {
+        var db = NewDb();
+
+        db.WorkflowExternalControlRequests.Add(new WorkflowExternalControlRequestEntity
+        {
+            Id = 1,
+            RunId = "run-99",
+            WorkflowInstanceId = "i-wf-1",
+            WorkflowDefinitionId = "wf-1",
+            ControlKind = Apperture.RuntimePlane.Abstractions.WorkflowExternalControlKindNames.Park,
+            Status = Apperture.RuntimePlane.Abstractions.WorkflowExternalControlStatusNames.Rejected,
+            RequestedAt = DateTimeOffset.UtcNow.AddMinutes(-5),
+            RequestedBy = "operator",
+            AppliedAt = null,
+            AppliedBy = null,
+            LastError = "rejected"
+        });
+        await db.SaveChangesAsync();
+
+        var service = new ControlAttentionQueryService(
+            runs: new StubRunQueryService(Array.Empty<RunSummaryDto>()),
+            authorization: new AllowAuthorizationEvaluationService(),
+            principal: new StubPrincipal(),
+            environment: new StubEnvironment("env-1"),
+            db: db,
+            workflowRunReadAuthz: new DenyWorkflowReadAuthz());
+
+        var items = await service.ListAttentionAsync(createdFromUtc: DateTimeOffset.UtcNow.AddHours(-1), take: 10);
+        items.Any(i => i.AttentionKind == "workflowControlRejected").Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task ControlCenterQueryService_EmitsTargetDetailLinks_AndOmitsScheduleTargets()
+    {
+        var operation = new Apperture.ControlPlane.Security.OperationDefinitionDto(
+            OperationDefinitionId: "op-1",
+            ModuleId: "mod-1",
+            InvariantName: "op.invariant",
+            DisplayName: "Op 1",
+            Description: "desc",
+            Category: "Command",
+            CanStart: true,
+            InputSchema: null);
+
+        var module = new Apperture.ModuleSdk.Abstractions.ModuleManifest(
+            Id: "mod-1",
+            Name: "Module 1",
+            Version: "1.0.0",
+            Description: "Module");
+
+        var workflow = new Apperture.RuntimePlane.Abstractions.WorkflowDefinition(
+            Id: new Apperture.RuntimePlane.Abstractions.WorkflowDefinitionId("wf-1"),
+            Name: "Workflow 1",
+            ModuleId: "mod-1",
+            StepNames: Array.Empty<string>(),
+            Category: Apperture.RuntimePlane.Abstractions.WorkflowCategory.Command,
+            RequiredPermissions: null);
+
+        var runtime = new Apperture.Core.Security.Trust.RuntimeIdentity(
+            Id: "rt-1",
+            DisplayName: "Runtime 1",
+            CredentialType: "Test",
+            PublicKeyOrThumbprint: null,
+            ManagedIdentityPrincipalId: null,
+            DeclaredScopes: Array.Empty<string>(),
+            RegisteredAt: DateTimeOffset.UtcNow.AddHours(-1));
+
+        var service = new ControlCenterQueryService(
+            operations: new StubOperationDefinitionQueryService(new[] { operation }),
+            workflowListing: new StubModuleWorkflowListingService(new[] { module }, new Dictionary<string, IReadOnlyList<Apperture.RuntimePlane.Abstractions.WorkflowDefinition>>
+            {
+                ["mod-1"] = new[] { workflow }
+            }),
+            runtimeIdentity: new StubRuntimeIdentityService(new[] { runtime }),
+            authorization: new AllowAuthorizationEvaluationService(),
+            principal: new StubPrincipal(),
+            environment: new StubEnvironment("env-1"),
+            activity: new StubControlActivityQueryService(),
+            attention: new StubControlAttentionQueryService(),
+            actions: new StubExecutionActionProjection());
+
+        var dto = await service.GetControlCenterAsync(DateTimeOffset.UtcNow.AddHours(-1), takeRecentActivity: 5, takeAttention: 5);
+
+        dto.Targets.Any(t => t.TargetKind == ControlFacade.TargetKindSchedule).Should().BeFalse();
+
+        var opTarget = dto.Targets.Single(t => t.TargetKind == ControlFacade.TargetKindOperation);
+        opTarget.DetailLink.Should().Be($"/operations/start?operationDefinitionId={Uri.EscapeDataString(operation.OperationDefinitionId)}");
+
+        var wfTarget = dto.Targets.Single(t => t.TargetKind == ControlFacade.TargetKindWorkflow);
+        wfTarget.DetailLink.Should().Be($"/workflows/start?moduleId={Uri.EscapeDataString(workflow.ModuleId)}&workflowId={Uri.EscapeDataString(workflow.Id.Value)}");
+
+        var rtTarget = dto.Targets.Single(t => t.TargetKind == ControlFacade.TargetKindRuntimeInstance);
+        rtTarget.DetailLink.Should().Be($"/runtimes/{Uri.EscapeDataString(runtime.Id)}/controls/shutdown/requests");
+    }
+
+    [Fact]
+    public async Task ControlCenterQueryService_RespectsRuntimeReadAuthorization()
+    {
+        var runtime = new Apperture.Core.Security.Trust.RuntimeIdentity(
+            Id: "rt-1",
+            DisplayName: "Runtime 1",
+            CredentialType: "Test",
+            PublicKeyOrThumbprint: null,
+            ManagedIdentityPrincipalId: null,
+            DeclaredScopes: Array.Empty<string>(),
+            RegisteredAt: DateTimeOffset.UtcNow.AddHours(-1));
+
+        var service = new ControlCenterQueryService(
+            operations: new StubOperationDefinitionQueryService(Array.Empty<Apperture.ControlPlane.Security.OperationDefinitionDto>()),
+            workflowListing: new StubModuleWorkflowListingService(
+                modules: Array.Empty<Apperture.ModuleSdk.Abstractions.ModuleManifest>(),
+                workflowsByModule: new Dictionary<string, IReadOnlyList<Apperture.RuntimePlane.Abstractions.WorkflowDefinition>>()),
+            runtimeIdentity: new StubRuntimeIdentityService(new[] { runtime }),
+            authorization: new DenyAuthorizationEvaluationService(),
+            principal: new StubPrincipal(),
+            environment: new StubEnvironment("env-1"),
+            activity: new StubControlActivityQueryService(),
+            attention: new StubControlAttentionQueryService(),
+            actions: new StubExecutionActionProjection());
+
+        var dto = await service.GetControlCenterAsync(DateTimeOffset.UtcNow.AddHours(-1), takeRecentActivity: 5, takeAttention: 5);
+        dto.Targets.Any(t => t.TargetKind == ControlFacade.TargetKindRuntimeInstance).Should().BeFalse();
     }
 
     private static Apperture.ControlPlane.Security.ControlActionAvailabilityProjection NewProjection(bool allowCancel, bool allowExternalControl, bool allowRetry)
@@ -253,6 +617,19 @@ public sealed class UnifiedControlFacadeTests
             ValueTask.FromResult<IReadOnlyList<RuntimeControlRequestResult>>(Array.Empty<RuntimeControlRequestResult>());
     }
 
+    private sealed class StubRuntimeControlServiceWithRequests : IRuntimeControlService
+    {
+        private readonly IReadOnlyList<RuntimeControlRequestResult> _requests;
+
+        public StubRuntimeControlServiceWithRequests(IReadOnlyList<RuntimeControlRequestResult> requests) => _requests = requests;
+
+        public ValueTask<RuntimeControlRequestResult?> RequestShutdownAsync(string runtimeId, CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult<RuntimeControlRequestResult?>(null);
+
+        public ValueTask<IReadOnlyList<RuntimeControlRequestResult>> GetShutdownRequestsAsync(string runtimeId, CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult<IReadOnlyList<RuntimeControlRequestResult>>(_requests);
+    }
+
     private sealed class StubRuntimeIdentityService : IRuntimeIdentityService
     {
         private readonly IReadOnlyList<Apperture.Core.Security.Trust.RuntimeIdentity> _runtimes;
@@ -278,6 +655,12 @@ public sealed class UnifiedControlFacadeTests
             ValueTask.FromResult(true);
     }
 
+    private sealed class DenyAuthorizationEvaluationService : IAuthorizationEvaluationService
+    {
+        public ValueTask<bool> EvaluateAsync(AuthorizationEvaluationContext context, CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(false);
+    }
+
     private sealed class StubPrincipal : IPrincipalContext
     {
         public ValueTask<IActor?> GetCurrentActorAsync(CancellationToken cancellationToken = default) =>
@@ -301,6 +684,12 @@ public sealed class UnifiedControlFacadeTests
     {
         public ValueTask EnsureCanReadRunsAsync(WorkflowDefinitionId workflowDefinitionId, CancellationToken cancellationToken = default) =>
             ValueTask.CompletedTask;
+    }
+
+    private sealed class DenyWorkflowReadAuthz : IWorkflowRunReadAuthorizationService
+    {
+        public ValueTask EnsureCanReadRunsAsync(WorkflowDefinitionId workflowDefinitionId, CancellationToken cancellationToken = default) =>
+            throw new UnauthorizedAccessException();
     }
 
     private sealed class StubOperationRunCancelAuthz : IOperationRunCancelAuthorizationService
@@ -364,6 +753,57 @@ public sealed class UnifiedControlFacadeTests
             if (!_allow) throw new UnauthorizedAccessException();
             return ValueTask.CompletedTask;
         }
+    }
+
+    private sealed class StubOperationDefinitionQueryService : IOperationDefinitionQueryService
+    {
+        private readonly IReadOnlyList<OperationDefinitionDto> _operations;
+
+        public StubOperationDefinitionQueryService(IReadOnlyList<OperationDefinitionDto> operations) => _operations = operations;
+
+        public ValueTask<IReadOnlyList<OperationDefinitionDto>> ListAsync(CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(_operations);
+
+        public ValueTask<OperationDefinitionDto?> GetAsync(OperationId operationDefinitionId, CancellationToken cancellationToken = default)
+        {
+            var match = _operations.FirstOrDefault(x => string.Equals(x.OperationDefinitionId, operationDefinitionId.Value, StringComparison.Ordinal));
+            return ValueTask.FromResult<OperationDefinitionDto?>(match);
+        }
+    }
+
+    private sealed class StubModuleWorkflowListingService : IModuleWorkflowListingService
+    {
+        private readonly IReadOnlyList<Apperture.ModuleSdk.Abstractions.ModuleManifest> _modules;
+        private readonly IReadOnlyDictionary<string, IReadOnlyList<Apperture.RuntimePlane.Abstractions.WorkflowDefinition>> _workflowsByModule;
+
+        public StubModuleWorkflowListingService(
+            IReadOnlyList<Apperture.ModuleSdk.Abstractions.ModuleManifest> modules,
+            IReadOnlyDictionary<string, IReadOnlyList<Apperture.RuntimePlane.Abstractions.WorkflowDefinition>> workflowsByModule)
+        {
+            _modules = modules;
+            _workflowsByModule = workflowsByModule;
+        }
+
+        public ValueTask<IReadOnlyList<Apperture.ModuleSdk.Abstractions.ModuleManifest>> GetModulesAsync(CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(_modules);
+
+        public ValueTask<IReadOnlyList<Apperture.RuntimePlane.Abstractions.WorkflowDefinition>> GetWorkflowsForModuleAsync(string moduleId, CancellationToken cancellationToken = default)
+        {
+            _workflowsByModule.TryGetValue(moduleId, out var workflows);
+            return ValueTask.FromResult<IReadOnlyList<Apperture.RuntimePlane.Abstractions.WorkflowDefinition>>(workflows ?? Array.Empty<Apperture.RuntimePlane.Abstractions.WorkflowDefinition>());
+        }
+    }
+
+    private sealed class StubControlActivityQueryService : IControlActivityQueryService
+    {
+        public ValueTask<IReadOnlyList<ControlActivitySummaryDto>> ListRecentActivityAsync(DateTimeOffset createdFromUtc, int take, CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult<IReadOnlyList<ControlActivitySummaryDto>>(Array.Empty<ControlActivitySummaryDto>());
+    }
+
+    private sealed class StubControlAttentionQueryService : IControlAttentionQueryService
+    {
+        public ValueTask<IReadOnlyList<ControlAttentionItemDto>> ListAttentionAsync(DateTimeOffset createdFromUtc, int take, CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult<IReadOnlyList<ControlAttentionItemDto>>(Array.Empty<ControlAttentionItemDto>());
     }
 }
 

@@ -20,7 +20,8 @@ We need an application/read-model layer that:
 Introduce a Unified Control Facade composed of three permission-safe projections:
 
 1. `ControlTargetSummary` with a small `ControlTargetKind` vocabulary:
-   - `operation`, `workflow`, `runtimeInstance`, and `schedule` (overlay shell).
+   - `operation`, `workflow`, and `runtimeInstance`.
+   - `schedule` is used as an `activity` classification (via `TargetKind=schedule`) rather than a first-class top-level schedule target in this cycle.
 2. `ControlActivitySummary` providing a normalized facade activity vocabulary:
    - executions and durable runtime control requests share common status/outcome fields,
    - `ActivitySource` distinguishes `direct` vs `scheduled` overlay classification,
@@ -32,7 +33,8 @@ Introduce a Unified Control Facade composed of three permission-safe projections
 
 Schedule integration uses a correlation overlay:
 
-- if correlation includes `schedule:{scheduleId}`, facade classifies the activity as `ActivitySource=scheduled` and attaches it to a `schedule` target kind.
+- if correlation includes `schedule:{scheduleId}`, the facade classifies the activity as `ActivitySource=scheduled` and tags it with `TargetKind=schedule` for grouping in the activity feed.
+- This is an inference-based overlay (transitional) until schedule evaluation/dispatch read models exist for the facade.
 
 ## Consequences
 

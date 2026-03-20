@@ -17,7 +17,9 @@ Top-level “things the operator can act on” are projected as `ControlTargetSu
 - `operation` — operation definitions with a server-projected start action availability.
 - `workflow` — workflow definitions with a server-projected start action availability.
 - `runtimeInstance` — runtime identities with a server-projected governed runtime shutdown request action.
-- `schedule` — schedule targets projected via scheduled-activity correlation (minimal shell; no schedule evaluation/dispatch in this cycle).
+- (No first-class `schedule` target in this cycle.) Scheduled items are shown via the activity feed using `TargetKind=schedule` and `ActivitySource=scheduled` (correlation overlay only).
+
+Each `ControlTargetSummary` includes a stable `DetailLink` so the UI can drill into the smallest existing domain-native control surface (e.g., operation/workflow start pages, runtime shutdown request listing).
 
 ### Unified Activity
 
@@ -37,7 +39,8 @@ They are permission-safe (items are included only when the caller is authorized 
 For this cycle, scheduled execution is integrated using a correlation convention:
 
 - When an activity/run includes a correlation token `schedule:{scheduleId}`, the facade classifies the activity as `ActivitySource=scheduled`.
-- Scheduled activities are attached to a `schedule` target kind for top-level grouping.
+- Scheduled activities are tagged with `TargetKind=schedule` in the activity feed so the UI can group them (no dedicated schedule control target shell is projected in this cycle).
+- This is a transitional, inference-based overlay: it depends on correlation-key conventions and does not imply schedule persistence or evaluation.
 - This facade does not implement schedule evaluation or dispatch; it projects what can be inferred from correlation.
 
 ## Server-Side Action Availability

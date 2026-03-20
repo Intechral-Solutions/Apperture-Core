@@ -181,6 +181,7 @@ public sealed record ControlTargetSummaryDto(
     string TargetId,
     string DisplayName,
     string? GroupKey,
+    string? DetailLink,
     IReadOnlyList<ControlActionAvailabilityDto> AvailableActions);
 
 public sealed record ControlActivitySummaryDto(

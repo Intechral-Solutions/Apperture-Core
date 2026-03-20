@@ -1,5 +1,6 @@
 @page "/operations/start"
 @using System.Globalization
+@using Microsoft.AspNetCore.Components
 @using Apperture.Management.Client
 @inject IManagementClient Client
 
@@ -139,6 +140,9 @@
 </div>
 
 @code {
+    [SupplyParameterFromQuery(Name = "operationDefinitionId")]
+    private string? _operationDefinitionIdFromQuery { get; set; }
+
     private IReadOnlyList<OperationDefinitionDto>? _operations;
     private OperationDefinitionDto? _selected;
     private string? _selectedOperationId;
@@ -150,7 +154,14 @@
     private string? _startMessage;
     private string? _startedRunId;
 
-    protected override Task OnInitializedAsync() => LoadOperationsAsync();
+    protected override async Task OnInitializedAsync()
+    {
+        // Drill-down contract: preselect operation when `operationDefinitionId` query parameter is present.
+        if (!string.IsNullOrWhiteSpace(_operationDefinitionIdFromQuery))
+            _selectedOperationId = _operationDefinitionIdFromQuery;
+
+        await LoadOperationsAsync();
+    }
 
     private async Task LoadOperationsAsync()
     {

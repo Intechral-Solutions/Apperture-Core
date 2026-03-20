@@ -49,6 +49,10 @@
                                         <div class="text-xs text-muted">Group: <span class="font-mono">@t.GroupKey</span></div>
                                     }
                                 </div>
+                        @if (!string.IsNullOrWhiteSpace(t.DetailLink))
+                        {
+                            <a class="underline text-sm" href="@t.DetailLink">Open</a>
+                        }
                             </div>
 
                             <div class="mt-2">
@@ -237,6 +241,11 @@
         if (string.Equals(it.AttentionKind, "runtimeShutdownQueuedStuck", StringComparison.Ordinal))
         {
             return $"/runtimes/{it.TargetId}/controls/shutdown/requests/{it.RelatedActivityId}";
+        }
+
+        if (string.Equals(it.AttentionKind, "workflowControlRejected", StringComparison.Ordinal))
+        {
+            return $"/runs/{it.RelatedActivityId}";
         }
 
         return null;
