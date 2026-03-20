@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Apperture.Core.Security.Trust;
 using Apperture.Persistence.SqlServer;
 using Microsoft.EntityFrameworkCore;
@@ -26,6 +27,7 @@ public sealed class SqlRuntimeIdentityService : IRuntimeIdentityService
             entity.CredentialType,
             entity.PublicKeyOrThumbprint,
             entity.ManagedIdentityPrincipalId,
+            DeserializeScopes(entity.DeclaredScopesJson),
             entity.RegisteredAt);
     }
 
@@ -75,5 +77,14 @@ public sealed class SqlRuntimeIdentityService : IRuntimeIdentityService
         await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
 
         return new EnrollmentResult(request.RuntimeId, true, "Runtime credential rollover completed.");
+    }
+
+    private static IReadOnlyList<string> DeserializeScopes(string json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+            return Array.Empty<string>();
+
+        // Stored as JSON array of strings.
+        return JsonSerializer.Deserialize<string[]>(json) ?? Array.Empty<string>();
     }
 }

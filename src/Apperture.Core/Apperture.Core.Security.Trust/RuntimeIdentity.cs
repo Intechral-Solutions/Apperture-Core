@@ -10,5 +10,6 @@ public sealed record RuntimeIdentity(
     string CredentialType,
     string? PublicKeyOrThumbprint,
     string? ManagedIdentityPrincipalId,
+    IReadOnlyList<string> DeclaredScopes,
     DateTimeOffset RegisteredAt);
 

@@ -1,6 +1,11 @@
 using Apperture.Core.Application;
 using Apperture.Core.Application.Services;
+using Apperture.Core.Domain.Governance;
+using Apperture.Core.Domain.Audit;
+using Apperture.Core.Domain.Identity;
+using Apperture.ControlPlane.Security;
 using Apperture.Core.Security.Trust;
+using Apperture.Shared.Kernel;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -18,17 +23,29 @@ public sealed class EnrollController : ControllerBase
     private readonly IPrincipalContext _principalContext;
     private readonly IPrincipalToUserResolver _principalToUserResolver;
     private readonly IRoleProvider _roleProvider;
+    private readonly IResourceDescriptorRegistry _descriptorRegistry;
+    private readonly IEnvironmentContext _environment;
+    private readonly IAuthorizationEvaluationService _authorizationEvaluation;
+    private readonly IAuditService _audit;
 
     public EnrollController(
         IRuntimeEnrollmentService enrollment,
         IPrincipalContext principalContext,
         IPrincipalToUserResolver principalToUserResolver,
-        IRoleProvider roleProvider)
+        IRoleProvider roleProvider,
+        IResourceDescriptorRegistry descriptorRegistry,
+        IEnvironmentContext environment,
+        IAuthorizationEvaluationService authorizationEvaluation,
+        IAuditService audit)
     {
         _enrollment = enrollment;
         _principalContext = principalContext;
         _principalToUserResolver = principalToUserResolver;
         _roleProvider = roleProvider;
+        _descriptorRegistry = descriptorRegistry;
+        _environment = environment;
+        _authorizationEvaluation = authorizationEvaluation;
+        _audit = audit;
     }
 
     /// <summary>
@@ -43,13 +60,16 @@ public sealed class EnrollController : ControllerBase
         if (actor is null)
             return Unauthorized();
 
-        var userId = await _principalToUserResolver.ResolveUserIdAsync(actor, cancellationToken);
-        if (userId is null)
-            return Forbid();
+        var environmentId = _environment.EnvironmentId;
+        var runtimeScopeKey = ScopeKeyConstants.RuntimeInstance(environmentId, request.RuntimeId);
+        var permission = new PermissionDescriptor(
+            ActionConstants.RuntimeEnrollInvitationCreate,
+            new ResourceDescriptor(ResourceTypeConstants.RuntimeInstance, runtimeScopeKey));
 
-        var roles = await _roleProvider.GetRolesForUserAsync(userId!, cancellationToken);
-        var isPlatformAdmin = roles.Any(r => r.Id.Value == BootstrapConstants.PlatformAdminRoleId);
-        if (!isPlatformAdmin)
+        var allowed = await _authorizationEvaluation.EvaluateAsync(
+            new AuthorizationEvaluationContext(actor, permission, permission.Resource),
+            cancellationToken);
+        if (!allowed)
             return Forbid();
 
         var ttl = request.TtlHours.HasValue ? TimeSpan.FromHours(request.TtlHours.Value) : (TimeSpan?)null;
@@ -58,6 +78,19 @@ public sealed class EnrollController : ControllerBase
             ttl,
             request.Scopes,
             cancellationToken).ConfigureAwait(false);
+
+        var runtimeResource = new ResourceDescriptor(ResourceTypeConstants.RuntimeInstance, runtimeScopeKey);
+        var record = new AuditRecord(
+            new AuditRecordId(Guid.NewGuid().ToString("N")),
+            actor.Id,
+            GovernanceAuditActionNames.RuntimeEnrollmentInvitationCreated,
+            runtimeResource,
+            "auth-admin",
+            DateTimeOffset.UtcNow,
+            new CorrelationId(null),
+            $"runtimeId={request.RuntimeId} scopesCount={request.Scopes?.Count ?? 0}");
+        await _audit.AppendAsync(record, cancellationToken);
+
         return Ok(invitation);
     }
 
@@ -80,7 +113,18 @@ public sealed class EnrollController : ControllerBase
             request.Token,
             registration,
             cancellationToken).ConfigureAwait(false);
-        return result.Success ? Ok(result) : BadRequest(result);
+
+        if (!result.Success)
+            return BadRequest(result);
+
+        // Governance spine: make the canonical runtime governed resource visible in the descriptor registry.
+        var environmentId = _environment.EnvironmentId;
+        var runtimeScopeKey = ScopeKeyConstants.RuntimeInstance(environmentId, result.RuntimeId);
+        _descriptorRegistry.RegisterResource(
+            new ResourceDescriptor(ResourceTypeConstants.RuntimeInstance, runtimeScopeKey),
+            ResourceFamily.Core);
+
+        return Ok(result);
     }
 }
 

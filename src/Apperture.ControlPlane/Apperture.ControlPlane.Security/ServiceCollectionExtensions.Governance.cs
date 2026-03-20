@@ -1,8 +1,10 @@
 using Apperture.Bootstrap;
 using Apperture.Core.Application.Services;
+using Apperture.Core.Domain.Governance;
 using Apperture.ModuleSdk.Abstractions;
 using Apperture.Persistence.SqlServer;
 using Apperture.RuntimePlane.Abstractions;
+using Apperture.Shared.Kernel;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 
@@ -31,6 +33,7 @@ public static class ServiceCollectionExtensions
     /// </summary>
     public static IServiceCollection AddAppertureGovernance(this IServiceCollection services)
     {
+        services.AddSingleton<IEnvironmentContext, StaticEnvironmentContext>();
         services.AddSingleton<IPlatformPermissionSeeder, PlatformPermissionSeederService>();
         services.AddSingleton<IResourceDescriptorRegistry>(sp =>
         {

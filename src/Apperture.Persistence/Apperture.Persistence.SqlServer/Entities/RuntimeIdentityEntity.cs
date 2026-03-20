@@ -7,5 +7,6 @@ public sealed class RuntimeIdentityEntity
     public string CredentialType { get; set; } = "";
     public string? PublicKeyOrThumbprint { get; set; }
     public string? ManagedIdentityPrincipalId { get; set; }
+    public string DeclaredScopesJson { get; set; } = "[]";
     public DateTimeOffset RegisteredAt { get; set; }
 }

@@ -261,6 +261,8 @@ public class AppertureDbContext : DbContext
             e.HasKey(x => x.Id);
             e.Property(x => x.Token).HasMaxLength(256);
             e.Property(x => x.RuntimeId).HasMaxLength(128);
+            e.Property(x => x.EnvironmentId).HasMaxLength(128);
+            e.Property(x => x.ScopesJson).HasMaxLength(4096);
         });
 
         modelBuilder.Entity<RuntimeIdentityEntity>(e =>
@@ -272,6 +274,7 @@ public class AppertureDbContext : DbContext
             e.Property(x => x.CredentialType).HasMaxLength(64);
             e.Property(x => x.PublicKeyOrThumbprint).HasMaxLength(512);
             e.Property(x => x.ManagedIdentityPrincipalId).HasMaxLength(256);
+            e.Property(x => x.DeclaredScopesJson).HasMaxLength(4096);
         });
 
         modelBuilder.Entity<ConnectionEntity>(e =>

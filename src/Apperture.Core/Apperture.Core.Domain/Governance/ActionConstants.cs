@@ -30,6 +30,11 @@ public static class ActionConstants
     public const string ModuleInstall = "module.install";
     public const string ModuleConfigure = "module.configure";
 
+    // Environment / Runtime
+    public const string EnvironmentRead = "environment.read";
+    public const string RuntimeRead = "runtime.read";
+    public const string RuntimeEnrollInvitationCreate = "runtime.enroll.invitation.create";
+
     // Schedule
     public const string ScheduleManage = "schedule.manage";
 

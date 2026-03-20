@@ -1,6 +1,7 @@
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Governance;
 using Apperture.ControlPlane.Security;
+using Apperture.Shared.Kernel;
 using FluentAssertions;
 using Xunit;
 
@@ -8,11 +9,16 @@ namespace Apperture.UnitTests.Governance;
 
 public sealed class PlatformPermissionSeederTests
 {
+    private sealed class StubEnvironmentContext : IEnvironmentContext
+    {
+        public string EnvironmentId => "local";
+    }
+
     [Fact]
     public void Seed_registers_expected_permissions()
     {
         var registry = new InMemoryResourceDescriptorRegistry();
-        new PlatformPermissionSeederService().Seed(registry);
+        new PlatformPermissionSeederService(new StubEnvironmentContext()).Seed(registry);
 
         var permissions = registry.GetPermissionDescriptors();
 
@@ -38,7 +44,7 @@ public sealed class PlatformPermissionSeederTests
     public void Seed_can_be_called_multiple_times_without_throwing()
     {
         var registry = new InMemoryResourceDescriptorRegistry();
-        var seeder = new PlatformPermissionSeederService();
+        var seeder = new PlatformPermissionSeederService(new StubEnvironmentContext());
 
         var act = () =>
         {

@@ -1,5 +1,7 @@
 using Apperture.Core.Security.Trust;
 using Apperture.Persistence.SqlServer;
+using Apperture.Shared.Kernel;
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 
 namespace Apperture.ControlPlane.Security;
@@ -10,10 +12,12 @@ namespace Apperture.ControlPlane.Security;
 public sealed class SqlRuntimeEnrollmentService : IRuntimeEnrollmentService
 {
     private readonly AppertureDbContext _db;
+    private readonly IEnvironmentContext _environment;
 
-    public SqlRuntimeEnrollmentService(AppertureDbContext db)
+    public SqlRuntimeEnrollmentService(AppertureDbContext db, IEnvironmentContext environment)
     {
         _db = db;
+        _environment = environment;
     }
 
     public async ValueTask<EnrollmentInvitation> CreateInvitationAsync(
@@ -25,14 +29,17 @@ public sealed class SqlRuntimeEnrollmentService : IRuntimeEnrollmentService
         var duration = ttl ?? TimeSpan.FromHours(24);
         var expiresAt = DateTimeOffset.UtcNow.Add(duration);
         var token = Guid.NewGuid().ToString("N");
+        IEnumerable<string> scopeList = scopes is null ? Array.Empty<string>() : scopes;
         _db.EnrollmentTokens.Add(new EnrollmentTokenEntity
         {
             Id = Guid.NewGuid(),
             Token = token,
             RuntimeId = runtimeId,
+            EnvironmentId = _environment.EnvironmentId,
             ExpiresAt = expiresAt,
             Used = false,
-            CreatedAt = DateTimeOffset.UtcNow
+            CreatedAt = DateTimeOffset.UtcNow,
+            ScopesJson = JsonSerializer.Serialize(scopeList)
         });
         await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         var baseUrl = "https://localhost"; // TODO: from config
@@ -75,6 +82,11 @@ public sealed class SqlRuntimeEnrollmentService : IRuntimeEnrollmentService
             .FirstOrDefaultAsync(x => x.Token == enrollmentToken && !x.Used, cancellationToken).ConfigureAwait(false);
         if (entity is null)
             return new EnrollmentResult("", false, "Invalid or expired enrollment token.");
+
+        // Token-scoped environment mapping validation for enrollment.
+        if (!string.Equals(entity.EnvironmentId, _environment.EnvironmentId, StringComparison.Ordinal))
+            return new EnrollmentResult(entity.RuntimeId, false, "Enrollment token environment mismatch.");
+
         if (entity.ExpiresAt < DateTimeOffset.UtcNow)
             return new EnrollmentResult(entity.RuntimeId, false, "Enrollment token has expired.");
         entity.Used = true;
@@ -85,6 +97,7 @@ public sealed class SqlRuntimeEnrollmentService : IRuntimeEnrollmentService
             CredentialType = registration.CredentialType,
             PublicKeyOrThumbprint = registration.PublicKeyOrThumbprint,
             ManagedIdentityPrincipalId = registration.ManagedIdentityPrincipalId,
+            DeclaredScopesJson = entity.ScopesJson,
             RegisteredAt = DateTimeOffset.UtcNow
         });
         await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);

@@ -5,7 +5,9 @@ public sealed class EnrollmentTokenEntity
     public Guid Id { get; set; }
     public string Token { get; set; } = "";
     public string RuntimeId { get; set; } = "";
+    public string EnvironmentId { get; set; } = "";
     public DateTimeOffset ExpiresAt { get; set; }
     public bool Used { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
+    public string ScopesJson { get; set; } = "[]";
 }

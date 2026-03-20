@@ -14,6 +14,39 @@ public static class PlatformPermissionSeeder
     /// </summary>
     public static void Seed(IResourceDescriptorRegistry registry)
     {
+        Seed(registry, "local");
+    }
+
+    /// <summary>
+    /// Seeds the permission catalog plus core governance resource descriptors for environment-scoped control.
+    /// </summary>
+    public static void Seed(IResourceDescriptorRegistry registry, string environmentId)
+    {
+        SeedCore(registry);
+
+        var envScopeKey = ScopeKeyConstants.Environment(environmentId);
+
+        // Environment governance resource descriptor for this deployment.
+        registry.RegisterResource(
+            new ResourceDescriptor(ResourceTypeConstants.Environment, envScopeKey),
+            ResourceFamily.Core);
+
+        // Environment/runtime governance permissions scoped to the current environment.
+        registry.RegisterPermission(
+            new PermissionDescriptor(ActionConstants.EnvironmentRead, new ResourceDescriptor(ResourceTypeConstants.Environment, envScopeKey)),
+            ResourceFamily.Core);
+
+        registry.RegisterPermission(
+            new PermissionDescriptor(ActionConstants.RuntimeRead, new ResourceDescriptor(ResourceTypeConstants.RuntimeInstance, envScopeKey)),
+            ResourceFamily.Core);
+
+        registry.RegisterPermission(
+            new PermissionDescriptor(ActionConstants.RuntimeEnrollInvitationCreate, new ResourceDescriptor(ResourceTypeConstants.RuntimeInstance, envScopeKey)),
+            ResourceFamily.Core);
+    }
+
+    private static void SeedCore(IResourceDescriptorRegistry registry)
+    {
         // Connector family
         Register(registry, ActionConstants.ConnectionCreate, ResourceTypeConstants.Connection, ScopeKeyConstants.Instance, ResourceFamily.Connector);
         Register(registry, ActionConstants.ConnectionRead, ResourceTypeConstants.Connection, ScopeKeyConstants.Instance, ResourceFamily.Connector);
