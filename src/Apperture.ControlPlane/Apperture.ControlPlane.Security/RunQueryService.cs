@@ -177,6 +177,9 @@ public sealed class RunQueryService : IRunQueryService
                     x.LastError))
                 .ToListAsync(cancellationToken);
 
+            var request = await _db.WorkflowStartRequests.AsNoTracking()
+                .FirstOrDefaultAsync(x => x.RunId == r.Id, cancellationToken);
+
             return new RunDetailDto(
                 r.Id,
                 r.WorkflowInstanceId,
@@ -192,6 +195,12 @@ public sealed class RunQueryService : IRunQueryService
                 lifecycleEvents,
                 stepInstances,
                 controlRequests,
+                request?.IdempotencyKey,
+                request?.CorrelationId,
+                request?.ParametersJson,
+                request?.CreatedAt,
+                request?.ClaimedBy,
+                request?.ClaimedAt,
                 ExecutionKind.Workflow);
         }
 
@@ -231,6 +240,8 @@ public sealed class RunQueryService : IRunQueryService
             .ToListAsync(cancellationToken);
 
         var opError = BuildOperationError(opLifecycleEvents);
+        var opStartRequest = await _db.OperationStartRequests.AsNoTracking()
+            .FirstOrDefaultAsync(x => x.RunId == r.Id, cancellationToken);
         return new RunDetailDto(
             r.Id,
             r.WorkflowInstanceId,
@@ -246,6 +257,12 @@ public sealed class RunQueryService : IRunQueryService
             opLifecycleEvents,
             opStepInstances,
             Array.Empty<RunControlRequestDto>(),
+            opStartRequest?.IdempotencyKey,
+            opStartRequest?.CorrelationId,
+            opStartRequest?.ParametersJson,
+            opStartRequest?.CreatedAt,
+            opStartRequest?.ClaimedBy,
+            opStartRequest?.ClaimedAt,
             ExecutionKind.Operation);
     }
 

@@ -1,4 +1,5 @@
 using Apperture.ControlPlane.Security;
+using Apperture.Core.Application.ControlFacade;
 using Apperture.RuntimePlane.Abstractions;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -14,13 +15,20 @@ public sealed class RunsController : ControllerBase
     private readonly IExecutionCancelService _cancel;
     private readonly IWorkflowRetryService _retry;
     private readonly IWorkflowExternalControlService _externalControl;
+    private readonly IRunActionAvailabilityQueryService _runActions;
 
-    public RunsController(IRunQueryService runs, IExecutionCancelService cancel, IWorkflowRetryService retry, IWorkflowExternalControlService externalControl)
+    public RunsController(
+        IRunQueryService runs,
+        IExecutionCancelService cancel,
+        IWorkflowRetryService retry,
+        IWorkflowExternalControlService externalControl,
+        IRunActionAvailabilityQueryService runActions)
     {
         _runs = runs;
         _cancel = cancel;
         _retry = retry;
         _externalControl = externalControl;
+        _runActions = runActions;
     }
 
     [HttpGet]
@@ -62,6 +70,22 @@ public sealed class RunsController : ControllerBase
             if (run is null)
                 return NotFound();
             return Ok(run);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return Forbid();
+        }
+    }
+
+    [HttpGet("{id}/actions")]
+    public async Task<ActionResult<IReadOnlyList<ControlActionAvailabilityDto>>> GetRunActions(string id, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var actions = await _runActions.GetRunActionsAsync(new OperationRunId(id), cancellationToken);
+            if (actions is null)
+                return NotFound();
+            return Ok(actions);
         }
         catch (UnauthorizedAccessException)
         {

@@ -12,7 +12,7 @@ public sealed class RunsControllerTests
     [Fact]
     public async Task GetRun_WhenMissing_Returns404()
     {
-        var controller = new RunsController(new StubRunQueryService(get: _ => null), new StubCancelService(), new StubRetryService(), new StubExternalControlService());
+        var controller = NewController(new StubRunQueryService(get: _ => null));
         var result = await controller.GetRun("missing", CancellationToken.None);
         result.Result.Should().BeOfType<NotFoundResult>();
     }
@@ -20,11 +20,8 @@ public sealed class RunsControllerTests
     [Fact]
     public async Task GetRuns_ReturnsList()
     {
-        var controller = new RunsController(new StubRunQueryService(
-            list: new[] { new RunSummaryDto("run-1", "inst-1", "wf-1", "requested", DateTimeOffset.UtcNow, null, null, null) }),
-            new StubCancelService(),
-            new StubRetryService(),
-            new StubExternalControlService());
+        var controller = NewController(new StubRunQueryService(
+            list: new[] { new RunSummaryDto("run-1", "inst-1", "wf-1", "requested", DateTimeOffset.UtcNow, null, null, null) }));
         var result = await controller.GetRuns(null, null, null, null, null, null, null, CancellationToken.None);
         result.Result.Should().BeOfType<OkObjectResult>();
     }
@@ -32,7 +29,7 @@ public sealed class RunsControllerTests
     [Fact]
     public async Task RetryRun_WhenMissing_Returns404()
     {
-        var controller = new RunsController(new StubRunQueryService(), new StubCancelService(), new StubRetryService(returnNull: true), new StubExternalControlService());
+        var controller = NewController(new StubRunQueryService(), retry: new StubRetryService(returnNull: true));
         var result = await controller.RetryRun("missing", CancellationToken.None);
         result.Should().BeOfType<NotFoundResult>();
     }
@@ -40,16 +37,14 @@ public sealed class RunsControllerTests
     [Fact]
     public async Task RetryRun_WhenAuthorized_Returns202()
     {
-        var controller = new RunsController(
+        var controller = NewController(
             new StubRunQueryService(),
-            new StubCancelService(),
-            new StubRetryService(new WorkflowRetryResult(
+            retry: new StubRetryService(new WorkflowRetryResult(
                 new Apperture.RuntimePlane.Abstractions.OperationRunId("original"),
                 new Apperture.RuntimePlane.Abstractions.OperationRunId("new-run"),
                 new Apperture.RuntimePlane.Abstractions.WorkflowInstanceId("new-instance"),
                 new Apperture.RuntimePlane.Abstractions.WorkflowDefinitionId("wf-1"),
-                "requested")),
-            new StubExternalControlService());
+                "requested")));
         var result = await controller.RetryRun("original", CancellationToken.None);
         result.Should().BeOfType<AcceptedResult>();
     }
@@ -57,7 +52,7 @@ public sealed class RunsControllerTests
     [Fact]
     public async Task RetryRun_WhenUnauthorized_Returns403()
     {
-        var controller = new RunsController(new StubRunQueryService(), new StubCancelService(), new StubRetryService(throwUnauthorized: true), new StubExternalControlService());
+        var controller = NewController(new StubRunQueryService(), retry: new StubRetryService(throwUnauthorized: true));
         var result = await controller.RetryRun("original", CancellationToken.None);
         result.Should().BeOfType<ForbidResult>();
     }
@@ -65,7 +60,7 @@ public sealed class RunsControllerTests
     [Fact]
     public async Task RetryRun_WhenIneligible_Returns409()
     {
-        var controller = new RunsController(new StubRunQueryService(), new StubCancelService(), new StubRetryService(throwConflict: true), new StubExternalControlService());
+        var controller = NewController(new StubRunQueryService(), retry: new StubRetryService(throwConflict: true));
         var result = await controller.RetryRun("original", CancellationToken.None);
         result.Should().BeOfType<ConflictObjectResult>();
     }
@@ -73,7 +68,7 @@ public sealed class RunsControllerTests
     [Fact]
     public async Task ParkRun_WhenAuthorized_Returns202()
     {
-        var controller = new RunsController(new StubRunQueryService(), new StubCancelService(), new StubRetryService(), new StubExternalControlService());
+        var controller = NewController(new StubRunQueryService());
         var result = await controller.ParkRun("run-1", CancellationToken.None);
         result.Should().BeOfType<AcceptedResult>();
     }
@@ -81,7 +76,7 @@ public sealed class RunsControllerTests
     [Fact]
     public async Task ResumeRun_WhenAuthorized_Returns202()
     {
-        var controller = new RunsController(new StubRunQueryService(), new StubCancelService(), new StubRetryService(), new StubExternalControlService());
+        var controller = NewController(new StubRunQueryService());
         var result = await controller.ResumeRun("run-1", CancellationToken.None);
         result.Should().BeOfType<AcceptedResult>();
     }
@@ -89,11 +84,9 @@ public sealed class RunsControllerTests
     [Fact]
     public async Task ParkRun_WhenUnauthorized_Returns403()
     {
-        var controller = new RunsController(
+        var controller = NewController(
             new StubRunQueryService(),
-            new StubCancelService(),
-            new StubRetryService(),
-            new StubExternalControlService(throwParkUnauthorized: true));
+            external: new StubExternalControlService(throwParkUnauthorized: true));
         var result = await controller.ParkRun("run-1", CancellationToken.None);
         result.Should().BeOfType<ForbidResult>();
     }
@@ -101,14 +94,57 @@ public sealed class RunsControllerTests
     [Fact]
     public async Task ResumeRun_WhenUnauthorized_Returns403()
     {
-        var controller = new RunsController(
+        var controller = NewController(
             new StubRunQueryService(),
-            new StubCancelService(),
-            new StubRetryService(),
-            new StubExternalControlService(throwResumeUnauthorized: true));
+            external: new StubExternalControlService(throwResumeUnauthorized: true));
         var result = await controller.ResumeRun("run-1", CancellationToken.None);
         result.Should().BeOfType<ForbidResult>();
     }
+
+    [Fact]
+    public async Task GetRunActions_WhenMissing_Returns404()
+    {
+        var controller = NewController(new StubRunQueryService(), runActions: new StubRunActionAvailabilityQueryService(result: null));
+        var result = await controller.GetRunActions("missing", CancellationToken.None);
+        result.Result.Should().BeOfType<NotFoundResult>();
+    }
+
+    [Fact]
+    public async Task GetRunActions_WhenUnauthorized_Returns403()
+    {
+        var controller = NewController(new StubRunQueryService(), runActions: new StubRunActionAvailabilityQueryService(throwUnauthorized: true));
+        var result = await controller.GetRunActions("run-1", CancellationToken.None);
+        result.Result.Should().BeOfType<ForbidResult>();
+    }
+
+    [Fact]
+    public async Task GetRunActions_WhenAvailable_Returns200()
+    {
+        var controller = NewController(
+            new StubRunQueryService(),
+            runActions: new StubRunActionAvailabilityQueryService(new[]
+            {
+                new Apperture.Core.Application.ControlFacade.ControlActionAvailabilityDto("execution.cancel", "available", null)
+            }));
+        var result = await controller.GetRunActions("run-1", CancellationToken.None);
+        result.Result.Should().BeOfType<OkObjectResult>();
+    }
+
+    private static RunsController NewController(
+        IRunQueryService runs,
+        IExecutionCancelService? cancel = null,
+        IWorkflowRetryService? retry = null,
+        IWorkflowExternalControlService? external = null,
+        IRunActionAvailabilityQueryService? runActions = null) =>
+        new(
+            runs,
+            cancel ?? new StubCancelService(),
+            retry ?? new StubRetryService(),
+            external ?? new StubExternalControlService(),
+            runActions ?? new StubRunActionAvailabilityQueryService(new[]
+            {
+                new Apperture.Core.Application.ControlFacade.ControlActionAvailabilityDto("execution.cancel", "available", null)
+            }));
 
     private sealed class StubRunQueryService : IRunQueryService
     {
@@ -132,7 +168,13 @@ public sealed class RunsControllerTests
                 null,
                 Array.Empty<RunLifecycleEventDto>(),
                 Array.Empty<RunStepInstanceDto>(),
-                Array.Empty<RunControlRequestDto>()));
+                Array.Empty<RunControlRequestDto>(),
+                null,
+                null,
+                null,
+                null,
+                null,
+                null));
         }
 
         public ValueTask<IReadOnlyList<RunSummaryDto>> ListRunsAsync(RunQueryFilter? filter = null, CancellationToken cancellationToken = default) =>
@@ -140,6 +182,30 @@ public sealed class RunsControllerTests
 
         public ValueTask<RunDetailDto?> GetRunAsync(Apperture.RuntimePlane.Abstractions.OperationRunId id, CancellationToken cancellationToken = default) =>
             ValueTask.FromResult(_get(id.Value));
+    }
+
+    private sealed class StubRunActionAvailabilityQueryService : IRunActionAvailabilityQueryService
+    {
+        private readonly IReadOnlyList<Apperture.Core.Application.ControlFacade.ControlActionAvailabilityDto>? _result;
+        private readonly bool _throwUnauthorized;
+
+        public StubRunActionAvailabilityQueryService(
+            IReadOnlyList<Apperture.Core.Application.ControlFacade.ControlActionAvailabilityDto>? result = null,
+            bool throwUnauthorized = false)
+        {
+            _result = result;
+            _throwUnauthorized = throwUnauthorized;
+        }
+
+        public Task<IReadOnlyList<Apperture.Core.Application.ControlFacade.ControlActionAvailabilityDto>?> GetRunActionsAsync(
+            Apperture.RuntimePlane.Abstractions.OperationRunId runId,
+            CancellationToken cancellationToken = default)
+        {
+            if (_throwUnauthorized)
+                throw new UnauthorizedAccessException();
+
+            return Task.FromResult(_result);
+        }
     }
 
     private sealed class StubCancelService : IExecutionCancelService

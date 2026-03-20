@@ -154,6 +154,7 @@ public sealed class OperationsControllerTests
                 Array.Empty<RunLifecycleEventDto>(),
                 Array.Empty<RunStepInstanceDto>(),
                 Array.Empty<RunControlRequestDto>(),
+                null, null, null, null, null, null,
                 "workflow")));
 
         var result = await controller.GetOperationRun("r1", CancellationToken.None);
@@ -175,6 +176,7 @@ public sealed class OperationsControllerTests
                 Array.Empty<RunLifecycleEventDto>(),
                 Array.Empty<RunStepInstanceDto>(),
                 Array.Empty<RunControlRequestDto>(),
+                null, null, null, null, null, null,
                 "operation")));
 
         var result = await controller.GetOperationRun("r1", CancellationToken.None);

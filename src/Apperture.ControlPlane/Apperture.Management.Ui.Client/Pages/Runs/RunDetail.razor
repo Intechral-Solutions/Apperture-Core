@@ -1,5 +1,6 @@
 @page "/runs/{RunId}"
 @using Apperture.Management.Client
+@using System.Linq
 @inject IManagementClient Client
 @inject NavigationManager Nav
 @implements IDisposable
@@ -12,22 +13,26 @@
         </div>
         <div class="flex items-center gap-2">
             <button class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface"
-                    disabled="@_loading"
+                    disabled="@(!CanInvoke("execution.cancel"))"
+                    title="@ActionReason("execution.cancel")"
                     @onclick="CancelAsync">
                 Cancel
             </button>
             <button class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface"
-                    disabled="@_loading || string.Equals(_detail?.ExecutionKind, "operation", StringComparison.OrdinalIgnoreCase)"
+                    disabled="@(!CanInvoke("execution.retry"))"
+                    title="@ActionReason("execution.retry")"
                     @onclick="RetryAsync">
                 Retry (new run)
             </button>
             <button class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface"
-                    disabled="@_loading || string.Equals(_detail?.ExecutionKind, "operation", StringComparison.OrdinalIgnoreCase)"
+                    disabled="@(!CanInvoke("execution.park"))"
+                    title="@ActionReason("execution.park")"
                     @onclick="ParkAsync">
                 Park
             </button>
             <button class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface"
-                    disabled="@_loading || string.Equals(_detail?.ExecutionKind, "operation", StringComparison.OrdinalIgnoreCase)"
+                    disabled="@(!CanInvoke("execution.resume"))"
+                    title="@ActionReason("execution.resume")"
                     @onclick="ResumeAsync">
                 Resume
             </button>
@@ -72,6 +77,31 @@
 
         <div class="mt-4 grid gap-4">
             <div class="rounded border border-default bg-surface p-3">
+                <div class="text-sm font-semibold text-heading">Action availability</div>
+                <div class="text-xs text-muted">Server-projected action eligibility for this run.</div>
+                @if (_actions.Count == 0)
+                {
+                    <div class="mt-2 text-sm text-muted">No actions available.</div>
+                }
+                else
+                {
+                    <div class="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2">
+                        @foreach (var action in _actions.OrderBy(x => x.ActionKind, StringComparer.Ordinal))
+                        {
+                            <div class="rounded border border-default bg-surface-muted px-2 py-2">
+                                <div class="text-xs font-mono text-body">@action.ActionKind</div>
+                                <div class="text-xs text-muted">@action.AvailabilityState</div>
+                                @if (!string.IsNullOrWhiteSpace(action.ReasonCode))
+                                {
+                                    <div class="text-xs text-muted">@action.ReasonCode</div>
+                                }
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+
+            <div class="rounded border border-default bg-surface p-3">
                 <div class="grid grid-cols-1 gap-2 md:grid-cols-2">
                     <div>
                         <div class="text-xs text-muted">Status</div>
@@ -114,6 +144,40 @@
                         </div>
                     </div>
                 </div>
+            </div>
+
+            <div class="rounded border border-default bg-surface p-3">
+                <div class="text-sm font-semibold text-heading">Start request</div>
+                <div class="text-xs text-muted">Persisted start metadata for this execution run.</div>
+                <div class="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2">
+                    <div>
+                        <div class="text-xs text-muted">Requested</div>
+                        <div class="text-sm text-body">@Fmt(_detail.StartRequestedAt)</div>
+                    </div>
+                    <div>
+                        <div class="text-xs text-muted">Claimed</div>
+                        <div class="text-sm text-body">@Fmt(_detail.StartClaimedAt)</div>
+                    </div>
+                    <div>
+                        <div class="text-xs text-muted">Idempotency key</div>
+                        <div class="text-sm font-mono break-all">@_detail.StartIdempotencyKey</div>
+                    </div>
+                    <div>
+                        <div class="text-xs text-muted">Correlation id</div>
+                        <div class="text-sm font-mono break-all">@_detail.StartCorrelationId</div>
+                    </div>
+                    <div>
+                        <div class="text-xs text-muted">Claimed by</div>
+                        <div class="text-sm text-body">@_detail.StartClaimedBy</div>
+                    </div>
+                </div>
+                @if (!string.IsNullOrWhiteSpace(_detail.StartParametersJson))
+                {
+                    <div class="mt-2">
+                        <div class="text-xs text-muted">Parameters JSON</div>
+                        <pre class="mt-1 max-h-64 overflow-auto rounded border border-default bg-surface-muted p-2 text-xs text-body"><code>@_detail.StartParametersJson</code></pre>
+                    </div>
+                }
             </div>
 
             <div class="rounded border border-default bg-surface p-3">
@@ -276,6 +340,7 @@
     private string? _error;
     private string? _actionMessage;
     private string? _newRunId;
+    private IReadOnlyList<ControlActionAvailabilityDto> _actions = Array.Empty<ControlActionAvailabilityDto>();
     private bool _pollingEnabled;
     private PeriodicTimer? _timer;
     private CancellationTokenSource? _pollingCts;
@@ -305,6 +370,15 @@
             ? "When parked, CurrentStepName is the saved resume pointer (the next step that will run after resume)."
             : "While running, CurrentStepName reflects current step progression.";
 
+    private bool CanInvoke(string actionKind) =>
+        !_loading && string.Equals(GetAction(actionKind)?.AvailabilityState, "available", StringComparison.Ordinal);
+
+    private string ActionReason(string actionKind) =>
+        GetAction(actionKind)?.ReasonCode ?? string.Empty;
+
+    private ControlActionAvailabilityDto? GetAction(string actionKind) =>
+        _actions.FirstOrDefault(x => string.Equals(x.ActionKind, actionKind, StringComparison.Ordinal));
+
     private async Task LoadAsync()
     {
         if (string.IsNullOrWhiteSpace(RunId))
@@ -318,7 +392,14 @@
         {
             _detail = await Client.GetRunAsync(RunId);
             if (_detail is null)
+            {
                 _error = "Run not found (404).";
+                _actions = Array.Empty<ControlActionAvailabilityDto>();
+            }
+            else
+            {
+                _actions = await Client.GetRunActionsAsync(RunId);
+            }
         }
         catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Forbidden)
         {

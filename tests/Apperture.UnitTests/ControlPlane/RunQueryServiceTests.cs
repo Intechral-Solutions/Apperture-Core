@@ -123,7 +123,12 @@ public sealed class RunQueryServiceTests
             OperationInstanceId = "i-op",
             OperationDefinitionId = "op.def",
             CreatedAt = DateTimeOffset.UtcNow,
-            Status = WorkflowLifecycleStatusNames.Failed
+            Status = WorkflowLifecycleStatusNames.Failed,
+            IdempotencyKey = "idem-op-1",
+            CorrelationId = "corr-op-1",
+            ParametersJson = "{\"force\":true}",
+            ClaimedBy = "worker-op",
+            ClaimedAt = DateTimeOffset.UtcNow.AddSeconds(30)
         });
         db.OperationInstances.Add(new OperationInstanceEntity
         {
@@ -154,6 +159,12 @@ public sealed class RunQueryServiceTests
         detail!.ExecutionKind.Should().Be("operation");
         detail.Error.Should().NotBeNull();
         detail.Error!.DetailsJson.Should().Contain("boom");
+        detail.StartIdempotencyKey.Should().Be("idem-op-1");
+        detail.StartCorrelationId.Should().Be("corr-op-1");
+        detail.StartParametersJson.Should().Contain("force");
+        detail.StartClaimedBy.Should().Be("worker-op");
+        detail.StartRequestedAt.Should().NotBeNull();
+        detail.StartClaimedAt.Should().NotBeNull();
     }
 
     [Fact]
@@ -185,7 +196,12 @@ public sealed class RunQueryServiceTests
             WorkflowInstanceId = "i1",
             WorkflowDefinitionId = "Sample.HelloWorld.HelloWorld",
             CreatedAt = DateTimeOffset.UtcNow.AddMinutes(-5),
-            Status = WorkflowLifecycleStatusNames.Running
+            Status = WorkflowLifecycleStatusNames.Running,
+            ParametersJson = "{\"name\":\"Ada\",\"count\":2}",
+            IdempotencyKey = "idem-wf-1",
+            CorrelationId = "corr-wf-1",
+            ClaimedBy = "worker-1",
+            ClaimedAt = DateTimeOffset.UtcNow.AddMinutes(-4)
         });
         db.WorkflowLifecycleEvents.Add(new WorkflowLifecycleEventEntity
         {
@@ -235,6 +251,12 @@ public sealed class RunQueryServiceTests
         detail.ControlRequests.Should().ContainSingle();
         detail.ControlRequests[0].ControlKind.Should().Be(WorkflowExternalControlKindNames.Park);
         detail.ControlRequests[0].Status.Should().Be(WorkflowExternalControlStatusNames.Queued);
+        detail.StartParametersJson.Should().Contain("\"name\":\"Ada\"");
+        detail.StartIdempotencyKey.Should().Be("idem-wf-1");
+        detail.StartCorrelationId.Should().Be("corr-wf-1");
+        detail.StartClaimedBy.Should().Be("worker-1");
+        detail.StartRequestedAt.Should().NotBeNull();
+        detail.StartClaimedAt.Should().NotBeNull();
     }
 
     [Fact]

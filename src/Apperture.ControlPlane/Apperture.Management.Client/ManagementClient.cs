@@ -54,6 +54,12 @@ public sealed class ManagementClient : IManagementClient
         return await _http.GetFromJsonAsync<RunDetailDto>($"runs/{runId}", cancellationToken).ConfigureAwait(false);
     }
 
+    public async Task<IReadOnlyList<ControlActionAvailabilityDto>> GetRunActionsAsync(string runId, CancellationToken cancellationToken = default)
+    {
+        var list = await _http.GetFromJsonAsync<ControlActionAvailabilityDto[]>($"runs/{runId}/actions", cancellationToken).ConfigureAwait(false);
+        return list ?? Array.Empty<ControlActionAvailabilityDto>();
+    }
+
     public async Task<CancelRunResult> CancelRunAsync(string runId, CancellationToken cancellationToken = default)
     {
         var response = await _http.PostAsync($"runs/{runId}/cancel", content: null, cancellationToken).ConfigureAwait(false);

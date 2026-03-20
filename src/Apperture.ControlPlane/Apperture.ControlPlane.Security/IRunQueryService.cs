@@ -46,6 +46,12 @@ public sealed record RunDetailDto(
     IReadOnlyList<RunLifecycleEventDto> LifecycleEvents,
     IReadOnlyList<RunStepInstanceDto> StepInstances,
     IReadOnlyList<RunControlRequestDto> ControlRequests,
+    string? StartIdempotencyKey,
+    string? StartCorrelationId,
+    string? StartParametersJson,
+    DateTimeOffset? StartRequestedAt,
+    string? StartClaimedBy,
+    DateTimeOffset? StartClaimedAt,
     string ExecutionKind = "workflow");
 
 public sealed record RunResultDto(
