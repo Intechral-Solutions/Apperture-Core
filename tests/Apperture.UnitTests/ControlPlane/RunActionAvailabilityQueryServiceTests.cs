@@ -49,6 +49,7 @@ public sealed class RunActionAvailabilityQueryServiceTests
 
         var service = new RunActionAvailabilityQueryService(
             db,
+            new RunKindResolver(db),
             NewProjection(),
             new AllowWorkflowReadAuthz(),
             new AllowOperationReadAuthz());
@@ -85,6 +86,7 @@ public sealed class RunActionAvailabilityQueryServiceTests
 
         var service = new RunActionAvailabilityQueryService(
             db,
+            new RunKindResolver(db),
             NewProjection(),
             new AllowWorkflowReadAuthz(),
             new AllowOperationReadAuthz());
@@ -121,6 +123,7 @@ public sealed class RunActionAvailabilityQueryServiceTests
 
         var service = new RunActionAvailabilityQueryService(
             db,
+            new RunKindResolver(db),
             NewProjection(),
             new DenyWorkflowReadAuthz(),
             new AllowOperationReadAuthz());

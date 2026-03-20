@@ -11,15 +11,18 @@ namespace Apperture.ControlPlane.Security;
 public sealed class RunTimelineQueryService : IRunTimelineQueryService
 {
     private readonly AppertureDbContext _db;
+    private readonly IRunKindResolver _runKinds;
     private readonly IWorkflowRunReadAuthorizationService _workflowReadAuthz;
     private readonly IOperationRunReadAuthorizationService _operationReadAuthz;
 
     public RunTimelineQueryService(
         AppertureDbContext db,
+        IRunKindResolver runKinds,
         IWorkflowRunReadAuthorizationService workflowReadAuthz,
         IOperationRunReadAuthorizationService operationReadAuthz)
     {
         _db = db;
+        _runKinds = runKinds;
         _workflowReadAuthz = workflowReadAuthz;
         _operationReadAuthz = operationReadAuthz;
     }
@@ -40,15 +43,17 @@ public sealed class RunTimelineQueryService : IRunTimelineQueryService
         if (run is null)
             return null;
 
-        var workflowStart = await _db.WorkflowStartRequests.AsNoTracking()
-            .FirstOrDefaultAsync(x => x.RunId == run.Id, cancellationToken);
-        var operationStart = await _db.OperationStartRequests.AsNoTracking()
-            .FirstOrDefaultAsync(x => x.RunId == run.Id, cancellationToken);
-
-        var isWorkflow = workflowStart is not null;
-        var isOperation = operationStart is not null;
-        if (isWorkflow == isOperation)
+        var runKind = await _runKinds.ResolveRunKindAsync(run.Id, cancellationToken);
+        if (runKind is null)
             return null;
+        var isWorkflow = string.Equals(runKind, RunKindNames.Workflow, StringComparison.Ordinal);
+
+        var workflowStart = isWorkflow
+            ? await _db.WorkflowStartRequests.AsNoTracking().FirstOrDefaultAsync(x => x.RunId == run.Id, cancellationToken)
+            : null;
+        var operationStart = isWorkflow
+            ? null
+            : await _db.OperationStartRequests.AsNoTracking().FirstOrDefaultAsync(x => x.RunId == run.Id, cancellationToken);
 
         if (isWorkflow)
             await _workflowReadAuthz.EnsureCanReadRunsAsync(new WorkflowDefinitionId(run.DefinitionId), cancellationToken);
@@ -260,7 +265,7 @@ public sealed class RunTimelineQueryService : IRunTimelineQueryService
 
         return new RunTimelineDto(
             RunId: run.Id,
-            ExecutionKind: isWorkflow ? "workflow" : "operation",
+            ExecutionKind: isWorkflow ? RunKindNames.Workflow : RunKindNames.Operation,
             Events: ordered);
     }
 

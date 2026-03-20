@@ -61,7 +61,7 @@ public sealed class RunTimelineQueryServiceTests
         });
         await db.SaveChangesAsync();
 
-        var service = new RunTimelineQueryService(db, new AllowWorkflowReadAuthz(), new AllowOperationReadAuthz());
+        var service = new RunTimelineQueryService(db, new RunKindResolver(db), new AllowWorkflowReadAuthz(), new AllowOperationReadAuthz());
         var timeline = await service.GetRunTimelineAsync(new OperationRunId("run-1"));
 
         timeline.Should().NotBeNull();
@@ -114,7 +114,7 @@ public sealed class RunTimelineQueryServiceTests
         });
         await db.SaveChangesAsync();
 
-        var service = new RunTimelineQueryService(db, new AllowWorkflowReadAuthz(), new AllowOperationReadAuthz());
+        var service = new RunTimelineQueryService(db, new RunKindResolver(db), new AllowWorkflowReadAuthz(), new AllowOperationReadAuthz());
         var timeline = await service.GetRunTimelineAsync(new OperationRunId("op-run"));
 
         timeline.Should().NotBeNull();
@@ -144,9 +144,51 @@ public sealed class RunTimelineQueryServiceTests
         });
         await db.SaveChangesAsync();
 
-        var service = new RunTimelineQueryService(db, new DenyWorkflowReadAuthz(), new AllowOperationReadAuthz());
+        var service = new RunTimelineQueryService(db, new RunKindResolver(db), new DenyWorkflowReadAuthz(), new AllowOperationReadAuthz());
         await Assert.ThrowsAsync<UnauthorizedAccessException>(async () =>
             await service.GetRunTimelineAsync(new OperationRunId("run-unauth")));
+    }
+
+    [Fact]
+    public async Task GetRunTimelineAsync_AddsCompletedBoundary_WhenNoLifecycleEventAtCompletedAt()
+    {
+        var t0 = DateTimeOffset.UtcNow.AddMinutes(-10);
+        var db = NewDb();
+        db.OperationRuns.Add(new OperationRunEntity
+        {
+            Id = "op-boundary",
+            WorkflowInstanceId = "op-i1",
+            DefinitionId = "op-1",
+            Status = WorkflowLifecycleStatusNames.Completed,
+            CreatedAt = t0,
+            CompletedAt = t0.AddMinutes(5)
+        });
+        db.OperationStartRequests.Add(new OperationStartRequestEntity
+        {
+            RunId = "op-boundary",
+            OperationInstanceId = "op-i1",
+            OperationDefinitionId = "op-1",
+            Status = WorkflowLifecycleStatusNames.Completed,
+            CreatedAt = t0
+        });
+        db.OperationLifecycleEvents.Add(new OperationLifecycleEventEntity
+        {
+            Id = 71,
+            RunId = "op-boundary",
+            OperationInstanceId = "op-i1",
+            OperationDefinitionId = "op-1",
+            EventType = OperationLifecycleEventNames.Completed,
+            FromStatus = WorkflowLifecycleStatusNames.Running,
+            ToStatus = WorkflowLifecycleStatusNames.Completed,
+            OccurredAt = t0.AddMinutes(4)
+        });
+        await db.SaveChangesAsync();
+
+        var service = new RunTimelineQueryService(db, new RunKindResolver(db), new AllowWorkflowReadAuthz(), new AllowOperationReadAuthz());
+        var timeline = await service.GetRunTimelineAsync(new OperationRunId("op-boundary"));
+
+        timeline.Should().NotBeNull();
+        timeline!.Events.Any(e => e.EventKind == RunTimeline.EventKindRunCompletedBoundary).Should().BeTrue();
     }
 
     private static AppertureDbContext NewDb()

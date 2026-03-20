@@ -256,129 +256,129 @@
             </div>
 
             <div class="rounded border border-default bg-surface p-3">
-                <div class="flex items-center justify-between">
-                    <div>
-                        <div class="text-sm font-semibold text-heading">Lifecycle</div>
-                        <div class="text-xs text-muted">Truthful event trail (ordered).</div>
+                <details>
+                    <summary class="cursor-pointer text-sm font-semibold text-heading">Supporting records (non-canonical)</summary>
+                    <div class="mt-2 text-xs text-muted">
+                        Execution timeline above is the canonical history narrative. The records below are raw supporting evidence.
                     </div>
-                </div>
+                    <div class="mt-3 grid gap-4">
+                        <div>
+                            <div class="text-sm font-semibold text-heading">Lifecycle records</div>
+                            @if (_detail.LifecycleEvents.Count == 0)
+                            {
+                                <div class="mt-2 text-sm text-muted">No lifecycle events.</div>
+                            }
+                            else
+                            {
+                                <div class="mt-2 overflow-x-auto">
+                                    <table class="min-w-full text-left text-sm text-body">
+                                        <thead class="border-b border-default text-xs text-muted">
+                                            <tr>
+                                                <th class="px-2 py-2">At</th>
+                                                <th class="px-2 py-2">Event</th>
+                                                <th class="px-2 py-2">From</th>
+                                                <th class="px-2 py-2">To</th>
+                                                <th class="px-2 py-2">Step</th>
+                                                <th class="px-2 py-2">Details</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            @foreach (var e in _detail.LifecycleEvents)
+                                            {
+                                                <tr class="border-b border-default">
+                                                    <td class="px-2 py-2">@e.OccurredAt.ToLocalTime().ToString("u")</td>
+                                                    <td class="px-2 py-2 font-mono text-xs">@e.EventType</td>
+                                                    <td class="px-2 py-2">@e.FromStatus</td>
+                                                    <td class="px-2 py-2">@e.ToStatus</td>
+                                                    <td class="px-2 py-2 font-mono text-xs">@e.StepName</td>
+                                                    <td class="px-2 py-2 font-mono text-xs break-all">@e.DetailsJson</td>
+                                                </tr>
+                                            }
+                                        </tbody>
+                                    </table>
+                                </div>
+                            }
+                        </div>
 
-                @if (_detail.LifecycleEvents.Count == 0)
-                {
-                    <div class="mt-2 text-sm text-muted">No lifecycle events.</div>
-                }
-                else
-                {
-                    <div class="mt-2 overflow-x-auto">
-                        <table class="min-w-full text-left text-sm text-body">
-                            <thead class="border-b border-default text-xs text-muted">
-                                <tr>
-                                    <th class="px-2 py-2">At</th>
-                                    <th class="px-2 py-2">Event</th>
-                                    <th class="px-2 py-2">From</th>
-                                    <th class="px-2 py-2">To</th>
-                                    <th class="px-2 py-2">Step</th>
-                                    <th class="px-2 py-2">Details</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                @foreach (var e in _detail.LifecycleEvents)
-                                {
-                                    <tr class="border-b border-default">
-                                        <td class="px-2 py-2">@e.OccurredAt.ToLocalTime().ToString("u")</td>
-                                        <td class="px-2 py-2 font-mono text-xs">@e.EventType</td>
-                                        <td class="px-2 py-2">@e.FromStatus</td>
-                                        <td class="px-2 py-2">@e.ToStatus</td>
-                                        <td class="px-2 py-2 font-mono text-xs">@e.StepName</td>
-                                        <td class="px-2 py-2 font-mono text-xs break-all">@e.DetailsJson</td>
-                                    </tr>
-                                }
-                            </tbody>
-                        </table>
+                        <div>
+                            <div class="text-sm font-semibold text-heading">Step records</div>
+                            @if (_detail.StepInstances.Count == 0)
+                            {
+                                <div class="mt-2 text-sm text-muted">No step instances.</div>
+                            }
+                            else
+                            {
+                                <div class="mt-2 overflow-x-auto">
+                                    <table class="min-w-full text-left text-sm text-body">
+                                        <thead class="border-b border-default text-xs text-muted">
+                                            <tr>
+                                                <th class="px-2 py-2">Step</th>
+                                                <th class="px-2 py-2">Attempt</th>
+                                                <th class="px-2 py-2">Status</th>
+                                                <th class="px-2 py-2">Started</th>
+                                                <th class="px-2 py-2">Ended</th>
+                                                <th class="px-2 py-2">Error</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            @foreach (var s in _detail.StepInstances)
+                                            {
+                                                <tr class="border-b border-default">
+                                                    <td class="px-2 py-2 font-mono text-xs">@s.StepName</td>
+                                                    <td class="px-2 py-2">@s.Attempt</td>
+                                                    <td class="px-2 py-2">@s.Status</td>
+                                                    <td class="px-2 py-2">@Fmt(s.StartedAt)</td>
+                                                    <td class="px-2 py-2">@Fmt(s.EndedAt)</td>
+                                                    <td class="px-2 py-2 text-xs break-all">@s.Error</td>
+                                                </tr>
+                                            }
+                                        </tbody>
+                                    </table>
+                                </div>
+                            }
+                        </div>
+
+                        <div>
+                            <div class="text-sm font-semibold text-heading">External control request records</div>
+                            @if (_detail.ControlRequests.Count == 0)
+                            {
+                                <div class="mt-2 text-sm text-muted">No external control requests.</div>
+                            }
+                            else
+                            {
+                                <div class="mt-2 overflow-x-auto">
+                                    <table class="min-w-full text-left text-sm text-body">
+                                        <thead class="border-b border-default text-xs text-muted">
+                                            <tr>
+                                                <th class="px-2 py-2">Kind</th>
+                                                <th class="px-2 py-2">Status</th>
+                                                <th class="px-2 py-2">Requested</th>
+                                                <th class="px-2 py-2">Requested by</th>
+                                                <th class="px-2 py-2">Applied</th>
+                                                <th class="px-2 py-2">Applied by</th>
+                                                <th class="px-2 py-2">Last error</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            @foreach (var c in _detail.ControlRequests)
+                                            {
+                                                <tr class="border-b border-default">
+                                                    <td class="px-2 py-2 font-mono text-xs">@c.ControlKind</td>
+                                                    <td class="px-2 py-2">@c.Status</td>
+                                                    <td class="px-2 py-2">@c.RequestedAt.ToLocalTime().ToString("u")</td>
+                                                    <td class="px-2 py-2">@c.RequestedBy</td>
+                                                    <td class="px-2 py-2">@Fmt(c.AppliedAt)</td>
+                                                    <td class="px-2 py-2">@c.AppliedBy</td>
+                                                    <td class="px-2 py-2 text-xs break-all">@c.LastError</td>
+                                                </tr>
+                                            }
+                                        </tbody>
+                                    </table>
+                                </div>
+                            }
+                        </div>
                     </div>
-                }
-            </div>
-
-            <div class="rounded border border-default bg-surface p-3">
-                <div class="text-sm font-semibold text-heading">Step history</div>
-                <div class="text-xs text-muted">Per-step execution trail (ordered by step/attempt).</div>
-
-                @if (_detail.StepInstances.Count == 0)
-                {
-                    <div class="mt-2 text-sm text-muted">No step instances.</div>
-                }
-                else
-                {
-                    <div class="mt-2 overflow-x-auto">
-                        <table class="min-w-full text-left text-sm text-body">
-                            <thead class="border-b border-default text-xs text-muted">
-                                <tr>
-                                    <th class="px-2 py-2">Step</th>
-                                    <th class="px-2 py-2">Attempt</th>
-                                    <th class="px-2 py-2">Status</th>
-                                    <th class="px-2 py-2">Started</th>
-                                    <th class="px-2 py-2">Ended</th>
-                                    <th class="px-2 py-2">Error</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                @foreach (var s in _detail.StepInstances)
-                                {
-                                    <tr class="border-b border-default">
-                                        <td class="px-2 py-2 font-mono text-xs">@s.StepName</td>
-                                        <td class="px-2 py-2">@s.Attempt</td>
-                                        <td class="px-2 py-2">@s.Status</td>
-                                        <td class="px-2 py-2">@Fmt(s.StartedAt)</td>
-                                        <td class="px-2 py-2">@Fmt(s.EndedAt)</td>
-                                        <td class="px-2 py-2 text-xs break-all">@s.Error</td>
-                                    </tr>
-                                }
-                            </tbody>
-                        </table>
-                    </div>
-                }
-            </div>
-
-            <div class="rounded border border-default bg-surface p-3">
-                <div class="text-sm font-semibold text-heading">External control requests</div>
-                <div class="text-xs text-muted">Park/resume requests are queued and applied by the worker at safe boundaries.</div>
-
-                @if (_detail.ControlRequests.Count == 0)
-                {
-                    <div class="mt-2 text-sm text-muted">No external control requests.</div>
-                }
-                else
-                {
-                    <div class="mt-2 overflow-x-auto">
-                        <table class="min-w-full text-left text-sm text-body">
-                            <thead class="border-b border-default text-xs text-muted">
-                                <tr>
-                                    <th class="px-2 py-2">Kind</th>
-                                    <th class="px-2 py-2">Status</th>
-                                    <th class="px-2 py-2">Requested</th>
-                                    <th class="px-2 py-2">Requested by</th>
-                                    <th class="px-2 py-2">Applied</th>
-                                    <th class="px-2 py-2">Applied by</th>
-                                    <th class="px-2 py-2">Last error</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                @foreach (var c in _detail.ControlRequests)
-                                {
-                                    <tr class="border-b border-default">
-                                        <td class="px-2 py-2 font-mono text-xs">@c.ControlKind</td>
-                                        <td class="px-2 py-2">@c.Status</td>
-                                        <td class="px-2 py-2">@c.RequestedAt.ToLocalTime().ToString("u")</td>
-                                        <td class="px-2 py-2">@c.RequestedBy</td>
-                                        <td class="px-2 py-2">@Fmt(c.AppliedAt)</td>
-                                        <td class="px-2 py-2">@c.AppliedBy</td>
-                                        <td class="px-2 py-2 text-xs break-all">@c.LastError</td>
-                                    </tr>
-                                }
-                            </tbody>
-                        </table>
-                    </div>
-                }
+                </details>
             </div>
         </div>
     }

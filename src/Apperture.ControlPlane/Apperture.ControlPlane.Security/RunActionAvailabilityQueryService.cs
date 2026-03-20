@@ -12,17 +12,20 @@ namespace Apperture.ControlPlane.Security;
 public sealed class RunActionAvailabilityQueryService : IRunActionAvailabilityQueryService
 {
     private readonly AppertureDbContext _db;
+    private readonly IRunKindResolver _runKinds;
     private readonly IControlActionAvailabilityProjection _projection;
     private readonly IWorkflowRunReadAuthorizationService _workflowReadAuthz;
     private readonly IOperationRunReadAuthorizationService _operationReadAuthz;
 
     public RunActionAvailabilityQueryService(
         AppertureDbContext db,
+        IRunKindResolver runKinds,
         IControlActionAvailabilityProjection projection,
         IWorkflowRunReadAuthorizationService workflowReadAuthz,
         IOperationRunReadAuthorizationService operationReadAuthz)
     {
         _db = db;
+        _runKinds = runKinds;
         _projection = projection;
         _workflowReadAuthz = workflowReadAuthz;
         _operationReadAuthz = operationReadAuthz;
@@ -49,12 +52,10 @@ public sealed class RunActionAvailabilityQueryService : IRunActionAvailabilityQu
         if (run is null)
             return null;
 
-        var isWorkflow = await _db.WorkflowStartRequests.AsNoTracking()
-            .AnyAsync(x => x.RunId == run.Id, cancellationToken);
-        var isOperation = await _db.OperationStartRequests.AsNoTracking()
-            .AnyAsync(x => x.RunId == run.Id, cancellationToken);
-        if (isWorkflow == isOperation)
+        var runKind = await _runKinds.ResolveRunKindAsync(run.Id, cancellationToken);
+        if (runKind is null)
             return null;
+        var isWorkflow = string.Equals(runKind, RunKindNames.Workflow, StringComparison.Ordinal);
 
         if (isWorkflow)
             await _workflowReadAuthz.EnsureCanReadRunsAsync(new WorkflowDefinitionId(run.DefinitionId), cancellationToken);
@@ -86,7 +87,7 @@ public sealed class RunActionAvailabilityQueryService : IRunActionAvailabilityQu
             CompletedAt: run.CompletedAt,
             CorrelationKey: run.CorrelationKey,
             RetryOfRunId: run.RetryOfRunId,
-            ExecutionKind: isWorkflow ? "workflow" : "operation");
+            ExecutionKind: isWorkflow ? RunKindNames.Workflow : RunKindNames.Operation);
 
         return await _projection.ProjectExecutionRunActionsAsync(summary, hasQueuedPark, hasQueuedResume, cancellationToken);
     }

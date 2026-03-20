@@ -84,6 +84,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IOperationStartAuthorizationService, OperationStartAuthorizationService>();
         services.AddScoped<IOperationInputValidationService, OperationInputValidationService>();
         services.AddScoped<IOperationStartDispatchService, OperationStartDispatchService>();
+        services.AddScoped<IRunKindResolver, RunKindResolver>();
         services.AddScoped<IRunQueryService, RunQueryService>();
         services.AddScoped<IRunActionAvailabilityQueryService, RunActionAvailabilityQueryService>();
         services.AddScoped<IRunTimelineQueryService, RunTimelineQueryService>();

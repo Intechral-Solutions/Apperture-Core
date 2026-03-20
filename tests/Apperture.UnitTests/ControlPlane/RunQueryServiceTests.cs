@@ -35,7 +35,7 @@ public sealed class RunQueryServiceTests
         });
         await db.SaveChangesAsync();
 
-        var service = new RunQueryService(db, new StubOperationRegistry(), new AllowReadAuthz(), new AllowOperationReadAuthz());
+        var service = new RunQueryService(db, new StubOperationRegistry(), new RunKindResolver(db), new AllowReadAuthz(), new AllowOperationReadAuthz());
         var all = await service.ListRunsAsync();
 
         all.Should().HaveCount(2);
@@ -68,7 +68,7 @@ public sealed class RunQueryServiceTests
         });
         await db.SaveChangesAsync();
 
-        var service = new RunQueryService(db, new StubOperationRegistry(), new AllowReadAuthz(), new AllowOperationReadAuthz());
+        var service = new RunQueryService(db, new StubOperationRegistry(), new RunKindResolver(db), new AllowReadAuthz(), new AllowOperationReadAuthz());
         var operationsOnly = await service.ListRunsAsync(new RunQueryFilter(ExecutionKind: "operation"));
 
         operationsOnly.Should().ContainSingle();
@@ -99,7 +99,7 @@ public sealed class RunQueryServiceTests
         });
         await db.SaveChangesAsync();
 
-        var service = new RunQueryService(db, new StubOperationRegistry(), new AllowReadAuthz(), new AllowOperationReadAuthz());
+        var service = new RunQueryService(db, new StubOperationRegistry(), new RunKindResolver(db), new AllowReadAuthz(), new AllowOperationReadAuthz());
         var all = await service.ListRunsAsync();
 
         all.Should().BeEmpty();
@@ -152,7 +152,7 @@ public sealed class RunQueryServiceTests
         });
         await db.SaveChangesAsync();
 
-        var service = new RunQueryService(db, new StubOperationRegistry(), new AllowReadAuthz(), new AllowOperationReadAuthz());
+        var service = new RunQueryService(db, new StubOperationRegistry(), new RunKindResolver(db), new AllowReadAuthz(), new AllowOperationReadAuthz());
         var detail = await service.GetRunAsync(new OperationRunId("rop"));
 
         detail.Should().NotBeNull();
@@ -237,7 +237,7 @@ public sealed class RunQueryServiceTests
         });
         await db.SaveChangesAsync();
 
-        var service = new RunQueryService(db, new StubOperationRegistry(), new AllowReadAuthz(), new AllowOperationReadAuthz());
+        var service = new RunQueryService(db, new StubOperationRegistry(), new RunKindResolver(db), new AllowReadAuthz(), new AllowOperationReadAuthz());
 
         var detail = await service.GetRunAsync(new OperationRunId("r1"));
 
@@ -340,7 +340,7 @@ public sealed class RunQueryServiceTests
             });
         await db.SaveChangesAsync();
 
-        var detail = await new RunQueryService(db, new StubOperationRegistry(), new AllowReadAuthz(), new AllowOperationReadAuthz()).GetRunAsync(new OperationRunId("r1"));
+        var detail = await new RunQueryService(db, new StubOperationRegistry(), new RunKindResolver(db), new AllowReadAuthz(), new AllowOperationReadAuthz()).GetRunAsync(new OperationRunId("r1"));
 
         detail.Should().NotBeNull();
         detail!.Status.Should().Be(WorkflowLifecycleStatusNames.Parked);
@@ -445,7 +445,7 @@ public sealed class RunQueryServiceTests
             });
         await db.SaveChangesAsync();
 
-        var detail = await new RunQueryService(db, new StubOperationRegistry(), new AllowReadAuthz(), new AllowOperationReadAuthz()).GetRunAsync(new OperationRunId("r1"));
+        var detail = await new RunQueryService(db, new StubOperationRegistry(), new RunKindResolver(db), new AllowReadAuthz(), new AllowOperationReadAuthz()).GetRunAsync(new OperationRunId("r1"));
 
         detail.Should().NotBeNull();
         detail!.Status.Should().Be(WorkflowLifecycleStatusNames.Running);
