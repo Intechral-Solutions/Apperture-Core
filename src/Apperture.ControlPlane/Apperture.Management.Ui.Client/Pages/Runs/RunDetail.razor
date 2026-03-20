@@ -182,7 +182,7 @@
 
             <div class="rounded border border-default bg-surface p-3">
                 <div class="text-sm font-semibold text-heading">Result</div>
-                <div class="text-xs text-muted">Normalized outcome for this execution.</div>
+                <div class="text-xs text-muted">Outcome, summary, and captured output from persisted execution.</div>
                 <div class="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2">
                     <div>
                         <div class="text-xs text-muted">Outcome</div>
@@ -192,6 +192,10 @@
                         <div class="text-xs text-muted">Summary</div>
                         <div class="text-sm text-body">@_detail.Result?.Summary</div>
                     </div>
+                    <div>
+                        <div class="text-xs text-muted">Output availability</div>
+                        <div class="text-sm font-mono text-body">@(_detail.Result?.OutputAvailability ?? "none")</div>
+                    </div>
                 </div>
                 @if (_detail.Error is not null)
                 {
@@ -200,6 +204,21 @@
                         <div class="text-sm text-body">@_detail.Error.Category: @_detail.Error.Message</div>
                         <div class="text-xs font-mono break-all text-muted">@_detail.Error.DetailsJson</div>
                     </div>
+                }
+                @if (HasDisplayableOutput)
+                {
+                    <div class="mt-2">
+                        <div class="text-xs text-muted">Captured output</div>
+                        @if (IsTruncated)
+                        {
+                            <div class="text-xs text-muted">Output was truncated at persistence.</div>
+                        }
+                        <pre class="mt-1 max-h-64 overflow-auto rounded border border-default bg-surface-muted p-2 text-xs text-body"><code>@_detail.Result?.PayloadJson</code></pre>
+                    </div>
+                }
+                else if (ShowOutputUnavailable)
+                {
+                    <div class="mt-2 text-sm text-muted">@OutputUnavailableMessage</div>
                 }
             </div>
 
@@ -431,6 +450,30 @@
 
     private ControlActionAvailabilityDto? GetAction(string actionKind) =>
         _actions.FirstOrDefault(x => string.Equals(x.ActionKind, actionKind, StringComparison.Ordinal));
+
+    private bool HasDisplayableOutput =>
+        _detail?.Result is not null &&
+        (string.Equals(_detail.Result.OutputAvailability, "captured", StringComparison.Ordinal) ||
+         string.Equals(_detail.Result.OutputAvailability, "truncated", StringComparison.Ordinal)) &&
+        !string.IsNullOrEmpty(_detail.Result.PayloadJson);
+
+    private bool IsTruncated =>
+        string.Equals(_detail?.Result?.OutputAvailability, "truncated", StringComparison.Ordinal);
+
+    private bool ShowOutputUnavailable =>
+        _detail?.Result is not null &&
+        (string.Equals(_detail.Result.OutputAvailability, "none", StringComparison.Ordinal) ||
+         string.Equals(_detail.Result.OutputAvailability, "empty", StringComparison.Ordinal) ||
+         string.Equals(_detail.Result.OutputAvailability, "unsupported", StringComparison.Ordinal));
+
+    private string OutputUnavailableMessage =>
+        _detail?.Result?.OutputAvailability switch
+        {
+            "none" => "No captured output for this run.",
+            "empty" => "Handler returned no output.",
+            "unsupported" => "Output could not be captured safely.",
+            _ => "Output not available."
+        };
 
     private async Task LoadAsync()
     {

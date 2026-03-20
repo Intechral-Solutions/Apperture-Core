@@ -56,6 +56,16 @@ The Management API (control plane) exposes REST endpoints for module registry, w
   - operation run: present in `OperationStartRequests` only
   - ambiguous/unknown ownership is treated as non-projectable.
 
+## Run result and output (Epic 20)
+
+- `GET /runs/{id}` returns `RunDetailDto` with `Result` (`RunResultDto`).
+- `RunResultDto` includes:
+  - `Outcome`, `Summary`: terminal outcome (derived from status) and human-readable summary.
+  - `PayloadJson`: operator-visible captured output JSON when `OutputAvailability` is `captured` or `truncated`.
+  - `OutputAvailability`: `none`, `empty`, `captured`, `truncated`, or `unsupported` (see ADR-0019).
+- Captured output is persisted on successful terminal completion (last step's return value).
+- Legacy runs (pre-migration) show `OutputAvailability: none`; no payload.
+
 ## Governance API notes
 
 - Permission assignment endpoints are intentionally API-first; UI can remain thin while governance semantics stabilize.

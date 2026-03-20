@@ -22,7 +22,7 @@ public sealed class HelloWorldCompleteStepHandler : IStepHandler
             conn.Open();
             try
             {
-                return null;
+                return new { message = "HelloWorld workflow completed.", step = "Complete" };
             }
             finally
             {

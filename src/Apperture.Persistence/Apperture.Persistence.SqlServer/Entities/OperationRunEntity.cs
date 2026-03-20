@@ -10,4 +10,24 @@ public sealed class OperationRunEntity
     public DateTimeOffset? CompletedAt { get; set; }
     public string? CorrelationKey { get; set; }
     public string? RetryOfRunId { get; set; }
+
+    /// <summary>
+    /// Captured output from the last step on successful terminal completion. Serialized JSON or null.
+    /// </summary>
+    public string? CapturedOutputJson { get; set; }
+
+    /// <summary>
+    /// Short human-readable summary when derivable (e.g. string return, or message property).
+    /// </summary>
+    public string? CapturedOutputSummary { get; set; }
+
+    /// <summary>
+    /// Capture status: none, empty, captured, truncated, unsupported. See ADR-0019.
+    /// </summary>
+    public string? CapturedOutputStatus { get; set; }
+
+    /// <summary>
+    /// Schema version for captured output envelope evolution.
+    /// </summary>
+    public int CapturedOutputVersion { get; set; }
 }

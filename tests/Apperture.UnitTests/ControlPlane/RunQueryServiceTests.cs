@@ -458,6 +458,51 @@ public sealed class RunQueryServiceTests
         detail.ControlRequests.Should().OnlyContain(c => c.Status == WorkflowExternalControlStatusNames.Applied);
     }
 
+    [Fact]
+    public async Task GetRunAsync_WhenRunHasCapturedOutput_ProjectsPayloadAndAvailability()
+    {
+        var db = NewDb();
+        db.WorkflowInstances.Add(new WorkflowInstanceEntity
+        {
+            Id = "i1",
+            DefinitionId = "Sample.HelloWorld.HelloWorld",
+            Status = WorkflowLifecycleStatusNames.Completed,
+            CreatedAt = DateTimeOffset.UtcNow.AddHours(-1),
+            UpdatedAt = DateTimeOffset.UtcNow,
+            Version = 1
+        });
+        db.OperationRuns.Add(new OperationRunEntity
+        {
+            Id = "r1",
+            WorkflowInstanceId = "i1",
+            DefinitionId = "Sample.HelloWorld.HelloWorld",
+            Status = WorkflowLifecycleStatusNames.Completed,
+            CreatedAt = DateTimeOffset.UtcNow.AddHours(-1),
+            CompletedAt = DateTimeOffset.UtcNow,
+            CapturedOutputJson = "{\"message\":\"HelloWorld workflow completed.\",\"step\":\"Complete\"}",
+            CapturedOutputSummary = "HelloWorld workflow completed.",
+            CapturedOutputStatus = "captured",
+            CapturedOutputVersion = 1
+        });
+        db.WorkflowStartRequests.Add(new WorkflowStartRequestEntity
+        {
+            RunId = "r1",
+            WorkflowInstanceId = "i1",
+            WorkflowDefinitionId = "Sample.HelloWorld.HelloWorld",
+            CreatedAt = DateTimeOffset.UtcNow.AddHours(-1),
+            Status = WorkflowLifecycleStatusNames.Completed
+        });
+        await db.SaveChangesAsync();
+
+        var detail = await new RunQueryService(db, new StubOperationRegistry(), new RunKindResolver(db), new AllowReadAuthz(), new AllowOperationReadAuthz()).GetRunAsync(new OperationRunId("r1"));
+
+        detail.Should().NotBeNull();
+        detail!.Result.Should().NotBeNull();
+        detail.Result!.PayloadJson.Should().Contain("HelloWorld workflow completed.");
+        detail.Result.OutputAvailability.Should().Be("captured");
+        detail.Result.Summary.Should().Be("HelloWorld workflow completed.");
+    }
+
     private static AppertureDbContext NewDb()
     {
         var opts = new DbContextOptionsBuilder<AppertureDbContext>()

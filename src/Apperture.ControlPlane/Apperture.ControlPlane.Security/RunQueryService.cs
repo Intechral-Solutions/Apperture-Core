@@ -180,7 +180,7 @@ public sealed class RunQueryService : IRunQueryService
                 r.CorrelationKey,
                 r.RetryOfRunId,
                 instance?.CurrentStepName,
-                BuildResultFromStatus(r.Status),
+                BuildResult(r.Status, r.CapturedOutputJson, r.CapturedOutputSummary, r.CapturedOutputStatus),
                 null,
                 lifecycleEvents,
                 stepInstances,
@@ -240,7 +240,7 @@ public sealed class RunQueryService : IRunQueryService
             r.CorrelationKey,
             r.RetryOfRunId,
             operationInstance?.CurrentStepName,
-            BuildResultFromStatus(r.Status),
+            BuildResult(r.Status, r.CapturedOutputJson, r.CapturedOutputSummary, r.CapturedOutputStatus),
             opError,
             opLifecycleEvents,
             opStepInstances,
@@ -254,7 +254,11 @@ public sealed class RunQueryService : IRunQueryService
             RunKindNames.Operation);
     }
 
-    private static RunResultDto BuildResultFromStatus(string status)
+    private static RunResultDto BuildResult(
+        string status,
+        string? capturedOutputJson,
+        string? capturedOutputSummary,
+        string? capturedOutputStatus)
     {
         var outcome = status.ToLowerInvariant() switch
         {
@@ -264,7 +268,7 @@ public sealed class RunQueryService : IRunQueryService
             _ => "in_progress"
         };
 
-        var summary = outcome switch
+        var baseSummary = outcome switch
         {
             "succeeded" => "Execution completed successfully.",
             "cancelled" => "Execution was cancelled.",
@@ -272,7 +276,17 @@ public sealed class RunQueryService : IRunQueryService
             _ => "Execution is still in progress."
         };
 
-        return new RunResultDto(outcome, summary, PayloadJson: null, DiagnosticsJson: null);
+        var summary = !string.IsNullOrWhiteSpace(capturedOutputSummary) && outcome == "succeeded"
+            ? capturedOutputSummary
+            : baseSummary;
+
+        var payloadJson = (capturedOutputStatus == RunOutputCapture.StatusCaptured || capturedOutputStatus == RunOutputCapture.StatusTruncated)
+            ? capturedOutputJson
+            : null;
+
+        var outputAvailability = capturedOutputStatus ?? RunOutputCapture.StatusNone;
+
+        return new RunResultDto(outcome, summary, payloadJson, DiagnosticsJson: null, outputAvailability);
     }
 
     private static RunErrorDto? BuildOperationError(IReadOnlyList<RunLifecycleEventDto> lifecycleEvents)

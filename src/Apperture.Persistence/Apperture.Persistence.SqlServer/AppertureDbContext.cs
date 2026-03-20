@@ -72,6 +72,9 @@ public class AppertureDbContext : DbContext
             e.Property(x => x.Status).HasMaxLength(32);
             e.Property(x => x.CorrelationKey).HasMaxLength(256);
             e.Property(x => x.RetryOfRunId).HasMaxLength(64);
+            e.Property(x => x.CapturedOutputJson).HasColumnType("nvarchar(max)");
+            e.Property(x => x.CapturedOutputSummary).HasMaxLength(512);
+            e.Property(x => x.CapturedOutputStatus).HasMaxLength(32);
             e.HasIndex(x => x.RetryOfRunId);
         });
 

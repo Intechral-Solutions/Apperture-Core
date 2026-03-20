@@ -93,7 +93,8 @@ public sealed record RunResultDto(
     string Outcome,
     string Summary,
     string? PayloadJson,
-    string? DiagnosticsJson);
+    string? DiagnosticsJson,
+    string? OutputAvailability = null);
 
 public sealed record RunErrorDto(
     string Category,

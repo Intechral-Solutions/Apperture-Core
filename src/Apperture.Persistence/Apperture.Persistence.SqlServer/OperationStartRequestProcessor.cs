@@ -237,9 +237,6 @@ WHERE RunId = {runId} AND (
                     parameters,
                     cancellationToken);
 
-                // (Result is intentionally ignored for MVP; outputs are not yet a first-class operation concept.)
-                _ = result;
-
                 // Heartbeat after step completion: detect ownership loss and stop safely without writing terminal lifecycle state.
                 activeStep.Status = WorkflowLifecycleStatusNames.Completed;
                 activeStep.EndedAt = DateTimeOffset.UtcNow;
@@ -268,6 +265,12 @@ WHERE RunId = {runId} AND (
                 request.ClaimedAt = null;
                 request.ClaimedBy = null;
                 request.LastError = null;
+
+                var capture = RunOutputCapture.TryCapture(result);
+                run.CapturedOutputJson = capture.CapturedOutputJson;
+                run.CapturedOutputSummary = capture.CapturedOutputSummary;
+                run.CapturedOutputStatus = capture.CapturedOutputStatus;
+                run.CapturedOutputVersion = capture.CapturedOutputVersion;
 
                 await RejectQueuedCancelRequestsAsync(runId, cancellationToken);
 

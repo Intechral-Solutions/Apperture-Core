@@ -241,6 +241,7 @@ WHERE RunId = {runId} AND (
                     startIndex = FindStepIndex(definition.StepNames, instance.CurrentStepName);
                 }
 
+                object? lastStepResult = null;
                 for (var stepIndex = startIndex; stepIndex < definition.StepNames.Count; stepIndex++)
                 {
                     var stepName = definition.StepNames[stepIndex];
@@ -295,7 +296,7 @@ WHERE RunId = {runId} AND (
                         instance.CurrentStepName,
                         instance.Version);
 
-                    await _executor.ExecuteStepAsync(definition, stepName, domainInstance, parameters, cancellationToken);
+                    lastStepResult = await _executor.ExecuteStepAsync(definition, stepName, domainInstance, parameters, cancellationToken);
 
                     activeStep.Status = WorkflowLifecycleStatusNames.Completed;
                     activeStep.EndedAt = DateTimeOffset.UtcNow;
@@ -325,6 +326,13 @@ WHERE RunId = {runId} AND (
                 request.ClaimedAt = null;
                 request.ClaimedBy = null;
                 request.LastError = null;
+
+                var capture = RunOutputCapture.TryCapture(lastStepResult);
+                run.CapturedOutputJson = capture.CapturedOutputJson;
+                run.CapturedOutputSummary = capture.CapturedOutputSummary;
+                run.CapturedOutputStatus = capture.CapturedOutputStatus;
+                run.CapturedOutputVersion = capture.CapturedOutputVersion;
+
                 await RejectQueuedParkRequestAsync(runId, cancellationToken);
                 _db.WorkflowLifecycleEvents.Add(new WorkflowLifecycleEventEntity
                 {

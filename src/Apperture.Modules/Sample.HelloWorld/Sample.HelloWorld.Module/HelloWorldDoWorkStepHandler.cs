@@ -23,7 +23,7 @@ public sealed class HelloWorldDoWorkStepHandler : IStepHandler
             conn.Open();
             try
             {
-                return null;
+                return new { message = "HelloWorld operation completed.", step = "DoWork" };
             }
             finally
             {
