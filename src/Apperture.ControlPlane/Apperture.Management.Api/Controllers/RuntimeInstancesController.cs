@@ -1,6 +1,7 @@
 using Apperture.ControlPlane.Security;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Governance;
+using Apperture.Core.Domain.Runtime;
 using Apperture.Core.Security.Trust;
 using Apperture.Shared.Kernel;
 using Microsoft.AspNetCore.Authorization;
@@ -10,7 +11,7 @@ namespace Apperture.Management.Api.Controllers;
 
 /// <summary>
 /// Operator-facing runtime inspection surfaces.
-/// Invitation scopes are treated as declared metadata (strings), not as platform-governed capabilities.
+/// Runtime invitation scopes are interpreted as governed runtime capabilities (validated against the platform catalog).
 /// </summary>
 [ApiController]
 [Route("api/runtime-instances")]
@@ -35,14 +36,14 @@ public sealed class RuntimeInstancesController : ControllerBase
     }
 
     /// <summary>
-    /// Lists runtime declared capability metadata (invitation scopes).
-    /// Requires runtime.read on the environment-scoped runtime instance scope.
+    /// Lists runtimes and their governed runtime capabilities.
+    /// Requires `runtime.read` on the environment-scoped runtime instance scope.
     /// </summary>
     [HttpGet]
-    [ProducesResponseType(typeof(IReadOnlyList<RuntimeDeclaredMetadataDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(IReadOnlyList<RuntimeCapabilitiesDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
-    public async ValueTask<ActionResult<IReadOnlyList<RuntimeDeclaredMetadataDto>>> GetAll(
+    public async ValueTask<ActionResult<IReadOnlyList<RuntimeCapabilitiesDto>>> GetAll(
         CancellationToken cancellationToken = default)
     {
         var actor = await _principalContext.GetCurrentActorAsync(cancellationToken);
@@ -62,23 +63,24 @@ public sealed class RuntimeInstancesController : ControllerBase
         if (!allowed)
             return Forbid();
 
-        // Durable source: operator discovery is backed by the persisted runtime identities table,
+        // Durable source: operator discovery is backed by persisted runtime identities (DB-backed),
         // not any in-memory descriptor registry.
         var identities = await _runtimeIdentity.GetAllAsync(cancellationToken);
-        var dtos = identities.Select(i => new RuntimeDeclaredMetadataDto(i.Id, i.DeclaredScopes)).ToList();
+        var dtos = identities.Select(i =>
+            new RuntimeCapabilitiesDto(i.Id, MapCapabilities(i.DeclaredScopes))).ToList();
         return Ok(dtos);
     }
 
     /// <summary>
-    /// Gets runtime declared capability metadata (invitation scopes).
-    /// Requires runtime.read on the runtime instance scope.
+    /// Gets runtime governed capabilities.
+    /// Requires `runtime.read` on the runtime instance scope.
     /// </summary>
     [HttpGet("{runtimeId}/capabilities")]
-    [ProducesResponseType(typeof(RuntimeDeclaredMetadataDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(RuntimeCapabilitiesDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async ValueTask<ActionResult<RuntimeDeclaredMetadataDto>> GetCapabilities(
+    public async ValueTask<ActionResult<RuntimeCapabilitiesDto>> GetCapabilities(
         string runtimeId,
         CancellationToken cancellationToken = default)
     {
@@ -103,9 +105,23 @@ public sealed class RuntimeInstancesController : ControllerBase
         if (identity is null)
             return NotFound();
 
-        return Ok(new RuntimeDeclaredMetadataDto(runtimeId, identity.DeclaredScopes));
+        return Ok(new RuntimeCapabilitiesDto(runtimeId, MapCapabilities(identity.DeclaredScopes)));
+    }
+
+    private static IReadOnlyList<RuntimeCapabilityDto> MapCapabilities(IReadOnlyList<string> declaredCapabilityIds)
+    {
+        var result = new List<RuntimeCapabilityDto>(declaredCapabilityIds.Count);
+        // Be honest: if older persisted identities contain unknown capability ids, filter them out.
+        foreach (var capabilityId in declaredCapabilityIds)
+        {
+            if (RuntimeCapabilityCatalog.TryResolve(capabilityId, out var definition))
+                result.Add(new RuntimeCapabilityDto(definition.CapabilityId, definition.Kind));
+        }
+
+        return result;
     }
 }
 
-public sealed record RuntimeDeclaredMetadataDto(string RuntimeId, IReadOnlyList<string> DeclaredScopes);
+public sealed record RuntimeCapabilityDto(string CapabilityId, RuntimeCapabilityKind Kind);
+public sealed record RuntimeCapabilitiesDto(string RuntimeId, IReadOnlyList<RuntimeCapabilityDto> Capabilities);
 

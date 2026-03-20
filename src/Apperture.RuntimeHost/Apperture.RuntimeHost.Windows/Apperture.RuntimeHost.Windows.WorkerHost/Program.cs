@@ -24,6 +24,13 @@ builder.Services.Configure<WorkflowStartRequestLeaseOptions>(
 builder.Services.Configure<OperationStartRequestLeaseOptions>(
     builder.Configuration.GetSection("OperationStartRequestLease"));
 
+builder.Services.Configure<RuntimeHostIdentityOptions>(opts =>
+{
+    opts.RuntimeId =
+        builder.Configuration["APERTURE_RUNTIME_ID"] ??
+        builder.Configuration["RuntimeHostIdentity:RuntimeId"];
+});
+
 builder.Services.AddAppertureBootstrap(builder.Configuration);
 builder.Services.AddApperturePersistence(
     sp => sp.GetRequiredService<IBootstrapConnectionProfile>().ConnectionString);

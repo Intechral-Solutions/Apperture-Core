@@ -5,9 +5,10 @@ This document defines how Apperture governs and controls **environments** and **
 `IResourceDescriptorRegistry` + `IResourceDescriptorRegistry.IsPermissionRegistered(...)` + `IAuthorizationEvaluationService`.
 
 The implementation in this cycle adds:
-- Authorization-aware operator inspection endpoints for environments and runtime declared capability metadata (invitation scopes).
+- Authorization-aware operator inspection endpoints for environments and governed runtime capabilities (validated invitation scopes).
 - A governance-gated and auditable operator control path for runtime enrollment invitations.
-- Token-scoped validation and persistence so runtime declared invitation scopes can be inspected after enrollment.
+- A governance-gated runtime control intent path (shutdown proving ground) that persists operator intent and transitions queued requests in the worker host.
+- Token-scoped validation and persistence so runtime governed capability ids can be inspected after enrollment.
 
 ## Canonical Governed Resources
 ### Environment (inspection surface)
@@ -41,6 +42,9 @@ Operator authorization is evaluated using governance actions and resource descri
 ### Privileged Control
 - `runtime.enroll.invitation.create` gates `POST /api/enroll/invitation`
 
+### Runtime Control Intent
+- `runtime.control.shutdown.request` gates `POST /api/runtime-instances/{runtimeId}/controls/shutdown/request`
+
 `POST /api/enroll/invitation` is the operator-issued privileged control surface.
 It does not authenticate runtimes; it issues an enrollment token.
 
@@ -57,10 +61,11 @@ To make env↔runtime governance scoping durable:
    - `SqlRuntimeEnrollmentService.EnrollAsync` validates the token’s `EnvironmentId` matches the current control-plane `EnvironmentId`
    - declared scopes are transferred into the persisted runtime identity record as `DeclaredScopesJson`
 
-After successful enrollment, operator inspection can safely project runtime declared scopes
-from persisted runtime identity (`RuntimeIdentity.DeclaredScopes`).
+After successful enrollment, operator inspection can safely project governed runtime capabilities
+from persisted runtime identity (`RuntimeIdentity.DeclaredScopes`), filtered by the platform capability catalog.
 
-Note: these invitation scopes are treated as declared metadata strings (not platform-governed capabilities).
+Note: invitation scopes are validated against the platform capability catalog at invitation creation time and persisted as governed runtime capability ids.
+Any legacy/unknown capability ids already persisted on older runtimes are treated as invalid metadata and filtered out by inspection surfaces.
 
 ## Auditability
 Successful privileged operator control events write durable audit records via `IAuditService`.

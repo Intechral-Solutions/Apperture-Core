@@ -3,6 +3,7 @@ using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Governance;
 using Apperture.Core.Domain.Audit;
 using Apperture.Core.Domain.Identity;
+using Apperture.Core.Domain.Runtime;
 using Apperture.ControlPlane.Security;
 using Apperture.Core.Security.Trust;
 using Apperture.Shared.Kernel;
@@ -70,10 +71,37 @@ public sealed class EnrollController : ControllerBase
             return Forbid();
 
         var ttl = request.TtlHours.HasValue ? TimeSpan.FromHours(request.TtlHours.Value) : (TimeSpan?)null;
+
+        // Canonical runtime capability validation:
+        // Invitation Scopes represent requested runtime capability ids and must be validated before persistence.
+        IReadOnlySet<string>? validatedScopes = null;
+        if (request.Scopes is not null)
+        {
+            var set = new HashSet<string>(StringComparer.Ordinal);
+            var invalid = new List<string>();
+
+            foreach (var scope in request.Scopes)
+            {
+                if (RuntimeCapabilityCatalog.TryResolve(scope, out var def))
+                    set.Add(def.CapabilityId);
+                else
+                    invalid.Add(scope);
+            }
+
+            if (invalid.Count > 0)
+                return BadRequest(new
+                {
+                    error = "UnknownRuntimeCapability",
+                    invalidScopes = invalid.ToArray()
+                });
+
+            validatedScopes = set;
+        }
+
         var invitation = await _enrollment.CreateInvitationAsync(
             request.RuntimeId,
             ttl,
-            request.Scopes,
+            validatedScopes,
             cancellationToken).ConfigureAwait(false);
 
         var runtimeResource = new ResourceDescriptor(ResourceTypeConstants.RuntimeInstance, runtimeScopeKey);
@@ -85,7 +113,7 @@ public sealed class EnrollController : ControllerBase
             "auth-admin",
             DateTimeOffset.UtcNow,
             new CorrelationId(null),
-            $"runtimeId={request.RuntimeId} scopesCount={request.Scopes?.Count ?? 0}");
+            $"runtimeId={request.RuntimeId} scopesCount={validatedScopes?.Count ?? 0}");
         await _audit.AppendAsync(record, cancellationToken);
 
         return Ok(invitation);

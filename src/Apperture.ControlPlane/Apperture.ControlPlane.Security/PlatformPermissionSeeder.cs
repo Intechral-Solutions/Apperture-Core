@@ -43,6 +43,11 @@ public static class PlatformPermissionSeeder
         registry.RegisterPermission(
             new PermissionDescriptor(ActionConstants.RuntimeEnrollInvitationCreate, new ResourceDescriptor(ResourceTypeConstants.RuntimeInstance, envScopeKey)),
             ResourceFamily.Core);
+
+        // Runtime control (operator control surface)
+        registry.RegisterPermission(
+            new PermissionDescriptor(ActionConstants.RuntimeControlShutdownRequest, new ResourceDescriptor(ResourceTypeConstants.RuntimeInstance, envScopeKey)),
+            ResourceFamily.Core);
     }
 
     private static void SeedCore(IResourceDescriptorRegistry registry)

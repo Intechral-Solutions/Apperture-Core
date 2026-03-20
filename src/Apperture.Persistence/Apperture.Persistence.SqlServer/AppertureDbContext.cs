@@ -18,6 +18,7 @@ public class AppertureDbContext : DbContext
     public DbSet<WorkflowCancelRequestEntity> WorkflowCancelRequests => Set<WorkflowCancelRequestEntity>();
     public DbSet<OperationCancelRequestEntity> OperationCancelRequests => Set<OperationCancelRequestEntity>();
     public DbSet<WorkflowExternalControlRequestEntity> WorkflowExternalControlRequests => Set<WorkflowExternalControlRequestEntity>();
+    public DbSet<RuntimeControlRequestEntity> RuntimeControlRequests => Set<RuntimeControlRequestEntity>();
     public DbSet<WorkflowLifecycleEventEntity> WorkflowLifecycleEvents => Set<WorkflowLifecycleEventEntity>();
     public DbSet<OperationLifecycleEventEntity> OperationLifecycleEvents => Set<OperationLifecycleEventEntity>();
     public DbSet<OperationInstanceEntity> OperationInstances => Set<OperationInstanceEntity>();
@@ -206,6 +207,24 @@ public class AppertureDbContext : DbContext
                 .IsUnique()
                 .HasFilter("[Status] = 'queued'");
             e.HasIndex(x => new { x.RunId, x.RequestedAt });
+            e.HasIndex(x => x.Status);
+        });
+
+        modelBuilder.Entity<RuntimeControlRequestEntity>(e =>
+        {
+            e.ToTable("RuntimeControlRequests");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).ValueGeneratedOnAdd();
+            e.Property(x => x.RuntimeId).HasMaxLength(128);
+            e.Property(x => x.ControlKind).HasMaxLength(64);
+            e.Property(x => x.Status).HasMaxLength(32);
+            e.Property(x => x.RequestedBy).HasMaxLength(256);
+            e.Property(x => x.AppliedBy).HasMaxLength(256);
+            e.Property(x => x.LastError).HasMaxLength(2048);
+            e.HasIndex(x => new { x.RuntimeId, x.ControlKind })
+                .IsUnique()
+                .HasFilter("[Status] = 'queued'");
+            e.HasIndex(x => new { x.RuntimeId, x.RequestedAt });
             e.HasIndex(x => x.Status);
         });
 

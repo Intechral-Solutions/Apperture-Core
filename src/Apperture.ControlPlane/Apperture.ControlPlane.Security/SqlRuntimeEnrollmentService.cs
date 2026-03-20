@@ -1,6 +1,7 @@
 using Apperture.Core.Security.Trust;
 using Apperture.Persistence.SqlServer;
 using Apperture.Shared.Kernel;
+using System.Linq;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 
@@ -29,7 +30,9 @@ public sealed class SqlRuntimeEnrollmentService : IRuntimeEnrollmentService
         var duration = ttl ?? TimeSpan.FromHours(24);
         var expiresAt = DateTimeOffset.UtcNow.Add(duration);
         var token = Guid.NewGuid().ToString("N");
-        IEnumerable<string> scopeList = scopes is null ? Array.Empty<string>() : scopes;
+        var scopeList = scopes is null
+            ? Array.Empty<string>()
+            : scopes.OrderBy(s => s, StringComparer.Ordinal).ToArray();
         _db.EnrollmentTokens.Add(new EnrollmentTokenEntity
         {
             Id = Guid.NewGuid(),

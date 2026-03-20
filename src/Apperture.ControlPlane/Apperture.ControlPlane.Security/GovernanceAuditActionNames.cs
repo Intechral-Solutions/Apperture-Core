@@ -12,5 +12,8 @@ public static class GovernanceAuditActionNames
 
     // Runtime enrollment (operator control surface)
     public const string RuntimeEnrollmentInvitationCreated = "governance.runtime.enrollment.invitation.created";
+
+    // Runtime external control (operator control surface)
+    public const string RuntimeShutdownRequestCreated = "governance.runtime.shutdown.request.created";
 }
 

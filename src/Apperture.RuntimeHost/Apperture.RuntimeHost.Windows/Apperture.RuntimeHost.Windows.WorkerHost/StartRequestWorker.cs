@@ -20,14 +20,19 @@ public sealed class StartRequestWorker : BackgroundService
     private readonly ILogger<StartRequestWorker> _logger;
     private readonly TimeSpan _pollInterval;
     private readonly string _workerId;
+    private readonly string? _runtimeId;
+    private readonly RuntimeShutdownRequestApplier _shutdownApplier = new();
     private readonly IOptions<WorkflowStartRequestLeaseOptions> _leaseOptions;
     private readonly IOptions<OperationStartRequestLeaseOptions> _operationLeaseOptions;
+    private readonly IHostApplicationLifetime _appLifetime;
 
     public StartRequestWorker(
         IServiceScopeFactory scopeFactory,
         ILogger<StartRequestWorker> logger,
         IOptions<WorkflowStartRequestLeaseOptions> leaseOptions,
-        IOptions<OperationStartRequestLeaseOptions> operationLeaseOptions)
+        IOptions<OperationStartRequestLeaseOptions> operationLeaseOptions,
+        IOptions<RuntimeHostIdentityOptions> runtimeHostIdentityOptions,
+        IHostApplicationLifetime appLifetime)
     {
         _scopeFactory = scopeFactory;
         _logger = logger;
@@ -35,8 +40,10 @@ public sealed class StartRequestWorker : BackgroundService
         // Truncate safely: string length may be < 64 depending on machine name format.
         var rawWorkerId = $"windows-worker:{Environment.MachineName}:{Guid.NewGuid():N}";
         _workerId = rawWorkerId.Length <= 64 ? rawWorkerId : rawWorkerId[..64];
+        _runtimeId = runtimeHostIdentityOptions.Value.RuntimeId;
         _leaseOptions = leaseOptions;
         _operationLeaseOptions = operationLeaseOptions;
+        _appLifetime = appLifetime;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -49,6 +56,15 @@ public sealed class StartRequestWorker : BackgroundService
             {
                 using var scope = _scopeFactory.CreateScope();
                 var db = scope.ServiceProvider.GetRequiredService<AppertureDbContext>();
+
+                // Runtime governance proving ground: shutdown requests stop the host.
+                if (await _shutdownApplier.TryApplyQueuedShutdownAsync(db, _runtimeId, _workerId, stoppingToken).ConfigureAwait(false))
+                {
+                    _logger.LogWarning("Applied runtime shutdown request. Stopping worker host.");
+                    _appLifetime.StopApplication();
+                    return;
+                }
+
                 var executor = scope.ServiceProvider.GetRequiredService<Apperture.RuntimePlane.Abstractions.IWorkflowExecutor>();
                 var definitionResolver = scope.ServiceProvider.GetRequiredService<IWorkflowDefinitionResolver>();
                 var processor = new WorkflowStartRequestProcessor(db, executor, definitionResolver, _workerId, _leaseOptions, _logger);
@@ -133,5 +149,6 @@ public sealed class StartRequestWorker : BackgroundService
 
         _logger.LogInformation("StartRequestWorker stopped. WorkerId={WorkerId}", _workerId);
     }
+
 }
 

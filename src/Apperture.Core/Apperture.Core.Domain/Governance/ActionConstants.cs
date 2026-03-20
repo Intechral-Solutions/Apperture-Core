@@ -34,6 +34,7 @@ public static class ActionConstants
     public const string EnvironmentRead = "environment.read";
     public const string RuntimeRead = "runtime.read";
     public const string RuntimeEnrollInvitationCreate = "runtime.enroll.invitation.create";
+    public const string RuntimeControlShutdownRequest = "runtime.control.shutdown.request";
 
     // Schedule
     public const string ScheduleManage = "schedule.manage";

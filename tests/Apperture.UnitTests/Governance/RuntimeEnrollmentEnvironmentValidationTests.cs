@@ -12,6 +12,7 @@ using FluentAssertions;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Xunit;
+using Apperture.Core.Domain.Runtime;
 
 namespace Apperture.UnitTests.Governance;
 
@@ -48,7 +49,7 @@ public sealed class RuntimeEnrollmentEnvironmentValidationTests
             audit: audit);
 
         var result = await controller.CreateInvitation(
-            new CreateInvitationRequest("rt-1", TtlHours: 1, Scopes: new HashSet<string> { "cap.a" }),
+            new CreateInvitationRequest("rt-1", TtlHours: 1, Scopes: new HashSet<string> { RuntimeCapabilityCatalog.InspectionCapabilities }),
             CancellationToken.None);
 
         result.Result.Should().BeOfType<ForbidResult>();
@@ -69,7 +70,11 @@ public sealed class RuntimeEnrollmentEnvironmentValidationTests
             audit: audit);
 
         var result = await controller.CreateInvitation(
-            new CreateInvitationRequest("rt-1", TtlHours: 1, Scopes: new HashSet<string> { "cap.a", "cap.b" }),
+            new CreateInvitationRequest("rt-1", TtlHours: 1, Scopes: new HashSet<string>
+            {
+                RuntimeCapabilityCatalog.InspectionCapabilities,
+                RuntimeCapabilityCatalog.ControlShutdown
+            }),
             CancellationToken.None);
 
         result.Result.Should().BeOfType<OkObjectResult>();
@@ -81,6 +86,30 @@ public sealed class RuntimeEnrollmentEnvironmentValidationTests
 
         audit.LastRecord.Details.Should().Contain("runtimeId=rt-1");
         audit.LastRecord.Details.Should().Contain("scopesCount=2");
+    }
+
+    [Fact]
+    public async Task CreateInvitation_WhenAuthorized_WithUnknownScopes_Returns400_AndDoesNotAudit()
+    {
+        var audit = new StubAuditService();
+        var controller = new EnrollController(
+            enrollment: new StubRuntimeEnrollmentService(token: "t-1"),
+            principalContext: new StubPrincipalContext(new HumanActor(new ActorId("u1"), "u1", isBreakGlassSession: false)),
+            principalToUserResolver: new StubPrincipalToUserResolver(),
+            roleProvider: new StubRoleProvider(),
+            environment: new StubEnvironmentContext("local"),
+            authorizationEvaluation: new StubAuthorizationEvaluationService(allowed: true),
+            audit: audit);
+
+        var result = await controller.CreateInvitation(
+            new CreateInvitationRequest(
+                "rt-1",
+                TtlHours: 1,
+                Scopes: new HashSet<string> { "unknown.runtime.capability" }),
+            CancellationToken.None);
+
+        result.Result.Should().BeOfType<BadRequestObjectResult>();
+        audit.AppendCalls.Should().Be(0);
     }
 
     [Fact]
@@ -97,7 +126,7 @@ public sealed class RuntimeEnrollmentEnvironmentValidationTests
             ExpiresAt = DateTimeOffset.UtcNow.AddHours(1),
             Used = false,
             CreatedAt = DateTimeOffset.UtcNow,
-            ScopesJson = JsonSerializer.Serialize(new[] { "cap.a" })
+            ScopesJson = JsonSerializer.Serialize(new[] { RuntimeCapabilityCatalog.InspectionCapabilities })
         });
         await db.SaveChangesAsync();
 
@@ -117,7 +146,11 @@ public sealed class RuntimeEnrollmentEnvironmentValidationTests
     {
         var db = NewDb();
 
-        var scopes = new[] { "cap.a", "cap.b" };
+        var scopes = new[]
+        {
+            RuntimeCapabilityCatalog.InspectionCapabilities,
+            RuntimeCapabilityCatalog.ControlShutdown
+        };
         db.EnrollmentTokens.Add(new EnrollmentTokenEntity
         {
             Id = Guid.NewGuid(),
@@ -165,7 +198,7 @@ public sealed class RuntimeEnrollmentEnvironmentValidationTests
             audit: audit);
 
         var invitationResult = await enrollController.CreateInvitation(
-            new CreateInvitationRequest("rt-3", TtlHours: 1, Scopes: new HashSet<string> { "cap.a" }),
+            new CreateInvitationRequest("rt-3", TtlHours: 1, Scopes: new HashSet<string> { RuntimeCapabilityCatalog.InspectionCapabilities }),
             CancellationToken.None);
 
         var ok = invitationResult.Result.Should().BeOfType<OkObjectResult>().Which;
@@ -191,8 +224,10 @@ public sealed class RuntimeEnrollmentEnvironmentValidationTests
 
         var inspectionResult = await inspection.GetCapabilities("rt-3", CancellationToken.None);
         inspectionResult.Result.Should().BeOfType<OkObjectResult>();
-        var dto = ((OkObjectResult)inspectionResult.Result!).Value.Should().BeOfType<RuntimeDeclaredMetadataDto>().Which;
-        dto.DeclaredScopes.Should().ContainSingle(s => s == "cap.a");
+        var dto = ((OkObjectResult)inspectionResult.Result!).Value.Should().BeOfType<RuntimeCapabilitiesDto>().Which;
+        dto.Capabilities.Should().ContainSingle(c =>
+            c.CapabilityId == RuntimeCapabilityCatalog.InspectionCapabilities &&
+            c.Kind == RuntimeCapabilityKind.Inspection);
     }
 
     private static AppertureDbContext NewDb()

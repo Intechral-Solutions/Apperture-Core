@@ -1,6 +1,7 @@
 using Apperture.ControlPlane.Security;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Governance;
+using Apperture.Core.Domain.Runtime;
 using Apperture.Core.Security.Trust;
 using Apperture.Management.Api.Controllers;
 using Apperture.Shared.Kernel;
@@ -99,7 +100,7 @@ public sealed class EnvironmentRuntimeGovernanceControllersTests
             "PublicKey",
             "pk",
             null,
-            ["cap.a"],
+            [RuntimeCapabilityCatalog.InspectionCapabilities],
             DateTimeOffset.UtcNow));
         var controller = new RuntimeInstancesController(
             runtime,
@@ -136,7 +137,7 @@ public sealed class EnvironmentRuntimeGovernanceControllersTests
             "PublicKey",
             "pk",
             null,
-            ["cap.a", "cap.b"],
+            [RuntimeCapabilityCatalog.InspectionCapabilities, RuntimeCapabilityCatalog.ControlShutdown],
             DateTimeOffset.UtcNow));
 
         var identity = new RuntimeIdentity(
@@ -145,7 +146,7 @@ public sealed class EnvironmentRuntimeGovernanceControllersTests
             "PublicKey",
             "pk",
             null,
-            ["cap.a", "cap.b"],
+            [RuntimeCapabilityCatalog.InspectionCapabilities, RuntimeCapabilityCatalog.ControlShutdown],
             DateTimeOffset.UtcNow);
 
         var auth = new StubAuthorizationEvaluationService(allowed: true);
@@ -159,9 +160,55 @@ public sealed class EnvironmentRuntimeGovernanceControllersTests
 
         result.Result.Should().BeOfType<OkObjectResult>();
         var ok = (OkObjectResult)result.Result!;
-        var dto = (RuntimeDeclaredMetadataDto)ok.Value!;
+        var dto = (RuntimeCapabilitiesDto)ok.Value!;
         dto.RuntimeId.Should().Be("rt-1");
-        dto.DeclaredScopes.Should().BeEquivalentTo(new[] { "cap.a", "cap.b" });
+        dto.Capabilities.Select(c => c.CapabilityId).Should().BeEquivalentTo(new[]
+        {
+            RuntimeCapabilityCatalog.InspectionCapabilities,
+            RuntimeCapabilityCatalog.ControlShutdown
+        });
+        dto.Capabilities.Should().ContainSingle(c =>
+            c.CapabilityId == RuntimeCapabilityCatalog.InspectionCapabilities &&
+            c.Kind == RuntimeCapabilityKind.Inspection);
+        dto.Capabilities.Should().ContainSingle(c =>
+            c.CapabilityId == RuntimeCapabilityCatalog.ControlShutdown &&
+            c.Kind == RuntimeCapabilityKind.Control);
+        runtime.GetByIdCallCount.Should().Be(1);
+
+        auth.LastEvaluatedPermission!.Action.Should().Be(ActionConstants.RuntimeRead);
+        auth.LastEvaluatedResource!.ScopeKey.Should().Be(ScopeKeyConstants.RuntimeInstance("local", "rt-1"));
+    }
+
+    [Fact]
+    public async Task RuntimeInstancesController_WhenAuthorized_FiltersUnknownCapabilities()
+    {
+        var runtime = new StubRuntimeIdentityService(new RuntimeIdentity(
+            "rt-1",
+            "Runtime 1",
+            "PublicKey",
+            "pk",
+            null,
+            [RuntimeCapabilityCatalog.InspectionCapabilities, "unknown.runtime.capability"],
+            DateTimeOffset.UtcNow));
+
+        var auth = new StubAuthorizationEvaluationService(allowed: true);
+        var controller = new RuntimeInstancesController(
+            runtime,
+            auth,
+            new StubPrincipalContext(new HumanActor(new ActorId("u1"), "u1", isBreakGlassSession: false)),
+            new StubEnvironmentContext("local"));
+
+        var result = await controller.GetCapabilities("rt-1", CancellationToken.None);
+
+        result.Result.Should().BeOfType<OkObjectResult>();
+        var ok = (OkObjectResult)result.Result!;
+        var dto = (RuntimeCapabilitiesDto)ok.Value!;
+
+        dto.RuntimeId.Should().Be("rt-1");
+        dto.Capabilities.Select(c => c.CapabilityId).Should().BeEquivalentTo(new[]
+        {
+            RuntimeCapabilityCatalog.InspectionCapabilities
+        });
         runtime.GetByIdCallCount.Should().Be(1);
 
         auth.LastEvaluatedPermission!.Action.Should().Be(ActionConstants.RuntimeRead);
@@ -179,7 +226,7 @@ public sealed class EnvironmentRuntimeGovernanceControllersTests
                 "PublicKey",
                 "pk",
                 null,
-                ["meta.a"],
+                [RuntimeCapabilityCatalog.InspectionCapabilities],
                 DateTimeOffset.UtcNow),
             new RuntimeIdentity(
                 "rt-2",
@@ -187,7 +234,7 @@ public sealed class EnvironmentRuntimeGovernanceControllersTests
                 "PublicKey",
                 "pk",
                 null,
-                ["meta.b"],
+                [RuntimeCapabilityCatalog.ControlShutdown],
                 DateTimeOffset.UtcNow)
         });
 
@@ -214,7 +261,7 @@ public sealed class EnvironmentRuntimeGovernanceControllersTests
                 "PublicKey",
                 "pk",
                 null,
-                ["not-canonical.scope"],
+                [RuntimeCapabilityCatalog.InspectionCapabilities],
                 DateTimeOffset.UtcNow),
             new RuntimeIdentity(
                 "rt-2",
@@ -222,7 +269,7 @@ public sealed class EnvironmentRuntimeGovernanceControllersTests
                 "PublicKey",
                 "pk",
                 null,
-                ["another.meta"],
+                [RuntimeCapabilityCatalog.ControlShutdown],
                 DateTimeOffset.UtcNow)
         });
 
@@ -237,10 +284,12 @@ public sealed class EnvironmentRuntimeGovernanceControllersTests
 
         result.Result.Should().BeOfType<OkObjectResult>();
         var ok = (OkObjectResult)result.Result!;
-        var dtos = (IReadOnlyList<RuntimeDeclaredMetadataDto>)ok.Value!;
+        var dtos = (IReadOnlyList<RuntimeCapabilitiesDto>)ok.Value!;
 
         dtos.Select(d => d.RuntimeId).Should().BeEquivalentTo(new[] { "rt-1", "rt-2" });
-        dtos.First(d => d.RuntimeId == "rt-1").DeclaredScopes.Should().ContainSingle(s => s == "not-canonical.scope");
+        dtos.First(d => d.RuntimeId == "rt-1").Capabilities.Should().ContainSingle(c =>
+            c.CapabilityId == RuntimeCapabilityCatalog.InspectionCapabilities &&
+            c.Kind == RuntimeCapabilityKind.Inspection);
         runtime.GetAllCallCount.Should().Be(1);
 
         auth.LastEvaluatedPermission!.Action.Should().Be(ActionConstants.RuntimeRead);
