@@ -31,6 +31,23 @@ public sealed class SqlRuntimeIdentityService : IRuntimeIdentityService
             entity.RegisteredAt);
     }
 
+    public async ValueTask<IReadOnlyList<RuntimeIdentity>> GetAllAsync(CancellationToken cancellationToken = default)
+    {
+        var entities = await _db.RuntimeIdentities.AsNoTracking()
+            .OrderBy(x => x.RegisteredAt)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        return entities.Select(entity => new RuntimeIdentity(
+            entity.Id,
+            entity.DisplayName,
+            entity.CredentialType,
+            entity.PublicKeyOrThumbprint,
+            entity.ManagedIdentityPrincipalId,
+            DeserializeScopes(entity.DeclaredScopesJson),
+            entity.RegisteredAt)).ToList();
+    }
+
     public async ValueTask<RuntimeTrustValidationResult> ValidateAsync(
         string runtimeId,
         string presentedCredential,

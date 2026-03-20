@@ -5,9 +5,9 @@ This document defines how Apperture governs and controls **environments** and **
 `IResourceDescriptorRegistry` + `IResourceDescriptorRegistry.IsPermissionRegistered(...)` + `IAuthorizationEvaluationService`.
 
 The implementation in this cycle adds:
-- Authorization-aware operator inspection endpoints for environments and runtime declared capabilities (scopes).
+- Authorization-aware operator inspection endpoints for environments and runtime declared capability metadata (invitation scopes).
 - A governance-gated and auditable operator control path for runtime enrollment invitations.
-- Token-scoped validation and persistence so runtime declared scopes can be inspected after enrollment.
+- Token-scoped validation and persistence so runtime declared invitation scopes can be inspected after enrollment.
 
 ## Canonical Governed Resources
 ### Environment (inspection surface)
@@ -35,6 +35,7 @@ Operator authorization is evaluated using governance actions and resource descri
 
 ### Visibility
 - `environment.read` gates `GET /api/environments`
+- `runtime.read` gates `GET /api/runtime-instances` (durable runtime identity discovery)
 - `runtime.read` gates `GET /api/runtime-instances/{runtimeId}/capabilities`
 
 ### Privileged Control
@@ -58,6 +59,8 @@ To make env↔runtime governance scoping durable:
 
 After successful enrollment, operator inspection can safely project runtime declared scopes
 from persisted runtime identity (`RuntimeIdentity.DeclaredScopes`).
+
+Note: these invitation scopes are treated as declared metadata strings (not platform-governed capabilities).
 
 ## Auditability
 Successful privileged operator control events write durable audit records via `IAuditService`.

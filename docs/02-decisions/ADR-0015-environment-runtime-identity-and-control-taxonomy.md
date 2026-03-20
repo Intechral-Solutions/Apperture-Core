@@ -11,7 +11,7 @@ Apperture already has a governance spine that is operation-centric:
 
 To generalize governance beyond operations (and prove the model’s portability), we must govern and control:
 - environment-scoped operator visibility
-- runtime declared capability visibility
+- runtime declared capability metadata visibility (invitation scopes)
 - privileged operator control over runtime enrollment
 
 This cycle must preserve control-plane vs runtime-plane boundaries and keep runtime authentication (token-based enrollment) distinct from operator authorization (RBAC).
@@ -25,7 +25,8 @@ This cycle must preserve control-plane vs runtime-plane boundaries and keep runt
    - Runtime scope: `environment:{environmentId}:runtime:{runtimeId}`
 4. **Actions taxonomy**:
    - `environment.read` for `GET /api/environments`
-   - `runtime.read` for `GET /api/runtime-instances/{runtimeId}/capabilities`
+   - `runtime.read` for `GET /api/runtime-instances` (durable runtime identity discovery)
+   - `runtime.read` for `GET /api/runtime-instances/{runtimeId}/capabilities` (declared metadata inspection)
    - `runtime.enroll.invitation.create` for `POST /api/enroll/invitation`
 5. **Operator control path** (`POST /api/enroll/invitation`) is governed and auditable:
    - admission is decided by `IAuthorizationEvaluationService`
@@ -33,15 +34,16 @@ This cycle must preserve control-plane vs runtime-plane boundaries and keep runt
 6. **Runtime authentication** remains token-authenticated:
    - `POST /api/enroll` is `AllowAnonymous`
    - `SqlRuntimeEnrollmentService.EnrollAsync` validates token-scoped environment mapping before registering runtime identity
-7. **Declared runtime capability metadata** (invitation scopes) is persisted:
+7. **Declared runtime capability metadata** (invitation scopes) is persisted as declared strings:
    - invitation `ScopesJson` is transferred into runtime identity `DeclaredScopesJson`
-   - operator inspection reads declared scopes from runtime identity after enrollment
+   - operator inspection reads declared scopes from persisted runtime identity after enrollment
+   - these invitation scopes are treated as declared metadata strings, not as platform-governed capabilities
 
 ## Consequences
 ### Positive
 - Environment/runtime governance uses the existing descriptor registry and authorization evaluation seam (no parallel permission system).
 - Privileged operator actions are auditable with a clear success path.
-- Operator visibility of runtime declared capabilities is durable and authorization-gated.
+- Operator visibility of runtime declared metadata is durable (DB-backed runtime identity) and authorization-gated.
 
 ### Negative
 - In the current cycle, `environmentId` is process-stable (single-tenant); multi-environment deployments require a follow-up cycle to broaden the model.

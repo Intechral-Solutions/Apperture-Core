@@ -12,6 +12,11 @@ public interface IRuntimeIdentityService
     ValueTask<RuntimeIdentity?> GetByIdAsync(string runtimeId, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Lists all registered runtime identities (durable, DB-backed).
+    /// </summary>
+    ValueTask<IReadOnlyList<RuntimeIdentity>> GetAllAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Validates that the presented credential matches the registered runtime identity.
     /// </summary>
     ValueTask<RuntimeTrustValidationResult> ValidateAsync(

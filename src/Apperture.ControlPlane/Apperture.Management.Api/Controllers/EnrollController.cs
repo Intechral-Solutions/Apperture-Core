@@ -23,7 +23,6 @@ public sealed class EnrollController : ControllerBase
     private readonly IPrincipalContext _principalContext;
     private readonly IPrincipalToUserResolver _principalToUserResolver;
     private readonly IRoleProvider _roleProvider;
-    private readonly IResourceDescriptorRegistry _descriptorRegistry;
     private readonly IEnvironmentContext _environment;
     private readonly IAuthorizationEvaluationService _authorizationEvaluation;
     private readonly IAuditService _audit;
@@ -33,7 +32,6 @@ public sealed class EnrollController : ControllerBase
         IPrincipalContext principalContext,
         IPrincipalToUserResolver principalToUserResolver,
         IRoleProvider roleProvider,
-        IResourceDescriptorRegistry descriptorRegistry,
         IEnvironmentContext environment,
         IAuthorizationEvaluationService authorizationEvaluation,
         IAuditService audit)
@@ -42,7 +40,6 @@ public sealed class EnrollController : ControllerBase
         _principalContext = principalContext;
         _principalToUserResolver = principalToUserResolver;
         _roleProvider = roleProvider;
-        _descriptorRegistry = descriptorRegistry;
         _environment = environment;
         _authorizationEvaluation = authorizationEvaluation;
         _audit = audit;
@@ -116,13 +113,6 @@ public sealed class EnrollController : ControllerBase
 
         if (!result.Success)
             return BadRequest(result);
-
-        // Governance spine: make the canonical runtime governed resource visible in the descriptor registry.
-        var environmentId = _environment.EnvironmentId;
-        var runtimeScopeKey = ScopeKeyConstants.RuntimeInstance(environmentId, result.RuntimeId);
-        _descriptorRegistry.RegisterResource(
-            new ResourceDescriptor(ResourceTypeConstants.RuntimeInstance, runtimeScopeKey),
-            ResourceFamily.Core);
 
         return Ok(result);
     }

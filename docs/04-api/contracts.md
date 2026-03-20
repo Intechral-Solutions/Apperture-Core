@@ -26,7 +26,8 @@ The Management API (control plane) exposes REST endpoints for module registry, w
 | PUT | `/api/roles/{id}/permissions` | Replace explicit role permission assignments |
 | GET | `/api/schedules/capabilities` | Schedule governance capability projection |
 | GET | `/api/environments` | Inspect the current environment (authorization gated) |
-| GET | `/api/runtime-instances/{runtimeId}/capabilities` | Inspect runtime declared capability/scopes (authorization gated) |
+| GET | `/api/runtime-instances` | Inspect runtime declared capability metadata (invitation scopes) list (authorization gated) |
+| GET | `/api/runtime-instances/{runtimeId}/capabilities` | Inspect runtime declared capability metadata (invitation scopes) (authorization gated) |
 | POST | `/api/enroll/invitation` | Operator-issued runtime enrollment invitation (governance gated + auditable) |
 | POST | `/api/enroll` | Runtime enrollment using enrollment token (anonymous; token-scoped) |
 
@@ -60,7 +61,8 @@ The Management API (control plane) exposes REST endpoints for module registry, w
   - Canonical runtime (governed) descriptor uses `ResourceTypeConstants.RuntimeInstance` with scope key `environment:{environmentId}:runtime:{runtimeId}`.
   - Authorization actions:
     - `environment.read` gates environment inspection (`GET /api/environments`).
-    - `runtime.read` gates runtime capability inspection (`GET /api/runtime-instances/{runtimeId}/capabilities`).
+    - `runtime.read` gates runtime identity discovery (`GET /api/runtime-instances`).
+    - `runtime.read` gates runtime declared metadata inspection (`GET /api/runtime-instances/{runtimeId}/capabilities`).
     - `runtime.enroll.invitation.create` gates operator creation of enrollment invitations (`POST /api/enroll/invitation`).
   - Privileged operator control (`POST /api/enroll/invitation`) writes durable audit records on successful authorization and invitation creation.
   - Runtime enrollment (`POST /api/enroll`) remains token-authenticated with `AllowAnonymous`, and validates token-scoped environment mapping before registering runtime identity.

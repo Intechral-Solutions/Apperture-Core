@@ -4,6 +4,7 @@ using Apperture.Core.Domain.Governance;
 using Apperture.Core.Security.Trust;
 using Apperture.Management.Api.Controllers;
 using Apperture.Shared.Kernel;
+using System.Linq;
 using FluentAssertions;
 using Microsoft.AspNetCore.Mvc;
 using Xunit;
@@ -41,8 +42,9 @@ public sealed class EnvironmentRuntimeGovernanceControllersTests
     [Fact]
     public async Task EnvironmentsController_WhenAuthorized_Returns200WithCurrentEnvironment()
     {
+        var auth = new StubAuthorizationEvaluationService(allowed: true);
         var controller = new EnvironmentsController(
-            new StubAuthorizationEvaluationService(allowed: true),
+            auth,
             new StubPrincipalContext(new HumanActor(new ActorId("u1"), "u1", isBreakGlassSession: false)),
             new StubEnvironmentContext("local"));
 
@@ -52,6 +54,10 @@ public sealed class EnvironmentRuntimeGovernanceControllersTests
         var ok = (OkObjectResult)result.Result!;
         var data = (IReadOnlyList<EnvironmentSummaryDto>)ok.Value!;
         data.Should().ContainSingle(e => e.EnvironmentId == "local");
+
+        auth.LastEvaluatedPermission!.Action.Should().Be(ActionConstants.EnvironmentRead);
+        auth.LastEvaluatedResource!.ResourceType.Should().Be(ResourceTypeConstants.Environment);
+        auth.LastEvaluatedResource.ScopeKey.Should().Be(ScopeKeyConstants.Environment("local"));
     }
 
     [Fact]
@@ -69,17 +75,34 @@ public sealed class EnvironmentRuntimeGovernanceControllersTests
     }
 
     [Fact]
+    public async Task RuntimeInstancesController_GetAll_WhenNoActor_Returns401()
+    {
+        var runtime = new StubRuntimeIdentityService(runtimeIdentity: null);
+        var controller = new RuntimeInstancesController(
+            runtime,
+            new StubAuthorizationEvaluationService(allowed: true),
+            new StubPrincipalContext(actor: null),
+            new StubEnvironmentContext("local"));
+
+        var result = await controller.GetAll(CancellationToken.None);
+
+        result.Result.Should().BeOfType<UnauthorizedResult>();
+        runtime.GetAllCallCount.Should().Be(0);
+    }
+
+    [Fact]
     public async Task RuntimeInstancesController_WhenNotAuthorized_Returns403()
     {
+        var runtime = new StubRuntimeIdentityService(new RuntimeIdentity(
+            "rt-1",
+            "Runtime 1",
+            "PublicKey",
+            "pk",
+            null,
+            ["cap.a"],
+            DateTimeOffset.UtcNow));
         var controller = new RuntimeInstancesController(
-            new StubRuntimeIdentityService(new RuntimeIdentity(
-                "rt-1",
-                "Runtime 1",
-                "PublicKey",
-                "pk",
-                null,
-                ["cap.a"],
-                DateTimeOffset.UtcNow)),
+            runtime,
             new StubAuthorizationEvaluationService(allowed: false),
             new StubPrincipalContext(new HumanActor(new ActorId("u1"), "u1", isBreakGlassSession: false)),
             new StubEnvironmentContext("local"));
@@ -87,6 +110,7 @@ public sealed class EnvironmentRuntimeGovernanceControllersTests
         var result = await controller.GetCapabilities("rt-1", CancellationToken.None);
 
         result.Result.Should().BeOfType<ForbidResult>();
+        runtime.GetByIdCallCount.Should().Be(0); // deny/no-leak: do not resolve runtime existence
     }
 
     [Fact]
@@ -106,6 +130,15 @@ public sealed class EnvironmentRuntimeGovernanceControllersTests
     [Fact]
     public async Task RuntimeInstancesController_WhenAuthorized_ReturnsDeclaredScopes()
     {
+        var runtime = new StubRuntimeIdentityService(new RuntimeIdentity(
+            "rt-1",
+            "Runtime 1",
+            "PublicKey",
+            "pk",
+            null,
+            ["cap.a", "cap.b"],
+            DateTimeOffset.UtcNow));
+
         var identity = new RuntimeIdentity(
             "rt-1",
             "Runtime 1",
@@ -117,7 +150,7 @@ public sealed class EnvironmentRuntimeGovernanceControllersTests
 
         var auth = new StubAuthorizationEvaluationService(allowed: true);
         var controller = new RuntimeInstancesController(
-            new StubRuntimeIdentityService(identity),
+            runtime,
             auth,
             new StubPrincipalContext(new HumanActor(new ActorId("u1"), "u1", isBreakGlassSession: false)),
             new StubEnvironmentContext("local"));
@@ -126,12 +159,92 @@ public sealed class EnvironmentRuntimeGovernanceControllersTests
 
         result.Result.Should().BeOfType<OkObjectResult>();
         var ok = (OkObjectResult)result.Result!;
-        var dto = (RuntimeCapabilitiesDto)ok.Value!;
+        var dto = (RuntimeDeclaredMetadataDto)ok.Value!;
         dto.RuntimeId.Should().Be("rt-1");
         dto.DeclaredScopes.Should().BeEquivalentTo(new[] { "cap.a", "cap.b" });
+        runtime.GetByIdCallCount.Should().Be(1);
 
         auth.LastEvaluatedPermission!.Action.Should().Be(ActionConstants.RuntimeRead);
         auth.LastEvaluatedResource!.ScopeKey.Should().Be(ScopeKeyConstants.RuntimeInstance("local", "rt-1"));
+    }
+
+    [Fact]
+    public async Task RuntimeInstancesController_GetAll_WhenNotAuthorized_Returns403_AndDoesNotLeak()
+    {
+        var runtime = new StubRuntimeIdentityService(new[]
+        {
+            new RuntimeIdentity(
+                "rt-1",
+                "Runtime 1",
+                "PublicKey",
+                "pk",
+                null,
+                ["meta.a"],
+                DateTimeOffset.UtcNow),
+            new RuntimeIdentity(
+                "rt-2",
+                "Runtime 2",
+                "PublicKey",
+                "pk",
+                null,
+                ["meta.b"],
+                DateTimeOffset.UtcNow)
+        });
+
+        var controller = new RuntimeInstancesController(
+            runtime,
+            new StubAuthorizationEvaluationService(allowed: false),
+            new StubPrincipalContext(new HumanActor(new ActorId("u1"), "u1", isBreakGlassSession: false)),
+            new StubEnvironmentContext("local"));
+
+        var result = await controller.GetAll(CancellationToken.None);
+
+        result.Result.Should().BeOfType<ForbidResult>();
+        runtime.GetAllCallCount.Should().Be(0); // deny/no-leak
+    }
+
+    [Fact]
+    public async Task RuntimeInstancesController_GetAll_WhenAuthorized_ReturnsDurableDeclaredMetadataList()
+    {
+        var runtime = new StubRuntimeIdentityService(new[]
+        {
+            new RuntimeIdentity(
+                "rt-1",
+                "Runtime 1",
+                "PublicKey",
+                "pk",
+                null,
+                ["not-canonical.scope"],
+                DateTimeOffset.UtcNow),
+            new RuntimeIdentity(
+                "rt-2",
+                "Runtime 2",
+                "PublicKey",
+                "pk",
+                null,
+                ["another.meta"],
+                DateTimeOffset.UtcNow)
+        });
+
+        var auth = new StubAuthorizationEvaluationService(allowed: true);
+        var controller = new RuntimeInstancesController(
+            runtime,
+            auth,
+            new StubPrincipalContext(new HumanActor(new ActorId("u1"), "u1", isBreakGlassSession: false)),
+            new StubEnvironmentContext("local"));
+
+        var result = await controller.GetAll(CancellationToken.None);
+
+        result.Result.Should().BeOfType<OkObjectResult>();
+        var ok = (OkObjectResult)result.Result!;
+        var dtos = (IReadOnlyList<RuntimeDeclaredMetadataDto>)ok.Value!;
+
+        dtos.Select(d => d.RuntimeId).Should().BeEquivalentTo(new[] { "rt-1", "rt-2" });
+        dtos.First(d => d.RuntimeId == "rt-1").DeclaredScopes.Should().ContainSingle(s => s == "not-canonical.scope");
+        runtime.GetAllCallCount.Should().Be(1);
+
+        auth.LastEvaluatedPermission!.Action.Should().Be(ActionConstants.RuntimeRead);
+        auth.LastEvaluatedResource!.ScopeKey.Should().Be(ScopeKeyConstants.Environment("local"));
     }
 
     private sealed class StubEnvironmentContext : IEnvironmentContext
@@ -170,12 +283,36 @@ public sealed class EnvironmentRuntimeGovernanceControllersTests
 
     private sealed class StubRuntimeIdentityService : IRuntimeIdentityService
     {
-        private readonly RuntimeIdentity? _runtimeIdentity;
+        private readonly IReadOnlyDictionary<string, RuntimeIdentity> _byId;
+        private readonly IReadOnlyList<RuntimeIdentity> _all;
 
-        public StubRuntimeIdentityService(RuntimeIdentity? runtimeIdentity) => _runtimeIdentity = runtimeIdentity;
+        public int GetByIdCallCount { get; private set; }
+        public int GetAllCallCount { get; private set; }
 
-        public ValueTask<RuntimeIdentity?> GetByIdAsync(string runtimeId, CancellationToken cancellationToken = default) =>
-            ValueTask.FromResult(_runtimeIdentity);
+        public StubRuntimeIdentityService(RuntimeIdentity? runtimeIdentity)
+        {
+            _all = runtimeIdentity is null ? Array.Empty<RuntimeIdentity>() : new[] { runtimeIdentity };
+            _byId = _all.ToDictionary(x => x.Id, x => x);
+        }
+
+        public StubRuntimeIdentityService(IReadOnlyList<RuntimeIdentity> runtimeIdentities)
+        {
+            _all = runtimeIdentities ?? Array.Empty<RuntimeIdentity>();
+            _byId = _all.ToDictionary(x => x.Id, x => x);
+        }
+
+        public ValueTask<RuntimeIdentity?> GetByIdAsync(string runtimeId, CancellationToken cancellationToken = default)
+        {
+            GetByIdCallCount++;
+            _byId.TryGetValue(runtimeId, out var identity);
+            return ValueTask.FromResult(identity);
+        }
+
+        public ValueTask<IReadOnlyList<RuntimeIdentity>> GetAllAsync(CancellationToken cancellationToken = default)
+        {
+            GetAllCallCount++;
+            return ValueTask.FromResult(_all);
+        }
 
         public ValueTask<RuntimeTrustValidationResult> ValidateAsync(string runtimeId, string presentedCredential, CancellationToken cancellationToken = default) =>
             ValueTask.FromResult(new RuntimeTrustValidationResult(false, FailureReason: "not implemented"));

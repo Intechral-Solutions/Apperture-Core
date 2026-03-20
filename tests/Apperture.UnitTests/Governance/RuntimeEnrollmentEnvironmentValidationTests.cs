@@ -25,7 +25,6 @@ public sealed class RuntimeEnrollmentEnvironmentValidationTests
             principalContext: new StubPrincipalContext(actor: null),
             principalToUserResolver: new StubPrincipalToUserResolver(),
             roleProvider: new StubRoleProvider(),
-            descriptorRegistry: new StubResourceDescriptorRegistry(),
             environment: new StubEnvironmentContext("local"),
             authorizationEvaluation: new StubAuthorizationEvaluationService(allowed: true),
             audit: new StubAuditService());
@@ -44,7 +43,6 @@ public sealed class RuntimeEnrollmentEnvironmentValidationTests
             principalContext: new StubPrincipalContext(new HumanActor(new ActorId("u1"), "u1", isBreakGlassSession: false)),
             principalToUserResolver: new StubPrincipalToUserResolver(),
             roleProvider: new StubRoleProvider(),
-            descriptorRegistry: new StubResourceDescriptorRegistry(),
             environment: new StubEnvironmentContext("local"),
             authorizationEvaluation: new StubAuthorizationEvaluationService(allowed: false),
             audit: audit);
@@ -66,7 +64,6 @@ public sealed class RuntimeEnrollmentEnvironmentValidationTests
             principalContext: new StubPrincipalContext(new HumanActor(new ActorId("u1"), "u1", isBreakGlassSession: false)),
             principalToUserResolver: new StubPrincipalToUserResolver(),
             roleProvider: new StubRoleProvider(),
-            descriptorRegistry: new StubResourceDescriptorRegistry(),
             environment: new StubEnvironmentContext("local"),
             authorizationEvaluation: new StubAuthorizationEvaluationService(allowed: true),
             audit: audit);
@@ -163,7 +160,6 @@ public sealed class RuntimeEnrollmentEnvironmentValidationTests
             principalContext: new StubPrincipalContext(new HumanActor(new ActorId("u1"), "u1", isBreakGlassSession: false)),
             principalToUserResolver: new StubPrincipalToUserResolver(),
             roleProvider: new StubRoleProvider(),
-            descriptorRegistry: new StubResourceDescriptorRegistry(),
             environment: environment,
             authorizationEvaluation: createInvitationAuthz,
             audit: audit);
@@ -195,7 +191,7 @@ public sealed class RuntimeEnrollmentEnvironmentValidationTests
 
         var inspectionResult = await inspection.GetCapabilities("rt-3", CancellationToken.None);
         inspectionResult.Result.Should().BeOfType<OkObjectResult>();
-        var dto = ((OkObjectResult)inspectionResult.Result!).Value.Should().BeOfType<RuntimeCapabilitiesDto>().Which;
+        var dto = ((OkObjectResult)inspectionResult.Result!).Value.Should().BeOfType<RuntimeDeclaredMetadataDto>().Which;
         dto.DeclaredScopes.Should().ContainSingle(s => s == "cap.a");
     }
 
