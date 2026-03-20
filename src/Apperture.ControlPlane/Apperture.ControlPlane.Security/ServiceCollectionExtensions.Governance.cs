@@ -88,6 +88,10 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IModuleWorkflowListingService, ModuleWorkflowListingService>();
         services.AddScoped<IWorkflowStartAuthorizationService, WorkflowStartAuthorizationService>();
         services.AddScoped<IScheduleGovernanceService, ScheduleGovernanceService>();
+        services.AddScoped<IControlActionAvailabilityProjection, ControlActionAvailabilityProjection>();
+        services.AddScoped<IControlActivityQueryService, ControlActivityQueryService>();
+        services.AddScoped<IControlAttentionQueryService, ControlAttentionQueryService>();
+        services.AddScoped<IControlCenterQueryService, ControlCenterQueryService>();
         return services;
     }
 

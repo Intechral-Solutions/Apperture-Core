@@ -29,8 +29,12 @@ The Management API (control plane) exposes REST endpoints for module registry, w
 | GET | `/api/runtime-instances` | Inspect governed runtime capabilities (validated capability ids + kind) list (authorization gated) |
 | GET | `/api/runtime-instances/{runtimeId}/capabilities` | Inspect governed runtime capabilities for one runtime (capabilityId + kind) (authorization gated) |
 | POST | `/api/runtime-instances/{runtimeId}/controls/shutdown/request` | Request runtime shutdown (governance gated + auditable) |
+| GET | `/api/runtime-instances/{runtimeId}/controls/shutdown/requests` | List persisted runtime shutdown requests (permission-gated by `runtime.read`) |
 | POST | `/api/enroll/invitation` | Operator-issued runtime enrollment invitation (governance gated + auditable) |
 | POST | `/api/enroll` | Runtime enrollment using enrollment token (anonymous; token-scoped) |
+| GET | `/api/control/center` | Unified operator control facade (targets + recent activity + attention) |
+| GET | `/api/control/activity` | Unified operator activity feed (executions + durable runtime control requests) |
+| GET | `/api/control/attention` | Cross-domain attention items for triage (permission-safe) |
 
 ## Operation definition and run contract notes
 

@@ -31,7 +31,8 @@ The Control Panel UI provides the navigation shell for the Apperture Management 
 
 ## Operator console (current baseline)
 
-- **Default landing view:** `/` redirects to `/runs` (thin operator entry point).
+- **Default landing view:** `/` redirects to `/control/center` (unified operator control console).
+- **Control center:** `/control/center` provides a cohesive operator facade (targets + recent activity + attention) and links into drill-down pages.
 - **Runs console:** `/runs` list + `/runs/{id}` detail. Detail renders backend truth only: lifecycle events, step history, and external-control request trail.
 - **Control actions:** cancel/retry/park/resume are issued via the existing Management API endpoints and are shown as cooperative/queued until the worker applies them (operator observes outcomes via refresh/poll).
 - **Operation start:** `/operations/start` provides operation-centric discovery and execution. Inputs are metadata-driven from operation definition schema, not module custom UI.

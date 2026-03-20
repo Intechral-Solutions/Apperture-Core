@@ -1,0 +1,245 @@
+@page "/control/center"
+@using Apperture.Management.Client
+@inject IManagementClient Client
+@inject NavigationManager Nav
+
+<div class="p-4">
+    <div class="flex items-center justify-between gap-3">
+        <div class="min-w-0">
+            <h1 class="text-xl font-semibold text-heading">Control Center</h1>
+            <div class="text-xs text-muted">Unified control targets, recent activity, and attention items.</div>
+        </div>
+        <button class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface"
+                disabled="@_loading"
+                @onclick="LoadAsync">
+            Refresh
+        </button>
+    </div>
+
+    @if (!string.IsNullOrEmpty(_error))
+    {
+        <div class="mt-4 rounded border border-default bg-surface px-3 py-2 text-sm text-body">
+            <div class="font-semibold">Error</div>
+            <div class="text-muted">@_error</div>
+        </div>
+    }
+    else if (_dto is null)
+    {
+        <div class="mt-4 text-sm text-muted">Loading...</div>
+    }
+    else
+    {
+        <div class="mt-4 grid gap-4 lg:grid-cols-3">
+            <div class="rounded border border-default bg-surface p-3 lg:col-span-1">
+                <div class="text-sm font-semibold text-heading">Targets</div>
+                <div class="text-xs text-muted">Server-projected action availability.</div>
+
+                <div class="mt-3 space-y-3">
+                    @foreach (var t in _dto.Targets)
+                    {
+                        <div class="rounded border border-default bg-surface-muted p-3">
+                            <div class="flex items-start justify-between gap-2">
+                                <div class="min-w-0">
+                                    <div class="text-sm font-semibold">@t.DisplayName</div>
+                                    <div class="text-xs text-muted">
+                                        <span class="font-mono">@t.TargetKind</span> / <span class="font-mono">@t.TargetId</span>
+                                    </div>
+                                    @if (!string.IsNullOrWhiteSpace(t.GroupKey))
+                                    {
+                                        <div class="text-xs text-muted">Group: <span class="font-mono">@t.GroupKey</span></div>
+                                    }
+                                </div>
+                            </div>
+
+                            <div class="mt-2">
+                                @if (t.AvailableActions.Count == 0)
+                                {
+                                    <div class="text-xs text-muted">No actions.</div>
+                                }
+                                else
+                                {
+                                    <div class="space-y-1">
+                                        @foreach (var a in t.AvailableActions)
+                                        {
+                                            <div class="text-xs">
+                                                <span class="font-mono">@a.ActionKind</span>:
+                                                <span class="font-semibold">@a.AvailabilityState</span>
+                                                @if (!string.IsNullOrWhiteSpace(a.ReasonCode))
+                                                {
+                                                    <span class="text-muted">(<span class="font-mono">@a.ReasonCode</span>)</span>
+                                                }
+                                            </div>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                    }
+                </div>
+            </div>
+
+            <div class="rounded border border-default bg-surface p-3 lg:col-span-2">
+                <div class="flex items-center justify-between gap-3">
+                    <div>
+                        <div class="text-sm font-semibold text-heading">Recent Activity</div>
+                        <div class="text-xs text-muted">Executions and durable runtime control requests.</div>
+                    </div>
+                </div>
+
+                @if (_dto.RecentActivity.Count == 0)
+                {
+                    <div class="mt-3 text-sm text-muted">No activity found.</div>
+                }
+                else
+                {
+                    <div class="mt-3 overflow-x-auto">
+                        <table class="min-w-full text-left text-sm text-body">
+                            <thead class="border-b border-default text-xs text-muted">
+                                <tr>
+                                    <th class="px-2 py-2">When</th>
+                                    <th class="px-2 py-2">Status</th>
+                                    <th class="px-2 py-2">Activity</th>
+                                    <th class="px-2 py-2">Target</th>
+                                    <th class="px-2 py-2">Outcome</th>
+                                    <th class="px-2 py-2">Actions</th>
+                                    <th class="px-2 py-2">Open</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var a in _dto.RecentActivity)
+                                {
+                                    <tr class="border-b border-default">
+                                        <td class="px-2 py-2">
+                                            <div class="font-mono text-xs">@FmtWhen(a.RequestedAtIso)</div>
+                                        </td>
+                                        <td class="px-2 py-2">
+                                            <div class="font-semibold">@a.CurrentNormalizedStatus</div>
+                                            <div class="text-xs text-muted">@a.ActivitySource</div>
+                                        </td>
+                                        <td class="px-2 py-2">
+                                            <div class="font-mono text-xs">@a.ActivityKind</div>
+                                            <div class="font-mono text-xs text-muted">@a.ActivityId</div>
+                                        </td>
+                                        <td class="px-2 py-2">
+                                            <div class="font-mono text-xs">@a.TargetKind</div>
+                                            <div class="font-mono text-xs text-muted">@a.TargetId</div>
+                                        </td>
+                                        <td class="px-2 py-2">
+                                            <div class="font-semibold text-xs">@a.Outcome</div>
+                                            <div class="text-xs text-muted">@a.OutcomeSummary</div>
+                                        </td>
+                                        <td class="px-2 py-2">
+                                            @if (a.AvailableActions.Count == 0)
+                                            {
+                                                <div class="text-xs text-muted">-</div>
+                                            }
+                                            else
+                                            {
+                                                <div class="space-y-1">
+                                                    @foreach (var act in a.AvailableActions)
+                                                    {
+                                                        <div class="text-xs">
+                                                            <span class="font-mono">@act.ActionKind</span>:
+                                                            <span class="font-semibold">@act.AvailabilityState</span>
+                                                        </div>
+                                                    }
+                                                </div>
+                                            }
+                                        </td>
+                                        <td class="px-2 py-2">
+                                            <a class="underline" href="@a.DetailLink">Open</a>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            </div>
+        </div>
+
+        <div class="mt-4 rounded border border-default bg-surface p-3">
+            <div class="text-sm font-semibold text-heading">Attention</div>
+            <div class="text-xs text-muted">Minimal cross-domain issues for triage.</div>
+
+            @if (_dto.AttentionItems.Count == 0)
+            {
+                <div class="mt-3 text-sm text-muted">Nothing needs attention.</div>
+            }
+            else
+            {
+                <div class="mt-3 space-y-2">
+                    @foreach (var it in _dto.AttentionItems)
+                    {
+                        <div class="rounded border border-default bg-surface-muted p-3">
+                            <div class="flex items-start justify-between gap-3">
+                                <div class="min-w-0">
+                                    <div class="text-sm font-semibold">@it.Summary</div>
+                                    <div class="text-xs text-muted">
+                                        <span class="font-mono">@it.AttentionKind</span> / <span class="font-mono">@it.Severity</span>
+                                    </div>
+                                    <div class="text-xs text-muted">
+                                        Target: <span class="font-mono">@it.TargetKind</span> / <span class="font-mono">@it.TargetId</span>
+                                    </div>
+                                </div>
+                                <div class="text-right">
+                                    @if (!string.IsNullOrWhiteSpace(GetAttentionLink(it)))
+                                    {
+                                        <a class="underline text-sm" href="@GetAttentionLink(it)">Open</a>
+                                    }
+                                </div>
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private ControlCenterDto? _dto;
+    private bool _loading;
+    private string? _error;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _error = null;
+        _dto = null;
+        try
+        {
+            _dto = await Client.GetControlCenterAsync();
+        }
+        catch (HttpRequestException ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private string FmtWhen(string iso) =>
+        DateTimeOffset.TryParse(iso, out var dt) ? dt.ToLocalTime().ToString("u") : iso;
+
+    private string? GetAttentionLink(ControlAttentionItemDto it)
+    {
+        if (string.IsNullOrWhiteSpace(it.RelatedActivityId))
+            return null;
+
+        if (string.Equals(it.AttentionKind, "executionFailed", StringComparison.Ordinal))
+            return $"/runs/{it.RelatedActivityId}";
+
+        if (string.Equals(it.AttentionKind, "runtimeShutdownQueuedStuck", StringComparison.Ordinal))
+        {
+            return $"/runtimes/{it.TargetId}/controls/shutdown/requests/{it.RelatedActivityId}";
+        }
+
+        return null;
+    }
+}
+

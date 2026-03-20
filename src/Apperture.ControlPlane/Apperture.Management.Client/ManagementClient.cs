@@ -97,6 +97,22 @@ public sealed class ManagementClient : IManagementClient
         return await _http.GetFromJsonAsync<OperationDefinitionDto>($"operations/{operationDefinitionId}", cancellationToken).ConfigureAwait(false);
     }
 
+    public async Task<ControlCenterDto> GetControlCenterAsync(CancellationToken cancellationToken = default)
+    {
+        var dto = await _http.GetFromJsonAsync<ControlCenterDto>("control/center", cancellationToken).ConfigureAwait(false);
+        return dto ?? new ControlCenterDto([], [], []);
+    }
+
+    public async Task<IReadOnlyList<RuntimeControlRequestDto>> GetRuntimeShutdownRequestsAsync(
+        string runtimeId,
+        CancellationToken cancellationToken = default)
+    {
+        var list = await _http.GetFromJsonAsync<RuntimeControlRequestDto[]>(
+            $"runtime-instances/{runtimeId}/controls/shutdown/requests",
+            cancellationToken).ConfigureAwait(false);
+        return list ?? Array.Empty<RuntimeControlRequestDto>();
+    }
+
     public async Task<StartOperationResult> StartOperationAsync(
         string operationDefinitionId,
         IReadOnlyDictionary<string, object?>? parameters,

@@ -85,5 +85,45 @@ public sealed class RuntimeControlsController : ControllerBase
             status = result.Status
         });
     }
+
+    /// <summary>
+    /// Lists persisted shutdown control requests for a runtime (queued/applied/rejected/failed).
+    /// Permission-gated by <c>runtime.read</c> on the runtime instance scope.
+    /// </summary>
+    [HttpGet("{runtimeId}/controls/shutdown/requests")]
+    [ProducesResponseType(typeof(IReadOnlyList<RuntimeControlRequestResult>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async ValueTask<ActionResult<IReadOnlyList<RuntimeControlRequestResult>>> GetShutdownRequests(
+        string runtimeId,
+        CancellationToken cancellationToken = default)
+    {
+        var actor = await _principalContext.GetCurrentActorAsync(cancellationToken);
+        if (actor is null)
+            return Unauthorized();
+
+        // Ensure runtime exists before returning (also avoids leaking "no such runtime" only via list).
+        var identity = await _runtimeIdentity.GetByIdAsync(runtimeId, cancellationToken);
+        if (identity is null)
+            return NotFound();
+
+        var envId = _environment.EnvironmentId;
+        var runtimeScopeKey = ScopeKeyConstants.RuntimeInstance(envId, runtimeId);
+
+        var permission = new PermissionDescriptor(
+            ActionConstants.RuntimeRead,
+            new ResourceDescriptor(ResourceTypeConstants.RuntimeInstance, runtimeScopeKey));
+
+        var allowed = await _authorizationEvaluation.EvaluateAsync(
+            new AuthorizationEvaluationContext(actor, permission, permission.Resource),
+            cancellationToken);
+
+        if (!allowed)
+            return Forbid();
+
+        var requests = await _control.GetShutdownRequestsAsync(runtimeId, cancellationToken).ConfigureAwait(false);
+        return Ok(requests);
+    }
 }
 

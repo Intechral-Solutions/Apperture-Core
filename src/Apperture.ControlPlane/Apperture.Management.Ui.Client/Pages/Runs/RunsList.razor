@@ -10,7 +10,7 @@
             <select class="rounded border border-default bg-surface px-2 py-2 text-sm"
                     disabled="@_loading"
                     @bind="_executionKindFilter"
-                    @onchange="async _ => await LoadAsync()">
+                    >
                 <option value="">All executions</option>
                 <option value="operation">Operations</option>
                 <option value="workflow">Workflows</option>

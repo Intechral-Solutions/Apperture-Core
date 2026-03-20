@@ -30,6 +30,12 @@ public interface IManagementClient
     Task<RetryRunResult> RetryRunAsync(string runId, CancellationToken cancellationToken = default);
     Task<ExternalControlResult> ParkRunAsync(string runId, CancellationToken cancellationToken = default);
     Task<ExternalControlResult> ResumeRunAsync(string runId, CancellationToken cancellationToken = default);
+
+    Task<ControlCenterDto> GetControlCenterAsync(CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<RuntimeControlRequestDto>> GetRuntimeShutdownRequestsAsync(
+        string runtimeId,
+        CancellationToken cancellationToken = default);
 }
 
 public sealed record StartWorkflowResult(
@@ -164,3 +170,54 @@ public sealed record ExternalControlResult(
     string Status,
     string RunStatus,
     string? CurrentStepName);
+
+public sealed record ControlActionAvailabilityDto(
+    string ActionKind,
+    string AvailabilityState,
+    string? ReasonCode);
+
+public sealed record ControlTargetSummaryDto(
+    string TargetKind,
+    string TargetId,
+    string DisplayName,
+    string? GroupKey,
+    IReadOnlyList<ControlActionAvailabilityDto> AvailableActions);
+
+public sealed record ControlActivitySummaryDto(
+    string ActivityKind,
+    string ActivityId,
+    string TargetKind,
+    string TargetId,
+    string RequestedAtIso,
+    string? CompletedAtIso,
+    string CurrentNormalizedStatus,
+    string Outcome,
+    string OutcomeSummary,
+    string ActivitySource,
+    string DetailLink,
+    IReadOnlyList<ControlActionAvailabilityDto> AvailableActions);
+
+public sealed record ControlAttentionItemDto(
+    string AttentionKind,
+    string Severity,
+    string TargetKind,
+    string TargetId,
+    string Summary,
+    string CreatedAtIso,
+    string? RelatedActivityId);
+
+public sealed record ControlCenterDto(
+    IReadOnlyList<ControlTargetSummaryDto> Targets,
+    IReadOnlyList<ControlActivitySummaryDto> RecentActivity,
+    IReadOnlyList<ControlAttentionItemDto> AttentionItems);
+
+public sealed record RuntimeControlRequestDto(
+    long Id,
+    string RuntimeId,
+    string ControlKind,
+    string Status,
+    DateTimeOffset RequestedAt,
+    string? RequestedBy,
+    DateTimeOffset? AppliedAt,
+    string? AppliedBy,
+    string? LastError);

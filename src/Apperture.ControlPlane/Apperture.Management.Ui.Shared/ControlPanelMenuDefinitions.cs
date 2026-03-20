@@ -23,6 +23,14 @@ public static class ControlPanelMenuDefinitions
                     new DomainMenuItem { Text = "Start Workflow", Href = "/workflows/start" },
                 }
             },
+            ["Control"] = new DomainMenu
+            {
+                Title = null,
+                Items =
+                {
+                    new DomainMenuItem { Text = "Control Center", Href = "/control/center" }
+                }
+            },
             ["Test Suite"] = new DomainMenu
             {
                 Title = null,
