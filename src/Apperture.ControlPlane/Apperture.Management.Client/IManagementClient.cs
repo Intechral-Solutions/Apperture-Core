@@ -17,6 +17,7 @@ public interface IManagementClient
     Task<IReadOnlyList<RunSummaryDto>> GetRunsAsync(RunQueryFilter? filter, CancellationToken cancellationToken = default);
     Task<RunDetailDto?> GetRunAsync(string runId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<ControlActionAvailabilityDto>> GetRunActionsAsync(string runId, CancellationToken cancellationToken = default);
+    Task<RunTimelineDto?> GetRunTimelineAsync(string runId, CancellationToken cancellationToken = default);
 
     Task<IReadOnlyList<OperationDefinitionDto>> GetOperationsAsync(CancellationToken cancellationToken = default);
     Task<OperationDefinitionDto?> GetOperationAsync(string operationDefinitionId, CancellationToken cancellationToken = default);
@@ -127,6 +128,22 @@ public sealed record RunControlRequestDto(
     DateTimeOffset? AppliedAt,
     string? AppliedBy,
     string? LastError);
+
+public sealed record RunTimelineDto(
+    string RunId,
+    string ExecutionKind,
+    IReadOnlyList<RunTimelineEventDto> Events);
+
+public sealed record RunTimelineEventDto(
+    string EventId,
+    string RunId,
+    DateTimeOffset OccurredAt,
+    string EventKind,
+    string Summary,
+    string? Actor,
+    string SourceType,
+    string? SourceId,
+    IReadOnlyDictionary<string, string?> Metadata);
 
 public sealed record CancelRunResult(string RunId, string Status);
 

@@ -204,6 +204,58 @@
             </div>
 
             <div class="rounded border border-default bg-surface p-3">
+                <div class="text-sm font-semibold text-heading">Execution timeline</div>
+                <div class="text-xs text-muted">Canonical ordered history projected from persisted execution artifacts.</div>
+
+                @if (_timeline is null || _timeline.Events.Count == 0)
+                {
+                    <div class="mt-2 text-sm text-muted">No timeline events.</div>
+                }
+                else
+                {
+                    <div class="mt-2 overflow-x-auto">
+                        <table class="min-w-full text-left text-sm text-body">
+                            <thead class="border-b border-default text-xs text-muted">
+                                <tr>
+                                    <th class="px-2 py-2">At</th>
+                                    <th class="px-2 py-2">Event</th>
+                                    <th class="px-2 py-2">Summary</th>
+                                    <th class="px-2 py-2">Actor</th>
+                                    <th class="px-2 py-2">Source</th>
+                                    <th class="px-2 py-2">Metadata</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var e in _timeline.Events)
+                                {
+                                    <tr class="border-b border-default">
+                                        <td class="px-2 py-2">@e.OccurredAt.ToLocalTime().ToString("u")</td>
+                                        <td class="px-2 py-2 font-mono text-xs">@e.EventKind</td>
+                                        <td class="px-2 py-2">@e.Summary</td>
+                                        <td class="px-2 py-2">@e.Actor</td>
+                                        <td class="px-2 py-2 font-mono text-xs">@e.SourceType/@e.SourceId</td>
+                                        <td class="px-2 py-2 text-xs">
+                                            @if (e.Metadata.Count == 0)
+                                            {
+                                                <span class="text-muted">-</span>
+                                            }
+                                            else
+                                            {
+                                                @foreach (var m in e.Metadata.OrderBy(x => x.Key, StringComparer.Ordinal))
+                                                {
+                                                    <div class="font-mono break-all">@m.Key=@m.Value</div>
+                                                }
+                                            }
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            </div>
+
+            <div class="rounded border border-default bg-surface p-3">
                 <div class="flex items-center justify-between">
                     <div>
                         <div class="text-sm font-semibold text-heading">Lifecycle</div>
@@ -341,6 +393,7 @@
     private string? _actionMessage;
     private string? _newRunId;
     private IReadOnlyList<ControlActionAvailabilityDto> _actions = Array.Empty<ControlActionAvailabilityDto>();
+    private RunTimelineDto? _timeline;
     private bool _pollingEnabled;
     private PeriodicTimer? _timer;
     private CancellationTokenSource? _pollingCts;
@@ -395,10 +448,12 @@
             {
                 _error = "Run not found (404).";
                 _actions = Array.Empty<ControlActionAvailabilityDto>();
+                _timeline = null;
             }
             else
             {
                 _actions = await Client.GetRunActionsAsync(RunId);
+                _timeline = await Client.GetRunTimelineAsync(RunId);
             }
         }
         catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Forbidden)

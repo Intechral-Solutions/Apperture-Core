@@ -16,19 +16,22 @@ public sealed class RunsController : ControllerBase
     private readonly IWorkflowRetryService _retry;
     private readonly IWorkflowExternalControlService _externalControl;
     private readonly IRunActionAvailabilityQueryService _runActions;
+    private readonly IRunTimelineQueryService _timeline;
 
     public RunsController(
         IRunQueryService runs,
         IExecutionCancelService cancel,
         IWorkflowRetryService retry,
         IWorkflowExternalControlService externalControl,
-        IRunActionAvailabilityQueryService runActions)
+        IRunActionAvailabilityQueryService runActions,
+        IRunTimelineQueryService timeline)
     {
         _runs = runs;
         _cancel = cancel;
         _retry = retry;
         _externalControl = externalControl;
         _runActions = runActions;
+        _timeline = timeline;
     }
 
     [HttpGet]
@@ -86,6 +89,22 @@ public sealed class RunsController : ControllerBase
             if (actions is null)
                 return NotFound();
             return Ok(actions);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return Forbid();
+        }
+    }
+
+    [HttpGet("{id}/timeline")]
+    public async Task<ActionResult<RunTimelineDto>> GetRunTimeline(string id, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var timeline = await _timeline.GetRunTimelineAsync(new OperationRunId(id), cancellationToken);
+            if (timeline is null)
+                return NotFound();
+            return Ok(timeline);
         }
         catch (UnauthorizedAccessException)
         {

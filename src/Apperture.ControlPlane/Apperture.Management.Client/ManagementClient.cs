@@ -60,6 +60,11 @@ public sealed class ManagementClient : IManagementClient
         return list ?? Array.Empty<ControlActionAvailabilityDto>();
     }
 
+    public async Task<RunTimelineDto?> GetRunTimelineAsync(string runId, CancellationToken cancellationToken = default)
+    {
+        return await _http.GetFromJsonAsync<RunTimelineDto>($"runs/{runId}/timeline", cancellationToken).ConfigureAwait(false);
+    }
+
     public async Task<CancelRunResult> CancelRunAsync(string runId, CancellationToken cancellationToken = default)
     {
         var response = await _http.PostAsync($"runs/{runId}/cancel", content: null, cancellationToken).ConfigureAwait(false);

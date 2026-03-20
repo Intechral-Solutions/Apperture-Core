@@ -1,6 +1,7 @@
 using Apperture.ControlPlane.Security;
 using Apperture.Management.Api.Controllers;
 using Apperture.RuntimePlane.Abstractions;
+using System.Collections.Generic;
 using FluentAssertions;
 using Microsoft.AspNetCore.Mvc;
 using Xunit;
@@ -130,12 +131,54 @@ public sealed class RunsControllerTests
         result.Result.Should().BeOfType<OkObjectResult>();
     }
 
+    [Fact]
+    public async Task GetRunTimeline_WhenMissing_Returns404()
+    {
+        var controller = NewController(new StubRunQueryService(), timeline: new StubRunTimelineQueryService(result: null));
+        var result = await controller.GetRunTimeline("missing", CancellationToken.None);
+        result.Result.Should().BeOfType<NotFoundResult>();
+    }
+
+    [Fact]
+    public async Task GetRunTimeline_WhenUnauthorized_Returns403()
+    {
+        var controller = NewController(new StubRunQueryService(), timeline: new StubRunTimelineQueryService(throwUnauthorized: true));
+        var result = await controller.GetRunTimeline("run-1", CancellationToken.None);
+        result.Result.Should().BeOfType<ForbidResult>();
+    }
+
+    [Fact]
+    public async Task GetRunTimeline_WhenAvailable_Returns200()
+    {
+        var controller = NewController(
+            new StubRunQueryService(),
+            timeline: new StubRunTimelineQueryService(new RunTimelineDto(
+                RunId: "run-1",
+                ExecutionKind: "workflow",
+                Events: new[]
+                {
+                    new RunTimelineEventDto(
+                        EventId: "startRequest:1:requested",
+                        RunId: "run-1",
+                        OccurredAt: DateTimeOffset.UtcNow,
+                        EventKind: RunTimeline.EventKindRunRequested,
+                        Summary: "Run requested.",
+                        Actor: null,
+                        SourceType: RunTimeline.SourceTypeStartRequest,
+                        SourceId: "1",
+                        Metadata: new Dictionary<string, string?>())
+                })));
+        var result = await controller.GetRunTimeline("run-1", CancellationToken.None);
+        result.Result.Should().BeOfType<OkObjectResult>();
+    }
+
     private static RunsController NewController(
         IRunQueryService runs,
         IExecutionCancelService? cancel = null,
         IWorkflowRetryService? retry = null,
         IWorkflowExternalControlService? external = null,
-        IRunActionAvailabilityQueryService? runActions = null) =>
+        IRunActionAvailabilityQueryService? runActions = null,
+        IRunTimelineQueryService? timeline = null) =>
         new(
             runs,
             cancel ?? new StubCancelService(),
@@ -144,7 +187,8 @@ public sealed class RunsControllerTests
             runActions ?? new StubRunActionAvailabilityQueryService(new[]
             {
                 new Apperture.Core.Application.ControlFacade.ControlActionAvailabilityDto("execution.cancel", "available", null)
-            }));
+            }),
+            timeline ?? new StubRunTimelineQueryService(new RunTimelineDto("run-1", "workflow", Array.Empty<RunTimelineEventDto>())));
 
     private sealed class StubRunQueryService : IRunQueryService
     {
@@ -204,6 +248,25 @@ public sealed class RunsControllerTests
             if (_throwUnauthorized)
                 throw new UnauthorizedAccessException();
 
+            return Task.FromResult(_result);
+        }
+    }
+
+    private sealed class StubRunTimelineQueryService : IRunTimelineQueryService
+    {
+        private readonly RunTimelineDto? _result;
+        private readonly bool _throwUnauthorized;
+
+        public StubRunTimelineQueryService(RunTimelineDto? result = null, bool throwUnauthorized = false)
+        {
+            _result = result;
+            _throwUnauthorized = throwUnauthorized;
+        }
+
+        public Task<RunTimelineDto?> GetRunTimelineAsync(OperationRunId runId, CancellationToken cancellationToken = default)
+        {
+            if (_throwUnauthorized)
+                throw new UnauthorizedAccessException();
             return Task.FromResult(_result);
         }
     }
