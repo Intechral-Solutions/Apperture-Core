@@ -227,6 +227,14 @@
                         {
                             <div class="text-xs font-mono break-all text-muted">@_detail.Error.DetailsJson</div>
                         }
+                        else if (HasNoDiagnostics)
+                        {
+                            <div class="text-xs text-muted">No failure diagnostics were captured for this run.</div>
+                        }
+                        else if (HasUnsupportedDiagnostics)
+                        {
+                            <div class="text-xs text-muted">Failure diagnostics could not be captured in a supported inline form.</div>
+                        }
                         else if (HasSummaryOnlyDiagnostics)
                         {
                             <div class="text-xs text-muted">Detailed diagnostics are summary-only for this failure.</div>
@@ -522,6 +530,14 @@
     private bool HasWithheldDiagnostics =>
         _detail?.Result is not null
         && string.Equals(_detail.Result.DiagnosticsAvailability, "withheld", StringComparison.Ordinal);
+
+    private bool HasNoDiagnostics =>
+        _detail?.Result is not null
+        && string.Equals(_detail.Result.DiagnosticsAvailability, "none", StringComparison.Ordinal);
+
+    private bool HasUnsupportedDiagnostics =>
+        _detail?.Result is not null
+        && string.Equals(_detail.Result.DiagnosticsAvailability, "unsupported", StringComparison.Ordinal);
 
     private async Task LoadAsync()
     {

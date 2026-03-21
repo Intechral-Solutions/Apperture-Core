@@ -704,6 +704,140 @@ public sealed class RunQueryServiceTests
         detail.Result.DiagnosticsJson.Should().Contain("timeout");
     }
 
+    [Fact]
+    public async Task GetRunAsync_WhenFailedRunHasNoDiagnostics_ProjectsNoneAvailability()
+    {
+        var db = NewDb();
+        db.WorkflowInstances.Add(new WorkflowInstanceEntity
+        {
+            Id = "i1",
+            DefinitionId = "Sample.HelloWorld.HelloWorld",
+            Status = WorkflowLifecycleStatusNames.Failed,
+            CreatedAt = DateTimeOffset.UtcNow.AddHours(-1),
+            UpdatedAt = DateTimeOffset.UtcNow,
+            Version = 1
+        });
+        db.OperationRuns.Add(new OperationRunEntity
+        {
+            Id = "r1",
+            WorkflowInstanceId = "i1",
+            DefinitionId = "Sample.HelloWorld.HelloWorld",
+            Status = WorkflowLifecycleStatusNames.Failed,
+            CreatedAt = DateTimeOffset.UtcNow.AddHours(-1),
+            CompletedAt = DateTimeOffset.UtcNow,
+            FailureSummary = "Execution failed.",
+            FailureDiagnosticsStatus = null,
+            FailureDiagnosticsJson = null
+        });
+        db.WorkflowStartRequests.Add(new WorkflowStartRequestEntity
+        {
+            RunId = "r1",
+            WorkflowInstanceId = "i1",
+            WorkflowDefinitionId = "Sample.HelloWorld.HelloWorld",
+            CreatedAt = DateTimeOffset.UtcNow.AddHours(-1),
+            Status = WorkflowLifecycleStatusNames.Failed
+        });
+        await db.SaveChangesAsync();
+
+        var detail = await new RunQueryService(db, new StubOperationRegistry(), new RunKindResolver(db), new AllowReadAuthz(), new AllowOperationReadAuthz()).GetRunAsync(new OperationRunId("r1"));
+        detail!.Result!.DiagnosticsAvailability.Should().Be("none");
+        detail.Result.DiagnosticsJson.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task GetRunAsync_WhenFailedRunHasUnsupportedDiagnostics_ProjectsUnsupportedAvailability()
+    {
+        var db = NewDb();
+        db.WorkflowInstances.Add(new WorkflowInstanceEntity
+        {
+            Id = "i1",
+            DefinitionId = "Sample.HelloWorld.HelloWorld",
+            Status = WorkflowLifecycleStatusNames.Failed,
+            CreatedAt = DateTimeOffset.UtcNow.AddHours(-1),
+            UpdatedAt = DateTimeOffset.UtcNow,
+            Version = 1
+        });
+        db.OperationRuns.Add(new OperationRunEntity
+        {
+            Id = "r1",
+            WorkflowInstanceId = "i1",
+            DefinitionId = "Sample.HelloWorld.HelloWorld",
+            Status = WorkflowLifecycleStatusNames.Failed,
+            CreatedAt = DateTimeOffset.UtcNow.AddHours(-1),
+            CompletedAt = DateTimeOffset.UtcNow,
+            FailureSummary = "Execution failed.",
+            FailureDiagnosticsStatus = "unsupported",
+            FailureDiagnosticsJson = null,
+            FailureDiagnosticsDisplayPolicy = "summary_only"
+        });
+        db.WorkflowStartRequests.Add(new WorkflowStartRequestEntity
+        {
+            RunId = "r1",
+            WorkflowInstanceId = "i1",
+            WorkflowDefinitionId = "Sample.HelloWorld.HelloWorld",
+            CreatedAt = DateTimeOffset.UtcNow.AddHours(-1),
+            Status = WorkflowLifecycleStatusNames.Failed
+        });
+        await db.SaveChangesAsync();
+
+        var detail = await new RunQueryService(db, new StubOperationRegistry(), new RunKindResolver(db), new AllowReadAuthz(), new AllowOperationReadAuthz()).GetRunAsync(new OperationRunId("r1"));
+        detail!.Result!.DiagnosticsAvailability.Should().Be("unsupported");
+        detail.Result.DiagnosticsJson.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task GetRunAsync_WhenOperationFailureDiagnosticsMissing_FallsBackToLifecycleDetails()
+    {
+        var db = NewDb();
+        db.OperationInstances.Add(new OperationInstanceEntity
+        {
+            Id = "i1",
+            DefinitionId = "Sample.HelloWorld.Operation",
+            Status = WorkflowLifecycleStatusNames.Failed,
+            CreatedAt = DateTimeOffset.UtcNow.AddHours(-1),
+            UpdatedAt = DateTimeOffset.UtcNow,
+            Version = 1
+        });
+        db.OperationRuns.Add(new OperationRunEntity
+        {
+            Id = "r1",
+            WorkflowInstanceId = "i1",
+            DefinitionId = "Sample.HelloWorld.Operation",
+            Status = WorkflowLifecycleStatusNames.Failed,
+            CreatedAt = DateTimeOffset.UtcNow.AddHours(-1),
+            CompletedAt = DateTimeOffset.UtcNow,
+            FailureSummary = "Operation failed.",
+            FailureDiagnosticsJson = null,
+            FailureDiagnosticsStatus = "captured",
+            FailureDiagnosticsVersion = 1,
+            FailureDiagnosticsDisplayPolicy = "inline"
+        });
+        db.OperationLifecycleEvents.Add(new OperationLifecycleEventEntity
+        {
+            RunId = "r1",
+            OperationInstanceId = "i1",
+            OperationDefinitionId = "Sample.HelloWorld.Operation",
+            EventType = OperationLifecycleEventNames.Failed,
+            FromStatus = WorkflowLifecycleStatusNames.Running,
+            ToStatus = WorkflowLifecycleStatusNames.Failed,
+            OccurredAt = DateTimeOffset.UtcNow,
+            DetailsJson = "{\"error\":\"from-lifecycle\"}"
+        });
+        db.OperationStartRequests.Add(new OperationStartRequestEntity
+        {
+            RunId = "r1",
+            OperationInstanceId = "i1",
+            OperationDefinitionId = "Sample.HelloWorld.Operation",
+            CreatedAt = DateTimeOffset.UtcNow.AddHours(-1),
+            Status = WorkflowLifecycleStatusNames.Failed
+        });
+        await db.SaveChangesAsync();
+
+        var detail = await new RunQueryService(db, new StubOperationRegistry(), new RunKindResolver(db), new AllowReadAuthz(), new AllowOperationReadAuthz()).GetRunAsync(new OperationRunId("r1"));
+        detail!.Error!.DetailsJson.Should().Contain("from-lifecycle");
+        detail.Result!.DiagnosticsJson.Should().BeNull();
+    }
+
     private static AppertureDbContext NewDb()
     {
         var opts = new DbContextOptionsBuilder<AppertureDbContext>()

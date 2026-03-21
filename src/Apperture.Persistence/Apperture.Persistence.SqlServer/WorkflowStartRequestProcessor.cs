@@ -14,6 +14,8 @@ namespace Apperture.Persistence.SqlServer;
 /// </summary>
 public sealed class WorkflowStartRequestProcessor
 {
+    private const string SupportingFailureMessage = "Execution failed. See failure summary for operator-safe diagnostics.";
+
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNameCaseInsensitive = true
@@ -362,7 +364,7 @@ WHERE RunId = {runId} AND (
                 {
                     activeStep.Status = WorkflowLifecycleStatusNames.Failed;
                     activeStep.EndedAt = DateTimeOffset.UtcNow;
-                    activeStep.Error = Truncate(ex.Message, 2048);
+                    activeStep.Error = SupportingFailureMessage;
                 }
 
                 instance.Status = WorkflowLifecycleStatusNames.Failed;
@@ -377,7 +379,7 @@ WHERE RunId = {runId} AND (
                 request.Status = WorkflowLifecycleStatusNames.Failed;
                 request.ClaimedAt = null;
                 request.ClaimedBy = null;
-                request.LastError = Truncate(ex.Message, 2048);
+                request.LastError = SupportingFailureMessage;
                 _db.WorkflowLifecycleEvents.Add(new WorkflowLifecycleEventEntity
                 {
                     RunId = run.Id,

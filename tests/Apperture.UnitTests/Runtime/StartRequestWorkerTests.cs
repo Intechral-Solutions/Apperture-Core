@@ -177,11 +177,14 @@ public sealed class StartRequestWorkerTests
 
         request.Status.Should().Be("failed");
         request.LastError.Should().NotBeNullOrEmpty();
+        request.LastError.Should().NotContain("boom");
         run.Status.Should().Be("failed");
         run.CompletedAt.Should().NotBeNull();
         instance.Status.Should().Be("failed");
 
         (await db.WorkflowStepInstances.CountAsync()).Should().Be(1);
+        var step = await db.WorkflowStepInstances.SingleAsync(x => x.WorkflowInstanceId == "i1");
+        step.Error.Should().NotContain("boom");
         (await db.WorkflowLifecycleEvents.Where(x => x.RunId == "r1").Select(x => x.EventType).ToListAsync())
             .Should().Contain("workflow.failed");
     }

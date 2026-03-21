@@ -58,6 +58,7 @@ public sealed record RunDetailDto(
 /// Terminal run result projection for <c>GET /runs/{id}</c>. <see cref="Outcome"/> is derived from lifecycle status.
 /// <see cref="Summary"/> uses persisted captured-output summary when the run succeeded and that summary is non-empty; otherwise a standard phrase for the outcome.
 /// <see cref="OutputDisplayPolicy"/> is set when the handler used <c>OperatorRunOutput</c> (ADR-0020); null means legacy Epic-20 plain return (implicit inline).
+/// Failure diagnostics are exposed separately via <see cref="DiagnosticsAvailability"/>/<see cref="DiagnosticsDisplayPolicy"/> and optional inline <see cref="DiagnosticsJson"/>.
 /// </summary>
 public sealed record RunResultDto(
     string Outcome,

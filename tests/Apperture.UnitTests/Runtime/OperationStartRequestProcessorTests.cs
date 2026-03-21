@@ -99,6 +99,35 @@ public sealed class OperationStartRequestProcessorTests
             .Should().Contain(OperationLifecycleEventNames.Cancelled);
     }
 
+    [Fact]
+    public async Task ProcessClaimedAsync_Failure_DoesNotLeakRawExceptionInSupportingFields()
+    {
+        var db = NewDb();
+        SeedStartTriplet(db, runId: "run-3", instanceId: "opinst-3", definitionId: "Sample.HelloWorld.DoWork");
+        await db.SaveChangesAsync();
+
+        var processor = new OperationStartRequestProcessor(
+            db,
+            new ThrowingExecutor(),
+            new StubOperationRegistry(new OperationDefinition(
+                new OperationId("Sample.HelloWorld.DoWork"),
+                "DoWork",
+                "Sample.HelloWorld",
+                OperationCategory.Command,
+                ParameterSchema: null,
+                RequiredPermissions: Array.Empty<PermissionDescriptor>())),
+            "worker-a",
+            DefaultLeaseOptions());
+
+        (await processor.TryClaimAsync("run-3")).Should().BeTrue();
+        await processor.ProcessClaimedAsync("run-3");
+
+        var request = await db.OperationStartRequests.SingleAsync(x => x.RunId == "run-3");
+        var step = await db.OperationStepInstances.SingleAsync(x => x.OperationInstanceId == "opinst-3");
+        request.LastError.Should().NotContain("boom");
+        step.Error.Should().NotContain("boom");
+    }
+
     private static void SeedStartTriplet(AppertureDbContext db, string runId, string instanceId, string definitionId)
     {
         db.OperationStartRequests.Add(new OperationStartRequestEntity
@@ -165,6 +194,17 @@ public sealed class OperationStartRequestProcessorTests
             Calls++;
             return ValueTask.FromResult<object?>(null);
         }
+    }
+
+    private sealed class ThrowingExecutor : IWorkflowExecutor
+    {
+        public ValueTask<object?> ExecuteStepAsync(
+            WorkflowDefinition definition,
+            string stepName,
+            WorkflowInstance instance,
+            IReadOnlyDictionary<string, object?>? parameters,
+            CancellationToken cancellationToken = default)
+            => throw new InvalidOperationException("boom");
     }
 }
 
