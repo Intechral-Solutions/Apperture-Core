@@ -64,4 +64,17 @@ public sealed class SqlScheduleManagementService : IScheduleManagementService
     {
         return await _repo.GetAssignmentsAsync(runtimePlaneId, cancellationToken);
     }
+
+    public async ValueTask<ScheduleWithExecutionState?> GetScheduleWithExecutionStateAsync(ScheduleId id, RuntimePlaneId planeId, CancellationToken cancellationToken = default)
+    {
+        var def = await _repo.GetDefinitionAsync(id, cancellationToken);
+        if (def is null)
+            return null;
+        var assignments = await _repo.GetAssignmentsAsync(planeId, cancellationToken);
+        var assignment = assignments.FirstOrDefault(a => a.ScheduleId.Value == id.Value);
+        if (assignment is null)
+            return new ScheduleWithExecutionState(def, null);
+        var state = await _repo.GetStateAsync(assignment.Id.Value, cancellationToken);
+        return new ScheduleWithExecutionState(def, state);
+    }
 }

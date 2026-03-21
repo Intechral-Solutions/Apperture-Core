@@ -44,16 +44,17 @@ public sealed class SchedulesController : ControllerBase
     }
 
     [HttpGet("{id}")]
-    [ProducesResponseType(typeof(ScheduleDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ScheduleDetailDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<ActionResult<ScheduleDto>> Get(string id, CancellationToken cancellationToken = default)
+    public async Task<ActionResult<ScheduleDetailDto>> Get(string id, [FromQuery] string? runtimePlaneId, CancellationToken cancellationToken = default)
     {
         if (!await _scheduleGovernance.CanManageAsync(cancellationToken))
             return Forbid();
-        var def = await _scheduleManagement.GetDefinitionAsync(new ScheduleId(id), cancellationToken);
-        if (def is null)
+        var planeId = new RuntimePlaneId(runtimePlaneId ?? "local");
+        var detail = await _scheduleManagement.GetScheduleWithExecutionStateAsync(new ScheduleId(id), planeId, cancellationToken);
+        if (detail is null)
             return NotFound();
-        return Ok(ToDto(def));
+        return Ok(ToDetailDto(detail));
     }
 
     [HttpPost]
@@ -146,6 +147,25 @@ public sealed class SchedulesController : ControllerBase
         (int)d.Target.JobType,
         d.Target.JobConfiguration,
         d.Version);
+
+    private static ScheduleDetailDto ToDetailDto(ScheduleWithExecutionState detail)
+    {
+        var d = detail.Definition;
+        var state = detail.ExecutionState;
+        return new ScheduleDetailDto(
+            d.Id.Value,
+            d.Name,
+            d.RecurrenceExpression,
+            d.TimeZone,
+            d.Enabled,
+            (int)d.Target.JobType,
+            d.Target.JobConfiguration,
+            d.Version,
+            state?.LastAttemptedUtc,
+            state?.LastOutcome,
+            state?.LastOutcomeReason,
+            state?.LastSuccessfulDispatchUtc);
+    }
 }
 
 public sealed record ScheduleCapabilitiesDto(bool CanManage);
@@ -159,6 +179,23 @@ public sealed record ScheduleDto(
     int TargetJobType,
     string? TargetJobConfiguration,
     int Version);
+
+/// <summary>
+/// Schedule with execution state for operator visibility. Epic 28.
+/// </summary>
+public sealed record ScheduleDetailDto(
+    string Id,
+    string Name,
+    string RecurrenceExpression,
+    string TimeZone,
+    bool Enabled,
+    int TargetJobType,
+    string? TargetJobConfiguration,
+    int Version,
+    DateTimeOffset? LastAttemptedUtc,
+    string? LastOutcome,
+    string? LastOutcomeReason,
+    DateTimeOffset? LastSuccessfulDispatchUtc);
 
 public sealed record CreateScheduleRequestBody(
     string Name,

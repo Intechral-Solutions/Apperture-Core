@@ -48,6 +48,45 @@ public sealed class ScheduleDispatchTests
         runOutcome.Should().Be("Failed");
     }
 
+    /// <summary>
+    /// First-run with no prior state uses bounded 5-minute lookback (not 24h).
+    /// Hourly cron yields 0 or 1 firing in that window, preventing burst dispatch.
+    /// </summary>
+    [Fact]
+    public async Task RunCycleAsync_FirstRun_WithNoPriorState_UsesBoundedLookback_NoBurstDispatch()
+    {
+        var db = NewDb();
+        // Hourly cron, NO prior state - evaluator uses FirstRunLookbackMinutes (5) instead of 24h
+        SeedScheduleWithWorkflowTarget(db, "s1", "a1", "Sample.HelloWorld.HelloWorld", "0 * * * *", "UTC", lastAttemptedUtc: null);
+        await db.SaveChangesAsync();
+
+        var services = new ServiceCollection();
+        services.AddScoped<AppertureDbContext>(_ => db);
+        services.AddScoped<IScheduleRepository, SqlScheduleRepository>();
+        services.AddScoped<IScheduleEvaluator, CronScheduleEvaluator>();
+        services.AddScoped<IAuditService, SqlAuditService>();
+        services.AddSingleton<IWorkflowDefinitionResolver>(_ =>
+            new WorkflowDefinitionResolver([new HelloWorldModule()], null));
+        services.AddScoped<ISchedulerLifecycleGuard, SchedulerLifecycleGuard>();
+        services.AddScoped<IWorkflowPersistence, SqlWorkflowPersistence>();
+        services.AddScoped<IWorkflowStartDispatchService, WorkflowStartDispatchService>();
+        services.AddScoped<IScheduleDispatchRunner, ScheduleDispatchRunner>();
+
+        await using (var scope = services.BuildServiceProvider().CreateAsyncScope())
+        {
+            var runner = scope.ServiceProvider.GetRequiredService<IScheduleDispatchRunner>();
+            await runner.RunCycleAsync(new RuntimePlaneId("local"), DateTimeOffset.UtcNow);
+
+            var ctx = scope.ServiceProvider.GetRequiredService<AppertureDbContext>();
+            var startRequestCount = await ctx.WorkflowStartRequests.AsNoTracking().CountAsync();
+            var runCount = await ctx.ScheduleRuns.AsNoTracking().CountAsync();
+
+            // With 5-min lookback and hourly cron: 0 or 1 firing. Never 24 (the old 24h behavior).
+            startRequestCount.Should().BeLessThanOrEqualTo(1, "bounded first-run lookback prevents 24-run burst");
+            runCount.Should().BeLessThanOrEqualTo(1);
+        }
+    }
+
     private static void SeedScheduleWithWorkflowTarget(
         AppertureDbContext db,
         string scheduleId,
@@ -96,8 +135,9 @@ public sealed class ScheduleDispatchTests
     {
         var db = NewDb();
         var now = DateTimeOffset.UtcNow;
-        // Use every-minute cron and state so evaluator window yields exactly 1 due firing
-        SeedScheduleWithWorkflowTarget(db, "s1", "a1", workflowDefinitionId, "* * * * *", "UTC", lastAttemptedUtc: now.AddSeconds(-90));
+        // Use every-minute cron and state so evaluator window yields exactly 1 due firing.
+        // fromUtc = lastAttemptedUtc + 1s; ~65s puts window mid-minute to avoid 2 occurrences.
+        SeedScheduleWithWorkflowTarget(db, "s1", "a1", workflowDefinitionId, "* * * * *", "UTC", lastAttemptedUtc: now.AddSeconds(-65));
         await db.SaveChangesAsync();
 
         var services = new ServiceCollection();

@@ -66,6 +66,9 @@ public sealed class SchedulesControllerTests
 
         public ValueTask<IReadOnlyList<ScheduleAssignment>> GetAssignmentsAsync(RuntimePlaneId runtimePlaneId, CancellationToken cancellationToken = default) =>
             ValueTask.FromResult<IReadOnlyList<ScheduleAssignment>>([]);
+
+        public ValueTask<ScheduleWithExecutionState?> GetScheduleWithExecutionStateAsync(ScheduleId id, RuntimePlaneId planeId, CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult<ScheduleWithExecutionState?>(null);
     }
 
     private sealed class StubScheduleGovernanceService : IScheduleGovernanceService

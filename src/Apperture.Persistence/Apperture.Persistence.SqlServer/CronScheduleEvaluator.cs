@@ -10,6 +10,13 @@ namespace Apperture.Persistence.SqlServer;
 /// </summary>
 public sealed class CronScheduleEvaluator : IScheduleEvaluator
 {
+    /// <summary>
+    /// Bounded lookback when no prior state exists (first-run).
+    /// Prevents accidental burst dispatch of many missed runs.
+    /// Only occurrences within this window are considered due.
+    /// </summary>
+    internal const int FirstRunLookbackMinutes = 5;
+
     private readonly IScheduleRepository _repo;
 
     public CronScheduleEvaluator(IScheduleRepository repo) => _repo = repo;
@@ -32,7 +39,8 @@ public sealed class CronScheduleEvaluator : IScheduleEvaluator
                 continue; // V1: workflow only
 
             var state = await _repo.GetStateAsync(assignment.Id.Value, cancellationToken);
-            var fromUtc = state?.LastAttemptedUtc?.AddSeconds(1) ?? asOfUtc.AddDays(-1);
+            // First-run: bounded lookback to prevent burst dispatch. Subsequent runs: from last attempted + 1s.
+            var fromUtc = state?.LastAttemptedUtc?.AddSeconds(1) ?? asOfUtc.AddMinutes(-FirstRunLookbackMinutes);
 
             TimeZoneInfo tz;
             try

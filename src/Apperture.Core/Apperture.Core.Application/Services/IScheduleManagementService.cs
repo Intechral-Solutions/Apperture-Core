@@ -47,4 +47,17 @@ public interface IScheduleManagementService
     /// Gets schedule assignments for a runtime plane.
     /// </summary>
     ValueTask<IReadOnlyList<ScheduleAssignment>> GetAssignmentsAsync(RuntimePlaneId runtimePlaneId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Gets a schedule definition with execution state for the given runtime plane.
+    /// Used to expose last attempted, last outcome, and blocked reason to operators.
+    /// </summary>
+    ValueTask<ScheduleWithExecutionState?> GetScheduleWithExecutionStateAsync(ScheduleId id, RuntimePlaneId planeId, CancellationToken cancellationToken = default);
 }
+
+/// <summary>
+/// Schedule definition plus execution state for operator visibility. Epic 28.
+/// </summary>
+public sealed record ScheduleWithExecutionState(
+    ScheduleDefinition Definition,
+    ScheduleState? ExecutionState);
