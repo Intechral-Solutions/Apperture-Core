@@ -54,12 +54,18 @@ public sealed record RunDetailDto(
     DateTimeOffset? StartClaimedAt,
     string ExecutionKind = "workflow");
 
+/// <summary>
+/// Terminal run result projection for <c>GET /runs/{id}</c>. <see cref="Outcome"/> is derived from lifecycle status.
+/// <see cref="Summary"/> uses persisted captured-output summary when the run succeeded and that summary is non-empty; otherwise a standard phrase for the outcome.
+/// <see cref="OutputDisplayPolicy"/> is set when the handler used <c>OperatorRunOutput</c> (ADR-0020); null means legacy Epic-20 plain return (implicit inline).
+/// </summary>
 public sealed record RunResultDto(
     string Outcome,
     string Summary,
     string? PayloadJson,
     string? DiagnosticsJson,
-    string? OutputAvailability = null);
+    string? OutputAvailability = null,
+    string? OutputDisplayPolicy = null);
 
 public sealed record RunErrorDto(
     string Category,

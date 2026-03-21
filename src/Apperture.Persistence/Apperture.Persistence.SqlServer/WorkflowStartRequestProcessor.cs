@@ -332,6 +332,7 @@ WHERE RunId = {runId} AND (
                 run.CapturedOutputSummary = capture.CapturedOutputSummary;
                 run.CapturedOutputStatus = capture.CapturedOutputStatus;
                 run.CapturedOutputVersion = capture.CapturedOutputVersion;
+                run.CapturedOutputDisplayPolicy = capture.CapturedOutputDisplayPolicy;
 
                 await RejectQueuedParkRequestAsync(runId, cancellationToken);
                 _db.WorkflowLifecycleEvents.Add(new WorkflowLifecycleEventEntity

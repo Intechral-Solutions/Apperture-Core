@@ -12,7 +12,10 @@ public interface IStepHandler
     /// <param name="context">Step execution context; use ResolveSlotAsync to obtain slot-bound dependencies.</param>
     /// <param name="parameters">Step parameters from the workflow invocation.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>Step result (or null). Must not return ResolvedSecret or secret material.</returns>
+    /// <returns>
+    /// Step result (or null). Must not return ResolvedSecret or secret material.
+    /// To declare operator output intent (inline vs summary-only vs withheld), return <see cref="OperatorRunOutput"/> (ADR-0020).
+    /// </returns>
     ValueTask<object?> ExecuteAsync(
         IStepExecutionContext context,
         IReadOnlyDictionary<string, object?> parameters,

@@ -27,13 +27,14 @@ Operators need a truthful answer to: "What did this run produce?"
    - `empty`: handler returned `null`.
    - `captured`: JSON serialized successfully and stored.
    - `truncated`: serialized but exceeded max size; truncated JSON stored.
-   - `unsupported`: serialization failed (unsafe types, circular refs); no payload stored.
+   - `unsupported`: JSON serialization threw (e.g. unsupported types, circular graphs); no payload or summary stored.
+   - See [ADR-0020](ADR-0020-operator-output-display-policy.md) for additive statuses `summary_only` and `withheld` (operator display policy); they do not replace the meanings above.
 
 4. **Serialization guardrails**
    - JSON serialize with stable options (camelCase, no indentation for storage).
    - Truncate to fixed max byte budget at write time (e.g. 64 KiB).
-   - Reject or fail-closed into `unsupported` for types known to carry secrets; handlers must not return secrets per existing contract.
-   - If serialization throws → `unsupported`; never persist raw exception content.
+   - There is **no** runtime type denylist: capture is best-effort JSON. If `JsonSerializer` throws, status is `unsupported`. Handlers/modules must follow existing contracts and **not** return secrets or internal objects as step results; the platform does not classify or redact return types in this MVP.
+   - Never persist raw exception content from serialization failures.
 
 5. **Versioning**
    - `CapturedOutputVersion` (int) for schema evolution; current version = 1.

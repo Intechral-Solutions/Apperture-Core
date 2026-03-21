@@ -1,9 +1,10 @@
 using System.Text.Json;
+using Apperture.Core.Application.Execution;
 
 namespace Apperture.Persistence.SqlServer;
 
 /// <summary>
-/// Captures the last step's return value for operator-visible run output. See ADR-0019.
+/// Captures the last step's return value for operator-visible run output. See ADR-0019 and ADR-0020.
 /// </summary>
 public static class RunOutputCapture
 {
@@ -15,6 +16,12 @@ public static class RunOutputCapture
     public const string StatusCaptured = "captured";
     public const string StatusTruncated = "truncated";
     public const string StatusUnsupported = "unsupported";
+    public const string StatusSummaryOnly = "summary_only";
+    public const string StatusWithheld = "withheld";
+
+    public const string DisplayPolicyInline = "inline";
+    public const string DisplayPolicySummaryOnly = "summary_only";
+    public const string DisplayPolicyWithheld = "withheld";
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -27,8 +34,65 @@ public static class RunOutputCapture
     /// </summary>
     public static RunOutputCaptureResult TryCapture(object? value)
     {
+        if (value is OperatorRunOutput wrapped)
+            return TryCaptureWrapped(wrapped);
+
+        return TryCaptureLegacy(value, displayPolicy: null);
+    }
+
+    private static RunOutputCaptureResult TryCaptureWrapped(OperatorRunOutput wrapped)
+    {
+        var policyString = wrapped.DisplayPolicy switch
+        {
+            OperatorOutputDisplayPolicy.Inline => DisplayPolicyInline,
+            OperatorOutputDisplayPolicy.SummaryOnly => DisplayPolicySummaryOnly,
+            OperatorOutputDisplayPolicy.Withheld => DisplayPolicyWithheld,
+            _ => DisplayPolicyInline
+        };
+
+        if (wrapped.DisplayPolicy == OperatorOutputDisplayPolicy.Withheld)
+            return new RunOutputCaptureResult(null, null, StatusWithheld, SchemaVersion, DisplayPolicyWithheld);
+
+        var payload = wrapped.Payload;
+        if (payload is null)
+            return new RunOutputCaptureResult(null, null, StatusEmpty, SchemaVersion, policyString);
+
+        if (wrapped.DisplayPolicy == OperatorOutputDisplayPolicy.SummaryOnly)
+            return TryCaptureSummaryOnly(payload, policyString);
+
+        return TryCaptureLegacy(payload, DisplayPolicyInline);
+    }
+
+    private static RunOutputCaptureResult TryCaptureSummaryOnly(object payload, string displayPolicySummaryOnly)
+    {
+        try
+        {
+            var json = JsonSerializer.Serialize(payload, JsonOptions);
+            var bytes = System.Text.Encoding.UTF8.GetByteCount(json);
+            string summary;
+            if (bytes <= MaxPayloadBytes)
+            {
+                summary = TryExtractSummary(payload, json) ?? "Output summary only (no extractable headline).";
+            }
+            else
+            {
+                var truncated = TruncateToMaxBytes(json);
+                summary = TryExtractSummary(payload, truncated)
+                          ?? "Output truncated before summary-only capture (exceeded max size).";
+            }
+
+            return new RunOutputCaptureResult(null, summary, StatusSummaryOnly, SchemaVersion, displayPolicySummaryOnly);
+        }
+        catch
+        {
+            return new RunOutputCaptureResult(null, null, StatusUnsupported, SchemaVersion, displayPolicySummaryOnly);
+        }
+    }
+
+    private static RunOutputCaptureResult TryCaptureLegacy(object? value, string? displayPolicy)
+    {
         if (value is null)
-            return new RunOutputCaptureResult(null, null, StatusEmpty, SchemaVersion);
+            return new RunOutputCaptureResult(null, null, StatusEmpty, SchemaVersion, displayPolicy);
 
         try
         {
@@ -38,15 +102,15 @@ public static class RunOutputCapture
             if (bytes <= MaxPayloadBytes)
             {
                 var summary = TryExtractSummary(value, json);
-                return new RunOutputCaptureResult(json, summary, StatusCaptured, SchemaVersion);
+                return new RunOutputCaptureResult(json, summary, StatusCaptured, SchemaVersion, displayPolicy);
             }
 
             var truncated = TruncateToMaxBytes(json);
-            return new RunOutputCaptureResult(truncated, "Output truncated (exceeded max size).", StatusTruncated, SchemaVersion);
+            return new RunOutputCaptureResult(truncated, "Output truncated (exceeded max size).", StatusTruncated, SchemaVersion, displayPolicy);
         }
         catch
         {
-            return new RunOutputCaptureResult(null, null, StatusUnsupported, SchemaVersion);
+            return new RunOutputCaptureResult(null, null, StatusUnsupported, SchemaVersion, displayPolicy);
         }
     }
 
@@ -100,4 +164,5 @@ public sealed record RunOutputCaptureResult(
     string? CapturedOutputJson,
     string? CapturedOutputSummary,
     string CapturedOutputStatus,
-    int CapturedOutputVersion);
+    int CapturedOutputVersion,
+    string? CapturedOutputDisplayPolicy = null);

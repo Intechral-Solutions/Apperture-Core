@@ -22,7 +22,8 @@ public sealed class HelloWorldCompleteStepHandler : IStepHandler
             conn.Open();
             try
             {
-                return new { message = "HelloWorld workflow completed.", step = "Complete" };
+                // Summary-only operator output (Epic 21): headline in Summary, no persisted inline JSON.
+                return OperatorRunOutput.SummaryOnly(new { message = "HelloWorld workflow completed.", step = "Complete" });
             }
             finally
             {

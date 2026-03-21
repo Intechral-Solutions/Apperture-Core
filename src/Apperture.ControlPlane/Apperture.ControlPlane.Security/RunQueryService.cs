@@ -180,7 +180,7 @@ public sealed class RunQueryService : IRunQueryService
                 r.CorrelationKey,
                 r.RetryOfRunId,
                 instance?.CurrentStepName,
-                BuildResult(r.Status, r.CapturedOutputJson, r.CapturedOutputSummary, r.CapturedOutputStatus),
+                BuildResult(r.Status, r.CapturedOutputJson, r.CapturedOutputSummary, r.CapturedOutputStatus, r.CapturedOutputDisplayPolicy),
                 null,
                 lifecycleEvents,
                 stepInstances,
@@ -240,7 +240,7 @@ public sealed class RunQueryService : IRunQueryService
             r.CorrelationKey,
             r.RetryOfRunId,
             operationInstance?.CurrentStepName,
-            BuildResult(r.Status, r.CapturedOutputJson, r.CapturedOutputSummary, r.CapturedOutputStatus),
+            BuildResult(r.Status, r.CapturedOutputJson, r.CapturedOutputSummary, r.CapturedOutputStatus, r.CapturedOutputDisplayPolicy),
             opError,
             opLifecycleEvents,
             opStepInstances,
@@ -258,7 +258,8 @@ public sealed class RunQueryService : IRunQueryService
         string status,
         string? capturedOutputJson,
         string? capturedOutputSummary,
-        string? capturedOutputStatus)
+        string? capturedOutputStatus,
+        string? capturedOutputDisplayPolicy)
     {
         var outcome = status.ToLowerInvariant() switch
         {
@@ -276,17 +277,25 @@ public sealed class RunQueryService : IRunQueryService
             _ => "Execution is still in progress."
         };
 
-        var summary = !string.IsNullOrWhiteSpace(capturedOutputSummary) && outcome == "succeeded"
-            ? capturedOutputSummary
-            : baseSummary;
+        string summary;
+        if (outcome == "succeeded" && string.Equals(capturedOutputStatus, RunOutputCapture.StatusWithheld, StringComparison.Ordinal))
+            summary = "The module did not expose operator-visible output.";
+        else if (outcome == "succeeded" && !string.IsNullOrWhiteSpace(capturedOutputSummary))
+            summary = capturedOutputSummary!;
+        else
+            summary = baseSummary;
 
-        var payloadJson = (capturedOutputStatus == RunOutputCapture.StatusCaptured || capturedOutputStatus == RunOutputCapture.StatusTruncated)
-            ? capturedOutputJson
-            : null;
+        var showInlinePayload =
+            (string.Equals(capturedOutputStatus, RunOutputCapture.StatusCaptured, StringComparison.Ordinal)
+             || string.Equals(capturedOutputStatus, RunOutputCapture.StatusTruncated, StringComparison.Ordinal))
+            && (string.IsNullOrEmpty(capturedOutputDisplayPolicy)
+                || string.Equals(capturedOutputDisplayPolicy, RunOutputCapture.DisplayPolicyInline, StringComparison.Ordinal));
+
+        var payloadJson = showInlinePayload ? capturedOutputJson : null;
 
         var outputAvailability = capturedOutputStatus ?? RunOutputCapture.StatusNone;
 
-        return new RunResultDto(outcome, summary, payloadJson, DiagnosticsJson: null, outputAvailability);
+        return new RunResultDto(outcome, summary, payloadJson, DiagnosticsJson: null, outputAvailability, capturedOutputDisplayPolicy);
     }
 
     private static RunErrorDto? BuildOperationError(IReadOnlyList<RunLifecycleEventDto> lifecycleEvents)

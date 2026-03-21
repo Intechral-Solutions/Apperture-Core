@@ -501,6 +501,101 @@ public sealed class RunQueryServiceTests
         detail.Result!.PayloadJson.Should().Contain("HelloWorld workflow completed.");
         detail.Result.OutputAvailability.Should().Be("captured");
         detail.Result.Summary.Should().Be("HelloWorld workflow completed.");
+        detail.Result.OutputDisplayPolicy.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task GetRunAsync_WhenRunHasSummaryOnlyCapture_ProjectsSummaryWithoutPayload()
+    {
+        var db = NewDb();
+        db.WorkflowInstances.Add(new WorkflowInstanceEntity
+        {
+            Id = "i1",
+            DefinitionId = "Sample.HelloWorld.HelloWorld",
+            Status = WorkflowLifecycleStatusNames.Completed,
+            CreatedAt = DateTimeOffset.UtcNow.AddHours(-1),
+            UpdatedAt = DateTimeOffset.UtcNow,
+            Version = 1
+        });
+        db.OperationRuns.Add(new OperationRunEntity
+        {
+            Id = "r1",
+            WorkflowInstanceId = "i1",
+            DefinitionId = "Sample.HelloWorld.HelloWorld",
+            Status = WorkflowLifecycleStatusNames.Completed,
+            CreatedAt = DateTimeOffset.UtcNow.AddHours(-1),
+            CompletedAt = DateTimeOffset.UtcNow,
+            CapturedOutputJson = null,
+            CapturedOutputSummary = "HelloWorld workflow completed.",
+            CapturedOutputStatus = "summary_only",
+            CapturedOutputVersion = 1,
+            CapturedOutputDisplayPolicy = "summary_only"
+        });
+        db.WorkflowStartRequests.Add(new WorkflowStartRequestEntity
+        {
+            RunId = "r1",
+            WorkflowInstanceId = "i1",
+            WorkflowDefinitionId = "Sample.HelloWorld.HelloWorld",
+            CreatedAt = DateTimeOffset.UtcNow.AddHours(-1),
+            Status = WorkflowLifecycleStatusNames.Completed
+        });
+        await db.SaveChangesAsync();
+
+        var detail = await new RunQueryService(db, new StubOperationRegistry(), new RunKindResolver(db), new AllowReadAuthz(), new AllowOperationReadAuthz()).GetRunAsync(new OperationRunId("r1"));
+
+        detail.Should().NotBeNull();
+        detail!.Result.Should().NotBeNull();
+        detail.Result!.PayloadJson.Should().BeNull();
+        detail.Result.OutputAvailability.Should().Be("summary_only");
+        detail.Result.OutputDisplayPolicy.Should().Be("summary_only");
+        detail.Result.Summary.Should().Be("HelloWorld workflow completed.");
+    }
+
+    [Fact]
+    public async Task GetRunAsync_WhenRunHasWithheldCapture_ProjectsNoPayloadAndExplicitSummary()
+    {
+        var db = NewDb();
+        db.WorkflowInstances.Add(new WorkflowInstanceEntity
+        {
+            Id = "i1",
+            DefinitionId = "Sample.HelloWorld.HelloWorld",
+            Status = WorkflowLifecycleStatusNames.Completed,
+            CreatedAt = DateTimeOffset.UtcNow.AddHours(-1),
+            UpdatedAt = DateTimeOffset.UtcNow,
+            Version = 1
+        });
+        db.OperationRuns.Add(new OperationRunEntity
+        {
+            Id = "r1",
+            WorkflowInstanceId = "i1",
+            DefinitionId = "Sample.HelloWorld.HelloWorld",
+            Status = WorkflowLifecycleStatusNames.Completed,
+            CreatedAt = DateTimeOffset.UtcNow.AddHours(-1),
+            CompletedAt = DateTimeOffset.UtcNow,
+            CapturedOutputJson = null,
+            CapturedOutputSummary = null,
+            CapturedOutputStatus = "withheld",
+            CapturedOutputVersion = 1,
+            CapturedOutputDisplayPolicy = "withheld"
+        });
+        db.WorkflowStartRequests.Add(new WorkflowStartRequestEntity
+        {
+            RunId = "r1",
+            WorkflowInstanceId = "i1",
+            WorkflowDefinitionId = "Sample.HelloWorld.HelloWorld",
+            CreatedAt = DateTimeOffset.UtcNow.AddHours(-1),
+            Status = WorkflowLifecycleStatusNames.Completed
+        });
+        await db.SaveChangesAsync();
+
+        var detail = await new RunQueryService(db, new StubOperationRegistry(), new RunKindResolver(db), new AllowReadAuthz(), new AllowOperationReadAuthz()).GetRunAsync(new OperationRunId("r1"));
+
+        detail.Should().NotBeNull();
+        detail!.Result.Should().NotBeNull();
+        detail.Result!.PayloadJson.Should().BeNull();
+        detail.Result.OutputAvailability.Should().Be("withheld");
+        detail.Result.OutputDisplayPolicy.Should().Be("withheld");
+        detail.Result.Summary.Should().Be("The module did not expose operator-visible output.");
     }
 
     private static AppertureDbContext NewDb()

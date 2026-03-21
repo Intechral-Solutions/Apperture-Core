@@ -56,15 +56,17 @@ The Management API (control plane) exposes REST endpoints for module registry, w
   - operation run: present in `OperationStartRequests` only
   - ambiguous/unknown ownership is treated as non-projectable.
 
-## Run result and output (Epic 20)
+## Run result and output (Epic 20 + Epic 21)
 
 - `GET /runs/{id}` returns `RunDetailDto` with `Result` (`RunResultDto`).
 - `RunResultDto` includes:
-  - `Outcome`, `Summary`: terminal outcome (derived from status) and human-readable summary.
-  - `PayloadJson`: operator-visible captured output JSON when `OutputAvailability` is `captured` or `truncated`.
-  - `OutputAvailability`: `none`, `empty`, `captured`, `truncated`, or `unsupported` (see ADR-0019).
-- Captured output is persisted on successful terminal completion (last step's return value).
-- Legacy runs (pre-migration) show `OutputAvailability: none`; no payload.
+  - `Outcome`: terminal outcome derived from lifecycle status (`succeeded`, `failed`, `cancelled`, `in_progress`).
+  - `Summary`: human-readable one-liner. For **succeeded** runs, if persisted captured-output summary is non-empty (`CapturedOutputSummary` from ADR-0019), the API uses that string; for **withheld** capture (ADR-0020), the API uses a fixed platform phrase instead of a fake payload; otherwise a fixed phrase for the outcome. This field blends “outcome headline” with “output headline” when capture provided a summary; `PayloadJson` remains the full captured JSON when inline policy allows it.
+  - `PayloadJson`: operator-visible captured output JSON only when inline display is allowed: `OutputAvailability` is `captured` or `truncated`, and `OutputDisplayPolicy` is null (legacy Epic-20 plain return) or `inline`. For `summary_only` or `withheld`, full JSON is not exposed here even if it existed transiently during capture.
+  - `OutputAvailability`: technical capture state: `none`, `empty`, `captured`, `truncated`, `unsupported` (ADR-0019), plus `summary_only` and `withheld` (ADR-0020 additive statuses).
+  - `OutputDisplayPolicy`: null for legacy/plain returns; otherwise `inline`, `summary_only`, or `withheld` when the handler returned `OperatorRunOutput` (ADR-0020).
+- Captured output is computed on successful terminal completion from the last step’s return value (see ADR-0019, ADR-0020).
+- Legacy runs (pre-output-migration) show `OutputAvailability: none`; no payload.
 
 ## Governance API notes
 

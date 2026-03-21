@@ -30,4 +30,10 @@ public sealed class OperationRunEntity
     /// Schema version for captured output envelope evolution.
     /// </summary>
     public int CapturedOutputVersion { get; set; }
+
+    /// <summary>
+    /// Operator display policy when the handler used <see cref="Apperture.Core.Application.Execution.OperatorRunOutput"/>:
+    /// inline, summary_only, withheld; null for legacy/plain Epic-20 returns. See ADR-0020.
+    /// </summary>
+    public string? CapturedOutputDisplayPolicy { get; set; }
 }

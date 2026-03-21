@@ -196,6 +196,13 @@
                         <div class="text-xs text-muted">Output availability</div>
                         <div class="text-sm font-mono text-body">@(_detail.Result?.OutputAvailability ?? "none")</div>
                     </div>
+                    @if (!string.IsNullOrEmpty(_detail.Result?.OutputDisplayPolicy))
+                    {
+                        <div>
+                            <div class="text-xs text-muted">Output display policy</div>
+                            <div class="text-sm font-mono text-body">@_detail.Result.OutputDisplayPolicy</div>
+                        </div>
+                    }
                 </div>
                 @if (_detail.Error is not null)
                 {
@@ -215,6 +222,10 @@
                         }
                         <pre class="mt-1 max-h-64 overflow-auto rounded border border-default bg-surface-muted p-2 text-xs text-body"><code>@_detail.Result?.PayloadJson</code></pre>
                     </div>
+                }
+                else if (IsSummaryOnlyOutput)
+                {
+                    <div class="mt-2 text-sm text-muted">Inline JSON was not stored (module summary-only policy). See Summary above.</div>
                 }
                 else if (ShowOutputUnavailable)
                 {
@@ -459,6 +470,10 @@
 
     private bool IsTruncated =>
         string.Equals(_detail?.Result?.OutputAvailability, "truncated", StringComparison.Ordinal);
+
+    private bool IsSummaryOnlyOutput =>
+        _detail?.Result is not null &&
+        string.Equals(_detail.Result.OutputAvailability, "summary_only", StringComparison.Ordinal);
 
     private bool ShowOutputUnavailable =>
         _detail?.Result is not null &&
