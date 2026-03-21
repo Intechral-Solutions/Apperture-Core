@@ -136,7 +136,6 @@ public sealed class ManagementClient : IManagementClient
     {
         var dto = await _http.GetFromJsonAsync<HostEffectiveModuleSnapshotDto>(
             "control/runtime-composition",
-            JsonReadOptions,
             cancellationToken).ConfigureAwait(false);
         return dto ?? new HostEffectiveModuleSnapshotDto(
             DateTimeOffset.UtcNow,

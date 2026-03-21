@@ -29,12 +29,13 @@ See [Epic27-Execution-Surface-Inventory.md](./Epic27-Execution-Surface-Inventory
 - `WorkflowModuleResolver` skips disabled modules so module-scoped workflow authorization does not target disabled owners.
 - Workers (`WorkflowStartRequestProcessor`, `OperationStartRequestProcessor`) re-resolve definitions at process boundaries; failure uses `DefinitionNotExecutableException` with distinct messaging when the module exists in catalog but is not effectively active.
 
-### In-flight, queued, and scheduled work
+### In-flight, queued, and scheduled work (Epic 27 corrective pass)
 
 - **No new starts** for disabled modules: API dispatch and worker resolution both enforce this.
-- **In-flight**: A run that already claimed the lease may complete the current `ProcessClaimedAsync` execution; on the next claim cycle, resolution runs again and fails if the module is no longer effective.
-- **Retries**: Go through `IWorkflowStartDispatchService`; gated like new starts.
-- **Scheduler**: `SchedulerHostStub` is not implemented; future scheduler must call `IWorkflowStarter` / dispatch only (already the architecture rule).
+- **In-flight**: A run that already claimed the lease may complete the current `ProcessClaimedAsync` execution; on the next claim cycle, resolution runs again and fails if the module is no longer effective. Disabled modules with draining in-flight work are visible via `HasInFlightWork` in runtime composition.
+- **Retries**: Go through `IWorkflowStartDispatchService`; when dispatch returns null (definition unavailable), retry returns a structured blocked result instead of throwing; audit records `execution.workflow_retry.blocked`.
+- **Scheduler**: `SchedulerHostStub` is not implemented; future scheduler must call `ISchedulerLifecycleGuard.CanDispatchWorkflowAsync` before dispatch and skip/record blocked when false.
+- **Persisted start requests**: Processed by workers; when definition resolution fails (module disabled), run is marked Failed with `[Blocked]` prefix in `FailureSummary`, audit outcome `Blocked`.
 
 ### Restart-bound surfaces
 
@@ -54,7 +55,13 @@ Enumerated in `RestartBoundSurface` and exposed via `HostEffectiveModuleSnapshot
 
 ### Audit
 
-- `LifecycleExecutionAuditActionNames`: workflow/operation start blocked (when dispatch returns null and an actor exists), run failed due to definition unavailable (worker), invalid composition at startup.
+- `LifecycleExecutionAuditActionNames`: workflow/operation start blocked (when dispatch returns null and an actor exists), run failed due to definition unavailable (worker), invalid composition at startup, workflow retry blocked (when definition unavailable).
+
+### Runtime composition model (Epic 27 corrective pass)
+
+- `RuntimeCompositionModuleEntry` extended with: `AllowsNewStarts`, `HasInFlightWork`, `ExecutionDegradedReason`.
+- `HasInFlightWork`: true when the module has runs in Running status (draining after disable).
+- `ExecutionDegradedReason`: `module_disabled`, `draining_in_flight`, or `invalid_persisted_state`.
 
 ## Consequences
 
@@ -65,3 +72,4 @@ Enumerated in `RestartBoundSurface` and exposed via `HostEffectiveModuleSnapshot
 ## Related
 
 - Epic 26: [Epic26-Module-Lifecycle-and-Contribution-Registration.md](./Epic26-Module-Lifecycle-and-Contribution-Registration.md)
+- Epic 27 Corrective Pass: [Epic27-Corrective-Pass-Deferred-Execution-Chokepoints.md](./Epic27-Corrective-Pass-Deferred-Execution-Chokepoints.md)

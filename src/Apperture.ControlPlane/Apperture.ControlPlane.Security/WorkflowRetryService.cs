@@ -1,5 +1,9 @@
 using System.Text.Json;
+using Apperture.Core.Application;
+using Apperture.Core.Application.Services;
+using Apperture.Core.Domain.Audit;
 using Apperture.Persistence.SqlServer;
+using Apperture.Shared.Kernel;
 using Apperture.RuntimePlane.Abstractions;
 using Microsoft.EntityFrameworkCore;
 
@@ -7,6 +11,8 @@ namespace Apperture.ControlPlane.Security;
 
 public sealed class WorkflowRetryService : IWorkflowRetryService
 {
+    private const string BlockedReasonMessage = "Workflow definition is not executable (module disabled or unavailable).";
+
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNameCaseInsensitive = true
@@ -15,15 +21,18 @@ public sealed class WorkflowRetryService : IWorkflowRetryService
     private readonly AppertureDbContext _db;
     private readonly IWorkflowRunRetryAuthorizationService _authz;
     private readonly IWorkflowStartDispatchService _dispatch;
+    private readonly IAuditService? _audit;
 
     public WorkflowRetryService(
         AppertureDbContext db,
         IWorkflowRunRetryAuthorizationService authz,
-        IWorkflowStartDispatchService dispatch)
+        IWorkflowStartDispatchService dispatch,
+        IAuditService? audit = null)
     {
         _db = db;
         _authz = authz;
         _dispatch = dispatch;
+        _audit = audit;
     }
 
     public async ValueTask<WorkflowRetryResult?> RequestRetryAsync(OperationRunId runId, CancellationToken cancellationToken = default)
@@ -56,7 +65,17 @@ public sealed class WorkflowRetryService : IWorkflowRetryService
             cancellationToken);
 
         if (dispatchResult is null)
-            throw new InvalidOperationException($"Workflow definition {originalRun.DefinitionId} could not be resolved for retry.");
+        {
+            await TryAuditRetryBlockedAsync(runId.Value, originalRun.DefinitionId, cancellationToken).ConfigureAwait(false);
+            return new WorkflowRetryResult(
+                new OperationRunId(runId.Value),
+                RunId: null,
+                WorkflowInstanceId: null,
+                new WorkflowDefinitionId(originalRun.DefinitionId),
+                Status: "blocked",
+                IsBlocked: true,
+                BlockedReason: BlockedReasonMessage);
+        }
 
         _db.WorkflowLifecycleEvents.Add(new WorkflowLifecycleEventEntity
         {
@@ -84,6 +103,31 @@ public sealed class WorkflowRetryService : IWorkflowRetryService
     private static bool IsRetryableStatus(string status) =>
         string.Equals(status, WorkflowLifecycleStatusNames.Failed, StringComparison.Ordinal) ||
         string.Equals(status, WorkflowLifecycleStatusNames.Cancelled, StringComparison.Ordinal);
+
+    private async ValueTask TryAuditRetryBlockedAsync(string runId, string definitionId, CancellationToken cancellationToken)
+    {
+        if (_audit is null)
+            return;
+
+        try
+        {
+            await _audit.AppendAsync(
+                new AuditRecord(
+                    new AuditRecordId(Guid.NewGuid().ToString("N")),
+                    new ActorId("system"),
+                    LifecycleExecutionAuditActionNames.WorkflowRetryBlocked,
+                    Resource: null,
+                    Outcome: "Blocked",
+                    Timestamp: DateTimeOffset.UtcNow,
+                    new CorrelationId(runId),
+                    $"runId={runId};definitionId={definitionId};reason={BlockedReasonMessage}"),
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch
+        {
+            // best-effort audit
+        }
+    }
 
     private static IReadOnlyDictionary<string, object?>? DeserializeParameters(string? parametersJson)
     {

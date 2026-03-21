@@ -74,4 +74,22 @@ public sealed class RunFailureCaptureTests
         r.FailureDiagnosticsJson.Should().BeNull();
         r.FailureDiagnosticsDisplayPolicy.Should().Be(RunFailureCapture.DisplayPolicyWithheld);
     }
+
+    [Fact]
+    public void TryCapture_DefinitionNotExecutable_PrefixesBlockedAndCapturesMetadata()
+    {
+        var ex = new DefinitionNotExecutableException(
+            "Sample.Module.Workflow1",
+            ExecutionDefinitionKind.Workflow,
+            "Workflow definition is not effectively active for execution (module disabled).");
+
+        var r = RunFailureCapture.TryCapture(ex);
+
+        r.FailureSummary.Should().StartWith(RunFailureCapture.DeferredWorkBlockedPrefix);
+        r.FailureSummary.Should().Contain("module disabled");
+        r.FailureDiagnosticsStatus.Should().Be(RunFailureCapture.StatusCaptured);
+        r.FailureDiagnosticsJson.Should().Contain("Sample.Module.Workflow1");
+        r.FailureDiagnosticsJson.Should().Contain("blocked");
+        r.FailureDiagnosticsDisplayPolicy.Should().Be(RunFailureCapture.DisplayPolicyInline);
+    }
 }

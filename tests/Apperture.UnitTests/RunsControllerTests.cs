@@ -67,6 +67,25 @@ public sealed class RunsControllerTests
     }
 
     [Fact]
+    public async Task RetryRun_WhenBlockedByLifecycle_Returns409WithBlockedFlag()
+    {
+        var blockedResult = new WorkflowRetryResult(
+            new OperationRunId("original"),
+            RunId: null,
+            WorkflowInstanceId: null,
+            new WorkflowDefinitionId("wf-1"),
+            "blocked",
+            IsBlocked: true,
+            BlockedReason: "Workflow definition is not executable (module disabled).");
+        var controller = NewController(new StubRunQueryService(), retry: new StubRetryService(result: blockedResult));
+        var result = await controller.RetryRun("original", CancellationToken.None);
+        result.Should().BeOfType<ConflictObjectResult>();
+        var conflict = (ConflictObjectResult)result;
+        var value = conflict.Value?.GetType().GetProperty("blocked")?.GetValue(conflict.Value);
+        value.Should().Be(true);
+    }
+
+    [Fact]
     public async Task ParkRun_WhenAuthorized_Returns202()
     {
         var controller = NewController(new StubRunQueryService());

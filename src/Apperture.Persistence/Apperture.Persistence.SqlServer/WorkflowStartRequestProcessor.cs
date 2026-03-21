@@ -245,6 +245,9 @@ WHERE RunId = {runId} AND (
                     return;
                 }
 
+                // Lifecycle gate: resolution here distinguishes new start from continuation (Epic 27 CP).
+                // New run, resume, and stale reclaim all re-enter here; definition must be executable.
+                // Within this invocation, steps execute without re-resolution until terminal/park/lease loss.
                 var definition = await ResolveDefinitionOrThrowAsync(request.WorkflowDefinitionId, cancellationToken);
                 var parameters = DeserializeParameters(request.ParametersJson);
 
@@ -599,7 +602,7 @@ WHERE RunId = {runId} AND (
                     new ActorId("system-worker"),
                     LifecycleExecutionAuditActionNames.WorkflowRunDefinitionUnavailable,
                     Resource: null,
-                    Outcome: "Failed",
+                    Outcome: "Blocked",
                     Timestamp: DateTimeOffset.UtcNow,
                     new CorrelationId(runId),
                     $"runId={runId};definitionId={dne.DefinitionId};kind={dne.Kind};message={dne.Message}"),

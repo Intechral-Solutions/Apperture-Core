@@ -99,6 +99,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IControlAttentionQueryService, ControlAttentionQueryService>();
         services.AddScoped<IControlCenterQueryService, ControlCenterQueryService>();
         services.AddScoped<IRuntimeModuleCompositionQueryService, RuntimeModuleCompositionQueryService>();
+        services.AddScoped<ISchedulerLifecycleGuard, SchedulerLifecycleGuard>();
         services.AddHostedService<ModuleCompositionBootstrapHostedService>();
         return services;
     }

@@ -452,7 +452,7 @@ WHERE RunId = {runId} AND (
                     new ActorId("system-worker"),
                     LifecycleExecutionAuditActionNames.OperationRunDefinitionUnavailable,
                     Resource: null,
-                    Outcome: "Failed",
+                    Outcome: "Blocked",
                     Timestamp: DateTimeOffset.UtcNow,
                     new CorrelationId(runId),
                     $"runId={runId};definitionId={dne.DefinitionId};kind={dne.Kind};message={dne.Message}"),

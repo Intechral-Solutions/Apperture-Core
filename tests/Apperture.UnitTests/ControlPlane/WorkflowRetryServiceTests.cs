@@ -26,7 +26,7 @@ public sealed class WorkflowRetryServiceTests
 
         result.Should().NotBeNull();
         result!.OriginalRunId.Value.Should().Be("r1");
-        result.RunId.Value.Should().NotBe("r1");
+        result.RunId!.Value.Should().NotBe("r1");
         result.WorkflowDefinitionId.Value.Should().Be(WorkflowId.Value);
 
         var original = await db.OperationRuns.SingleAsync(x => x.Id == "r1");
@@ -107,6 +107,31 @@ public sealed class WorkflowRetryServiceTests
         (await db.OperationRuns.CountAsync()).Should().Be(1);
     }
 
+    [Fact]
+    public async Task RequestRetryAsync_DefinitionNotExecutable_ReturnsBlockedResult_NoNewRun()
+    {
+        var db = NewDb();
+        SeedTerminalRun(db, "r1", "i1", "failed");
+        SeedStartRequest(db, "r1", "i1", "failed");
+        await db.SaveChangesAsync();
+
+        var nullResolver = new NullDefinitionResolver();
+        var dispatch = new WorkflowStartDispatchService(nullResolver, new SqlWorkflowPersistence(db), db);
+        var authz = new AllowRetryAuthz();
+        var service = new WorkflowRetryService(db, authz, dispatch);
+
+        var result = await service.RequestRetryAsync(new OperationRunId("r1"));
+
+        result.Should().NotBeNull();
+        result!.IsBlocked.Should().BeTrue();
+        result.BlockedReason.Should().NotBeNullOrEmpty();
+        result.RunId.Should().BeNull();
+        result.WorkflowInstanceId.Should().BeNull();
+        result.Status.Should().Be("blocked");
+        (await db.OperationRuns.CountAsync()).Should().Be(1);
+        (await db.WorkflowLifecycleEvents.AnyAsync(x => x.EventType == "workflow.retry_requested")).Should().BeFalse();
+    }
+
     private static WorkflowRetryService CreateService(AppertureDbContext db, bool allowAuthz)
     {
         var definitionResolver = new StubDefinitionResolver(new WorkflowDefinition(
@@ -177,6 +202,12 @@ public sealed class WorkflowRetryServiceTests
 
         public ValueTask<WorkflowDefinition?> GetByIdAsync(WorkflowDefinitionId id, CancellationToken cancellationToken = default) =>
             ValueTask.FromResult<WorkflowDefinition?>(string.Equals(id.Value, _definition.Id.Value, StringComparison.Ordinal) ? _definition : null);
+    }
+
+    private sealed class NullDefinitionResolver : IWorkflowDefinitionResolver
+    {
+        public ValueTask<WorkflowDefinition?> GetByIdAsync(WorkflowDefinitionId id, CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult<WorkflowDefinition?>(null);
     }
 
     private sealed class AllowRetryAuthz : IWorkflowRunRetryAuthorizationService

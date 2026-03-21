@@ -6,7 +6,10 @@ public sealed record RuntimeCompositionModuleEntryDto(
     bool Installed,
     bool PersistedEnabled,
     bool EffectivelyExecutable,
-    IReadOnlyList<string> ValidationIssueCodes);
+    IReadOnlyList<string> ValidationIssueCodes,
+    bool AllowsNewStarts = true,
+    bool HasInFlightWork = false,
+    string? ExecutionDegradedReason = null);
 
 public sealed record HostEffectiveModuleSnapshotDto(
     DateTimeOffset CapturedAtUtc,

@@ -28,10 +28,19 @@ public static class RunFailureCapture
         WriteIndented = false
     };
 
+    /// <summary>
+    /// Well-known prefix for lifecycle-blocked deferred work (Epic 27 corrective pass).
+    /// Enables operators to filter runs blocked because the module was disabled.
+    /// </summary>
+    public const string DeferredWorkBlockedPrefix = "[Blocked] ";
+
     public static RunFailureCaptureResult TryCapture(Exception ex, string displayPolicy = DisplayPolicySummaryOnly)
     {
         if (ex is OperatorExecutionFailureException declared)
             return TryCaptureDeclaredFailure(declared);
+
+        if (ex is DefinitionNotExecutableException dne)
+            return TryCaptureDefinitionNotExecutable(dne);
 
         var summary = Truncate(ex.Message, 512);
 
@@ -53,6 +62,30 @@ public static class RunFailureCapture
         catch
         {
             return new RunFailureCaptureResult(summary, null, StatusUnsupported, SchemaVersion, displayPolicy);
+        }
+    }
+
+    private static RunFailureCaptureResult TryCaptureDefinitionNotExecutable(DefinitionNotExecutableException dne)
+    {
+        var summary = DeferredWorkBlockedPrefix + Truncate(dne.Message, 512 - DeferredWorkBlockedPrefix.Length);
+        try
+        {
+            var payload = new
+            {
+                blocked = true,
+                definitionId = dne.DefinitionId,
+                kind = dne.Kind.ToString(),
+                message = Truncate(dne.Message, 2048)
+            };
+            var json = JsonSerializer.Serialize(payload, JsonOptions);
+            var bytes = System.Text.Encoding.UTF8.GetByteCount(json);
+            if (bytes > MaxPayloadBytes)
+                json = System.Text.Encoding.UTF8.GetString(System.Text.Encoding.UTF8.GetBytes(json).AsSpan(0, MaxPayloadBytes)).TrimEnd();
+            return new RunFailureCaptureResult(summary, json, StatusCaptured, SchemaVersion, DisplayPolicyInline);
+        }
+        catch
+        {
+            return new RunFailureCaptureResult(summary, null, StatusSummaryOnly, SchemaVersion, DisplayPolicySummaryOnly);
         }
     }
 

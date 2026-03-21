@@ -14,4 +14,10 @@ public static class LifecycleExecutionAuditActionNames
     public const string OperationRunDefinitionUnavailable = "execution.operation_run.failed_definition_unavailable";
 
     public const string RuntimeCompositionInvalidAtStartup = "runtime.composition.invalid_at_startup";
+
+    /// <summary>
+    /// Workflow retry blocked because the definition is not executable (e.g. module disabled).
+    /// Epic 27 corrective pass.
+    /// </summary>
+    public const string WorkflowRetryBlocked = "execution.workflow_retry.blocked";
 }

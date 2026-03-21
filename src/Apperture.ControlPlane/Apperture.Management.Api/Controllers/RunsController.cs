@@ -137,11 +137,14 @@ public sealed class RunsController : ControllerBase
             if (result is null)
                 return NotFound();
 
+            if (result.IsBlocked)
+                return Conflict(new { error = result.BlockedReason ?? "Retry blocked.", blocked = true, runId = id });
+
             return Accepted(new
             {
                 originalRunId = result.OriginalRunId.Value,
-                runId = result.RunId.Value,
-                workflowInstanceId = result.WorkflowInstanceId.Value,
+                runId = result.RunId!.Value,
+                workflowInstanceId = result.WorkflowInstanceId!.Value,
                 workflowDefinitionId = result.WorkflowDefinitionId.Value,
                 status = result.Status,
                 retryOfRunId = result.OriginalRunId.Value
