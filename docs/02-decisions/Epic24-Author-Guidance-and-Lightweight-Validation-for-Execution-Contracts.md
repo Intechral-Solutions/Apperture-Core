@@ -232,3 +232,5 @@ In practical terms, Epic 24 established a clearer answer to the next important p
 - How should module authors use the declared execution-contract model, and how does the platform gently reinforce that choice?
 
 That makes Epic 24 a meaningful continuation of the work established in Epics 20 through 23 and a strong foundation for future work around richer sample modules, stronger authoring ergonomics, and incremental validation or enforcement.
+
+See Epic 25 for the next bounded step focused on adoption assets (sample/template depth), not runtime semantic changes.

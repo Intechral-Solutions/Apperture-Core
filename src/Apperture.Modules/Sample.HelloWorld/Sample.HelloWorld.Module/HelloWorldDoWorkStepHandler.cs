@@ -23,6 +23,13 @@ public sealed class HelloWorldDoWorkStepHandler : IStepHandler
             conn.Open();
             try
             {
+                if (parameters.TryGetValue("successMode", out var successModeObj) &&
+                    successModeObj is string successMode &&
+                    string.Equals(successMode, "withheld", StringComparison.OrdinalIgnoreCase))
+                {
+                    return OperatorExecutionResult.SuccessWithheld();
+                }
+
                 return OperatorExecutionResult.SuccessInline(new { message = "HelloWorld operation completed.", step = "DoWork" });
             }
             finally

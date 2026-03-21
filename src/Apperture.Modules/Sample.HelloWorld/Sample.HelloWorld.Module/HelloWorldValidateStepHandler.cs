@@ -13,6 +13,16 @@ public sealed class HelloWorldValidateStepHandler : IStepHandler
         IReadOnlyDictionary<string, object?> parameters,
         CancellationToken cancellationToken = default)
     {
+        if (parameters.TryGetValue("failureMode", out var failureModeObj) &&
+            failureModeObj is string failureMode)
+        {
+            if (string.Equals(failureMode, "inline", StringComparison.OrdinalIgnoreCase))
+                throw OperatorExecutionResult.FailInline("HelloWorld validation failed with inline diagnostics.", new { reason = "validation.inline" });
+
+            if (string.Equals(failureMode, "withheld", StringComparison.OrdinalIgnoreCase))
+                throw OperatorExecutionResult.FailWithheld("HelloWorld validation failed with withheld diagnostics.");
+        }
+
         if (parameters.TryGetValue("simulateFailure", out var simulateFailure) &&
             simulateFailure is true)
         {

@@ -43,6 +43,29 @@ Use one explicit model for operator-visible run semantics.
 | Fail with inline-safe diagnostics payload | `throw OperatorExecutionResult.FailInline(summary, diagnostics);` |
 | Fail while withholding diagnostics payload | `throw OperatorExecutionResult.FailWithheld(summary);` |
 
+### Copyable snippets (preferred + compatibility)
+
+```csharp
+// Preferred success pattern for new handlers:
+return OperatorExecutionResult.SuccessInline(new
+{
+    message = "Operation completed.",
+    step = "DoWork"
+});
+```
+
+```csharp
+// Preferred declared failure pattern for new handlers:
+throw OperatorExecutionResult.FailInline(
+    "Validation failed.",
+    new { reason = "validation.missing_required_field" });
+```
+
+```csharp
+// Supported compatibility path (not preferred for new handlers):
+return OperatorRunOutput.SummaryOnly(new { message = "Compatibility-mode summary." });
+```
+
 ## Operations (Execution MVP Contract)
 
 Modules can also expose direct executable operations by implementing `IOperationDefinitionProvider` and returning `OperationDefinition` records.

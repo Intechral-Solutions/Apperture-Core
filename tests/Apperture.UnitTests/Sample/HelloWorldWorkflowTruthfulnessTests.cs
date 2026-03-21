@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Data;
 using Apperture.Core.Application.Services;
+using Apperture.Core.Application.Execution;
 using Apperture.ModuleSdk.Abstractions;
 using Apperture.Persistence.SqlServer;
 using Apperture.Persistence.SqlServer.Options;
@@ -127,6 +128,44 @@ public sealed class HelloWorldWorkflowTruthfulnessTests
         slotResolver.CloseCount.Should().Be(3);
     }
 
+    [Fact]
+    public async Task HelloWorldDoWork_SuccessModeWithheld_ReturnsDeclaredSuccessWithheld()
+    {
+        var handler = new HelloWorldDoWorkStepHandler();
+        var result = await handler.ExecuteAsync(
+            new StubStepExecutionContext("Sample.HelloWorld"),
+            new Dictionary<string, object?> { ["successMode"] = "withheld" });
+
+        result.Should().BeOfType<OperatorExecutionResult>();
+        var declared = (OperatorExecutionResult)result!;
+        declared.SuccessDisplayPolicy.Should().Be(OperatorOutputDisplayPolicy.Withheld);
+        declared.SuccessPayload.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task HelloWorldValidate_FailureModeInline_ThrowsDeclaredInlineFailure()
+    {
+        var handler = new HelloWorldValidateStepHandler();
+        var act = async () => await handler.ExecuteAsync(
+            new StubStepExecutionContext("Sample.HelloWorld"),
+            new Dictionary<string, object?> { ["failureMode"] = "inline" });
+
+        var ex = await act.Should().ThrowAsync<OperatorExecutionFailureException>();
+        ex.Which.DisplayPolicy.Should().Be(OperatorDiagnosticsDisplayPolicy.Inline);
+    }
+
+    [Fact]
+    public async Task HelloWorldValidate_FailureModeWithheld_ThrowsDeclaredWithheldFailure()
+    {
+        var handler = new HelloWorldValidateStepHandler();
+        var act = async () => await handler.ExecuteAsync(
+            new StubStepExecutionContext("Sample.HelloWorld"),
+            new Dictionary<string, object?> { ["failureMode"] = "withheld" });
+
+        var ex = await act.Should().ThrowAsync<OperatorExecutionFailureException>();
+        ex.Which.DisplayPolicy.Should().Be(OperatorDiagnosticsDisplayPolicy.Withheld);
+    }
+
     private sealed class CountingRuntimeSlotResolver : IRuntimeSlotResolver
     {
         public int OpenCount { get; private set; }
@@ -147,6 +186,35 @@ public sealed class HelloWorldWorkflowTruthfulnessTests
 
             return ValueTask.FromResult((T?)(object?)conn);
         }
+    }
+
+    private sealed class StubStepExecutionContext(string moduleId) : IStepExecutionContext
+    {
+        public string ModuleId { get; } = moduleId;
+
+        public ValueTask<T?> ResolveSlotAsync<T>(string slotName, CancellationToken cancellationToken = default)
+            where T : class
+        {
+            if (typeof(T) == typeof(IDbConnection))
+                return ValueTask.FromResult((T?)(object?)new StubDbConnection());
+
+            return ValueTask.FromResult<T?>(null);
+        }
+    }
+
+    private sealed class StubDbConnection : IDbConnection
+    {
+        public string ConnectionString { get; set; } = "";
+        public int ConnectionTimeout => 0;
+        public string Database => "";
+        public ConnectionState State { get; private set; } = ConnectionState.Closed;
+        public IDbTransaction BeginTransaction() => throw new NotImplementedException();
+        public IDbTransaction BeginTransaction(IsolationLevel il) => throw new NotImplementedException();
+        public void ChangeDatabase(string databaseName) => throw new NotImplementedException();
+        public IDbCommand CreateCommand() => throw new NotImplementedException();
+        public void Open() => State = ConnectionState.Open;
+        public void Close() => State = ConnectionState.Closed;
+        public void Dispose() => State = ConnectionState.Closed;
     }
 
     private sealed class CountingDbConnection : IDbConnection
