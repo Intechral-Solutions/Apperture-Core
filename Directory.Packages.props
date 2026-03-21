@@ -45,6 +45,8 @@
     <!-- Azure Key Vault and Identity (runtime secret resolution) -->
     <PackageVersion Include="Azure.Identity" Version="1.13.0" />
     <PackageVersion Include="Azure.Security.KeyVault.Secrets" Version="4.7.0" />
+    <!-- Cron / schedule evaluation (Epic 28) -->
+    <PackageVersion Include="Cronos" Version="0.8.4" />
     <!-- Azure Functions (isolated, .NET 10 compatible) -->
     <PackageVersion Include="Microsoft.Azure.Functions.Worker" Version="2.0.0" />
     <PackageVersion Include="Microsoft.Azure.Functions.Worker.Sdk" Version="2.0.7" />

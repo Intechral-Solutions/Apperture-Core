@@ -94,6 +94,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IModuleWorkflowListingService, ModuleWorkflowListingService>();
         services.AddScoped<IWorkflowStartAuthorizationService, WorkflowStartAuthorizationService>();
         services.AddScoped<IScheduleGovernanceService, ScheduleGovernanceService>();
+        services.AddScoped<IScheduleManagementService, SqlScheduleManagementService>();
         services.AddScoped<IControlActionAvailabilityProjection, ControlActionAvailabilityProjection>();
         services.AddScoped<IControlActivityQueryService, ControlActivityQueryService>();
         services.AddScoped<IControlAttentionQueryService, ControlAttentionQueryService>();
@@ -101,6 +102,19 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IRuntimeModuleCompositionQueryService, RuntimeModuleCompositionQueryService>();
         services.AddScoped<ISchedulerLifecycleGuard, SchedulerLifecycleGuard>();
         services.AddHostedService<ModuleCompositionBootstrapHostedService>();
+        return services;
+    }
+
+    /// <summary>
+    /// Registers scheduler dispatch services for runtime hosts (WorkerHost). Epic 28.
+    /// Requires: AddApperturePersistence, IWorkflowDefinitionResolver (with activation filter).
+    /// </summary>
+    public static IServiceCollection AddRuntimeSchedulerDispatch(this IServiceCollection services)
+    {
+        services.AddScoped<IWorkflowPersistence, SqlWorkflowPersistence>();
+        services.AddScoped<IWorkflowStartDispatchService, WorkflowStartDispatchService>();
+        services.AddScoped<ISchedulerLifecycleGuard, SchedulerLifecycleGuard>();
+        services.AddScoped<IScheduleDispatchRunner, ScheduleDispatchRunner>();
         return services;
     }
 

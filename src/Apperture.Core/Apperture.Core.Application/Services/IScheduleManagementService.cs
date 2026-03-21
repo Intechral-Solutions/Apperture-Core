@@ -9,6 +9,16 @@ namespace Apperture.Core.Application.Services;
 public interface IScheduleManagementService
 {
     /// <summary>
+    /// Gets a schedule definition by id.
+    /// </summary>
+    ValueTask<ScheduleDefinition?> GetDefinitionAsync(ScheduleId id, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Lists all schedule definitions.
+    /// </summary>
+    ValueTask<IReadOnlyList<ScheduleDefinition>> ListDefinitionsAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Creates a schedule definition.
     /// </summary>
     ValueTask<ScheduleDefinition> CreateScheduleAsync(ScheduleDefinition definition, CancellationToken cancellationToken = default);

@@ -1,5 +1,6 @@
 using Apperture.Bootstrap;
 using Apperture.ConnectorResolution;
+using Apperture.ControlPlane.Security;
 using Apperture.Core.Application.Execution;
 using Apperture.Core.Application.Services;
 using Apperture.ModuleSdk.Abstractions;
@@ -42,6 +43,13 @@ builder.Services.AddScoped<IModuleRegistryService, SqlModuleRegistryService>();
 builder.Services.AddSingleton<IModuleActivationFilter, WorkerRegistryModuleActivationFilter>();
 builder.Services.AddConnectorRepositories();
 builder.Services.AddConnectorResolution();
+builder.Services.AddSchedulePersistence();
+builder.Services.AddRuntimeSchedulerDispatch();
+builder.Services.Configure<ScheduleDispatchOptions>(builder.Configuration.GetSection(ScheduleDispatchOptions.SectionName));
+builder.Services.PostConfigure<ScheduleDispatchOptions>(opts =>
+{
+    opts.RuntimePlaneId ??= builder.Configuration["APERTURE_RUNTIME_ID"] ?? builder.Configuration["RuntimeHostIdentity:RuntimeId"] ?? "local";
+});
 builder.Services.AddPlatformSqlConnector();
 
 // Known modules (explicit host-controlled DI list; may include multiple modules for dev/testing and constrained composition).
@@ -74,6 +82,7 @@ builder.Services.AddSingleton<IStepHandlerRegistry>(sp =>
 builder.Services.AddScoped<IWorkflowExecutor, DefaultWorkflowExecutor>();
 
 builder.Services.AddHostedService<StartRequestWorker>();
+builder.Services.AddHostedService<ScheduleDispatchBackgroundService>();
 builder.Services.AddHostedService<ModuleCompositionBootstrapHostedService>();
 
 var host = builder.Build();

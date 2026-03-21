@@ -9,6 +9,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\..\Apperture.Bootstrap\Apperture.Bootstrap\Apperture.Bootstrap.csproj" />
+    <ProjectReference Include="..\..\..\Apperture.ControlPlane\Apperture.ControlPlane.Security\Apperture.ControlPlane.Security.csproj" />
     <ProjectReference Include="..\..\..\Apperture.ConnectorResolution\Apperture.ConnectorResolution.csproj" />
     <ProjectReference Include="..\..\..\Apperture.Persistence\Apperture.Persistence.SqlServer\Apperture.Persistence.SqlServer.csproj" />
     <ProjectReference Include="..\..\..\Apperture.RuntimePlane\Apperture.RuntimePlane.Engine\Apperture.RuntimePlane.Engine.csproj" />

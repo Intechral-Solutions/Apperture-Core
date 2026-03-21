@@ -94,4 +94,16 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IBindingRepository, SqlBindingRepository>();
         return services;
     }
+
+    /// <summary>
+    /// Registers schedule repository, evaluator, and provider. Epic 28.
+    /// Requires AddApperturePersistence (DbContext) to be registered first.
+    /// </summary>
+    public static IServiceCollection AddSchedulePersistence(this IServiceCollection services)
+    {
+        services.AddScoped<IScheduleRepository, SqlScheduleRepository>();
+        services.AddScoped<IScheduleEvaluator, CronScheduleEvaluator>();
+        services.AddScoped<IScheduleProvider, SqlScheduleProvider>();
+        return services;
+    }
 }

@@ -39,6 +39,10 @@ public class AppertureDbContext : DbContext
     public DbSet<UserRoleEntity> UserRoles => Set<UserRoleEntity>();
     public DbSet<LocalCredentialEntity> LocalCredentials => Set<LocalCredentialEntity>();
     public DbSet<ModuleInstallationStateEntity> ModuleInstallationStates => Set<ModuleInstallationStateEntity>();
+    public DbSet<ScheduleDefinitionEntity> ScheduleDefinitions => Set<ScheduleDefinitionEntity>();
+    public DbSet<ScheduleAssignmentEntity> ScheduleAssignments => Set<ScheduleAssignmentEntity>();
+    public DbSet<ScheduleRunEntity> ScheduleRuns => Set<ScheduleRunEntity>();
+    public DbSet<ScheduleStateEntity> ScheduleStates => Set<ScheduleStateEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -406,6 +410,52 @@ public class AppertureDbContext : DbContext
             e.Property(x => x.ModuleId).HasMaxLength(128);
             e.Property(x => x.Version).HasMaxLength(64);
             e.HasIndex(x => x.Enabled);
+        });
+
+        modelBuilder.Entity<ScheduleDefinitionEntity>(e =>
+        {
+            e.ToTable("ScheduleDefinitions");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasMaxLength(64);
+            e.Property(x => x.Name).HasMaxLength(256);
+            e.Property(x => x.RecurrenceExpression).HasMaxLength(256);
+            e.Property(x => x.TimeZone).HasMaxLength(128);
+            e.Property(x => x.TargetJobConfigurationJson).HasColumnType("nvarchar(max)");
+            e.Property(x => x.ExecutionPolicyRef).HasMaxLength(256);
+        });
+
+        modelBuilder.Entity<ScheduleAssignmentEntity>(e =>
+        {
+            e.ToTable("ScheduleAssignments");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasMaxLength(64);
+            e.Property(x => x.ScheduleId).HasMaxLength(64);
+            e.Property(x => x.RuntimePlaneId).HasMaxLength(128);
+            e.Property(x => x.PolicyOverrides).HasMaxLength(4096);
+            e.HasIndex(x => x.RuntimePlaneId);
+        });
+
+        modelBuilder.Entity<ScheduleRunEntity>(e =>
+        {
+            e.ToTable("ScheduleRuns");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).ValueGeneratedOnAdd();
+            e.Property(x => x.ScheduleId).HasMaxLength(64);
+            e.Property(x => x.AssignmentId).HasMaxLength(64);
+            e.Property(x => x.Outcome).HasMaxLength(64);
+            e.Property(x => x.OutcomeReason).HasMaxLength(2048);
+            e.Property(x => x.RunId).HasMaxLength(64);
+            e.HasIndex(x => new { x.ScheduleId, x.FireTimeUtc }).IsUnique();
+            e.HasIndex(x => x.AssignmentId);
+        });
+
+        modelBuilder.Entity<ScheduleStateEntity>(e =>
+        {
+            e.ToTable("ScheduleStates");
+            e.HasKey(x => x.AssignmentId);
+            e.Property(x => x.AssignmentId).HasMaxLength(64);
+            e.Property(x => x.LastOutcome).HasMaxLength(64);
+            e.Property(x => x.LastOutcomeReason).HasMaxLength(2048);
         });
     }
 }

@@ -169,11 +169,6 @@ namespace Apperture.Persistence.SqlServer.Migrations
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("datetimeoffset");
 
-                    b.Property<string>("EnvironmentId")
-                        .IsRequired()
-                        .HasMaxLength(128)
-                        .HasColumnType("nvarchar(128)");
-
                     b.Property<DateTimeOffset>("ExpiresAt")
                         .HasColumnType("datetimeoffset");
 
@@ -181,11 +176,6 @@ namespace Apperture.Persistence.SqlServer.Migrations
                         .IsRequired()
                         .HasMaxLength(128)
                         .HasColumnType("nvarchar(128)");
-
-                    b.Property<string>("ScopesJson")
-                        .IsRequired()
-                        .HasMaxLength(4096)
-                        .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("Token")
                         .IsRequired()
@@ -269,37 +259,6 @@ namespace Apperture.Persistence.SqlServer.Migrations
                     b.HasKey("UserId");
 
                     b.ToTable("LocalCredentials", (string)null);
-                });
-
-            modelBuilder.Entity("Apperture.Persistence.SqlServer.ModuleInstallationStateEntity", b =>
-                {
-                    b.Property<string>("EnvironmentId")
-                        .HasMaxLength(128)
-                        .HasColumnType("nvarchar(128)");
-
-                    b.Property<string>("ModuleId")
-                        .HasMaxLength(128)
-                        .HasColumnType("nvarchar(128)");
-
-                    b.Property<bool>("Enabled")
-                        .HasColumnType("bit");
-
-                    b.Property<DateTimeOffset>("InstalledAt")
-                        .HasColumnType("datetimeoffset");
-
-                    b.Property<DateTimeOffset>("UpdatedAt")
-                        .HasColumnType("datetimeoffset");
-
-                    b.Property<string>("Version")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
-
-                    b.HasKey("EnvironmentId", "ModuleId");
-
-                    b.HasIndex("Enabled");
-
-                    b.ToTable("ModuleInstallationStates", (string)null);
                 });
 
             modelBuilder.Entity("Apperture.Persistence.SqlServer.OperationCancelRequestEntity", b =>
@@ -438,24 +397,6 @@ namespace Apperture.Persistence.SqlServer.Migrations
                         .HasMaxLength(64)
                         .HasColumnType("nvarchar(64)");
 
-                    b.Property<string>("CapturedOutputDisplayPolicy")
-                        .HasMaxLength(32)
-                        .HasColumnType("nvarchar(32)");
-
-                    b.Property<string>("CapturedOutputJson")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("CapturedOutputStatus")
-                        .HasMaxLength(32)
-                        .HasColumnType("nvarchar(32)");
-
-                    b.Property<string>("CapturedOutputSummary")
-                        .HasMaxLength(512)
-                        .HasColumnType("nvarchar(512)");
-
-                    b.Property<int>("CapturedOutputVersion")
-                        .HasColumnType("int");
-
                     b.Property<DateTimeOffset?>("CompletedAt")
                         .HasColumnType("datetimeoffset");
 
@@ -470,24 +411,6 @@ namespace Apperture.Persistence.SqlServer.Migrations
                         .IsRequired()
                         .HasMaxLength(128)
                         .HasColumnType("nvarchar(128)");
-
-                    b.Property<string>("FailureDiagnosticsDisplayPolicy")
-                        .HasMaxLength(32)
-                        .HasColumnType("nvarchar(32)");
-
-                    b.Property<string>("FailureDiagnosticsJson")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("FailureDiagnosticsStatus")
-                        .HasMaxLength(32)
-                        .HasColumnType("nvarchar(32)");
-
-                    b.Property<int>("FailureDiagnosticsVersion")
-                        .HasColumnType("int");
-
-                    b.Property<string>("FailureSummary")
-                        .HasMaxLength(512)
-                        .HasColumnType("nvarchar(512)");
 
                     b.Property<string>("RetryOfRunId")
                         .HasMaxLength(64)
@@ -637,60 +560,6 @@ namespace Apperture.Persistence.SqlServer.Migrations
                     b.ToTable("Roles", (string)null);
                 });
 
-            modelBuilder.Entity("Apperture.Persistence.SqlServer.RuntimeControlRequestEntity", b =>
-                {
-                    b.Property<long>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bigint");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
-
-                    b.Property<DateTimeOffset?>("AppliedAt")
-                        .HasColumnType("datetimeoffset");
-
-                    b.Property<string>("AppliedBy")
-                        .HasMaxLength(256)
-                        .HasColumnType("nvarchar(256)");
-
-                    b.Property<string>("ControlKind")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
-
-                    b.Property<string>("LastError")
-                        .HasMaxLength(2048)
-                        .HasColumnType("nvarchar(2048)");
-
-                    b.Property<DateTimeOffset>("RequestedAt")
-                        .HasColumnType("datetimeoffset");
-
-                    b.Property<string>("RequestedBy")
-                        .HasMaxLength(256)
-                        .HasColumnType("nvarchar(256)");
-
-                    b.Property<string>("RuntimeId")
-                        .IsRequired()
-                        .HasMaxLength(128)
-                        .HasColumnType("nvarchar(128)");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasMaxLength(32)
-                        .HasColumnType("nvarchar(32)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("Status");
-
-                    b.HasIndex("RuntimeId", "ControlKind")
-                        .IsUnique()
-                        .HasFilter("[Status] = 'queued'");
-
-                    b.HasIndex("RuntimeId", "RequestedAt");
-
-                    b.ToTable("RuntimeControlRequests", (string)null);
-                });
-
             modelBuilder.Entity("Apperture.Persistence.SqlServer.RuntimeIdentityEntity", b =>
                 {
                     b.Property<string>("Id")
@@ -701,11 +570,6 @@ namespace Apperture.Persistence.SqlServer.Migrations
                         .IsRequired()
                         .HasMaxLength(64)
                         .HasColumnType("nvarchar(64)");
-
-                    b.Property<string>("DeclaredScopesJson")
-                        .IsRequired()
-                        .HasMaxLength(4096)
-                        .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("DisplayName")
                         .IsRequired()

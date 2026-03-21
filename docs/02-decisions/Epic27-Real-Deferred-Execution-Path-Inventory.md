@@ -12,11 +12,11 @@ This inventory documents the **actual implemented** deferred execution paths tha
 | **API workflow start** | `WorkflowsController` → `WorkflowStartDispatchService` | Dispatch returns null; no persisted request created | Via dispatch service |
 | **API operation start** | `OperationsController` → `OperationStartDispatchService` | Same | Via dispatch service |
 
-## Not implemented (no execution path exists)
+## Implemented (Epic 28)
 
-| Path | Status | Notes |
-|------|--------|-------|
-| **Scheduled dispatch** | **No real scheduler exists** | `SchedulerHostStub` runs `Task.CompletedTask`; no code path dispatches scheduled work. `ISchedulerLifecycleGuard` is a future extension point, not runtime enforcement. |
+| Path | Location | Lifecycle gating | Test coverage |
+|------|----------|------------------|---------------|
+| **Scheduled dispatch** | `ScheduleDispatchBackgroundService` (WorkerHost) → `ScheduleDispatchRunner` → `IWorkflowStartDispatchService` | `ISchedulerLifecycleGuard.CanDispatchWorkflowAsync` before dispatch; blocked outcome recorded | `ScheduleDispatchTests` (dispatch when enabled, block when disabled, fail when invalid target) |
 
 ## Restart-bound (governed at resolution, not unregistration)
 
@@ -27,6 +27,5 @@ This inventory documents the **actual implemented** deferred execution paths tha
 
 ## Summary
 
-- **Enforced today**: Persisted workflow/operation start processing, workflow retry, API dispatch.
-- **Not enforced (no path)**: Scheduler — no scheduler dispatch path exists.
+- **Enforced today**: Persisted workflow/operation start processing, workflow retry, API dispatch, **scheduled dispatch** (Epic 28).
 - **Restart-bound**: Step handler registration, permission registration.

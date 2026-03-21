@@ -3,11 +3,9 @@ using Microsoft.Extensions.Hosting;
 namespace Apperture.RuntimeHost.Windows.SchedulerHost;
 
 /// <summary>
-/// Placeholder scheduler host. <strong>No real scheduler execution path exists.</strong>
-/// ExecuteAsync returns immediately; no scheduled work is ever dispatched.
-/// Runtime composition exposes "SchedulerDispatch" as NotYetImplementedExecutionSurfaces.
-/// When a real scheduler is implemented, it must call ISchedulerLifecycleGuard before dispatch.
-/// See Epic 27 HF — Epic27-Real-Deferred-Execution-Path-Inventory.md.
+/// Standalone scheduler host stub. <strong>Real scheduler runs in WorkerHost</strong> (Epic 28).
+/// This process is a no-op placeholder; scheduled dispatch is implemented in
+/// ScheduleDispatchBackgroundService within WorkerHost. See Epic28-Real-Scheduler-Implementation.md.
 /// </summary>
 public sealed class SchedulerHostStub : BackgroundService
 {

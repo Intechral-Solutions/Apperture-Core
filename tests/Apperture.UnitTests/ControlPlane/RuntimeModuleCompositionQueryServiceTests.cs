@@ -40,8 +40,9 @@ public sealed class RuntimeModuleCompositionQueryServiceTests
         snap.Modules.Single(x => x.ModuleId == "m2").EffectivelyExecutable.Should().BeFalse();
         snap.RestartBoundExecutionSurfaces.Should().Contain(nameof(RestartBoundSurface.StepHandlerRegistry));
         snap.ImmediatelyGovernedExecutionSurfaces.Should().Contain("WorkflowDefinitionResolver");
-        snap.NotYetImplementedExecutionSurfaces.Should().Contain("SchedulerDispatch",
-            "Epic 27 HF: scheduler has no real execution path; must be exposed as not yet implemented");
+        snap.NotYetImplementedExecutionSurfaces.Should().NotContain("SchedulerDispatch",
+            "Epic 28: scheduler is now implemented and lifecycle-governed");
+        snap.ImmediatelyGovernedExecutionSurfaces.Should().Contain("SchedulerDispatch");
     }
 
     private sealed class StubModuleRegistry : IModuleRegistryService

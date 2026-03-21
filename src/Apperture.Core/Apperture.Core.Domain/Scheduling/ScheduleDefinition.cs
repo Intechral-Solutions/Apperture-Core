@@ -1,9 +1,8 @@
-using Apperture.Core.Domain.Environment;
-
 namespace Apperture.Core.Domain.Scheduling;
 
 /// <summary>
 /// Canonical schedule metadata and recurrence. Aggregate root.
+/// Epic 28: Target added for workflow/operation dispatch.
 /// </summary>
 public sealed record ScheduleDefinition(
     ScheduleId Id,
@@ -11,5 +10,6 @@ public sealed record ScheduleDefinition(
     string RecurrenceExpression,
     string TimeZone,
     bool Enabled,
+    ScheduledTarget Target,
     string? ExecutionPolicyRef,
     int Version);

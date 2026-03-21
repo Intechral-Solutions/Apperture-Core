@@ -28,6 +28,7 @@ builder.Services.AddAppertureDTFx();
 builder.Services.AddApperturePersistence(
     sp => sp.GetRequiredService<Apperture.Bootstrap.IBootstrapConnectionProfile>().ConnectionString);
 builder.Services.AddApperturePersistenceMigrationsOnStartup();
+builder.Services.AddSchedulePersistence();
 builder.Services.AddAppertureSqlSecrets();
 builder.Services.AddScoped<Apperture.Core.Security.Trust.IRuntimeEnrollmentService, Apperture.ControlPlane.Security.SqlRuntimeEnrollmentService>();
 builder.Services.AddScoped<Apperture.Core.Security.Trust.IRuntimeIdentityService, Apperture.ControlPlane.Security.SqlRuntimeIdentityService>();

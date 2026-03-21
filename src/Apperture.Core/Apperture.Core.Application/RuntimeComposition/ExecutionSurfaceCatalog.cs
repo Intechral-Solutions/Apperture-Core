@@ -14,7 +14,8 @@ public static class ExecutionSurfaceCatalog
         "WorkflowStartRequestProcessor.definition_resolution",
         "OperationStartRequestProcessor.definition_resolution",
         "ModuleWorkflowListingService",
-        "MenusController.navigation"
+        "MenusController.navigation",
+        "SchedulerDispatch"
     ];
 
     public static IReadOnlyList<string> RestartBoundSurfaceIds { get; } =
@@ -22,8 +23,7 @@ public static class ExecutionSurfaceCatalog
 
     /// <summary>
     /// Execution paths that exist only as future extension points; no real scheduler/dispatch path exists yet.
-    /// Epic 27 HF: Honest reporting — do not claim enforcement where no execution path exists.
+    /// Epic 28: SchedulerDispatch is now implemented and moved to ImmediatelyLifecycleGoverned.
     /// </summary>
-    public static IReadOnlyList<string> NotYetImplementedSurfaceIds { get; } =
-        ["SchedulerDispatch"];
+    public static IReadOnlyList<string> NotYetImplementedSurfaceIds { get; } = [];
 }
