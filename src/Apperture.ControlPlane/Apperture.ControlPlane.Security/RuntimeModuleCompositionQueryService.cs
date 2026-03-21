@@ -36,7 +36,8 @@ public sealed class RuntimeModuleCompositionQueryService : IRuntimeModuleComposi
             Modules: modules,
             EffectivelyExecutableModuleIds: effectivelyExecutableIds.ToList(),
             ImmediatelyGovernedExecutionSurfaces: ExecutionSurfaceCatalog.ImmediatelyLifecycleGoverned,
-            RestartBoundExecutionSurfaces: ExecutionSurfaceCatalog.RestartBoundSurfaceIds);
+            RestartBoundExecutionSurfaces: ExecutionSurfaceCatalog.RestartBoundSurfaceIds,
+            NotYetImplementedExecutionSurfaces: ExecutionSurfaceCatalog.NotYetImplementedSurfaceIds);
     }
 
     private async Task<IReadOnlyDictionary<string, int>> GetInFlightCountsByModuleAsync(

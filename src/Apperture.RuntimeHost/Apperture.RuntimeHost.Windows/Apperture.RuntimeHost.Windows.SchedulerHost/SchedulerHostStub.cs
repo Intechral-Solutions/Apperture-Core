@@ -3,11 +3,11 @@ using Microsoft.Extensions.Hosting;
 namespace Apperture.RuntimeHost.Windows.SchedulerHost;
 
 /// <summary>
-/// Placeholder scheduler host. When implemented, scheduled triggers must:
-/// 1. Call <c>ISchedulerLifecycleGuard.CanDispatchWorkflowAsync</c> before dispatch.
-/// 2. If false, skip and record blocked (audit/log); do not pretend the schedule executed.
-/// 3. If true, call <c>IWorkflowStarter.StartAsync</c> only — lifecycle gating also occurs at dispatch.
-/// See Epic 27 corrective pass — Epic27-Corrective-Pass-Deferred-Execution-Chokepoints.md.
+/// Placeholder scheduler host. <strong>No real scheduler execution path exists.</strong>
+/// ExecuteAsync returns immediately; no scheduled work is ever dispatched.
+/// Runtime composition exposes "SchedulerDispatch" as NotYetImplementedExecutionSurfaces.
+/// When a real scheduler is implemented, it must call ISchedulerLifecycleGuard before dispatch.
+/// See Epic 27 HF — Epic27-Real-Deferred-Execution-Path-Inventory.md.
 /// </summary>
 public sealed class SchedulerHostStub : BackgroundService
 {

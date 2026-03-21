@@ -11,7 +11,7 @@ This inventory identifies where deferred work becomes actual execution. Each pat
 | Persisted workflow start | `WorkflowStartRequestProcessor.ProcessClaimedAsync` → `ResolveDefinitionOrThrowAsync` | **Gated** | Definition resolution fails for disabled modules → `DefinitionNotExecutableException` → run marked Failed, audit recorded |
 | Persisted operation start | `OperationStartRequestProcessor.ProcessClaimedAsync` → `ResolveDefinitionOrThrowAsync` | **Gated** | Same pattern as workflow |
 | Workflow retry (creates new run) | `WorkflowRetryService.RequestRetryAsync` → `IWorkflowStartDispatchService.StartAsync` | **Gated (corrective)** | Dispatch returns null when definition unavailable → returns blocked result, audit recorded (no throw) |
-| Scheduled dispatch | `SchedulerHostStub` | **Stub / contract** | Not implemented; `ISchedulerLifecycleGuard` contract added so future scheduler must gate before dispatch |
+| Scheduled dispatch | `SchedulerHostStub` | **No path exists** | ExecuteAsync returns immediately; no scheduled work is ever dispatched. `NotYetImplementedExecutionSurfaces` includes `SchedulerDispatch`. |
 | API workflow start | `WorkflowsController` → `IWorkflowStartDispatchService` | **Gated** | Dispatch returns null → 404/blocked, audit |
 | API operation start | `OperationsController` → `OperationStartDispatchService` | **Gated** | Same |
 | Parked workflow resume | `WorkflowStartRequestProcessor` (parked + resume control) | **Gated** | Re-enters `ProcessClaimedAsync` → `ResolveDefinitionOrThrowAsync` at next claim |

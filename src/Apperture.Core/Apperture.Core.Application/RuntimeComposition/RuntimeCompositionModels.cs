@@ -20,10 +20,13 @@ public sealed record RuntimeCompositionModuleEntry(
 
 /// <summary>
 /// Operator-visible snapshot: discovered vs persisted vs effectively executable, plus surface classification.
+/// Epic 27 HF: NotYetImplementedExecutionSurfaces exposes paths that exist only as future hooks (e.g. scheduler).
 /// </summary>
 public sealed record HostEffectiveModuleSnapshot(
     DateTimeOffset CapturedAtUtc,
     IReadOnlyList<RuntimeCompositionModuleEntry> Modules,
     IReadOnlyList<string> EffectivelyExecutableModuleIds,
     IReadOnlyList<string> ImmediatelyGovernedExecutionSurfaces,
-    IReadOnlyList<string> RestartBoundExecutionSurfaces);
+    IReadOnlyList<string> RestartBoundExecutionSurfaces,
+    /// <summary>Execution paths not yet implemented; no runtime enforcement exists. E.g. SchedulerDispatch.</summary>
+    IReadOnlyList<string> NotYetImplementedExecutionSurfaces);

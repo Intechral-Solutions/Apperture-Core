@@ -34,7 +34,7 @@ See [Epic27-Execution-Surface-Inventory.md](./Epic27-Execution-Surface-Inventory
 - **No new starts** for disabled modules: API dispatch and worker resolution both enforce this.
 - **In-flight**: A run that already claimed the lease may complete the current `ProcessClaimedAsync` execution; on the next claim cycle, resolution runs again and fails if the module is no longer effective. Disabled modules with draining in-flight work are visible via `HasInFlightWork` in runtime composition.
 - **Retries**: Go through `IWorkflowStartDispatchService`; when dispatch returns null (definition unavailable), retry returns a structured blocked result instead of throwing; audit records `execution.workflow_retry.blocked`.
-- **Scheduler**: `SchedulerHostStub` is not implemented; future scheduler must call `ISchedulerLifecycleGuard.CanDispatchWorkflowAsync` before dispatch and skip/record blocked when false.
+- **Scheduler**: **No real scheduler execution path exists.** `SchedulerHostStub` runs `Task.CompletedTask`; no scheduled work is ever dispatched. Runtime composition exposes `SchedulerDispatch` in `NotYetImplementedExecutionSurfaces`. When a real scheduler is implemented, it must call `ISchedulerLifecycleGuard` before dispatch.
 - **Persisted start requests**: Processed by workers; when definition resolution fails (module disabled), run is marked Failed with `[Blocked]` prefix in `FailureSummary`, audit outcome `Blocked`.
 
 ### Restart-bound surfaces
@@ -46,7 +46,7 @@ Enumerated in `RestartBoundSurface` and exposed via `HostEffectiveModuleSnapshot
 
 ### Visibility
 
-- `GET /api/control/runtime-composition` returns `HostEffectiveModuleSnapshot` (modules, effectively executable ids, governed vs restart-bound surface lists).
+- `GET /api/control/runtime-composition` returns `HostEffectiveModuleSnapshot` (modules, effectively executable ids, governed vs restart-bound vs not-yet-implemented surface lists).
 - `IRuntimeModuleCompositionQueryService` is the application seam; `RuntimeModuleCompositionQueryService` implements it for the management host.
 
 ### Startup
@@ -57,11 +57,12 @@ Enumerated in `RestartBoundSurface` and exposed via `HostEffectiveModuleSnapshot
 
 - `LifecycleExecutionAuditActionNames`: workflow/operation start blocked (when dispatch returns null and an actor exists), run failed due to definition unavailable (worker), invalid composition at startup, workflow retry blocked (when definition unavailable).
 
-### Runtime composition model (Epic 27 corrective pass)
+### Runtime composition model (Epic 27 corrective pass + HF)
 
 - `RuntimeCompositionModuleEntry` extended with: `AllowsNewStarts`, `HasInFlightWork`, `ExecutionDegradedReason`.
 - `HasInFlightWork`: true when the module has runs in Running status (draining after disable).
 - `ExecutionDegradedReason`: `module_disabled`, `draining_in_flight`, or `invalid_persisted_state`.
+- `NotYetImplementedExecutionSurfaces`: execution paths that exist only as future hooks (e.g. `SchedulerDispatch`). No runtime enforcement exists for these.
 
 ## Consequences
 
@@ -73,3 +74,4 @@ Enumerated in `RestartBoundSurface` and exposed via `HostEffectiveModuleSnapshot
 
 - Epic 26: [Epic26-Module-Lifecycle-and-Contribution-Registration.md](./Epic26-Module-Lifecycle-and-Contribution-Registration.md)
 - Epic 27 Corrective Pass: [Epic27-Corrective-Pass-Deferred-Execution-Chokepoints.md](./Epic27-Corrective-Pass-Deferred-Execution-Chokepoints.md)
+- Epic 27 Hard Follow-Up: [Epic27-Real-Deferred-Execution-Path-Inventory.md](./Epic27-Real-Deferred-Execution-Path-Inventory.md)

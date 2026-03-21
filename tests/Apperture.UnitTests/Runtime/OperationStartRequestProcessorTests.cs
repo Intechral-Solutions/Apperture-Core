@@ -1,6 +1,7 @@
-using Apperture.Core.Application.Services;
 using Apperture.Core.Application.Execution;
+using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Operations;
+using Apperture.ModuleSdk.Abstractions;
 using Apperture.Persistence.SqlServer;
 using Apperture.Persistence.SqlServer.Options;
 using Apperture.RuntimePlane.Abstractions;
@@ -9,6 +10,7 @@ using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Sample.HelloWorld;
 using Xunit;
 
 namespace Apperture.UnitTests.Runtime;
@@ -89,6 +91,52 @@ public sealed class OperationStartRequestProcessorTests
         logger.Entries.Should().Contain(e =>
             e.Level == LogLevel.Warning &&
             e.Message.Contains("legacy success path", StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// Epic 27 hard follow-up: proves deferred operation start is blocked when module is disabled.
+    /// Worker-path enforcement: no execution, run marked Failed with [Blocked].
+    /// </summary>
+    [Fact]
+    public async Task ProcessClaimedAsync_WhenModuleDisabled_BlocksExecution_LeavesBlockedEvidence()
+    {
+        var db = NewDb();
+        SeedStartTriplet(db, runId: "run-1", instanceId: "opinst-1", definitionId: "Sample.HelloWorld.DoWork");
+        await db.SaveChangesAsync();
+
+        var module = new HelloWorldModule();
+        var nullOpRegistry = new NullOperationRegistry();
+        var catalogEntry = new ModuleCatalogEntry(
+            await ((IModule)module).BuildDescriptorAsync(CancellationToken.None),
+            ModuleLifecycleState.InstalledDisabled,
+            Installed: true,
+            Enabled: false,
+            EffectivelyActive: false,
+            ValidationIssues: []);
+        var moduleRegistry = new StubModuleRegistryForOp([catalogEntry]);
+
+        var processor = new OperationStartRequestProcessor(
+            db,
+            new NoOpExecutor(),
+            nullOpRegistry,
+            "worker-a",
+            DefaultLeaseOptions(),
+            moduleRegistry: moduleRegistry);
+
+        (await processor.TryClaimAsync("run-1")).Should().BeTrue();
+        await processor.ProcessClaimedAsync("run-1");
+
+        var request = await db.OperationStartRequests.SingleAsync(x => x.RunId == "run-1");
+        var instance = await db.OperationInstances.SingleAsync(x => x.Id == "opinst-1");
+        var run = await db.OperationRuns.SingleAsync(x => x.Id == "run-1");
+
+        request.Status.Should().Be("failed");
+        run.Status.Should().Be("failed");
+        instance.Status.Should().Be("failed");
+        run.FailureSummary.Should().NotBeNullOrEmpty();
+        run.FailureSummary.Should().StartWith(RunFailureCapture.DeferredWorkBlockedPrefix);
+        run.CompletedAt.Should().NotBeNull();
+        (await db.OperationStepInstances.CountAsync()).Should().Be(0);
     }
 
     [Fact]
@@ -237,6 +285,34 @@ public sealed class OperationStartRequestProcessorTests
 
     private static IOptions<OperationStartRequestLeaseOptions> DefaultLeaseOptions() =>
         Options.Create(new OperationStartRequestLeaseOptions { LeaseTimeout = TimeSpan.FromMinutes(10) });
+
+    private sealed class NullOperationRegistry : IOperationRegistryService
+    {
+        public ValueTask<IReadOnlyList<OperationDefinition>> ListAsync(CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult<IReadOnlyList<OperationDefinition>>([]);
+        public ValueTask<OperationDefinition?> GetOperationAsync(OperationId operationId, CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult<OperationDefinition?>(null);
+        public ValueTask<IReadOnlyList<OperationDefinition>> GetByModuleAsync(string moduleId, CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult<IReadOnlyList<OperationDefinition>>([]);
+        public ValueTask RegisterAsync(OperationDefinition definition, CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
+    }
+
+    private sealed class StubModuleRegistryForOp : IModuleRegistryService
+    {
+        private readonly IReadOnlyList<ModuleCatalogEntry> _catalog;
+        public StubModuleRegistryForOp(IReadOnlyList<ModuleCatalogEntry> catalog) => _catalog = catalog;
+        public ValueTask<IReadOnlyList<ModuleCatalogEntry>> ListModulesAsync(CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(_catalog);
+        public ValueTask<ModuleCatalogEntry?> GetModuleAsync(string moduleId, CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(_catalog.FirstOrDefault(x => x.Descriptor.ModuleId == moduleId));
+        public ValueTask<IReadOnlyList<ModuleDescriptor>> GetEnabledDescriptorsAsync(CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult<IReadOnlyList<ModuleDescriptor>>([]);
+        public ValueTask<ModuleLifecycleTransitionResult> DiscoverModulesAsync(CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<ModuleLifecycleTransitionResult> InstallModuleAsync(string moduleId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<ModuleLifecycleTransitionResult> EnableModuleAsync(string moduleId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<ModuleLifecycleTransitionResult> DisableModuleAsync(string moduleId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<ModuleLifecycleTransitionResult> UninstallModuleAsync(string moduleId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    }
 
     private sealed class StubOperationRegistry : IOperationRegistryService
     {

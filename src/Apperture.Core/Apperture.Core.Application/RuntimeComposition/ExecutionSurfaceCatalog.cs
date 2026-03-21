@@ -19,4 +19,11 @@ public static class ExecutionSurfaceCatalog
 
     public static IReadOnlyList<string> RestartBoundSurfaceIds { get; } =
         Enum.GetNames<RestartBoundSurface>();
+
+    /// <summary>
+    /// Execution paths that exist only as future extension points; no real scheduler/dispatch path exists yet.
+    /// Epic 27 HF: Honest reporting — do not claim enforcement where no execution path exists.
+    /// </summary>
+    public static IReadOnlyList<string> NotYetImplementedSurfaceIds { get; } =
+        ["SchedulerDispatch"];
 }

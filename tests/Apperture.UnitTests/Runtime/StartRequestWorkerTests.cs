@@ -1,12 +1,14 @@
+using Apperture.Core.Application.Execution;
+using Apperture.Core.Application.Services;
+using Apperture.ModuleSdk.Abstractions;
 using Apperture.Persistence.SqlServer;
 using Apperture.Persistence.SqlServer.Options;
-using Apperture.ModuleSdk.Abstractions;
-using Apperture.Core.Application.Execution;
 using Apperture.RuntimePlane.Abstractions;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Sample.HelloWorld;
 using Xunit;
 
 namespace Apperture.UnitTests.Runtime;
@@ -328,6 +330,57 @@ public sealed class StartRequestWorkerTests
         logger.Entries.Should().Contain(e =>
             e.Level == LogLevel.Warning &&
             e.Message.Contains("legacy failure path", StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// Epic 27 hard follow-up: proves deferred workflow start is blocked when module is disabled.
+    /// Worker-path enforcement: no execution, run marked Failed with [Blocked], durable evidence.
+    /// </summary>
+    [Fact]
+    public async Task ProcessClaimedAsync_WhenModuleDisabled_BlocksExecution_LeavesBlockedEvidence()
+    {
+        var db = NewDb();
+        SeedStartTriplet(db, runId: "r1", instanceId: "i1", definitionId: "Sample.HelloWorld.HelloWorld");
+        await db.SaveChangesAsync();
+
+        var module = new HelloWorldModule();
+        var denyAllFilter = new DenyAllActivationFilter();
+        var definitionResolver = new WorkflowDefinitionResolver([module], denyAllFilter);
+        var catalogEntry = new ModuleCatalogEntry(
+            await ((IModule)module).BuildDescriptorAsync(CancellationToken.None),
+            ModuleLifecycleState.InstalledDisabled,
+            Installed: true,
+            Enabled: false,
+            EffectivelyActive: false,
+            ValidationIssues: []);
+        var moduleRegistry = new StubModuleRegistry([catalogEntry]);
+
+        var processor = new WorkflowStartRequestProcessor(
+            db,
+            new NoOpExecutor(),
+            definitionResolver,
+            "test-worker",
+            DefaultLeaseOptions(),
+            moduleRegistry: moduleRegistry);
+
+        (await processor.TryClaimAsync("r1")).Should().BeTrue();
+        await processor.ProcessClaimedAsync("r1");
+
+        var request = await db.WorkflowStartRequests.SingleAsync(x => x.RunId == "r1");
+        var instance = await db.WorkflowInstances.SingleAsync(x => x.Id == "i1");
+        var run = await db.OperationRuns.SingleAsync(x => x.Id == "r1");
+
+        request.Status.Should().Be("failed");
+        run.Status.Should().Be("failed");
+        instance.Status.Should().Be("failed");
+        run.FailureSummary.Should().NotBeNullOrEmpty();
+        run.FailureSummary.Should().StartWith(RunFailureCapture.DeferredWorkBlockedPrefix, "blocked evidence must be durable and attributable to lifecycle");
+        run.CompletedAt.Should().NotBeNull();
+
+        (await db.WorkflowStepInstances.CountAsync()).Should().Be(0, "no steps must execute when blocked by lifecycle");
+        (await db.WorkflowLifecycleEvents.Where(x => x.RunId == "r1").Select(x => x.EventType).ToListAsync())
+            .Should().Contain("workflow.failed")
+            .And.NotContain("workflow.completed");
     }
 
     [Fact]
@@ -704,6 +757,38 @@ internal sealed class SingleDefinitionResolver : IWorkflowDefinitionResolver
 
     public ValueTask<WorkflowDefinition?> GetByIdAsync(WorkflowDefinitionId id, CancellationToken cancellationToken = default) =>
         ValueTask.FromResult<WorkflowDefinition?>(string.Equals(id.Value, _definition.Id.Value, StringComparison.Ordinal) ? _definition : null);
+}
+
+internal sealed class DenyAllActivationFilter : IModuleActivationFilter
+{
+    public ValueTask<bool> IsEnabledAsync(string moduleId, CancellationToken cancellationToken = default) =>
+        ValueTask.FromResult(false);
+}
+
+internal sealed class StubModuleRegistry : IModuleRegistryService
+{
+    private readonly IReadOnlyList<ModuleCatalogEntry> _catalog;
+
+    public StubModuleRegistry(IReadOnlyList<ModuleCatalogEntry> catalog) => _catalog = catalog;
+
+    public ValueTask<IReadOnlyList<ModuleCatalogEntry>> ListModulesAsync(CancellationToken cancellationToken = default) =>
+        ValueTask.FromResult(_catalog);
+
+    public ValueTask<ModuleCatalogEntry?> GetModuleAsync(string moduleId, CancellationToken cancellationToken = default) =>
+        ValueTask.FromResult(_catalog.FirstOrDefault(x => x.Descriptor.ModuleId == moduleId));
+
+    public ValueTask<IReadOnlyList<ModuleDescriptor>> GetEnabledDescriptorsAsync(CancellationToken cancellationToken = default) =>
+        ValueTask.FromResult<IReadOnlyList<ModuleDescriptor>>([]);
+
+    public ValueTask<ModuleLifecycleTransitionResult> DiscoverModulesAsync(CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+    public ValueTask<ModuleLifecycleTransitionResult> InstallModuleAsync(string moduleId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+    public ValueTask<ModuleLifecycleTransitionResult> EnableModuleAsync(string moduleId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+    public ValueTask<ModuleLifecycleTransitionResult> DisableModuleAsync(string moduleId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+    public ValueTask<ModuleLifecycleTransitionResult> UninstallModuleAsync(string moduleId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
 }
 
 internal sealed class TestLogger : ILogger

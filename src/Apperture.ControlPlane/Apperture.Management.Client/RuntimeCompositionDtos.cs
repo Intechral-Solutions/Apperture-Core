@@ -16,4 +16,5 @@ public sealed record HostEffectiveModuleSnapshotDto(
     IReadOnlyList<RuntimeCompositionModuleEntryDto> Modules,
     IReadOnlyList<string> EffectivelyExecutableModuleIds,
     IReadOnlyList<string> ImmediatelyGovernedExecutionSurfaces,
-    IReadOnlyList<string> RestartBoundExecutionSurfaces);
+    IReadOnlyList<string> RestartBoundExecutionSurfaces,
+    IReadOnlyList<string> NotYetImplementedExecutionSurfaces);

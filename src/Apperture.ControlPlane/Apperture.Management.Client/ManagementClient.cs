@@ -142,6 +142,7 @@ public sealed class ManagementClient : IManagementClient
             [],
             [],
             [],
+            [],
             []);
     }
 
