@@ -65,7 +65,11 @@ The Management API (control plane) exposes REST endpoints for module registry, w
   - `PayloadJson`: operator-visible captured output JSON only when inline display is allowed: `OutputAvailability` is `captured` or `truncated`, and `OutputDisplayPolicy` is null (legacy Epic-20 plain return) or `inline`. For `summary_only` or `withheld`, full JSON is not exposed here even if it existed transiently during capture.
   - `OutputAvailability`: technical capture state: `none`, `empty`, `captured`, `truncated`, `unsupported` (ADR-0019), plus `summary_only` and `withheld` (ADR-0020 additive statuses).
   - `OutputDisplayPolicy`: null for legacy/plain returns; otherwise `inline`, `summary_only`, or `withheld` when the handler returned `OperatorRunOutput` (ADR-0020).
+  - `DiagnosticsJson`: operator-visible failure diagnostics payload only when diagnostics status/policy allow inline display.
+  - `DiagnosticsAvailability`: failure diagnostics state (`none`, `summary_only`, `captured`, `withheld`, `unsupported`) for failed runs.
+  - `DiagnosticsDisplayPolicy`: diagnostics display policy when set (`inline`, `summary_only`, `withheld`).
 - Captured output is computed on successful terminal completion from the last step’s return value (see ADR-0019, ADR-0020).
+- Failure diagnostics are captured on terminal failure through run-grain fields (see ADR-0021).
 - Legacy runs (pre-output-migration) show `OutputAvailability: none`; no payload.
 
 ## Governance API notes

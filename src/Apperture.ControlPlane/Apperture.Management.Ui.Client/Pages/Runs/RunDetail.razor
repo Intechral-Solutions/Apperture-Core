@@ -203,13 +203,38 @@
                             <div class="text-sm font-mono text-body">@_detail.Result.OutputDisplayPolicy</div>
                         </div>
                     }
+                    @if (!string.IsNullOrEmpty(_detail.Result?.DiagnosticsAvailability))
+                    {
+                        <div>
+                            <div class="text-xs text-muted">Diagnostics availability</div>
+                            <div class="text-sm font-mono text-body">@_detail.Result.DiagnosticsAvailability</div>
+                        </div>
+                    }
+                    @if (!string.IsNullOrEmpty(_detail.Result?.DiagnosticsDisplayPolicy))
+                    {
+                        <div>
+                            <div class="text-xs text-muted">Diagnostics display policy</div>
+                            <div class="text-sm font-mono text-body">@_detail.Result.DiagnosticsDisplayPolicy</div>
+                        </div>
+                    }
                 </div>
                 @if (_detail.Error is not null)
                 {
                     <div class="mt-2 rounded border border-default bg-surface-muted px-2 py-2">
                         <div class="text-xs text-muted">Failure</div>
                         <div class="text-sm text-body">@_detail.Error.Category: @_detail.Error.Message</div>
-                        <div class="text-xs font-mono break-all text-muted">@_detail.Error.DetailsJson</div>
+                        @if (!string.IsNullOrWhiteSpace(_detail.Error.DetailsJson))
+                        {
+                            <div class="text-xs font-mono break-all text-muted">@_detail.Error.DetailsJson</div>
+                        }
+                        else if (HasSummaryOnlyDiagnostics)
+                        {
+                            <div class="text-xs text-muted">Detailed diagnostics are summary-only for this failure.</div>
+                        }
+                        else if (HasWithheldDiagnostics)
+                        {
+                            <div class="text-xs text-muted">Diagnostics were withheld for this failure.</div>
+                        }
                     </div>
                 }
                 @if (HasDisplayableOutput)
@@ -489,6 +514,14 @@
             "unsupported" => "Output could not be captured safely.",
             _ => "Output not available."
         };
+
+    private bool HasSummaryOnlyDiagnostics =>
+        _detail?.Result is not null
+        && string.Equals(_detail.Result.DiagnosticsAvailability, "summary_only", StringComparison.Ordinal);
+
+    private bool HasWithheldDiagnostics =>
+        _detail?.Result is not null
+        && string.Equals(_detail.Result.DiagnosticsAvailability, "withheld", StringComparison.Ordinal);
 
     private async Task LoadAsync()
     {

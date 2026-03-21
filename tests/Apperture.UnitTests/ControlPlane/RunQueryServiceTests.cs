@@ -598,6 +598,112 @@ public sealed class RunQueryServiceTests
         detail.Result.Summary.Should().Be("The module did not expose operator-visible output.");
     }
 
+    [Fact]
+    public async Task GetRunAsync_WhenWorkflowRunFailed_ProjectsFailureErrorAndDiagnosticsAvailability()
+    {
+        var db = NewDb();
+        db.WorkflowInstances.Add(new WorkflowInstanceEntity
+        {
+            Id = "i1",
+            DefinitionId = "Sample.HelloWorld.HelloWorld",
+            Status = WorkflowLifecycleStatusNames.Failed,
+            CreatedAt = DateTimeOffset.UtcNow.AddHours(-1),
+            UpdatedAt = DateTimeOffset.UtcNow,
+            Version = 1
+        });
+        db.OperationRuns.Add(new OperationRunEntity
+        {
+            Id = "r1",
+            WorkflowInstanceId = "i1",
+            DefinitionId = "Sample.HelloWorld.HelloWorld",
+            Status = WorkflowLifecycleStatusNames.Failed,
+            CreatedAt = DateTimeOffset.UtcNow.AddHours(-1),
+            CompletedAt = DateTimeOffset.UtcNow,
+            FailureSummary = "Connector timeout",
+            FailureDiagnosticsJson = null,
+            FailureDiagnosticsStatus = "summary_only",
+            FailureDiagnosticsVersion = 1,
+            FailureDiagnosticsDisplayPolicy = "summary_only"
+        });
+        db.WorkflowStartRequests.Add(new WorkflowStartRequestEntity
+        {
+            RunId = "r1",
+            WorkflowInstanceId = "i1",
+            WorkflowDefinitionId = "Sample.HelloWorld.HelloWorld",
+            CreatedAt = DateTimeOffset.UtcNow.AddHours(-1),
+            Status = WorkflowLifecycleStatusNames.Failed
+        });
+        await db.SaveChangesAsync();
+
+        var detail = await new RunQueryService(db, new StubOperationRegistry(), new RunKindResolver(db), new AllowReadAuthz(), new AllowOperationReadAuthz()).GetRunAsync(new OperationRunId("r1"));
+
+        detail.Should().NotBeNull();
+        detail!.Error.Should().NotBeNull();
+        detail.Error!.Message.Should().Be("Connector timeout");
+        detail.Result!.DiagnosticsAvailability.Should().Be("summary_only");
+        detail.Result.DiagnosticsDisplayPolicy.Should().Be("summary_only");
+        detail.Result.DiagnosticsJson.Should().BeNull();
+        detail.Result.Summary.Should().Be("Connector timeout");
+    }
+
+    [Fact]
+    public async Task GetRunAsync_WhenOperationRunFailedWithCapturedDiagnostics_ProjectsInlineDiagnostics()
+    {
+        var db = NewDb();
+        db.OperationInstances.Add(new OperationInstanceEntity
+        {
+            Id = "i1",
+            DefinitionId = "Sample.HelloWorld.Operation",
+            Status = WorkflowLifecycleStatusNames.Failed,
+            CreatedAt = DateTimeOffset.UtcNow.AddHours(-1),
+            UpdatedAt = DateTimeOffset.UtcNow,
+            Version = 1
+        });
+        db.OperationRuns.Add(new OperationRunEntity
+        {
+            Id = "r1",
+            WorkflowInstanceId = "i1",
+            DefinitionId = "Sample.HelloWorld.Operation",
+            Status = WorkflowLifecycleStatusNames.Failed,
+            CreatedAt = DateTimeOffset.UtcNow.AddHours(-1),
+            CompletedAt = DateTimeOffset.UtcNow,
+            FailureSummary = "Operation failed.",
+            FailureDiagnosticsJson = "{\"error\":\"timeout\"}",
+            FailureDiagnosticsStatus = "captured",
+            FailureDiagnosticsVersion = 1,
+            FailureDiagnosticsDisplayPolicy = "inline"
+        });
+        db.OperationLifecycleEvents.Add(new OperationLifecycleEventEntity
+        {
+            RunId = "r1",
+            OperationInstanceId = "i1",
+            OperationDefinitionId = "Sample.HelloWorld.Operation",
+            EventType = OperationLifecycleEventNames.Failed,
+            FromStatus = WorkflowLifecycleStatusNames.Running,
+            ToStatus = WorkflowLifecycleStatusNames.Failed,
+            OccurredAt = DateTimeOffset.UtcNow,
+            DetailsJson = "{\"error\":\"timeout\"}"
+        });
+        db.OperationStartRequests.Add(new OperationStartRequestEntity
+        {
+            RunId = "r1",
+            OperationInstanceId = "i1",
+            OperationDefinitionId = "Sample.HelloWorld.Operation",
+            CreatedAt = DateTimeOffset.UtcNow.AddHours(-1),
+            Status = WorkflowLifecycleStatusNames.Failed
+        });
+        await db.SaveChangesAsync();
+
+        var detail = await new RunQueryService(db, new StubOperationRegistry(), new RunKindResolver(db), new AllowReadAuthz(), new AllowOperationReadAuthz()).GetRunAsync(new OperationRunId("r1"));
+
+        detail.Should().NotBeNull();
+        detail!.Error.Should().NotBeNull();
+        detail.Error!.DetailsJson.Should().Contain("timeout");
+        detail.Result!.DiagnosticsAvailability.Should().Be("captured");
+        detail.Result.DiagnosticsDisplayPolicy.Should().Be("inline");
+        detail.Result.DiagnosticsJson.Should().Contain("timeout");
+    }
+
     private static AppertureDbContext NewDb()
     {
         var opts = new DbContextOptionsBuilder<AppertureDbContext>()

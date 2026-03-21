@@ -36,4 +36,29 @@ public sealed class OperationRunEntity
     /// inline, summary_only, withheld; null for legacy/plain Epic-20 returns. See ADR-0020.
     /// </summary>
     public string? CapturedOutputDisplayPolicy { get; set; }
+
+    /// <summary>
+    /// Short operator-facing failure summary captured on terminal failure.
+    /// </summary>
+    public string? FailureSummary { get; set; }
+
+    /// <summary>
+    /// Operator-safe diagnostics JSON when failure diagnostics policy allows inline exposure.
+    /// </summary>
+    public string? FailureDiagnosticsJson { get; set; }
+
+    /// <summary>
+    /// Failure diagnostics availability: none, summary_only, captured, withheld, unsupported.
+    /// </summary>
+    public string? FailureDiagnosticsStatus { get; set; }
+
+    /// <summary>
+    /// Failure diagnostics envelope version.
+    /// </summary>
+    public int FailureDiagnosticsVersion { get; set; }
+
+    /// <summary>
+    /// Failure diagnostics display policy: inline, summary_only, withheld.
+    /// </summary>
+    public string? FailureDiagnosticsDisplayPolicy { get; set; }
 }

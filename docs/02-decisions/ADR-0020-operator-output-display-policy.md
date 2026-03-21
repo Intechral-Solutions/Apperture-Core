@@ -12,7 +12,7 @@ Accepted
 
 1. **Separate dimensions**
    - **Capture status** (ADR-0019): technical outcome of the capture pipeline, including Epic 21 extensions below.
-   - **Display policy** (this ADR): what the module declared for operator surfaces when it opted into [`OperatorRunOutput`](../../src/Apperture.Core/Apperture.Core.Application/Execution/OperatorRunOutput.cs).
+   - **Display policy** (this ADR): what the module declared for operator surfaces when it opted into `OperatorRunOutput`.
 
 2. **Opt-in wrapper**
    - Handlers may return `OperatorRunOutput` from `IStepHandler.ExecuteAsync` / the last workflow step to attach `OperatorOutputDisplayPolicy`: `Inline`, `SummaryOnly`, `Withheld`.

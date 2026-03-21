@@ -180,8 +180,17 @@ public sealed class RunQueryService : IRunQueryService
                 r.CorrelationKey,
                 r.RetryOfRunId,
                 instance?.CurrentStepName,
-                BuildResult(r.Status, r.CapturedOutputJson, r.CapturedOutputSummary, r.CapturedOutputStatus, r.CapturedOutputDisplayPolicy),
-                null,
+                BuildResult(
+                    r.Status,
+                    r.CapturedOutputJson,
+                    r.CapturedOutputSummary,
+                    r.CapturedOutputStatus,
+                    r.CapturedOutputDisplayPolicy,
+                    r.FailureDiagnosticsJson,
+                    r.FailureSummary,
+                    r.FailureDiagnosticsStatus,
+                    r.FailureDiagnosticsDisplayPolicy),
+                BuildWorkflowError(r),
                 lifecycleEvents,
                 stepInstances,
                 controlRequests,
@@ -227,7 +236,7 @@ public sealed class RunQueryService : IRunQueryService
                 x.Error))
             .ToListAsync(cancellationToken);
 
-        var opError = BuildOperationError(opLifecycleEvents);
+        var opError = BuildOperationError(r, opLifecycleEvents);
         var opStartRequest = await _db.OperationStartRequests.AsNoTracking()
             .FirstOrDefaultAsync(x => x.RunId == r.Id, cancellationToken);
         return new RunDetailDto(
@@ -240,7 +249,16 @@ public sealed class RunQueryService : IRunQueryService
             r.CorrelationKey,
             r.RetryOfRunId,
             operationInstance?.CurrentStepName,
-            BuildResult(r.Status, r.CapturedOutputJson, r.CapturedOutputSummary, r.CapturedOutputStatus, r.CapturedOutputDisplayPolicy),
+            BuildResult(
+                r.Status,
+                r.CapturedOutputJson,
+                r.CapturedOutputSummary,
+                r.CapturedOutputStatus,
+                r.CapturedOutputDisplayPolicy,
+                r.FailureDiagnosticsJson,
+                r.FailureSummary,
+                r.FailureDiagnosticsStatus,
+                r.FailureDiagnosticsDisplayPolicy),
             opError,
             opLifecycleEvents,
             opStepInstances,
@@ -259,7 +277,11 @@ public sealed class RunQueryService : IRunQueryService
         string? capturedOutputJson,
         string? capturedOutputSummary,
         string? capturedOutputStatus,
-        string? capturedOutputDisplayPolicy)
+        string? capturedOutputDisplayPolicy,
+        string? failureDiagnosticsJson,
+        string? failureSummary,
+        string? failureDiagnosticsStatus,
+        string? failureDiagnosticsDisplayPolicy)
     {
         var outcome = status.ToLowerInvariant() switch
         {
@@ -282,6 +304,8 @@ public sealed class RunQueryService : IRunQueryService
             summary = "The module did not expose operator-visible output.";
         else if (outcome == "succeeded" && !string.IsNullOrWhiteSpace(capturedOutputSummary))
             summary = capturedOutputSummary!;
+        else if (outcome == "failed" && !string.IsNullOrWhiteSpace(failureSummary))
+            summary = failureSummary!;
         else
             summary = baseSummary;
 
@@ -295,20 +319,53 @@ public sealed class RunQueryService : IRunQueryService
 
         var outputAvailability = capturedOutputStatus ?? RunOutputCapture.StatusNone;
 
-        return new RunResultDto(outcome, summary, payloadJson, DiagnosticsJson: null, outputAvailability, capturedOutputDisplayPolicy);
+        var diagnosticsAvailability = outcome == "failed"
+            ? (failureDiagnosticsStatus ?? RunFailureCapture.StatusNone)
+            : null;
+        var showInlineDiagnostics =
+            outcome == "failed"
+            && string.Equals(diagnosticsAvailability, RunFailureCapture.StatusCaptured, StringComparison.Ordinal)
+            && (string.IsNullOrEmpty(failureDiagnosticsDisplayPolicy)
+                || string.Equals(failureDiagnosticsDisplayPolicy, RunFailureCapture.DisplayPolicyInline, StringComparison.Ordinal));
+        var diagnosticsJson = showInlineDiagnostics ? failureDiagnosticsJson : null;
+
+        return new RunResultDto(
+            outcome,
+            summary,
+            payloadJson,
+            diagnosticsJson,
+            outputAvailability,
+            capturedOutputDisplayPolicy,
+            diagnosticsAvailability,
+            failureDiagnosticsDisplayPolicy);
     }
 
-    private static RunErrorDto? BuildOperationError(IReadOnlyList<RunLifecycleEventDto> lifecycleEvents)
+    private static RunErrorDto? BuildWorkflowError(OperationRunEntity run)
     {
-        var failed = lifecycleEvents.LastOrDefault(e => string.Equals(e.EventType, OperationLifecycleEventNames.Failed, StringComparison.Ordinal));
-        if (failed is null)
+        if (!string.Equals(run.Status, WorkflowLifecycleStatusNames.Failed, StringComparison.Ordinal))
             return null;
 
         return new RunErrorDto(
             Category: "execution",
-            Message: "Operation execution failed.",
+            Message: string.IsNullOrWhiteSpace(run.FailureSummary) ? "Workflow execution failed." : run.FailureSummary!,
             Code: null,
-            DetailsJson: failed.DetailsJson);
+            DetailsJson: run.FailureDiagnosticsJson);
+    }
+
+    private static RunErrorDto? BuildOperationError(OperationRunEntity run, IReadOnlyList<RunLifecycleEventDto> lifecycleEvents)
+    {
+        if (!string.Equals(run.Status, WorkflowLifecycleStatusNames.Failed, StringComparison.Ordinal))
+            return null;
+
+        var failed = lifecycleEvents.LastOrDefault(e => string.Equals(e.EventType, OperationLifecycleEventNames.Failed, StringComparison.Ordinal));
+        var details = run.FailureDiagnosticsJson ?? failed?.DetailsJson;
+        var message = !string.IsNullOrWhiteSpace(run.FailureSummary) ? run.FailureSummary! : "Operation execution failed.";
+
+        return new RunErrorDto(
+            Category: "execution",
+            Message: message,
+            Code: null,
+            DetailsJson: details);
     }
 }
 

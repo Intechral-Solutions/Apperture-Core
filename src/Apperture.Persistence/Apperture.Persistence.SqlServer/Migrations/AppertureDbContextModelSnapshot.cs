@@ -440,6 +440,24 @@ namespace Apperture.Persistence.SqlServer.Migrations
                         .HasMaxLength(128)
                         .HasColumnType("nvarchar(128)");
 
+                    b.Property<string>("FailureDiagnosticsDisplayPolicy")
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<string>("FailureDiagnosticsJson")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("FailureDiagnosticsStatus")
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<int>("FailureDiagnosticsVersion")
+                        .HasColumnType("int");
+
+                    b.Property<string>("FailureSummary")
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)");
+
                     b.Property<string>("RetryOfRunId")
                         .HasMaxLength(64)
                         .HasColumnType("nvarchar(64)");

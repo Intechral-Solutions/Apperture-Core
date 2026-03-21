@@ -296,6 +296,7 @@ WHERE RunId = {runId} AND (
             catch (Exception ex)
             {
                 _logger?.LogError(ex, "Operation start execution failed. RunId={RunId}", runId);
+                var failureCapture = RunFailureCapture.TryCapture(ex);
 
                 if (activeStep is not null)
                 {
@@ -308,6 +309,11 @@ WHERE RunId = {runId} AND (
                 instance.UpdatedAt = DateTimeOffset.UtcNow;
                 run.Status = WorkflowLifecycleStatusNames.Failed;
                 run.CompletedAt = DateTimeOffset.UtcNow;
+                run.FailureSummary = failureCapture.FailureSummary;
+                run.FailureDiagnosticsJson = failureCapture.FailureDiagnosticsJson;
+                run.FailureDiagnosticsStatus = failureCapture.FailureDiagnosticsStatus;
+                run.FailureDiagnosticsVersion = failureCapture.FailureDiagnosticsVersion;
+                run.FailureDiagnosticsDisplayPolicy = failureCapture.FailureDiagnosticsDisplayPolicy;
                 request.Status = WorkflowLifecycleStatusNames.Failed;
                 request.ClaimedAt = null;
                 request.ClaimedBy = null;
@@ -324,7 +330,7 @@ WHERE RunId = {runId} AND (
                     OccurredAt = DateTimeOffset.UtcNow,
                     RelatedRunId = run.RetryOfRunId,
                     StepName = activeStep?.StepName,
-                    DetailsJson = JsonSerializer.Serialize(new { error = Truncate(ex.Message, 2048) })
+                    DetailsJson = failureCapture.FailureDiagnosticsJson
                 });
 
                 await _db.SaveChangesAsync(cancellationToken);

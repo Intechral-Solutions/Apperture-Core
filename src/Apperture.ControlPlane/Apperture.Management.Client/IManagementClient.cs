@@ -95,7 +95,9 @@ public sealed record RunResultDto(
     string? PayloadJson,
     string? DiagnosticsJson,
     string? OutputAvailability = null,
-    string? OutputDisplayPolicy = null);
+    string? OutputDisplayPolicy = null,
+    string? DiagnosticsAvailability = null,
+    string? DiagnosticsDisplayPolicy = null);
 
 public sealed record RunErrorDto(
     string Category,
