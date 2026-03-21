@@ -38,7 +38,10 @@ public sealed class OperationStartAuthorizationService : IOperationStartAuthoriz
             throw new UnauthorizedAccessException("No authenticated actor.");
 
         var definition = await _operations.GetOperationAsync(operationId, cancellationToken);
-        if (definition?.RequiredPermissions is { Count: > 0 } requiredPermissions)
+        if (definition is null)
+            throw new UnauthorizedAccessException("Operation not found or not available.");
+
+        if (definition.RequiredPermissions is { Count: > 0 } requiredPermissions)
         {
             var allowedByDefinition = await _executablePermissionEvaluator.EvaluateAllAsync(actor, requiredPermissions, cancellationToken);
             if (!allowedByDefinition)
@@ -49,7 +52,7 @@ public sealed class OperationStartAuthorizationService : IOperationStartAuthoriz
 
         // Coarse fallback: module-owned operations require `operation.execute` at module scope.
         // Otherwise require `operation.execute` at instance scope.
-        var moduleId = definition?.ModuleId;
+        var moduleId = definition.ModuleId;
         var scopeKey = string.IsNullOrWhiteSpace(moduleId)
             ? ScopeKeyConstants.Instance
             : ScopeKeyConstants.Module(moduleId);

@@ -9,6 +9,7 @@ namespace Apperture.ControlPlane.Security;
 /// <summary>
 /// Runs once at startup to register module-declared permissions into the active IResourceDescriptorRegistry.
 /// Depends on the registry (already seeded with platform permissions) and IModuleManifestProvider.
+/// Restart-bound for permission catalog updates: re-run requires process restart (Epic 27 — Epic27-Execution-Surface-Inventory.md).
 /// </summary>
 public sealed class ModulePermissionRegistrationHostedService : IHostedService
 {

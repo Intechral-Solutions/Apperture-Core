@@ -1,6 +1,10 @@
 using System.Text.Json;
+using Apperture.Core.Application;
 using Apperture.Core.Application.Execution;
+using Apperture.Core.Application.Services;
+using Apperture.Core.Domain.Audit;
 using Apperture.ModuleSdk.Abstractions;
+using Apperture.Shared.Kernel;
 using Apperture.RuntimePlane.Abstractions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -11,7 +15,7 @@ namespace Apperture.Persistence.SqlServer;
 
 /// <summary>
 /// Processes persisted workflow start requests (claim + execute + lifecycle updates).
-/// Intended for instance-plane worker hosts.
+/// Intended for instance-plane worker hosts. Definition resolution at process boundaries is lifecycle-governed (Epic 27 — Epic27-Execution-Surface-Inventory.md).
 /// </summary>
 public sealed class WorkflowStartRequestProcessor
 {
@@ -25,6 +29,8 @@ public sealed class WorkflowStartRequestProcessor
     private readonly AppertureDbContext _db;
     private readonly IWorkflowExecutor _executor;
     private readonly IWorkflowDefinitionResolver _definitionResolver;
+    private readonly IModuleRegistryService? _moduleRegistry;
+    private readonly IAuditService? _audit;
     private readonly ILogger? _logger;
     private readonly string _workerId;
     private readonly WorkflowStartRequestLeaseOptions _leaseOptions;
@@ -35,7 +41,9 @@ public sealed class WorkflowStartRequestProcessor
         IWorkflowDefinitionResolver definitionResolver,
         string workerId,
         IOptions<WorkflowStartRequestLeaseOptions> leaseOptions,
-        ILogger? logger = null)
+        ILogger? logger = null,
+        IModuleRegistryService? moduleRegistry = null,
+        IAuditService? audit = null)
     {
         _db = db;
         _executor = executor;
@@ -43,6 +51,8 @@ public sealed class WorkflowStartRequestProcessor
         _workerId = workerId;
         _leaseOptions = leaseOptions.Value;
         _logger = logger;
+        _moduleRegistry = moduleRegistry;
+        _audit = audit;
     }
 
     public async Task<bool> TryClaimAsync(string runId, CancellationToken cancellationToken = default)
@@ -359,6 +369,7 @@ WHERE RunId = {runId} AND (
             }
             catch (Exception ex)
             {
+                await TryAuditDefinitionUnavailableAsync(ex, runId, cancellationToken).ConfigureAwait(false);
                 _logger?.LogError(ex, "Start request execution failed. RunId={RunId}", runId);
                 LogExecutionContractSignalForFailure(runId, ex);
                 var failureCapture = RunFailureCapture.TryCapture(ex);
@@ -575,13 +586,59 @@ WHERE RunId = {runId} AND (
         });
     }
 
+    private async ValueTask TryAuditDefinitionUnavailableAsync(Exception ex, string runId, CancellationToken cancellationToken)
+    {
+        if (_audit is null || ex is not DefinitionNotExecutableException dne)
+            return;
+
+        try
+        {
+            await _audit.AppendAsync(
+                new AuditRecord(
+                    new AuditRecordId(Guid.NewGuid().ToString("N")),
+                    new ActorId("system-worker"),
+                    LifecycleExecutionAuditActionNames.WorkflowRunDefinitionUnavailable,
+                    Resource: null,
+                    Outcome: "Failed",
+                    Timestamp: DateTimeOffset.UtcNow,
+                    new CorrelationId(runId),
+                    $"runId={runId};definitionId={dne.DefinitionId};kind={dne.Kind};message={dne.Message}"),
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch
+        {
+            // best-effort audit
+        }
+    }
+
     private async ValueTask<WorkflowDefinition> ResolveDefinitionOrThrowAsync(string workflowDefinitionId, CancellationToken cancellationToken)
     {
         var id = new WorkflowDefinitionId(workflowDefinitionId);
         var definition = await _definitionResolver.GetByIdAsync(id, cancellationToken);
-        if (definition is null)
-            throw new InvalidOperationException($"Unknown workflow definition id '{workflowDefinitionId}'.");
-        return definition;
+        if (definition is not null)
+            return definition;
+
+        if (_moduleRegistry is not null)
+        {
+            var catalog = await _moduleRegistry.ListModulesAsync(cancellationToken).ConfigureAwait(false);
+            foreach (var entry in catalog)
+            {
+                var hasWorkflow = entry.Descriptor.Contributions.OfType<WorkflowContributionDescriptor>()
+                    .Any(w => string.Equals(w.Id, workflowDefinitionId, StringComparison.Ordinal));
+                if (hasWorkflow && !entry.EffectivelyActive)
+                {
+                    throw new DefinitionNotExecutableException(
+                        workflowDefinitionId,
+                        ExecutionDefinitionKind.Workflow,
+                        "Workflow definition is not effectively active for execution (module disabled, invalid, or blocked).");
+                }
+            }
+        }
+
+        throw new DefinitionNotExecutableException(
+            workflowDefinitionId,
+            ExecutionDefinitionKind.Workflow,
+            $"Unknown workflow definition id '{workflowDefinitionId}'.");
     }
 
     private static IReadOnlyDictionary<string, object?>? DeserializeParameters(string? parametersJson)

@@ -79,6 +79,23 @@ public sealed class WorkflowStartAuthorizationServiceTests
     }
 
     [Fact]
+    public async Task EnsureCanStartWorkflowAsync_WhenDefinitionIsNull_ThrowsUnauthorized()
+    {
+        var principal = new StubPrincipalContext(new HumanActor(new ActorId("u1"), "u1", isBreakGlassSession: false));
+        var auth = new RecordingAuthorizationService(allowed: true);
+        var workflowModuleResolver = new StubWorkflowModuleResolver(moduleId: "Sample.HelloWorld");
+        var workflowDefinitionResolver = new StubWorkflowDefinitionResolver(definition: null);
+        var registry = new StubRegistry(known: Array.Empty<PermissionDescriptor>());
+        var execEvaluator = new ExecutablePermissionEvaluator(auth, registry);
+        var evaluation = new AuthorizationEvaluationService(auth);
+
+        var svc = new WorkflowStartAuthorizationService(principal, evaluation, workflowModuleResolver, workflowDefinitionResolver, execEvaluator);
+
+        Func<Task> act = async () => await svc.EnsureCanStartWorkflowAsync(WorkflowId);
+        await act.Should().ThrowAsync<UnauthorizedAccessException>().WithMessage("Workflow not found or not available.*");
+    }
+
+    [Fact]
     public async Task EnsureCanStartWorkflowAsync_WhenRequiredPermissionIsUnknownInRegistry_Denies()
     {
         var principal = new StubPrincipalContext(new HumanActor(new ActorId("u1"), "u1", isBreakGlassSession: false));

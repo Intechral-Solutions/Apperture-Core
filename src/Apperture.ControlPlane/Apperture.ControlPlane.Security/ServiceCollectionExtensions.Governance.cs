@@ -2,6 +2,7 @@ using Apperture.Bootstrap;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Governance;
 using Apperture.ModuleSdk.Abstractions;
+using Apperture.Core.Application.RuntimeComposition;
 using Apperture.Persistence.SqlServer;
 using Apperture.RuntimePlane.Abstractions;
 using Apperture.Shared.Kernel;
@@ -97,6 +98,8 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IControlActivityQueryService, ControlActivityQueryService>();
         services.AddScoped<IControlAttentionQueryService, ControlAttentionQueryService>();
         services.AddScoped<IControlCenterQueryService, ControlCenterQueryService>();
+        services.AddScoped<IRuntimeModuleCompositionQueryService, RuntimeModuleCompositionQueryService>();
+        services.AddHostedService<ModuleCompositionBootstrapHostedService>();
         return services;
     }
 

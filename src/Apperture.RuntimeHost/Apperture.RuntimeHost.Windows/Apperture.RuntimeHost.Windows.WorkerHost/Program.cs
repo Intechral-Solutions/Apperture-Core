@@ -55,6 +55,7 @@ builder.Services.AddSingleton<IWorkflowDefinitionResolver, WorkflowDefinitionRes
 builder.Services.AddSingleton<IOperationRegistryService, OperationRegistryService>();
 
 // Step execution: registry populated by modules (no demo-only hard-coding).
+// Restart-bound: handlers for all DI modules are registered here; new work for disabled modules is still blocked at definition resolution (Epic 27 — Epic27-Execution-Surface-Inventory.md).
 builder.Services.AddSingleton<IStepHandlerRegistry>(sp =>
 {
     var registry = new StepHandlerRegistry();
@@ -73,6 +74,7 @@ builder.Services.AddSingleton<IStepHandlerRegistry>(sp =>
 builder.Services.AddScoped<IWorkflowExecutor, DefaultWorkflowExecutor>();
 
 builder.Services.AddHostedService<StartRequestWorker>();
+builder.Services.AddHostedService<ModuleCompositionBootstrapHostedService>();
 
 var host = builder.Build();
 host.Run();

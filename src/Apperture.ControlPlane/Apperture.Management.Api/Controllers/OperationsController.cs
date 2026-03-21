@@ -1,7 +1,10 @@
 using Apperture.Core.Domain.Operations;
 using Apperture.ControlPlane.Security;
 using Apperture.Core.Application;
+using Apperture.Core.Application.Services;
+using Apperture.Core.Domain.Audit;
 using Apperture.Management.Api.Models;
+using Apperture.Shared.Kernel;
 using Apperture.RuntimePlane.Abstractions;
 using Microsoft.AspNetCore.Mvc;
 
@@ -17,19 +20,25 @@ public sealed class OperationsController : ControllerBase
     private readonly IOperationInputValidationService _inputValidation;
     private readonly IOperationStartDispatchService _dispatch;
     private readonly IRunQueryService _runs;
+    private readonly IAuditService? _audit;
+    private readonly IPrincipalContext _principal;
 
     public OperationsController(
         IOperationDefinitionQueryService definitions,
         IOperationStartAuthorizationService startAuth,
         IOperationInputValidationService inputValidation,
         IOperationStartDispatchService dispatch,
-        IRunQueryService runs)
+        IRunQueryService runs,
+        IPrincipalContext principal,
+        IAuditService? audit = null)
     {
         _definitions = definitions;
         _startAuth = startAuth;
         _inputValidation = inputValidation;
         _dispatch = dispatch;
         _runs = runs;
+        _principal = principal;
+        _audit = audit;
     }
 
     [HttpGet("runs")]
@@ -161,7 +170,14 @@ public sealed class OperationsController : ControllerBase
 
         var dispatchResult = await _dispatch.StartAsync(request, cancellationToken);
         if (dispatchResult is null)
+        {
+            await TryAppendStartBlockedAuditAsync(
+                LifecycleExecutionAuditActionNames.OperationStartBlocked,
+                $"operationDefinitionId={operationDefinitionId};reason=definition_not_executable",
+                body?.CorrelationId,
+                cancellationToken).ConfigureAwait(false);
             return NotFound(new { error = $"Operation definition {operationDefinitionId} not found." });
+        }
 
         return Accepted(new
         {
@@ -170,6 +186,39 @@ public sealed class OperationsController : ControllerBase
             operationDefinitionId = dispatchResult.OperationDefinitionId.Value,
             status = dispatchResult.Status
         });
+    }
+
+    private async Task TryAppendStartBlockedAuditAsync(
+        string action,
+        string details,
+        string? correlationId,
+        CancellationToken cancellationToken)
+    {
+        if (_audit is null)
+            return;
+
+        var actor = await _principal.GetCurrentActorAsync(cancellationToken).ConfigureAwait(false);
+        if (actor is null)
+            return;
+
+        try
+        {
+            await _audit.AppendAsync(
+                new AuditRecord(
+                    new AuditRecordId(Guid.NewGuid().ToString("N")),
+                    actor.Id,
+                    action,
+                    Resource: null,
+                    Outcome: "Blocked",
+                    Timestamp: DateTimeOffset.UtcNow,
+                    new CorrelationId(correlationId),
+                    details),
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch
+        {
+            // best-effort audit
+        }
     }
 }
 

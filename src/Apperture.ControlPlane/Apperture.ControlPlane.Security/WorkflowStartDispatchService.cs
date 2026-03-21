@@ -9,7 +9,7 @@ namespace Apperture.ControlPlane.Security;
 
 /// <summary>
 /// Control-plane workflow start dispatch: persists a durable handoff (start request + run + instance) and returns a run id.
-/// Does not execute workflow steps (ADR-0001).
+/// Does not execute workflow steps (ADR-0001). Definition resolution is lifecycle-governed (Epic 27 — Epic27-Execution-Surface-Inventory.md).
 /// </summary>
 public sealed class WorkflowStartDispatchService : IWorkflowStartDispatchService
 {

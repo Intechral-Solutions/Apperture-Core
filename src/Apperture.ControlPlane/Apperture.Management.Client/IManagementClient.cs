@@ -40,6 +40,8 @@ public interface IManagementClient
 
     Task<ControlCenterDto> GetControlCenterAsync(CancellationToken cancellationToken = default);
 
+    Task<HostEffectiveModuleSnapshotDto> GetRuntimeCompositionAsync(CancellationToken cancellationToken = default);
+
     Task<IReadOnlyList<RuntimeControlRequestDto>> GetRuntimeShutdownRequestsAsync(
         string runtimeId,
         CancellationToken cancellationToken = default);

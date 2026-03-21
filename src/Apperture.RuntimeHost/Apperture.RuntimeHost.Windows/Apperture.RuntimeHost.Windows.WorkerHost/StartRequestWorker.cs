@@ -67,7 +67,17 @@ public sealed class StartRequestWorker : BackgroundService
 
                 var executor = scope.ServiceProvider.GetRequiredService<Apperture.RuntimePlane.Abstractions.IWorkflowExecutor>();
                 var definitionResolver = scope.ServiceProvider.GetRequiredService<IWorkflowDefinitionResolver>();
-                var processor = new WorkflowStartRequestProcessor(db, executor, definitionResolver, _workerId, _leaseOptions, _logger);
+                var moduleRegistry = scope.ServiceProvider.GetRequiredService<IModuleRegistryService>();
+                var audit = scope.ServiceProvider.GetService<IAuditService>();
+                var processor = new WorkflowStartRequestProcessor(
+                    db,
+                    executor,
+                    definitionResolver,
+                    _workerId,
+                    _leaseOptions,
+                    _logger,
+                    moduleRegistry,
+                    audit);
                 var operationRegistry = scope.ServiceProvider.GetRequiredService<IOperationRegistryService>();
                 var operationProcessor = new OperationStartRequestProcessor(
                     db,
@@ -75,7 +85,9 @@ public sealed class StartRequestWorker : BackgroundService
                     operationRegistry,
                     _workerId,
                     _operationLeaseOptions,
-                    _logger);
+                    _logger,
+                    moduleRegistry,
+                    audit);
 
                 // Best-effort: attempt a small batch each poll.
                 var now = DateTimeOffset.UtcNow;

@@ -4,6 +4,7 @@ namespace Apperture.ModuleSdk.Abstractions;
 
 /// <summary>
 /// Default implementation of <see cref="IWorkflowDefinitionResolver"/> that enumerates known modules.
+/// Lifecycle-governed immediately via <see cref="IModuleActivationFilter"/> (Epic 27 — see docs/02-decisions/Epic27-Execution-Surface-Inventory.md).
 /// </summary>
 public sealed class WorkflowDefinitionResolver : IWorkflowDefinitionResolver
 {

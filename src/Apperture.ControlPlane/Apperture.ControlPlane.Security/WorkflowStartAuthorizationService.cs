@@ -42,7 +42,10 @@ public sealed class WorkflowStartAuthorizationService : IWorkflowStartAuthorizat
             throw new UnauthorizedAccessException("No authenticated actor.");
 
         var definition = await _workflowDefinitionResolver.GetByIdAsync(workflowDefinitionId, cancellationToken);
-        if (definition?.RequiredPermissions is { Count: > 0 } requiredPermissions)
+        if (definition is null)
+            throw new UnauthorizedAccessException("Workflow not found or not available.");
+
+        if (definition.RequiredPermissions is { Count: > 0 } requiredPermissions)
         {
             var allowedByDefinition = await _executablePermissionEvaluator.EvaluateAllAsync(actor, requiredPermissions, cancellationToken);
             if (!allowedByDefinition)

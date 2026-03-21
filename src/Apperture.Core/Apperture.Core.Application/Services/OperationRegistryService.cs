@@ -5,6 +5,7 @@ namespace Apperture.Core.Application.Services;
 
 /// <summary>
 /// In-memory operation registry built from DI-registered modules at startup/first use.
+/// Lifecycle-governed immediately via <see cref="IModuleActivationFilter"/> during initialization (Epic 27 — see docs/02-decisions/Epic27-Execution-Surface-Inventory.md).
 /// </summary>
 public sealed class OperationRegistryService : IOperationRegistryService
 {

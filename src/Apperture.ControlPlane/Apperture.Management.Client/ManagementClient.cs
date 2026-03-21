@@ -1,5 +1,6 @@
 using Apperture.RuntimePlane.Abstractions;
 using System.Net.Http.Json;
+using System.Text.Json;
 
 namespace Apperture.Management.Client;
 
@@ -129,6 +130,20 @@ public sealed class ManagementClient : IManagementClient
     {
         var dto = await _http.GetFromJsonAsync<ControlCenterDto>("control/center", cancellationToken).ConfigureAwait(false);
         return dto ?? new ControlCenterDto([], [], []);
+    }
+
+    public async Task<HostEffectiveModuleSnapshotDto> GetRuntimeCompositionAsync(CancellationToken cancellationToken = default)
+    {
+        var dto = await _http.GetFromJsonAsync<HostEffectiveModuleSnapshotDto>(
+            "control/runtime-composition",
+            JsonReadOptions,
+            cancellationToken).ConfigureAwait(false);
+        return dto ?? new HostEffectiveModuleSnapshotDto(
+            DateTimeOffset.UtcNow,
+            [],
+            [],
+            [],
+            []);
     }
 
     public async Task<IReadOnlyList<RuntimeControlRequestDto>> GetRuntimeShutdownRequestsAsync(

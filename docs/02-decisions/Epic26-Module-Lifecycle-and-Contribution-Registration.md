@@ -61,6 +61,15 @@ Effect semantics returned by lifecycle operations:
 - Module listing distinguishes `enabled` from `effectivelyActive` and returns validation issues for invalid persisted states (for example, descriptor missing or enabled-set conflicts).
 - Existing sample module behavior remains compatible and now advertises descriptor-driven navigation contributions.
 
+## Runtime composition (Epic 27)
+
+Epic 27 adds **host-effective execution composition** and explicit **restart-bound** execution surfaces on top of this lifecycle model. See:
+
+- [Epic27-Runtime-Composition-Truth-and-Lifecycle-Gated-Execution.md](./Epic27-Runtime-Composition-Truth-and-Lifecycle-Gated-Execution.md)
+- [Epic27-Execution-Surface-Inventory.md](./Epic27-Execution-Surface-Inventory.md)
+
+`PartialUntilRestart` in Epic 26 maps concretely to surfaces such as worker **step handler registration** and control-plane **module permission registration at process start** (see `RestartBoundSurface`).
+
 ## Deferred
 
 - True in-process assembly unloading.

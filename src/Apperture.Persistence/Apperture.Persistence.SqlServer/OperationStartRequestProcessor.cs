@@ -1,6 +1,9 @@
 using System.Text.Json;
+using Apperture.Core.Application;
 using Apperture.Core.Application.Execution;
 using Apperture.Core.Application.Services;
+using Apperture.Core.Domain.Audit;
+using Apperture.Shared.Kernel;
 using Apperture.Core.Domain.Operations;
 using Apperture.ModuleSdk.Abstractions;
 using Apperture.Persistence.SqlServer.Options;
@@ -13,7 +16,7 @@ namespace Apperture.Persistence.SqlServer;
 
 /// <summary>
 /// Processes persisted operation start requests (claim + execute + lifecycle updates).
-/// Intended for instance-plane worker hosts.
+/// Intended for instance-plane worker hosts. Definition resolution at process boundaries is lifecycle-governed (Epic 27 — Epic27-Execution-Surface-Inventory.md).
 /// </summary>
 public sealed class OperationStartRequestProcessor
 {
@@ -27,6 +30,8 @@ public sealed class OperationStartRequestProcessor
     private readonly AppertureDbContext _db;
     private readonly IWorkflowExecutor _executor;
     private readonly IOperationRegistryService _operationRegistry;
+    private readonly IModuleRegistryService? _moduleRegistry;
+    private readonly IAuditService? _audit;
     private readonly ILogger? _logger;
     private readonly string _workerId;
     private readonly OperationStartRequestLeaseOptions _leaseOptions;
@@ -37,7 +42,9 @@ public sealed class OperationStartRequestProcessor
         IOperationRegistryService operationRegistry,
         string workerId,
         IOptions<OperationStartRequestLeaseOptions> leaseOptions,
-        ILogger? logger = null)
+        ILogger? logger = null,
+        IModuleRegistryService? moduleRegistry = null,
+        IAuditService? audit = null)
     {
         _db = db;
         _executor = executor;
@@ -45,6 +52,8 @@ public sealed class OperationStartRequestProcessor
         _workerId = workerId;
         _leaseOptions = leaseOptions.Value;
         _logger = logger;
+        _moduleRegistry = moduleRegistry;
+        _audit = audit;
     }
 
     public async Task<bool> TryClaimAsync(string runId, CancellationToken cancellationToken = default)
@@ -187,9 +196,7 @@ WHERE RunId = {runId} AND (
                     return;
                 }
 
-                var definition = await _operationRegistry.GetOperationAsync(new OperationId(request.OperationDefinitionId), cancellationToken);
-                if (definition is null)
-                    throw new InvalidOperationException($"Unknown operation definition id '{request.OperationDefinitionId}'.");
+                var definition = await ResolveDefinitionOrThrowAsync(request.OperationDefinitionId, cancellationToken);
 
                 if (string.IsNullOrWhiteSpace(definition.ModuleId))
                     throw new InvalidOperationException($"Operation definition '{definition.Id.Value}' must have a module id for step execution.");
@@ -299,6 +306,7 @@ WHERE RunId = {runId} AND (
             }
             catch (Exception ex)
             {
+                await TryAuditDefinitionUnavailableAsync(ex, runId, cancellationToken).ConfigureAwait(false);
                 _logger?.LogError(ex, "Operation start execution failed. RunId={RunId}", runId);
                 LogExecutionContractSignalForFailure(runId, ex);
                 var failureCapture = RunFailureCapture.TryCapture(ex);
@@ -431,13 +439,59 @@ WHERE RunId = {runId} AND (
         });
     }
 
+    private async ValueTask TryAuditDefinitionUnavailableAsync(Exception ex, string runId, CancellationToken cancellationToken)
+    {
+        if (_audit is null || ex is not DefinitionNotExecutableException dne)
+            return;
+
+        try
+        {
+            await _audit.AppendAsync(
+                new AuditRecord(
+                    new AuditRecordId(Guid.NewGuid().ToString("N")),
+                    new ActorId("system-worker"),
+                    LifecycleExecutionAuditActionNames.OperationRunDefinitionUnavailable,
+                    Resource: null,
+                    Outcome: "Failed",
+                    Timestamp: DateTimeOffset.UtcNow,
+                    new CorrelationId(runId),
+                    $"runId={runId};definitionId={dne.DefinitionId};kind={dne.Kind};message={dne.Message}"),
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch
+        {
+            // best-effort audit
+        }
+    }
+
     private async ValueTask<OperationDefinition> ResolveDefinitionOrThrowAsync(string operationDefinitionId, CancellationToken cancellationToken)
     {
         var id = new OperationId(operationDefinitionId);
         var definition = await _operationRegistry.GetOperationAsync(id, cancellationToken);
-        if (definition is null)
-            throw new InvalidOperationException($"Unknown operation definition id '{operationDefinitionId}'.");
-        return definition;
+        if (definition is not null)
+            return definition;
+
+        if (_moduleRegistry is not null)
+        {
+            var catalog = await _moduleRegistry.ListModulesAsync(cancellationToken).ConfigureAwait(false);
+            foreach (var entry in catalog)
+            {
+                var hasOp = entry.Descriptor.Contributions.OfType<OperationContributionDescriptor>()
+                    .Any(o => string.Equals(o.Id, operationDefinitionId, StringComparison.Ordinal));
+                if (hasOp && !entry.EffectivelyActive)
+                {
+                    throw new DefinitionNotExecutableException(
+                        operationDefinitionId,
+                        ExecutionDefinitionKind.Operation,
+                        "Operation definition is not effectively active for execution (module disabled, invalid, or blocked).");
+                }
+            }
+        }
+
+        throw new DefinitionNotExecutableException(
+            operationDefinitionId,
+            ExecutionDefinitionKind.Operation,
+            $"Unknown operation definition id '{operationDefinitionId}'.");
     }
 
     private static IReadOnlyDictionary<string, object?>? DeserializeParameters(string? parametersJson)

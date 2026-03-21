@@ -9,6 +9,7 @@ namespace Apperture.Management.Api.Controllers;
 
 /// <summary>
 /// API endpoint for serving Control Panel navigation menus.
+/// Navigation contributions are lifecycle-governed via <see cref="IModuleRegistryService.GetEnabledDescriptorsAsync"/> (Epic 27 — Epic27-Execution-Surface-Inventory.md).
 /// </summary>
 [ApiController]
 [Route("api/[controller]")]

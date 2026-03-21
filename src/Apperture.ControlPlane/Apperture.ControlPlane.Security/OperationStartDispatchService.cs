@@ -12,6 +12,7 @@ namespace Apperture.ControlPlane.Security;
 
 /// <summary>
 /// Control-plane operation start dispatch: persists a durable handoff (operation instance + run + start request) and returns a run id.
+/// Operation resolution is lifecycle-governed (Epic 27 — Epic27-Execution-Surface-Inventory.md).
 /// </summary>
 public sealed class OperationStartDispatchService : IOperationStartDispatchService
 {

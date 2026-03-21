@@ -1,5 +1,7 @@
 using Apperture.ControlPlane.Security;
+using Apperture.Core.Application.Services;
 using Apperture.Core.Security.Secrets.Models;
+using Apperture.Shared.Kernel;
 using Apperture.Management.Api.Controllers;
 using Apperture.Management.Api.Models;
 using Apperture.RuntimePlane.Abstractions;
@@ -23,12 +25,16 @@ public sealed class WorkflowsControllerTests
     private static IWorkflowStartDispatchService CreateDispatchService(Func<StartWorkflowRequest, WorkflowStartDispatchResult?> handler) =>
         new MockWorkflowStartDispatchService(handler);
 
+    private static IPrincipalContext StubPrincipal() =>
+        new StubPrincipalContext(new HumanActor(new ActorId("test"), "test"));
+
     [Fact]
     public void Start_WhenBodyContainsSecretBearingParameter_ThrowsArgumentException()
     {
         var controller = new WorkflowsController(
             CreateAllowAllAuthService(),
-            CreateDispatchService(_ => throw new InvalidOperationException("dispatch should not be called")));
+            CreateDispatchService(_ => throw new InvalidOperationException("dispatch should not be called")),
+            StubPrincipal());
         var resolvedSecret = new ResolvedSecret(
             new SecretRef("x", null),
             new SecretMaterial(SecretMaterialType.OpaqueString, OpaqueString: "secret"),
@@ -53,7 +59,8 @@ public sealed class WorkflowsControllerTests
                 new OperationRunId("run-1"),
                 new WorkflowInstanceId("inst-1"),
                 req.WorkflowDefinitionId,
-                "requested")));
+                "requested")),
+            StubPrincipal());
         var body = new StartWorkflowRequestBody
         {
             Parameters = new Dictionary<string, object?> { ["id"] = "safe-value" },
@@ -74,11 +81,19 @@ public sealed class WorkflowsControllerTests
                 new OperationRunId("run-1"),
                 new WorkflowInstanceId("inst-1"),
                 req.WorkflowDefinitionId,
-                "requested")));
+                "requested")),
+            StubPrincipal());
 
         var result = await controller.Start("workflow-1", null, CancellationToken.None);
 
         result.Should().BeOfType<AcceptedResult>();
+    }
+
+    private sealed class StubPrincipalContext : IPrincipalContext
+    {
+        private readonly IActor? _actor;
+        public StubPrincipalContext(IActor? actor) => _actor = actor;
+        public ValueTask<IActor?> GetCurrentActorAsync(CancellationToken cancellationToken = default) => ValueTask.FromResult(_actor);
     }
 
     private sealed class MockWorkflowStartAuthorizationService : IWorkflowStartAuthorizationService
