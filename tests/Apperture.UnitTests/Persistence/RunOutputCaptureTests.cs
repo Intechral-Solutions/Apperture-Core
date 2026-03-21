@@ -119,6 +119,31 @@ public sealed class RunOutputCaptureTests
     }
 
     [Fact]
+    public void TryCapture_OperatorExecutionResultSuccessSummaryOnly_MatchesOperatorRunOutputSummaryOnly()
+    {
+        var value = new { message = "declared-summary", detail = "hidden" };
+        var declared = RunOutputCapture.TryCapture(OperatorExecutionResult.SuccessSummaryOnly(value));
+        var wrapped = RunOutputCapture.TryCapture(OperatorRunOutput.SummaryOnly(value));
+
+        declared.CapturedOutputStatus.Should().Be(wrapped.CapturedOutputStatus);
+        declared.CapturedOutputJson.Should().Be(wrapped.CapturedOutputJson);
+        declared.CapturedOutputSummary.Should().Be(wrapped.CapturedOutputSummary);
+        declared.CapturedOutputDisplayPolicy.Should().Be(wrapped.CapturedOutputDisplayPolicy);
+    }
+
+    [Fact]
+    public void TryCapture_OperatorExecutionResultSuccessWithheld_MatchesOperatorRunOutputWithheld()
+    {
+        var declared = RunOutputCapture.TryCapture(OperatorExecutionResult.SuccessWithheld());
+        var wrapped = RunOutputCapture.TryCapture(OperatorRunOutput.Withheld());
+
+        declared.CapturedOutputStatus.Should().Be(wrapped.CapturedOutputStatus);
+        declared.CapturedOutputJson.Should().BeNull();
+        declared.CapturedOutputSummary.Should().BeNull();
+        declared.CapturedOutputDisplayPolicy.Should().Be(wrapped.CapturedOutputDisplayPolicy);
+    }
+
+    [Fact]
     public void TryCapture_OperatorRunOutputSummaryOnly_WhenSerializeFails_IsUnsupported()
     {
         var r = RunOutputCapture.TryCapture(OperatorRunOutput.SummaryOnly((Action)(() => { })));

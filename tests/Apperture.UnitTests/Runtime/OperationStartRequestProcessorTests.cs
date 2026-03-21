@@ -1,4 +1,5 @@
 using Apperture.Core.Application.Services;
+using Apperture.Core.Application.Execution;
 using Apperture.Core.Domain.Operations;
 using Apperture.Persistence.SqlServer;
 using Apperture.Persistence.SqlServer.Options;
@@ -128,6 +129,37 @@ public sealed class OperationStartRequestProcessorTests
         step.Error.Should().NotContain("boom");
     }
 
+    [Fact]
+    public async Task ProcessClaimedAsync_DeclaredFailureWithheld_CapturesDeclaredFailureViaCanonicalPath()
+    {
+        var db = NewDb();
+        SeedStartTriplet(db, runId: "run-4", instanceId: "opinst-4", definitionId: "Sample.HelloWorld.DoWork");
+        await db.SaveChangesAsync();
+
+        var processor = new OperationStartRequestProcessor(
+            db,
+            new DeclaredFailureExecutor(),
+            new StubOperationRegistry(new OperationDefinition(
+                new OperationId("Sample.HelloWorld.DoWork"),
+                "DoWork",
+                "Sample.HelloWorld",
+                OperationCategory.Command,
+                ParameterSchema: null,
+                RequiredPermissions: Array.Empty<PermissionDescriptor>())),
+            "worker-a",
+            DefaultLeaseOptions());
+
+        (await processor.TryClaimAsync("run-4")).Should().BeTrue();
+        await processor.ProcessClaimedAsync("run-4");
+
+        var run = await db.OperationRuns.SingleAsync(x => x.Id == "run-4");
+        run.Status.Should().Be(WorkflowLifecycleStatusNames.Failed);
+        run.FailureSummary.Should().Be("declared-op-withheld");
+        run.FailureDiagnosticsStatus.Should().Be(RunFailureCapture.StatusWithheld);
+        run.FailureDiagnosticsJson.Should().BeNull();
+        run.FailureDiagnosticsDisplayPolicy.Should().Be(RunFailureCapture.DisplayPolicyWithheld);
+    }
+
     private static void SeedStartTriplet(AppertureDbContext db, string runId, string instanceId, string definitionId)
     {
         db.OperationStartRequests.Add(new OperationStartRequestEntity
@@ -205,6 +237,17 @@ public sealed class OperationStartRequestProcessorTests
             IReadOnlyDictionary<string, object?>? parameters,
             CancellationToken cancellationToken = default)
             => throw new InvalidOperationException("boom");
+    }
+
+    private sealed class DeclaredFailureExecutor : IWorkflowExecutor
+    {
+        public ValueTask<object?> ExecuteStepAsync(
+            WorkflowDefinition definition,
+            string stepName,
+            WorkflowInstance instance,
+            IReadOnlyDictionary<string, object?>? parameters,
+            CancellationToken cancellationToken = default)
+            => throw OperatorExecutionResult.FailWithheld("declared-op-withheld");
     }
 }
 

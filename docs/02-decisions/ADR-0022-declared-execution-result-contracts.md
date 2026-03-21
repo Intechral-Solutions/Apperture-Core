@@ -38,6 +38,17 @@ The platform needs a small explicit authoring contract that unifies success and 
    - Existing run-grain persistence, `RunOutputCapture`, `RunFailureCapture`, processors, projection, and `RunDetail` remain canonical.
    - Epic 23 adds authoring clarity, not a parallel execution-result pipeline.
 
+### Minimal authoring example
+
+For declared failure intent, handlers should throw `OperatorExecutionResult.Fail*`:
+
+```csharp
+// Declared operator-facing failure summary without inline diagnostics payload.
+throw OperatorExecutionResult.FailSummaryOnly("Validation failed for the requested input.");
+```
+
+Ordinary exceptions remain valid and are still captured by default behavior, but `Fail*` makes operator-facing intent explicit.
+
 ## Consequences
 
 - Module authors get one discoverable contract family for success and failure operator intent.

@@ -62,4 +62,16 @@ public sealed class RunFailureCaptureTests
         r.FailureDiagnosticsJson.Should().Contain("boom-declared");
         r.FailureDiagnosticsDisplayPolicy.Should().Be(RunFailureCapture.DisplayPolicyInline);
     }
+
+    [Fact]
+    public void TryCapture_DeclaredFailureWithheld_UsesDeclaredSummaryAndWithheldPolicy()
+    {
+        var ex = OperatorExecutionResult.FailWithheld("declared-withheld");
+        var r = RunFailureCapture.TryCapture(ex);
+
+        r.FailureSummary.Should().Be("declared-withheld");
+        r.FailureDiagnosticsStatus.Should().Be(RunFailureCapture.StatusWithheld);
+        r.FailureDiagnosticsJson.Should().BeNull();
+        r.FailureDiagnosticsDisplayPolicy.Should().Be(RunFailureCapture.DisplayPolicyWithheld);
+    }
 }
