@@ -7,6 +7,7 @@ using Apperture.RuntimePlane.Abstractions;
 using Apperture.Shared.Kernel;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Xunit;
 
@@ -57,6 +58,34 @@ public sealed class OperationStartRequestProcessorTests
         step.StepName.Should().Be("DoWork");
         step.Status.Should().Be(WorkflowLifecycleStatusNames.Completed);
         step.EndedAt.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task ProcessClaimedAsync_Success_LegacyReturn_EmitsLegacySuccessSignal()
+    {
+        var db = NewDb();
+        SeedStartTriplet(db, runId: "run-signal-1", instanceId: "opinst-signal-1", definitionId: "Sample.HelloWorld.DoWork");
+        await db.SaveChangesAsync();
+        var logger = new TestLogger();
+
+        var processor = new OperationStartRequestProcessor(
+            db,
+            new NoOpExecutor(),
+            new StubOperationRegistry(new OperationDefinition(
+                new OperationId("Sample.HelloWorld.DoWork"),
+                "DoWork",
+                "Sample.HelloWorld",
+                OperationCategory.Command,
+                ParameterSchema: null,
+                RequiredPermissions: Array.Empty<PermissionDescriptor>())),
+            "worker-a",
+            DefaultLeaseOptions(),
+            logger);
+
+        (await processor.TryClaimAsync("run-signal-1")).Should().BeTrue();
+        await processor.ProcessClaimedAsync("run-signal-1");
+
+        logger.Messages.Should().Contain(m => m.Contains("legacy success path", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -135,6 +164,7 @@ public sealed class OperationStartRequestProcessorTests
         var db = NewDb();
         SeedStartTriplet(db, runId: "run-4", instanceId: "opinst-4", definitionId: "Sample.HelloWorld.DoWork");
         await db.SaveChangesAsync();
+        var logger = new TestLogger();
 
         var processor = new OperationStartRequestProcessor(
             db,
@@ -147,7 +177,8 @@ public sealed class OperationStartRequestProcessorTests
                 ParameterSchema: null,
                 RequiredPermissions: Array.Empty<PermissionDescriptor>())),
             "worker-a",
-            DefaultLeaseOptions());
+            DefaultLeaseOptions(),
+            logger);
 
         (await processor.TryClaimAsync("run-4")).Should().BeTrue();
         await processor.ProcessClaimedAsync("run-4");
@@ -158,6 +189,7 @@ public sealed class OperationStartRequestProcessorTests
         run.FailureDiagnosticsStatus.Should().Be(RunFailureCapture.StatusWithheld);
         run.FailureDiagnosticsJson.Should().BeNull();
         run.FailureDiagnosticsDisplayPolicy.Should().Be(RunFailureCapture.DisplayPolicyWithheld);
+        logger.Messages.Should().NotContain(m => m.Contains("legacy failure path", StringComparison.Ordinal));
     }
 
     private static void SeedStartTriplet(AppertureDbContext db, string runId, string instanceId, string definitionId)
@@ -248,6 +280,22 @@ public sealed class OperationStartRequestProcessorTests
             IReadOnlyDictionary<string, object?>? parameters,
             CancellationToken cancellationToken = default)
             => throw OperatorExecutionResult.FailWithheld("declared-op-withheld");
+    }
+
+    private sealed class TestLogger : ILogger
+    {
+        public List<string> Messages { get; } = new();
+
+        public IDisposable BeginScope<TState>(TState state) where TState : notnull => NullScope.Instance;
+        public bool IsEnabled(LogLevel logLevel) => true;
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
+            => Messages.Add(formatter(state, exception));
+
+        private sealed class NullScope : IDisposable
+        {
+            public static readonly NullScope Instance = new();
+            public void Dispose() { }
+        }
     }
 }
 

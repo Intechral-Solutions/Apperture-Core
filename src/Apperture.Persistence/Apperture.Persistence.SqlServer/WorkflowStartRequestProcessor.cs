@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Apperture.Core.Application.Execution;
 using Apperture.ModuleSdk.Abstractions;
 using Apperture.RuntimePlane.Abstractions;
 using Microsoft.EntityFrameworkCore;
@@ -330,6 +331,7 @@ WHERE RunId = {runId} AND (
                 request.LastError = null;
 
                 var capture = RunOutputCapture.TryCapture(lastStepResult);
+                LogExecutionContractSignalForSuccess(runId, lastStepResult);
                 run.CapturedOutputJson = capture.CapturedOutputJson;
                 run.CapturedOutputSummary = capture.CapturedOutputSummary;
                 run.CapturedOutputStatus = capture.CapturedOutputStatus;
@@ -358,6 +360,7 @@ WHERE RunId = {runId} AND (
             catch (Exception ex)
             {
                 _logger?.LogError(ex, "Start request execution failed. RunId={RunId}", runId);
+                LogExecutionContractSignalForFailure(runId, ex);
                 var failureCapture = RunFailureCapture.TryCapture(ex);
 
                 if (activeStep is not null)
@@ -399,6 +402,41 @@ WHERE RunId = {runId} AND (
                     await tx.CommitAsync(cancellationToken);
             }
         });
+    }
+
+    private void LogExecutionContractSignalForSuccess(string runId, object? result)
+    {
+        var declared = result is OperatorExecutionResult || result is OperatorRunOutput;
+        if (declared)
+        {
+            _logger?.LogDebug(
+                "Execution contract signal: declared success path. RunId={RunId} ExecutionContractPath={ExecutionContractPath}",
+                runId,
+                "declared");
+            return;
+        }
+
+        _logger?.LogWarning(
+            "Execution contract signal: legacy success path. RunId={RunId} ExecutionContractPath={ExecutionContractPath}",
+            runId,
+            "legacy");
+    }
+
+    private void LogExecutionContractSignalForFailure(string runId, Exception ex)
+    {
+        if (ex is OperatorExecutionFailureException)
+        {
+            _logger?.LogDebug(
+                "Execution contract signal: declared failure path. RunId={RunId} ExecutionContractPath={ExecutionContractPath}",
+                runId,
+                "declared");
+            return;
+        }
+
+        _logger?.LogWarning(
+            "Execution contract signal: legacy failure path. RunId={RunId} ExecutionContractPath={ExecutionContractPath}",
+            runId,
+            "legacy");
     }
 
     private async ValueTask<bool> IsCancelRequestedAsync(string runId, CancellationToken cancellationToken)

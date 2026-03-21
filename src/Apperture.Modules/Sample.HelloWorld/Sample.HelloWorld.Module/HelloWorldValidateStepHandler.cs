@@ -13,6 +13,12 @@ public sealed class HelloWorldValidateStepHandler : IStepHandler
         IReadOnlyDictionary<string, object?> parameters,
         CancellationToken cancellationToken = default)
     {
+        if (parameters.TryGetValue("simulateFailure", out var simulateFailure) &&
+            simulateFailure is true)
+        {
+            throw OperatorExecutionResult.FailSummaryOnly("HelloWorld validation failed by declared module intent.");
+        }
+
         var conn = await context.ResolveSlotAsync<IDbConnection>("Db", cancellationToken);
         if (conn is null)
             return null;

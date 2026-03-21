@@ -54,3 +54,4 @@ Ordinary exceptions remain valid and are still captured by default behavior, but
 - Module authors get one discoverable contract family for success and failure operator intent.
 - Existing modules continue to work without changes.
 - Success/failure intent is more symmetric and less convention-dependent.
+- See ADR-0023 for preferred/supported/discouraged author guidance taxonomy and non-breaking validation signals.

@@ -12,6 +12,36 @@ See [.ai/playbooks/module-sdk.md](../../.ai/playbooks/module-sdk.md) and [module
 
 Sample.HelloWorld demonstrates the pattern.
 
+## Execution Contract Authoring (Epic 23+)
+
+Use one explicit model for operator-visible run semantics.
+
+### Preferred patterns
+
+- **Success intent:** return `OperatorExecutionResult.SuccessInline(...)`, `SuccessSummaryOnly(...)`, or `SuccessWithheld()`.
+- **Failure intent:** throw `OperatorExecutionResult.FailInline(...)`, `FailSummaryOnly(...)`, or `FailWithheld(...)`.
+
+### Supported fallback patterns
+
+- Plain successful return values (`object?`) are still supported for backward compatibility.
+- Ordinary exceptions are still supported and are captured by default failure behavior.
+
+### Discouraged patterns
+
+- New handlers relying on plain successful returns or ordinary exceptions when declared intent is feasible.
+- Using implicit behavior where operator intent (inline vs summary-only vs withheld) should be explicit.
+
+### Quick selection matrix
+
+| Goal | Preferred authoring |
+|---|---|
+| Show inline operator payload on success | `return OperatorExecutionResult.SuccessInline(payload);` |
+| Show only a success headline | `return OperatorExecutionResult.SuccessSummaryOnly(payload);` |
+| Intentionally suppress success payload | `return OperatorExecutionResult.SuccessWithheld();` |
+| Fail with summary-only diagnostics | `throw OperatorExecutionResult.FailSummaryOnly(summary);` |
+| Fail with inline-safe diagnostics payload | `throw OperatorExecutionResult.FailInline(summary, diagnostics);` |
+| Fail while withholding diagnostics payload | `throw OperatorExecutionResult.FailWithheld(summary);` |
+
 ## Operations (Execution MVP Contract)
 
 Modules can also expose direct executable operations by implementing `IOperationDefinitionProvider` and returning `OperationDefinition` records.

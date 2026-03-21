@@ -10,3 +10,4 @@ Architecture decision records (ADRs) live in [docs/02-decisions/](../../docs/02-
 | [ADR-0020](../../docs/02-decisions/ADR-0020-operator-output-display-policy.md) | Operator output display policy (intent vs capture status; OperatorRunOutput) |
 | [ADR-0021](../../docs/02-decisions/ADR-0021-failure-diagnostics-visibility.md) | Failure diagnostics visibility and capture semantics |
 | [ADR-0022](../../docs/02-decisions/ADR-0022-declared-execution-result-contracts.md) | Declared execution result contracts (unified success/failure authoring intent) |
+| [ADR-0023](../../docs/02-decisions/ADR-0023-execution-contract-author-guidance-and-validation-signals.md) | Author guidance taxonomy and lightweight validation signals for execution contracts |
