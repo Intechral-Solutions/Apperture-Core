@@ -37,6 +37,7 @@ The Management API (control plane) exposes REST endpoints for module registry, w
 | GET | `/api/control/center` | Unified operator control facade (targets + recent activity + attention) |
 | GET | `/api/control/activity` | Unified operator activity feed (executions + durable runtime control requests) |
 | GET | `/api/control/attention` | Cross-domain attention items for triage (permission-safe) |
+| GET | `/api/control/runtime-health` | Runtime health snapshot (module/schedule/blocked-deferred diagnostics). Epic 30. |
 
 ## Operation definition and run contract notes
 
