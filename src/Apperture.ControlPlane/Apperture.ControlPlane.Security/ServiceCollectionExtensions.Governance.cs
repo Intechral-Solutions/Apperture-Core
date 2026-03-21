@@ -106,13 +106,14 @@ public static class ServiceCollectionExtensions
     }
 
     /// <summary>
-    /// Registers scheduler dispatch services for runtime hosts (WorkerHost). Epic 28.
-    /// Requires: AddApperturePersistence, IWorkflowDefinitionResolver (with activation filter).
+    /// Registers scheduler dispatch services for runtime hosts (WorkerHost). Epic 28 (workflow), Epic 29 (operation).
+    /// Requires: AddApperturePersistence, IWorkflowDefinitionResolver, IOperationRegistryService (with activation filter).
     /// </summary>
     public static IServiceCollection AddRuntimeSchedulerDispatch(this IServiceCollection services)
     {
         services.AddScoped<IWorkflowPersistence, SqlWorkflowPersistence>();
         services.AddScoped<IWorkflowStartDispatchService, WorkflowStartDispatchService>();
+        services.AddScoped<IOperationStartDispatchService, OperationStartDispatchService>();
         services.AddScoped<ISchedulerLifecycleGuard, SchedulerLifecycleGuard>();
         services.AddScoped<IScheduleDispatchRunner, ScheduleDispatchRunner>();
         return services;

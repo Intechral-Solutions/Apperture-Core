@@ -48,6 +48,30 @@ public sealed class ScheduleDispatchTests
         runOutcome.Should().Be("Failed");
     }
 
+    [Fact]
+    public async Task RunCycleAsync_WhenDueOperationScheduleAndModuleEnabled_DispatchesOperation()
+    {
+        var (opRequestCount, runOutcome) = await RunSchedulerCycleForOperationAsync(moduleEnabled: true, operationDefinitionId: "Sample.HelloWorld.DoWork");
+        opRequestCount.Should().Be(1);
+        runOutcome.Should().Be("Dispatched");
+    }
+
+    [Fact]
+    public async Task RunCycleAsync_WhenDueOperationScheduleAndModuleDisabled_BlocksDispatch()
+    {
+        var (opRequestCount, runOutcome) = await RunSchedulerCycleForOperationAsync(moduleEnabled: false, operationDefinitionId: "Sample.HelloWorld.DoWork");
+        opRequestCount.Should().Be(0);
+        runOutcome.Should().Be("BlockedByLifecycle");
+    }
+
+    [Fact]
+    public async Task RunCycleAsync_WhenOperationTargetInvalid_FailsWithReason()
+    {
+        var (opRequestCount, runOutcome) = await RunSchedulerCycleForOperationAsync(moduleEnabled: true, operationDefinitionId: null);
+        opRequestCount.Should().Be(0);
+        runOutcome.Should().Be("Failed");
+    }
+
     /// <summary>
     /// First-run with no prior state uses bounded 5-minute lookback (not 24h).
     /// Hourly cron yields 0 or 1 firing in that window, preventing burst dispatch.
@@ -65,11 +89,16 @@ public sealed class ScheduleDispatchTests
         services.AddScoped<IScheduleRepository, SqlScheduleRepository>();
         services.AddScoped<IScheduleEvaluator, CronScheduleEvaluator>();
         services.AddScoped<IAuditService, SqlAuditService>();
-        services.AddSingleton<IWorkflowDefinitionResolver>(_ =>
-            new WorkflowDefinitionResolver([new HelloWorldModule()], null));
+        var modules = new IModule[] { new HelloWorldModule() };
+        services.AddSingleton<IEnumerable<IModule>>(modules);
+        services.AddSingleton<IWorkflowDefinitionResolver>(sp =>
+            new WorkflowDefinitionResolver(sp.GetRequiredService<IEnumerable<IModule>>(), null));
+        services.AddSingleton<IOperationRegistryService>(sp =>
+            new OperationRegistryService(sp.GetRequiredService<IEnumerable<IModule>>(), null));
         services.AddScoped<ISchedulerLifecycleGuard, SchedulerLifecycleGuard>();
         services.AddScoped<IWorkflowPersistence, SqlWorkflowPersistence>();
         services.AddScoped<IWorkflowStartDispatchService, WorkflowStartDispatchService>();
+        services.AddScoped<IOperationStartDispatchService, OperationStartDispatchService>();
         services.AddScoped<IScheduleDispatchRunner, ScheduleDispatchRunner>();
 
         await using (var scope = services.BuildServiceProvider().CreateAsyncScope())
@@ -131,13 +160,57 @@ public sealed class ScheduleDispatchTests
         }
     }
 
+    private static void SeedScheduleWithOperationTarget(
+        AppertureDbContext db,
+        string scheduleId,
+        string assignmentId,
+        string? operationDefinitionId,
+        string cron,
+        string timeZone,
+        DateTimeOffset? lastAttemptedUtc = null)
+    {
+        var configJson = operationDefinitionId is not null
+            ? $"{{\"operationDefinitionId\":\"{operationDefinitionId}\"}}"
+            : null;
+
+        db.ScheduleDefinitions.Add(new ScheduleDefinitionEntity
+        {
+            Id = scheduleId,
+            Name = "Test",
+            RecurrenceExpression = cron,
+            TimeZone = timeZone,
+            Enabled = true,
+            TargetJobType = (int)ScheduledJobType.ModuleOperationExecution,
+            TargetJobConfigurationJson = configJson,
+            Version = 1
+        });
+
+        db.ScheduleAssignments.Add(new ScheduleAssignmentEntity
+        {
+            Id = assignmentId,
+            ScheduleId = scheduleId,
+            RuntimePlaneId = "local",
+            DesiredVersion = 1,
+            AppliedVersion = 1
+        });
+
+        if (lastAttemptedUtc is not null)
+        {
+            db.ScheduleStates.Add(new ScheduleStateEntity
+            {
+                AssignmentId = assignmentId,
+                LastAttemptedUtc = lastAttemptedUtc
+            });
+        }
+    }
+
     private static async Task<(int StartRequestCount, string RunOutcome)> RunSchedulerCycleAndGetResultsAsync(bool moduleEnabled, string? workflowDefinitionId)
     {
         var db = NewDb();
         var now = DateTimeOffset.UtcNow;
         // Use every-minute cron and state so evaluator window yields exactly 1 due firing.
-        // fromUtc = lastAttemptedUtc + 1s; ~65s puts window mid-minute to avoid 2 occurrences.
-        SeedScheduleWithWorkflowTarget(db, "s1", "a1", workflowDefinitionId, "* * * * *", "UTC", lastAttemptedUtc: now.AddSeconds(-65));
+        // fromUtc = lastAttemptedUtc + 1s; ~35s keeps window under 1 min to avoid 2 occurrences.
+        SeedScheduleWithWorkflowTarget(db, "s1", "a1", workflowDefinitionId, "* * * * *", "UTC", lastAttemptedUtc: now.AddSeconds(-35));
         await db.SaveChangesAsync();
 
         var services = new ServiceCollection();
@@ -148,15 +221,19 @@ public sealed class ScheduleDispatchTests
         services.AddScoped<IAuditService, SqlAuditService>();
 
         var helloWorld = new HelloWorldModule();
+        var modules = new IModule[] { helloWorld };
         var filter = moduleEnabled
             ? (IModuleActivationFilter?)null
             : new DenyAllSchedulerActivationFilter();
-        services.AddSingleton<IWorkflowDefinitionResolver>(_ =>
-            new WorkflowDefinitionResolver([helloWorld], filter));
-
+        services.AddSingleton<IEnumerable<IModule>>(modules);
+        services.AddSingleton<IWorkflowDefinitionResolver>(sp =>
+            new WorkflowDefinitionResolver(sp.GetRequiredService<IEnumerable<IModule>>(), filter));
+        services.AddSingleton<IOperationRegistryService>(sp =>
+            new OperationRegistryService(sp.GetRequiredService<IEnumerable<IModule>>(), filter));
         services.AddScoped<ISchedulerLifecycleGuard, SchedulerLifecycleGuard>();
         services.AddScoped<IWorkflowPersistence, SqlWorkflowPersistence>();
         services.AddScoped<IWorkflowStartDispatchService, WorkflowStartDispatchService>();
+        services.AddScoped<IOperationStartDispatchService, OperationStartDispatchService>();
         services.AddScoped<IScheduleDispatchRunner, ScheduleDispatchRunner>();
 
         await using (var scope = services.BuildServiceProvider().CreateAsyncScope())
@@ -168,6 +245,45 @@ public sealed class ScheduleDispatchTests
             var startRequestCount = await ctx.WorkflowStartRequests.AsNoTracking().CountAsync();
             var run = await ctx.ScheduleRuns.AsNoTracking().FirstOrDefaultAsync();
             return (startRequestCount, run?.Outcome ?? "None");
+        }
+    }
+
+    private static async Task<(int OperationRequestCount, string RunOutcome)> RunSchedulerCycleForOperationAsync(bool moduleEnabled, string? operationDefinitionId)
+    {
+        var db = NewDb();
+        var now = DateTimeOffset.UtcNow;
+        SeedScheduleWithOperationTarget(db, "s1", "a1", operationDefinitionId, "* * * * *", "UTC", lastAttemptedUtc: now.AddSeconds(-35));
+        await db.SaveChangesAsync();
+
+        var services = new ServiceCollection();
+        services.AddScoped<AppertureDbContext>(_ => db);
+        services.AddScoped<IScheduleRepository, SqlScheduleRepository>();
+        services.AddScoped<IScheduleEvaluator, CronScheduleEvaluator>();
+        services.AddScoped<IAuditService, SqlAuditService>();
+
+        var helloWorld = new HelloWorldModule();
+        var modules = new IModule[] { helloWorld };
+        var filter = moduleEnabled ? (IModuleActivationFilter?)null : new DenyAllSchedulerActivationFilter();
+        services.AddSingleton<IEnumerable<IModule>>(modules);
+        services.AddSingleton<IWorkflowDefinitionResolver>(sp =>
+            new WorkflowDefinitionResolver(sp.GetRequiredService<IEnumerable<IModule>>(), filter));
+        services.AddSingleton<IOperationRegistryService>(sp =>
+            new OperationRegistryService(sp.GetRequiredService<IEnumerable<IModule>>(), filter));
+        services.AddScoped<ISchedulerLifecycleGuard, SchedulerLifecycleGuard>();
+        services.AddScoped<IWorkflowPersistence, SqlWorkflowPersistence>();
+        services.AddScoped<IWorkflowStartDispatchService, WorkflowStartDispatchService>();
+        services.AddScoped<IOperationStartDispatchService, OperationStartDispatchService>();
+        services.AddScoped<IScheduleDispatchRunner, ScheduleDispatchRunner>();
+
+        await using (var scope = services.BuildServiceProvider().CreateAsyncScope())
+        {
+            var runner = scope.ServiceProvider.GetRequiredService<IScheduleDispatchRunner>();
+            await runner.RunCycleAsync(new RuntimePlaneId("local"), DateTimeOffset.UtcNow);
+
+            var ctx = scope.ServiceProvider.GetRequiredService<AppertureDbContext>();
+            var opRequestCount = await ctx.OperationStartRequests.AsNoTracking().CountAsync();
+            var run = await ctx.ScheduleRuns.AsNoTracking().FirstOrDefaultAsync();
+            return (opRequestCount, run?.Outcome ?? "None");
         }
     }
 

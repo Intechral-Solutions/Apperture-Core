@@ -3,6 +3,7 @@ using Apperture.Core.Application.RuntimeComposition;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Audit;
 using Apperture.Core.Domain.Environment;
+using Apperture.Core.Domain.Operations;
 using Apperture.Core.Domain.Scheduling;
 using Apperture.RuntimePlane.Abstractions;
 using Apperture.Shared.Kernel;
@@ -10,27 +11,30 @@ using Apperture.Shared.Kernel;
 namespace Apperture.ControlPlane.Security;
 
 /// <summary>
-/// Runs one schedule dispatch cycle. Epic 28.
+/// Runs one schedule dispatch cycle. Epic 28 (workflow), Epic 29 (operation).
 /// </summary>
 public sealed class ScheduleDispatchRunner : IScheduleDispatchRunner
 {
     private readonly IScheduleEvaluator _evaluator;
     private readonly IScheduleRepository _repo;
     private readonly ISchedulerLifecycleGuard _guard;
-    private readonly IWorkflowStartDispatchService _dispatch;
+    private readonly IWorkflowStartDispatchService _workflowDispatch;
+    private readonly IOperationStartDispatchService _operationDispatch;
     private readonly IAuditService _audit;
 
     public ScheduleDispatchRunner(
         IScheduleEvaluator evaluator,
         IScheduleRepository repo,
         ISchedulerLifecycleGuard guard,
-        IWorkflowStartDispatchService dispatch,
+        IWorkflowStartDispatchService workflowDispatch,
+        IOperationStartDispatchService operationDispatch,
         IAuditService audit)
     {
         _evaluator = evaluator;
         _repo = repo;
         _guard = guard;
-        _dispatch = dispatch;
+        _workflowDispatch = workflowDispatch;
+        _operationDispatch = operationDispatch;
         _audit = audit;
     }
 
@@ -56,12 +60,23 @@ public sealed class ScheduleDispatchRunner : IScheduleDispatchRunner
             return;
         }
 
-        if (definition.Target.JobType != ScheduledJobType.WorkflowExecution)
+        if (definition.Target.JobType == ScheduledJobType.WorkflowExecution)
         {
-            await CompleteWithOutcomeAsync(candidate, "Failed", $"Unsupported target type: {definition.Target.JobType}", null, ct);
+            await ProcessWorkflowTargetAsync(definition, candidate, ct);
             return;
         }
 
+        if (definition.Target.JobType == ScheduledJobType.ModuleOperationExecution)
+        {
+            await ProcessOperationTargetAsync(definition, candidate, ct);
+            return;
+        }
+
+        await CompleteWithOutcomeAsync(candidate, "Failed", $"Unsupported target type: {definition.Target.JobType}", null, ct);
+    }
+
+    private async Task ProcessWorkflowTargetAsync(ScheduleDefinition definition, ScheduleFireCandidate candidate, CancellationToken ct)
+    {
         var workflowId = ParseWorkflowDefinitionId(definition.Target.JobConfiguration);
         if (workflowId is null)
         {
@@ -97,7 +112,7 @@ public sealed class ScheduleDispatchRunner : IScheduleDispatchRunner
             CorrelationId: $"schedule:{candidate.ScheduleId}",
             RetryOfRunId: null);
 
-        var result = await _dispatch.StartAsync(request, ct);
+        var result = await _workflowDispatch.StartAsync(request, ct);
         if (result is null)
         {
             await CompleteWithOutcomeAsync(candidate, "Failed", "Dispatch returned null", null, ct);
@@ -112,6 +127,89 @@ public sealed class ScheduleDispatchRunner : IScheduleDispatchRunner
                     Timestamp: DateTimeOffset.UtcNow,
                     new CorrelationId($"schedule:{candidate.ScheduleId}:{candidate.FireTimeUtc:O}"),
                     Details: $"schedule:{candidate.ScheduleId};Workflow start dispatch returned null"
+                ), ct);
+            }
+            catch { /* best-effort audit */ }
+            return;
+        }
+
+        await CompleteWithOutcomeAsync(candidate, "Dispatched", null, result.RunId.Value, ct);
+        try
+        {
+            await _audit.AppendAsync(new AuditRecord(
+                new AuditRecordId(Guid.NewGuid().ToString("N")),
+                new ActorId("system:scheduler"),
+                SchedulerAuditActionNames.Dispatched,
+                Resource: null,
+                Outcome: "success",
+                Timestamp: DateTimeOffset.UtcNow,
+                new CorrelationId($"schedule:{candidate.ScheduleId}:{candidate.FireTimeUtc:O}"),
+                Details: $"schedule:{candidate.ScheduleId};RunId={result.RunId.Value}"
+            ), ct);
+        }
+        catch { /* best-effort audit */ }
+
+        var now = DateTimeOffset.UtcNow;
+        await _repo.UpdateStateAsync(candidate.AssignmentId, new ScheduleStateUpdate(
+            NextDueUtc: null,
+            LastAttemptedUtc: now,
+            LastOutcome: "Dispatched",
+            LastOutcomeReason: null,
+            LastSuccessfulDispatchUtc: now
+        ), ct);
+    }
+
+    private async Task ProcessOperationTargetAsync(ScheduleDefinition definition, ScheduleFireCandidate candidate, CancellationToken ct)
+    {
+        var operationId = ParseOperationDefinitionId(definition.Target.JobConfiguration);
+        if (operationId is null)
+        {
+            await CompleteWithOutcomeAsync(candidate, "Failed", "Invalid JobConfiguration: missing operationDefinitionId", null, ct);
+            return;
+        }
+
+        var canDispatch = await _guard.CanDispatchOperationAsync(operationId, ct);
+        if (!canDispatch)
+        {
+            await CompleteWithOutcomeAsync(candidate, "BlockedByLifecycle", "Module disabled or definition not executable", null, ct);
+            try
+            {
+                await _audit.AppendAsync(new AuditRecord(
+                    new AuditRecordId(Guid.NewGuid().ToString("N")),
+                    new ActorId("system:scheduler"),
+                    SchedulerAuditActionNames.BlockedByLifecycle,
+                    Resource: null,
+                    Outcome: "blocked",
+                    Timestamp: DateTimeOffset.UtcNow,
+                    new CorrelationId($"schedule:{candidate.ScheduleId}:{candidate.FireTimeUtc:O}"),
+                    Details: $"schedule:{candidate.ScheduleId};Operation {operationId.Value} not executable (module disabled or unavailable)"
+                ), ct);
+            }
+            catch { /* best-effort audit */ }
+            return;
+        }
+
+        var request = new StartOperationRequest(
+            operationId.Value,
+            Parameters: null,
+            IdempotencyKey: $"schedule:{candidate.ScheduleId}:{candidate.FireTimeUtc:O}",
+            CorrelationId: $"schedule:{candidate.ScheduleId}");
+
+        var result = await _operationDispatch.StartAsync(request, ct);
+        if (result is null)
+        {
+            await CompleteWithOutcomeAsync(candidate, "Failed", "Dispatch returned null", null, ct);
+            try
+            {
+                await _audit.AppendAsync(new AuditRecord(
+                    new AuditRecordId(Guid.NewGuid().ToString("N")),
+                    new ActorId("system:scheduler"),
+                    SchedulerAuditActionNames.Failed,
+                    Resource: null,
+                    Outcome: "failed",
+                    Timestamp: DateTimeOffset.UtcNow,
+                    new CorrelationId($"schedule:{candidate.ScheduleId}:{candidate.FireTimeUtc:O}"),
+                    Details: $"schedule:{candidate.ScheduleId};Operation start dispatch returned null"
                 ), ct);
             }
             catch { /* best-effort audit */ }
@@ -168,6 +266,23 @@ public sealed class ScheduleDispatchRunner : IScheduleDispatchRunner
             {
                 var val = prop.GetString();
                 return string.IsNullOrEmpty(val) ? null : new WorkflowDefinitionId(val);
+            }
+        }
+        catch { }
+        return null;
+    }
+
+    private static OperationId? ParseOperationDefinitionId(string? jobConfiguration)
+    {
+        if (string.IsNullOrWhiteSpace(jobConfiguration))
+            return null;
+        try
+        {
+            var doc = JsonDocument.Parse(jobConfiguration);
+            if (doc.RootElement.TryGetProperty("operationDefinitionId", out var prop))
+            {
+                var val = prop.GetString();
+                return string.IsNullOrEmpty(val) ? null : new OperationId(val);
             }
         }
         catch { }

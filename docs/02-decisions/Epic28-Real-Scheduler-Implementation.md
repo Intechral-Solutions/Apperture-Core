@@ -23,8 +23,8 @@ The scheduler runs in **WorkerHost** as a `BackgroundService` (`ScheduleDispatch
 
 ### 3. Supported targets (V1)
 
-- **WorkflowExecution** only. `JobConfiguration` = `{"workflowDefinitionId":"..."}`.
-- Operation scheduling not implemented; surface as limitation if needed.
+- **WorkflowExecution**: `JobConfiguration` = `{"workflowDefinitionId":"..."}`.
+- **ModuleOperationExecution** (Epic 29): `JobConfiguration` = `{"operationDefinitionId":"..."}`.
 
 ### 4. Cron evaluation
 
@@ -82,4 +82,5 @@ V1 assumes a single scheduler host. Idempotency key `ScheduleId:FireTimeUtc` and
 
 - [Epic27-Real-Deferred-Execution-Path-Inventory.md](./Epic27-Real-Deferred-Execution-Path-Inventory.md)
 - [Epic28-Corrective-Pass-Audit-Inventory.md](./Epic28-Corrective-Pass-Audit-Inventory.md)
+- [Epic29-Operation-Scheduling.md](./Epic29-Operation-Scheduling.md)
 - [instance-owned-scheduling.md](../01-architecture/instance-owned-scheduling.md)

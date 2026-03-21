@@ -16,7 +16,7 @@ This inventory documents the **actual implemented** deferred execution paths tha
 
 | Path | Location | Lifecycle gating | Test coverage |
 |------|----------|------------------|---------------|
-| **Scheduled dispatch** | `ScheduleDispatchBackgroundService` (WorkerHost) → `ScheduleDispatchRunner` → `IWorkflowStartDispatchService` | `ISchedulerLifecycleGuard.CanDispatchWorkflowAsync` before dispatch; blocked outcome recorded | `ScheduleDispatchTests` (dispatch when enabled, block when disabled, fail when invalid target) |
+| **Scheduled dispatch** | `ScheduleDispatchBackgroundService` (WorkerHost) → `ScheduleDispatchRunner` → `IWorkflowStartDispatchService` / `IOperationStartDispatchService` | `ISchedulerLifecycleGuard.CanDispatchWorkflowAsync` / `CanDispatchOperationAsync` before dispatch; blocked outcome recorded | `ScheduleDispatchTests` (workflow + operation: dispatch when enabled, block when disabled, fail when invalid target) |
 
 ## Restart-bound (governed at resolution, not unregistration)
 
@@ -27,5 +27,5 @@ This inventory documents the **actual implemented** deferred execution paths tha
 
 ## Summary
 
-- **Enforced today**: Persisted workflow/operation start processing, workflow retry, API dispatch, **scheduled dispatch** (Epic 28).
+- **Enforced today**: Persisted workflow/operation start processing, workflow retry, API dispatch, **scheduled dispatch** (workflow + operation, Epic 28/29).
 - **Restart-bound**: Step handler registration, permission registration.

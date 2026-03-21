@@ -213,9 +213,9 @@ Scheduling remains one domain model with host-specific adapters.
 
 ## Windows/on-prem adapter
 
-- Uses internal scheduler background service.
+- Uses internal scheduler background service (WorkerHost).
 - Performs cron/interval evaluation loop locally.
-- Dispatches into local workflow/operation/PowerShell executors.
+- Dispatches into local workflow and operation executors (Epic 28/29); PowerShell and other target types planned.
 - Persists durable schedule state and runs in instance storage.
 
 ## Recommended V1 (Windows-first, portability-preserving)

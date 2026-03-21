@@ -35,8 +35,9 @@ public sealed class CronScheduleEvaluator : IScheduleEvaluator
             if (definition is null || !definition.Enabled)
                 continue;
 
-            if (definition.Target.JobType != ScheduledJobType.WorkflowExecution)
-                continue; // V1: workflow only
+            if (definition.Target.JobType != ScheduledJobType.WorkflowExecution &&
+                definition.Target.JobType != ScheduledJobType.ModuleOperationExecution)
+                continue; // V1: workflow and operation only
 
             var state = await _repo.GetStateAsync(assignment.Id.Value, cancellationToken);
             // First-run: bounded lookback to prevent burst dispatch. Subsequent runs: from last attempted + 1s.

@@ -64,8 +64,11 @@ public sealed class SchedulesController : ControllerBase
     {
         if (!await _scheduleGovernance.CanManageAsync(cancellationToken))
             return Forbid();
+        var jobType = (ScheduledJobType)(body.TargetJobType ?? 0);
+        if (jobType != ScheduledJobType.WorkflowExecution && jobType != ScheduledJobType.ModuleOperationExecution)
+            return BadRequest("TargetJobType must be 0 (WorkflowExecution) or 1 (ModuleOperationExecution).");
         var id = Guid.NewGuid().ToString("N")[..24];
-        var target = new ScheduledTarget(ScheduledJobType.WorkflowExecution, body.TargetJobConfiguration);
+        var target = new ScheduledTarget(jobType, body.TargetJobConfiguration);
         var definition = new ScheduleDefinition(
             new ScheduleId(id),
             body.Name,
@@ -202,6 +205,7 @@ public sealed record CreateScheduleRequestBody(
     string RecurrenceExpression,
     string? TimeZone = "UTC",
     bool Enabled = true,
+    int? TargetJobType = 0,
     string? TargetJobConfiguration = null,
     string? ExecutionPolicyRef = null,
     string? RuntimePlaneId = "local");

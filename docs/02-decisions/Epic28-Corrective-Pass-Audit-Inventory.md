@@ -70,7 +70,7 @@ This document records the factual state of Epic 28 after the corrective pass, pe
 
 ## 6. Remaining Limitations
 
-- **Operation scheduling**: Not implemented; V1 workflow-only
+- **Operation scheduling**: Implemented (Epic 29)
 - **Multi-host**: Single-host assumption; no distributed claiming
 - **First-run lookback**: Fixed 5 minutes; not configurable
 - **List API**: Does not include execution state (use detail endpoint per schedule)
