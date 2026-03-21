@@ -23,6 +23,7 @@ Use one explicit model for operator-visible run semantics.
 
 ### Supported fallback patterns
 
+- `OperatorRunOutput` remains a supported compatibility path for success intent, but it is not the preferred authoring surface for new handlers.
 - Plain successful return values (`object?`) are still supported for backward compatibility.
 - Ordinary exceptions are still supported and are captured by default failure behavior.
 

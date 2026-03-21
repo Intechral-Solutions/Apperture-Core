@@ -86,6 +86,9 @@ public sealed class OperationStartRequestProcessorTests
         await processor.ProcessClaimedAsync("run-signal-1");
 
         logger.Messages.Should().Contain(m => m.Contains("legacy success path", StringComparison.Ordinal));
+        logger.Entries.Should().Contain(e =>
+            e.Level == LogLevel.Warning &&
+            e.Message.Contains("legacy success path", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -190,6 +193,9 @@ public sealed class OperationStartRequestProcessorTests
         run.FailureDiagnosticsJson.Should().BeNull();
         run.FailureDiagnosticsDisplayPolicy.Should().Be(RunFailureCapture.DisplayPolicyWithheld);
         logger.Messages.Should().NotContain(m => m.Contains("legacy failure path", StringComparison.Ordinal));
+        logger.Entries.Should().Contain(e =>
+            e.Level == LogLevel.Debug &&
+            e.Message.Contains("declared failure path", StringComparison.Ordinal));
     }
 
     private static void SeedStartTriplet(AppertureDbContext db, string runId, string instanceId, string definitionId)
@@ -284,12 +290,19 @@ public sealed class OperationStartRequestProcessorTests
 
     private sealed class TestLogger : ILogger
     {
+        public sealed record LogEntry(LogLevel Level, string Message);
+
         public List<string> Messages { get; } = new();
+        public List<LogEntry> Entries { get; } = new();
 
         public IDisposable BeginScope<TState>(TState state) where TState : notnull => NullScope.Instance;
         public bool IsEnabled(LogLevel logLevel) => true;
         public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
-            => Messages.Add(formatter(state, exception));
+        {
+            var message = formatter(state, exception);
+            Messages.Add(message);
+            Entries.Add(new LogEntry(logLevel, message));
+        }
 
         private sealed class NullScope : IDisposable
         {

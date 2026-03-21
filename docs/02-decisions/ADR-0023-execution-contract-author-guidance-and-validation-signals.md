@@ -18,7 +18,7 @@ Author guidance exists but is fragmented across interface remarks and ADRs, and 
 
 1. Define an explicit authoring taxonomy:
    - **Preferred:** `OperatorExecutionResult.Success*` and `OperatorExecutionResult.Fail*`.
-   - **Supported fallback:** plain successful returns and ordinary exceptions.
+   - **Supported fallback:** `OperatorRunOutput` for success compatibility, plain successful returns, and ordinary exceptions.
    - **Discouraged:** new handler code that relies on fallback paths when declared contracts are feasible.
 
 2. Keep runtime behavior backward-compatible:

@@ -5,6 +5,7 @@ using Apperture.Core.Application.Execution;
 using Apperture.RuntimePlane.Abstractions;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Xunit;
 
@@ -231,6 +232,102 @@ public sealed class StartRequestWorkerTests
         run.FailureDiagnosticsStatus.Should().Be(RunFailureCapture.StatusCaptured);
         run.FailureDiagnosticsJson.Should().Contain("declared-inline");
         run.FailureDiagnosticsDisplayPolicy.Should().Be(RunFailureCapture.DisplayPolicyInline);
+    }
+
+    [Fact]
+    public async Task ProcessClaimedAsync_Success_DeclaredPath_EmitsDeclaredSuccessSignalAtDebug()
+    {
+        var db = NewDb();
+        SeedStartTriplet(db, runId: "r-succ-declared", instanceId: "i-succ-declared", definitionId: "Sample.HelloWorld.HelloWorld");
+        await db.SaveChangesAsync();
+        var logger = new TestLogger();
+
+        var processor = new WorkflowStartRequestProcessor(
+            db,
+            new DeclaredSuccessExecutor(),
+            DefaultDefinitionResolver(),
+            "test-worker",
+            DefaultLeaseOptions(),
+            logger);
+
+        (await processor.TryClaimAsync("r-succ-declared")).Should().BeTrue();
+        await processor.ProcessClaimedAsync("r-succ-declared");
+
+        logger.Entries.Should().Contain(e =>
+            e.Level == LogLevel.Debug &&
+            e.Message.Contains("declared success path", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task ProcessClaimedAsync_Success_LegacyPath_EmitsLegacySuccessSignalAtWarning()
+    {
+        var db = NewDb();
+        SeedStartTriplet(db, runId: "r-succ-legacy", instanceId: "i-succ-legacy", definitionId: "Sample.HelloWorld.HelloWorld");
+        await db.SaveChangesAsync();
+        var logger = new TestLogger();
+
+        var processor = new WorkflowStartRequestProcessor(
+            db,
+            new NoOpExecutor(),
+            DefaultDefinitionResolver(),
+            "test-worker",
+            DefaultLeaseOptions(),
+            logger);
+
+        (await processor.TryClaimAsync("r-succ-legacy")).Should().BeTrue();
+        await processor.ProcessClaimedAsync("r-succ-legacy");
+
+        logger.Entries.Should().Contain(e =>
+            e.Level == LogLevel.Warning &&
+            e.Message.Contains("legacy success path", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task ProcessClaimedAsync_Failure_DeclaredPath_EmitsDeclaredFailureSignalAtDebug()
+    {
+        var db = NewDb();
+        SeedStartTriplet(db, runId: "r-fail-declared", instanceId: "i-fail-declared", definitionId: "Sample.HelloWorld.HelloWorld");
+        await db.SaveChangesAsync();
+        var logger = new TestLogger();
+
+        var processor = new WorkflowStartRequestProcessor(
+            db,
+            new DeclaredFailureExecutor(),
+            DefaultDefinitionResolver(),
+            "test-worker",
+            DefaultLeaseOptions(),
+            logger);
+
+        (await processor.TryClaimAsync("r-fail-declared")).Should().BeTrue();
+        await processor.ProcessClaimedAsync("r-fail-declared");
+
+        logger.Entries.Should().Contain(e =>
+            e.Level == LogLevel.Debug &&
+            e.Message.Contains("declared failure path", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task ProcessClaimedAsync_Failure_LegacyPath_EmitsLegacyFailureSignalAtWarning()
+    {
+        var db = NewDb();
+        SeedStartTriplet(db, runId: "r-fail-legacy", instanceId: "i-fail-legacy", definitionId: "Sample.HelloWorld.HelloWorld");
+        await db.SaveChangesAsync();
+        var logger = new TestLogger();
+
+        var processor = new WorkflowStartRequestProcessor(
+            db,
+            new ThrowingExecutor(),
+            DefaultDefinitionResolver(),
+            "test-worker",
+            DefaultLeaseOptions(),
+            logger);
+
+        (await processor.TryClaimAsync("r-fail-legacy")).Should().BeTrue();
+        await processor.ProcessClaimedAsync("r-fail-legacy");
+
+        logger.Entries.Should().Contain(e =>
+            e.Level == LogLevel.Warning &&
+            e.Message.Contains("legacy failure path", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -560,6 +657,17 @@ internal sealed class DeclaredFailureExecutor : IWorkflowExecutor
         => throw OperatorExecutionResult.FailInline("declared failure", new { reason = "declared-inline" });
 }
 
+internal sealed class DeclaredSuccessExecutor : IWorkflowExecutor
+{
+    public ValueTask<object?> ExecuteStepAsync(
+        WorkflowDefinition definition,
+        string stepName,
+        WorkflowInstance instance,
+        IReadOnlyDictionary<string, object?>? parameters,
+        CancellationToken cancellationToken = default)
+        => ValueTask.FromResult<object?>(OperatorExecutionResult.SuccessInline(new { message = "declared-success" }));
+}
+
 internal sealed class OwnershipStealingExecutor : IWorkflowExecutor
 {
     private readonly AppertureDbContext _db;
@@ -596,5 +704,31 @@ internal sealed class SingleDefinitionResolver : IWorkflowDefinitionResolver
 
     public ValueTask<WorkflowDefinition?> GetByIdAsync(WorkflowDefinitionId id, CancellationToken cancellationToken = default) =>
         ValueTask.FromResult<WorkflowDefinition?>(string.Equals(id.Value, _definition.Id.Value, StringComparison.Ordinal) ? _definition : null);
+}
+
+internal sealed class TestLogger : ILogger
+{
+    public sealed record LogEntry(LogLevel Level, string Message);
+
+    public List<LogEntry> Entries { get; } = new();
+
+    public IDisposable BeginScope<TState>(TState state) where TState : notnull => NullScope.Instance;
+    public bool IsEnabled(LogLevel logLevel) => true;
+
+    public void Log<TState>(
+        LogLevel logLevel,
+        EventId eventId,
+        TState state,
+        Exception? exception,
+        Func<TState, Exception?, string> formatter)
+    {
+        Entries.Add(new LogEntry(logLevel, formatter(state, exception)));
+    }
+
+    private sealed class NullScope : IDisposable
+    {
+        public static readonly NullScope Instance = new();
+        public void Dispose() { }
+    }
 }
 
