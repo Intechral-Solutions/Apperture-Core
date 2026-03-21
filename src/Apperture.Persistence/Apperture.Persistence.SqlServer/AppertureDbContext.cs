@@ -38,6 +38,7 @@ public class AppertureDbContext : DbContext
     public DbSet<RoleEntity> Roles => Set<RoleEntity>();
     public DbSet<UserRoleEntity> UserRoles => Set<UserRoleEntity>();
     public DbSet<LocalCredentialEntity> LocalCredentials => Set<LocalCredentialEntity>();
+    public DbSet<ModuleInstallationStateEntity> ModuleInstallationStates => Set<ModuleInstallationStateEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -395,6 +396,16 @@ public class AppertureDbContext : DbContext
             e.Property(x => x.Algorithm).IsRequired().HasMaxLength(64);
             e.Property(x => x.RowVersion).IsRowVersion();
             e.HasOne<UserEntity>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<ModuleInstallationStateEntity>(e =>
+        {
+            e.ToTable("ModuleInstallationStates");
+            e.HasKey(x => new { x.EnvironmentId, x.ModuleId });
+            e.Property(x => x.EnvironmentId).HasMaxLength(128);
+            e.Property(x => x.ModuleId).HasMaxLength(128);
+            e.Property(x => x.Version).HasMaxLength(64);
+            e.HasIndex(x => x.Enabled);
         });
     }
 }

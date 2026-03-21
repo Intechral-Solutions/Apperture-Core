@@ -7,7 +7,7 @@ using Apperture.Core.Application.Execution;
 
 namespace Sample.HelloWorld;
 
-public sealed class HelloWorldModule : IModule, IModuleStepHandlerRegistrar, IOperationDefinitionProvider
+public sealed class HelloWorldModule : IModule, IModuleStepHandlerRegistrar, IOperationDefinitionProvider, IModuleNavigationProvider
 {
     private static readonly WorkflowDefinitionId DefinitionId = new("Sample.HelloWorld.HelloWorld");
     private static readonly OperationId OperationDefId = new("Sample.HelloWorld.DoWork");
@@ -57,6 +57,9 @@ public sealed class HelloWorldModule : IModule, IModuleStepHandlerRegistrar, IOp
 
         await Task.CompletedTask.ConfigureAwait(false);
     }
+
+    public IReadOnlyList<NavigationContributionDescriptor> GetNavigationContributions()
+        => [new NavigationContributionDescriptor("Runs", "Start HelloWorld Workflow", "/workflows/start", $"{ModuleId}.start-workflow")];
 
     public void RegisterStepHandlers(IStepHandlerRegistry registry)
     {

@@ -72,7 +72,7 @@ public sealed class ControlCenterQueryService : IControlCenterQueryService
         var modules = await _workflowListing.GetModulesAsync(cancellationToken).ConfigureAwait(false);
         foreach (var module in modules)
         {
-            var workflows = await _workflowListing.GetWorkflowsForModuleAsync(module.Id, cancellationToken).ConfigureAwait(false);
+            var workflows = await _workflowListing.GetWorkflowsForModuleAsync(module.Descriptor.ModuleId, cancellationToken).ConfigureAwait(false);
             foreach (var wf in workflows)
             {
                 var startActions = await _actions.ProjectWorkflowDefinitionActionsAsync(wf, cancellationToken).ConfigureAwait(false);

@@ -8,6 +8,7 @@ using Apperture.Persistence.SqlServer.Options;
 using Apperture.RuntimeHost.Windows.WorkerHost;
 using Apperture.RuntimePlane.Abstractions;
 using Apperture.RuntimePlane.Engine;
+using Apperture.Shared.Kernel;
 using Sample.HelloWorld;
 
 // Windows runtime uses the shared SQL-backed operational secret store (same as Control Plane) with DPAPI protection.
@@ -35,6 +36,10 @@ builder.Services.AddAppertureBootstrap(builder.Configuration);
 builder.Services.AddApperturePersistence(
     sp => sp.GetRequiredService<IBootstrapConnectionProfile>().ConnectionString);
 builder.Services.AddAppertureSqlSecrets();
+builder.Services.AddSingleton<IEnvironmentContext, RuntimeEnvironmentContext>();
+builder.Services.AddScoped<IAuditService, SqlAuditService>();
+builder.Services.AddScoped<IModuleRegistryService, SqlModuleRegistryService>();
+builder.Services.AddSingleton<IModuleActivationFilter, WorkerRegistryModuleActivationFilter>();
 builder.Services.AddConnectorRepositories();
 builder.Services.AddConnectorResolution();
 builder.Services.AddPlatformSqlConnector();

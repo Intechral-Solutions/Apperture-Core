@@ -8,4 +8,7 @@ public abstract class ModuleBase : IModule
     public abstract ModuleManifest GetManifest();
 
     public abstract IAsyncEnumerable<WorkflowDefinition> GetDefinitionsAsync(CancellationToken cancellationToken = default);
+
+    public virtual ValueTask<ModuleDescriptor> BuildDescriptorAsync(CancellationToken cancellationToken = default)
+        => ModuleDescriptorBuilder.BuildAsync(this, cancellationToken);
 }

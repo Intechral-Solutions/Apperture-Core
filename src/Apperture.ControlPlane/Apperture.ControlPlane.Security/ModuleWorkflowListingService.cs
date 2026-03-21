@@ -16,23 +16,23 @@ public sealed class ModuleWorkflowListingService : IModuleWorkflowListingService
 
     private readonly IPrincipalContext _principalContext;
     private readonly IAuthorizationEvaluationService _authorizationEvaluation;
-    private readonly IModuleManifestProvider _manifestProvider;
     private readonly IEnumerable<IModule> _modules;
+    private readonly IModuleRegistryService _moduleRegistryService;
 
     public ModuleWorkflowListingService(
         IPrincipalContext principalContext,
         IAuthorizationEvaluationService authorizationEvaluation,
-        IModuleManifestProvider manifestProvider,
-        IEnumerable<IModule> modules)
+        IEnumerable<IModule> modules,
+        IModuleRegistryService moduleRegistryService)
     {
         _principalContext = principalContext;
         _authorizationEvaluation = authorizationEvaluation;
-        _manifestProvider = manifestProvider;
         _modules = modules ?? [];
+        _moduleRegistryService = moduleRegistryService;
     }
 
     /// <inheritdoc />
-    public async ValueTask<IReadOnlyList<ModuleManifest>> GetModulesAsync(CancellationToken cancellationToken = default)
+    public async ValueTask<IReadOnlyList<ModuleCatalogEntry>> GetModulesAsync(CancellationToken cancellationToken = default)
     {
         var actor = await _principalContext.GetCurrentActorAsync(cancellationToken);
         if (actor is null)
@@ -47,8 +47,14 @@ public sealed class ModuleWorkflowListingService : IModuleWorkflowListingService
         if (!allowed)
             throw new UnauthorizedAccessException("Not authorized to list modules.");
 
-        var manifests = _manifestProvider.GetManifests();
-        return manifests.Select(m => m.Manifest).ToList();
+        await _moduleRegistryService.DiscoverModulesAsync(cancellationToken).ConfigureAwait(false);
+        return await _moduleRegistryService.ListModulesAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    public async ValueTask<ModuleCatalogEntry?> GetModuleAsync(string moduleId, CancellationToken cancellationToken = default)
+    {
+        var modules = await GetModulesAsync(cancellationToken).ConfigureAwait(false);
+        return modules.FirstOrDefault(x => string.Equals(x.Descriptor.ModuleId, moduleId, StringComparison.Ordinal));
     }
 
     /// <inheritdoc />
@@ -69,14 +75,59 @@ public sealed class ModuleWorkflowListingService : IModuleWorkflowListingService
             throw new UnauthorizedAccessException("Not authorized to list workflows for this module.");
 
         var list = new List<WorkflowDefinition>();
+        var enabled = (await _moduleRegistryService.GetEnabledDescriptorsAsync(cancellationToken).ConfigureAwait(false))
+            .Select(x => x.ModuleId)
+            .ToHashSet(StringComparer.Ordinal);
         foreach (var module in _modules)
         {
             var manifest = module.GetManifest();
+            if (!enabled.Contains(manifest.Id))
+                continue;
             if (!string.Equals(manifest.Id, moduleId, StringComparison.Ordinal))
                 continue;
             await foreach (var definition in module.GetDefinitionsAsync(cancellationToken).ConfigureAwait(false))
                 list.Add(definition);
         }
         return list;
+    }
+
+    public async ValueTask<ModuleLifecycleTransitionResult> InstallModuleAsync(string moduleId, CancellationToken cancellationToken = default)
+    {
+        await EnsureConfigureAuthorizedAsync(cancellationToken).ConfigureAwait(false);
+        return await _moduleRegistryService.InstallModuleAsync(moduleId, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async ValueTask<ModuleLifecycleTransitionResult> EnableModuleAsync(string moduleId, CancellationToken cancellationToken = default)
+    {
+        await EnsureConfigureAuthorizedAsync(cancellationToken).ConfigureAwait(false);
+        return await _moduleRegistryService.EnableModuleAsync(moduleId, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async ValueTask<ModuleLifecycleTransitionResult> DisableModuleAsync(string moduleId, CancellationToken cancellationToken = default)
+    {
+        await EnsureConfigureAuthorizedAsync(cancellationToken).ConfigureAwait(false);
+        return await _moduleRegistryService.DisableModuleAsync(moduleId, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async ValueTask<ModuleLifecycleTransitionResult> UninstallModuleAsync(string moduleId, CancellationToken cancellationToken = default)
+    {
+        await EnsureConfigureAuthorizedAsync(cancellationToken).ConfigureAwait(false);
+        return await _moduleRegistryService.UninstallModuleAsync(moduleId, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async ValueTask EnsureConfigureAuthorizedAsync(CancellationToken cancellationToken)
+    {
+        var actor = await _principalContext.GetCurrentActorAsync(cancellationToken);
+        if (actor is null)
+            throw new UnauthorizedAccessException("No authenticated actor.");
+
+        var allowed = await _authorizationEvaluation.EvaluateAsync(
+            new AuthorizationEvaluationContext(
+                actor,
+                new PermissionDescriptor(ActionConstants.ModuleConfigure, new ResourceDescriptor(ResourceTypeConstants.Module, ScopeKeyConstants.Instance)),
+                null),
+            cancellationToken);
+        if (!allowed)
+            throw new UnauthorizedAccessException("Not authorized to configure modules.");
     }
 }

@@ -271,6 +271,37 @@ namespace Apperture.Persistence.SqlServer.Migrations
                     b.ToTable("LocalCredentials", (string)null);
                 });
 
+            modelBuilder.Entity("Apperture.Persistence.SqlServer.ModuleInstallationStateEntity", b =>
+                {
+                    b.Property<string>("EnvironmentId")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("ModuleId")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<bool>("Enabled")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTimeOffset>("InstalledAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("Version")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.HasKey("EnvironmentId", "ModuleId");
+
+                    b.HasIndex("Enabled");
+
+                    b.ToTable("ModuleInstallationStates", (string)null);
+                });
+
             modelBuilder.Entity("Apperture.Persistence.SqlServer.OperationCancelRequestEntity", b =>
                 {
                     b.Property<string>("RunId")

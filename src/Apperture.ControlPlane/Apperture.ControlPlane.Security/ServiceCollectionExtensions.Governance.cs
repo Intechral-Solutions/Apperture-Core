@@ -59,7 +59,9 @@ public static class ServiceCollectionExtensions
         services.AddHostedService<PlatformAdminRoleRepairService>();
         services.AddHostedService<ModulePermissionRegistrationHostedService>();
         services.AddSingleton<IEnumerable<IModule>>(Array.Empty<IModule>());
+        services.AddScoped<IModuleRegistryService, SqlModuleRegistryService>();
         services.AddSingleton<IModuleManifestProvider, KnownModuleManifestProvider>();
+        services.AddSingleton<IModuleActivationFilter, RegistryBackedModuleActivationFilter>();
         services.AddSingleton<IConnectorDefinitionRegistry, StubConnectorDefinitionRegistry>();
         services.AddSingleton<IWorkflowModuleResolver, WorkflowModuleResolver>();
         services.AddScoped<IWorkflowDefinitionResolver, Apperture.ModuleSdk.Abstractions.WorkflowDefinitionResolver>();

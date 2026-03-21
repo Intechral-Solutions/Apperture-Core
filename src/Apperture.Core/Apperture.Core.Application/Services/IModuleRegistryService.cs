@@ -1,4 +1,5 @@
 using Apperture.Core.Domain.Environment;
+using Apperture.ModuleSdk.Abstractions;
 
 namespace Apperture.Core.Application.Services;
 
@@ -7,28 +8,12 @@ namespace Apperture.Core.Application.Services;
 /// </summary>
 public interface IModuleRegistryService
 {
-    /// <summary>
-    /// Gets all module installations for an environment.
-    /// </summary>
-    ValueTask<IReadOnlyList<ModuleInstallation>> GetInstallationsAsync(EnvironmentId environmentId, CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// Gets a module instance by id.
-    /// </summary>
-    ValueTask<ModuleInstance?> GetInstanceAsync(ModuleInstanceId moduleInstanceId, CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// Registers a module in the catalog.
-    /// </summary>
-    ValueTask RegisterModuleAsync(Module module, CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// Enables a module installation in an environment.
-    /// </summary>
-    ValueTask EnableModuleAsync(EnvironmentId environmentId, ModuleId moduleId, string version, CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// Disables a module installation.
-    /// </summary>
-    ValueTask DisableModuleAsync(ModuleInstallationId moduleInstallationId, CancellationToken cancellationToken = default);
+    ValueTask<IReadOnlyList<ModuleCatalogEntry>> ListModulesAsync(CancellationToken cancellationToken = default);
+    ValueTask<ModuleCatalogEntry?> GetModuleAsync(string moduleId, CancellationToken cancellationToken = default);
+    ValueTask<IReadOnlyList<ModuleDescriptor>> GetEnabledDescriptorsAsync(CancellationToken cancellationToken = default);
+    ValueTask<ModuleLifecycleTransitionResult> DiscoverModulesAsync(CancellationToken cancellationToken = default);
+    ValueTask<ModuleLifecycleTransitionResult> InstallModuleAsync(string moduleId, CancellationToken cancellationToken = default);
+    ValueTask<ModuleLifecycleTransitionResult> EnableModuleAsync(string moduleId, CancellationToken cancellationToken = default);
+    ValueTask<ModuleLifecycleTransitionResult> DisableModuleAsync(string moduleId, CancellationToken cancellationToken = default);
+    ValueTask<ModuleLifecycleTransitionResult> UninstallModuleAsync(string moduleId, CancellationToken cancellationToken = default);
 }

@@ -9,6 +9,7 @@ namespace Apperture.Core.Application.Services;
 public sealed class OperationRegistryService : IOperationRegistryService
 {
     private readonly IEnumerable<IModule> _modules;
+    private readonly IModuleActivationFilter? _activationFilter;
 
     private readonly Dictionary<OperationId, OperationDefinition> _byId = new();
     private readonly Dictionary<string, List<OperationDefinition>> _byModule = new(StringComparer.Ordinal);
@@ -16,9 +17,10 @@ public sealed class OperationRegistryService : IOperationRegistryService
     private readonly SemaphoreSlim _initGate = new(1, 1);
     private bool _initialized;
 
-    public OperationRegistryService(IEnumerable<IModule> modules)
+    public OperationRegistryService(IEnumerable<IModule> modules, IModuleActivationFilter? activationFilter = null)
     {
         _modules = modules ?? [];
+        _activationFilter = activationFilter;
     }
 
     public async ValueTask<OperationDefinition?> GetOperationAsync(OperationId operationId, CancellationToken cancellationToken = default)
@@ -86,6 +88,9 @@ public sealed class OperationRegistryService : IOperationRegistryService
 
             foreach (var module in _modules)
             {
+                if (_activationFilter is not null && !await _activationFilter.IsEnabledAsync(module.GetManifest().Id, cancellationToken).ConfigureAwait(false))
+                    continue;
+
                 if (module is not IOperationDefinitionProvider provider)
                     continue;
 
@@ -126,5 +131,6 @@ public sealed class OperationRegistryService : IOperationRegistryService
         if (string.IsNullOrWhiteSpace(definition.Name))
             throw new InvalidOperationException($"Operation '{definition.Id.Value}' must declare Name for single-step handler mapping.");
     }
+
 }
 

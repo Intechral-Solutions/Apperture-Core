@@ -27,6 +27,8 @@ public sealed class ModulePermissionRegistrationHostedService : IHostedService
         using var scope = _scopeFactory.CreateScope();
         var registry = scope.ServiceProvider.GetRequiredService<IResourceDescriptorRegistry>();
         var manifestProvider = scope.ServiceProvider.GetRequiredService<IModuleManifestProvider>();
+        var moduleRegistry = scope.ServiceProvider.GetRequiredService<IModuleRegistryService>();
+        moduleRegistry.DiscoverModulesAsync(cancellationToken).AsTask().GetAwaiter().GetResult();
         var manifests = manifestProvider.GetManifests();
         try
         {

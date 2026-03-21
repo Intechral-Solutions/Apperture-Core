@@ -9,6 +9,7 @@ using Apperture.Core.Domain.Operations;
 using Apperture.Core.Domain.Governance;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Security.Trust;
+using Apperture.ModuleSdk.Abstractions;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Xunit;
@@ -773,25 +774,48 @@ public sealed class UnifiedControlFacadeTests
 
     private sealed class StubModuleWorkflowListingService : IModuleWorkflowListingService
     {
-        private readonly IReadOnlyList<Apperture.ModuleSdk.Abstractions.ModuleManifest> _modules;
+        private readonly IReadOnlyList<ModuleCatalogEntry> _modules;
         private readonly IReadOnlyDictionary<string, IReadOnlyList<Apperture.RuntimePlane.Abstractions.WorkflowDefinition>> _workflowsByModule;
 
         public StubModuleWorkflowListingService(
             IReadOnlyList<Apperture.ModuleSdk.Abstractions.ModuleManifest> modules,
             IReadOnlyDictionary<string, IReadOnlyList<Apperture.RuntimePlane.Abstractions.WorkflowDefinition>> workflowsByModule)
         {
-            _modules = modules;
+            _modules = modules
+                .Select(m => new ModuleCatalogEntry(
+                    new ModuleDescriptor(m.Id, m.Name, m.Version, m.Description, null, null, []),
+                    ModuleLifecycleState.InstalledEnabled,
+                    Installed: true,
+                    Enabled: true,
+                    EffectivelyActive: true,
+                    ValidationIssues: []))
+                .ToList();
             _workflowsByModule = workflowsByModule;
         }
 
-        public ValueTask<IReadOnlyList<Apperture.ModuleSdk.Abstractions.ModuleManifest>> GetModulesAsync(CancellationToken cancellationToken = default) =>
+        public ValueTask<IReadOnlyList<ModuleCatalogEntry>> GetModulesAsync(CancellationToken cancellationToken = default) =>
             ValueTask.FromResult(_modules);
+
+        public ValueTask<ModuleCatalogEntry?> GetModuleAsync(string moduleId, CancellationToken cancellationToken = default)
+            => ValueTask.FromResult<ModuleCatalogEntry?>(_modules.FirstOrDefault(x => x.Descriptor.ModuleId == moduleId));
 
         public ValueTask<IReadOnlyList<Apperture.RuntimePlane.Abstractions.WorkflowDefinition>> GetWorkflowsForModuleAsync(string moduleId, CancellationToken cancellationToken = default)
         {
             _workflowsByModule.TryGetValue(moduleId, out var workflows);
             return ValueTask.FromResult<IReadOnlyList<Apperture.RuntimePlane.Abstractions.WorkflowDefinition>>(workflows ?? Array.Empty<Apperture.RuntimePlane.Abstractions.WorkflowDefinition>());
         }
+
+        public ValueTask<ModuleLifecycleTransitionResult> InstallModuleAsync(string moduleId, CancellationToken cancellationToken = default)
+            => ValueTask.FromResult(new ModuleLifecycleTransitionResult(true, moduleId, "install", ModuleLifecycleState.InstalledDisabled, ModuleLifecycleEffect.Immediate, []));
+
+        public ValueTask<ModuleLifecycleTransitionResult> EnableModuleAsync(string moduleId, CancellationToken cancellationToken = default)
+            => ValueTask.FromResult(new ModuleLifecycleTransitionResult(true, moduleId, "enable", ModuleLifecycleState.InstalledEnabled, ModuleLifecycleEffect.PartialUntilRestart, []));
+
+        public ValueTask<ModuleLifecycleTransitionResult> DisableModuleAsync(string moduleId, CancellationToken cancellationToken = default)
+            => ValueTask.FromResult(new ModuleLifecycleTransitionResult(true, moduleId, "disable", ModuleLifecycleState.InstalledDisabled, ModuleLifecycleEffect.PartialUntilRestart, []));
+
+        public ValueTask<ModuleLifecycleTransitionResult> UninstallModuleAsync(string moduleId, CancellationToken cancellationToken = default)
+            => ValueTask.FromResult(new ModuleLifecycleTransitionResult(true, moduleId, "uninstall", ModuleLifecycleState.Discovered, ModuleLifecycleEffect.RequiresRestart, []));
     }
 
     private sealed class StubControlActivityQueryService : IControlActivityQueryService

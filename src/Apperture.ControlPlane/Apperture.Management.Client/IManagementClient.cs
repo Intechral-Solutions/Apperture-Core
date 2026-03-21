@@ -5,6 +5,11 @@ namespace Apperture.Management.Client;
 public interface IManagementClient
 {
     Task<IReadOnlyList<ModuleDto>> GetModulesAsync(CancellationToken cancellationToken = default);
+    Task<ModuleDto?> GetModuleAsync(string moduleId, CancellationToken cancellationToken = default);
+    Task<ModuleLifecycleActionResultDto> InstallModuleAsync(string moduleId, CancellationToken cancellationToken = default);
+    Task<ModuleLifecycleActionResultDto> EnableModuleAsync(string moduleId, CancellationToken cancellationToken = default);
+    Task<ModuleLifecycleActionResultDto> DisableModuleAsync(string moduleId, CancellationToken cancellationToken = default);
+    Task<ModuleLifecycleActionResultDto> UninstallModuleAsync(string moduleId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<WorkflowDto>> GetWorkflowsAsync(string moduleId, CancellationToken cancellationToken = default);
     Task<StartWorkflowResult> StartWorkflowAsync(
         string workflowId,

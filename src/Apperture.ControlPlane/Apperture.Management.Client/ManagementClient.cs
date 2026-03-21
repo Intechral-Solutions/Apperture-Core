@@ -15,6 +15,23 @@ public sealed class ManagementClient : IManagementClient
         return list ?? Array.Empty<ModuleDto>();
     }
 
+    public async Task<ModuleDto?> GetModuleAsync(string moduleId, CancellationToken cancellationToken = default)
+    {
+        return await _http.GetFromJsonAsync<ModuleDto>($"modules/{moduleId}", cancellationToken).ConfigureAwait(false);
+    }
+
+    public Task<ModuleLifecycleActionResultDto> InstallModuleAsync(string moduleId, CancellationToken cancellationToken = default)
+        => PostModuleLifecycleActionAsync($"modules/{moduleId}/install", moduleId, "install", cancellationToken);
+
+    public Task<ModuleLifecycleActionResultDto> EnableModuleAsync(string moduleId, CancellationToken cancellationToken = default)
+        => PostModuleLifecycleActionAsync($"modules/{moduleId}/enable", moduleId, "enable", cancellationToken);
+
+    public Task<ModuleLifecycleActionResultDto> DisableModuleAsync(string moduleId, CancellationToken cancellationToken = default)
+        => PostModuleLifecycleActionAsync($"modules/{moduleId}/disable", moduleId, "disable", cancellationToken);
+
+    public Task<ModuleLifecycleActionResultDto> UninstallModuleAsync(string moduleId, CancellationToken cancellationToken = default)
+        => PostModuleLifecycleActionAsync($"modules/{moduleId}/uninstall", moduleId, "uninstall", cancellationToken);
+
     public async Task<IReadOnlyList<WorkflowDto>> GetWorkflowsAsync(string moduleId, CancellationToken cancellationToken = default)
     {
         var list = await _http.GetFromJsonAsync<WorkflowDto[]>($"modules/{moduleId}/workflows", cancellationToken).ConfigureAwait(false);
@@ -166,5 +183,23 @@ public sealed class ManagementClient : IManagementClient
         if (string.IsNullOrWhiteSpace(value))
             return;
         pairs.Add($"{Uri.EscapeDataString(key)}={Uri.EscapeDataString(value)}");
+    }
+
+    private async Task<ModuleLifecycleActionResultDto> PostModuleLifecycleActionAsync(
+        string route,
+        string moduleId,
+        string action,
+        CancellationToken cancellationToken)
+    {
+        var response = await _http.PostAsync(route, content: null, cancellationToken).ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+        var dto = await response.Content.ReadFromJsonAsync<ModuleLifecycleActionResultDto>(cancellationToken).ConfigureAwait(false);
+        return dto ?? new ModuleLifecycleActionResultDto(
+            Succeeded: false,
+            ModuleId: moduleId,
+            Action: action,
+            State: "Discovered",
+            Effect: "Immediate",
+            Blockers: [new ModuleLifecycleBlockerDto("no_response", "Server returned no lifecycle action payload.")]);
     }
 }
