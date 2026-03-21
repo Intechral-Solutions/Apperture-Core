@@ -70,6 +70,7 @@ The Management API (control plane) exposes REST endpoints for module registry, w
   - `DiagnosticsDisplayPolicy`: diagnostics display policy when set (`inline`, `summary_only`, `withheld`).
 - Captured output is computed on successful terminal completion from the last step’s return value (see ADR-0019, ADR-0020).
 - Failure diagnostics are captured on terminal failure through run-grain fields (see ADR-0021).
+- Module authors can now declare preferred success/failure operator intent via `OperatorExecutionResult` (ADR-0022); legacy plain success returns remain compatible.
 - Legacy runs (pre-output-migration) show `OutputAvailability: none`; no payload.
 
 ## Governance API notes

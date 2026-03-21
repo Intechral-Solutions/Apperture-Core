@@ -106,6 +106,19 @@ public sealed class RunOutputCaptureTests
     }
 
     [Fact]
+    public void TryCapture_OperatorExecutionResultSuccessInline_MatchesOperatorRunOutputInline()
+    {
+        var value = new { message = "contract", step = "Complete" };
+        var declared = RunOutputCapture.TryCapture(OperatorExecutionResult.SuccessInline(value));
+        var wrapped = RunOutputCapture.TryCapture(OperatorRunOutput.Inline(value));
+
+        declared.CapturedOutputStatus.Should().Be(wrapped.CapturedOutputStatus);
+        declared.CapturedOutputJson.Should().Be(wrapped.CapturedOutputJson);
+        declared.CapturedOutputSummary.Should().Be(wrapped.CapturedOutputSummary);
+        declared.CapturedOutputDisplayPolicy.Should().Be(wrapped.CapturedOutputDisplayPolicy);
+    }
+
+    [Fact]
     public void TryCapture_OperatorRunOutputSummaryOnly_WhenSerializeFails_IsUnsupported()
     {
         var r = RunOutputCapture.TryCapture(OperatorRunOutput.SummaryOnly((Action)(() => { })));

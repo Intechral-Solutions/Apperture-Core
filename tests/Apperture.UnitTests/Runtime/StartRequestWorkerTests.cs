@@ -1,6 +1,7 @@
 using Apperture.Persistence.SqlServer;
 using Apperture.Persistence.SqlServer.Options;
 using Apperture.ModuleSdk.Abstractions;
+using Apperture.Core.Application.Execution;
 using Apperture.RuntimePlane.Abstractions;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
@@ -187,6 +188,49 @@ public sealed class StartRequestWorkerTests
         step.Error.Should().NotContain("boom");
         (await db.WorkflowLifecycleEvents.Where(x => x.RunId == "r1").Select(x => x.EventType).ToListAsync())
             .Should().Contain("workflow.failed");
+    }
+
+    [Fact]
+    public async Task ProcessClaimedAsync_DeclaredFailureInline_UsesDeclaredFailureCapture()
+    {
+        var db = NewDb();
+        db.WorkflowStartRequests.Add(new WorkflowStartRequestEntity
+        {
+            RunId = "r1",
+            WorkflowInstanceId = "i1",
+            WorkflowDefinitionId = "Sample.HelloWorld.HelloWorld",
+            CreatedAt = DateTimeOffset.UtcNow,
+            Status = "requested"
+        });
+        db.WorkflowInstances.Add(new WorkflowInstanceEntity
+        {
+            Id = "i1",
+            DefinitionId = "Sample.HelloWorld.HelloWorld",
+            Status = "requested",
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow,
+            Version = 0
+        });
+        db.OperationRuns.Add(new OperationRunEntity
+        {
+            Id = "r1",
+            WorkflowInstanceId = "i1",
+            DefinitionId = "Sample.HelloWorld.HelloWorld",
+            Status = "requested",
+            CreatedAt = DateTimeOffset.UtcNow
+        });
+        await db.SaveChangesAsync();
+
+        var processor = new WorkflowStartRequestProcessor(db, new DeclaredFailureExecutor(), DefaultDefinitionResolver(), "test-worker", DefaultLeaseOptions());
+
+        (await processor.TryClaimAsync("r1")).Should().BeTrue();
+        await processor.ProcessClaimedAsync("r1");
+
+        var run = await db.OperationRuns.SingleAsync(x => x.Id == "r1");
+        run.FailureSummary.Should().Be("declared failure");
+        run.FailureDiagnosticsStatus.Should().Be(RunFailureCapture.StatusCaptured);
+        run.FailureDiagnosticsJson.Should().Contain("declared-inline");
+        run.FailureDiagnosticsDisplayPolicy.Should().Be(RunFailureCapture.DisplayPolicyInline);
     }
 
     [Fact]
@@ -503,6 +547,17 @@ internal sealed class ThrowingExecutor : IWorkflowExecutor
         IReadOnlyDictionary<string, object?>? parameters,
         CancellationToken cancellationToken = default)
         => throw new InvalidOperationException("boom");
+}
+
+internal sealed class DeclaredFailureExecutor : IWorkflowExecutor
+{
+    public ValueTask<object?> ExecuteStepAsync(
+        WorkflowDefinition definition,
+        string stepName,
+        WorkflowInstance instance,
+        IReadOnlyDictionary<string, object?>? parameters,
+        CancellationToken cancellationToken = default)
+        => throw OperatorExecutionResult.FailInline("declared failure", new { reason = "declared-inline" });
 }
 
 internal sealed class OwnershipStealingExecutor : IWorkflowExecutor

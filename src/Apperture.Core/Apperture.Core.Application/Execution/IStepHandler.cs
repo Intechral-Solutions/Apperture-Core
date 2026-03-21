@@ -14,7 +14,8 @@ public interface IStepHandler
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>
     /// Step result (or null). Must not return ResolvedSecret or secret material.
-    /// To declare operator output intent (inline vs summary-only vs withheld), return <see cref="OperatorRunOutput"/> (ADR-0020).
+    /// To declare operator intent explicitly, prefer <see cref="OperatorExecutionResult"/> (Epic 23).
+    /// <see cref="OperatorRunOutput"/> remains supported for success-path compatibility.
     /// </returns>
     ValueTask<object?> ExecuteAsync(
         IStepExecutionContext context,

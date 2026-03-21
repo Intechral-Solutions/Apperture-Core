@@ -34,10 +34,26 @@ public static class RunOutputCapture
     /// </summary>
     public static RunOutputCaptureResult TryCapture(object? value)
     {
+        if (value is OperatorExecutionResult declared)
+            return TryCaptureDeclared(declared);
+
         if (value is OperatorRunOutput wrapped)
             return TryCaptureWrapped(wrapped);
 
         return TryCaptureLegacy(value, displayPolicy: null);
+    }
+
+    private static RunOutputCaptureResult TryCaptureDeclared(OperatorExecutionResult declared)
+    {
+        var wrapped = declared.SuccessDisplayPolicy switch
+        {
+            OperatorOutputDisplayPolicy.Inline => OperatorRunOutput.Inline(declared.SuccessPayload),
+            OperatorOutputDisplayPolicy.SummaryOnly => OperatorRunOutput.SummaryOnly(declared.SuccessPayload),
+            OperatorOutputDisplayPolicy.Withheld => OperatorRunOutput.Withheld(),
+            _ => OperatorRunOutput.Inline(declared.SuccessPayload)
+        };
+
+        return TryCaptureWrapped(wrapped);
     }
 
     private static RunOutputCaptureResult TryCaptureWrapped(OperatorRunOutput wrapped)

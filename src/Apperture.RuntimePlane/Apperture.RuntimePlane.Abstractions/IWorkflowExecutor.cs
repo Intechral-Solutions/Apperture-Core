@@ -8,6 +8,7 @@ namespace Apperture.RuntimePlane.Abstractions;
 /// Steps do not receive ISecretResolver; connection secrets are resolved inside the resolution pipeline, not in step code.
 /// Steps receive only IStepExecutionContext. Step results must not return ResolvedSecret or secret material.
 /// For operator-visible output policy, handlers may return Apperture.Core.Application.Execution.OperatorRunOutput (ADR-0020).
+/// Epic 23 preferred explicit authoring contract is Apperture.Core.Application.Execution.OperatorExecutionResult.
 /// </remarks>
 public interface IWorkflowExecutor
 {

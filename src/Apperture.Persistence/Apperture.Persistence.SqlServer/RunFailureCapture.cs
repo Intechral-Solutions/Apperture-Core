@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Apperture.Core.Application.Execution;
 
 namespace Apperture.Persistence.SqlServer;
 
@@ -29,6 +30,9 @@ public static class RunFailureCapture
 
     public static RunFailureCaptureResult TryCapture(Exception ex, string displayPolicy = DisplayPolicySummaryOnly)
     {
+        if (ex is OperatorExecutionFailureException declared)
+            return TryCaptureDeclaredFailure(declared);
+
         var summary = Truncate(ex.Message, 512);
 
         if (string.Equals(displayPolicy, DisplayPolicyWithheld, StringComparison.Ordinal))
@@ -49,6 +53,39 @@ public static class RunFailureCapture
         catch
         {
             return new RunFailureCaptureResult(summary, null, StatusUnsupported, SchemaVersion, displayPolicy);
+        }
+    }
+
+    private static RunFailureCaptureResult TryCaptureDeclaredFailure(OperatorExecutionFailureException declared)
+    {
+        var summary = Truncate(declared.Summary, 512);
+        var policy = declared.DisplayPolicy switch
+        {
+            OperatorDiagnosticsDisplayPolicy.Inline => DisplayPolicyInline,
+            OperatorDiagnosticsDisplayPolicy.SummaryOnly => DisplayPolicySummaryOnly,
+            OperatorDiagnosticsDisplayPolicy.Withheld => DisplayPolicyWithheld,
+            _ => DisplayPolicySummaryOnly
+        };
+
+        if (string.Equals(policy, DisplayPolicyWithheld, StringComparison.Ordinal))
+            return new RunFailureCaptureResult(summary, null, StatusWithheld, SchemaVersion, policy);
+
+        if (string.Equals(policy, DisplayPolicySummaryOnly, StringComparison.Ordinal))
+            return new RunFailureCaptureResult(summary, null, StatusSummaryOnly, SchemaVersion, policy);
+
+        try
+        {
+            var payload = declared.Diagnostics ?? new { error = Truncate(declared.Summary, 2048) };
+            var json = JsonSerializer.Serialize(payload, JsonOptions);
+            var bytes = System.Text.Encoding.UTF8.GetByteCount(json);
+            if (bytes > MaxPayloadBytes)
+                json = System.Text.Encoding.UTF8.GetString(System.Text.Encoding.UTF8.GetBytes(json).AsSpan(0, MaxPayloadBytes)).TrimEnd();
+
+            return new RunFailureCaptureResult(summary, json, StatusCaptured, SchemaVersion, DisplayPolicyInline);
+        }
+        catch
+        {
+            return new RunFailureCaptureResult(summary, null, StatusUnsupported, SchemaVersion, policy);
         }
     }
 

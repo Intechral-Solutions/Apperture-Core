@@ -1,4 +1,5 @@
 using Apperture.Persistence.SqlServer;
+using Apperture.Core.Application.Execution;
 using FluentAssertions;
 using Xunit;
 
@@ -36,5 +37,29 @@ public sealed class RunFailureCaptureTests
         r.FailureDiagnosticsStatus.Should().Be(RunFailureCapture.StatusWithheld);
         r.FailureDiagnosticsJson.Should().BeNull();
         r.FailureDiagnosticsDisplayPolicy.Should().Be(RunFailureCapture.DisplayPolicyWithheld);
+    }
+
+    [Fact]
+    public void TryCapture_DeclaredFailureSummaryOnly_UsesDeclaredSummaryAndPolicy()
+    {
+        var ex = OperatorExecutionResult.FailSummaryOnly("declared-summary");
+        var r = RunFailureCapture.TryCapture(ex);
+
+        r.FailureSummary.Should().Be("declared-summary");
+        r.FailureDiagnosticsStatus.Should().Be(RunFailureCapture.StatusSummaryOnly);
+        r.FailureDiagnosticsJson.Should().BeNull();
+        r.FailureDiagnosticsDisplayPolicy.Should().Be(RunFailureCapture.DisplayPolicySummaryOnly);
+    }
+
+    [Fact]
+    public void TryCapture_DeclaredFailureInline_CapturesDeclaredDiagnostics()
+    {
+        var ex = OperatorExecutionResult.FailInline("declared-summary", new { reason = "boom-declared" });
+        var r = RunFailureCapture.TryCapture(ex);
+
+        r.FailureSummary.Should().Be("declared-summary");
+        r.FailureDiagnosticsStatus.Should().Be(RunFailureCapture.StatusCaptured);
+        r.FailureDiagnosticsJson.Should().Contain("boom-declared");
+        r.FailureDiagnosticsDisplayPolicy.Should().Be(RunFailureCapture.DisplayPolicyInline);
     }
 }
