@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Design;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Configuration;
 
 namespace Apperture.Persistence.SqlServer;
@@ -24,6 +25,7 @@ internal sealed class DesignTimeDbContextFactory : IDesignTimeDbContextFactory<A
             ?? "Server=(localdb)\\mssqllocaldb;Database=Apperture;Trusted_Connection=True;";
 
         var options = new DbContextOptionsBuilder<AppertureDbContext>()
+            .ConfigureWarnings(w => w.Ignore(RelationalEventId.PendingModelChangesWarning))
             .UseSqlServer(connectionString)
             .Options;
 

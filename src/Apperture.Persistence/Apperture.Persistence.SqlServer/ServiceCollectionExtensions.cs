@@ -1,5 +1,6 @@
 using Apperture.Core.Application.Services;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Apperture.Persistence.SqlServer;
@@ -23,6 +24,7 @@ public static class ServiceCollectionExtensions
         var opts = options ?? new SqlPersistenceOptions();
         services.AddDbContext<AppertureDbContext>((sp, builder) =>
         {
+            builder.ConfigureWarnings(w => w.Ignore(RelationalEventId.PendingModelChangesWarning));
             var connectionString = connectionStringFactory(sp);
             var sqlBuilder = builder.UseSqlServer(
                 connectionString,
@@ -48,6 +50,7 @@ public static class ServiceCollectionExtensions
         var opts = options ?? new SqlPersistenceOptions();
         services.AddDbContextFactory<AppertureDbContext>((sp, builder) =>
         {
+            builder.ConfigureWarnings(w => w.Ignore(RelationalEventId.PendingModelChangesWarning));
             var connectionString = connectionStringFactory(sp);
             builder.UseSqlServer(
                 connectionString,
