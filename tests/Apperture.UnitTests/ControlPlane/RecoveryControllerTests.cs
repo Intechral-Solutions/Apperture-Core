@@ -47,12 +47,18 @@ public sealed class RecoveryControllerTests
     }
 
     [Fact]
-    public async Task RetryBlockedWork_WhenOperation_Returns400()
+    public async Task RetryBlockedWork_WhenOperation_Returns400WithInspectionOnly()
     {
         var entry = CreateBlockedEntry("r1", "operation", false);
         var controller = NewController(recovery: new StubRecoveryQueryService(blocked: [entry], single: entry));
         var result = await controller.RetryBlockedWork("r1", CancellationToken.None);
-        result.Should().BeOfType<BadRequestObjectResult>();
+        var badRequest = result.Should().BeOfType<BadRequestObjectResult>().Subject;
+        var value = badRequest.Value;
+        value.Should().NotBeNull();
+        var inspectionOnly = value!.GetType().GetProperty("inspectionOnly")?.GetValue(value);
+        inspectionOnly.Should().Be(true, "operation blocked work is inspection-only");
+        var definitionKind = value.GetType().GetProperty("definitionKind")?.GetValue(value);
+        definitionKind.Should().Be("operation");
     }
 
     [Fact]
@@ -114,13 +120,16 @@ public sealed class RecoveryControllerTests
     }
 
     [Fact]
-    public async Task RunScheduleCycle_Returns202()
+    public async Task RunScheduleCycle_InvokesGlobalSchedulerCycle_Returns202()
     {
         var runner = new StubScheduleDispatchRunner();
         var controller = NewController(scheduleRunner: runner);
         var result = await controller.RunScheduleCycle(cancellationToken: CancellationToken.None);
-        result.Should().BeOfType<AcceptedResult>();
-        runner.RunCycleCalled.Should().BeTrue();
+        var accepted = result.Should().BeOfType<AcceptedResult>().Subject;
+        runner.RunCycleCalled.Should().BeTrue("controller must invoke IScheduleDispatchRunner.RunCycleAsync");
+        accepted.Value.Should().NotBeNull();
+        var action = accepted.Value!.GetType().GetProperty("action")?.GetValue(accepted.Value);
+        action.Should().Be("global_scheduler_run_cycle", "response must indicate global scheduler action");
     }
 
     [Fact]

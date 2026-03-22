@@ -71,7 +71,7 @@ public sealed class RecoveryController : ControllerBase
 
     /// <summary>
     /// Retries a blocked workflow start. Returns 409 if still ineligible.
-    /// Operations are not supported; returns 400.
+    /// Operation blocked work is inspectable only; retry is not supported. Returns 400 with inspectionOnly.
     /// </summary>
     [HttpPost("blocked-work/{runId}/retry")]
     [ProducesResponseType(StatusCodes.Status202Accepted)]
@@ -85,7 +85,16 @@ public sealed class RecoveryController : ControllerBase
             return NotFound();
 
         if (string.Equals(entry.DefinitionKind, "operation", StringComparison.OrdinalIgnoreCase))
-            return BadRequest(new { error = "Operation retry not yet supported.", runId });
+        {
+            return BadRequest(new
+            {
+                error = "Operation retry not yet supported.",
+                runId,
+                definitionKind = "operation",
+                inspectionOnly = true,
+                message = "Operation blocked work is inspectable via GET blocked-work; platform recovery does not yet support operation retry."
+            });
+        }
 
         if (!entry.RetryEligibleNow)
         {
@@ -141,7 +150,9 @@ public sealed class RecoveryController : ControllerBase
     }
 
     /// <summary>
-    /// Triggers a schedule dispatch cycle. Processes schedules due at current time.
+    /// Triggers a global scheduler re-evaluation cycle for the runtime plane.
+    /// Processes all schedules due at the current time; this is not a schedule-specific replay.
+    /// Blocked schedules will re-evaluate at their NextDueUtc when the cycle runs.
     /// </summary>
     [HttpPost("schedules/run-cycle")]
     [ProducesResponseType(StatusCodes.Status202Accepted)]
@@ -152,7 +163,12 @@ public sealed class RecoveryController : ControllerBase
         var planeId = new RuntimePlaneId(runtimePlaneId ?? "local");
         await _scheduleRunner.RunCycleAsync(planeId, DateTimeOffset.UtcNow, cancellationToken).ConfigureAwait(false);
         await TryAuditRunCycleRequestedAsync(planeId.Value, cancellationToken).ConfigureAwait(false);
-        return Accepted(new { runtimePlaneId = planeId.Value, message = "Schedule cycle completed." });
+        return Accepted(new
+        {
+            runtimePlaneId = planeId.Value,
+            action = "global_scheduler_run_cycle",
+            message = "Global scheduler cycle completed. Processes schedules due at cycle time; not schedule-specific."
+        });
     }
 
     /// <summary>

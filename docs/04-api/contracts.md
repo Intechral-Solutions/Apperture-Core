@@ -42,16 +42,16 @@ The Management API (control plane) exposes REST endpoints for module registry, w
 | GET | `/api/control/recovery/blocked-work/{runId}` | Blocked item detail + eligibility. Epic 31. |
 | POST | `/api/control/recovery/blocked-work/{runId}/retry` | Retry blocked workflow (409 if still ineligible; operations not supported). Epic 31. |
 | GET | `/api/control/recovery/schedules/{id}` | Schedule remediation context (query: runtimePlaneId). Epic 31. |
-| POST | `/api/control/recovery/schedules/run-cycle` | Trigger schedule dispatch cycle (query: runtimePlaneId). Epic 31. |
+| POST | `/api/control/recovery/schedules/run-cycle` | Trigger **global** scheduler run cycle (query: runtimePlaneId). Not schedule-specific. Epic 31. |
 | GET | `/api/control/recovery/modules/{moduleId}` | Module remediation context. Epic 31. |
 
 ## Recovery API (Epic 31)
 
 Operator recovery and remediation workflows extend Epic 30 diagnostics with eligibility projection and safe retry actions.
 
-- **Blocked work**: Workflow runs with `[Blocked]` failure summary are inspectable; eligibility (`RetryEligibleNow`) is derived from `composition.EffectivelyExecutableModuleIds` containing the definition's module. Operations are inspectable but not retryable (Option A).
+- **Blocked work**: Workflow runs with `[Blocked]` failure summary are inspectable; eligibility (`RetryEligibleNow`) is derived from `composition.EffectivelyExecutableModuleIds` containing the definition's module. **Operations are inspection-only**: `RetryEligibleNow` is always false; retry returns 400 with `inspectionOnly: true`.
 - **Retry guard**: Before invoking retry, the API re-checks eligibility. If ineligible, returns 409 without calling dispatch; audits `recovery.blocked_work.retry_refused`.
-- **Schedule remediation**: `RemediationAvailable` = (enabled && TargetModuleExecutable). Run-cycle processes schedules due at current time; no per-schedule "force fire" in V1.
+- **Schedule remediation**: `RemediationAvailable` = (enabled && TargetModuleExecutable). Run-cycle triggers **global** scheduler re-evaluation; processes schedules due at cycle time. No per-schedule "force fire" in V1.
 - **Module remediation**: `PrerequisiteHint` guides operators (e.g. "Enable module to allow new starts"); links to existing `POST /modules/{id}/enable`.
 - **Audit actions**: `recovery.blocked_work.retry_requested`, `recovery.blocked_work.retry_dispatched`, `recovery.blocked_work.retry_refused`, `recovery.schedules.run_cycle_requested`.
 

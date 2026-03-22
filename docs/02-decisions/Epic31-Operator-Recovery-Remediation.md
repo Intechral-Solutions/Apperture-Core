@@ -27,16 +27,16 @@ Epic 30 delivered runtime health diagnostics including blocked deferred work, sc
 | Action | Endpoint | Behavior |
 |--------|----------|----------|
 | Retry blocked workflow | `POST /api/control/recovery/blocked-work/{runId}/retry` | Delegates to `IWorkflowRetryService.RequestRetryAsync`; returns 409 with `blocked: true` when ineligible or when retry returns blocked |
-| Run schedule cycle | `POST /api/control/recovery/schedules/run-cycle` | Calls `IScheduleDispatchRunner.RunCycleAsync(planeId, UtcNow)`; processes schedules due at current time |
+| Global scheduler run cycle | `POST /api/control/recovery/schedules/run-cycle` | Triggers **global** scheduler re-evaluation for the runtime plane. Processes all schedules due at cycle time. **Not** schedule-specific; blocked schedules re-evaluate at NextDueUtc. |
 
 ### 4. Refused remediation behavior
 
 - Before retry: re-check eligibility via `IRecoveryQueryService.GetBlockedWorkRemediationForRunAsync`. If not eligible, return 409 without calling dispatch; audit `recovery.blocked_work.retry_refused`.
-- Operation retry: returns 400 with error "Operation retry not yet supported."
+- Operation retry: returns 400 with `inspectionOnly: true`, `definitionKind: "operation"`, and message explaining that operation blocked work is inspectable but not retryable. This is an intentional limitation (StartOperationRequest lacks RetryOfRunId).
 
 ### 5. Schedule and module remediation context
 
-- **Schedule**: `RemediationAvailable` indicates whether run-cycle can dispatch (enabled and target module executable). No "force fire this schedule now" in V1.
+- **Schedule**: `RemediationAvailable` indicates whether run-cycle can dispatch (enabled and target module executable). The run-cycle endpoint triggers a **global** scheduler cycle; there is no schedule-specific "force fire now" in V1.
 - **Module**: `PrerequisiteHint` guides operators (e.g. "Enable module to allow new starts"). No new lifecycle actions; link to existing `POST /modules/{id}/enable`.
 
 ### 6. Audit records
@@ -61,6 +61,12 @@ Epic 30 delivered runtime health diagnostics including blocked deferred work, sc
 - Eligibility is projected from runtime composition truth; no fabrication
 - Refused retries are audited without invoking dispatch
 - Schedule and module remediation context supports operator triage
+
+## Epic 31 corrective pass
+
+- **Workflow remediation proof**: `RecoveryWorkflowRemediationSqlServerTests` proves blocked workflow becomes retryable after module enabled and dispatches through trusted path (WorkflowRetryService → WorkflowStartDispatchService). Requires SQL Server.
+- **Schedule remediation semantics**: Run-cycle is explicitly a **global** scheduler re-evaluation; response includes `action: "global_scheduler_run_cycle"`. Not schedule-specific.
+- **Operation limitation**: Operation blocked work is inspection-only; retry returns 400 with `inspectionOnly: true`, `definitionKind: "operation"`.
 
 ## References
 
