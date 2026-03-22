@@ -137,6 +137,7 @@ public sealed class SqlScheduleRepository : IScheduleRepository
         return rows == 1;
     }
 
+    /// <inheritdoc cref="IScheduleRepository.GetInProgressRunClaimAsync"/>
     public async ValueTask<(string ClaimedByHostId, DateTimeOffset StartedAtUtc)?> GetInProgressRunClaimAsync(string assignmentId, CancellationToken ct = default)
     {
         var run = await _db.ScheduleRuns.AsNoTracking()

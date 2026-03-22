@@ -42,7 +42,9 @@ public interface IScheduleRepository
     ValueTask<bool> TryRecoverStaleClaimAsync(string scheduleId, DateTimeOffset fireTimeUtc, string assignmentId, string hostId, DateTimeOffset staleCutoffUtc, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Gets claim info for the assignment's current in-progress run, if any. Epic 36.
+    /// Returns claim projection for an <strong>active</strong> in-progress schedule run only
+    /// (<c>Outcome = InProgress</c>). Returns null when no such row exists (including after
+    /// <c>CompleteRunAsync</c>). Does not surface historical claim owners on completed runs. Epic 36.
     /// </summary>
     ValueTask<(string ClaimedByHostId, DateTimeOffset StartedAtUtc)?> GetInProgressRunClaimAsync(string assignmentId, CancellationToken cancellationToken = default);
 

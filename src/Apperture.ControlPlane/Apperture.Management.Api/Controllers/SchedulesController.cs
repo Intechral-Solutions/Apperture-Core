@@ -189,6 +189,7 @@ public sealed record ScheduleDto(
 
 /// <summary>
 /// Schedule with execution state for operator visibility. Epic 28, Epic 36 (claim visibility).
+/// <see cref="ClaimedByHostId"/> / <see cref="ClaimedAtUtc"/> / <see cref="IsClaimStale"/>: active in-progress claim only; not historical.
 /// </summary>
 public sealed record ScheduleDetailDto(
     string Id,

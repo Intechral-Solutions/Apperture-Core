@@ -64,8 +64,13 @@ public sealed record ScheduleWithExecutionState(
     ScheduleInProgressClaim? InProgressClaim = null);
 
 /// <summary>
-/// Claim info for a schedule's current in-progress run. Epic 36.
+/// Active scheduler claim for the assignment: present only when a <c>ScheduleRuns</c> row exists with
+/// <c>Outcome = InProgress</c> for this assignment. Not populated for historical completed runs.
+/// Epic 36 corrective pass: operators must not read this as “last run was claimed by X.”
 /// </summary>
+/// <param name="ClaimedByHostId">Host that currently owns the in-progress claim (may be empty for pre-migration rows).</param>
+/// <param name="ClaimedAtUtc">Lease clock: same as run <c>StartedAtUtc</c> for the active in-progress row.</param>
+/// <param name="IsStale">True when <paramref name="ClaimedAtUtc"/> is before <c>UtcNow - ClaimLeaseMinutes</c>; another host may recover.</param>
 public sealed record ScheduleInProgressClaim(
     string ClaimedByHostId,
     DateTimeOffset ClaimedAtUtc,

@@ -38,6 +38,8 @@ public sealed record ModuleDiagnosticEntry(
 
 /// <summary>
 /// Schedule diagnostics for operator visibility. Epic 30, Epic 36 (claim visibility).
+/// Epic 36 corrective: <see cref="ClaimedByHostId"/>, <see cref="ClaimedAtUtc"/>, <see cref="IsClaimStale"/> are set only for an
+/// <strong>active</strong> in-progress <c>ScheduleRuns</c> row for this schedule's assignment in the plane—not for completed runs.
 /// </summary>
 public sealed record ScheduleDiagnosticEntry(
     string ScheduleId,

@@ -14,6 +14,7 @@ public sealed record ScheduleDto(
 
 /// <summary>
 /// Schedule with execution state for operator visibility. Epic 28, Epic 36 (claim visibility).
+/// Claim fields: populated only when a schedule run is <strong>in progress</strong> for this plane's assignment; absent once completed.
 /// </summary>
 public sealed record ScheduleDetailDto(
     string Id,

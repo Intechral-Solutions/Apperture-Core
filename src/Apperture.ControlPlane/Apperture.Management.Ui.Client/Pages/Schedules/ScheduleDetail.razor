@@ -116,18 +116,23 @@
                     </div>
                     @if (!string.IsNullOrEmpty(_detail.ClaimedByHostId))
                     {
+                        <div class="md:col-span-2 border-t border-default pt-2 mt-1">
+                            <div class="text-xs font-semibold text-heading">Active scheduler claim</div>
+                            <div class="text-xs text-muted mt-1">Shown only while a firing is in progress (<code class="text-[11px]">ScheduleRuns</code> not yet completed). Not the owner of past runs.</div>
+                        </div>
                         <div>
-                            <div class="text-xs text-muted">Claimed by host</div>
+                            <div class="text-xs text-muted">Claimed by host (current)</div>
                             <div class="text-sm text-body">@_detail.ClaimedByHostId</div>
                         </div>
                         <div>
-                            <div class="text-xs text-muted">Claimed at</div>
+                            <div class="text-xs text-muted">Claim started (UTC)</div>
                             <div class="text-sm text-body">@Fmt(_detail.ClaimedAtUtc)</div>
                         </div>
                         @if (_detail.IsClaimStale == true)
                         {
-                            <div>
+                            <div class="md:col-span-2">
                                 <span class="rounded bg-amber-100 dark:bg-amber-900/40 px-2 py-0.5 text-xs font-medium text-amber-800 dark:text-amber-200">Stale</span>
+                                <span class="ml-2 text-xs text-muted">Past claim lease; another host may take over.</span>
                             </div>
                         }
                     }

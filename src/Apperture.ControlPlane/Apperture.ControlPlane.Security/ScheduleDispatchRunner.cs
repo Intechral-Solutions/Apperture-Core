@@ -11,7 +11,8 @@ using Apperture.Shared.Kernel;
 namespace Apperture.ControlPlane.Security;
 
 /// <summary>
-/// Runs one schedule dispatch cycle. Epic 28 (workflow), Epic 29 (operation).
+/// Runs one schedule dispatch cycle. Epic 28 (workflow), Epic 29 (operation), Epic 36 (multi-host claim/recover).
+/// Multi-host coordination audit: only stale recovery appends <see cref="SchedulerAuditActionNames.ClaimRecovered"/>; new claims are not audited.
 /// </summary>
 public sealed class ScheduleDispatchRunner : IScheduleDispatchRunner
 {
