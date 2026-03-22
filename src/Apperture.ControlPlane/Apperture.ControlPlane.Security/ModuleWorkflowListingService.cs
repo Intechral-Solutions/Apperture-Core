@@ -9,6 +9,7 @@ namespace Apperture.ControlPlane.Security;
 /// <summary>
 /// Lists modules and module workflows with authorization enforcement.
 /// Uses module.configure for list modules and workflow.execute (module-declared) for list workflows per module.
+/// Workflow catalog entries match host discovery; lifecycle activation still governs execution.
 /// </summary>
 public sealed class ModuleWorkflowListingService : IModuleWorkflowListingService
 {
@@ -74,15 +75,14 @@ public sealed class ModuleWorkflowListingService : IModuleWorkflowListingService
         if (!allowed)
             throw new UnauthorizedAccessException("Not authorized to list workflows for this module.");
 
+        // Catalog: list definitions from any host-discovered module with this id. The module list API already
+        // surfaces Discovered / InstalledDisabled entries; hiding workflows until EffectivelyActive made the
+        // Workflow dropdown empty while HelloWorld was still selectable (operators enable modules on /modules).
+        // Execution remains gated by IModuleActivationFilter + IWorkflowDefinitionResolver on start (Epic 27).
         var list = new List<WorkflowDefinition>();
-        var enabled = (await _moduleRegistryService.GetEnabledDescriptorsAsync(cancellationToken).ConfigureAwait(false))
-            .Select(x => x.ModuleId)
-            .ToHashSet(StringComparer.Ordinal);
         foreach (var module in _modules)
         {
             var manifest = module.GetManifest();
-            if (!enabled.Contains(manifest.Id))
-                continue;
             if (!string.Equals(manifest.Id, moduleId, StringComparison.Ordinal))
                 continue;
             await foreach (var definition in module.GetDefinitionsAsync(cancellationToken).ConfigureAwait(false))

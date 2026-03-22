@@ -32,6 +32,7 @@ builder.Services.AddSchedulePersistence();
 builder.Services.AddAppertureSqlSecrets();
 builder.Services.AddScoped<Apperture.Core.Security.Trust.IRuntimeEnrollmentService, Apperture.ControlPlane.Security.SqlRuntimeEnrollmentService>();
 builder.Services.AddScoped<Apperture.Core.Security.Trust.IRuntimeIdentityService, Apperture.ControlPlane.Security.SqlRuntimeIdentityService>();
+builder.Services.Configure<DevTestUserOptions>(builder.Configuration.GetSection(DevTestUserOptions.SectionName));
 builder.Services.AddAppertureGovernance();
 builder.Services.AddKnownModules([new HelloWorldModule()]);
 builder.Services.AddAppertureRecovery();

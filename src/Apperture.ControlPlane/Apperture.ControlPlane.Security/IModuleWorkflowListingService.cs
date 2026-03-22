@@ -17,7 +17,8 @@ public interface IModuleWorkflowListingService
     ValueTask<ModuleCatalogEntry?> GetModuleAsync(string moduleId, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Returns workflow definitions for the given module. Caller must have workflow.execute at module:{moduleId} scope.
+    /// Returns workflow definitions declared by the host-discovered module (same id). Caller must have workflow.execute at module:{moduleId} scope.
+    /// Includes modules that are not yet effectively active; starting a run still requires an executable definition surface (activation filter / resolver).
     /// </summary>
     ValueTask<IReadOnlyList<WorkflowDefinition>> GetWorkflowsForModuleAsync(string moduleId, CancellationToken cancellationToken = default);
     ValueTask<ModuleLifecycleTransitionResult> InstallModuleAsync(string moduleId, CancellationToken cancellationToken = default);

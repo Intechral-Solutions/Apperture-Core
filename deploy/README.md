@@ -59,6 +59,26 @@ This syncs User Secrets to `.env`, starts SQL Server (Docker), and launches the 
 - `.\scripts\dev\down.ps1` stops the API and UI.
 - `docker compose down` stops SQL Server.
 
+### Dev test user (local login)
+
+In Development, the **DevTestUser** bootstrap ensures a configured test user exists with the platform administrator role. Add this to `appsettings.Development.json`:
+
+```json
+{
+  "DevTestUser": {
+    "Enabled": true,
+    "Username": "tenny",
+    "DisplayName": "Tenny (Dev)",
+    "Password": "dev"
+  },
+  "LocalAuth": {
+    "Enabled": true
+  }
+}
+```
+
+Then log in at `POST /api/auth/local/login` with `tenny` / `dev` (or your chosen password). The user will have full access to modules, workflows, runs, and the rest of the platform.
+
 ### Run migrations
 
 When EF Core migrations exist:

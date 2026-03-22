@@ -60,8 +60,10 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<ILocalPasswordHasher, LocalPasswordHasher>();
         services.AddScoped<IFirstAdminBootstrapService, FirstAdminBootstrapService>();
         services.AddScoped<IUserManagementService, UserManagementService>();
-        services.AddHostedService<PlatformAdminRoleRepairService>();
+        // Module permission registration must run before role repair so platform-admin gets module-scoped workflow.execute etc.
         services.AddHostedService<ModulePermissionRegistrationHostedService>();
+        services.AddHostedService<PlatformAdminRoleRepairService>();
+        services.AddHostedService<DevTestUserBootstrapHostedService>();
         services.AddSingleton<IEnumerable<IModule>>(Array.Empty<IModule>());
         services.AddScoped<IModuleRegistryService, SqlModuleRegistryService>();
         services.AddSingleton<IModuleManifestProvider, KnownModuleManifestProvider>();

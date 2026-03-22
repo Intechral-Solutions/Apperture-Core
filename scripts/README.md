@@ -28,6 +28,8 @@ This starts **SQL Server** (Docker), the **Management API** (port 9000), and the
 | **reset-db.ps1** | Drop/recreate the `Apperture` database and apply all EF migrations. |
 | **Fix-ScheduleTables.ps1** | Create schedule tables if missing (only needed if migrations were out of sync). **Management.Host** on startup also applies migration `EnsureScheduleTablesConditional`, which does the same idempotently. |
 
+**`/api/runs` 500 — invalid `OperationRuns` columns (`CapturedOutputJson`, …):** Your database is missing columns the model expects (often migration history vs. schema drift). **Management.Host** runs `MigrateAsync` on startup; rebuild and restart the API so migration `20260322220000_EnsureOperationRunsExtendedColumns` applies (idempotent `ALTER TABLE`). Or run `dotnet ef database update --project src/Apperture.Persistence/Apperture.Persistence.SqlServer --startup-project src/Apperture.ControlPlane/Apperture.Management.Host`, or **`scripts/dev/reset-db.ps1`** for a clean DB.
+
 ---
 
 ## CI (`ci/`)

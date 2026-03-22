@@ -399,6 +399,24 @@ namespace Apperture.Persistence.SqlServer.Migrations
                         .HasMaxLength(64)
                         .HasColumnType("nvarchar(64)");
 
+                    b.Property<string>("CapturedOutputDisplayPolicy")
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<string>("CapturedOutputJson")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("CapturedOutputStatus")
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<string>("CapturedOutputSummary")
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)");
+
+                    b.Property<int>("CapturedOutputVersion")
+                        .HasColumnType("int");
+
                     b.Property<DateTimeOffset?>("CompletedAt")
                         .HasColumnType("datetimeoffset");
 
@@ -413,6 +431,24 @@ namespace Apperture.Persistence.SqlServer.Migrations
                         .IsRequired()
                         .HasMaxLength(128)
                         .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("FailureDiagnosticsDisplayPolicy")
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<string>("FailureDiagnosticsJson")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("FailureDiagnosticsStatus")
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<int>("FailureDiagnosticsVersion")
+                        .HasColumnType("int");
+
+                    b.Property<string>("FailureSummary")
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)");
 
                     b.Property<string>("RetryOfRunId")
                         .HasMaxLength(64)
