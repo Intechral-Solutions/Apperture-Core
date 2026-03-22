@@ -37,7 +37,7 @@ namespace Apperture.Persistence.SqlServer.Migrations
                     Id = table.Column<string>(type: "nvarchar(64)", maxLength: 64, nullable: false),
                     ScheduleId = table.Column<string>(type: "nvarchar(64)", maxLength: 64, nullable: false),
                     RuntimePlaneId = table.Column<string>(type: "nvarchar(128)", maxLength: 128, nullable: false),
-                    PolicyOverrides = table.Column<string>(type: "nvarchar(4096)", maxLength: 4096, nullable: true),
+                    PolicyOverrides = table.Column<string>(type: "nvarchar(max)", maxLength: 4096, nullable: true),
                     DesiredVersion = table.Column<int>(type: "int", nullable: false),
                     AppliedVersion = table.Column<int>(type: "int", nullable: false)
                 },

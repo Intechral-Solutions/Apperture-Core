@@ -39,7 +39,7 @@ BEGIN
         [Id] nvarchar(64) NOT NULL,
         [ScheduleId] nvarchar(64) NOT NULL,
         [RuntimePlaneId] nvarchar(128) NOT NULL,
-        [PolicyOverrides] nvarchar(4096) NULL,
+        [PolicyOverrides] nvarchar(max) NULL,
         [DesiredVersion] int NOT NULL,
         [AppliedVersion] int NOT NULL,
         CONSTRAINT [PK_ScheduleAssignments] PRIMARY KEY ([Id])

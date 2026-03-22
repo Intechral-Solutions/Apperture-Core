@@ -431,7 +431,8 @@ public class AppertureDbContext : DbContext
             e.Property(x => x.Id).HasMaxLength(64);
             e.Property(x => x.ScheduleId).HasMaxLength(64);
             e.Property(x => x.RuntimePlaneId).HasMaxLength(128);
-            e.Property(x => x.PolicyOverrides).HasMaxLength(4096);
+            // SQL Server: nvarchar(n) allows n <= 4000; use max for 4096 logical cap (matches connector JSON columns).
+            e.Property(x => x.PolicyOverrides).HasMaxLength(4096).HasColumnType("nvarchar(max)");
             e.HasIndex(x => x.RuntimePlaneId);
         });
 

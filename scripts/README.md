@@ -25,7 +25,8 @@ This starts **SQL Server** (Docker), the **Management API** (port 9000), and the
 | **down.ps1** | Stop API and UI processes on ports 9000 and 9001. |
 | **logs.ps1** | Show which processes are listening on dev ports. |
 | **seed.ps1** | Placeholder: seed dev database (implement when persistence is added). |
-| **reset-db.ps1** | Placeholder: reset dev database (implement when EF Core is configured). |
+| **reset-db.ps1** | Drop/recreate the `Apperture` database and apply all EF migrations. |
+| **Fix-ScheduleTables.ps1** | Create schedule tables if missing (only needed if migrations were out of sync). **Management.Host** on startup also applies migration `EnsureScheduleTablesConditional`, which does the same idempotently. |
 
 ---
 
