@@ -132,6 +132,7 @@ public sealed class RuntimeHealthQueryServiceTests
         services.AddScoped(_ => registry);
         services.AddScoped<IScheduleManagementService>(_ => scheduleMgmt ?? new StubScheduleManagement(Array.Empty<ScheduleDefinition>(), assignments));
         services.AddScoped<IScheduleRepository>(_ => new StubScheduleRepository(assignments));
+        services.AddSingleton<ISchedulerClaimOptions>(new DefaultSchedulerClaimOptions(5));
         services.AddScoped<IRunKindResolver, RunKindResolver>();
         services.AddScoped<IRuntimeHealthQueryService, RuntimeHealthQueryService>();
         return services;
@@ -214,7 +215,10 @@ public sealed class RuntimeHealthQueryServiceTests
         public ValueTask AddAssignmentAsync(ScheduleAssignment a, CancellationToken ct = default) => ValueTask.CompletedTask;
         public ValueTask UpdateAssignmentAsync(ScheduleAssignment a, CancellationToken ct = default) => ValueTask.CompletedTask;
         public ValueTask<bool> RunExistsAsync(string scheduleId, DateTimeOffset fireTimeUtc, CancellationToken ct = default) => ValueTask.FromResult(false);
-        public ValueTask<bool> TryClaimFireAsync(string scheduleId, DateTimeOffset fireTimeUtc, string assignmentId, CancellationToken ct = default) => ValueTask.FromResult(false);
+        public ValueTask<bool> TryClaimFireAsync(string scheduleId, DateTimeOffset fireTimeUtc, string assignmentId, string hostId, CancellationToken ct = default) => ValueTask.FromResult(false);
+        public ValueTask<IReadOnlyList<ScheduleFireCandidate>> GetRecoverableStaleCandidatesAsync(RuntimePlaneId planeId, DateTimeOffset staleCutoffUtc, CancellationToken ct = default) => ValueTask.FromResult<IReadOnlyList<ScheduleFireCandidate>>([]);
+        public ValueTask<bool> TryRecoverStaleClaimAsync(string scheduleId, DateTimeOffset fireTimeUtc, string assignmentId, string hostId, DateTimeOffset staleCutoffUtc, CancellationToken ct = default) => ValueTask.FromResult(false);
+        public ValueTask<(string ClaimedByHostId, DateTimeOffset StartedAtUtc)?> GetInProgressRunClaimAsync(string assignmentId, CancellationToken ct = default) => ValueTask.FromResult<(string, DateTimeOffset)?>(null);
         public ValueTask CompleteRunAsync(string scheduleId, DateTimeOffset fireTimeUtc, string outcome, string? reason, string? runId, CancellationToken ct = default) => ValueTask.CompletedTask;
         public ValueTask UpdateStateAsync(string assignmentId, ScheduleStateUpdate state, CancellationToken ct = default) => ValueTask.CompletedTask;
         public ValueTask<ScheduleState?> GetStateAsync(string assignmentId, CancellationToken ct = default) => ValueTask.FromResult<ScheduleState?>(null);

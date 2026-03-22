@@ -39,7 +39,10 @@ public sealed record ScheduleDiagnosticEntryDto(
     DateTimeOffset? LastSuccessfulDispatchUtc,
     string ScheduleHealthStatus,
     string? DegradedReason,
-    bool TargetModuleExecutable);
+    bool TargetModuleExecutable,
+    string? ClaimedByHostId = null,
+    DateTimeOffset? ClaimedAtUtc = null,
+    bool? IsClaimStale = null);
 
 public sealed record BlockedDeferredWorkEntryDto(
     string RunId,

@@ -21,6 +21,7 @@ public sealed class RuntimeHealthQueryService : IRuntimeHealthQueryService
     private readonly IModuleRegistryService _moduleRegistry;
     private readonly IScheduleManagementService _scheduleManagement;
     private readonly IScheduleRepository _scheduleRepo;
+    private readonly ISchedulerClaimOptions _claimOptions;
     private readonly IRunKindResolver _runKinds;
     private readonly AppertureDbContext? _db;
 
@@ -29,6 +30,7 @@ public sealed class RuntimeHealthQueryService : IRuntimeHealthQueryService
         IModuleRegistryService moduleRegistry,
         IScheduleManagementService scheduleManagement,
         IScheduleRepository scheduleRepo,
+        ISchedulerClaimOptions claimOptions,
         IRunKindResolver runKinds,
         AppertureDbContext? db = null)
     {
@@ -36,6 +38,7 @@ public sealed class RuntimeHealthQueryService : IRuntimeHealthQueryService
         _moduleRegistry = moduleRegistry;
         _scheduleManagement = scheduleManagement;
         _scheduleRepo = scheduleRepo;
+        _claimOptions = claimOptions;
         _runKinds = runKinds;
         _db = db;
     }
@@ -228,6 +231,20 @@ public sealed class RuntimeHealthQueryService : IRuntimeHealthQueryService
             var targetModuleExecutable = targetDefId != null && definitionToModule.TryGetValue(targetDefId, out var moduleId)
                 && effectivelyExecutable.Contains(moduleId);
             var (scheduleHealth, degradedReason) = ComputeScheduleHealth(def, state, targetModuleExecutable);
+            string? claimedByHostId = null;
+            DateTimeOffset? claimedAtUtc = null;
+            bool? isClaimStale = null;
+            if (assignment != null)
+            {
+                var claimInfo = await _scheduleRepo.GetInProgressRunClaimAsync(assignment.Id.Value, ct).ConfigureAwait(false);
+                if (claimInfo.HasValue)
+                {
+                    claimedByHostId = string.IsNullOrEmpty(claimInfo.Value.ClaimedByHostId) ? null : claimInfo.Value.ClaimedByHostId;
+                    claimedAtUtc = claimInfo.Value.StartedAtUtc;
+                    var cutoff = DateTimeOffset.UtcNow.AddMinutes(-_claimOptions.ClaimLeaseMinutes);
+                    isClaimStale = claimInfo.Value.StartedAtUtc < cutoff;
+                }
+            }
             result.Add(new ScheduleDiagnosticEntry(
                 ScheduleId: def.Id.Value,
                 ScheduleName: def.Name,
@@ -241,7 +258,10 @@ public sealed class RuntimeHealthQueryService : IRuntimeHealthQueryService
                 LastSuccessfulDispatchUtc: state?.LastSuccessfulDispatchUtc,
                 ScheduleHealthStatus: scheduleHealth,
                 DegradedReason: degradedReason,
-                TargetModuleExecutable: targetModuleExecutable));
+                TargetModuleExecutable: targetModuleExecutable,
+                ClaimedByHostId: claimedByHostId,
+                ClaimedAtUtc: claimedAtUtc,
+                IsClaimStale: isClaimStale));
         }
         return result;
     }

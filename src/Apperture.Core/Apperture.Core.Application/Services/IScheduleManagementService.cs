@@ -56,8 +56,17 @@ public interface IScheduleManagementService
 }
 
 /// <summary>
-/// Schedule definition plus execution state for operator visibility. Epic 28.
+/// Schedule definition plus execution state for operator visibility. Epic 28, Epic 36 (claim visibility).
 /// </summary>
 public sealed record ScheduleWithExecutionState(
     ScheduleDefinition Definition,
-    ScheduleState? ExecutionState);
+    ScheduleState? ExecutionState,
+    ScheduleInProgressClaim? InProgressClaim = null);
+
+/// <summary>
+/// Claim info for a schedule's current in-progress run. Epic 36.
+/// </summary>
+public sealed record ScheduleInProgressClaim(
+    string ClaimedByHostId,
+    DateTimeOffset ClaimedAtUtc,
+    bool IsStale);

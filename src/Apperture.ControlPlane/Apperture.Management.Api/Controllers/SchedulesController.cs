@@ -155,6 +155,7 @@ public sealed class SchedulesController : ControllerBase
     {
         var d = detail.Definition;
         var state = detail.ExecutionState;
+        var claim = detail.InProgressClaim;
         return new ScheduleDetailDto(
             d.Id.Value,
             d.Name,
@@ -167,7 +168,10 @@ public sealed class SchedulesController : ControllerBase
             state?.LastAttemptedUtc,
             state?.LastOutcome,
             state?.LastOutcomeReason,
-            state?.LastSuccessfulDispatchUtc);
+            state?.LastSuccessfulDispatchUtc,
+            claim?.ClaimedByHostId,
+            claim?.ClaimedAtUtc,
+            claim?.IsStale);
     }
 }
 
@@ -184,7 +188,7 @@ public sealed record ScheduleDto(
     int Version);
 
 /// <summary>
-/// Schedule with execution state for operator visibility. Epic 28.
+/// Schedule with execution state for operator visibility. Epic 28, Epic 36 (claim visibility).
 /// </summary>
 public sealed record ScheduleDetailDto(
     string Id,
@@ -198,7 +202,10 @@ public sealed record ScheduleDetailDto(
     DateTimeOffset? LastAttemptedUtc,
     string? LastOutcome,
     string? LastOutcomeReason,
-    DateTimeOffset? LastSuccessfulDispatchUtc);
+    DateTimeOffset? LastSuccessfulDispatchUtc,
+    string? ClaimedByHostId = null,
+    DateTimeOffset? ClaimedAtUtc = null,
+    bool? IsClaimStale = null);
 
 public sealed record CreateScheduleRequestBody(
     string Name,

@@ -10,6 +10,7 @@ using Apperture.RuntimeHost.Windows.WorkerHost;
 using Apperture.RuntimePlane.Abstractions;
 using Apperture.RuntimePlane.Engine;
 using Apperture.Shared.Kernel;
+using Microsoft.Extensions.Options;
 using Sample.HelloWorld;
 
 // Windows runtime uses the shared SQL-backed operational secret store (same as Control Plane) with DPAPI protection.
@@ -44,12 +45,23 @@ builder.Services.AddSingleton<IModuleActivationFilter, WorkerRegistryModuleActiv
 builder.Services.AddConnectorRepositories();
 builder.Services.AddConnectorResolution();
 builder.Services.AddSchedulePersistence();
-builder.Services.AddRuntimeSchedulerDispatch();
 builder.Services.Configure<ScheduleDispatchOptions>(builder.Configuration.GetSection(ScheduleDispatchOptions.SectionName));
 builder.Services.PostConfigure<ScheduleDispatchOptions>(opts =>
 {
     opts.RuntimePlaneId ??= builder.Configuration["APERTURE_RUNTIME_ID"] ?? builder.Configuration["RuntimeHostIdentity:RuntimeId"] ?? "local";
 });
+builder.Services.AddSingleton<ISchedulerHostIdentity>(sp =>
+{
+    var opts = sp.GetRequiredService<IOptions<ScheduleDispatchOptions>>().Value;
+    var ropts = sp.GetRequiredService<IOptions<RuntimeHostIdentityOptions>>().Value;
+    return new DefaultSchedulerHostIdentity(opts.SchedulerHostId ?? ropts.RuntimeId ?? "worker");
+});
+builder.Services.AddSingleton<ISchedulerClaimOptions>(sp =>
+{
+    var opts = sp.GetRequiredService<IOptions<ScheduleDispatchOptions>>().Value;
+    return new DefaultSchedulerClaimOptions(opts.ClaimLeaseMinutes);
+});
+builder.Services.AddRuntimeSchedulerDispatch();
 builder.Services.AddPlatformSqlConnector();
 
 // Known modules (explicit host-controlled DI list; may include multiple modules for dev/testing and constrained composition).

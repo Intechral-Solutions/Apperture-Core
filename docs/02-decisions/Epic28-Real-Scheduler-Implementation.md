@@ -61,9 +61,9 @@ Before dispatching, the scheduler calls `ISchedulerLifecycleGuard.CanDispatchWor
 - Poll interval: configurable via `ScheduleDispatch:PollIntervalSeconds` (default 30)
 - RuntimePlaneId: `ScheduleDispatch:RuntimePlaneId` or `APERTURE_RUNTIME_ID` or `"local"`
 
-### 9. Single-host assumption
+### 9. Multi-host coordination (Epic 36)
 
-V1 assumes a single scheduler host. Idempotency key `ScheduleId:FireTimeUtc` and unique index prevent duplicate dispatch. Multi-host claiming not implemented.
+Multi-host claim coordination is implemented. See **Epic36-Multi-Host-Scheduler-Coordination.md** for host identity, claim ownership, lease-based staleness, and stale-claim recovery. Idempotency key `schedule:{id}:{fire:O}` and unique index on ScheduleRuns prevent duplicate dispatch across hosts.
 
 ### 10. Operator visibility
 

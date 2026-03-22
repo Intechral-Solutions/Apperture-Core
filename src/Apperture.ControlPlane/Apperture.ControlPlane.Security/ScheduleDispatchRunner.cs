@@ -21,6 +21,8 @@ public sealed class ScheduleDispatchRunner : IScheduleDispatchRunner
     private readonly IWorkflowStartDispatchService _workflowDispatch;
     private readonly IOperationStartDispatchService _operationDispatch;
     private readonly IAuditService _audit;
+    private readonly ISchedulerHostIdentity _hostIdentity;
+    private readonly ISchedulerClaimOptions _claimOptions;
 
     public ScheduleDispatchRunner(
         IScheduleEvaluator evaluator,
@@ -28,7 +30,9 @@ public sealed class ScheduleDispatchRunner : IScheduleDispatchRunner
         ISchedulerLifecycleGuard guard,
         IWorkflowStartDispatchService workflowDispatch,
         IOperationStartDispatchService operationDispatch,
-        IAuditService audit)
+        IAuditService audit,
+        ISchedulerHostIdentity hostIdentity,
+        ISchedulerClaimOptions claimOptions)
     {
         _evaluator = evaluator;
         _repo = repo;
@@ -36,20 +40,52 @@ public sealed class ScheduleDispatchRunner : IScheduleDispatchRunner
         _workflowDispatch = workflowDispatch;
         _operationDispatch = operationDispatch;
         _audit = audit;
+        _hostIdentity = hostIdentity;
+        _claimOptions = claimOptions;
     }
 
     public async ValueTask RunCycleAsync(RuntimePlaneId planeId, DateTimeOffset asOfUtc, CancellationToken ct = default)
     {
+        var hostId = _hostIdentity.HostId;
+        var staleCutoffUtc = asOfUtc.AddMinutes(-_claimOptions.ClaimLeaseMinutes);
+
         var due = await _evaluator.GetDueAsync(planeId, asOfUtc, ct);
-        foreach (var candidate in due)
+        var stale = await _repo.GetRecoverableStaleCandidatesAsync(planeId, staleCutoffUtc, ct);
+        var candidates = due
+            .Concat(stale.Where(s => !due.Any(d => d.ScheduleId == s.ScheduleId && d.FireTimeUtc == s.FireTimeUtc)))
+            .ToList();
+
+        foreach (var candidate in candidates)
         {
-            await ProcessDueAsync(candidate, ct);
+            await ProcessDueAsync(candidate, hostId, staleCutoffUtc, ct);
         }
     }
 
-    private async Task ProcessDueAsync(ScheduleFireCandidate candidate, CancellationToken ct)
+    private async Task ProcessDueAsync(ScheduleFireCandidate candidate, string hostId, DateTimeOffset staleCutoffUtc, CancellationToken ct)
     {
-        var claimed = await _repo.TryClaimFireAsync(candidate.ScheduleId, candidate.FireTimeUtc, candidate.AssignmentId, ct);
+        var claimed = await _repo.TryClaimFireAsync(candidate.ScheduleId, candidate.FireTimeUtc, candidate.AssignmentId, hostId, ct);
+        if (!claimed)
+        {
+            claimed = await _repo.TryRecoverStaleClaimAsync(candidate.ScheduleId, candidate.FireTimeUtc, candidate.AssignmentId, hostId, staleCutoffUtc, ct);
+            if (claimed)
+            {
+                try
+                {
+                    await _audit.AppendAsync(new AuditRecord(
+                        new AuditRecordId(Guid.NewGuid().ToString("N")),
+                        new ActorId("system:scheduler"),
+                        SchedulerAuditActionNames.ClaimRecovered,
+                        Resource: null,
+                        Outcome: "recovered",
+                        Timestamp: DateTimeOffset.UtcNow,
+                        new CorrelationId($"schedule:{candidate.ScheduleId}:{candidate.FireTimeUtc:O}"),
+                        Details: $"schedule:{candidate.ScheduleId};fire={candidate.FireTimeUtc:O};recovered by host {hostId}"
+                    ), ct);
+                }
+                catch { /* best-effort audit */ }
+            }
+        }
+
         if (!claimed)
             return;
 

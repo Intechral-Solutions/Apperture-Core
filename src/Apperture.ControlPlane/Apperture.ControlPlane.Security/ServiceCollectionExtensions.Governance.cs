@@ -10,6 +10,7 @@ using Apperture.Persistence.SqlServer;
 using Apperture.RuntimePlane.Abstractions;
 using Apperture.Shared.Kernel;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 
 namespace Apperture.ControlPlane.Security;
@@ -116,11 +117,14 @@ public static class ServiceCollectionExtensions
     }
 
     /// <summary>
-    /// Registers scheduler dispatch services for runtime hosts (WorkerHost). Epic 28 (workflow), Epic 29 (operation).
+    /// Registers scheduler dispatch services for runtime hosts (WorkerHost). Epic 28 (workflow), Epic 29 (operation), Epic 36 (multi-host).
     /// Requires: AddApperturePersistence, IWorkflowDefinitionResolver, IOperationRegistryService (with activation filter).
+    /// Optionally register ISchedulerHostIdentity and ISchedulerClaimOptions before calling to override defaults.
     /// </summary>
     public static IServiceCollection AddRuntimeSchedulerDispatch(this IServiceCollection services)
     {
+        services.TryAddSingleton<ISchedulerHostIdentity>(new DefaultSchedulerHostIdentity());
+        services.TryAddSingleton<ISchedulerClaimOptions>(new DefaultSchedulerClaimOptions());
         services.AddScoped<IWorkflowPersistence, SqlWorkflowPersistence>();
         services.AddScoped<IWorkflowStartDispatchService, WorkflowStartDispatchService>();
         services.AddScoped<IOperationStartDispatchService, OperationStartDispatchService>();

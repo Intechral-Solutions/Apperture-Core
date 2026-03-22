@@ -37,7 +37,7 @@ public sealed record ModuleDiagnosticEntry(
     int? BlockedScheduleCount);
 
 /// <summary>
-/// Schedule diagnostics for operator visibility. Epic 30.
+/// Schedule diagnostics for operator visibility. Epic 30, Epic 36 (claim visibility).
 /// </summary>
 public sealed record ScheduleDiagnosticEntry(
     string ScheduleId,
@@ -52,7 +52,10 @@ public sealed record ScheduleDiagnosticEntry(
     DateTimeOffset? LastSuccessfulDispatchUtc,
     string ScheduleHealthStatus,
     string? DegradedReason,
-    bool TargetModuleExecutable);
+    bool TargetModuleExecutable,
+    string? ClaimedByHostId = null,
+    DateTimeOffset? ClaimedAtUtc = null,
+    bool? IsClaimStale = null);
 
 /// <summary>
 /// Execution anomaly for operator visibility. Epic 30.

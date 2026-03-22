@@ -13,7 +13,7 @@ public sealed record ScheduleDto(
     int Version);
 
 /// <summary>
-/// Schedule with execution state for operator visibility. Epic 28.
+/// Schedule with execution state for operator visibility. Epic 28, Epic 36 (claim visibility).
 /// </summary>
 public sealed record ScheduleDetailDto(
     string Id,
@@ -27,4 +27,7 @@ public sealed record ScheduleDetailDto(
     DateTimeOffset? LastAttemptedUtc,
     string? LastOutcome,
     string? LastOutcomeReason,
-    DateTimeOffset? LastSuccessfulDispatchUtc);
+    DateTimeOffset? LastSuccessfulDispatchUtc,
+    string? ClaimedByHostId = null,
+    DateTimeOffset? ClaimedAtUtc = null,
+    bool? IsClaimStale = null);

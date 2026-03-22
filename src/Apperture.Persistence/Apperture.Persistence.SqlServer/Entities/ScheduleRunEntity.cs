@@ -1,7 +1,7 @@
 namespace Apperture.Persistence.SqlServer;
 
 /// <summary>
-/// Per-firing schedule run record. Epic 28.
+/// Per-firing schedule run record. Epic 28, Epic 36 (multi-host claim ownership).
 /// </summary>
 public sealed class ScheduleRunEntity
 {
@@ -14,4 +14,7 @@ public sealed class ScheduleRunEntity
     public string Outcome { get; set; } = "";
     public string? OutcomeReason { get; set; }
     public string? RunId { get; set; }
+
+    /// <summary>Epic 36: Host that claimed this firing. Null for pre-migration rows.</summary>
+    public string? ClaimedByHostId { get; set; }
 }

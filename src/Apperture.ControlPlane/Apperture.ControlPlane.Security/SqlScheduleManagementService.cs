@@ -5,13 +5,18 @@ using Apperture.Core.Domain.Scheduling;
 namespace Apperture.ControlPlane.Security;
 
 /// <summary>
-/// SQL-backed schedule management. Epic 28.
+/// SQL-backed schedule management. Epic 28, Epic 36.
 /// </summary>
 public sealed class SqlScheduleManagementService : IScheduleManagementService
 {
     private readonly IScheduleRepository _repo;
+    private readonly ISchedulerClaimOptions _claimOptions;
 
-    public SqlScheduleManagementService(IScheduleRepository repo) => _repo = repo;
+    public SqlScheduleManagementService(IScheduleRepository repo, ISchedulerClaimOptions claimOptions)
+    {
+        _repo = repo;
+        _claimOptions = claimOptions;
+    }
 
     public async ValueTask<ScheduleDefinition?> GetDefinitionAsync(ScheduleId id, CancellationToken cancellationToken = default) =>
         await _repo.GetDefinitionAsync(id, cancellationToken);
@@ -75,6 +80,16 @@ public sealed class SqlScheduleManagementService : IScheduleManagementService
         if (assignment is null)
             return new ScheduleWithExecutionState(def, null);
         var state = await _repo.GetStateAsync(assignment.Id.Value, cancellationToken);
-        return new ScheduleWithExecutionState(def, state);
+        ScheduleInProgressClaim? claim = null;
+        var claimInfo = await _repo.GetInProgressRunClaimAsync(assignment.Id.Value, cancellationToken);
+        if (claimInfo.HasValue)
+        {
+            var cutoff = DateTimeOffset.UtcNow.AddMinutes(-_claimOptions.ClaimLeaseMinutes);
+            claim = new ScheduleInProgressClaim(
+                claimInfo.Value.ClaimedByHostId,
+                claimInfo.Value.StartedAtUtc,
+                claimInfo.Value.StartedAtUtc < cutoff);
+        }
+        return new ScheduleWithExecutionState(def, state, claim);
     }
 }

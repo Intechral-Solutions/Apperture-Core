@@ -446,6 +446,7 @@ public class AppertureDbContext : DbContext
             e.Property(x => x.Outcome).HasMaxLength(64);
             e.Property(x => x.OutcomeReason).HasMaxLength(2048);
             e.Property(x => x.RunId).HasMaxLength(64);
+            e.Property(x => x.ClaimedByHostId).HasMaxLength(128);
             e.HasIndex(x => new { x.ScheduleId, x.FireTimeUtc }).IsUnique();
             e.HasIndex(x => x.AssignmentId);
         });

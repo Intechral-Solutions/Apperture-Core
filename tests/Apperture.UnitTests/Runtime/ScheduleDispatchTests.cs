@@ -99,6 +99,8 @@ public sealed class ScheduleDispatchTests
         services.AddScoped<IWorkflowPersistence, SqlWorkflowPersistence>();
         services.AddScoped<IWorkflowStartDispatchService, WorkflowStartDispatchService>();
         services.AddScoped<IOperationStartDispatchService, OperationStartDispatchService>();
+        services.AddSingleton<ISchedulerHostIdentity>(new DefaultSchedulerHostIdentity("test"));
+        services.AddSingleton<ISchedulerClaimOptions>(new DefaultSchedulerClaimOptions(5));
         services.AddScoped<IScheduleDispatchRunner, ScheduleDispatchRunner>();
 
         await using (var scope = services.BuildServiceProvider().CreateAsyncScope())
@@ -234,6 +236,8 @@ public sealed class ScheduleDispatchTests
         services.AddScoped<IWorkflowPersistence, SqlWorkflowPersistence>();
         services.AddScoped<IWorkflowStartDispatchService, WorkflowStartDispatchService>();
         services.AddScoped<IOperationStartDispatchService, OperationStartDispatchService>();
+        services.AddSingleton<ISchedulerHostIdentity>(new DefaultSchedulerHostIdentity("test"));
+        services.AddSingleton<ISchedulerClaimOptions>(new DefaultSchedulerClaimOptions(5));
         services.AddScoped<IScheduleDispatchRunner, ScheduleDispatchRunner>();
 
         await using (var scope = services.BuildServiceProvider().CreateAsyncScope())
@@ -273,6 +277,8 @@ public sealed class ScheduleDispatchTests
         services.AddScoped<IWorkflowPersistence, SqlWorkflowPersistence>();
         services.AddScoped<IWorkflowStartDispatchService, WorkflowStartDispatchService>();
         services.AddScoped<IOperationStartDispatchService, OperationStartDispatchService>();
+        services.AddSingleton<ISchedulerHostIdentity>(new DefaultSchedulerHostIdentity("test"));
+        services.AddSingleton<ISchedulerClaimOptions>(new DefaultSchedulerClaimOptions(5));
         services.AddScoped<IScheduleDispatchRunner, ScheduleDispatchRunner>();
 
         await using (var scope = services.BuildServiceProvider().CreateAsyncScope())

@@ -225,7 +225,7 @@ V1 should be pragmatic and deliver end-to-end behavior without overengineering:
 1. Instance-local schedule repository and state store.
 2. Cron parser behind `IScheduleEvaluator` abstraction.
 3. Background polling service every `N` seconds.
-4. Single-node lease lock (`ScheduleId + FireTimeUtc`) with durable check.
+4. Lease lock (`ScheduleId + FireTimeUtc`) with durable check; Epic 36 adds multi-host claim ownership and stale-claim recovery.
 5. Durable schedule run table + basic query API.
 6. Generic dispatcher with workflow and PowerShell executors first.
 7. Telemetry reporter uplink to control plane run/status views.

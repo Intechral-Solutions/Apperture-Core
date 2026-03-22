@@ -85,7 +85,7 @@ public sealed class SqlScheduleRepository : IScheduleRepository
             .AnyAsync(x => x.ScheduleId == scheduleId && x.FireTimeUtc == fireTimeUtc, ct);
     }
 
-    public async ValueTask<bool> TryClaimFireAsync(string scheduleId, DateTimeOffset fireTimeUtc, string assignmentId, CancellationToken ct = default)
+    public async ValueTask<bool> TryClaimFireAsync(string scheduleId, DateTimeOffset fireTimeUtc, string assignmentId, string hostId, CancellationToken ct = default)
     {
         try
         {
@@ -97,7 +97,8 @@ public sealed class SqlScheduleRepository : IScheduleRepository
                 StartedAtUtc = DateTimeOffset.UtcNow,
                 Outcome = "InProgress",
                 OutcomeReason = null,
-                RunId = null
+                RunId = null,
+                ClaimedByHostId = hostId
             });
             await _db.SaveChangesAsync(ct);
             return true;
@@ -106,6 +107,45 @@ public sealed class SqlScheduleRepository : IScheduleRepository
         {
             return false;
         }
+    }
+
+    public async ValueTask<IReadOnlyList<ScheduleFireCandidate>> GetRecoverableStaleCandidatesAsync(RuntimePlaneId planeId, DateTimeOffset staleCutoffUtc, CancellationToken ct = default)
+    {
+        var assignmentIds = await _db.ScheduleAssignments.AsNoTracking()
+            .Where(a => a.RuntimePlaneId == planeId.Value)
+            .Select(a => a.Id)
+            .ToListAsync(ct);
+
+        var runs = await _db.ScheduleRuns.AsNoTracking()
+            .Where(r =>
+                r.Outcome == "InProgress" &&
+                r.StartedAtUtc < staleCutoffUtc &&
+                assignmentIds.Contains(r.AssignmentId))
+            .Select(r => new ScheduleFireCandidate(r.ScheduleId, r.AssignmentId, r.FireTimeUtc))
+            .ToListAsync(ct);
+
+        return runs;
+    }
+
+    public async ValueTask<bool> TryRecoverStaleClaimAsync(string scheduleId, DateTimeOffset fireTimeUtc, string assignmentId, string hostId, DateTimeOffset staleCutoffUtc, CancellationToken ct = default)
+    {
+        var now = DateTimeOffset.UtcNow;
+        var rows = await _db.Database.ExecuteSqlInterpolatedAsync($@"
+            UPDATE ScheduleRuns SET ClaimedByHostId = {hostId}, StartedAtUtc = {now}
+            WHERE ScheduleId = {scheduleId} AND FireTimeUtc = {fireTimeUtc} AND Outcome = N'InProgress' AND StartedAtUtc < {staleCutoffUtc}
+            ", ct);
+        return rows == 1;
+    }
+
+    public async ValueTask<(string ClaimedByHostId, DateTimeOffset StartedAtUtc)?> GetInProgressRunClaimAsync(string assignmentId, CancellationToken ct = default)
+    {
+        var run = await _db.ScheduleRuns.AsNoTracking()
+            .Where(r => r.AssignmentId == assignmentId && r.Outcome == "InProgress")
+            .OrderByDescending(r => r.StartedAtUtc)
+            .FirstOrDefaultAsync(ct);
+        if (run is null)
+            return null;
+        return (run.ClaimedByHostId ?? "", run.StartedAtUtc);
     }
 
     public async ValueTask CompleteRunAsync(string scheduleId, DateTimeOffset fireTimeUtc, string outcome, string? outcomeReason, string? runId, CancellationToken ct = default)
