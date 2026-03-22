@@ -38,6 +38,8 @@ public sealed class OperatorCapabilitiesQueryService : IOperatorCapabilitiesQuer
         var canViewAudit = await EvaluateAsync(actor, ActionConstants.AuditRead, ResourceTypeConstants.AuditPolicy, cancellationToken).ConfigureAwait(false);
         var canViewRuntimeHealth = await EvaluateAsync(actor, ActionConstants.RuntimeHealthRead, ResourceTypeConstants.RuntimeHealth, cancellationToken).ConfigureAwait(false);
         var canManageModules = await EvaluateAsync(actor, ActionConstants.ModuleConfigure, ResourceTypeConstants.Module, cancellationToken).ConfigureAwait(false);
+        // CanViewGovernance: uses user.read on Role because no distinct governance-read permission exists.
+        // Backend governance endpoints rely on user.read. If a more specific governance-read permission is added, update here.
         var canViewGovernance = await EvaluateAsync(actor, ActionConstants.UserRead, ResourceTypeConstants.Role, cancellationToken).ConfigureAwait(false);
         var canAssignPermissions = await EvaluateAsync(actor, ActionConstants.PermissionAssign, ResourceTypeConstants.Role, cancellationToken).ConfigureAwait(false);
 

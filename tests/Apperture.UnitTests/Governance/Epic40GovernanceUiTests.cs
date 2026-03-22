@@ -13,20 +13,30 @@ public sealed class Epic40GovernanceUiTests
     [Fact]
     public void RoleEditReplaceAllSemantics_MessageContainsReplaceAndRevoke()
     {
-        const string expectedMessage = "Saving replaces the role's entire permission set. Permissions not selected will be revoked.";
+        const string expectedMessage = "Saving replaces the role's entire permission set with the selections below. Permissions not selected will be revoked. Changes apply to the role as currently loaded.";
         expectedMessage.Should().Contain("replaces", "UI must make replace-all explicit");
         expectedMessage.Should().Contain("revoked", "UI must make revocation-by-omission explicit");
+        expectedMessage.Should().Contain("currently loaded", "UI must signal load-as-of-edit semantics");
     }
 
     [Fact]
     public void EffectiveAccessLimitationMessage_DoesNotOverclaim()
     {
-        const string expectedMessage = "Effective access shows merged permissions from assigned roles. It does not include direct user grants, scope containment, or service principals.";
+        const string expectedMessage = "This page shows merged permissions from assigned roles only. It is not a complete effective-access model: direct user grants, scope containment, and service principals are excluded.";
         expectedMessage.Should().Contain("merged permissions", "must state merged source");
         expectedMessage.Should().Contain("assigned roles", "must state role-derived");
+        expectedMessage.Should().Contain("not a complete effective-access model", "must not overclaim");
         expectedMessage.Should().Contain("direct user grants", "must exclude unsupported");
         expectedMessage.Should().Contain("scope containment", "must exclude unsupported");
         expectedMessage.Should().Contain("service principals", "must exclude unsupported");
+    }
+
+    [Fact]
+    public void SystemRoleReadOnlyNotice_ExplainsNonEditability()
+    {
+        const string expectedNotice = "System roles are not editable from this UI. Their permissions are managed by the platform.";
+        expectedNotice.Should().Contain("not editable", "UI must block edit affordance for system roles");
+        expectedNotice.Should().Contain("this UI", "scope is explicit");
     }
 
     [Fact]

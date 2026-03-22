@@ -9,8 +9,9 @@
 <div class="p-4">
     <div class="flex items-center justify-between gap-3">
         <div class="min-w-0">
+            <div class="text-xs text-muted mb-1">Governance — Users</div>
             <h1 class="text-xl font-semibold text-heading">Users</h1>
-            <div class="text-xs text-muted">Users for effective-access inspection.</div>
+            <div class="text-xs text-muted">Users for role-derived access inspection. Use the effective-access link to see merged permissions from assigned roles.</div>
         </div>
         <button class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface"
                 disabled="@_loading"
@@ -76,7 +77,7 @@
                             <td class="px-3 py-2">@(u.HasEntraLink ? "Yes" : "No")</td>
                             <td class="px-3 py-2">@(u.RoleIds?.Count ?? 0)</td>
                             <td class="px-3 py-2">
-                                <a href="@("/governance/users/" + Uri.EscapeDataString(u.UserId) + "/effective-access")" class="underline text-sm">View effective access</a>
+                                <a href="@("/governance/users/" + Uri.EscapeDataString(u.UserId) + "/effective-access")" class="underline text-sm">View role-derived access</a>
                             </td>
                         </tr>
                     }

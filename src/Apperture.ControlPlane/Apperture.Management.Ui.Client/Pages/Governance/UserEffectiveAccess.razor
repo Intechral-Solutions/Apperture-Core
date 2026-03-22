@@ -8,8 +8,9 @@
 <div class="p-4">
     <div class="flex items-center justify-between gap-3">
         <div class="min-w-0">
-            <h1 class="text-xl font-semibold text-heading">Effective Access</h1>
-            <div class="mt-1 font-mono text-xs text-muted break-all">User @UserId</div>
+            <div class="text-xs text-muted mb-1"><a href="/governance/users" class="hover:underline">Users</a> / Role-derived access</div>
+            <h1 class="text-xl font-semibold text-heading">Role-derived access</h1>
+            <div class="mt-1 font-mono text-xs text-muted break-all">User @UserId — merged permissions from assigned roles only</div>
         </div>
         <div class="flex items-center gap-2">
             <a href="/governance/users" class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface">Back to users</a>
@@ -22,7 +23,7 @@
     </div>
 
     <div class="mt-2 rounded border border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-950/30 px-3 py-2 text-xs text-body">
-        Effective access shows merged permissions from assigned roles. It does not include direct user grants, scope containment, or service principals.
+        This page shows <strong>merged permissions from assigned roles only</strong>. It is not a complete effective-access model: direct user grants, scope containment, and service principals are excluded.
     </div>
 
     @if (!_capabilitiesLoaded)
