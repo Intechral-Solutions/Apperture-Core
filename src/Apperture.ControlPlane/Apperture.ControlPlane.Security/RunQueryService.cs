@@ -1,6 +1,8 @@
-using Apperture.Persistence.SqlServer;
+using Apperture.Core.Application.RuntimeComposition;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Operations;
+using Apperture.ModuleSdk.Abstractions;
+using Apperture.Persistence.SqlServer;
 using Apperture.RuntimePlane.Abstractions;
 using Microsoft.EntityFrameworkCore;
 
@@ -8,24 +10,32 @@ namespace Apperture.ControlPlane.Security;
 
 public sealed class RunQueryService : IRunQueryService
 {
+    private const int RetriedByRunLimit = 20;
+
     private readonly AppertureDbContext _db;
     private readonly IOperationRegistryService _operations;
     private readonly IRunKindResolver _runKinds;
     private readonly IWorkflowRunReadAuthorizationService _workflowAuthz;
     private readonly IOperationRunReadAuthorizationService _operationAuthz;
+    private readonly IWorkflowDefinitionResolver _workflowDefinitions;
+    private readonly IRuntimeModuleCompositionQueryService _composition;
 
     public RunQueryService(
         AppertureDbContext db,
         IOperationRegistryService operations,
         IRunKindResolver runKinds,
         IWorkflowRunReadAuthorizationService workflowAuthz,
-        IOperationRunReadAuthorizationService operationAuthz)
+        IOperationRunReadAuthorizationService operationAuthz,
+        IWorkflowDefinitionResolver workflowDefinitions,
+        IRuntimeModuleCompositionQueryService composition)
     {
         _db = db;
         _operations = operations;
         _runKinds = runKinds;
         _workflowAuthz = workflowAuthz;
         _operationAuthz = operationAuthz;
+        _workflowDefinitions = workflowDefinitions;
+        _composition = composition;
     }
 
     public async ValueTask<IReadOnlyList<RunSummaryDto>> ListRunsAsync(RunQueryFilter? filter = null, CancellationToken cancellationToken = default)
@@ -170,6 +180,14 @@ public sealed class RunQueryService : IRunQueryService
             var request = await _db.WorkflowStartRequests.AsNoTracking()
                 .FirstOrDefaultAsync(x => x.RunId == r.Id, cancellationToken);
 
+            var forensic = await BuildForensicContextAsync(
+                r,
+                RunKindNames.Workflow,
+                request?.IdempotencyKey,
+                request?.CorrelationId,
+                request is not null,
+                cancellationToken).ConfigureAwait(false);
+
             return new RunDetailDto(
                 r.Id,
                 r.WorkflowInstanceId,
@@ -200,7 +218,8 @@ public sealed class RunQueryService : IRunQueryService
                 request?.CreatedAt,
                 request?.ClaimedBy,
                 request?.ClaimedAt,
-                RunKindNames.Workflow);
+                RunKindNames.Workflow,
+                forensic);
         }
 
         var operationInstance = await _db.OperationInstances.AsNoTracking()
@@ -239,6 +258,15 @@ public sealed class RunQueryService : IRunQueryService
         var opError = BuildOperationError(r, opLifecycleEvents);
         var opStartRequest = await _db.OperationStartRequests.AsNoTracking()
             .FirstOrDefaultAsync(x => x.RunId == r.Id, cancellationToken);
+
+        var opForensic = await BuildForensicContextAsync(
+            r,
+            RunKindNames.Operation,
+            opStartRequest?.IdempotencyKey,
+            opStartRequest?.CorrelationId,
+            opStartRequest is not null,
+            cancellationToken).ConfigureAwait(false);
+
         return new RunDetailDto(
             r.Id,
             r.WorkflowInstanceId,
@@ -269,7 +297,86 @@ public sealed class RunQueryService : IRunQueryService
             opStartRequest?.CreatedAt,
             opStartRequest?.ClaimedBy,
             opStartRequest?.ClaimedAt,
-            RunKindNames.Operation);
+            RunKindNames.Operation,
+            opForensic);
+    }
+
+    private async ValueTask<RunForensicContextDto> BuildForensicContextAsync(
+        OperationRunEntity r,
+        string runKind,
+        string? startIdempotencyKey,
+        string? startCorrelationId,
+        bool hasStartRequest,
+        CancellationToken cancellationToken)
+    {
+        string? moduleId = null;
+        if (string.Equals(runKind, RunKindNames.Workflow, StringComparison.Ordinal))
+        {
+            var def = await _workflowDefinitions
+                .GetByIdAsync(new WorkflowDefinitionId(r.DefinitionId), cancellationToken)
+                .ConfigureAwait(false);
+            moduleId = def?.ModuleId;
+        }
+        else
+        {
+            var opDef = await _operations.GetOperationAsync(new OperationId(r.DefinitionId), cancellationToken).ConfigureAwait(false);
+            moduleId = opDef?.ModuleId;
+        }
+
+        var (originKind, originDetail, scheduleId, scheduleFire) = RunOriginClassifier.Classify(
+            r.RetryOfRunId,
+            startIdempotencyKey,
+            startCorrelationId,
+            hasStartRequest);
+
+        var retriedBy = await _db.OperationRuns.AsNoTracking()
+            .Where(x => x.RetryOfRunId == r.Id)
+            .OrderBy(x => x.CreatedAt)
+            .Take(RetriedByRunLimit)
+            .Select(x => x.Id)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        bool? moduleExecutableNow = null;
+        string? moduleExecutionHint = null;
+        if (!string.IsNullOrEmpty(moduleId))
+        {
+            var snapshot = await _composition.GetSnapshotAsync(cancellationToken).ConfigureAwait(false);
+            var entry = snapshot.Modules.FirstOrDefault(m =>
+                string.Equals(m.ModuleId, moduleId, StringComparison.Ordinal));
+            if (entry is not null)
+            {
+                moduleExecutableNow = entry.EffectivelyExecutable;
+                if (!entry.AllowsNewStarts)
+                    moduleExecutionHint = entry.ExecutionDegradedReason ?? "Module does not allow new starts (current composition).";
+                else if (!string.IsNullOrEmpty(entry.ExecutionDegradedReason))
+                    moduleExecutionHint = entry.ExecutionDegradedReason;
+                else
+                    moduleExecutionHint = "Module allows new starts (current composition snapshot; not historical).";
+            }
+        }
+
+        var hints = new List<RunInvestigationHintDto>
+        {
+            new("audit", r.Id)
+        };
+        if (!string.IsNullOrEmpty(moduleId))
+            hints.Add(new RunInvestigationHintDto("module", moduleId));
+        if (!string.IsNullOrEmpty(scheduleId))
+            hints.Add(new RunInvestigationHintDto("schedule", scheduleId));
+        hints.Add(new RunInvestigationHintDto("blocked_work", null));
+        hints.Add(new RunInvestigationHintDto("runtime_health", null));
+
+        return new RunForensicContextDto(
+            moduleId,
+            originKind,
+            originDetail,
+            scheduleId,
+            scheduleFire,
+            retriedBy,
+            moduleExecutableNow,
+            moduleExecutionHint,
+            hints);
     }
 
     private static RunResultDto BuildResult(

@@ -1,7 +1,9 @@
 using Apperture.ControlPlane.Security;
 using Apperture.Core.Application.ControlFacade;
+using Apperture.Core.Application.RuntimeComposition;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Operations;
+using Apperture.ModuleSdk.Abstractions;
 using Apperture.Persistence.SqlServer;
 using Apperture.RuntimePlane.Abstractions;
 using System;
@@ -36,7 +38,14 @@ public sealed class RunRouteFamilyParityTests
         await db.SaveChangesAsync();
 
         var kinds = new RunKindResolver(db);
-        var detailService = new RunQueryService(db, new StubOperationRegistry(), kinds, new AllowWorkflowReadAuthz(), new AllowOperationReadAuthz());
+        var detailService = new RunQueryService(
+            db,
+            new StubOperationRegistry(),
+            kinds,
+            new AllowWorkflowReadAuthz(),
+            new AllowOperationReadAuthz(),
+            new StubWorkflowDefinitionResolver(),
+            new StubComposition());
         var actionService = new RunActionAvailabilityQueryService(db, kinds, new StubActionProjection(), new AllowWorkflowReadAuthz(), new AllowOperationReadAuthz());
         var timelineService = new RunTimelineQueryService(db, kinds, new AllowWorkflowReadAuthz(), new AllowOperationReadAuthz());
 
@@ -96,5 +105,23 @@ public sealed class RunRouteFamilyParityTests
     {
         public ValueTask EnsureCanReadRunsAsync(OperationId operationId, CancellationToken cancellationToken = default) =>
             ValueTask.CompletedTask;
+    }
+
+    private sealed class StubWorkflowDefinitionResolver : IWorkflowDefinitionResolver
+    {
+        public ValueTask<WorkflowDefinition?> GetByIdAsync(WorkflowDefinitionId id, CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult<WorkflowDefinition?>(null);
+    }
+
+    private sealed class StubComposition : IRuntimeModuleCompositionQueryService
+    {
+        public ValueTask<HostEffectiveModuleSnapshot> GetSnapshotAsync(CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(new HostEffectiveModuleSnapshot(
+                DateTimeOffset.UtcNow,
+                [],
+                [],
+                [],
+                [],
+                []));
     }
 }

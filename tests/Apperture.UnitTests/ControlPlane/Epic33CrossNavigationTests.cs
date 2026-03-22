@@ -86,4 +86,12 @@ public sealed class Epic33CrossNavigationTests
         blockedWorkHref.Should().Be("/control/blocked-work");
         moduleLinkFormat.Replace("{moduleId}", "m1").Should().Be("/modules/m1");
     }
+
+    [Fact]
+    public void ScheduleDetail_RunsForSchedule_UsesCorrelationConvention()
+    {
+        var href = Epic33UiDisplayHelpers.GetRunsListCorrelationFilterHref("schedule:s1");
+        href.Should().StartWith("/runs?correlationKey=");
+        href.Should().Contain(Uri.EscapeDataString("schedule:s1"));
+    }
 }

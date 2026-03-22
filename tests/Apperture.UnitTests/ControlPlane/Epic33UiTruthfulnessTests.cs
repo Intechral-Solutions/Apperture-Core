@@ -148,6 +148,36 @@ public sealed class Epic33UiTruthfulnessTests
         Epic33UiDisplayHelpers.GetRecoveryAuditLink().Should().Contain("recovery");
     }
 
+    // --- Run forensics (Epic 35) ---
+
+    [Fact]
+    public void RunForensics_OriginKindLabels_AreStable()
+    {
+        Epic33UiDisplayHelpers.FormatRunOriginKind("retry").Should().Contain("Retry");
+        Epic33UiDisplayHelpers.FormatRunOriginKind("scheduled").Should().Contain("Scheduled");
+        Epic33UiDisplayHelpers.FormatRunOriginKind("manual").Should().Contain("Manual");
+        Epic33UiDisplayHelpers.FormatRunOriginKind("unknown").Should().Be("Unknown");
+        Epic33UiDisplayHelpers.FormatRunOriginKind(null).Should().Be("Unknown");
+    }
+
+    [Fact]
+    public void RunForensics_ScheduleDisclaimer_MentionsConventionNotFk()
+    {
+        Epic33UiDisplayHelpers.RunScheduleInferenceDisclaimer.Should().Contain("idempotency");
+        Epic33UiDisplayHelpers.RunScheduleInferenceDisclaimer.Should().Contain("not a separate persisted");
+    }
+
+    [Fact]
+    public void RunForensics_InvestigationHintHrefs_UseIdsOnly()
+    {
+        Epic33UiDisplayHelpers.GetRunInvestigationHintHref("audit", "r1").Should().Be("/control/audit?runId=r1");
+        Epic33UiDisplayHelpers.GetRunInvestigationHintHref("module", "m1").Should().Be("/modules/m1");
+        Epic33UiDisplayHelpers.GetRunInvestigationHintHref("schedule", "s1").Should().Be("/schedules/s1");
+        Epic33UiDisplayHelpers.GetRunInvestigationHintHref("blocked_work", null).Should().Be("/control/blocked-work");
+        Epic33UiDisplayHelpers.GetRunInvestigationHintHref("runtime_health", null).Should().Be("/control/center");
+        Epic33UiDisplayHelpers.GetRunInvestigationHintHref("audit", null).Should().Be("#");
+    }
+
     private static ModuleDiagnosticEntryDto CreateModuleDiagnostic(string id, bool executable, string? degradedReason) =>
         new(id, "InstalledEnabled", true, executable, true, false, Array.Empty<string>(), degradedReason, null, null);
 

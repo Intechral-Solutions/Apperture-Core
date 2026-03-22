@@ -93,4 +93,35 @@ public static class Epic33UiDisplayHelpers
     public const string RecoveryAuditActionPrefix = "recovery.";
     public static string GetRecoveryAuditLink() =>
         $"/control/audit?actionPrefix={Uri.EscapeDataString(RecoveryAuditActionPrefix)}";
+
+    // --- Run forensics (Epic 35) ---
+
+    public static string FormatRunOriginKind(string? originKind) =>
+        originKind?.ToLowerInvariant() switch
+        {
+            "retry" => "Retry (new run)",
+            "scheduled" => "Scheduled dispatch",
+            "manual" => "Manual / API start",
+            "unknown" or null => "Unknown",
+            _ => originKind ?? "Unknown"
+        };
+
+    /// <summary>Shown when origin is inferred from idempotency convention, not a stored FK.</summary>
+    public static string RunScheduleInferenceDisclaimer =>
+        "Schedule link is inferred from the platform idempotency key convention (schedule:{id}:{time}). It is not a separate persisted association.";
+
+    /// <summary>Builds relative URL for investigation hint kinds from <see cref="Apperture.Management.Client.RunInvestigationHintDto"/>.</summary>
+    public static string GetRunInvestigationHintHref(string kind, string? targetId) =>
+        kind.ToLowerInvariant() switch
+        {
+            "audit" when !string.IsNullOrEmpty(targetId) => GetAuditLinkForRun(targetId),
+            "module" when !string.IsNullOrEmpty(targetId) => $"/modules/{Uri.EscapeDataString(targetId)}",
+            "schedule" when !string.IsNullOrEmpty(targetId) => $"/schedules/{Uri.EscapeDataString(targetId)}",
+            "blocked_work" => "/control/blocked-work",
+            "runtime_health" => "/control/center",
+            _ => "#"
+        };
+
+    public static string GetRunsListCorrelationFilterHref(string correlationKey) =>
+        $"/runs?correlationKey={Uri.EscapeDataString(correlationKey)}";
 }

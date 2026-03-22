@@ -1,6 +1,7 @@
 using Apperture.ControlPlane.Security;
-using Apperture.Persistence.SqlServer;
+using Apperture.Core.Application.RuntimeComposition;
 using Apperture.Core.Domain.Operations;
+using Apperture.Persistence.SqlServer;
 using Apperture.RuntimePlane.Abstractions;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
@@ -35,7 +36,7 @@ public sealed class RunQueryServiceTests
         });
         await db.SaveChangesAsync();
 
-        var service = new RunQueryService(db, new StubOperationRegistry(), new RunKindResolver(db), new AllowReadAuthz(), new AllowOperationReadAuthz());
+        var service = NewService(db);
         var all = await service.ListRunsAsync();
 
         all.Should().HaveCount(2);
@@ -68,7 +69,7 @@ public sealed class RunQueryServiceTests
         });
         await db.SaveChangesAsync();
 
-        var service = new RunQueryService(db, new StubOperationRegistry(), new RunKindResolver(db), new AllowReadAuthz(), new AllowOperationReadAuthz());
+        var service = NewService(db);
         var operationsOnly = await service.ListRunsAsync(new RunQueryFilter(ExecutionKind: "operation"));
 
         operationsOnly.Should().ContainSingle();
@@ -99,10 +100,168 @@ public sealed class RunQueryServiceTests
         });
         await db.SaveChangesAsync();
 
-        var service = new RunQueryService(db, new StubOperationRegistry(), new RunKindResolver(db), new AllowReadAuthz(), new AllowOperationReadAuthz());
+        var service = NewService(db);
         var all = await service.ListRunsAsync();
 
         all.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task ListRunsAsync_WhenCorrelationKeyFilter_ReturnsMatchingRunsOnly()
+    {
+        var db = NewDb();
+        db.OperationRuns.AddRange(
+            new OperationRunEntity
+            {
+                Id = "r-a",
+                WorkflowInstanceId = "i-a",
+                DefinitionId = "wf.def",
+                Status = WorkflowLifecycleStatusNames.Completed,
+                CreatedAt = DateTimeOffset.UtcNow,
+                CorrelationKey = "schedule:s1"
+            },
+            new OperationRunEntity
+            {
+                Id = "r-b",
+                WorkflowInstanceId = "i-b",
+                DefinitionId = "wf.def",
+                Status = WorkflowLifecycleStatusNames.Completed,
+                CreatedAt = DateTimeOffset.UtcNow,
+                CorrelationKey = "schedule:s2"
+            });
+        foreach (var rid in new[] { "r-a", "r-b" })
+        {
+            db.WorkflowStartRequests.Add(new WorkflowStartRequestEntity
+            {
+                RunId = rid,
+                WorkflowInstanceId = rid == "r-a" ? "i-a" : "i-b",
+                WorkflowDefinitionId = "wf.def",
+                CreatedAt = DateTimeOffset.UtcNow,
+                Status = WorkflowLifecycleStatusNames.Requested
+            });
+        }
+
+        await db.SaveChangesAsync();
+
+        var service = NewService(db);
+        var filtered = await service.ListRunsAsync(new RunQueryFilter(CorrelationKey: "schedule:s1"));
+
+        filtered.Should().ContainSingle();
+        filtered[0].RunId.Should().Be("r-a");
+    }
+
+    [Fact]
+    public async Task GetRunAsync_Workflow_ForensicContext_Scheduled_FromScheduleIdempotencyConvention()
+    {
+        var db = NewDb();
+        var scheduleId = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
+        var fire = new DateTimeOffset(2025, 3, 1, 12, 0, 0, TimeSpan.Zero);
+        var idem = $"schedule:{scheduleId}:{fire:O}";
+        db.WorkflowInstances.Add(new WorkflowInstanceEntity
+        {
+            Id = "inst-wf",
+            DefinitionId = "wf.def",
+            Status = WorkflowLifecycleStatusNames.Completed,
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow
+        });
+        db.OperationRuns.Add(new OperationRunEntity
+        {
+            Id = "r-wf",
+            WorkflowInstanceId = "inst-wf",
+            DefinitionId = "wf.def",
+            Status = WorkflowLifecycleStatusNames.Completed,
+            CreatedAt = DateTimeOffset.UtcNow
+        });
+        db.WorkflowStartRequests.Add(new WorkflowStartRequestEntity
+        {
+            RunId = "r-wf",
+            WorkflowInstanceId = "inst-wf",
+            WorkflowDefinitionId = "wf.def",
+            CreatedAt = DateTimeOffset.UtcNow,
+            Status = WorkflowLifecycleStatusNames.Completed,
+            IdempotencyKey = idem,
+            CorrelationId = $"schedule:{scheduleId}"
+        });
+        await db.SaveChangesAsync();
+
+        var detail = await NewService(db).GetRunAsync(new OperationRunId("r-wf"));
+
+        detail.Should().NotBeNull();
+        var fx = detail!.ForensicContext!;
+        fx.OriginKind.Should().Be(RunOriginKindNames.Scheduled);
+        fx.ScheduleId.Should().Be(scheduleId);
+        fx.ScheduleFireTimeUtc.Should().Be(fire);
+        fx.ModuleId.Should().Be("Sample.HelloWorld");
+    }
+
+    [Fact]
+    public async Task GetRunAsync_Workflow_ForensicContext_RetryAndRetriedByChain()
+    {
+        var db = NewDb();
+        db.WorkflowInstances.AddRange(
+            new WorkflowInstanceEntity
+            {
+                Id = "i0",
+                DefinitionId = "wf.def",
+                Status = WorkflowLifecycleStatusNames.Failed,
+                CreatedAt = DateTimeOffset.UtcNow,
+                UpdatedAt = DateTimeOffset.UtcNow
+            },
+            new WorkflowInstanceEntity
+            {
+                Id = "i1",
+                DefinitionId = "wf.def",
+                Status = WorkflowLifecycleStatusNames.Running,
+                CreatedAt = DateTimeOffset.UtcNow,
+                UpdatedAt = DateTimeOffset.UtcNow
+            });
+        db.OperationRuns.AddRange(
+            new OperationRunEntity
+            {
+                Id = "r-parent",
+                WorkflowInstanceId = "i0",
+                DefinitionId = "wf.def",
+                Status = WorkflowLifecycleStatusNames.Failed,
+                CreatedAt = DateTimeOffset.UtcNow.AddMinutes(-10)
+            },
+            new OperationRunEntity
+            {
+                Id = "r-retry",
+                WorkflowInstanceId = "i1",
+                DefinitionId = "wf.def",
+                Status = WorkflowLifecycleStatusNames.Running,
+                CreatedAt = DateTimeOffset.UtcNow,
+                RetryOfRunId = "r-parent"
+            });
+        db.WorkflowStartRequests.AddRange(
+            new WorkflowStartRequestEntity
+            {
+                RunId = "r-parent",
+                WorkflowInstanceId = "i0",
+                WorkflowDefinitionId = "wf.def",
+                CreatedAt = DateTimeOffset.UtcNow,
+                Status = WorkflowLifecycleStatusNames.Failed
+            },
+            new WorkflowStartRequestEntity
+            {
+                RunId = "r-retry",
+                WorkflowInstanceId = "i1",
+                WorkflowDefinitionId = "wf.def",
+                CreatedAt = DateTimeOffset.UtcNow,
+                Status = WorkflowLifecycleStatusNames.Requested
+            });
+        await db.SaveChangesAsync();
+
+        var service = NewService(db);
+        var parent = await service.GetRunAsync(new OperationRunId("r-parent"));
+        var retry = await service.GetRunAsync(new OperationRunId("r-retry"));
+
+        parent!.ForensicContext!.RetriedByRunIds.Should().Equal("r-retry");
+        parent.ForensicContext.OriginKind.Should().Be(RunOriginKindNames.Manual);
+
+        retry!.ForensicContext!.OriginKind.Should().Be(RunOriginKindNames.Retry);
+        retry.ForensicContext.ScheduleId.Should().BeNull();
     }
 
     [Fact]
@@ -152,7 +311,7 @@ public sealed class RunQueryServiceTests
         });
         await db.SaveChangesAsync();
 
-        var service = new RunQueryService(db, new StubOperationRegistry(), new RunKindResolver(db), new AllowReadAuthz(), new AllowOperationReadAuthz());
+        var service = NewService(db);
         var detail = await service.GetRunAsync(new OperationRunId("rop"));
 
         detail.Should().NotBeNull();
@@ -237,7 +396,7 @@ public sealed class RunQueryServiceTests
         });
         await db.SaveChangesAsync();
 
-        var service = new RunQueryService(db, new StubOperationRegistry(), new RunKindResolver(db), new AllowReadAuthz(), new AllowOperationReadAuthz());
+        var service = NewService(db);
 
         var detail = await service.GetRunAsync(new OperationRunId("r1"));
 
@@ -340,7 +499,7 @@ public sealed class RunQueryServiceTests
             });
         await db.SaveChangesAsync();
 
-        var detail = await new RunQueryService(db, new StubOperationRegistry(), new RunKindResolver(db), new AllowReadAuthz(), new AllowOperationReadAuthz()).GetRunAsync(new OperationRunId("r1"));
+        var detail = await NewService(db).GetRunAsync(new OperationRunId("r1"));
 
         detail.Should().NotBeNull();
         detail!.Status.Should().Be(WorkflowLifecycleStatusNames.Parked);
@@ -445,7 +604,7 @@ public sealed class RunQueryServiceTests
             });
         await db.SaveChangesAsync();
 
-        var detail = await new RunQueryService(db, new StubOperationRegistry(), new RunKindResolver(db), new AllowReadAuthz(), new AllowOperationReadAuthz()).GetRunAsync(new OperationRunId("r1"));
+        var detail = await NewService(db).GetRunAsync(new OperationRunId("r1"));
 
         detail.Should().NotBeNull();
         detail!.Status.Should().Be(WorkflowLifecycleStatusNames.Running);
@@ -494,7 +653,7 @@ public sealed class RunQueryServiceTests
         });
         await db.SaveChangesAsync();
 
-        var detail = await new RunQueryService(db, new StubOperationRegistry(), new RunKindResolver(db), new AllowReadAuthz(), new AllowOperationReadAuthz()).GetRunAsync(new OperationRunId("r1"));
+        var detail = await NewService(db).GetRunAsync(new OperationRunId("r1"));
 
         detail.Should().NotBeNull();
         detail!.Result.Should().NotBeNull();
@@ -541,7 +700,7 @@ public sealed class RunQueryServiceTests
         });
         await db.SaveChangesAsync();
 
-        var detail = await new RunQueryService(db, new StubOperationRegistry(), new RunKindResolver(db), new AllowReadAuthz(), new AllowOperationReadAuthz()).GetRunAsync(new OperationRunId("r1"));
+        var detail = await NewService(db).GetRunAsync(new OperationRunId("r1"));
 
         detail.Should().NotBeNull();
         detail!.Result.Should().NotBeNull();
@@ -588,7 +747,7 @@ public sealed class RunQueryServiceTests
         });
         await db.SaveChangesAsync();
 
-        var detail = await new RunQueryService(db, new StubOperationRegistry(), new RunKindResolver(db), new AllowReadAuthz(), new AllowOperationReadAuthz()).GetRunAsync(new OperationRunId("r1"));
+        var detail = await NewService(db).GetRunAsync(new OperationRunId("r1"));
 
         detail.Should().NotBeNull();
         detail!.Result.Should().NotBeNull();
@@ -635,7 +794,7 @@ public sealed class RunQueryServiceTests
         });
         await db.SaveChangesAsync();
 
-        var detail = await new RunQueryService(db, new StubOperationRegistry(), new RunKindResolver(db), new AllowReadAuthz(), new AllowOperationReadAuthz()).GetRunAsync(new OperationRunId("r1"));
+        var detail = await NewService(db).GetRunAsync(new OperationRunId("r1"));
 
         detail.Should().NotBeNull();
         detail!.Error.Should().NotBeNull();
@@ -694,7 +853,7 @@ public sealed class RunQueryServiceTests
         });
         await db.SaveChangesAsync();
 
-        var detail = await new RunQueryService(db, new StubOperationRegistry(), new RunKindResolver(db), new AllowReadAuthz(), new AllowOperationReadAuthz()).GetRunAsync(new OperationRunId("r1"));
+        var detail = await NewService(db).GetRunAsync(new OperationRunId("r1"));
 
         detail.Should().NotBeNull();
         detail!.Error.Should().NotBeNull();
@@ -739,7 +898,7 @@ public sealed class RunQueryServiceTests
         });
         await db.SaveChangesAsync();
 
-        var detail = await new RunQueryService(db, new StubOperationRegistry(), new RunKindResolver(db), new AllowReadAuthz(), new AllowOperationReadAuthz()).GetRunAsync(new OperationRunId("r1"));
+        var detail = await NewService(db).GetRunAsync(new OperationRunId("r1"));
         detail!.Result!.DiagnosticsAvailability.Should().Be("none");
         detail.Result.DiagnosticsJson.Should().BeNull();
     }
@@ -780,7 +939,7 @@ public sealed class RunQueryServiceTests
         });
         await db.SaveChangesAsync();
 
-        var detail = await new RunQueryService(db, new StubOperationRegistry(), new RunKindResolver(db), new AllowReadAuthz(), new AllowOperationReadAuthz()).GetRunAsync(new OperationRunId("r1"));
+        var detail = await NewService(db).GetRunAsync(new OperationRunId("r1"));
         detail!.Result!.DiagnosticsAvailability.Should().Be("unsupported");
         detail.Result.DiagnosticsJson.Should().BeNull();
     }
@@ -833,7 +992,7 @@ public sealed class RunQueryServiceTests
         });
         await db.SaveChangesAsync();
 
-        var detail = await new RunQueryService(db, new StubOperationRegistry(), new RunKindResolver(db), new AllowReadAuthz(), new AllowOperationReadAuthz()).GetRunAsync(new OperationRunId("r1"));
+        var detail = await NewService(db).GetRunAsync(new OperationRunId("r1"));
         detail!.Error!.DetailsJson.Should().Contain("from-lifecycle");
         detail.Result!.DiagnosticsJson.Should().BeNull();
     }
@@ -844,6 +1003,37 @@ public sealed class RunQueryServiceTests
             .UseInMemoryDatabase(Guid.NewGuid().ToString("N"))
             .Options;
         return new AppertureDbContext(opts);
+    }
+
+    private static RunQueryService NewService(AppertureDbContext db) =>
+        new(
+            db,
+            new StubOperationRegistry(),
+            new RunKindResolver(db),
+            new AllowReadAuthz(),
+            new AllowOperationReadAuthz(),
+            new TestWorkflowDefinitionResolver(),
+            new TestComposition());
+
+    private sealed class TestWorkflowDefinitionResolver : IWorkflowDefinitionResolver
+    {
+        public ValueTask<WorkflowDefinition?> GetByIdAsync(WorkflowDefinitionId id, CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult<WorkflowDefinition?>(new WorkflowDefinition(id, "test", "Sample.HelloWorld", ["step"]));
+    }
+
+    private sealed class TestComposition : IRuntimeModuleCompositionQueryService
+    {
+        public ValueTask<HostEffectiveModuleSnapshot> GetSnapshotAsync(CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(new HostEffectiveModuleSnapshot(
+                DateTimeOffset.UtcNow,
+                [
+                    new RuntimeCompositionModuleEntry(
+                        "Sample.HelloWorld", "InstalledEnabled", true, true, true, [], true, false, null)
+                ],
+                ["Sample.HelloWorld"],
+                [],
+                [],
+                []));
     }
 
     private sealed class AllowReadAuthz : IWorkflowRunReadAuthorizationService

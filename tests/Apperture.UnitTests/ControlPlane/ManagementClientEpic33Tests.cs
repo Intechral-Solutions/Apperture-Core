@@ -86,6 +86,21 @@ public sealed class ManagementClientEpic33Tests
         result.InspectionOnly.Should().BeTrue();
     }
 
+    [Fact]
+    public async Task GetRunsAsync_IncludesCorrelationKeyQuery_Epic35()
+    {
+        var handler = new RunsQueryCaptureHandler();
+        var http = new HttpClient(handler) { BaseAddress = new Uri("https://api.example/") };
+        var client = new ManagementClient(http);
+
+        _ = await client.GetRunsAsync(new RunQueryFilter(CorrelationKey: "schedule:s1"));
+
+        handler.LastRequestUri.Should().NotBeNull();
+        var q = handler.LastRequestUri!.Query;
+        q.Should().Contain("correlationKey=");
+        q.Should().Contain(Uri.EscapeDataString("schedule:s1"));
+    }
+
     private static ManagementClient CreateClientWithJsonResponse(object payload, string expectedPathContains)
     {
         var json = JsonSerializer.Serialize(payload);
@@ -117,6 +132,19 @@ public sealed class ManagementClientEpic33Tests
         {
             request.RequestUri?.ToString().Should().Contain(_pathContains);
             var response = new HttpResponseMessage(_status) { Content = new StringContent(_content) };
+            response.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");
+            return Task.FromResult(response);
+        }
+    }
+
+    private sealed class RunsQueryCaptureHandler : HttpMessageHandler
+    {
+        public Uri? LastRequestUri { get; private set; }
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            LastRequestUri = request.RequestUri;
+            var response = new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("[]") };
             response.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");
             return Task.FromResult(response);
         }

@@ -181,6 +181,21 @@ public sealed record RunQueryFilter(
     string? ModuleId = null,
     string? CorrelationKey = null);
 
+/// <summary>Epic 35: investigation navigation hint; UI builds routes from <see cref="Kind"/> and <see cref="TargetId"/>.</summary>
+public sealed record RunInvestigationHintDto(string Kind, string? TargetId);
+
+/// <summary>Epic 35: truthful run forensics from persisted data and platform conventions.</summary>
+public sealed record RunForensicContextDto(
+    string? ModuleId,
+    string OriginKind,
+    string OriginDetail,
+    string? ScheduleId,
+    DateTimeOffset? ScheduleFireTimeUtc,
+    IReadOnlyList<string> RetriedByRunIds,
+    bool? ModuleExecutableNow,
+    string? ModuleExecutionHint,
+    IReadOnlyList<RunInvestigationHintDto> InvestigationHints);
+
 public sealed record RunDetailDto(
     string RunId,
     string ExecutionInstanceId,
@@ -202,7 +217,8 @@ public sealed record RunDetailDto(
     DateTimeOffset? StartRequestedAt,
     string? StartClaimedBy,
     DateTimeOffset? StartClaimedAt,
-    string ExecutionKind = "workflow");
+    string ExecutionKind = "workflow",
+    RunForensicContextDto? ForensicContext = null);
 
 public sealed record RunResultDto(
     string Outcome,

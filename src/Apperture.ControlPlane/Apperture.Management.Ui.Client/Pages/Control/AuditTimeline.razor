@@ -10,6 +10,13 @@
         <div class="min-w-0">
             <h1 class="text-xl font-semibold text-heading">Audit Timeline</h1>
             <div class="text-xs text-muted">Platform audit events. Minimal viewer: time, category, actor. Full filters via API.</div>
+            @if (!string.IsNullOrWhiteSpace(QueryRunId))
+            {
+                <div class="mt-2 rounded border border-default bg-surface px-2 py-1 text-xs text-body">
+                    <span class="text-muted">Run filter:</span>
+                    <a class="ml-1 font-mono underline" href="@($"/runs/{QueryRunId.Trim()}")">Open run @QueryRunId.Trim()</a>
+                </div>
+            }
         </div>
         <button class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface"
                 disabled="@_loading"
@@ -196,7 +203,7 @@
             await LoadAsync();
     }
 
-    protected override Task OnInitializedAsync() => LoadAsync();
+    protected override Task OnParametersSetAsync() => LoadAsync();
 
     private async Task LoadAsync()
     {

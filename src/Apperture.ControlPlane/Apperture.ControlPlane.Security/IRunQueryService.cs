@@ -28,6 +28,26 @@ public sealed record RunSummaryDto(
     string? RetryOfRunId,
     string ExecutionKind = "workflow");
 
+/// <summary>
+/// Operator hint for cross-navigation from run forensics. <see cref="Kind"/> is a stable token; <see cref="TargetId"/> is optional (e.g. module id, schedule id).
+/// Epic 35.
+/// </summary>
+public sealed record RunInvestigationHintDto(string Kind, string? TargetId);
+
+/// <summary>
+/// Truthful run investigation projection from persisted data and platform conventions. Epic 35.
+/// </summary>
+public sealed record RunForensicContextDto(
+    string? ModuleId,
+    string OriginKind,
+    string OriginDetail,
+    string? ScheduleId,
+    DateTimeOffset? ScheduleFireTimeUtc,
+    IReadOnlyList<string> RetriedByRunIds,
+    bool? ModuleExecutableNow,
+    string? ModuleExecutionHint,
+    IReadOnlyList<RunInvestigationHintDto> InvestigationHints);
+
 /// <param name="CurrentStepName">
 /// Same field as <see cref="WorkflowInstanceEntity.CurrentStepName"/>: when <paramref name="Status"/> is <c>parked</c>, this is the next step to run after resume; when <c>running</c>, reflects current step progression.
 /// </param>
@@ -52,7 +72,8 @@ public sealed record RunDetailDto(
     DateTimeOffset? StartRequestedAt,
     string? StartClaimedBy,
     DateTimeOffset? StartClaimedAt,
-    string ExecutionKind = "workflow");
+    string ExecutionKind = "workflow",
+    RunForensicContextDto? ForensicContext = null);
 
 /// <summary>
 /// Terminal run result projection for <c>GET /runs/{id}</c>. <see cref="Outcome"/> is derived from lifecycle status.

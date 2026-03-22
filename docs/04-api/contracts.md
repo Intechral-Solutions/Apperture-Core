@@ -69,6 +69,7 @@ Operator recovery and remediation workflows extend Epic 30 diagnostics with elig
   - `createdTo`
   - `moduleId`
   - `correlationKey`
+- **Epic 35 — Run forensics**: `GET /runs/{id}` returns `RunDetailDto` with optional nested `ForensicContext` (`RunForensicContextDto`): resolved `ModuleId`, `OriginKind` / `OriginDetail`, optional `ScheduleId` / `ScheduleFireTimeUtc` (from **platform schedule idempotency convention**, not an FK), `RetriedByRunIds`, optional current composition hints (`ModuleExecutableNow`, `ModuleExecutionHint`), and `InvestigationHints` (audit / module / schedule / blocked_work / runtime_health — ids only). See [Epic35-Run-Inspection-Forensics.md](../02-decisions/Epic35-Run-Inspection-Forensics.md) for derivation rules and limitations (retry vs recovery not distinguished; composition is current snapshot only).
 - Run kind resolution is deterministic from durable start-request ownership:
   - workflow run: present in `WorkflowStartRequests` only
   - operation run: present in `OperationStartRequests` only
@@ -76,7 +77,7 @@ Operator recovery and remediation workflows extend Epic 30 diagnostics with elig
 
 ## Run result and output (Epic 20 + Epic 21)
 
-- `GET /runs/{id}` returns `RunDetailDto` with `Result` (`RunResultDto`).
+- `GET /runs/{id}` returns `RunDetailDto` with `Result` (`RunResultDto`) and optional `ForensicContext` (Epic 35; see run list notes above).
 - `RunResultDto` includes:
   - `Outcome`: terminal outcome derived from lifecycle status (`succeeded`, `failed`, `cancelled`, `in_progress`).
   - `Summary`: human-readable one-liner. For **succeeded** runs, if persisted captured-output summary is non-empty (`CapturedOutputSummary` from ADR-0019), the API uses that string; for **withheld** capture (ADR-0020), the API uses a fixed platform phrase instead of a fake payload; otherwise a fixed phrase for the outcome. This field blends “outcome headline” with “output headline” when capture provided a summary; `PayloadJson` remains the full captured JSON when inline policy allows it.
