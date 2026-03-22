@@ -56,9 +56,12 @@ public sealed class RecoveryControllerTests
         var value = badRequest.Value;
         value.Should().NotBeNull();
         var inspectionOnly = value!.GetType().GetProperty("inspectionOnly")?.GetValue(value);
-        inspectionOnly.Should().Be(true, "operation blocked work is inspection-only");
+        inspectionOnly.Should().Be(true, "operation blocked work is inspection-only; platform recovery does not support operation retry");
         var definitionKind = value.GetType().GetProperty("definitionKind")?.GetValue(value);
         definitionKind.Should().Be("operation");
+        var message = value.GetType().GetProperty("message")?.GetValue(value) as string;
+        message.Should().Contain("inspectable", "response must tell operator that operation items are inspectable via GET blocked-work");
+        message.Should().Contain("not yet support operation retry", "response must explicitly state operation retry limitation");
     }
 
     [Fact]
@@ -130,6 +133,8 @@ public sealed class RecoveryControllerTests
         accepted.Value.Should().NotBeNull();
         var action = accepted.Value!.GetType().GetProperty("action")?.GetValue(accepted.Value);
         action.Should().Be("global_scheduler_run_cycle", "response must indicate global scheduler action");
+        var message = accepted.Value!.GetType().GetProperty("message")?.GetValue(accepted.Value) as string;
+        message.Should().Contain("not schedule-specific", "response must clarify this is global re-evaluation, not schedule-specific force-fire");
     }
 
     [Fact]

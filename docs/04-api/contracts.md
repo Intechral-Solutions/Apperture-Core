@@ -49,7 +49,8 @@ The Management API (control plane) exposes REST endpoints for module registry, w
 
 Operator recovery and remediation workflows extend Epic 30 diagnostics with eligibility projection and safe retry actions.
 
-- **Blocked work**: Workflow runs with `[Blocked]` failure summary are inspectable; eligibility (`RetryEligibleNow`) is derived from `composition.EffectivelyExecutableModuleIds` containing the definition's module. **Operations are inspection-only**: `RetryEligibleNow` is always false; retry returns 400 with `inspectionOnly: true`.
+- **Blocked work**: Workflow runs with `[Blocked]` failure summary are inspectable; eligibility (`RetryEligibleNow`) is derived from `composition.EffectivelyExecutableModuleIds` containing the definition's module.
+- **Operation blocked work (inspection-only, intentional limitation)**: For `DefinitionKind=operation`, `RetryEligibleNow` is always false; `RetryEligibleReason` is "Operation retry not yet supported." Retry returns **400** with `inspectionOnly: true`, `definitionKind: "operation"`, and a message directing operators to inspect via GET blocked-work. No operation retry path exists in this epic.
 - **Retry guard**: Before invoking retry, the API re-checks eligibility. If ineligible, returns 409 without calling dispatch; audits `recovery.blocked_work.retry_refused`.
 - **Schedule remediation**: `RemediationAvailable` = (enabled && TargetModuleExecutable). Run-cycle triggers **global** scheduler re-evaluation; processes schedules due at cycle time. No per-schedule "force fire" in V1.
 - **Module remediation**: `PrerequisiteHint` guides operators (e.g. "Enable module to allow new starts"); links to existing `POST /modules/{id}/enable`.

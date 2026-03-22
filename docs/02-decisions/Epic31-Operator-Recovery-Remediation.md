@@ -27,12 +27,18 @@ Epic 30 delivered runtime health diagnostics including blocked deferred work, sc
 | Action | Endpoint | Behavior |
 |--------|----------|----------|
 | Retry blocked workflow | `POST /api/control/recovery/blocked-work/{runId}/retry` | Delegates to `IWorkflowRetryService.RequestRetryAsync`; returns 409 with `blocked: true` when ineligible or when retry returns blocked |
-| Global scheduler run cycle | `POST /api/control/recovery/schedules/run-cycle` | Triggers **global** scheduler re-evaluation for the runtime plane. Processes all schedules due at cycle time. **Not** schedule-specific; blocked schedules re-evaluate at NextDueUtc. |
+| Global scheduler run cycle | `POST /api/control/recovery/schedules/run-cycle` | Triggers **global** scheduler re-evaluation for the runtime plane. Processes all schedules due at cycle time. **Not** schedule-specific; blocked schedules re-evaluate at NextDueUtc. Response includes `action: "global_scheduler_run_cycle"` and `message` stating "not schedule-specific". |
+
+**Schedule remediation semantics (explicit)**: The run-cycle endpoint is a **global** scheduler re-evaluation trigger, not a schedule-specific "force fire now" or "replay this schedule". Schedule-specific remediation is **not supported** in V1.
 
 ### 4. Refused remediation behavior
 
 - Before retry: re-check eligibility via `IRecoveryQueryService.GetBlockedWorkRemediationForRunAsync`. If not eligible, return 409 without calling dispatch; audit `recovery.blocked_work.retry_refused`.
-- Operation retry: returns 400 with `inspectionOnly: true`, `definitionKind: "operation"`, and message explaining that operation blocked work is inspectable but not retryable. This is an intentional limitation (StartOperationRequest lacks RetryOfRunId).
+- **Operation remediation limitation (explicit)**: Operation blocked work is **inspectable only**. `RetryEligibleNow` is always false for `DefinitionKind=operation`; `RetryEligibleReason` is "Operation retry not yet supported." Retry returns **400 Bad Request** with:
+  - `inspectionOnly: true` — operator-meaningful flag indicating platform does not support operation retry
+  - `definitionKind: "operation"`
+  - `message`: "Operation blocked work is inspectable via GET blocked-work; platform recovery does not yet support operation retry."
+  - Root cause: `StartOperationRequest` lacks `RetryOfRunId`; no trusted execution path exists for operation retry in this epic.
 
 ### 5. Schedule and module remediation context
 
@@ -64,9 +70,9 @@ Epic 30 delivered runtime health diagnostics including blocked deferred work, sc
 
 ## Epic 31 corrective pass
 
-- **Workflow remediation proof**: `RecoveryWorkflowRemediationSqlServerTests` proves blocked workflow becomes retryable after module enabled and dispatches through trusted path (WorkflowRetryService → WorkflowStartDispatchService). Requires SQL Server.
-- **Schedule remediation semantics**: Run-cycle is explicitly a **global** scheduler re-evaluation; response includes `action: "global_scheduler_run_cycle"`. Not schedule-specific.
-- **Operation limitation**: Operation blocked work is inspection-only; retry returns 400 with `inspectionOnly: true`, `definitionKind: "operation"`.
+- **Workflow remediation proof**: `RecoveryWorkflowRemediationSqlServerTests.BlockedWorkflow_BecomesRetryableAfterModuleEnabled_DispatchesThroughTrustedPath` proves: (1) blocked workflow exists while module disabled, (2) eligibility false when disabled, (3) module re-enabled, (4) retry succeeds, (5) trusted path used (WorkflowRetryService → WorkflowStartDispatchService → SQL persistence: OperationRun with RetryOfRunId, WorkflowStartRequest, WorkflowLifecycleEvents). Requires SQL Server. Trait: `Category=SqlServer`.
+- **Schedule remediation semantics**: Run-cycle is explicitly a **global** scheduler re-evaluation; response includes `action: "global_scheduler_run_cycle"` and `message` stating "not schedule-specific". `RecoveryControllerTests.RunScheduleCycle_InvokesGlobalSchedulerCycle_Returns202` asserts both. Schedule-specific remediation not supported in V1.
+- **Operation limitation**: Operation blocked work is inspection-only. `RetryEligibleNow` always false; retry returns 400 with `inspectionOnly: true`, `definitionKind: "operation"`, operator-meaningful message. `RecoveryControllerTests.RetryBlockedWork_WhenOperation_Returns400WithInspectionOnly` asserts response contract. Root cause documented: `StartOperationRequest` lacks RetryOfRunId.
 
 ## References
 

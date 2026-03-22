@@ -2,6 +2,7 @@ namespace Apperture.Core.Application.Recovery;
 
 /// <summary>
 /// Blocked deferred work with remediation eligibility. Epic 31.
+/// For DefinitionKind=operation: RetryEligibleNow is always false; platform recovery does not support operation retry (inspection-only).
 /// </summary>
 public sealed record BlockedWorkRemediationEntry(
     string RunId,

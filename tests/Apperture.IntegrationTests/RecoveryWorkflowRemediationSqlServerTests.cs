@@ -19,12 +19,14 @@ namespace Apperture.IntegrationTests;
 /// Integration tests proving blocked workflow remediation flows through the trusted execution path.
 /// Requires SQL Server (e.g. Docker on port 1433). Epic 31 corrective pass.
 /// </summary>
+[Trait("Category", "SqlServer")]
 public sealed class RecoveryWorkflowRemediationSqlServerTests
 {
     private const string WorkflowId = "Sample.HelloWorld.HelloWorld";
     private const string ModuleId = "Sample.HelloWorld";
 
     [Fact]
+    [Trait("Category", "SqlServer")]
     public async Task BlockedWorkflow_BecomesRetryableAfterModuleEnabled_DispatchesThroughTrustedPath()
     {
         var connectionString = SqlServerTestConfiguration.GetConnectionString();

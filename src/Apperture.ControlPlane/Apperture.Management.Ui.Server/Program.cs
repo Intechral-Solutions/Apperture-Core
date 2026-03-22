@@ -27,6 +27,8 @@ builder.Services.AddScoped<DomainMenuService>(sp =>
     return new DomainMenuService(httpClient, options, logger);
 });
 
+builder.Services.AddScoped<IOperatorCapabilitiesService, OperatorCapabilitiesService>();
+
 var app = builder.Build();
 if (!app.Environment.IsDevelopment())
 {

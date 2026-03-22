@@ -1,5 +1,6 @@
 using Apperture.ControlPlane.Security.Audit;
 using Apperture.Persistence.SqlServer;
+using Microsoft.EntityFrameworkCore;
 using Apperture.Core.Application.Recovery;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Audit;
