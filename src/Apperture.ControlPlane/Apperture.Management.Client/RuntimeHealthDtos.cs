@@ -1,0 +1,60 @@
+namespace Apperture.Management.Client;
+
+/// <summary>
+/// Runtime health snapshot. Epic 30.
+/// </summary>
+public sealed record RuntimeHealthSnapshotDto(
+    DateTimeOffset CapturedAtUtc,
+    string OverallStatus,
+    IReadOnlyList<string> DegradationReasons,
+    IReadOnlyList<ModuleDiagnosticEntryDto> ModuleDiagnostics,
+    IReadOnlyList<ScheduleDiagnosticEntryDto> ScheduleDiagnostics,
+    IReadOnlyList<BlockedDeferredWorkEntryDto> BlockedDeferredWork,
+    IReadOnlyList<ExecutionAnomalyEntryDto> Anomalies,
+    IReadOnlyList<string> RestartBoundSurfaces,
+    IReadOnlyList<string> NotYetImplementedSurfaces);
+
+public sealed record ModuleDiagnosticEntryDto(
+    string ModuleId,
+    string LifecycleState,
+    bool PersistedEnabled,
+    bool EffectivelyExecutable,
+    bool AllowsNewStarts,
+    bool HasInFlightWork,
+    IReadOnlyList<string> ValidationIssueCodes,
+    string? ExecutionDegradedReason,
+    int? BlockedDeferredWorkCount,
+    int? BlockedScheduleCount);
+
+public sealed record ScheduleDiagnosticEntryDto(
+    string ScheduleId,
+    string ScheduleName,
+    bool Enabled,
+    int TargetJobType,
+    string? TargetJobConfiguration,
+    DateTimeOffset? NextDueUtc,
+    DateTimeOffset? LastAttemptedUtc,
+    string? LastOutcome,
+    string? LastOutcomeReason,
+    DateTimeOffset? LastSuccessfulDispatchUtc,
+    string ScheduleHealthStatus,
+    string? DegradedReason,
+    bool TargetModuleExecutable);
+
+public sealed record BlockedDeferredWorkEntryDto(
+    string RunId,
+    string DefinitionId,
+    string DefinitionKind,
+    string? ModuleId,
+    DateTimeOffset FailedAtUtc,
+    string Summary);
+
+public sealed record ExecutionAnomalyEntryDto(
+    string AnomalyKind,
+    string Severity,
+    string? ModuleId,
+    string? ScheduleId,
+    string? RunId,
+    string? DefinitionId,
+    string Summary,
+    DateTimeOffset OccurredAtUtc);

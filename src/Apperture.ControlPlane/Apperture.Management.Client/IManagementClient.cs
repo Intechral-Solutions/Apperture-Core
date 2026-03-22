@@ -66,7 +66,65 @@ public interface IManagementClient
     /// Gets a single audit entry by id. Epic 32.
     /// </summary>
     Task<AuditTimelineEntryDto?> GetAuditEntryAsync(string id, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Gets runtime health snapshot. Epic 30.
+    /// </summary>
+    Task<RuntimeHealthSnapshotDto?> GetRuntimeHealthAsync(
+        string? runtimePlaneId = "local",
+        int blockedDeferredWindowHours = 24,
+        int scheduleFailureWindowHours = 24,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Lists schedules. Epic 28/33.
+    /// </summary>
+    Task<IReadOnlyList<ScheduleDto>> GetSchedulesAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Gets schedule detail with execution state.
+    /// </summary>
+    Task<ScheduleDetailDto?> GetScheduleAsync(string id, string? runtimePlaneId = "local", CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Enables a schedule.
+    /// </summary>
+    Task EnableScheduleAsync(string id, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Disables a schedule.
+    /// </summary>
+    Task DisableScheduleAsync(string id, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Lists blocked work with remediation eligibility. Epic 31.
+    /// </summary>
+    Task<IReadOnlyList<BlockedWorkRemediationEntryDto>> GetBlockedWorkAsync(
+        string? runtimePlaneId = "local",
+        int windowHours = 24,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Gets a single blocked item's remediation context.
+    /// </summary>
+    Task<BlockedWorkRemediationEntryDto?> GetBlockedWorkItemAsync(string runId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Retries a blocked workflow. Returns 202 on success; 409 if not eligible; 400 for operations (inspection only).
+    /// </summary>
+    Task<BlockedWorkRetryResult> RetryBlockedWorkAsync(string runId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Triggers global scheduler re-evaluation cycle. Not schedule-specific.
+    /// </summary>
+    Task TriggerSchedulerRunCycleAsync(string? runtimePlaneId = "local", CancellationToken cancellationToken = default);
 }
+
+public sealed record BlockedWorkRetryResult(
+    bool Success,
+    string? NewRunId,
+    string? ErrorMessage,
+    bool InspectionOnly);
 
 public sealed record AuditTimelineEntryDto(
     string Id,

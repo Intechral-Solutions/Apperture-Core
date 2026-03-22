@@ -1,0 +1,96 @@
+using Apperture.Management.Client;
+
+namespace Apperture.Management.Ui.Shared;
+
+/// <summary>
+/// Epic 33: Testable display logic for blocked work, schedule action semantics,
+/// control center health, and audit cross-navigation. Single source of truth for UI truthfulness tests.
+/// </summary>
+public static class Epic33UiDisplayHelpers
+{
+    // --- Blocked Work ---
+
+    /// <summary>Retry-eligible display for blocked work table: "Inspection only", "Yes", or reason.</summary>
+    public static string GetBlockedWorkRetryEligibleDisplay(BlockedWorkRemediationEntryDto item)
+    {
+        if (string.Equals(item.DefinitionKind, "operation", StringComparison.OrdinalIgnoreCase))
+            return "Inspection only";
+        if (item.RetryEligibleNow)
+            return "Yes";
+        return item.RetryEligibleReason ?? "No";
+    }
+
+    /// <summary>Action cell: shows Retry button for eligible workflow, View run for operation, "-" otherwise.</summary>
+    public static BlockedWorkActionKind GetBlockedWorkActionKind(BlockedWorkRemediationEntryDto item)
+    {
+        if (string.Equals(item.DefinitionKind, "workflow", StringComparison.OrdinalIgnoreCase) && item.RetryEligibleNow)
+            return BlockedWorkActionKind.Retry;
+        if (string.Equals(item.DefinitionKind, "operation", StringComparison.OrdinalIgnoreCase))
+            return BlockedWorkActionKind.ViewRun;
+        return BlockedWorkActionKind.None;
+    }
+
+    public enum BlockedWorkActionKind { Retry, ViewRun, None }
+
+    /// <summary>True when the UI shows a Retry button (workflow + eligible).</summary>
+    public static bool ShowsRetryButton(BlockedWorkRemediationEntryDto item) =>
+        GetBlockedWorkActionKind(item) == BlockedWorkActionKind.Retry;
+
+    /// <summary>True when the UI shows inspection-only messaging (operation items).</summary>
+    public static bool ShowsInspectionOnly(BlockedWorkRemediationEntryDto item) =>
+        string.Equals(item.DefinitionKind, "operation", StringComparison.OrdinalIgnoreCase);
+
+    // --- Schedule action semantics (global re-evaluation, NOT schedule-specific) ---
+
+    public const string ScheduleActionButtonLabel = "Trigger scheduler re-evaluation";
+    public const string ScheduleActionButtonTitle = "Trigger global scheduler re-evaluation. Not schedule-specific.";
+    public const string ScheduleActionExplanatoryText = "Trigger scheduler re-evaluation runs a global cycle for all schedules due at the current time. It is not a schedule-specific force-fire.";
+
+    /// <summary>Verifies schedule action semantics are global, not schedule-specific.</summary>
+    public static bool ScheduleActionIsGlobalSemantics =>
+        ScheduleActionButtonLabel.Contains("re-evaluation", StringComparison.Ordinal) &&
+        ScheduleActionExplanatoryText.Contains("global", StringComparison.OrdinalIgnoreCase) &&
+        ScheduleActionExplanatoryText.Contains("not a schedule-specific", StringComparison.OrdinalIgnoreCase) &&
+        !ScheduleActionExplanatoryText.Contains("run now", StringComparison.OrdinalIgnoreCase) &&
+        !ScheduleActionExplanatoryText.Contains("fire this schedule", StringComparison.OrdinalIgnoreCase);
+
+    // --- Control center platform health ---
+
+    public record ControlCenterHealthCounts(int DegradedModuleCount, int BlockedScheduleCount, int BlockedWorkCount);
+
+    public static ControlCenterHealthCounts GetPlatformHealthCounts(RuntimeHealthSnapshotDto health)
+    {
+        var degradedCount = health.ModuleDiagnostics.Count(m =>
+            !m.EffectivelyExecutable || m.ExecutionDegradedReason is not null);
+        var blockedSchedules = health.ScheduleDiagnostics.Count(s =>
+            s.ScheduleHealthStatus == "Blocked" || s.ScheduleHealthStatus == "Degraded");
+        var blockedWorkCount = health.BlockedDeferredWork.Count;
+        return new ControlCenterHealthCounts(degradedCount, blockedSchedules, blockedWorkCount);
+    }
+
+    public static string GetStatusCssClass(string status) =>
+        status == "Healthy" ? "text-green-600" : status == "Degraded" ? "text-amber-600" : "text-red-600";
+
+    // --- Audit cross-navigation (links from module/schedule/run context) ---
+
+    public static string GetAuditRefLink(AuditRelatedReferenceDto r) => r.Kind switch
+    {
+        "run" => $"/runs/{r.Id}",
+        "schedule" => $"/schedules/{r.Id}",
+        "module" => string.IsNullOrEmpty(r.Id) ? "/modules" : $"/modules/{r.Id}",
+        _ => "#"
+    };
+
+    public static string GetAuditLinkForModule(string moduleId) =>
+        $"/control/audit?moduleId={Uri.EscapeDataString(moduleId)}";
+
+    public static string GetAuditLinkForSchedule(string scheduleId) =>
+        $"/control/audit?scheduleId={Uri.EscapeDataString(scheduleId)}";
+
+    public static string GetAuditLinkForRun(string runId) =>
+        $"/control/audit?runId={Uri.EscapeDataString(runId)}";
+
+    public const string RecoveryAuditActionPrefix = "recovery.";
+    public static string GetRecoveryAuditLink() =>
+        $"/control/audit?actionPrefix={Uri.EscapeDataString(RecoveryAuditActionPrefix)}";
+}

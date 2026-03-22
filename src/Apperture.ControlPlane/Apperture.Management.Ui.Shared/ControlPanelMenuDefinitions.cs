@@ -29,8 +29,14 @@ public static class ControlPanelMenuDefinitions
                 Items =
                 {
                     new DomainMenuItem { Text = "Control Center", Href = "/control/center" },
+                    new DomainMenuItem { Text = "Blocked Work", Href = "/control/blocked-work" },
                     new DomainMenuItem { Text = "Audit Timeline", Href = "/control/audit" }
                 }
+            },
+            ["Modules"] = new DomainMenu
+            {
+                Title = null,
+                Items = { new DomainMenuItem { Text = "View All", Href = "/modules" } }
             },
             ["Test Suite"] = new DomainMenu
             {
@@ -85,14 +91,11 @@ public static class ControlPanelMenuDefinitions
                     new DomainMenuItem { Text = "Create Client", Href = "/clients/new" }
                 }
             },
+            // Create schedule: not implemented; no /schedules/new link to avoid misleading flow
             ["Schedules"] = new DomainMenu
             {
                 Title = null,
-                Items =
-                {
-                    new DomainMenuItem { Text = "View All", Href = "/schedules" },
-                    new DomainMenuItem { Text = "Create Schedule", Href = "/schedules/new" }
-                }
+                Items = { new DomainMenuItem { Text = "View All", Href = "/schedules" } }
             },
             ["Tools"] = new DomainMenu
             {

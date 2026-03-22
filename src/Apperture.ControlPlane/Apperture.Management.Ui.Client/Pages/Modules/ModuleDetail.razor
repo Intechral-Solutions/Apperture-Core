@@ -1,0 +1,191 @@
+@page "/modules/{ModuleId}"
+@using Apperture.Management.Client
+@using Apperture.Management.Ui.Shared
+@inject IManagementClient Client
+@inject NavigationManager Nav
+
+<div class="p-4">
+    <div class="flex items-center justify-between gap-3">
+        <div class="min-w-0">
+            <h1 class="text-xl font-semibold text-heading">Module</h1>
+            <div class="mt-1 font-mono text-xs text-muted break-all">@ModuleId</div>
+        </div>
+        <div class="flex items-center gap-2">
+            <a href="/modules" class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface">Back to list</a>
+            <button class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface"
+                    disabled="@_loading"
+                    @onclick="LoadAsync">
+                Refresh
+            </button>
+        </div>
+    </div>
+
+    @if (!string.IsNullOrEmpty(_error))
+    {
+        <div class="mt-4 rounded border border-default bg-surface px-3 py-2 text-sm text-body">
+            <div class="font-semibold">Error</div>
+            <div class="text-muted">@_error</div>
+        </div>
+    }
+    else if (!string.IsNullOrEmpty(_actionMessage))
+    {
+        <div class="mt-4 rounded border border-default bg-surface px-3 py-2 text-sm text-body">
+            <div class="font-semibold">Action</div>
+            <div class="text-muted">@_actionMessage</div>
+        </div>
+    }
+    else if (_module is null)
+    {
+        <div class="mt-4 text-sm text-muted">Loading...</div>
+    }
+    else
+    {
+        <div class="mt-4 grid gap-4">
+            <div class="rounded border border-default bg-surface p-3">
+                <div class="text-sm font-semibold text-heading">Lifecycle actions</div>
+                <div class="text-xs text-muted">Safe actions supported by the backend. Disabled when not applicable.</div>
+                <div class="mt-2 flex flex-wrap gap-2">
+                    <button class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface disabled:opacity-50"
+                            disabled="@(_loading || !CanInstall)"
+                            title="@(CanInstall ? "Install module" : "Already installed or not applicable")"
+                            @onclick="InstallAsync">
+                        Install
+                    </button>
+                    <button class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface disabled:opacity-50"
+                            disabled="@(_loading || !CanEnable)"
+                            title="@(CanEnable ? "Enable module" : "Already enabled or not applicable")"
+                            @onclick="EnableAsync">
+                        Enable
+                    </button>
+                    <button class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface disabled:opacity-50"
+                            disabled="@(_loading || !CanDisable)"
+                            title="@(CanDisable ? "Disable module" : "Already disabled or not applicable")"
+                            @onclick="DisableAsync">
+                        Disable
+                    </button>
+                    <button class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface disabled:opacity-50"
+                            disabled="@(_loading || !CanUninstall)"
+                            title="@(CanUninstall ? "Uninstall module" : "Not installed or not applicable")"
+                            @onclick="UninstallAsync">
+                        Uninstall
+                    </button>
+                </div>
+            </div>
+
+            <div class="rounded border border-default bg-surface p-3">
+                <div class="text-sm font-semibold text-heading">State</div>
+                <div class="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2">
+                    <div>
+                        <div class="text-xs text-muted">Name</div>
+                        <div class="text-sm text-body">@_module.Name</div>
+                    </div>
+                    <div>
+                        <div class="text-xs text-muted">Version</div>
+                        <div class="text-sm text-body">@_module.Version</div>
+                    </div>
+                    <div>
+                        <div class="text-xs text-muted">Lifecycle state</div>
+                        <div class="text-sm font-mono">@_module.State</div>
+                    </div>
+                    <div>
+                        <div class="text-xs text-muted">Enabled (persisted)</div>
+                        <div class="text-sm text-body">@(_module.Enabled ? "Yes" : "No")</div>
+                    </div>
+                    <div>
+                        <div class="text-xs text-muted">Effectively active</div>
+                        <div class="text-sm text-body">@(_module.EffectivelyActive ? "Yes" : "No")</div>
+                    </div>
+                    <div>
+                        <div class="text-xs text-muted">Installed</div>
+                        <div class="text-sm text-body">@(_module.Installed ? "Yes" : "No")</div>
+                    </div>
+                </div>
+                @if (_module.ValidationIssues is { Count: > 0 })
+                {
+                    <div class="mt-2">
+                        <div class="text-xs text-muted">Validation issues / degraded reasons</div>
+                        <div class="mt-1 space-y-1">
+                            @foreach (var v in _module.ValidationIssues)
+                            {
+                                <div class="text-xs font-mono">@v.Code: @v.Message</div>
+                            }
+                        </div>
+                    </div>
+                }
+            </div>
+
+            <div class="rounded border border-default bg-surface p-3">
+                <div class="text-sm font-semibold text-heading">Links</div>
+                <div class="mt-2 flex flex-wrap gap-2">
+                    <a href="@Epic33UiDisplayHelpers.GetAuditLinkForModule(ModuleId)" class="text-sm underline">View audit for this module</a>
+                    <a href="/control/blocked-work" class="text-sm underline">Blocked work / recovery</a>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public string ModuleId { get; set; } = "";
+
+    private ModuleDto? _module;
+    private bool _loading;
+    private string? _error;
+    private string? _actionMessage;
+
+    private bool CanInstall => _module is not null && string.Equals(_module.State, "Discovered", StringComparison.OrdinalIgnoreCase);
+    private bool CanEnable => _module is not null && string.Equals(_module.State, "InstalledDisabled", StringComparison.OrdinalIgnoreCase);
+    private bool CanDisable => _module is not null && string.Equals(_module.State, "InstalledEnabled", StringComparison.OrdinalIgnoreCase);
+    private bool CanUninstall => _module is not null && string.Equals(_module.State, "InstalledDisabled", StringComparison.OrdinalIgnoreCase);
+
+    protected override Task OnParametersSetAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        if (string.IsNullOrWhiteSpace(ModuleId))
+            return;
+
+        _loading = true;
+        _error = null;
+        _actionMessage = null;
+        try
+        {
+            _module = await Client.GetModuleAsync(ModuleId);
+        }
+        catch (HttpRequestException ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task InstallAsync() => await ExecuteLifecycleAsync(() => Client.InstallModuleAsync(ModuleId));
+    private async Task EnableAsync() => await ExecuteLifecycleAsync(() => Client.EnableModuleAsync(ModuleId));
+    private async Task DisableAsync() => await ExecuteLifecycleAsync(() => Client.DisableModuleAsync(ModuleId));
+    private async Task UninstallAsync() => await ExecuteLifecycleAsync(() => Client.UninstallModuleAsync(ModuleId));
+
+    private async Task ExecuteLifecycleAsync(Func<Task<ModuleLifecycleActionResultDto>> action)
+    {
+        _loading = true;
+        _actionMessage = null;
+        try
+        {
+            var result = await action();
+            _actionMessage = result.Succeeded
+                ? $"Action '{result.Action}' succeeded. State: {result.State}."
+                : $"Action '{result.Action}' failed. Blockers: {string.Join("; ", result.Blockers.Select(b => b.Message))}";
+        }
+        catch (HttpRequestException ex)
+        {
+            _actionMessage = ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+        await LoadAsync();
+    }
+}

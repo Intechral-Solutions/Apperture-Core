@@ -1,0 +1,103 @@
+@page "/schedules"
+@using Apperture.Management.Client
+@inject IManagementClient Client
+@inject NavigationManager Nav
+
+<div class="p-4">
+    <div class="flex items-center justify-between gap-3">
+        <div class="min-w-0">
+            <h1 class="text-xl font-semibold text-heading">Schedules</h1>
+            <div class="text-xs text-muted">Schedule definitions and execution state.</div>
+        </div>
+        <button class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface"
+                disabled="@_loading"
+                @onclick="LoadAsync">
+            Refresh
+        </button>
+    </div>
+
+    @if (!string.IsNullOrEmpty(_error))
+    {
+        <div class="mt-4 rounded border border-default bg-surface px-3 py-2 text-sm text-body">
+            <div class="font-semibold">Error</div>
+            <div class="text-muted">@_error</div>
+        </div>
+    }
+    else if (_schedules is null)
+    {
+        <div class="mt-4 text-sm text-muted">Loading...</div>
+    }
+    else if (_schedules.Count == 0)
+    {
+        <div class="mt-4 text-sm text-muted">No schedules found.</div>
+    }
+    else
+    {
+        <div class="mt-4 overflow-x-auto rounded border border-default bg-surface">
+            <table class="min-w-full text-left text-sm text-body">
+                <thead class="border-b border-default text-xs text-muted">
+                    <tr>
+                        <th class="px-3 py-2">Id</th>
+                        <th class="px-3 py-2">Name</th>
+                        <th class="px-3 py-2">Enabled</th>
+                        <th class="px-3 py-2">Target</th>
+                        <th class="px-3 py-2"></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var s in _schedules)
+                    {
+                        <tr class="border-b border-default hover:bg-surface-muted cursor-pointer"
+                            @onclick="@(() => Nav.NavigateTo("/schedules/" + Uri.EscapeDataString(s.Id)))">
+                            <td class="px-3 py-2 font-mono text-xs">@s.Id</td>
+                            <td class="px-3 py-2">@s.Name</td>
+                            <td class="px-3 py-2">@(s.Enabled ? "Yes" : "No")</td>
+                            <td class="px-3 py-2">
+                                <span class="font-mono text-xs">@GetTargetKind(s.TargetJobType)</span>
+                                @if (!string.IsNullOrEmpty(s.TargetJobConfiguration))
+                                {
+                                    <div class="text-xs text-muted truncate max-w-xs">@s.TargetJobConfiguration</div>
+                                }
+                            </td>
+                            <td class="px-3 py-2">
+                                <a href="@("/schedules/" + Uri.EscapeDataString(s.Id))" class="underline text-sm" @onclick:stopPropagation>Open</a>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+        <div class="mt-2 text-xs text-muted">
+            Schedule detail (including last outcome) is shown on the detail page.
+        </div>
+    }
+</div>
+
+@code {
+    private IReadOnlyList<ScheduleDto>? _schedules;
+    private bool _loading;
+    private string? _error;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _error = null;
+        try
+        {
+            _schedules = await Client.GetSchedulesAsync();
+        }
+        catch (HttpRequestException ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private static string GetTargetKind(int targetJobType) =>
+        targetJobType == 0 ? "Workflow" : targetJobType == 1 ? "Operation" : $"Type{targetJobType}";
+}

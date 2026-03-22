@@ -116,8 +116,8 @@ public sealed class AuditTimelineQueryServiceTests
 
         page.Items.Should().HaveCount(1);
         audit.LastQuery.Should().NotBeNull();
-        audit.LastQuery!.Value.ToUtc.Should().NotBeNull("reference filters clamp effective window");
-        var windowHours = (audit.LastQuery.Value.ToUtc!.Value - fromUtc).TotalHours;
+        audit.LastQuery!.ToUtc.Should().NotBeNull("reference filters clamp effective window");
+        var windowHours = (audit.LastQuery.ToUtc!.Value - fromUtc).TotalHours;
         windowHours.Should().BeLessOrEqualTo(AuditTimelineQueryService.MaxWindowHoursForReferenceFilters + 1);
     }
 
@@ -133,7 +133,7 @@ public sealed class AuditTimelineQueryServiceTests
             PageSize: 10));
 
         audit.LastQuery.Should().NotBeNull();
-        audit.LastQuery!.Value.FromUtc.Should().NotBeNull("reference filters require default window");
+        audit.LastQuery!.FromUtc.Should().NotBeNull("reference filters require default window");
     }
 
     [Fact]
@@ -148,7 +148,7 @@ public sealed class AuditTimelineQueryServiceTests
             PageSize: 500));
 
         audit.LastQuery.Should().NotBeNull();
-        audit.LastQuery!.Value.PageSize.Should().BeLessOrEqualTo(AuditTimelineQueryService.MaxFetchSizeForReferenceFilters);
+        audit.LastQuery!.PageSize.Should().BeLessOrEqualTo(AuditTimelineQueryService.MaxFetchSizeForReferenceFilters);
     }
 
     private static AuditRecord CreateRecord(string id, string action, string actor, string details) =>

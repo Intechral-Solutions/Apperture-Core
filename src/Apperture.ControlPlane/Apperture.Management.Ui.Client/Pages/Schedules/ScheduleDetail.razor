@@ -1,0 +1,206 @@
+@page "/schedules/{ScheduleId}"
+@using Apperture.Management.Client
+@using Apperture.Management.Ui.Shared
+@inject IManagementClient Client
+@inject NavigationManager Nav
+
+<div class="p-4">
+    <div class="flex items-center justify-between gap-3">
+        <div class="min-w-0">
+            <h1 class="text-xl font-semibold text-heading">Schedule</h1>
+            <div class="mt-1 font-mono text-xs text-muted break-all">@ScheduleId</div>
+        </div>
+        <div class="flex items-center gap-2">
+            <a href="/schedules" class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface">Back to list</a>
+            <button class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface disabled:opacity-50"
+                    disabled="@(_loading || (_detail?.Enabled == true))"
+                    title="Enable this schedule"
+                    @onclick="EnableAsync">
+                Enable
+            </button>
+            <button class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface disabled:opacity-50"
+                    disabled="@(_loading || (_detail?.Enabled != true))"
+                    title="Disable this schedule"
+                    @onclick="DisableAsync">
+                Disable
+            </button>
+            <button class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface"
+                    disabled="@_loading"
+                    title="@Epic33UiDisplayHelpers.ScheduleActionButtonTitle"
+                    @onclick="TriggerRunCycleAsync">
+                @Epic33UiDisplayHelpers.ScheduleActionButtonLabel
+            </button>
+            <button class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface"
+                    disabled="@_loading"
+                    @onclick="LoadAsync">
+                Refresh
+            </button>
+        </div>
+    </div>
+
+    @if (!string.IsNullOrEmpty(_error))
+    {
+        <div class="mt-4 rounded border border-default bg-surface px-3 py-2 text-sm text-body">
+            <div class="font-semibold">Error</div>
+            <div class="text-muted">@_error</div>
+        </div>
+    }
+    else if (!string.IsNullOrEmpty(_actionMessage))
+    {
+        <div class="mt-4 rounded border border-default bg-surface px-3 py-2 text-sm text-body">
+            <div class="font-semibold">Action</div>
+            <div class="text-muted">@_actionMessage</div>
+        </div>
+    }
+    else if (_detail is null)
+    {
+        <div class="mt-4 text-sm text-muted">Loading...</div>
+    }
+    else
+    {
+        <div class="mt-4 grid gap-4">
+            <div class="rounded border border-default bg-surface p-3">
+                <div class="text-xs text-muted mb-2">@Epic33UiDisplayHelpers.ScheduleActionExplanatoryText</div>
+            </div>
+
+            <div class="rounded border border-default bg-surface p-3">
+                <div class="text-sm font-semibold text-heading">State</div>
+                <div class="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2">
+                    <div>
+                        <div class="text-xs text-muted">Name</div>
+                        <div class="text-sm text-body">@_detail.Name</div>
+                    </div>
+                    <div>
+                        <div class="text-xs text-muted">Enabled</div>
+                        <div class="text-sm text-body">@(_detail.Enabled ? "Yes" : "No")</div>
+                    </div>
+                    <div>
+                        <div class="text-xs text-muted">Target type</div>
+                        <div class="text-sm font-mono">@GetTargetKind(_detail.TargetJobType)</div>
+                    </div>
+                    <div>
+                        <div class="text-xs text-muted">Target configuration</div>
+                        <div class="text-sm font-mono break-all">@(_detail.TargetJobConfiguration ?? "-")</div>
+                    </div>
+                    <div>
+                        <div class="text-xs text-muted">Recurrence</div>
+                        <div class="text-sm font-mono">@_detail.RecurrenceExpression</div>
+                    </div>
+                    <div>
+                        <div class="text-xs text-muted">Time zone</div>
+                        <div class="text-sm text-body">@_detail.TimeZone</div>
+                    </div>
+                    <div>
+                        <div class="text-xs text-muted">Last attempted</div>
+                        <div class="text-sm text-body">@Fmt(_detail.LastAttemptedUtc)</div>
+                    </div>
+                    <div>
+                        <div class="text-xs text-muted">Last outcome</div>
+                        <div class="text-sm text-body">@(_detail.LastOutcome ?? "-")</div>
+                    </div>
+                    <div>
+                        <div class="text-xs text-muted">Last outcome reason</div>
+                        <div class="text-sm text-body">@(_detail.LastOutcomeReason ?? "-")</div>
+                    </div>
+                    <div>
+                        <div class="text-xs text-muted">Last successful dispatch</div>
+                        <div class="text-sm text-body">@Fmt(_detail.LastSuccessfulDispatchUtc)</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="rounded border border-default bg-surface p-3">
+                <div class="text-sm font-semibold text-heading">Links</div>
+                <div class="mt-2 flex flex-wrap gap-2">
+                    <a href="@Epic33UiDisplayHelpers.GetAuditLinkForSchedule(ScheduleId)" class="text-sm underline">View audit for this schedule</a>
+                    <a href="/control/blocked-work" class="text-sm underline">Blocked work / recovery</a>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public string ScheduleId { get; set; } = "";
+
+    private ScheduleDetailDto? _detail;
+    private bool _loading;
+    private string? _error;
+    private string? _actionMessage;
+
+    protected override Task OnParametersSetAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        if (string.IsNullOrWhiteSpace(ScheduleId))
+            return;
+
+        _loading = true;
+        _error = null;
+        _actionMessage = null;
+        try
+        {
+            _detail = await Client.GetScheduleAsync(ScheduleId);
+        }
+        catch (HttpRequestException ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task EnableAsync()
+    {
+        await ExecuteScheduleActionAsync(async () =>
+        {
+            await Client.EnableScheduleAsync(ScheduleId);
+            return "Schedule enabled.";
+        });
+    }
+
+    private async Task DisableAsync()
+    {
+        await ExecuteScheduleActionAsync(async () =>
+        {
+            await Client.DisableScheduleAsync(ScheduleId);
+            return "Schedule disabled.";
+        });
+    }
+
+    private async Task TriggerRunCycleAsync()
+    {
+        await ExecuteScheduleActionAsync(async () =>
+        {
+            await Client.TriggerSchedulerRunCycleAsync();
+            return "Scheduler run cycle triggered. Processes all schedules due at cycle time.";
+        });
+    }
+
+    private async Task ExecuteScheduleActionAsync(Func<Task<string>> action)
+    {
+        _loading = true;
+        _actionMessage = null;
+        try
+        {
+            _actionMessage = await action();
+        }
+        catch (HttpRequestException ex)
+        {
+            _actionMessage = ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+        await LoadAsync();
+    }
+
+    private static string Fmt(DateTimeOffset? dt) =>
+        dt is null ? "-" : dt.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss");
+
+    private static string GetTargetKind(int targetJobType) =>
+        targetJobType == 0 ? "Workflow" : targetJobType == 1 ? "Operation" : $"Type{targetJobType}";
+}

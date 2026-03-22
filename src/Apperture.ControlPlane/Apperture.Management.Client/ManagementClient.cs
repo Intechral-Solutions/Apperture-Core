@@ -1,6 +1,6 @@
-using Apperture.RuntimePlane.Abstractions;
 using System.Net.Http.Json;
 using System.Text.Json;
+using Apperture.RuntimePlane.Abstractions;
 
 namespace Apperture.Management.Client;
 
@@ -195,6 +195,103 @@ public sealed class ManagementClient : IManagementClient
         return await _http.GetFromJsonAsync<AuditTimelineEntryDto>(
             $"control/audit/{Uri.EscapeDataString(id)}",
             cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<RuntimeHealthSnapshotDto?> GetRuntimeHealthAsync(
+        string? runtimePlaneId = "local",
+        int blockedDeferredWindowHours = 24,
+        int scheduleFailureWindowHours = 24,
+        CancellationToken cancellationToken = default)
+    {
+        var query = $"?runtimePlaneId={Uri.EscapeDataString(runtimePlaneId ?? "local")}&blockedDeferredWindowHours={blockedDeferredWindowHours}&scheduleFailureWindowHours={scheduleFailureWindowHours}";
+        return await _http.GetFromJsonAsync<RuntimeHealthSnapshotDto>(
+            $"control/runtime-health{query}",
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<IReadOnlyList<ScheduleDto>> GetSchedulesAsync(CancellationToken cancellationToken = default)
+    {
+        var list = await _http.GetFromJsonAsync<ScheduleDto[]>("schedules", cancellationToken).ConfigureAwait(false);
+        return list ?? Array.Empty<ScheduleDto>();
+    }
+
+    public async Task<ScheduleDetailDto?> GetScheduleAsync(string id, string? runtimePlaneId = "local", CancellationToken cancellationToken = default)
+    {
+        var query = string.IsNullOrEmpty(runtimePlaneId) ? "" : $"?runtimePlaneId={Uri.EscapeDataString(runtimePlaneId)}";
+        return await _http.GetFromJsonAsync<ScheduleDetailDto>(
+            $"schedules/{Uri.EscapeDataString(id)}{query}",
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task EnableScheduleAsync(string id, CancellationToken cancellationToken = default)
+    {
+        var response = await _http.PostAsync($"schedules/{Uri.EscapeDataString(id)}/enable", content: null, cancellationToken).ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+    }
+
+    public async Task DisableScheduleAsync(string id, CancellationToken cancellationToken = default)
+    {
+        var response = await _http.PostAsync($"schedules/{Uri.EscapeDataString(id)}/disable", content: null, cancellationToken).ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+    }
+
+    public async Task<IReadOnlyList<BlockedWorkRemediationEntryDto>> GetBlockedWorkAsync(
+        string? runtimePlaneId = "local",
+        int windowHours = 24,
+        CancellationToken cancellationToken = default)
+    {
+        var query = $"?runtimePlaneId={Uri.EscapeDataString(runtimePlaneId ?? "local")}&windowHours={windowHours}";
+        var list = await _http.GetFromJsonAsync<BlockedWorkRemediationEntryDto[]>(
+            $"control/recovery/blocked-work{query}",
+            cancellationToken).ConfigureAwait(false);
+        return list ?? Array.Empty<BlockedWorkRemediationEntryDto>();
+    }
+
+    public async Task<BlockedWorkRemediationEntryDto?> GetBlockedWorkItemAsync(string runId, CancellationToken cancellationToken = default)
+    {
+        return await _http.GetFromJsonAsync<BlockedWorkRemediationEntryDto>(
+            $"control/recovery/blocked-work/{Uri.EscapeDataString(runId)}",
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<BlockedWorkRetryResult> RetryBlockedWorkAsync(string runId, CancellationToken cancellationToken = default)
+    {
+        var response = await _http.PostAsync(
+            $"control/recovery/blocked-work/{Uri.EscapeDataString(runId)}/retry",
+            content: null,
+            cancellationToken).ConfigureAwait(false);
+
+        if (response.IsSuccessStatusCode)
+        {
+            var json = await response.Content.ReadFromJsonAsync<JsonElement>(cancellationToken).ConfigureAwait(false);
+            var newRunId = json.TryGetProperty("runId", out var r) ? r.GetString() : null;
+            return new BlockedWorkRetryResult(true, newRunId, null, false);
+        }
+
+        if (response.StatusCode == System.Net.HttpStatusCode.BadRequest)
+        {
+            var json = await response.Content.ReadFromJsonAsync<JsonElement>(cancellationToken).ConfigureAwait(false);
+            var inspectionOnly = json.TryGetProperty("inspectionOnly", out var io) && io.GetBoolean();
+            var error = json.TryGetProperty("message", out var m) ? m.GetString() : json.TryGetProperty("error", out var e) ? e.GetString() : response.ReasonPhrase;
+            return new BlockedWorkRetryResult(false, null, error, inspectionOnly);
+        }
+
+        if (response.StatusCode == System.Net.HttpStatusCode.Conflict)
+        {
+            var json = await response.Content.ReadFromJsonAsync<JsonElement>(cancellationToken).ConfigureAwait(false);
+            var error = json.TryGetProperty("error", out var e) ? e.GetString() : response.ReasonPhrase;
+            return new BlockedWorkRetryResult(false, null, error ?? "Conflict", false);
+        }
+
+        response.EnsureSuccessStatusCode();
+        return new BlockedWorkRetryResult(false, null, response.ReasonPhrase, false);
+    }
+
+    public async Task TriggerSchedulerRunCycleAsync(string? runtimePlaneId = "local", CancellationToken cancellationToken = default)
+    {
+        var query = $"?runtimePlaneId={Uri.EscapeDataString(runtimePlaneId ?? "local")}";
+        var response = await _http.PostAsync($"control/recovery/schedules/run-cycle{query}", content: null, cancellationToken).ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
     }
 
     public async Task<StartOperationResult> StartOperationAsync(

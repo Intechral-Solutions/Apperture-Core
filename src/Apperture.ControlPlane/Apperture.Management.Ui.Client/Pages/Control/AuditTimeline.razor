@@ -1,5 +1,7 @@
 @page "/control/audit"
+@using Microsoft.AspNetCore.Components.Web
 @using Apperture.Management.Client
+@using Apperture.Management.Ui.Shared
 @inject IManagementClient Client
 
 <div class="p-4">
@@ -162,8 +164,16 @@
 </div>
 
 @code {
+    [SupplyParameterFromQuery(Name = "moduleId")]
+    public string? QueryModuleId { get; set; }
+
+    [SupplyParameterFromQuery(Name = "scheduleId")]
+    public string? QueryScheduleId { get; set; }
+
+    [SupplyParameterFromQuery(Name = "runId")]
+    public string? QueryRunId { get; set; }
+
     private AuditTimelinePageDto? _page;
-    private string? _continuationToken;
     private bool _loading;
     private string? _error;
     private string? _expandedId;
@@ -183,7 +193,6 @@
     {
         _loading = true;
         _error = null;
-        _continuationToken = null;
         try
         {
             var hours = int.TryParse(_timeRange, out var h) ? h : 24;
@@ -193,6 +202,9 @@
                 toUtc: null,
                 actor: string.IsNullOrWhiteSpace(_actorFilter) ? null : _actorFilter.Trim(),
                 actionPrefix: string.IsNullOrEmpty(_actionPrefix) ? null : _actionPrefix,
+                moduleId: string.IsNullOrWhiteSpace(QueryModuleId) ? null : QueryModuleId.Trim(),
+                scheduleId: string.IsNullOrWhiteSpace(QueryScheduleId) ? null : QueryScheduleId.Trim(),
+                runId: string.IsNullOrWhiteSpace(QueryRunId) ? null : QueryRunId.Trim(),
                 pageSize: 50,
                 cancellationToken: default);
         }
@@ -221,6 +233,9 @@
                 toUtc: null,
                 actor: string.IsNullOrWhiteSpace(_actorFilter) ? null : _actorFilter.Trim(),
                 actionPrefix: string.IsNullOrEmpty(_actionPrefix) ? null : _actionPrefix,
+                moduleId: string.IsNullOrWhiteSpace(QueryModuleId) ? null : QueryModuleId.Trim(),
+                scheduleId: string.IsNullOrWhiteSpace(QueryScheduleId) ? null : QueryScheduleId.Trim(),
+                runId: string.IsNullOrWhiteSpace(QueryRunId) ? null : QueryRunId.Trim(),
                 pageSize: 50,
                 continuationToken: _page.NextContinuationToken,
                 cancellationToken: default);
@@ -246,14 +261,4 @@
     private string FmtWhen(DateTimeOffset dt) =>
         dt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss");
 
-    private string GetRefLink(AuditRelatedReferenceDto r)
-    {
-        return r.Kind switch
-        {
-            "run" => $"/runs/{r.Id}",
-            "schedule" => $"/schedules/{r.Id}",
-            "module" => "/modules",
-            _ => "#"
-        };
-    }
 }
