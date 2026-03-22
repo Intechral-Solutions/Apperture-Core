@@ -6,7 +6,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace Apperture.Management.Api.Controllers;
 
 [ApiController]
-[Route("modules/{moduleId}/slots/{slotName}")]
+[Route("api/modules/{moduleId}/slots/{slotName}")]
 [Authorize]
 public sealed class BindingsController : ControllerBase
 {

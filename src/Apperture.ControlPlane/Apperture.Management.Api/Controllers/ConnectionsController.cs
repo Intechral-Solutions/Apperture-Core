@@ -7,7 +7,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace Apperture.Management.Api.Controllers;
 
 [ApiController]
-[Route("connections")]
+[Route("api/connections")]
 [Authorize]
 public sealed class ConnectionsController : ControllerBase
 {

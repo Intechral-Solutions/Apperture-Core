@@ -35,6 +35,7 @@ builder.Services.AddScoped<Apperture.Core.Security.Trust.IRuntimeIdentityService
 builder.Services.AddAppertureGovernance();
 builder.Services.AddKnownModules([new HelloWorldModule()]);
 builder.Services.AddAppertureRecovery();
+builder.Services.AddRuntimeSchedulerDispatch();
 builder.Services.AddAppertureConnectorWorkflows();
 builder.Services.AddAppertureAuthentication(builder.Configuration);
 builder.Services.AddAuthorization();

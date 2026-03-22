@@ -11,7 +11,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace Apperture.Management.Api.Controllers;
 
 [ApiController]
-[Route("workflows")]
+[Route("api/workflows")]
 [Authorize]
 public sealed class WorkflowsController : ControllerBase
 {

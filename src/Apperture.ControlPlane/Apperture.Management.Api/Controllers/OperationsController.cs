@@ -11,7 +11,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace Apperture.Management.Api.Controllers;
 
 [ApiController]
-[Route("operations")]
+[Route("api/operations")]
 [Microsoft.AspNetCore.Authorization.Authorize]
 public sealed class OperationsController : ControllerBase
 {

@@ -7,7 +7,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace Apperture.Management.Api.Controllers;
 
 [ApiController]
-[Route("runs")]
+[Route("api/runs")]
 [Authorize]
 public sealed class RunsController : ControllerBase
 {
