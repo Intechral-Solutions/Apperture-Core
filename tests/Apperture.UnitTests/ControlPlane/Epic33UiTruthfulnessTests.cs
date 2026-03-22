@@ -148,6 +148,14 @@ public sealed class Epic33UiTruthfulnessTests
         Epic33UiDisplayHelpers.GetRecoveryAuditLink().Should().Contain("recovery");
     }
 
+    [Fact]
+    public void GovernanceAuditLink_HasActionPrefix_Epic40()
+    {
+        Epic33UiDisplayHelpers.GetGovernanceAuditLink().Should().Contain("actionPrefix=");
+        Epic33UiDisplayHelpers.GetGovernanceAuditLink().Should().Contain("governance");
+        Epic33UiDisplayHelpers.GetGovernanceAuditLink().Should().StartWith("/control/audit");
+    }
+
     // --- Run forensics (Epic 35) ---
 
     [Fact]

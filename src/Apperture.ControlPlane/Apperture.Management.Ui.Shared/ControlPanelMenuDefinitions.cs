@@ -104,6 +104,16 @@ public static class ControlPanelMenuDefinitions
             {
                 Title = null,
                 Items = { new DomainMenuItem { Text = "API Explorer", Href = "/tools/explorer" } }
+            },
+            ["Governance"] = new DomainMenu
+            {
+                Title = null,
+                Items =
+                {
+                    new DomainMenuItem { Text = "Permission Catalog", Href = "/governance/catalog" },
+                    new DomainMenuItem { Text = "Roles", Href = "/governance/roles" },
+                    new DomainMenuItem { Text = "Users", Href = "/governance/users" }
+                }
             }
         };
     }

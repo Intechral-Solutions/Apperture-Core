@@ -94,6 +94,10 @@ public static class Epic33UiDisplayHelpers
     public static string GetRecoveryAuditLink() =>
         $"/control/audit?actionPrefix={Uri.EscapeDataString(RecoveryAuditActionPrefix)}";
 
+    public const string GovernanceAuditActionPrefix = "governance.";
+    public static string GetGovernanceAuditLink() =>
+        $"/control/audit?actionPrefix={Uri.EscapeDataString(GovernanceAuditActionPrefix)}";
+
     // --- Run forensics (Epic 35) ---
 
     public static string FormatRunOriginKind(string? originKind) =>

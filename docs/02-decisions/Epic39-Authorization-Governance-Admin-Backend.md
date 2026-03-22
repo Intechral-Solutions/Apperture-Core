@@ -6,7 +6,7 @@ Implemented
 
 ## Context
 
-The platform had governance concepts, module-contributed resources and permissions, permission-aware management flows, and audit maturity. What was missing was a coherent backend administration surface for auth/governance itself. Admins could not easily list roles/principals/resources/permissions in an admin-consumable way, inspect what a role or principal can do, assign or revoke grants with clear validation, or distinguish definitions from grants from effective access. Epic 39 implements a truthful backend administration surface sufficient to support a future auth management UI without forcing the UI to invent its own auth model.
+The platform had governance concepts, module-contributed resources and permissions, permission-aware management flows, and audit maturity. What was missing was a coherent backend administration surface for auth/governance itself. **Epic 40** builds the authorization management UI on top of this backend surface. Admins could not easily list roles/principals/resources/permissions in an admin-consumable way, inspect what a role or principal can do, assign or revoke grants with clear validation, or distinguish definitions from grants from effective access. Epic 39 implements a truthful backend administration surface sufficient to support a future auth management UI without forcing the UI to invent its own auth model.
 
 ## Summary
 

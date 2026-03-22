@@ -89,7 +89,7 @@
 
     protected override async Task OnInitializedAsync()
     {
-        try { _capabilities = await Capabilities.GetCapabilitiesAsync(); } catch { _capabilities = new OperatorCapabilitiesDto(false, false, false, false, false); }
+        try { _capabilities = await Capabilities.GetCapabilitiesAsync(); } catch { _capabilities = new OperatorCapabilitiesDto(false, false, false, false, false, false, false); }
         await LoadAsync();
     }
 

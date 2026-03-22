@@ -1,3 +1,4 @@
+using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using Apperture.RuntimePlane.Abstractions;
@@ -354,10 +355,64 @@ public sealed class ManagementClient : IManagementClient
         response.EnsureSuccessStatusCode();
     }
 
+    public async Task<GovernanceDescriptorResponse> GetGovernanceDescriptorsAsync(CancellationToken cancellationToken = default)
+    {
+        var dto = await _http.GetFromJsonAsync<GovernanceDescriptorResponse>("governance/descriptors", cancellationToken).ConfigureAwait(false);
+        return dto ?? new GovernanceDescriptorResponse([], []);
+    }
+
+    public async Task<IReadOnlyList<RoleDto>> GetRolesAsync(CancellationToken cancellationToken = default)
+    {
+        var list = await _http.GetFromJsonAsync<RoleDto[]>("roles", cancellationToken).ConfigureAwait(false);
+        return list ?? Array.Empty<RoleDto>();
+    }
+
+    public async Task<RoleDetailDto?> GetRoleAsync(string roleId, CancellationToken cancellationToken = default)
+    {
+        return await _http.GetFromJsonAsync<RoleDetailDto>($"roles/{Uri.EscapeDataString(roleId)}", cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task SetRolePermissionsAsync(string roleId, SetRolePermissionsRequest request, CancellationToken cancellationToken = default)
+    {
+        var response = await _http.PutAsJsonAsync($"roles/{Uri.EscapeDataString(roleId)}/permissions", request, cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode == HttpStatusCode.BadRequest || response.StatusCode == HttpStatusCode.NotFound)
+        {
+            var msg = await TryGetMessageFromResponseAsync(response, cancellationToken).ConfigureAwait(false);
+            throw new InvalidOperationException(msg ?? "Request failed.");
+        }
+        if (response.StatusCode == HttpStatusCode.Forbidden)
+            throw new HttpRequestException("Not authorized to assign permissions.", null, HttpStatusCode.Forbidden);
+        response.EnsureSuccessStatusCode();
+    }
+
+    public async Task<UserListResponse> GetUserPageAsync(int skip, int take, CancellationToken cancellationToken = default)
+    {
+        var query = $"?skip={skip}&take={take}";
+        var dto = await _http.GetFromJsonAsync<UserListResponse>($"users{query}", cancellationToken).ConfigureAwait(false);
+        return dto ?? new UserListResponse([], 0);
+    }
+
+    public async Task<PrincipalEffectiveAccessDto?> GetEffectiveAccessAsync(string userId, CancellationToken cancellationToken = default)
+    {
+        return await _http.GetFromJsonAsync<PrincipalEffectiveAccessDto>($"users/{Uri.EscapeDataString(userId)}/effective-access", cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task<string?> TryGetMessageFromResponseAsync(HttpResponseMessage response, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var json = await response.Content.ReadFromJsonAsync<JsonElement>(cancellationToken).ConfigureAwait(false);
+            if (json.TryGetProperty("message", out var prop))
+                return prop.GetString();
+        }
+        catch { }
+        return null;
+    }
+
     public async Task<OperatorCapabilitiesDto> GetOperatorCapabilitiesAsync(CancellationToken cancellationToken = default)
     {
         var dto = await _http.GetFromJsonAsync<OperatorCapabilitiesDto>("control/capabilities", cancellationToken).ConfigureAwait(false);
-        return dto ?? new OperatorCapabilitiesDto(false, false, false, false, false);
+        return dto ?? new OperatorCapabilitiesDto(false, false, false, false, false, false, false);
     }
 
     public async Task<StartOperationResult> StartOperationAsync(

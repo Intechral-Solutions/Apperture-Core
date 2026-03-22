@@ -1,0 +1,158 @@
+@page "/governance/users/{UserId}/effective-access"
+@using System.Net
+@using Apperture.Management.Client
+@using Apperture.Management.Ui.Client.Services
+@inject IManagementClient Client
+@inject IOperatorCapabilitiesService Capabilities
+
+<div class="p-4">
+    <div class="flex items-center justify-between gap-3">
+        <div class="min-w-0">
+            <h1 class="text-xl font-semibold text-heading">Effective Access</h1>
+            <div class="mt-1 font-mono text-xs text-muted break-all">User @UserId</div>
+        </div>
+        <div class="flex items-center gap-2">
+            <a href="/governance/users" class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface">Back to users</a>
+            <button class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface"
+                    disabled="@_loading"
+                    @onclick="LoadAsync">
+                Refresh
+            </button>
+        </div>
+    </div>
+
+    <div class="mt-2 rounded border border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-950/30 px-3 py-2 text-xs text-body">
+        Effective access shows merged permissions from assigned roles. It does not include direct user grants, scope containment, or service principals.
+    </div>
+
+    @if (!_capabilitiesLoaded)
+    {
+        <div class="mt-4 text-sm text-muted">Loading...</div>
+    }
+    else if (_capabilities?.CanViewGovernance != true)
+    {
+        <div class="mt-4 rounded border border-default bg-surface px-3 py-2 text-sm text-body">
+            <div class="font-semibold">Not authorized</div>
+            <div class="text-muted">You do not have permission to view effective access.</div>
+        </div>
+    }
+    else if (_forbidden)
+    {
+        <div class="mt-4 rounded border border-default bg-surface px-3 py-2 text-sm text-body">
+            <div class="font-semibold">Not authorized</div>
+            <div class="text-muted">You do not have permission to view effective access.</div>
+        </div>
+    }
+    else if (!string.IsNullOrEmpty(_error))
+    {
+        <div class="mt-4 rounded border border-default bg-surface px-3 py-2 text-sm text-body">
+            <div class="font-semibold">Error</div>
+            <div class="text-muted">@_error</div>
+        </div>
+    }
+    else if (_access is null)
+    {
+        <div class="mt-4 text-sm text-muted">Loading...</div>
+    }
+    else
+    {
+        <div class="mt-4 grid gap-4">
+            <div class="rounded border border-default bg-surface p-3">
+                <div class="text-sm font-semibold text-heading">User & roles</div>
+                <div class="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2">
+                    <div>
+                        <div class="text-xs text-muted">User ID</div>
+                        <div class="text-sm font-mono">@_access.UserId</div>
+                    </div>
+                    <div>
+                        <div class="text-xs text-muted">Roles</div>
+                        <div class="text-sm">@(string.Join(", ", _access.RoleIds) != "" ? string.Join(", ", _access.RoleIds) : "(none)")</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="rounded border border-default bg-surface p-3">
+                <div class="text-sm font-semibold text-heading">Merged permissions</div>
+                @if (_access.Permissions.Count == 0)
+                {
+                    <div class="mt-2 text-xs text-muted">No permissions (user has no roles or roles have no permissions).</div>
+                }
+                else
+                {
+                    <div class="mt-2 overflow-x-auto">
+                        <table class="min-w-full text-left text-sm text-body">
+                            <thead class="border-b border-default text-xs text-muted">
+                                <tr>
+                                    <th class="px-2 py-2">Action</th>
+                                    <th class="px-2 py-2">Resource Type</th>
+                                    <th class="px-2 py-2">Scope Key</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var p in _access.Permissions)
+                                {
+                                    <tr class="border-b border-default hover:bg-surface-muted">
+                                        <td class="px-2 py-2 font-mono text-xs">@p.Action</td>
+                                        <td class="px-2 py-2 font-mono text-xs">@(p.ResourceType ?? "-")</td>
+                                        <td class="px-2 py-2 font-mono text-xs">@(p.ScopeKey ?? "-")</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public string UserId { get; set; } = "";
+
+    private PrincipalEffectiveAccessDto? _access;
+    private bool _loading;
+    private bool _forbidden;
+    private string? _error;
+    private OperatorCapabilitiesDto? _capabilities;
+    private bool _capabilitiesLoaded;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try { _capabilities = await Capabilities.GetCapabilitiesAsync(); } catch { _capabilities = new OperatorCapabilitiesDto(false, false, false, false, false, false, false); }
+        _capabilitiesLoaded = true;
+        await LoadAsync();
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_capabilitiesLoaded)
+            await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        if (_capabilities?.CanViewGovernance != true) return;
+
+        _loading = true;
+        _error = null;
+        _forbidden = false;
+        try
+        {
+            _access = await Client.GetEffectiveAccessAsync(UserId);
+            if (_access is null)
+                _error = "User not found.";
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.Forbidden)
+        {
+            _forbidden = true;
+        }
+        catch (HttpRequestException ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+}

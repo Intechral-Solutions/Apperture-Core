@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using Apperture.RuntimePlane.Abstractions;
 
 namespace Apperture.Management.Client;
@@ -133,14 +134,81 @@ public interface IManagementClient
     /// Gets operator UI capabilities for permission-aware rendering. Epic 34.
     /// </summary>
     Task<OperatorCapabilitiesDto> GetOperatorCapabilitiesAsync(CancellationToken cancellationToken = default);
+
+    // --- Governance admin (Epic 39/40) ---
+
+    /// <summary>Gets the governance descriptor catalog (resources and permissions). Requires user.read.</summary>
+    Task<GovernanceDescriptorResponse> GetGovernanceDescriptorsAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>Lists all roles. Requires user.read.</summary>
+    Task<IReadOnlyList<RoleDto>> GetRolesAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>Gets a role by id with its granted permissions. Requires user.read.</summary>
+    Task<RoleDetailDto?> GetRoleAsync(string roleId, CancellationToken cancellationToken = default);
+
+    /// <summary>Replaces the role's full permission set. Requires permission.assign. Throws on 400/403/404.</summary>
+    Task SetRolePermissionsAsync(string roleId, SetRolePermissionsRequest request, CancellationToken cancellationToken = default);
+
+    /// <summary>Gets a paginated page of users. Requires user.read.</summary>
+    Task<UserListResponse> GetUserPageAsync(int skip, int take, CancellationToken cancellationToken = default);
+
+    /// <summary>Gets effective access for a user (merged permissions from roles). Requires user.read.</summary>
+    Task<PrincipalEffectiveAccessDto?> GetEffectiveAccessAsync(string userId, CancellationToken cancellationToken = default);
 }
+
+public sealed record GovernanceDescriptorResponse(
+    IReadOnlyList<ResourceCatalogEntryDto> Resources,
+    IReadOnlyList<PermissionCatalogEntryDto> Permissions);
+
+public sealed record ResourceCatalogEntryDto(string ResourceType, string ScopeKey, string? Family);
+
+public sealed record PermissionCatalogEntryDto(
+    string Action,
+    string? ResourceType,
+    string? ScopeKey,
+    string? Family,
+    string Source,
+    string? ModuleId);
+
+public sealed record RoleDto(string Id, string Name, string? Description, bool IsSystemRole);
+
+public sealed record RoleDetailDto(
+    string Id,
+    string Name,
+    string? Description,
+    bool IsSystemRole,
+    IReadOnlyList<RolePermissionEntryDto> Permissions);
+
+public sealed record RolePermissionEntryDto(string Action, string? ResourceType, string? ScopeKey);
+
+public sealed record RolePermissionDto(string Action, string? ResourceType, string? ScopeKey);
+
+public sealed record SetRolePermissionsRequest(IReadOnlyList<RolePermissionDto> Permissions);
+
+public sealed record UserListResponse(
+    [property: JsonPropertyName("items")] IReadOnlyList<UserListDto> Items,
+    [property: JsonPropertyName("totalCount")] int TotalCount);
+
+public sealed record UserListDto(
+    [property: JsonPropertyName("userId")] string UserId,
+    [property: JsonPropertyName("displayName")] string DisplayName,
+    [property: JsonPropertyName("hasLocalLink")] bool HasLocalLink,
+    [property: JsonPropertyName("hasEntraLink")] bool HasEntraLink,
+    [property: JsonPropertyName("roleIds")] IReadOnlyList<string> RoleIds);
+
+public sealed record PrincipalEffectiveAccessDto(
+    string UserId,
+    IReadOnlyList<string> RoleIds,
+    IReadOnlyList<RolePermissionEntryDto> Permissions);
 
 public sealed record OperatorCapabilitiesDto(
     bool CanManageSchedules,
     bool CanManageRecovery,
     bool CanViewAudit,
     bool CanViewRuntimeHealth,
-    bool CanManageModules);
+    bool CanManageModules,
+    bool CanViewGovernance = false,
+    bool CanAssignPermissions = false);
 
 public sealed record BlockedWorkRetryResult(
     bool Success,
