@@ -1,7 +1,9 @@
 @page "/modules/{ModuleId}"
 @using Apperture.Management.Client
+@using Apperture.Management.Ui.Client.Services
 @using Apperture.Management.Ui.Shared
 @inject IManagementClient Client
+@inject IOperatorCapabilitiesService Capabilities
 @inject NavigationManager Nav
 
 <div class="p-4">
@@ -41,36 +43,39 @@
     else
     {
         <div class="mt-4 grid gap-4">
-            <div class="rounded border border-default bg-surface p-3">
-                <div class="text-sm font-semibold text-heading">Lifecycle actions</div>
-                <div class="text-xs text-muted">Safe actions supported by the backend. Disabled when not applicable.</div>
-                <div class="mt-2 flex flex-wrap gap-2">
-                    <button class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface disabled:opacity-50"
-                            disabled="@(_loading || !CanInstall)"
-                            title="@(CanInstall ? "Install module" : "Already installed or not applicable")"
-                            @onclick="InstallAsync">
-                        Install
-                    </button>
-                    <button class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface disabled:opacity-50"
-                            disabled="@(_loading || !CanEnable)"
-                            title="@(CanEnable ? "Enable module" : "Already enabled or not applicable")"
-                            @onclick="EnableAsync">
-                        Enable
-                    </button>
-                    <button class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface disabled:opacity-50"
-                            disabled="@(_loading || !CanDisable)"
-                            title="@(CanDisable ? "Disable module" : "Already disabled or not applicable")"
-                            @onclick="DisableAsync">
-                        Disable
-                    </button>
-                    <button class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface disabled:opacity-50"
-                            disabled="@(_loading || !CanUninstall)"
-                            title="@(CanUninstall ? "Uninstall module" : "Not installed or not applicable")"
-                            @onclick="UninstallAsync">
-                        Uninstall
-                    </button>
+            @if (_capabilities?.CanManageModules == true)
+            {
+                <div class="rounded border border-default bg-surface p-3">
+                    <div class="text-sm font-semibold text-heading">Lifecycle actions</div>
+                    <div class="text-xs text-muted">Safe actions supported by the backend. Disabled when not applicable.</div>
+                    <div class="mt-2 flex flex-wrap gap-2">
+                        <button class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface disabled:opacity-50"
+                                disabled="@(_loading || !CanInstall)"
+                                title="@(CanInstall ? "Install module" : "Already installed or not applicable")"
+                                @onclick="InstallAsync">
+                            Install
+                        </button>
+                        <button class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface disabled:opacity-50"
+                                disabled="@(_loading || !CanEnable)"
+                                title="@(CanEnable ? "Enable module" : "Already enabled or not applicable")"
+                                @onclick="EnableAsync">
+                            Enable
+                        </button>
+                        <button class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface disabled:opacity-50"
+                                disabled="@(_loading || !CanDisable)"
+                                title="@(CanDisable ? "Disable module" : "Already disabled or not applicable")"
+                                @onclick="DisableAsync">
+                            Disable
+                        </button>
+                        <button class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface disabled:opacity-50"
+                                disabled="@(_loading || !CanUninstall)"
+                                title="@(CanUninstall ? "Uninstall module" : "Not installed or not applicable")"
+                                @onclick="UninstallAsync">
+                            Uninstall
+                        </button>
+                    </div>
                 </div>
-            </div>
+            }
 
             <div class="rounded border border-default bg-surface p-3">
                 <div class="text-sm font-semibold text-heading">State</div>
@@ -129,6 +134,7 @@
     [Parameter] public string ModuleId { get; set; } = "";
 
     private ModuleDto? _module;
+    private OperatorCapabilitiesDto? _capabilities;
     private bool _loading;
     private string? _error;
     private string? _actionMessage;
@@ -138,7 +144,23 @@
     private bool CanDisable => _module is not null && string.Equals(_module.State, "InstalledEnabled", StringComparison.OrdinalIgnoreCase);
     private bool CanUninstall => _module is not null && string.Equals(_module.State, "InstalledDisabled", StringComparison.OrdinalIgnoreCase);
 
-    protected override Task OnParametersSetAsync() => LoadAsync();
+    protected override async Task OnParametersSetAsync()
+    {
+        await LoadCapabilitiesAsync();
+        await LoadAsync();
+    }
+
+    private async Task LoadCapabilitiesAsync()
+    {
+        try
+        {
+            _capabilities = await Capabilities.GetCapabilitiesAsync();
+        }
+        catch
+        {
+            _capabilities = new OperatorCapabilitiesDto(false, false, false, false, false);
+        }
+    }
 
     private async Task LoadAsync()
     {

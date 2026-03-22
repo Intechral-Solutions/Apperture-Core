@@ -1,3 +1,4 @@
+using Apperture.ControlPlane.Security;
 using Apperture.ControlPlane.Security.Audit;
 using Apperture.Core.Application.Services;
 using Apperture.Management.Api.Controllers;
@@ -9,6 +10,17 @@ namespace Apperture.UnitTests.ControlPlane;
 
 public sealed class AuditControllerTests
 {
+    private static AuditController NewController(
+        IAuditTimelineQueryService? timeline = null,
+        IPrincipalContext? principal = null,
+        IAuthorizationEvaluationService? authorization = null)
+    {
+        return new AuditController(
+            timeline ?? new StubAuditTimelineQueryService(new AuditTimelinePage([], null)),
+            principal ?? new StubPrincipalContext(),
+            authorization ?? new StubAuthorizationEvaluationService(allowed: true));
+    }
+
     [Fact]
     public async Task List_Returns200WithPage()
     {
@@ -24,7 +36,7 @@ public sealed class AuditControllerTests
             [new AuditRelatedReference("schedule", "s1"), new AuditRelatedReference("run", "r1")]);
         var page = new AuditTimelinePage([entry], null);
         var svc = new StubAuditTimelineQueryService(page);
-        var controller = new AuditController(svc);
+        var controller = NewController(timeline: svc);
 
         var result = await controller.List(cancellationToken: CancellationToken.None);
 
@@ -50,7 +62,7 @@ public sealed class AuditControllerTests
             "runId=r1;definitionId=wf1",
             [new AuditRelatedReference("run", "r1")]);
         var svc = new StubAuditTimelineQueryService(entry: entry);
-        var controller = new AuditController(svc);
+        var controller = NewController(timeline: svc);
 
         var result = await controller.GetById("42", CancellationToken.None);
 
@@ -64,11 +76,56 @@ public sealed class AuditControllerTests
     public async Task GetById_WhenNotFound_Returns404()
     {
         var svc = new StubAuditTimelineQueryService(entry: null);
-        var controller = new AuditController(svc);
+        var controller = NewController(timeline: svc);
 
         var result = await controller.GetById("999", CancellationToken.None);
 
         result.Result.Should().BeOfType<NotFoundResult>();
+    }
+
+    [Fact]
+    public async Task List_WithoutAuditRead_Returns403()
+    {
+        var page = new AuditTimelinePage([], null);
+        var auth = new StubAuthorizationEvaluationService(allowed: false);
+        var controller = NewController(timeline: new StubAuditTimelineQueryService(page), authorization: auth);
+        var result = await controller.List(cancellationToken: CancellationToken.None);
+        result.Result.Should().BeOfType<ForbidResult>();
+    }
+
+    [Fact]
+    public async Task List_WithAuditRead_Returns200()
+    {
+        var page = new AuditTimelinePage([], null);
+        var auth = new StubAuthorizationEvaluationService(allowed: true);
+        var controller = NewController(timeline: new StubAuditTimelineQueryService(page), authorization: auth);
+        var result = await controller.List(cancellationToken: CancellationToken.None);
+        result.Result.Should().BeOfType<OkObjectResult>();
+    }
+
+    private sealed class StubPrincipalContext : IPrincipalContext
+    {
+        public ValueTask<Apperture.Shared.Kernel.IActor?> GetCurrentActorAsync(CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult<Apperture.Shared.Kernel.IActor?>(new StubActor());
+    }
+
+    private sealed class StubActor : Apperture.Shared.Kernel.IActor
+    {
+        public Apperture.Shared.Kernel.ActorId Id => new("user:test");
+        public Apperture.Shared.Kernel.ActorKind Kind => Apperture.Shared.Kernel.ActorKind.Human;
+        public string? DisplayName => "Test User";
+    }
+
+    private sealed class StubAuthorizationEvaluationService : IAuthorizationEvaluationService
+    {
+        private readonly bool _allowed;
+
+        public StubAuthorizationEvaluationService(bool allowed = true) => _allowed = allowed;
+
+        public ValueTask<bool> EvaluateAsync(
+            Apperture.Core.Domain.Governance.AuthorizationEvaluationContext context,
+            CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(_allowed);
     }
 
     private sealed class StubAuditTimelineQueryService : IAuditTimelineQueryService

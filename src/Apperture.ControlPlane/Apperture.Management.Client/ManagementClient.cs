@@ -294,6 +294,12 @@ public sealed class ManagementClient : IManagementClient
         response.EnsureSuccessStatusCode();
     }
 
+    public async Task<OperatorCapabilitiesDto> GetOperatorCapabilitiesAsync(CancellationToken cancellationToken = default)
+    {
+        var dto = await _http.GetFromJsonAsync<OperatorCapabilitiesDto>("control/capabilities", cancellationToken).ConfigureAwait(false);
+        return dto ?? new OperatorCapabilitiesDto(false, false, false, false, false);
+    }
+
     public async Task<StartOperationResult> StartOperationAsync(
         string operationDefinitionId,
         IReadOnlyDictionary<string, object?>? parameters,

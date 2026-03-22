@@ -35,7 +35,7 @@ The platform governance cycle added cross-domain hardening beyond operations:
 | Permission catalog | Done | IPlatformPermissionSeeder, PlatformPermissionSeeder, IResourceDescriptorRegistry; module-declared permissions registered at startup via IModuleManifestProvider and ModulePermissionRegistrationHostedService (Epic 5 Prompt 1). Runtime enforcement (Epic 5 Prompt 2): module/workflow operations use IAuthorizationService and consume registered module permissions. |
 | Connector domain (Phase 1) | Done | Connection, Binding, ConnectorDefinition, MappingDefinition, ICapabilitySlot, CapabilityVisibility |
 | Host auth scaffolding | Done | Management.Host: AddAppertureAuthentication (Cookie + OpenIdConnect when Entra enabled), AddAuthorization, UseAuthentication, UseAuthorization; GET /signin, /signout; real Entra OIDC and local POST /api/auth/local/login |
-| Endpoint protection | Done | [Authorize] on Connections, Bindings, Enroll, Workflows, Runs, Modules; service-layer permission checks (IAuthorizationService) on Connections, Bindings, module list/workflow list, workflow start; 403 on deny. [AllowAnonymous] on Bootstrap first-admin, Enroll POST, Auth local/login, local/logout, auth/break-glass |
+| Endpoint protection | Done | [Authorize] on Connections, Bindings, Enroll, Workflows, Runs, Modules; service-layer permission checks (IAuthorizationService) on Connections, Bindings, module list/workflow list, workflow start; 403 on deny. [AllowAnonymous] on Bootstrap first-admin, Enroll POST, Auth local/login, local/logout, auth/break-glass. **Epic 34:** Recovery (recovery.read, recovery.manage), Audit (audit.read), Runtime Health (runtime.health.read) — see [Epic34-Management-Authorization-Hardening](../02-decisions/Epic34-Management-Authorization-Hardening.md). |
 
 ## Executable required-permissions (Epic 6)
 
@@ -196,6 +196,19 @@ Definition-level permissions must remain coherent with the grantable catalog. If
 - **AuthorizationEvaluationContext** is defined but not yet populated during evaluation. Populating it would enable future audit emission. Defer until audit integration.
 - **Access-denied reasoning** — Current API returns bool. A richer result type (Allow/Deny + reason) could be added later if needed.
 - **IAuthorizationService** does not accept IGovernedResource directly; callers use GovernedResourceDescriptor.FromIdentity for resource and resource.GetIdentity() for resourceIdentity. This is intentional and documented.
+
+## Operator Flow Endpoint Protection (Epic 34)
+
+| Endpoint area | Permission(s) | Notes |
+|---------------|---------------|-------|
+| Recovery (blocked-work list, detail, schedule/module remediation GET) | recovery.read | Read-only inspection |
+| Recovery (retry, run-cycle POST) | recovery.manage | Action operations |
+| Audit (list, get by id) | audit.read | View audit timeline |
+| Runtime health | runtime.health.read | View platform health snapshot |
+| Schedules (list, detail, enable, disable, run-cycle) | schedule.manage | Unchanged from prior epic |
+| Modules (list, detail, lifecycle) | module.configure | Unchanged from prior epic |
+
+See [Epic34-Management-Authorization-Hardening](../02-decisions/Epic34-Management-Authorization-Hardening.md) for full details.
 
 ## Connector Resource Family Integration
 

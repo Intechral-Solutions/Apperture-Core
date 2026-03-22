@@ -1,7 +1,9 @@
 @page "/control/blocked-work"
 @using Apperture.Management.Client
+@using Apperture.Management.Ui.Client.Services
 @using Apperture.Management.Ui.Shared
 @inject IManagementClient Client
+@inject IOperatorCapabilitiesService Capabilities
 @inject NavigationManager Nav
 
 <div class="p-4">
@@ -18,11 +20,14 @@
                 <option value="24">Last 24 hours</option>
                 <option value="168">Last 7 days</option>
             </select>
-            <button class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface"
-                    disabled="@_loading"
-                    @onclick="TriggerRunCycleAsync">
-                Trigger scheduler cycle
-            </button>
+            @if (_capabilities?.CanManageRecovery == true)
+            {
+                <button class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface"
+                        disabled="@_loading"
+                        @onclick="TriggerRunCycleAsync">
+                    Trigger scheduler cycle
+                </button>
+            }
             <button class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface"
                     disabled="@_loading"
                     @onclick="LoadAsync">
@@ -116,11 +121,18 @@
                                 @switch (Epic33UiDisplayHelpers.GetBlockedWorkActionKind(item))
                                 {
                                     case Epic33UiDisplayHelpers.BlockedWorkActionKind.Retry:
-                                        <button class="rounded bg-surface-muted px-2 py-1 text-xs hover:bg-surface"
-                                                disabled="@_loading"
-                                                @onclick="() => RetryAsync(item.RunId)">
-                                            Retry
-                                        </button>
+                                        @if (_capabilities?.CanManageRecovery == true)
+                                        {
+                                            <button class="rounded bg-surface-muted px-2 py-1 text-xs hover:bg-surface"
+                                                    disabled="@_loading"
+                                                    @onclick="() => RetryAsync(item.RunId)">
+                                                Retry
+                                            </button>
+                                        }
+                                        else
+                                        {
+                                            <span class="text-xs text-muted">-</span>
+                                        }
                                         break;
                                     case Epic33UiDisplayHelpers.BlockedWorkActionKind.ViewRun:
                                         <a href="@($"/runs/{item.RunId}")" class="text-xs underline">View run</a>
@@ -143,13 +155,30 @@
 
 @code {
     private IReadOnlyList<BlockedWorkRemediationEntryDto>? _items;
+    private OperatorCapabilitiesDto? _capabilities;
     private bool _loading;
     private string? _error;
     private string? _actionMessage;
     private string? _newRunId;
     private string _windowHours = "24";
 
-    protected override Task OnInitializedAsync() => LoadAsync();
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadCapabilitiesAsync();
+        await LoadAsync();
+    }
+
+    private async Task LoadCapabilitiesAsync()
+    {
+        try
+        {
+            _capabilities = await Capabilities.GetCapabilitiesAsync();
+        }
+        catch
+        {
+            _capabilities = new OperatorCapabilitiesDto(false, false, false, false, false);
+        }
+    }
 
     private async Task LoadAsync()
     {

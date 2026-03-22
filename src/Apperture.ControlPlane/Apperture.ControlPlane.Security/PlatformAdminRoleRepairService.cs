@@ -23,12 +23,17 @@ public sealed class PlatformAdminRoleRepairService : IHostedService
     ];
 
     // Permissions required for the operator console surfaces (menus, module/workflow listing, workflow start).
-    // These are intentionally coarse "instance" scope permissions so they contain module-scoped targets.
+    // Epic 34: Add recovery, audit, runtime health, schedule manage.
     private static readonly PermissionDescriptor[] RequiredOperatorUiPermissions =
     [
         new PermissionDescriptor(ActionConstants.ModuleConfigure, new ResourceDescriptor(ResourceTypeConstants.Module, ScopeKeyConstants.Instance)),
         new PermissionDescriptor("workflow.execute", new ResourceDescriptor(ResourceTypeConstants.WorkflowInstance, ScopeKeyConstants.Instance)),
-        new PermissionDescriptor(ActionConstants.WorkflowStart, new ResourceDescriptor(ResourceTypeConstants.WorkflowInstance, ScopeKeyConstants.Instance))
+        new PermissionDescriptor(ActionConstants.WorkflowStart, new ResourceDescriptor(ResourceTypeConstants.WorkflowInstance, ScopeKeyConstants.Instance)),
+        new PermissionDescriptor(ActionConstants.ScheduleManage, new ResourceDescriptor(ResourceTypeConstants.Schedule, ScopeKeyConstants.Instance)),
+        new PermissionDescriptor(ActionConstants.RecoveryRead, new ResourceDescriptor(ResourceTypeConstants.Recovery, ScopeKeyConstants.Instance)),
+        new PermissionDescriptor(ActionConstants.RecoveryManage, new ResourceDescriptor(ResourceTypeConstants.Recovery, ScopeKeyConstants.Instance)),
+        new PermissionDescriptor(ActionConstants.AuditRead, new ResourceDescriptor(ResourceTypeConstants.AuditPolicy, ScopeKeyConstants.Instance)),
+        new PermissionDescriptor(ActionConstants.RuntimeHealthRead, new ResourceDescriptor(ResourceTypeConstants.RuntimeHealth, ScopeKeyConstants.Instance))
     ];
 
     private readonly IServiceScopeFactory _scopeFactory;

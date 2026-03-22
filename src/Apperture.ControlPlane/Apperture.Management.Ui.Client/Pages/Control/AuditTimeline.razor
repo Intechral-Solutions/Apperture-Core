@@ -1,4 +1,5 @@
 @page "/control/audit"
+@using System.Net
 @using Microsoft.AspNetCore.Components.Web
 @using Apperture.Management.Client
 @using Apperture.Management.Ui.Shared
@@ -51,20 +52,27 @@
         </div>
     </div>
 
-    @if (!string.IsNullOrEmpty(_error))
+    @if (_forbidden)
+    {
+        <div class="mt-4 rounded border border-default bg-surface px-3 py-2 text-sm text-body">
+            <div class="font-semibold">Not authorized</div>
+            <div class="text-muted">You do not have permission to view the audit timeline.</div>
+        </div>
+    }
+    else if (!string.IsNullOrEmpty(_error))
     {
         <div class="mt-4 rounded border border-default bg-surface px-3 py-2 text-sm text-body">
             <div class="font-semibold">Error</div>
             <div class="text-muted">@_error</div>
         </div>
     }
-    else if (_page is null)
+    else if (_page is null && !_forbidden)
     {
         <div class="mt-4 text-sm text-muted">Loading...</div>
     }
     else
     {
-        @if (_page.Items.Count == 0)
+        @if (_page!.Items.Count == 0)
         {
             <div class="mt-4 text-sm text-muted">No audit events found.</div>
         }
@@ -135,7 +143,7 @@
                                                     <div class="mt-1 flex flex-wrap gap-2">
                                                         @foreach (var r in e.RelatedReferences)
                                                         {
-                                                            <a href="@GetRefLink(r)" class="font-mono underline">@r.Kind:@r.Id</a>
+                                                            <a href="@Epic33UiDisplayHelpers.GetAuditRefLink(r)" class="font-mono underline">@r.Kind:@r.Id</a>
                                                         }
                                                     </div>
                                                 </div>
@@ -175,6 +183,7 @@
 
     private AuditTimelinePageDto? _page;
     private bool _loading;
+    private bool _forbidden;
     private string? _error;
     private string? _expandedId;
     private string _timeRange = "24";
@@ -193,6 +202,7 @@
     {
         _loading = true;
         _error = null;
+        _forbidden = false;
         try
         {
             var hours = int.TryParse(_timeRange, out var h) ? h : 24;
@@ -207,6 +217,10 @@
                 runId: string.IsNullOrWhiteSpace(QueryRunId) ? null : QueryRunId.Trim(),
                 pageSize: 50,
                 cancellationToken: default);
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.Forbidden)
+        {
+            _forbidden = true;
         }
         catch (HttpRequestException ex)
         {
@@ -242,6 +256,10 @@
             _page = new AuditTimelinePageDto(
                 _page.Items.Concat(next.Items).ToList(),
                 next.NextContinuationToken);
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.Forbidden)
+        {
+            _forbidden = true;
         }
         catch (HttpRequestException ex)
         {

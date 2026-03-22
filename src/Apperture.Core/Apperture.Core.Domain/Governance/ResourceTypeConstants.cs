@@ -20,6 +20,8 @@ public static class ResourceTypeConstants
 
     // Administrative
     public const string Schedule = "Schedule";
+    public const string Recovery = "Recovery";
+    public const string RuntimeHealth = "RuntimeHealth";
     public const string SecretDescriptor = "SecretDescriptor";
     public const string AuditPolicy = "AuditPolicy";
 

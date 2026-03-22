@@ -40,4 +40,6 @@ builder.Services.AddScoped<DomainMenuService>(sp =>
 builder.Services.AddScoped<IManagementClient>(sp =>
     new ManagementClient(sp.GetRequiredService<HttpClient>()));
 
+builder.Services.AddScoped<IOperatorCapabilitiesService, OperatorCapabilitiesService>();
+
 await builder.Build().RunAsync();

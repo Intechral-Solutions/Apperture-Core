@@ -1,7 +1,9 @@
 @page "/control/center"
 @using Apperture.Management.Client
+@using Apperture.Management.Ui.Client.Services
 @using Apperture.Management.Ui.Shared
 @inject IManagementClient Client
+@inject IOperatorCapabilitiesService Capabilities
 @inject NavigationManager Nav
 
 <div class="p-4">
@@ -30,7 +32,7 @@
     }
     else
     {
-        @if (_health is not null)
+        @if (_capabilities?.CanViewRuntimeHealth == true && _health is not null)
         {
             <div class="mt-4 rounded border border-default bg-surface p-3">
                 <div class="text-sm font-semibold text-heading">Platform Health</div>
@@ -86,6 +88,13 @@
                         </div>
                     </div>
                 }
+            </div>
+        }
+        else if (_capabilities?.CanViewRuntimeHealth == false || _healthForbidden)
+        {
+            <div class="mt-4 rounded border border-default bg-surface p-3">
+                <div class="text-sm font-semibold text-heading">Platform Health</div>
+                <div class="text-xs text-muted">Not available. You do not have permission to view runtime health.</div>
             </div>
         }
         <div class="mt-4 grid gap-4 lg:grid-cols-3">
@@ -263,10 +272,28 @@
 @code {
     private ControlCenterDto? _dto;
     private RuntimeHealthSnapshotDto? _health;
+    private OperatorCapabilitiesDto? _capabilities;
+    private bool _healthForbidden;
     private bool _loading;
     private string? _error;
 
-    protected override Task OnInitializedAsync() => LoadAsync();
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadCapabilitiesAsync();
+        await LoadAsync();
+    }
+
+    private async Task LoadCapabilitiesAsync()
+    {
+        try
+        {
+            _capabilities = await Capabilities.GetCapabilitiesAsync();
+        }
+        catch
+        {
+            _capabilities = new OperatorCapabilitiesDto(false, false, false, false, false);
+        }
+    }
 
     private async Task LoadAsync()
     {
@@ -274,10 +301,21 @@
         _error = null;
         _dto = null;
         _health = null;
+        _healthForbidden = false;
         try
         {
             _dto = await Client.GetControlCenterAsync();
-            _health = await Client.GetRuntimeHealthAsync();
+            if (_capabilities?.CanViewRuntimeHealth == true)
+            {
+                try
+                {
+                    _health = await Client.GetRuntimeHealthAsync();
+                }
+                catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Forbidden)
+                {
+                    _healthForbidden = true;
+                }
+            }
         }
         catch (HttpRequestException ex)
         {

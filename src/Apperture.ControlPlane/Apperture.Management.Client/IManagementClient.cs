@@ -118,7 +118,19 @@ public interface IManagementClient
     /// Triggers global scheduler re-evaluation cycle. Not schedule-specific.
     /// </summary>
     Task TriggerSchedulerRunCycleAsync(string? runtimePlaneId = "local", CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Gets operator UI capabilities for permission-aware rendering. Epic 34.
+    /// </summary>
+    Task<OperatorCapabilitiesDto> GetOperatorCapabilitiesAsync(CancellationToken cancellationToken = default);
 }
+
+public sealed record OperatorCapabilitiesDto(
+    bool CanManageSchedules,
+    bool CanManageRecovery,
+    bool CanViewAudit,
+    bool CanViewRuntimeHealth,
+    bool CanManageModules);
 
 public sealed record BlockedWorkRetryResult(
     bool Success,

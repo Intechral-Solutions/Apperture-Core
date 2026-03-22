@@ -35,7 +35,8 @@ public static class AuditCategoryResolver
         if (action.StartsWith("module.lifecycle.", StringComparison.Ordinal))
             return CategoryModuleLifecycle;
 
-        if (action.StartsWith("governance.", StringComparison.Ordinal))
+        if (action.StartsWith("governance.", StringComparison.Ordinal)
+            || action.StartsWith("audit.read.", StringComparison.Ordinal))
             return CategoryGovernance;
 
         if (action.StartsWith("auth.", StringComparison.Ordinal)

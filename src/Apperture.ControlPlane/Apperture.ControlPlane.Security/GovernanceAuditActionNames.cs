@@ -15,5 +15,8 @@ public static class GovernanceAuditActionNames
 
     // Runtime external control (operator control surface)
     public const string RuntimeShutdownRequestCreated = "governance.runtime.shutdown.request.created";
+
+    /// <summary>Epic 34: audit when audit.read is denied due to permission.</summary>
+    public const string AuditReadDenied = "audit.read.denied";
 }
 

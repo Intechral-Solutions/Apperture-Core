@@ -150,6 +150,87 @@ public sealed class RecoveryControllerTests
         result.Result.Should().BeOfType<OkObjectResult>();
     }
 
+    // Epic 34: authorization tests
+    [Fact]
+    public async Task ListBlockedWork_WithoutRecoveryRead_Returns403()
+    {
+        var gov = new StubRecoveryGovernanceService(canRead: false, canManage: false);
+        var controller = NewController(
+            recovery: new StubRecoveryQueryService(blocked: [CreateBlockedEntry("r1", "workflow", true)]),
+            recoveryGovernance: gov);
+        var result = await controller.ListBlockedWork(cancellationToken: CancellationToken.None);
+        result.Result.Should().BeOfType<ForbidResult>();
+    }
+
+    [Fact]
+    public async Task ListBlockedWork_WithRecoveryRead_Returns200()
+    {
+        var gov = new StubRecoveryGovernanceService(canRead: true, canManage: false);
+        var controller = NewController(
+            recovery: new StubRecoveryQueryService(blocked: [CreateBlockedEntry("r1", "workflow", true)]),
+            recoveryGovernance: gov);
+        var result = await controller.ListBlockedWork(cancellationToken: CancellationToken.None);
+        result.Result.Should().BeOfType<OkObjectResult>();
+    }
+
+    [Fact]
+    public async Task RetryBlockedWork_WithoutRecoveryManage_Returns403()
+    {
+        var entry = CreateBlockedEntry("r1", "workflow", true);
+        var gov = new StubRecoveryGovernanceService(canRead: true, canManage: false);
+        var controller = NewController(
+            recovery: new StubRecoveryQueryService(blocked: [entry], single: entry),
+            retry: new StubRetryService(new WorkflowRetryResult(
+                new OperationRunId("r1"), new OperationRunId("r2"), new WorkflowInstanceId("i"), new WorkflowDefinitionId("wf"), "requested")),
+            recoveryGovernance: gov);
+        var result = await controller.RetryBlockedWork("r1", CancellationToken.None);
+        result.Should().BeOfType<ForbidResult>();
+    }
+
+    [Fact]
+    public async Task RetryBlockedWork_WithRecoveryManage_WhenEligible_Returns202()
+    {
+        var entry = CreateBlockedEntry("r1", "workflow", true);
+        var gov = new StubRecoveryGovernanceService(canRead: true, canManage: true);
+        var controller = NewController(
+            recovery: new StubRecoveryQueryService(blocked: [entry], single: entry),
+            retry: new StubRetryService(new WorkflowRetryResult(
+                new OperationRunId("r1"), new OperationRunId("r2"), new WorkflowInstanceId("i"), new WorkflowDefinitionId("wf"), "requested")),
+            recoveryGovernance: gov);
+        var result = await controller.RetryBlockedWork("r1", CancellationToken.None);
+        result.Should().BeOfType<AcceptedResult>();
+    }
+
+    [Fact]
+    public async Task RunScheduleCycle_WithoutRecoveryManage_Returns403()
+    {
+        var gov = new StubRecoveryGovernanceService(canRead: true, canManage: false);
+        var controller = NewController(recoveryGovernance: gov);
+        var result = await controller.RunScheduleCycle(cancellationToken: CancellationToken.None);
+        result.Should().BeOfType<ForbidResult>();
+    }
+
+    [Fact]
+    public async Task RunScheduleCycle_WithRecoveryManage_Returns202()
+    {
+        var gov = new StubRecoveryGovernanceService(canRead: true, canManage: true);
+        var runner = new StubScheduleDispatchRunner();
+        var controller = NewController(recoveryGovernance: gov, scheduleRunner: runner);
+        var result = await controller.RunScheduleCycle(cancellationToken: CancellationToken.None);
+        result.Should().BeOfType<AcceptedResult>();
+        runner.RunCycleCalled.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task GetScheduleRemediation_WithoutRecoveryRead_Returns403()
+    {
+        var gov = new StubRecoveryGovernanceService(canRead: false, canManage: false);
+        var schedule = new ScheduleRemediationEntry("s1", "S", true, "Blocked", "reason", false, false, DateTimeOffset.UtcNow.AddHours(1), "next");
+        var controller = NewController(recovery: new StubRecoveryQueryService(blocked: [], schedule: schedule), recoveryGovernance: gov);
+        var result = await controller.GetScheduleRemediation("s1", cancellationToken: CancellationToken.None);
+        result.Result.Should().BeOfType<ForbidResult>();
+    }
+
     private static BlockedWorkRemediationEntry CreateBlockedEntry(string runId, string kind, bool retryEligibleNow) =>
         new(runId, "def-1", kind, "m1", DateTimeOffset.UtcNow.AddHours(-1),
             "blocked reason", retryEligibleNow, retryEligibleNow ? "eligible" : "not eligible");
@@ -158,6 +239,7 @@ public sealed class RecoveryControllerTests
         IRecoveryQueryService? recovery = null,
         IWorkflowRetryService? retry = null,
         IScheduleDispatchRunner? scheduleRunner = null,
+        IRecoveryGovernanceService? recoveryGovernance = null,
         IPrincipalContext? principal = null,
         IAuditService? audit = null)
     {
@@ -165,8 +247,27 @@ public sealed class RecoveryControllerTests
             recovery ?? new StubRecoveryQueryService(blocked: []),
             retry ?? new StubRetryService(),
             scheduleRunner ?? new StubScheduleDispatchRunner(),
+            recoveryGovernance ?? new StubRecoveryGovernanceService(canRead: true, canManage: true),
             principal ?? new StubPrincipalContext(),
             audit);
+    }
+
+    private sealed class StubRecoveryGovernanceService : IRecoveryGovernanceService
+    {
+        private readonly bool _canRead;
+        private readonly bool _canManage;
+
+        public StubRecoveryGovernanceService(bool canRead = true, bool canManage = true)
+        {
+            _canRead = canRead;
+            _canManage = canManage;
+        }
+
+        public ValueTask<bool> CanReadAsync(CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(_canRead);
+
+        public ValueTask<bool> CanManageAsync(CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(_canManage);
     }
 
     private sealed class StubRecoveryQueryService : IRecoveryQueryService

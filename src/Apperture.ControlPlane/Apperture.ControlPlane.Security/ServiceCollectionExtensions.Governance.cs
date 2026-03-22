@@ -97,6 +97,8 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IModuleWorkflowListingService, ModuleWorkflowListingService>();
         services.AddScoped<IWorkflowStartAuthorizationService, WorkflowStartAuthorizationService>();
         services.AddScoped<IScheduleGovernanceService, ScheduleGovernanceService>();
+        services.AddScoped<IRecoveryGovernanceService, RecoveryGovernanceService>();
+        services.AddScoped<IOperatorCapabilitiesQueryService, OperatorCapabilitiesQueryService>();
         services.AddScoped<IScheduleManagementService, SqlScheduleManagementService>();
         services.AddScoped<IControlActionAvailabilityProjection, ControlActionAvailabilityProjection>();
         services.AddScoped<IControlActivityQueryService, ControlActivityQueryService>();

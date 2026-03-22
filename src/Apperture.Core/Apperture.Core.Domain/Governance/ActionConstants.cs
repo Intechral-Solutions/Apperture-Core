@@ -39,6 +39,13 @@ public static class ActionConstants
     // Schedule
     public const string ScheduleManage = "schedule.manage";
 
+    // Recovery (Epic 34)
+    public const string RecoveryRead = "recovery.read";
+    public const string RecoveryManage = "recovery.manage";
+
+    // Runtime health (Epic 34)
+    public const string RuntimeHealthRead = "runtime.health.read";
+
     // Secret
     public const string SecretManage = "secret.manage";
 

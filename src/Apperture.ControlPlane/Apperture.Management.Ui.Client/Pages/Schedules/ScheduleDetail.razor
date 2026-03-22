@@ -1,7 +1,9 @@
 @page "/schedules/{ScheduleId}"
 @using Apperture.Management.Client
+@using Apperture.Management.Ui.Client.Services
 @using Apperture.Management.Ui.Shared
 @inject IManagementClient Client
+@inject IOperatorCapabilitiesService Capabilities
 @inject NavigationManager Nav
 
 <div class="p-4">
@@ -12,24 +14,27 @@
         </div>
         <div class="flex items-center gap-2">
             <a href="/schedules" class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface">Back to list</a>
-            <button class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface disabled:opacity-50"
-                    disabled="@(_loading || (_detail?.Enabled == true))"
-                    title="Enable this schedule"
-                    @onclick="EnableAsync">
-                Enable
-            </button>
-            <button class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface disabled:opacity-50"
-                    disabled="@(_loading || (_detail?.Enabled != true))"
-                    title="Disable this schedule"
-                    @onclick="DisableAsync">
-                Disable
-            </button>
-            <button class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface"
-                    disabled="@_loading"
-                    title="@Epic33UiDisplayHelpers.ScheduleActionButtonTitle"
-                    @onclick="TriggerRunCycleAsync">
-                @Epic33UiDisplayHelpers.ScheduleActionButtonLabel
-            </button>
+            @if (_capabilities?.CanManageSchedules == true)
+            {
+                <button class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface disabled:opacity-50"
+                        disabled="@(_loading || (_detail?.Enabled == true))"
+                        title="Enable this schedule"
+                        @onclick="EnableAsync">
+                    Enable
+                </button>
+                <button class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface disabled:opacity-50"
+                        disabled="@(_loading || (_detail?.Enabled != true))"
+                        title="Disable this schedule"
+                        @onclick="DisableAsync">
+                    Disable
+                </button>
+                <button class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface"
+                        disabled="@_loading"
+                        title="@Epic33UiDisplayHelpers.ScheduleActionButtonTitle"
+                        @onclick="TriggerRunCycleAsync">
+                    @Epic33UiDisplayHelpers.ScheduleActionButtonLabel
+                </button>
+            }
             <button class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface"
                     disabled="@_loading"
                     @onclick="LoadAsync">
@@ -124,11 +129,28 @@
     [Parameter] public string ScheduleId { get; set; } = "";
 
     private ScheduleDetailDto? _detail;
+    private OperatorCapabilitiesDto? _capabilities;
     private bool _loading;
     private string? _error;
     private string? _actionMessage;
 
-    protected override Task OnParametersSetAsync() => LoadAsync();
+    protected override async Task OnParametersSetAsync()
+    {
+        await LoadCapabilitiesAsync();
+        await LoadAsync();
+    }
+
+    private async Task LoadCapabilitiesAsync()
+    {
+        try
+        {
+            _capabilities = await Capabilities.GetCapabilitiesAsync();
+        }
+        catch
+        {
+            _capabilities = new OperatorCapabilitiesDto(false, false, false, false, false);
+        }
+    }
 
     private async Task LoadAsync()
     {
