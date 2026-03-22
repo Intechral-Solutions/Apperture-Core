@@ -160,23 +160,74 @@ public sealed class RolesControllerTests
         result.Result.Should().BeOfType<NotFoundResult>();
     }
 
+    [Fact]
+    public async Task List_WhenUnauthorized_Returns403()
+    {
+        var userManagement = new StubUserManagementService(getRolesThrows: new UnauthorizedAccessException("deny"));
+        var controller = new RolesController(userManagement);
+
+        var result = await controller.List(CancellationToken.None);
+
+        result.Result.Should().BeOfType<ForbidResult>();
+    }
+
+    [Fact]
+    public async Task Get_WhenUnauthorized_Returns403()
+    {
+        var userManagement = new StubUserManagementService(getRoleThrows: new UnauthorizedAccessException("deny"));
+        var controller = new RolesController(userManagement);
+
+        var result = await controller.Get("r1", CancellationToken.None);
+
+        result.Result.Should().BeOfType<ForbidResult>();
+    }
+
+    [Fact]
+    public async Task SetPermissions_ReplacesFullPermissionSet_RevocationByOmission()
+    {
+        IReadOnlyList<PermissionDescriptor>? lastPermissions = null;
+        var userManagement = new StubUserManagementService(onSetPermissions: perms => lastPermissions = perms);
+        var controller = new RolesController(userManagement);
+
+        await controller.SetPermissions("role-1", new SetRolePermissionsRequest([
+            new RolePermissionDto("user.read", "User", "instance"),
+            new RolePermissionDto("audit.read", "AuditPolicy", "instance")
+        ]), CancellationToken.None);
+        lastPermissions.Should().HaveCount(2);
+
+        await controller.SetPermissions("role-1", new SetRolePermissionsRequest([
+            new RolePermissionDto("user.read", "User", "instance")
+        ]), CancellationToken.None);
+        lastPermissions.Should().ContainSingle(p => p.Action == "user.read");
+        lastPermissions.Should().NotContain(p => p.Action == "audit.read");
+    }
+
     private sealed class StubUserManagementService : IUserManagementService
     {
         private readonly Exception? _setThrows;
         private readonly Exception? _getPermissionsThrows;
+        private readonly Exception? _getRolesThrows;
+        private readonly Exception? _getRoleThrows;
         private readonly IReadOnlyList<Apperture.Core.Domain.Identity.Role> _roles;
         private readonly Apperture.Core.Domain.Identity.Role? _role;
+        private readonly Action<IReadOnlyList<PermissionDescriptor>>? _onSetPermissions;
 
         public StubUserManagementService(
             Exception? setThrows = null,
             Exception? getPermissionsThrows = null,
+            Exception? getRolesThrows = null,
+            Exception? getRoleThrows = null,
             IReadOnlyList<Apperture.Core.Domain.Identity.Role>? roles = null,
-            Apperture.Core.Domain.Identity.Role? role = null)
+            Apperture.Core.Domain.Identity.Role? role = null,
+            Action<IReadOnlyList<PermissionDescriptor>>? onSetPermissions = null)
         {
             _setThrows = setThrows;
             _getPermissionsThrows = getPermissionsThrows;
+            _getRolesThrows = getRolesThrows;
+            _getRoleThrows = getRoleThrows;
             _roles = roles ?? [];
             _role = role;
+            _onSetPermissions = onSetPermissions;
         }
 
         public ValueTask<(IReadOnlyList<Apperture.Core.Domain.Identity.User> Page, int TotalCount)> GetUserPageAsync(int skip, int take, CancellationToken cancellationToken = default) =>
@@ -185,11 +236,19 @@ public sealed class RolesControllerTests
         public ValueTask<Apperture.Core.Domain.Identity.User?> GetUserByIdAsync(Apperture.Core.Domain.Identity.UserId userId, CancellationToken cancellationToken = default) =>
             ValueTask.FromResult<Apperture.Core.Domain.Identity.User?>(null);
 
-        public ValueTask<IReadOnlyList<Apperture.Core.Domain.Identity.Role>> GetRolesAsync(CancellationToken cancellationToken = default) =>
-            ValueTask.FromResult<IReadOnlyList<Apperture.Core.Domain.Identity.Role>>(_roles);
+        public ValueTask<IReadOnlyList<Apperture.Core.Domain.Identity.Role>> GetRolesAsync(CancellationToken cancellationToken = default)
+        {
+            if (_getRolesThrows is not null)
+                throw _getRolesThrows;
+            return ValueTask.FromResult<IReadOnlyList<Apperture.Core.Domain.Identity.Role>>(_roles);
+        }
 
-        public ValueTask<Apperture.Core.Domain.Identity.Role?> GetRoleAsync(Apperture.Core.Domain.Identity.RoleId roleId, CancellationToken cancellationToken = default) =>
-            ValueTask.FromResult<Apperture.Core.Domain.Identity.Role?>(_role);
+        public ValueTask<Apperture.Core.Domain.Identity.Role?> GetRoleAsync(Apperture.Core.Domain.Identity.RoleId roleId, CancellationToken cancellationToken = default)
+        {
+            if (_getRoleThrows is not null)
+                throw _getRoleThrows;
+            return ValueTask.FromResult<Apperture.Core.Domain.Identity.Role?>(_role);
+        }
 
         public async ValueTask<IReadOnlyList<PermissionDescriptor>> GetRolePermissionsAsync(Apperture.Core.Domain.Identity.RoleId roleId, CancellationToken cancellationToken = default)
         {
@@ -202,6 +261,7 @@ public sealed class RolesControllerTests
         {
             if (_setThrows is not null)
                 throw _setThrows;
+            _onSetPermissions?.Invoke(permissions);
         }
 
         public ValueTask<Apperture.Core.Domain.Identity.UserId> CreateUserAsync(string displayName, Apperture.Core.Domain.Identity.IdentitySource source, string externalId, string? password = null, CancellationToken cancellationToken = default) =>

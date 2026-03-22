@@ -66,6 +66,36 @@ public sealed class Epic39GovernanceAdminTests
         result.Result.Should().BeOfType<ForbidResult>();
     }
 
+    [Fact]
+    public async Task GetEffectiveAccess_WhenUserHasMultipleRoles_MergesAndDeduplicatesPermissions()
+    {
+        var user = new User(
+            new UserId("u1"),
+            "Alice",
+            [new IdentityLink(IdentitySource.Local, "alice", null)],
+            [new RoleId("r1"), new RoleId("r2")],
+            false);
+        var perm1 = new PermissionDescriptor("user.read", new ResourceDescriptor("User", "instance"));
+        var perm2 = new PermissionDescriptor("audit.read", new ResourceDescriptor("AuditPolicy", "instance"));
+        var role1 = new Role(new RoleId("r1"), "Admin", null, [perm1], false);
+        var role2 = new Role(new RoleId("r2"), "Auditor", null, [perm1, perm2], false);
+        var userManagement = new StubUserManagement(user);
+        var roleProvider = new StubRoleProvider([role1, role2]);
+
+        var controller = new UsersController(userManagement, new StubLocalCredentialRepository(), roleProvider);
+
+        var result = await controller.GetEffectiveAccess("u1", CancellationToken.None);
+
+        result.Result.Should().BeOfType<OkObjectResult>();
+        var ok = (OkObjectResult)result.Result!;
+        var dto = (PrincipalEffectiveAccessDto)ok.Value!;
+        dto.UserId.Should().Be("u1");
+        dto.RoleIds.Should().BeEquivalentTo("r1", "r2");
+        dto.Permissions.Should().Contain(p => p.Action == "user.read");
+        dto.Permissions.Should().Contain(p => p.Action == "audit.read");
+        dto.Permissions.Should().HaveCount(2);
+    }
+
     private sealed class StubUserManagement : IUserManagementService
     {
         private readonly User? _user;

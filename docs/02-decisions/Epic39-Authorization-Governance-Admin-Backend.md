@@ -74,6 +74,52 @@ This reflects **role-membership-based effective permissions** only. It does not 
 - Per-resource-instance effective access simulation.
 - Human-readable permission descriptions — Action/ResourceType/ScopeKey are the identifiers.
 
+## Epic 39 Corrective Pass — Authorization Proof, Grant Semantics, Effective-Access Truthfulness
+
+### Admin Endpoint Authorization (Proven)
+
+| Endpoint | Governing Permission | Enforcement Path | Tests |
+|----------|----------------------|------------------|-------|
+| `GET /api/governance/descriptors` | user.read (Role) | GovernanceController evaluates user.read on Role; returns 403 when denied | GetDescriptors_WhenNoActor_Returns401, GetDescriptors_WhenNotAuthorized_Returns403 |
+| `GET /api/governance/effective-permissions` | user.read (User) | Same pattern for caller's permissions | GetEffectivePermissions_WhenNoActor_Returns401, GetEffectivePermissions_WhenNotAuthorized_Returns403 |
+| `GET /api/roles` | user.read | UserManagementService.RequireUserReadAsync → GetRolesAsync | List_WhenUnauthorized_Returns403 |
+| `GET /api/roles/{id}` | user.read | RequireUserReadAsync → GetRoleAsync | Get_WhenUnauthorized_Returns403 |
+| `GET /api/roles/{id}/permissions` | user.read | RequireUserReadAsync → GetRolePermissionsAsync | GetPermissions_WhenUnauthorized_Returns403 |
+| `PUT /api/roles/{id}/permissions` | permission.assign | UserManagementService.RequirePermissionAssignAsync | SetPermissions_WhenUnauthorized_Returns403 |
+| `GET /api/users/{id}/effective-access` | user.read | GetUserByIdAsync (RequireUserReadAsync) | GetEffectiveAccess_WhenUnauthorized_Returns403 |
+
+### Grant-Management Semantics (Explicit)
+
+- **Replace-all**: `PUT /api/roles/{id}/permissions` replaces the full permission set. The request body is the entire new set.
+- **Revocation by omission**: To revoke a permission, omit it from the request body. The backend persists exactly the set provided.
+- **Validation**: Each permission is validated against `IResourceDescriptorRegistry.IsPermissionRegistered` before persistence. Unknown or malformed permissions return 400.
+- **Audit**: On success, `governance.permission.assignment.updated` is emitted with roleId and permissionCount in details.
+- **Test**: `SetPermissions_ReplacesFullPermissionSet_RevocationByOmission` proves that a second PUT with a reduced set results in the reduced set being persisted (revocation by omission).
+
+### Effective-Access Semantics (Honest Scope)
+
+**Sources merged:** Only role-derived permissions. `IRoleProvider.GetRolesForUserAsync(userId)` returns all roles assigned to the user (via UserRoles table). Permissions are the union of each role's `Permissions` list, deduplicated.
+
+**What is included:**
+- Permissions from every role assigned to the user
+- System roles (e.g. Platform Administrator) contribute their permissions like any other role
+- No special handling beyond role membership
+
+**What is NOT included:**
+- Direct user-level permission grants (platform has none; all grants are role-based)
+- Break-glass or session-level overrides (not modeled in the response)
+- Scope containment (whether the user can act on a specific resource instance)
+- Machine/service principal identity (Human → User only)
+
+**Test:** `GetEffectiveAccess_WhenUserHasMultipleRoles_MergesAndDeduplicatesPermissions` proves that permissions from multiple roles are merged and deduplicated (e.g. user.read in both roles appears once).
+
+### Closure Verdict
+
+Epic 39 is complete. The governance admin backend surface is coherent, backend-protected, and honestly scoped. A future auth management UI can rely on:
+- Explicit permission requirements per endpoint
+- Replace-all semantics for role permission updates
+- Role-membership-based effective access with no overclaiming
+
 ## Files
 
 | File | Purpose |
@@ -84,3 +130,5 @@ This reflects **role-membership-based effective permissions** only. It does not 
 | `UsersController.cs` | GetEffectiveAccess |
 | `IResourceDescriptorRegistry` | GetResourceDescriptorsWithFamily, GetPermissionDescriptorsWithFamily |
 | `UserManagementService.cs` | GetRoleAsync; SetRolePermissionsAsync role-existence check |
+| `RolesControllerTests.cs` | List_WhenUnauthorized_Returns403, Get_WhenUnauthorized_Returns403, SetPermissions_ReplacesFullPermissionSet_RevocationByOmission |
+| `Epic39GovernanceAdminTests.cs` | GetEffectiveAccess_WhenUserHasMultipleRoles_MergesAndDeduplicatesPermissions |
