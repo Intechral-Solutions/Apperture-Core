@@ -28,6 +28,9 @@
                         @onclick="DisableAsync">
                     Disable
                 </button>
+            }
+            @if (_capabilities?.CanManageRecovery == true)
+            {
                 <button class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface"
                         disabled="@_loading"
                         title="@Epic33UiDisplayHelpers.ScheduleActionButtonTitle"

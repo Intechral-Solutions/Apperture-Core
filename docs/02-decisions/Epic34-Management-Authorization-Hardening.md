@@ -16,8 +16,10 @@ Epics 31–33 added recovery, audit timeline, runtime health, and management UI 
 | `recovery.manage` | Recovery | Instance | Retry blocked work, trigger run-cycle |
 | `audit.read` | AuditPolicy | Instance | View audit timeline (list, get by id) |
 | `runtime.health.read` | RuntimeHealth | Instance | View runtime health snapshot |
-| `schedule.manage` | Schedule | Instance | List, detail, enable, disable, trigger run-cycle (unchanged) |
-| `module.configure` | Module | Instance | List, detail, lifecycle (Install/Enable/Disable/Uninstall) (unchanged) |
+| `schedule.manage` | Schedule | Instance | List, detail, enable, disable schedules |
+| `module.configure` | Module | Instance | List, detail, lifecycle (Install/Enable/Disable/Uninstall) |
+
+**Note**: Trigger run-cycle (scheduler re-evaluation) is enforced by `recovery.manage`, not `schedule.manage`. The endpoint is `POST /api/control/recovery/schedules/run-cycle` in RecoveryController.
 
 ### Read vs Manage Separation
 
@@ -40,6 +42,8 @@ Epics 31–33 added recovery, audit timeline, runtime health, and management UI 
 | Audit list | `GET /api/control/audit` | audit.read | Yes |
 | Audit get by id | `GET /api/control/audit/{id}` | audit.read | Yes |
 | Runtime health | `GET /api/control/runtime-health` | runtime.health.read | Yes |
+| Module lifecycle | `POST /modules/{id}/install`, enable, disable, uninstall | module.configure (via ModuleWorkflowListingService) | Yes |
+| Schedule enable/disable | `POST /api/schedules/{id}/enable`, disable | schedule.manage (via ScheduleGovernanceService) | Yes |
 | Operator capabilities | `GET /api/control/capabilities` | [Authorize] | Yes (401) |
 
 ## UI Authorization Behavior
@@ -61,7 +65,7 @@ The UI fetches capabilities via `IOperatorCapabilitiesService` (cached per scope
 | Page | Permission-driven behavior |
 |------|----------------------------|
 | Blocked Work | Hide Retry buttons and "Trigger scheduler cycle" when `CanManageRecovery` is false |
-| Schedule detail | Hide Enable/Disable and "Trigger scheduler re-evaluation" when `CanManageSchedules` is false |
+| Schedule detail | Enable/Disable gated by `CanManageSchedules`; "Trigger scheduler re-evaluation" gated by `CanManageRecovery` (run-cycle endpoint is in RecoveryController, requires recovery.manage) |
 | Module detail | Hide Install/Enable/Disable/Uninstall when `CanManageModules` is false |
 | Control Center | Platform Health section: show only when `CanViewRuntimeHealth`; if 403 on fetch, show "Not available" |
 | Audit Timeline | API returns 403 if no audit.read; UI shows "Not authorized" when 403 |
@@ -79,17 +83,25 @@ The UI fetches capabilities via `IOperatorCapabilitiesService` (cached per scope
 - `recovery.blocked_work.retry_requested`, `retry_dispatched`, `retry_refused`
 - `recovery.schedules.run_cycle_requested`
 
-### Denial Audit (Epic 34)
+### Denial Audit Policy (Epic 34 Corrective)
 
-When a privileged action returns 403 due to permission:
+**In scope — denials audited:**
 
-| Action | Audit action name | Outcome |
-|--------|-------------------|---------|
-| Recovery retry denied | `recovery.retry.denied` | denied |
-| Recovery run-cycle denied | `recovery.run_cycle.denied` | denied |
-| Audit read denied | `audit.read.denied` | denied |
+| Action | Audit action name | Reason |
+|--------|-------------------|--------|
+| Recovery retry denied | `recovery.retry.denied` | High-value privileged action; explicit audit supports compliance and forensics |
+| Recovery run-cycle denied | `recovery.run_cycle.denied` | Same as above |
+| Audit read denied | `audit.read.denied` | Sensitive read; denial reveals attempted access to audit data |
 
 Details include `reason=permission_missing`. One record per denied attempt.
+
+**Explicitly out of scope — denials not audited (deferred):**
+
+- Module lifecycle (install/enable/disable/uninstall): Governance exists; denial audit deferred to avoid noise until a broader operator-action audit story is defined.
+- Schedule enable/disable: Same as module lifecycle; governance enforced; denial audit deferred.
+- Runtime health read: Lower sensitivity than audit; denial audit deferred.
+
+This policy is intentional and documented so it is not accidental or inconsistent. Future work may expand denial auditing to module/schedule actions.
 
 ## Implementation Summary
 
@@ -99,7 +111,7 @@ Details include `reason=permission_missing`. One record per denied attempt.
 - **Capabilities**: [IOperatorCapabilitiesQueryService](src/Apperture.ControlPlane/Apperture.ControlPlane.Security/IOperatorCapabilitiesQueryService.cs), [OperatorCapabilitiesQueryService](src/Apperture.ControlPlane/Apperture.ControlPlane.Security/OperatorCapabilitiesQueryService.cs)
 - **Client**: [GetOperatorCapabilitiesAsync](src/Apperture.ControlPlane/Apperture.Management.Client/IManagementClient.cs)
 - **UI**: [OperatorCapabilitiesService](src/Apperture.ControlPlane/Apperture.Management.Ui.Client/Services/OperatorCapabilitiesService.cs), BlockedWork, ScheduleDetail, ModuleDetail, ControlCenter, AuditTimeline
-- **Tests**: [RecoveryControllerTests](tests/Apperture.UnitTests/ControlPlane/RecoveryControllerTests.cs), [AuditControllerTests](tests/Apperture.UnitTests/ControlPlane/AuditControllerTests.cs), [Epic34AuthorizationTests](tests/Apperture.UnitTests/ControlPlane/Epic34AuthorizationTests.cs)
+- **Tests**: [RecoveryControllerTests](tests/Apperture.UnitTests/ControlPlane/RecoveryControllerTests.cs), [AuditControllerTests](tests/Apperture.UnitTests/ControlPlane/AuditControllerTests.cs), [Epic34AuthorizationTests](tests/Apperture.UnitTests/ControlPlane/Epic34AuthorizationTests.cs), [Epic34CorrectivePassTests](tests/Apperture.UnitTests/ControlPlane/Epic34CorrectivePassTests.cs)
 
 ## Out of Scope / Deferred
 

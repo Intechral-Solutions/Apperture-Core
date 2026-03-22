@@ -1,6 +1,6 @@
 using Apperture.Core.Application.Recovery;
-using Apperture.ControlPlane.Security;
 using Apperture.Core.Application.Services;
+using Apperture.ControlPlane.Security;
 using Apperture.Core.Domain.Environment;
 using Apperture.Management.Api.Controllers;
 using Apperture.RuntimePlane.Abstractions;
@@ -222,6 +222,34 @@ public sealed class RecoveryControllerTests
     }
 
     [Fact]
+    public async Task RetryBlockedWork_WhenDenied_AuditsRetryDenied()
+    {
+        var entry = CreateBlockedEntry("r1", "workflow", true);
+        var gov = new StubRecoveryGovernanceService(canRead: true, canManage: false);
+        var spyAudit = new SpyAuditService();
+        var controller = NewController(
+            recovery: new StubRecoveryQueryService(blocked: [entry], single: entry),
+            recoveryGovernance: gov,
+            audit: spyAudit);
+        var result = await controller.RetryBlockedWork("r1", CancellationToken.None);
+        result.Should().BeOfType<ForbidResult>();
+        spyAudit.LastAppended.Should().NotBeNull("denial audit policy requires recovery retry denials to be audited");
+        spyAudit.LastAppended!.Action.Should().Be(RecoveryAuditActionNames.RetryDenied);
+    }
+
+    [Fact]
+    public async Task RunScheduleCycle_WhenDenied_AuditsRunCycleDenied()
+    {
+        var gov = new StubRecoveryGovernanceService(canRead: true, canManage: false);
+        var spyAudit = new SpyAuditService();
+        var controller = NewController(recoveryGovernance: gov, audit: spyAudit);
+        var result = await controller.RunScheduleCycle(cancellationToken: CancellationToken.None);
+        result.Should().BeOfType<ForbidResult>();
+        spyAudit.LastAppended.Should().NotBeNull("denial audit policy requires run-cycle denials to be audited");
+        spyAudit.LastAppended!.Action.Should().Be(RecoveryAuditActionNames.RunCycleDenied);
+    }
+
+    [Fact]
     public async Task GetScheduleRemediation_WithoutRecoveryRead_Returns403()
     {
         var gov = new StubRecoveryGovernanceService(canRead: false, canManage: false);
@@ -332,5 +360,22 @@ public sealed class RecoveryControllerTests
     {
         public ValueTask<Apperture.Shared.Kernel.IActor?> GetCurrentActorAsync(CancellationToken cancellationToken = default) =>
             ValueTask.FromResult<Apperture.Shared.Kernel.IActor?>(null);
+    }
+
+    private sealed class SpyAuditService : IAuditService
+    {
+        public Apperture.Core.Domain.Audit.AuditRecord? LastAppended { get; private set; }
+
+        public ValueTask AppendAsync(Apperture.Core.Domain.Audit.AuditRecord record, CancellationToken cancellationToken = default)
+        {
+            LastAppended = record;
+            return ValueTask.CompletedTask;
+        }
+
+        public ValueTask<AuditPage> QueryAsync(AuditQuery query, CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(new AuditPage([], null));
+
+        public ValueTask<Apperture.Core.Domain.Audit.AuditRecord?> GetByIdAsync(string id, CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult<Apperture.Core.Domain.Audit.AuditRecord?>(null);
     }
 }
