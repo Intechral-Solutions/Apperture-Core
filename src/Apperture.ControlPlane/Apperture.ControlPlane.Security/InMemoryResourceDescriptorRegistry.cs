@@ -71,6 +71,18 @@ public sealed class InMemoryResourceDescriptorRegistry : IResourceDescriptorRegi
         return _permissions.ContainsKey(key);
     }
 
+    /// <inheritdoc />
+    public IReadOnlyList<(ResourceDescriptor Descriptor, ResourceFamily? Family)> GetResourceDescriptorsWithFamily(ResourceFamily? family = null) =>
+        family is null
+            ? _resources.Values.Select(r => (r.Descriptor, r.Family)).ToList()
+            : _resources.Values.Where(r => r.Family == family).Select(r => (r.Descriptor, r.Family)).ToList();
+
+    /// <inheritdoc />
+    public IReadOnlyList<(PermissionDescriptor Descriptor, ResourceFamily? Family)> GetPermissionDescriptorsWithFamily(ResourceFamily? family = null) =>
+        family is null
+            ? _permissions.Values.Select(p => (p.Descriptor, p.Family)).ToList()
+            : _permissions.Values.Where(p => p.Family == family).Select(p => (p.Descriptor, p.Family)).ToList();
+
     private static string ToResourceKey(ResourceDescriptor descriptor) =>
         $"{descriptor.ResourceType}::{descriptor.ScopeKey}";
 

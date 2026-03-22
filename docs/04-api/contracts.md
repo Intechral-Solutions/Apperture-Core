@@ -22,10 +22,13 @@ The Management API (control plane) exposes REST endpoints for module registry, w
 | GET | `/runs/{id}/timeline` | Get canonical persisted-evidence run timeline |
 | POST | `/runs/{id}/park` | Request that a run park at the next safe boundary |
 | POST | `/runs/{id}/resume` | Resume a parked run from the saved next step |
-| GET | `/api/governance/descriptors` | List registered governed resource/action descriptors |
+| GET | `/api/governance/descriptors` | List registered governed resource/action descriptors (Epic 39: with Family, Source, ModuleId) |
 | GET | `/api/governance/effective-permissions` | Inspect caller effective permissions |
+| GET | `/api/roles` | List roles (Epic 39: includes IsSystemRole) |
+| GET | `/api/roles/{id}` | Role detail with grants (Epic 39) |
 | GET | `/api/roles/{id}/permissions` | Read explicit role permission assignments |
-| PUT | `/api/roles/{id}/permissions` | Replace explicit role permission assignments |
+| PUT | `/api/roles/{id}/permissions` | Replace explicit role permission assignments (Epic 39: 404 when role not found) |
+| GET | `/api/users/{id}/effective-access` | Target user's effective access from roles (Epic 39) |
 | GET | `/api/schedules/capabilities` | Schedule governance capability projection |
 | GET | `/api/schedules` | List schedules (Epic 28/33) |
 | GET | `/api/schedules/{id}` | Get schedule detail with execution state (query: runtimePlaneId) |
@@ -114,6 +117,7 @@ Operator recovery and remediation workflows extend Epic 30 diagnostics with elig
 
 ## Governance API notes
 
+- **Epic 39 — Admin surface**: Catalog (`GET /api/governance/descriptors`) returns `ResourceCatalogEntryDto` (ResourceType, ScopeKey, Family) and `PermissionCatalogEntryDto` (Action, ResourceType, ScopeKey, Family, Source, ModuleId). Source is `platform` or `module`; ModuleId derived from ScopeKey when `module:*`. `GET /api/roles` includes IsSystemRole. `GET /api/roles/{id}` returns role detail with grants. `PUT /api/roles/{id}/permissions` returns 404 when role not found. `GET /api/users/{id}/effective-access` returns merged permissions from assigned roles for a target user (role-membership-based; no scope containment simulation). Grant model: replace-only (assign = include in PUT body, revoke = omit). Permissions: user.read (catalog, roles, effective-access), permission.assign (SetPermissions), role.assign (user-role assignment).
 - Permission assignment endpoints are intentionally API-first; UI can remain thin while governance semantics stabilize.
 - Descriptor listing is sourced from `IResourceDescriptorRegistry` after platform seeding and module contribution registration.
 - Module governance contributions require explicit `ResourceType` in manifest declarations (`GovernedResources`, `GovernedActions`); no operation-shaped defaults. Contributions use `ResourceFamily.Core` for generic module resources.

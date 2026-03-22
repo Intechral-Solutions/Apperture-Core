@@ -333,6 +333,8 @@ public sealed class RuntimeEnrollmentEnvironmentValidationTests
         public IReadOnlyList<ResourceDescriptor> GetResourceDescriptors(ResourceFamily? family = null) => Array.Empty<ResourceDescriptor>();
         public IReadOnlyList<PermissionDescriptor> GetPermissionDescriptors(ResourceFamily? family = null) => Array.Empty<PermissionDescriptor>();
         public bool IsPermissionRegistered(PermissionDescriptor descriptor) => true;
+        public IReadOnlyList<(ResourceDescriptor Descriptor, ResourceFamily? Family)> GetResourceDescriptorsWithFamily(ResourceFamily? family = null) => Array.Empty<(ResourceDescriptor, ResourceFamily?)>();
+        public IReadOnlyList<(PermissionDescriptor Descriptor, ResourceFamily? Family)> GetPermissionDescriptorsWithFamily(ResourceFamily? family = null) => Array.Empty<(PermissionDescriptor, ResourceFamily?)>();
     }
 
     private sealed class StubAuditService : IAuditService

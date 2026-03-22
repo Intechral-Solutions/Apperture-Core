@@ -1,6 +1,7 @@
 using Apperture.ControlPlane.Security;
 using Apperture.Core.Application.Services;
 using Apperture.Management.Api.Controllers;
+using Apperture.Management.Api.Models;
 using Apperture.Shared.Kernel;
 using FluentAssertions;
 using Microsoft.AspNetCore.Mvc;
@@ -89,15 +90,93 @@ public sealed class RolesControllerTests
         result.Result.Should().BeOfType<ForbidResult>();
     }
 
+    [Fact]
+    public async Task SetPermissions_WhenRoleNotFound_Returns404()
+    {
+        var userManagement = new StubUserManagementService(setThrows: new InvalidOperationException("Role role-999 not found."));
+        var controller = new RolesController(userManagement);
+        var request = new SetRolePermissionsRequest([new RolePermissionDto("user.read", "User", "instance")]);
+
+        var result = await controller.SetPermissions("role-999", request, CancellationToken.None);
+
+        result.Should().BeOfType<NotFoundObjectResult>();
+    }
+
+    [Fact]
+    public async Task List_ReturnsRolesWithIsSystemRole()
+    {
+        var roles = new[]
+        {
+            new Apperture.Core.Domain.Identity.Role(
+                new Apperture.Core.Domain.Identity.RoleId("r1"),
+                "Admin",
+                "System admin",
+                [],
+                true),
+        };
+        var userManagement = new StubUserManagementService(roles: roles);
+        var controller = new RolesController(userManagement);
+
+        var result = await controller.List(CancellationToken.None);
+
+        result.Result.Should().BeOfType<OkObjectResult>();
+        var ok = (OkObjectResult)result.Result!;
+        var list = (IReadOnlyList<RoleDto>)ok.Value!;
+        list.Should().ContainSingle(r => r.Id == "r1" && r.IsSystemRole);
+    }
+
+    [Fact]
+    public async Task Get_WhenRoleExists_ReturnsRoleDetailWithGrants()
+    {
+        var perm = new PermissionDescriptor("user.read", new ResourceDescriptor("User", "instance"));
+        var role = new Apperture.Core.Domain.Identity.Role(
+            new Apperture.Core.Domain.Identity.RoleId("r1"),
+            "Admin",
+            "System admin",
+            [perm],
+            true);
+        var userManagement = new StubUserManagementService(role: role);
+        var controller = new RolesController(userManagement);
+
+        var result = await controller.Get("r1", CancellationToken.None);
+
+        result.Result.Should().BeOfType<OkObjectResult>();
+        var ok = (OkObjectResult)result.Result!;
+        var detail = (RoleDetailDto)ok.Value!;
+        detail.Id.Should().Be("r1");
+        detail.Name.Should().Be("Admin");
+        detail.IsSystemRole.Should().BeTrue();
+        detail.Permissions.Should().ContainSingle(p => p.Action == "user.read");
+    }
+
+    [Fact]
+    public async Task Get_WhenRoleNotFound_Returns404()
+    {
+        var userManagement = new StubUserManagementService(role: null);
+        var controller = new RolesController(userManagement);
+
+        var result = await controller.Get("nonexistent", CancellationToken.None);
+
+        result.Result.Should().BeOfType<NotFoundResult>();
+    }
+
     private sealed class StubUserManagementService : IUserManagementService
     {
         private readonly Exception? _setThrows;
         private readonly Exception? _getPermissionsThrows;
+        private readonly IReadOnlyList<Apperture.Core.Domain.Identity.Role> _roles;
+        private readonly Apperture.Core.Domain.Identity.Role? _role;
 
-        public StubUserManagementService(Exception? setThrows = null, Exception? getPermissionsThrows = null)
+        public StubUserManagementService(
+            Exception? setThrows = null,
+            Exception? getPermissionsThrows = null,
+            IReadOnlyList<Apperture.Core.Domain.Identity.Role>? roles = null,
+            Apperture.Core.Domain.Identity.Role? role = null)
         {
             _setThrows = setThrows;
             _getPermissionsThrows = getPermissionsThrows;
+            _roles = roles ?? [];
+            _role = role;
         }
 
         public ValueTask<(IReadOnlyList<Apperture.Core.Domain.Identity.User> Page, int TotalCount)> GetUserPageAsync(int skip, int take, CancellationToken cancellationToken = default) =>
@@ -107,7 +186,10 @@ public sealed class RolesControllerTests
             ValueTask.FromResult<Apperture.Core.Domain.Identity.User?>(null);
 
         public ValueTask<IReadOnlyList<Apperture.Core.Domain.Identity.Role>> GetRolesAsync(CancellationToken cancellationToken = default) =>
-            ValueTask.FromResult<IReadOnlyList<Apperture.Core.Domain.Identity.Role>>([]);
+            ValueTask.FromResult<IReadOnlyList<Apperture.Core.Domain.Identity.Role>>(_roles);
+
+        public ValueTask<Apperture.Core.Domain.Identity.Role?> GetRoleAsync(Apperture.Core.Domain.Identity.RoleId roleId, CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult<Apperture.Core.Domain.Identity.Role?>(_role);
 
         public async ValueTask<IReadOnlyList<PermissionDescriptor>> GetRolePermissionsAsync(Apperture.Core.Domain.Identity.RoleId roleId, CancellationToken cancellationToken = default)
         {

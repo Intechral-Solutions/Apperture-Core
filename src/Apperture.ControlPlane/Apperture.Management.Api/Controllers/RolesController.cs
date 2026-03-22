@@ -1,4 +1,5 @@
 using Apperture.Core.Application.Services;
+using Apperture.Management.Api.Models;
 using Apperture.Shared.Kernel;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -32,7 +33,33 @@ public sealed class RolesController : ControllerBase
         try
         {
             var roles = await _userManagement.GetRolesAsync(cancellationToken);
-            return Ok(roles.Select(r => new RoleDto(r.Id.Value, r.Name, r.Description)).ToList());
+            return Ok(roles.Select(r => new RoleDto(r.Id.Value, r.Name, r.Description, r.IsSystemRole)).ToList());
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return Forbid();
+        }
+    }
+
+    /// <summary>
+    /// Gets a role by id with its granted permissions. Requires user.read.
+    /// </summary>
+    [HttpGet("{id}")]
+    [ProducesResponseType(typeof(RoleDetailDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<RoleDetailDto>> Get(string id, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var role = await _userManagement.GetRoleAsync(new Apperture.Core.Domain.Identity.RoleId(id), cancellationToken);
+            if (role is null)
+                return NotFound();
+            var permissions = role.Permissions
+                .Select(p => new RolePermissionEntryDto(p.Action, p.Resource?.ResourceType, p.Resource?.ScopeKey))
+                .ToList();
+            return Ok(new RoleDetailDto(role.Id.Value, role.Name, role.Description, role.IsSystemRole, permissions));
         }
         catch (UnauthorizedAccessException)
         {
@@ -62,6 +89,7 @@ public sealed class RolesController : ControllerBase
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> SetPermissions(string id, [FromBody] SetRolePermissionsRequest request, CancellationToken cancellationToken = default)
     {
         if (request.Permissions is null)
@@ -81,6 +109,8 @@ public sealed class RolesController : ControllerBase
         }
         catch (InvalidOperationException ex)
         {
+            if (ex.Message.Contains("not found", StringComparison.OrdinalIgnoreCase))
+                return NotFound(new { message = ex.Message });
             return BadRequest(new { message = ex.Message });
         }
     }
@@ -101,6 +131,6 @@ public sealed class RolesController : ControllerBase
                     permission.ScopeKey ?? Apperture.Core.Domain.Governance.ScopeKeyConstants.Instance));
 }
 
-public sealed record RoleDto(string Id, string Name, string? Description);
+public sealed record RoleDto(string Id, string Name, string? Description, bool IsSystemRole = false);
 public sealed record RolePermissionDto(string Action, string? ResourceType, string? ScopeKey);
 public sealed record SetRolePermissionsRequest(IReadOnlyList<RolePermissionDto> Permissions);

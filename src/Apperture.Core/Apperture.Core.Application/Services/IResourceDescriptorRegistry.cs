@@ -38,4 +38,14 @@ public interface IResourceDescriptorRegistry
     /// Used to validate role-permission assignments before persistence.
     /// </summary>
     bool IsPermissionRegistered(PermissionDescriptor descriptor);
+
+    /// <summary>
+    /// Gets all registered resource descriptors with their family, optionally filtered by family.
+    /// </summary>
+    IReadOnlyList<(ResourceDescriptor Descriptor, ResourceFamily? Family)> GetResourceDescriptorsWithFamily(ResourceFamily? family = null);
+
+    /// <summary>
+    /// Gets all registered permission descriptors with their family, optionally filtered by family.
+    /// </summary>
+    IReadOnlyList<(PermissionDescriptor Descriptor, ResourceFamily? Family)> GetPermissionDescriptorsWithFamily(ResourceFamily? family = null);
 }

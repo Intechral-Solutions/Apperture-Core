@@ -25,6 +25,11 @@ public interface IUserManagementService
     ValueTask<IReadOnlyList<Role>> GetRolesAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Gets a role by id. Requires user.read. Returns null if not found.
+    /// </summary>
+    ValueTask<Role?> GetRoleAsync(RoleId roleId, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Gets the explicit permission assignments for a role. Requires user.read.
     /// </summary>
     ValueTask<IReadOnlyList<PermissionDescriptor>> GetRolePermissionsAsync(RoleId roleId, CancellationToken cancellationToken = default);

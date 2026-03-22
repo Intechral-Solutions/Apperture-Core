@@ -72,6 +72,13 @@ public sealed class UserManagementService : IUserManagementService
     }
 
     /// <inheritdoc />
+    public async ValueTask<Role?> GetRoleAsync(RoleId roleId, CancellationToken cancellationToken = default)
+    {
+        await RequireUserReadAsync(cancellationToken);
+        return await _roleRepository.GetAsync(roleId, cancellationToken);
+    }
+
+    /// <inheritdoc />
     public async ValueTask<IReadOnlyList<PermissionDescriptor>> GetRolePermissionsAsync(RoleId roleId, CancellationToken cancellationToken = default)
     {
         await RequireUserReadAsync(cancellationToken);
@@ -84,6 +91,10 @@ public sealed class UserManagementService : IUserManagementService
     {
         var actorId = await RequirePermissionAssignAsync(cancellationToken);
         await AppendBreakGlassUseAuditIfNeededAsync("permission.assign", actorId, cancellationToken);
+
+        var role = await _roleRepository.GetAsync(roleId, cancellationToken);
+        if (role is null)
+            throw new InvalidOperationException($"Role {roleId.Value} not found.");
 
         if (permissions is { Count: > 0 })
         {

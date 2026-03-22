@@ -2,6 +2,7 @@ using Apperture.ControlPlane.Security;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Governance;
 using Apperture.Management.Api.Controllers;
+using Apperture.Management.Api.Models;
 using Apperture.Shared.Kernel;
 using FluentAssertions;
 using Microsoft.AspNetCore.Mvc;
@@ -65,6 +66,31 @@ public sealed class GovernanceControllerTests
     }
 
     [Fact]
+    public async Task GetDescriptors_WhenAuthorized_ReturnsCatalogWithFamilyAndSourceMetadata()
+    {
+        var registry = new InMemoryResourceDescriptorRegistry();
+        registry.RegisterPermission(
+            new PermissionDescriptor("user.read", new ResourceDescriptor("User", "instance")),
+            ResourceFamily.Core);
+
+        var controller = new GovernanceController(
+            registry,
+            new StubPrincipalContext(),
+            new AllowAllEvaluation(),
+            new StubPrincipalToUserResolver(),
+            new StubRoleProvider());
+        var result = await controller.GetDescriptors(CancellationToken.None);
+
+        result.Result.Should().BeOfType<OkObjectResult>();
+        var ok = (OkObjectResult)result.Result!;
+        var response = (GovernanceDescriptorResponse)ok.Value!;
+        var perm = response.Permissions.Single(p => p.Action == "user.read");
+        perm.Family.Should().Be("Core");
+        perm.Source.Should().Be("platform");
+        perm.ModuleId.Should().BeNull();
+    }
+
+    [Fact]
     public async Task GetEffectivePermissions_WhenNoActor_Returns401()
     {
         var controller = new GovernanceController(
@@ -103,7 +129,7 @@ public sealed class GovernanceControllerTests
 
         result.Result.Should().BeOfType<OkObjectResult>();
         var ok = (OkObjectResult)result.Result!;
-        var perms = (IReadOnlyList<GovernedPermissionDto>)ok.Value!;
+        var perms = (IReadOnlyList<RolePermissionEntryDto>)ok.Value!;
         perms.Should().BeEmpty();
     }
 
@@ -120,7 +146,7 @@ public sealed class GovernanceControllerTests
 
         result.Result.Should().BeOfType<OkObjectResult>();
         var ok = (OkObjectResult)result.Result!;
-        var perms = (IReadOnlyList<GovernedPermissionDto>)ok.Value!;
+        var perms = (IReadOnlyList<RolePermissionEntryDto>)ok.Value!;
         perms.Should().Contain(p => p.Action == "user.read");
     }
 

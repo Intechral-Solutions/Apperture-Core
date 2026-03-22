@@ -1,6 +1,7 @@
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Governance;
 using Apperture.ControlPlane.Security;
+using Apperture.Management.Api.Models;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -11,6 +12,9 @@ namespace Apperture.Management.Api.Controllers;
 [Authorize]
 public sealed class GovernanceController : ControllerBase
 {
+    private const string SourcePlatform = "platform";
+    private const string SourceModule = "module";
+
     private readonly IResourceDescriptorRegistry _registry;
     private readonly IPrincipalContext _principalContext;
     private readonly IAuthorizationEvaluationService _authorizationEvaluation;
@@ -50,13 +54,13 @@ public sealed class GovernanceController : ControllerBase
         if (!allowed)
             return Forbid();
 
-        var resources = _registry.GetResourceDescriptors()
-            .Select(r => new GovernedResourceDto(r.ResourceType, r.ScopeKey))
+        var resources = _registry.GetResourceDescriptorsWithFamily()
+            .Select(r => new ResourceCatalogEntryDto(r.Descriptor.ResourceType, r.Descriptor.ScopeKey, r.Family?.ToString()))
             .OrderBy(r => r.ResourceType, StringComparer.Ordinal)
             .ThenBy(r => r.ScopeKey, StringComparer.Ordinal)
             .ToList();
-        var permissions = _registry.GetPermissionDescriptors()
-            .Select(p => new GovernedPermissionDto(p.Action, p.Resource?.ResourceType, p.Resource?.ScopeKey))
+        var permissions = _registry.GetPermissionDescriptorsWithFamily()
+            .Select(p => ToPermissionCatalogEntry(p.Descriptor, p.Family))
             .OrderBy(p => p.Action, StringComparer.Ordinal)
             .ThenBy(p => p.ResourceType, StringComparer.Ordinal)
             .ThenBy(p => p.ScopeKey, StringComparer.Ordinal)
@@ -65,11 +69,38 @@ public sealed class GovernanceController : ControllerBase
         return Ok(new GovernanceDescriptorResponse(resources, permissions));
     }
 
+    private static PermissionCatalogEntryDto ToPermissionCatalogEntry(Apperture.Shared.Kernel.PermissionDescriptor descriptor, ResourceFamily? family)
+    {
+        var scopeKey = descriptor.Resource?.ScopeKey ?? ScopeKeyConstants.Instance;
+        var (source, moduleId) = DeriveSourceAndModuleId(scopeKey);
+        return new PermissionCatalogEntryDto(
+            descriptor.Action,
+            descriptor.Resource?.ResourceType,
+            descriptor.Resource?.ScopeKey,
+            family?.ToString(),
+            source,
+            moduleId);
+    }
+
+    private static (string Source, string? ModuleId) DeriveSourceAndModuleId(string scopeKey)
+    {
+        if (string.IsNullOrEmpty(scopeKey))
+            return (SourcePlatform, null);
+        if (scopeKey == ScopeKeyConstants.Instance)
+            return (SourcePlatform, null);
+        if (scopeKey.StartsWith("module:", StringComparison.Ordinal))
+        {
+            var moduleId = scopeKey.Length > 7 ? scopeKey[7..] : null;
+            return (SourceModule, string.IsNullOrEmpty(moduleId) ? null : moduleId);
+        }
+        return (SourcePlatform, null);
+    }
+
     [HttpGet("effective-permissions")]
-    [ProducesResponseType(typeof(IReadOnlyList<GovernedPermissionDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(IReadOnlyList<RolePermissionEntryDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
-    public async Task<ActionResult<IReadOnlyList<GovernedPermissionDto>>> GetEffectivePermissions(CancellationToken cancellationToken = default)
+    public async Task<ActionResult<IReadOnlyList<RolePermissionEntryDto>>> GetEffectivePermissions(CancellationToken cancellationToken = default)
     {
         var actor = await _principalContext.GetCurrentActorAsync(cancellationToken);
         if (actor is null)
@@ -86,12 +117,12 @@ public sealed class GovernanceController : ControllerBase
 
         var userId = await _principalToUserResolver.ResolveUserIdAsync(actor, cancellationToken);
         if (userId is null)
-            return Ok(Array.Empty<GovernedPermissionDto>());
+            return Ok(Array.Empty<RolePermissionEntryDto>());
 
         var permissions = (await _roleProvider.GetRolesForUserAsync(userId, cancellationToken))
             .SelectMany(r => r.Permissions)
             .Distinct()
-            .Select(p => new GovernedPermissionDto(p.Action, p.Resource?.ResourceType, p.Resource?.ScopeKey))
+            .Select(p => new RolePermissionEntryDto(p.Action, p.Resource?.ResourceType, p.Resource?.ScopeKey))
             .OrderBy(p => p.Action, StringComparer.Ordinal)
             .ThenBy(p => p.ResourceType, StringComparer.Ordinal)
             .ThenBy(p => p.ScopeKey, StringComparer.Ordinal)
@@ -101,9 +132,6 @@ public sealed class GovernanceController : ControllerBase
 }
 
 public sealed record GovernanceDescriptorResponse(
-    IReadOnlyList<GovernedResourceDto> Resources,
-    IReadOnlyList<GovernedPermissionDto> Permissions);
-
-public sealed record GovernedResourceDto(string ResourceType, string ScopeKey);
-public sealed record GovernedPermissionDto(string Action, string? ResourceType, string? ScopeKey);
+    IReadOnlyList<ResourceCatalogEntryDto> Resources,
+    IReadOnlyList<PermissionCatalogEntryDto> Permissions);
 

@@ -1,5 +1,6 @@
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Identity;
+using Apperture.Management.Api.Models;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -15,11 +16,13 @@ public sealed class UsersController : ControllerBase
 {
     private readonly IUserManagementService _userManagement;
     private readonly ILocalCredentialRepository _localCredentialRepository;
+    private readonly IRoleProvider _roleProvider;
 
-    public UsersController(IUserManagementService userManagement, ILocalCredentialRepository localCredentialRepository)
+    public UsersController(IUserManagementService userManagement, ILocalCredentialRepository localCredentialRepository, IRoleProvider roleProvider)
     {
         _userManagement = userManagement;
         _localCredentialRepository = localCredentialRepository;
+        _roleProvider = roleProvider;
     }
 
     /// <summary>
@@ -70,6 +73,43 @@ public sealed class UsersController : ControllerBase
                 isCredentialDisabled = cred?.IsDisabled;
             }
             return Ok(ToDetailDto(user, hasLocalCredential, isCredentialDisabled));
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return Forbid();
+        }
+    }
+
+    /// <summary>
+    /// Gets effective access for a user (merged permissions from assigned roles). Requires user.read.
+    /// Reflects role-membership-based effective permissions; runtime authorization also applies scope containment.
+    /// </summary>
+    [HttpGet("{id}/effective-access")]
+    [ProducesResponseType(typeof(PrincipalEffectiveAccessDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<PrincipalEffectiveAccessDto>> GetEffectiveAccess(string id, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var userId = new UserId(id);
+            var user = await _userManagement.GetUserByIdAsync(userId, cancellationToken);
+            if (user is null)
+                return NotFound();
+
+            var roles = await _roleProvider.GetRolesForUserAsync(userId, cancellationToken);
+            var roleIds = roles.Select(r => r.Id.Value).ToList();
+            var permissions = roles
+                .SelectMany(r => r.Permissions)
+                .Distinct()
+                .Select(p => new RolePermissionEntryDto(p.Action, p.Resource?.ResourceType, p.Resource?.ScopeKey))
+                .OrderBy(p => p.Action, StringComparer.Ordinal)
+                .ThenBy(p => p.ResourceType, StringComparer.Ordinal)
+                .ThenBy(p => p.ScopeKey, StringComparer.Ordinal)
+                .ToList();
+
+            return Ok(new PrincipalEffectiveAccessDto(userId.Value, roleIds, permissions));
         }
         catch (UnauthorizedAccessException)
         {

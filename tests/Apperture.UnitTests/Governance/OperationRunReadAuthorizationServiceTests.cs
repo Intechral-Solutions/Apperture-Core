@@ -86,6 +86,9 @@ public sealed class OperationRunReadAuthorizationServiceTests
         public IReadOnlyList<ResourceDescriptor> GetResourceDescriptors(ResourceFamily? family = null) => Array.Empty<ResourceDescriptor>();
         public IReadOnlyList<PermissionDescriptor> GetPermissionDescriptors(ResourceFamily? family = null) => _known;
         public bool IsPermissionRegistered(PermissionDescriptor descriptor) => _known.Any(p => p.Equals(descriptor));
+        public IReadOnlyList<(ResourceDescriptor Descriptor, ResourceFamily? Family)> GetResourceDescriptorsWithFamily(ResourceFamily? family = null) => Array.Empty<(ResourceDescriptor, ResourceFamily?)>();
+        public IReadOnlyList<(PermissionDescriptor Descriptor, ResourceFamily? Family)> GetPermissionDescriptorsWithFamily(ResourceFamily? family = null) =>
+            _known.Select(p => (p, (ResourceFamily?)null)).ToList();
     }
 
     private sealed class StubOperationRegistry : IOperationRegistryService
