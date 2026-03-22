@@ -6,7 +6,7 @@
     <div class="flex items-center justify-between gap-3">
         <div class="min-w-0">
             <h1 class="text-xl font-semibold text-heading">Audit Timeline</h1>
-            <div class="text-xs text-muted">Platform audit events: lifecycle, scheduler, recovery, anomalies.</div>
+            <div class="text-xs text-muted">Platform audit events. Minimal viewer: time, category, actor. Full filters via API.</div>
         </div>
         <button class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface"
                 disabled="@_loading"
@@ -38,6 +38,14 @@
                 <option value="module.lifecycle.">Module lifecycle</option>
                 <option value="governance.">Governance</option>
             </select>
+        </div>
+        <div>
+            <label class="text-xs text-muted">Actor</label>
+            <input type="text" class="ml-1 rounded border border-default bg-surface px-2 py-1 text-sm font-mono"
+                   placeholder="e.g. system:scheduler"
+                   @bind="_actorFilter"
+                   @bind:event="oninput"
+                   @onkeydown="OnActorKeyDown" />
         </div>
     </div>
 
@@ -161,6 +169,13 @@
     private string? _expandedId;
     private string _timeRange = "24";
     private string _actionPrefix = "";
+    private string _actorFilter = "";
+
+    private async Task OnActorKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+            await LoadAsync();
+    }
 
     protected override Task OnInitializedAsync() => LoadAsync();
 
@@ -176,7 +191,7 @@
             _page = await Client.GetAuditTimelineAsync(
                 fromUtc: fromUtc,
                 toUtc: null,
-                actor: null,
+                actor: string.IsNullOrWhiteSpace(_actorFilter) ? null : _actorFilter.Trim(),
                 actionPrefix: string.IsNullOrEmpty(_actionPrefix) ? null : _actionPrefix,
                 pageSize: 50,
                 cancellationToken: default);
@@ -204,7 +219,7 @@
             var next = await Client.GetAuditTimelineAsync(
                 fromUtc: fromUtc,
                 toUtc: null,
-                actor: null,
+                actor: string.IsNullOrWhiteSpace(_actorFilter) ? null : _actorFilter.Trim(),
                 actionPrefix: string.IsNullOrEmpty(_actionPrefix) ? null : _actionPrefix,
                 pageSize: 50,
                 continuationToken: _page.NextContinuationToken,

@@ -76,14 +76,18 @@ Extraction is best-effort; formats may vary across writers.
 
 ### Filters
 
-- **DB-filterable**: time range, actor, action prefix
-- **In-memory (post-fetch)**: moduleId, scheduleId, runId, outcome — applied after fetching a time-bounded window
+- **DB-filterable (indexed/column)**: time range (FromUtc, ToUtc), actor, action prefix. These filters are applied in the database query.
+- **In-memory (post-fetch, bounded)**: moduleId, scheduleId, runId, outcome. These are applied within the fetched page only; they do not perform global indexed search. When reference filters are used:
+  - A time window is required (default 24h if omitted).
+  - The effective window is capped at 168 hours (7 days) to prevent unbounded scans.
+  - Fetch size is capped at 300 records per request.
+  - Results are scoped to the bounded window and fetch; matching events outside the window are not returned.
 
 ### UI
 
 - Audit Timeline page at `/control/audit` under Control domain (Control Panel menu: "Audit Timeline")
+- Minimal viewer: time range (24h / 7d), category, actor. Full filters (module, schedule, run, outcome) available via API only.
 - Table with Timestamp, Action, Actor, Outcome, Category; expandable Details and Related references
-- Filters: time range (24h / 7d), category (All, Lifecycle, Scheduler, Recovery, Module lifecycle, Governance)
 - Load-more pagination
 - Links to related entities: runs (`/runs/{id}`), schedules (`/schedules/{id}`), modules (`/modules`)
 
@@ -120,9 +124,16 @@ Extraction is best-effort; formats may vary across writers.
 - Second audit writer or shadow store
 - Alerting on audit events
 
+## Filter Truthfulness (Epic 32 Corrective)
+
+Operators should expect:
+- **Time, actor, category (action prefix)**: Efficient DB-backed filters. Use these for broad discoverability.
+- **Module/schedule/run/outcome**: Best-effort within the requested time window. Results are bounded (max 7-day window, 300 records per fetch). Do not assume these find all matching events globally.
+- **API vs UI**: The API exposes the full filter surface. The UI is a minimal timeline viewer with time range, category, and actor; use the API for module, schedule, run, or outcome filtering.
+
 ## Remaining Limitations
 
 1. **Outcome/Resource on read**: Not stored as columns; Outcome is best-effort parsed from Details; Resource is not recoverable.
-2. **Module/schedule/run filters**: Not indexed; applied in-memory after time-bounded fetch. Large windows may be slow.
+2. **Module/schedule/run filters**: Not indexed; applied in-memory within bounded fetch. Not global search.
 3. **Full-text search**: Not implemented; Details returned as opaque string.
 4. **Schema**: No migration; existing schema unchanged. Future: add Outcome/Resource columns, indexes on Action/At.

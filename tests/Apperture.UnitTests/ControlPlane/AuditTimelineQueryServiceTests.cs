@@ -101,6 +101,56 @@ public sealed class AuditTimelineQueryServiceTests
         (await svc.GetByIdAsync("999")).Should().BeNull();
     }
 
+    [Fact]
+    public async Task QueryAsync_ReferenceFilters_ClampsWindowAndFetchSize()
+    {
+        var fromUtc = DateTimeOffset.UtcNow.AddDays(-30);
+        var audit = new RecordingFakeAuditService([CreateRecord("1", "recovery.blocked_work.retry_requested", "user:alice", "runId=r1;definitionId=wf1")]);
+        var svc = new AuditTimelineQueryService(audit);
+
+        var page = await svc.QueryAsync(new AuditFilterCriteria(
+            FromUtc: fromUtc,
+            ToUtc: null,
+            RunId: "r1",
+            PageSize: 50));
+
+        page.Items.Should().HaveCount(1);
+        audit.LastQuery.Should().NotBeNull();
+        audit.LastQuery!.Value.ToUtc.Should().NotBeNull("reference filters clamp effective window");
+        var windowHours = (audit.LastQuery.Value.ToUtc!.Value - fromUtc).TotalHours;
+        windowHours.Should().BeLessOrEqualTo(AuditTimelineQueryService.MaxWindowHoursForReferenceFilters + 1);
+    }
+
+    [Fact]
+    public async Task QueryAsync_ReferenceFiltersWithoutFromUtc_UsesDefaultWindow()
+    {
+        var audit = new RecordingFakeAuditService([]);
+        var svc = new AuditTimelineQueryService(audit);
+
+        await svc.QueryAsync(new AuditFilterCriteria(
+            FromUtc: null,
+            RunId: "r1",
+            PageSize: 10));
+
+        audit.LastQuery.Should().NotBeNull();
+        audit.LastQuery!.Value.FromUtc.Should().NotBeNull("reference filters require default window");
+    }
+
+    [Fact]
+    public async Task QueryAsync_ReferenceFilters_FetchSizeCapped()
+    {
+        var audit = new RecordingFakeAuditService([]);
+        var svc = new AuditTimelineQueryService(audit);
+
+        await svc.QueryAsync(new AuditFilterCriteria(
+            FromUtc: DateTimeOffset.UtcNow.AddDays(-1),
+            RunId: "r1",
+            PageSize: 500));
+
+        audit.LastQuery.Should().NotBeNull();
+        audit.LastQuery!.Value.PageSize.Should().BeLessOrEqualTo(AuditTimelineQueryService.MaxFetchSizeForReferenceFilters);
+    }
+
     private static AuditRecord CreateRecord(string id, string action, string actor, string details) =>
         new(
             new AuditRecordId(id),
@@ -139,5 +189,26 @@ public sealed class AuditTimelineQueryServiceTests
 
         public ValueTask<AuditRecord?> GetByIdAsync(string id, CancellationToken cancellationToken = default) =>
             ValueTask.FromResult<AuditRecord?>(_records.FirstOrDefault(r => r.Id.Value == id));
+    }
+
+    private sealed class RecordingFakeAuditService : IAuditService
+    {
+        private readonly FakeAuditService _inner;
+
+        public RecordingFakeAuditService(List<AuditRecord> records) => _inner = new FakeAuditService(records);
+
+        public AuditQuery? LastQuery { get; private set; }
+
+        public ValueTask AppendAsync(AuditRecord record, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public async ValueTask<AuditPage> QueryAsync(AuditQuery query, CancellationToken cancellationToken = default)
+        {
+            LastQuery = query;
+            return await _inner.QueryAsync(query, cancellationToken);
+        }
+
+        public ValueTask<AuditRecord?> GetByIdAsync(string id, CancellationToken cancellationToken = default) =>
+            _inner.GetByIdAsync(id, cancellationToken);
     }
 }

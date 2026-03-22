@@ -5,9 +5,24 @@ namespace Apperture.ControlPlane.Security.Audit;
 
 /// <summary>
 /// Query service for audit timeline discoverability. Epic 32.
+/// DB-backed filters: time range, actor, action prefix.
+/// In-memory filters (moduleId, scheduleId, runId, outcome) are applied within the fetched window only;
+/// they are not indexed and do not perform global search. See AuditFilterCriteria for details.
 /// </summary>
 public sealed class AuditTimelineQueryService : IAuditTimelineQueryService
 {
+    /// <summary>
+    /// Maximum records fetched per request when in-memory reference filters are used.
+    /// Reference filters are applied within this bounded fetch; results are not globally indexed.
+    /// </summary>
+    public const int MaxFetchSizeForReferenceFilters = 300;
+
+    /// <summary>
+    /// Maximum time window (hours) when in-memory reference filters are used.
+    /// Prevents unbounded DB scans. Reference filters apply within this window only.
+    /// </summary>
+    public const int MaxWindowHoursForReferenceFilters = 168;
+
     private readonly IAuditService _audit;
 
     public AuditTimelineQueryService(IAuditService audit) => _audit = audit;
@@ -15,21 +30,36 @@ public sealed class AuditTimelineQueryService : IAuditTimelineQueryService
     /// <inheritdoc />
     public async ValueTask<AuditTimelinePage> QueryAsync(AuditFilterCriteria criteria, CancellationToken cancellationToken = default)
     {
+        var hasReferenceFilters = criteria.ModuleId is not null || criteria.ScheduleId is not null
+            || criteria.RunId is not null || criteria.Outcome is not null;
+
+        var fromUtc = criteria.FromUtc;
+        var toUtc = criteria.ToUtc;
+
+        if (hasReferenceFilters)
+        {
+            if (!fromUtc.HasValue)
+                fromUtc = DateTimeOffset.UtcNow.AddHours(-24);
+
+            var effectiveTo = toUtc ?? DateTimeOffset.UtcNow;
+            var windowHours = (effectiveTo - fromUtc.Value).TotalHours;
+            if (windowHours > MaxWindowHoursForReferenceFilters)
+                toUtc = fromUtc.Value.AddHours(MaxWindowHoursForReferenceFilters);
+        }
+
         var actorId = string.IsNullOrEmpty(criteria.Actor) ? null : new ActorId(criteria.Actor);
         var query = new AuditQuery(
             FilterByActorId: actorId,
             FilterByActionPrefix: criteria.ActionPrefix,
-            FromUtc: criteria.FromUtc,
-            ToUtc: criteria.ToUtc,
+            FromUtc: fromUtc,
+            ToUtc: toUtc,
             PageSize: criteria.PageSize,
             ContinuationToken: criteria.ContinuationToken);
 
         var pageSize = Math.Clamp(criteria.PageSize, 1, 100);
         var fetchSize = pageSize;
-        if (criteria.ModuleId is not null || criteria.ScheduleId is not null || criteria.RunId is not null || criteria.Outcome is not null)
-        {
-            fetchSize = Math.Min(pageSize * 3, 300);
-        }
+        if (hasReferenceFilters)
+            fetchSize = Math.Min(pageSize * 3, MaxFetchSizeForReferenceFilters);
 
         query = query with { PageSize = fetchSize };
 
