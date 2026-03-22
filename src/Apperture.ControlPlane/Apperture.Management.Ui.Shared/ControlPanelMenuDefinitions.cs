@@ -91,11 +91,14 @@ public static class ControlPanelMenuDefinitions
                     new DomainMenuItem { Text = "Create Client", Href = "/clients/new" }
                 }
             },
-            // Create schedule: not implemented; no /schedules/new link to avoid misleading flow
             ["Schedules"] = new DomainMenu
             {
                 Title = null,
-                Items = { new DomainMenuItem { Text = "View All", Href = "/schedules" } }
+                Items =
+                {
+                    new DomainMenuItem { Text = "View All", Href = "/schedules" },
+                    new DomainMenuItem { Text = "Create Schedule", Href = "/schedules/new" }
+                }
             },
             ["Tools"] = new DomainMenu
             {

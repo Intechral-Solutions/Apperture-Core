@@ -1,5 +1,35 @@
 namespace Apperture.Management.Client;
 
+/// <summary>Epic 38: Create schedule request. Shape matches API CreateScheduleRequestBody.</summary>
+public sealed record CreateScheduleRequest(
+    string Name,
+    string RecurrenceExpression,
+    string? TimeZone = "UTC",
+    bool Enabled = true,
+    int? TargetJobType = 0,
+    string? TargetJobConfiguration = null,
+    string? ExecutionPolicyRef = null,
+    string? RuntimePlaneId = "local");
+
+/// <summary>Epic 38: Update schedule request. Shape matches API UpdateScheduleRequestBody.</summary>
+public sealed record UpdateScheduleRequest(
+    string? Name = null,
+    string? RecurrenceExpression = null,
+    string? TimeZone = null,
+    bool? Enabled = null);
+
+/// <summary>Epic 38: Thrown when schedule create/update returns 400 with validation errors.</summary>
+public sealed class ScheduleValidationException : Exception
+{
+    public IReadOnlyList<string> Errors { get; }
+
+    public ScheduleValidationException(IReadOnlyList<string> errors)
+        : base($"Schedule validation failed: {string.Join("; ", errors)}")
+    {
+        Errors = errors;
+    }
+}
+
 public sealed record ScheduleCapabilitiesDto(bool CanManage);
 
 public sealed record ScheduleDto(

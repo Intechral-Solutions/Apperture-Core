@@ -32,6 +32,7 @@ public sealed class Epic33CrossNavigationTests
 
         menus["Modules"].Items.Select(i => i.Href).Should().Contain("/modules");
         menus["Schedules"].Items.Select(i => i.Href).Should().Contain("/schedules");
+        menus["Schedules"].Items.Select(i => i.Href).Should().Contain("/schedules/new");
     }
 
     [Fact]
@@ -46,6 +47,7 @@ public sealed class Epic33CrossNavigationTests
 
         menus["Modules"].Items.Select(i => i.Href).Should().Contain("/modules");
         menus["Schedules"].Items.Select(i => i.Href).Should().Contain("/schedules");
+        menus["Schedules"].Items.Select(i => i.Href).Should().Contain("/schedules/new");
     }
 
     [Fact]

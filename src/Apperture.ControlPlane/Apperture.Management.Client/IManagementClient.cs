@@ -97,6 +97,16 @@ public interface IManagementClient
     Task DisableScheduleAsync(string id, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Creates a schedule. Epic 38. Throws <see cref="ScheduleValidationException"/> on 400.
+    /// </summary>
+    Task<ScheduleDto> CreateScheduleAsync(CreateScheduleRequest request, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Updates a schedule. Epic 38. Throws <see cref="ScheduleValidationException"/> on 400.
+    /// </summary>
+    Task<ScheduleDto> UpdateScheduleAsync(string id, UpdateScheduleRequest request, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Lists blocked work with remediation eligibility. Epic 31.
     /// </summary>
     Task<IReadOnlyList<BlockedWorkRemediationEntryDto>> GetBlockedWorkAsync(

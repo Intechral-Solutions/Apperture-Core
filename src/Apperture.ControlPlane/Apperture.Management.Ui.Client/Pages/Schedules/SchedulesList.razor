@@ -1,6 +1,8 @@
 @page "/schedules"
 @using Apperture.Management.Client
+@using Apperture.Management.Ui.Client.Services
 @inject IManagementClient Client
+@inject IOperatorCapabilitiesService Capabilities
 @inject NavigationManager Nav
 
 <div class="p-4">
@@ -9,11 +11,17 @@
             <h1 class="text-xl font-semibold text-heading">Schedules</h1>
             <div class="text-xs text-muted">Schedule definitions and execution state.</div>
         </div>
-        <button class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface"
-                disabled="@_loading"
-                @onclick="LoadAsync">
-            Refresh
-        </button>
+        <div class="flex items-center gap-2">
+            @if (_capabilities?.CanManageSchedules == true)
+            {
+                <a href="/schedules/new" class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface">Create schedule</a>
+            }
+            <button class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface"
+                    disabled="@_loading"
+                    @onclick="LoadAsync">
+                Refresh
+            </button>
+        </div>
     </div>
 
     @if (!string.IsNullOrEmpty(_error))
@@ -75,10 +83,15 @@
 
 @code {
     private IReadOnlyList<ScheduleDto>? _schedules;
+    private OperatorCapabilitiesDto? _capabilities;
     private bool _loading;
     private string? _error;
 
-    protected override Task OnInitializedAsync() => LoadAsync();
+    protected override async Task OnInitializedAsync()
+    {
+        try { _capabilities = await Capabilities.GetCapabilitiesAsync(); } catch { _capabilities = new OperatorCapabilitiesDto(false, false, false, false, false); }
+        await LoadAsync();
+    }
 
     private async Task LoadAsync()
     {

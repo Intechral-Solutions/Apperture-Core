@@ -27,6 +27,12 @@ The Management API (control plane) exposes REST endpoints for module registry, w
 | GET | `/api/roles/{id}/permissions` | Read explicit role permission assignments |
 | PUT | `/api/roles/{id}/permissions` | Replace explicit role permission assignments |
 | GET | `/api/schedules/capabilities` | Schedule governance capability projection |
+| GET | `/api/schedules` | List schedules (Epic 28/33) |
+| GET | `/api/schedules/{id}` | Get schedule detail with execution state (query: runtimePlaneId) |
+| POST | `/api/schedules` | Create schedule (Epic 38). Body: CreateScheduleRequestBody. Returns 201 with ScheduleDto; 400 with `{ "errors": ["..."] }` on validation failure. |
+| PATCH | `/api/schedules/{id}` | Update schedule (Epic 38). Body: UpdateScheduleRequestBody (Name?, RecurrenceExpression?, TimeZone?, Enabled?). Returns 200 with ScheduleDto; 400 with errors on validation failure. Target is immutable. |
+| POST | `/api/schedules/{id}/enable` | Enable schedule |
+| POST | `/api/schedules/{id}/disable` | Disable schedule |
 | GET | `/api/environments` | Inspect the current environment (authorization gated) |
 | GET | `/api/runtime-instances` | Inspect governed runtime capabilities (validated capability ids + kind) list (authorization gated) |
 | GET | `/api/runtime-instances/{runtimeId}/capabilities` | Inspect governed runtime capabilities for one runtime (capabilityId + kind) (authorization gated) |
@@ -44,6 +50,13 @@ The Management API (control plane) exposes REST endpoints for module registry, w
 | GET | `/api/control/recovery/schedules/{id}` | Schedule remediation context (query: runtimePlaneId). Epic 31. |
 | POST | `/api/control/recovery/schedules/run-cycle` | Trigger **global** scheduler run cycle (query: runtimePlaneId). Not schedule-specific. Epic 31. |
 | GET | `/api/control/recovery/modules/{moduleId}` | Module remediation context. Epic 31. |
+
+## Schedule API (Epic 28, Epic 38)
+
+- **Create** (`POST /api/schedules`): Body `CreateScheduleRequestBody` with `Name`, `RecurrenceExpression`, `TimeZone` (default `UTC`), `Enabled` (default `true`), `TargetJobType` (0=Workflow, 1=Operation), `TargetJobConfiguration` (JSON: `{"workflowDefinitionId":"..."}` or `{"operationDefinitionId":"..."}`). Optional: `ExecutionPolicyRef`, `RuntimePlaneId` (default `local`). On validation failure returns **400** with `{ "errors": ["..."] }`. On success returns **201** with `ScheduleDto` in body.
+- **Update** (`PATCH /api/schedules/{id}`): Body `UpdateScheduleRequestBody` with optional `Name`, `RecurrenceExpression`, `TimeZone`, `Enabled`. Target (kind, configuration) is immutable. On validation failure returns **400** with `{ "errors": ["..."] }`. On success returns **200** with updated `ScheduleDto` in body.
+- **Validation**: Cron via Cronos format; timezone via IANA IDs; target config must be valid JSON with required key for chosen `TargetJobType`.
+- **Permissions**: All schedule endpoints require `schedule.manage` (ScheduleGovernanceService.CanManageAsync). Create and edit are not audited (consistent with enable/disable).
 
 ## Recovery API (Epic 31)
 

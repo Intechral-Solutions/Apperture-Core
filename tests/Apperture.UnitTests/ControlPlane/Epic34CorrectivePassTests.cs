@@ -64,7 +64,8 @@ public sealed class Epic34CorrectivePassTests
     {
         var gov = new StubScheduleGovernanceService(canManage: false);
         var mgmt = new StubScheduleManagementService();
-        var controller = new SchedulesController(gov, mgmt);
+        var validation = new ScheduleValidationService();
+        var controller = new SchedulesController(gov, mgmt, validation);
         var result = await controller.Enable("s1", CancellationToken.None);
         result.Should().BeOfType<ForbidResult>();
     }
@@ -74,7 +75,8 @@ public sealed class Epic34CorrectivePassTests
     {
         var gov = new StubScheduleGovernanceService(canManage: true);
         var mgmt = new StubScheduleManagementService();
-        var controller = new SchedulesController(gov, mgmt);
+        var validation = new ScheduleValidationService();
+        var controller = new SchedulesController(gov, mgmt, validation);
         var result = await controller.Enable("s1", CancellationToken.None);
         result.Should().BeOfType<OkResult>();
     }
@@ -84,7 +86,8 @@ public sealed class Epic34CorrectivePassTests
     {
         var gov = new StubScheduleGovernanceService(canManage: false);
         var mgmt = new StubScheduleManagementService();
-        var controller = new SchedulesController(gov, mgmt);
+        var validation = new ScheduleValidationService();
+        var controller = new SchedulesController(gov, mgmt, validation);
         var result = await controller.Disable("s1", CancellationToken.None);
         result.Should().BeOfType<ForbidResult>();
     }

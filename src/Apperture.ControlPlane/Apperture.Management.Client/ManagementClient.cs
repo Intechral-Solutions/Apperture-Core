@@ -235,6 +235,66 @@ public sealed class ManagementClient : IManagementClient
         response.EnsureSuccessStatusCode();
     }
 
+    public async Task<ScheduleDto> CreateScheduleAsync(CreateScheduleRequest request, CancellationToken cancellationToken = default)
+    {
+        var body = new
+        {
+            request.Name,
+            request.RecurrenceExpression,
+            TimeZone = request.TimeZone ?? "UTC",
+            request.Enabled,
+            TargetJobType = request.TargetJobType ?? 0,
+            request.TargetJobConfiguration,
+            request.ExecutionPolicyRef,
+            RuntimePlaneId = request.RuntimePlaneId ?? "local"
+        };
+        var response = await _http.PostAsJsonAsync("schedules", body, cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode == System.Net.HttpStatusCode.BadRequest)
+            throw await ParseValidationExceptionAsync(response, cancellationToken).ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+        var created = await response.Content.ReadFromJsonAsync<ScheduleDto>(cancellationToken).ConfigureAwait(false);
+        return created ?? throw new InvalidOperationException("Server returned no schedule body.");
+    }
+
+    public async Task<ScheduleDto> UpdateScheduleAsync(string id, UpdateScheduleRequest request, CancellationToken cancellationToken = default)
+    {
+        var body = new
+        {
+            request.Name,
+            request.RecurrenceExpression,
+            request.TimeZone,
+            request.Enabled
+        };
+        var response = await _http.PatchAsJsonAsync($"schedules/{Uri.EscapeDataString(id)}", body, cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode == System.Net.HttpStatusCode.BadRequest)
+            throw await ParseValidationExceptionAsync(response, cancellationToken).ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+        var updated = await response.Content.ReadFromJsonAsync<ScheduleDto>(cancellationToken).ConfigureAwait(false);
+        return updated ?? throw new InvalidOperationException("Server returned no schedule body.");
+    }
+
+    private static async Task<ScheduleValidationException> ParseValidationExceptionAsync(HttpResponseMessage response, CancellationToken cancellationToken)
+    {
+        var errors = new List<string>();
+        try
+        {
+            var json = await response.Content.ReadFromJsonAsync<JsonElement>(cancellationToken).ConfigureAwait(false);
+            if (json.TryGetProperty("errors", out var arr) && arr.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var e in arr.EnumerateArray())
+                    if (e.ValueKind == JsonValueKind.String)
+                        errors.Add(e.GetString() ?? "Unknown error");
+            }
+        }
+        catch
+        {
+            errors.Add(response.ReasonPhrase ?? "Validation failed.");
+        }
+        if (errors.Count == 0)
+            errors.Add(response.ReasonPhrase ?? "Validation failed.");
+        return new ScheduleValidationException(errors);
+    }
+
     public async Task<IReadOnlyList<BlockedWorkRemediationEntryDto>> GetBlockedWorkAsync(
         string? runtimePlaneId = "local",
         int windowHours = 24,

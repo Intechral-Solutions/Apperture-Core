@@ -14,6 +14,14 @@
         </div>
         <div class="flex items-center gap-2">
             <a href="/schedules" class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface">Back to list</a>
+            @if (_capabilities?.CanManageSchedules == true && !_editing)
+            {
+                <button class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface"
+                        title="Edit schedule"
+                        @onclick="StartEdit">
+                    Edit
+                </button>
+            }
             @if (_capabilities?.CanManageSchedules == true)
             {
                 <button class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface disabled:opacity-50"
@@ -51,6 +59,15 @@
         <div class="mt-4 rounded border border-default bg-surface px-3 py-2 text-sm text-body">
             <div class="font-semibold">Error</div>
             <div class="text-muted">@_error</div>
+            @if (_validationErrors is { Count: > 0 })
+            {
+                <ul class="mt-2 list-disc pl-4 text-muted">
+                    @foreach (var err in _validationErrors)
+                    {
+                        <li>@err</li>
+                    }
+                </ul>
+            }
         </div>
     }
     else if (!string.IsNullOrEmpty(_actionMessage))
@@ -73,48 +90,103 @@
 
             <div class="rounded border border-default bg-surface p-3">
                 <div class="text-sm font-semibold text-heading">State</div>
+                <div class="text-xs text-muted mt-1">Target cannot be changed after creation.</div>
                 <div class="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2">
-                    <div>
-                        <div class="text-xs text-muted">Name</div>
-                        <div class="text-sm text-body">@_detail.Name</div>
-                    </div>
-                    <div>
-                        <div class="text-xs text-muted">Enabled</div>
-                        <div class="text-sm text-body">@(_detail.Enabled ? "Yes" : "No")</div>
-                    </div>
-                    <div>
-                        <div class="text-xs text-muted">Target type</div>
-                        <div class="text-sm font-mono">@GetTargetKind(_detail.TargetJobType)</div>
-                    </div>
-                    <div>
-                        <div class="text-xs text-muted">Target configuration</div>
-                        <div class="text-sm font-mono break-all">@(_detail.TargetJobConfiguration ?? "-")</div>
-                    </div>
-                    <div>
-                        <div class="text-xs text-muted">Recurrence</div>
-                        <div class="text-sm font-mono">@_detail.RecurrenceExpression</div>
-                    </div>
-                    <div>
-                        <div class="text-xs text-muted">Time zone</div>
-                        <div class="text-sm text-body">@_detail.TimeZone</div>
-                    </div>
-                    <div>
-                        <div class="text-xs text-muted">Last attempted</div>
-                        <div class="text-sm text-body">@Fmt(_detail.LastAttemptedUtc)</div>
-                    </div>
-                    <div>
-                        <div class="text-xs text-muted">Last outcome</div>
-                        <div class="text-sm text-body">@(_detail.LastOutcome ?? "-")</div>
-                    </div>
-                    <div>
-                        <div class="text-xs text-muted">Last outcome reason</div>
-                        <div class="text-sm text-body">@(_detail.LastOutcomeReason ?? "-")</div>
-                    </div>
-                    <div>
-                        <div class="text-xs text-muted">Last successful dispatch</div>
-                        <div class="text-sm text-body">@Fmt(_detail.LastSuccessfulDispatchUtc)</div>
-                    </div>
-                    @if (!string.IsNullOrEmpty(_detail.ClaimedByHostId))
+                    @if (_editing)
+                    {
+                        <div>
+                            <label class="block text-xs text-muted">Name</label>
+                            <input class="mt-1 w-full rounded border border-default bg-surface px-2 py-2 text-sm"
+                                   @bind="_editName" />
+                        </div>
+                        <div>
+                            <label class="block text-xs text-muted">Enabled</label>
+                            <div class="mt-1 flex items-center gap-2">
+                                <input type="checkbox" id="editEnabled" @bind="_editEnabled" />
+                                <label for="editEnabled" class="text-sm text-body">@(_editEnabled ? "Yes" : "No")</label>
+                            </div>
+                        </div>
+                        <div>
+                            <div class="text-xs text-muted">Target type (read-only)</div>
+                            <div class="text-sm font-mono">@GetTargetKind(_detail.TargetJobType)</div>
+                        </div>
+                        <div>
+                            <div class="text-xs text-muted">Target configuration (read-only)</div>
+                            <div class="text-sm font-mono break-all">@(_detail.TargetJobConfiguration ?? "-")</div>
+                        </div>
+                        <div>
+                            <label class="block text-xs text-muted">Recurrence</label>
+                            <input class="mt-1 w-full rounded border border-default bg-surface px-2 py-2 text-sm font-mono"
+                                   @bind="_editRecurrence" />
+                        </div>
+                        <div>
+                            <label class="block text-xs text-muted">Time zone</label>
+                            <input class="mt-1 w-full rounded border border-default bg-surface px-2 py-2 text-sm"
+                                   @bind="_editTimeZone" />
+                        </div>
+                        <div class="md:col-span-2 flex gap-2">
+                            <button class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface"
+                                    disabled="@_loading"
+                                    @onclick="SaveEditAsync">
+                                Save
+                            </button>
+                            <button class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface"
+                                    disabled="@_loading"
+                                    @onclick="CancelEdit">
+                                Cancel
+                            </button>
+                        </div>
+                    }
+                    else
+                    {
+                        <div>
+                            <div class="text-xs text-muted">Name</div>
+                            <div class="text-sm text-body">@_detail.Name</div>
+                        </div>
+                        <div>
+                            <div class="text-xs text-muted">Enabled</div>
+                            <div class="text-sm text-body">@(_detail.Enabled ? "Yes" : "No")</div>
+                        </div>
+                        <div>
+                            <div class="text-xs text-muted">Target type</div>
+                            <div class="text-sm font-mono">@GetTargetKind(_detail.TargetJobType)</div>
+                        </div>
+                        <div>
+                            <div class="text-xs text-muted">Target configuration</div>
+                            <div class="text-sm font-mono break-all">@(_detail.TargetJobConfiguration ?? "-")</div>
+                        </div>
+                        <div>
+                            <div class="text-xs text-muted">Recurrence</div>
+                            <div class="text-sm font-mono">@_detail.RecurrenceExpression</div>
+                        </div>
+                        <div>
+                            <div class="text-xs text-muted">Time zone</div>
+                            <div class="text-sm text-body">@_detail.TimeZone</div>
+                        </div>
+                    }
+                    @if (!_editing)
+                    {
+                        <div>
+                            <div class="text-xs text-muted">Last attempted</div>
+                            <div class="text-sm text-body">@Fmt(_detail.LastAttemptedUtc)</div>
+                        </div>
+                    }
+                    @if (!_editing)
+                    {
+                        <div>
+                            <div class="text-xs text-muted">Last outcome</div>
+                            <div class="text-sm text-body">@(_detail.LastOutcome ?? "-")</div>
+                        </div>
+                        <div>
+                            <div class="text-xs text-muted">Last outcome reason</div>
+                            <div class="text-sm text-body">@(_detail.LastOutcomeReason ?? "-")</div>
+                        </div>
+                        <div>
+                            <div class="text-xs text-muted">Last successful dispatch</div>
+                            <div class="text-sm text-body">@Fmt(_detail.LastSuccessfulDispatchUtc)</div>
+                        </div>
+                    }
+                    @if (!_editing && !string.IsNullOrEmpty(_detail.ClaimedByHostId))
                     {
                         <div class="md:col-span-2 border-t border-default pt-2 mt-1">
                             <div class="text-xs font-semibold text-heading">Active scheduler claim</div>
@@ -159,6 +231,65 @@
     private bool _loading;
     private string? _error;
     private string? _actionMessage;
+    private IReadOnlyList<string>? _validationErrors;
+
+    private bool _editing;
+    private string _editName = "";
+    private string _editRecurrence = "";
+    private string _editTimeZone = "";
+    private bool _editEnabled;
+
+    private void StartEdit()
+    {
+        if (_detail is null) return;
+        _editing = true;
+        _editName = _detail.Name;
+        _editRecurrence = _detail.RecurrenceExpression;
+        _editTimeZone = _detail.TimeZone;
+        _editEnabled = _detail.Enabled;
+        _error = null;
+        _validationErrors = null;
+    }
+
+    private void CancelEdit()
+    {
+        _editing = false;
+        _error = null;
+        _validationErrors = null;
+    }
+
+    private async Task SaveEditAsync()
+    {
+        if (_detail is null) return;
+
+        _loading = true;
+        _error = null;
+        _validationErrors = null;
+        try
+        {
+            var request = new UpdateScheduleRequest(_editName.Trim(), _editRecurrence.Trim(), string.IsNullOrWhiteSpace(_editTimeZone) ? "UTC" : _editTimeZone.Trim(), _editEnabled);
+            await Client.UpdateScheduleAsync(ScheduleId, request);
+            _editing = false;
+            await LoadAsync();
+        }
+        catch (ScheduleValidationException ex)
+        {
+            _error = "Validation failed.";
+            _validationErrors = ex.Errors;
+        }
+        catch (HttpRequestException ex)
+        {
+            _error = ex.Message;
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
 
     protected override async Task OnParametersSetAsync()
     {

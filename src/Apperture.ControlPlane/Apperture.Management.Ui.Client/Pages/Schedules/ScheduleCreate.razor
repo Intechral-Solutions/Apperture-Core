@@ -1,0 +1,305 @@
+@page "/schedules/new"
+@using Apperture.Management.Client
+@using Apperture.Management.Ui.Client.Services
+@using Apperture.Management.Ui.Shared
+@inject IManagementClient Client
+@inject IOperatorCapabilitiesService Capabilities
+@inject NavigationManager Nav
+
+<div class="p-4">
+    <div class="flex items-center justify-between gap-3">
+        <div class="min-w-0">
+            <h1 class="text-xl font-semibold text-heading">Create schedule</h1>
+            <div class="text-xs text-muted">Define a new scheduled workflow or operation.</div>
+        </div>
+        <a href="/schedules" class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface">Back to list</a>
+    </div>
+
+    @if (_capabilities?.CanManageSchedules != true)
+    {
+        <div class="mt-4 rounded border border-default bg-surface px-3 py-2 text-sm text-body">
+            <div class="font-semibold">Not authorized</div>
+            <div class="text-muted">You do not have permission to create schedules.</div>
+        </div>
+    }
+    else if (!string.IsNullOrEmpty(_error))
+    {
+        <div class="mt-4 rounded border border-default bg-surface px-3 py-2 text-sm text-body">
+            <div class="font-semibold">Error</div>
+            <div class="text-muted">@_error</div>
+            @if (_validationErrors is { Count: > 0 })
+            {
+                <ul class="mt-2 list-disc pl-4 text-muted">
+                    @foreach (var err in _validationErrors)
+                    {
+                        <li>@err</li>
+                    }
+                </ul>
+            }
+        </div>
+    }
+    else
+    {
+        <div class="mt-4 rounded border border-default bg-surface p-3">
+            <div class="text-xs text-muted mb-3">@Epic33UiDisplayHelpers.ScheduleActionExplanatoryText</div>
+            <div class="text-xs text-muted mb-4">On first evaluation, only runs due in the last 5 minutes are dispatched to avoid burst.</div>
+
+            <form class="grid gap-4 md:grid-cols-2" @onsubmit="SubmitAsync" @onsubmit:preventDefault>
+                <div class="space-y-3">
+                    <div>
+                        <label class="block text-xs text-muted">Name (required)</label>
+                        <input class="mt-1 w-full rounded border border-default bg-surface px-2 py-2 text-sm"
+                               @bind="_name"
+                               required />
+                    </div>
+
+                    <div>
+                        <label class="block text-xs text-muted">Target kind</label>
+                        <select class="mt-1 w-full rounded border border-default bg-surface px-2 py-2 text-sm"
+                                @onchange="OnTargetKindChanged"
+                                value="@(_targetKind == 0 ? "0" : "1")">
+                            <option value="0">Workflow</option>
+                            <option value="1">Operation</option>
+                        </select>
+                    </div>
+
+                    @if (_targetKind == 0)
+                    {
+                        <div>
+                            <label class="block text-xs text-muted">Module</label>
+                            <select class="mt-1 w-full rounded border border-default bg-surface px-2 py-2 text-sm"
+                                    value="@(_selectedModuleId ?? "")"
+                                    @onchange="OnModuleChanged">
+                                <option value="">Select…</option>
+                                @if (_modules is not null)
+                                {
+                                    @foreach (var m in _modules)
+                                    {
+                                        <option value="@m.Id">@m.Name (@m.Id)</option>
+                                    }
+                                }
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-xs text-muted">Workflow</label>
+                            <select class="mt-1 w-full rounded border border-default bg-surface px-2 py-2 text-sm"
+                                    disabled="@(_workflows is null)"
+                                    value="@(_selectedWorkflowId ?? "")"
+                                    @onchange="OnWorkflowChanged">
+                                <option value="">Select…</option>
+                                @if (_workflows is not null)
+                                {
+                                    @foreach (var w in _workflows)
+                                    {
+                                        <option value="@w.Id">@w.Name (@w.Id)</option>
+                                    }
+                                }
+                            </select>
+                        </div>
+                    }
+                    else
+                    {
+                        <div>
+                            <label class="block text-xs text-muted">Operation</label>
+                            <select class="mt-1 w-full rounded border border-default bg-surface px-2 py-2 text-sm"
+                                    value="@(_selectedOperationId ?? "")"
+                                    @onchange="OnOperationChanged">
+                                <option value="">Select…</option>
+                                @if (_operations is not null)
+                                {
+                                    @foreach (var op in _operations)
+                                    {
+                                        <option value="@op.OperationDefinitionId">@op.DisplayName (@op.OperationDefinitionId)</option>
+                                    }
+                                }
+                            </select>
+                        </div>
+                    }
+
+                    <div>
+                        <label class="block text-xs text-muted">Recurrence (cron expression, required)</label>
+                        <input class="mt-1 w-full rounded border border-default bg-surface px-2 py-2 text-sm font-mono"
+                               @bind="_recurrence"
+                               placeholder="0 * * * *"
+                               required />
+                        <div class="mt-1 text-xs text-muted">Cron expression (e.g. 0 * * * * for hourly). Uses Cronos format.</div>
+                    </div>
+
+                    <div>
+                        <label class="block text-xs text-muted">Time zone</label>
+                        <input class="mt-1 w-full rounded border border-default bg-surface px-2 py-2 text-sm"
+                               @bind="_timeZone"
+                               placeholder="UTC" />
+                        <div class="mt-1 text-xs text-muted">IANA time zone (e.g. UTC, America/New_York)</div>
+                    </div>
+
+                    <div class="flex items-center gap-2">
+                        <input type="checkbox" id="enabled" @bind="_enabled" />
+                        <label for="enabled" class="text-sm text-body">Enabled</label>
+                    </div>
+                </div>
+
+                <div class="flex flex-col gap-2">
+                    <button type="submit"
+                            class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface disabled:opacity-50 w-fit"
+                            disabled="@(_loading || !CanSubmit)">
+                        Create schedule
+                    </button>
+                    <a href="/schedules" class="text-sm underline w-fit">Cancel</a>
+                </div>
+            </form>
+        </div>
+    }
+</div>
+
+@code {
+    private OperatorCapabilitiesDto? _capabilities;
+    private IReadOnlyList<ModuleDto>? _modules;
+    private IReadOnlyList<WorkflowDto>? _workflows;
+    private IReadOnlyList<OperationDefinitionDto>? _operations;
+    private string? _selectedModuleId;
+    private string? _selectedWorkflowId;
+    private string? _selectedOperationId;
+    private int _targetKind; // 0 = Workflow, 1 = Operation
+    private string _name = "";
+    private string _recurrence = "";
+    private string _timeZone = "UTC";
+    private bool _enabled = true;
+    private bool _loading;
+    private string? _error;
+    private IReadOnlyList<string>? _validationErrors;
+
+    private bool CanSubmit =>
+        !string.IsNullOrWhiteSpace(_name) &&
+        !string.IsNullOrWhiteSpace(_recurrence) &&
+        (_targetKind == 0
+            ? !string.IsNullOrWhiteSpace(_selectedWorkflowId)
+            : !string.IsNullOrWhiteSpace(_selectedOperationId));
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadCapabilitiesAsync();
+        if (_capabilities?.CanManageSchedules != true)
+            return;
+        await LoadModulesAsync();
+        await LoadOperationsAsync();
+    }
+
+    private async Task LoadCapabilitiesAsync()
+    {
+        try
+        {
+            _capabilities = await Capabilities.GetCapabilitiesAsync();
+        }
+        catch
+        {
+            _capabilities = new OperatorCapabilitiesDto(false, false, false, false, false);
+        }
+    }
+
+    private async Task LoadModulesAsync()
+    {
+        try
+        {
+            _modules = await Client.GetModulesAsync();
+        }
+        catch
+        {
+            _modules = Array.Empty<ModuleDto>();
+        }
+    }
+
+    private async Task LoadOperationsAsync()
+    {
+        try
+        {
+            _operations = await Client.GetOperationsAsync();
+        }
+        catch
+        {
+            _operations = Array.Empty<OperationDefinitionDto>();
+        }
+    }
+
+    private void OnTargetKindChanged(ChangeEventArgs e)
+    {
+        _targetKind = int.TryParse(e.Value?.ToString(), out var v) ? v : 0;
+        _selectedModuleId = null;
+        _selectedWorkflowId = null;
+        _selectedOperationId = null;
+        _workflows = null;
+    }
+
+    private async Task OnModuleChanged(ChangeEventArgs e)
+    {
+        _selectedModuleId = e.Value?.ToString();
+        _selectedWorkflowId = null;
+        _workflows = null;
+        if (string.IsNullOrEmpty(_selectedModuleId))
+            return;
+        try
+        {
+            _workflows = await Client.GetWorkflowsAsync(_selectedModuleId);
+        }
+        catch
+        {
+            _workflows = Array.Empty<WorkflowDto>();
+        }
+    }
+
+    private void OnWorkflowChanged(ChangeEventArgs e) => _selectedWorkflowId = e.Value?.ToString();
+
+    private void OnOperationChanged(ChangeEventArgs e) => _selectedOperationId = e.Value?.ToString();
+
+    private async Task SubmitAsync()
+    {
+        if (!CanSubmit)
+            return;
+
+        _loading = true;
+        _error = null;
+        _validationErrors = null;
+        try
+        {
+            string? targetConfig;
+            if (_targetKind == 0)
+            {
+                targetConfig = System.Text.Json.JsonSerializer.Serialize(new { workflowDefinitionId = _selectedWorkflowId });
+            }
+            else
+            {
+                targetConfig = System.Text.Json.JsonSerializer.Serialize(new { operationDefinitionId = _selectedOperationId });
+            }
+
+            var request = new CreateScheduleRequest(
+                _name.Trim(),
+                _recurrence.Trim(),
+                string.IsNullOrWhiteSpace(_timeZone) ? "UTC" : _timeZone.Trim(),
+                _enabled,
+                _targetKind,
+                targetConfig,
+                ExecutionPolicyRef: null,
+                RuntimePlaneId: "local");
+
+            var created = await Client.CreateScheduleAsync(request);
+            Nav.NavigateTo($"/schedules/{Uri.EscapeDataString(created.Id)}");
+        }
+        catch (ScheduleValidationException ex)
+        {
+            _error = "Validation failed.";
+            _validationErrors = ex.Errors;
+        }
+        catch (HttpRequestException ex)
+        {
+            _error = ex.Message;
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+}

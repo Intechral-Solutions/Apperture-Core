@@ -14,11 +14,13 @@ public sealed class SchedulesController : ControllerBase
 {
     private readonly IScheduleGovernanceService _scheduleGovernance;
     private readonly IScheduleManagementService _scheduleManagement;
+    private readonly IScheduleValidationService _scheduleValidation;
 
-    public SchedulesController(IScheduleGovernanceService scheduleGovernance, IScheduleManagementService scheduleManagement)
+    public SchedulesController(IScheduleGovernanceService scheduleGovernance, IScheduleManagementService scheduleManagement, IScheduleValidationService scheduleValidation)
     {
         _scheduleGovernance = scheduleGovernance;
         _scheduleManagement = scheduleManagement;
+        _scheduleValidation = scheduleValidation;
     }
 
     [HttpGet("capabilities")]
@@ -64,11 +66,18 @@ public sealed class SchedulesController : ControllerBase
     {
         if (!await _scheduleGovernance.CanManageAsync(cancellationToken))
             return Forbid();
+        var validation = _scheduleValidation.ValidateCreate(
+            body.Name,
+            body.RecurrenceExpression,
+            body.TimeZone,
+            body.Enabled,
+            body.TargetJobType,
+            body.TargetJobConfiguration);
+        if (!validation.IsValid)
+            return BadRequest(new { errors = validation.Errors });
         var jobType = (ScheduledJobType)(body.TargetJobType ?? 0);
-        if (jobType != ScheduledJobType.WorkflowExecution && jobType != ScheduledJobType.ModuleOperationExecution)
-            return BadRequest("TargetJobType must be 0 (WorkflowExecution) or 1 (ModuleOperationExecution).");
         var id = Guid.NewGuid().ToString("N")[..24];
-        var target = new ScheduledTarget(jobType, body.TargetJobConfiguration);
+        var target = new ScheduledTarget(jobType, body.TargetJobConfiguration!);
         var definition = new ScheduleDefinition(
             new ScheduleId(id),
             body.Name,
@@ -85,12 +94,16 @@ public sealed class SchedulesController : ControllerBase
     }
 
     [HttpPatch("{id}")]
-    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ScheduleDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<ActionResult> Update(string id, [FromBody] UpdateScheduleRequestBody body, CancellationToken cancellationToken = default)
+    public async Task<ActionResult<ScheduleDto>> Update(string id, [FromBody] UpdateScheduleRequestBody body, CancellationToken cancellationToken = default)
     {
         if (!await _scheduleGovernance.CanManageAsync(cancellationToken))
             return Forbid();
+        var validation = _scheduleValidation.ValidateUpdate(body.Name, body.RecurrenceExpression, body.TimeZone, body.Enabled);
+        if (!validation.IsValid)
+            return BadRequest(new { errors = validation.Errors });
         var def = await _scheduleManagement.GetDefinitionAsync(new ScheduleId(id), cancellationToken);
         if (def is null)
             return NotFound();
@@ -102,7 +115,7 @@ public sealed class SchedulesController : ControllerBase
             Enabled = body.Enabled ?? def.Enabled
         };
         await _scheduleManagement.UpdateScheduleAsync(updated, cancellationToken);
-        return Ok();
+        return Ok(ToDto(updated));
     }
 
     [HttpPost("{id}/enable")]
