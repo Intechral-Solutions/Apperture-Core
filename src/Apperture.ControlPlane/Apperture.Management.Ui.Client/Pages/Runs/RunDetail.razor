@@ -94,7 +94,7 @@
                     @if (!string.IsNullOrEmpty(fx.ModuleId))
                     {
                         <div>
-                            <div class="text-xs text-muted">Module</div>
+                            <div class="text-xs text-muted">@Epic33UiDisplayHelpers.RunForensicModuleLabel</div>
                             <a class="text-sm underline font-mono break-all" href="@($"/modules/{fx.ModuleId}")">@fx.ModuleId</a>
                         </div>
                     }

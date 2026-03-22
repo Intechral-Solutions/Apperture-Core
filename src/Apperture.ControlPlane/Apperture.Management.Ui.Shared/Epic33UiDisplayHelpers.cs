@@ -110,6 +110,9 @@ public static class Epic33UiDisplayHelpers
     public static string RunScheduleInferenceDisclaimer =>
         "Schedule link is inferred from the platform idempotency key convention (schedule:{id}:{time}). It is not a separate persisted association.";
 
+    /// <summary>Label for module link when resolved from workflow/operation definition. Used so UI does not overclaim inferred causality.</summary>
+    public static string RunForensicModuleLabel => "Module (from definition)";
+
     /// <summary>Builds relative URL for investigation hint kinds from <see cref="Apperture.Management.Client.RunInvestigationHintDto"/>.</summary>
     public static string GetRunInvestigationHintHref(string kind, string? targetId) =>
         kind.ToLowerInvariant() switch

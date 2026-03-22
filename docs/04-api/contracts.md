@@ -69,7 +69,14 @@ Operator recovery and remediation workflows extend Epic 30 diagnostics with elig
   - `createdTo`
   - `moduleId`
   - `correlationKey`
-- **Epic 35 — Run forensics**: `GET /runs/{id}` returns `RunDetailDto` with optional nested `ForensicContext` (`RunForensicContextDto`): resolved `ModuleId`, `OriginKind` / `OriginDetail`, optional `ScheduleId` / `ScheduleFireTimeUtc` (from **platform schedule idempotency convention**, not an FK), `RetriedByRunIds`, optional current composition hints (`ModuleExecutableNow`, `ModuleExecutionHint`), and `InvestigationHints` (audit / module / schedule / blocked_work / runtime_health — ids only). See [Epic35-Run-Inspection-Forensics.md](../02-decisions/Epic35-Run-Inspection-Forensics.md) for derivation rules and limitations (retry vs recovery not distinguished; composition is current snapshot only).
+- **Epic 35 — Run forensics**: `GET /runs/{id}` returns `RunDetailDto` with optional nested `ForensicContext` (`RunForensicContextDto`). Forensic contract (field provenance):
+  - **ModuleId** — derived from workflow/operation definition via registry; null when resolution fails.
+  - **OriginKind** / **OriginDetail** — derived from RetryOfRunId, start idempotency pattern, or hasStartRequest; one of unknown, manual, scheduled, retry.
+  - **ScheduleId** / **ScheduleFireTimeUtc** — inferred from platform idempotency convention `schedule:{id}:{ISO}` when pattern matches; not a persisted FK. Null when not applicable.
+  - **RetriedByRunIds** — direct query on OperationRuns where RetryOfRunId equals this run.
+  - **ModuleExecutableNow** / **ModuleExecutionHint** — current runtime composition snapshot only; not historical.
+  - **InvestigationHints** — derived hints (kind + optional targetId) for navigation; UI builds routes. When targetId is null, no link should be shown.
+  - Unknown origin is returned when evidence is insufficient; the API does not fabricate causality. See [Epic35-Run-Inspection-Forensics.md](../02-decisions/Epic35-Run-Inspection-Forensics.md).
 - Run kind resolution is deterministic from durable start-request ownership:
   - workflow run: present in `WorkflowStartRequests` only
   - operation run: present in `OperationStartRequests` only

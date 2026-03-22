@@ -36,10 +36,22 @@ First match:
 3. **`manual`** — persisted start request exists, not retry, not schedule pattern.
 4. **`unknown`** — no start request or insufficient metadata (`hasStartRequest == false` in classifier; normal API-projectable runs typically still have a start row once kind is resolved).
 
+### Forensic field provenance
+
+| Field | Provenance | Notes |
+|-------|------------|-------|
+| `ModuleId` | Derived | Resolved from workflow/operation definition via registry. Null when resolution fails. |
+| `OriginKind` / `OriginDetail` | Derived | Classified from durable evidence; never fabricated. Unknown when evidence insufficient. |
+| `ScheduleId` / `ScheduleFireTimeUtc` | Inferred | Parsed from idempotency key when it matches platform convention. Not a persisted association. |
+| `RetriedByRunIds` | Direct | Query on OperationRuns.RetryOfRunId. |
+| `ModuleExecutableNow` / `ModuleExecutionHint` | Current snapshot | From runtime composition; reflects now, not run start. |
+| `InvestigationHints` | Derived | Kind + optional targetId; UI builds routes. No link when targetId null. |
+
 ### Truth boundaries (do not overclaim)
 
 - **Scheduled schedule link** is **inferred** from the idempotency convention, not a stored association; custom keys could theoretically collide—document in UI disclaimer.
 - **Module / composition hints** reflect **current** runtime composition, not necessarily state at run start.
+- **Unknown** origin is returned when no start request or insufficient metadata; the system does not upgrade unknown to false certainty.
 - **No durable “replay”** flag unless evidenced elsewhere (e.g. lifecycle events)—not invented here.
 - **No distributed trace** or speculative causality engine.
 

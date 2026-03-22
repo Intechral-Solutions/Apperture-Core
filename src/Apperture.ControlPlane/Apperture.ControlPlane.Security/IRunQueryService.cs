@@ -29,14 +29,25 @@ public sealed record RunSummaryDto(
     string ExecutionKind = "workflow");
 
 /// <summary>
-/// Operator hint for cross-navigation from run forensics. <see cref="Kind"/> is a stable token; <see cref="TargetId"/> is optional (e.g. module id, schedule id).
-/// Epic 35.
+/// Operator hint for cross-navigation from run forensics. Epic 35.
+/// <see cref="Kind"/> is a stable token (audit, module, schedule, blocked_work, runtime_health).
+/// <see cref="TargetId"/> is optional (e.g. run id for audit, module id, schedule id); when null, UI should not render a link.
 /// </summary>
 public sealed record RunInvestigationHintDto(string Kind, string? TargetId);
 
 /// <summary>
-/// Truthful run investigation projection from persisted data and platform conventions. Epic 35.
+/// Run investigation projection from persisted data and platform conventions. Epic 35.
+/// All fields reflect backend truth; none are fabricated. See field provenance below.
 /// </summary>
+/// <param name="ModuleId">Derived: resolved from workflow/operation definition via registry. Null when resolution fails or definition unknown.</param>
+/// <param name="OriginKind">Derived: classified from RetryOfRunId, start idempotency pattern, or hasStartRequest. One of: unknown, manual, scheduled, retry.</param>
+/// <param name="OriginDetail">Derived: human-readable explanation of how OriginKind was determined. Never claims certainty when evidence is insufficient.</param>
+/// <param name="ScheduleId">Inferred: parsed from start IdempotencyKey when it matches platform convention schedule:{id}:{ISO}. Null otherwise. Not a persisted FK.</param>
+/// <param name="ScheduleFireTimeUtc">Inferred: parsed from IdempotencyKey when ScheduleId is present. Null otherwise.</param>
+/// <param name="RetriedByRunIds">Direct: run IDs where RetryOfRunId equals this run. Query on OperationRuns; limit 20.</param>
+/// <param name="ModuleExecutableNow">Current snapshot: from IRuntimeModuleCompositionQueryService. Reflects now, not run start. Null when ModuleId unknown.</param>
+/// <param name="ModuleExecutionHint">Current snapshot: one-line hint from composition. Null when ModuleId unknown or no hint.</param>
+/// <param name="InvestigationHints">Derived: structured hints (kind + optional targetId) for audit, module, schedule, blocked_work, runtime_health. IDs only; UI builds routes.</param>
 public sealed record RunForensicContextDto(
     string? ModuleId,
     string OriginKind,
