@@ -36,14 +36,22 @@ public sealed class SqlAuditService : IAuditService
     /// <inheritdoc />
     public async ValueTask<AuditPage> QueryAsync(AuditQuery query, CancellationToken cancellationToken = default)
     {
-        var q = _db.AuditLogs.AsNoTracking().OrderByDescending(x => x.At).AsQueryable();
+        var q = _db.AuditLogs.AsNoTracking()
+            .OrderByDescending(x => x.At)
+            .ThenByDescending(x => x.Id)
+            .AsQueryable();
 
         if (query.FilterByActorId is { } actorId)
             q = q.Where(x => x.Actor == actorId.Value);
+        if (!string.IsNullOrEmpty(query.FilterByActionPrefix))
+            q = q.Where(x => x.Action.StartsWith(query.FilterByActionPrefix));
         if (query.FromUtc.HasValue)
             q = q.Where(x => x.At >= query.FromUtc.Value);
         if (query.ToUtc.HasValue)
             q = q.Where(x => x.At <= query.ToUtc.Value);
+
+        if (!string.IsNullOrEmpty(query.ContinuationToken) && long.TryParse(query.ContinuationToken, out var lastId))
+            q = q.Where(x => x.Id < lastId);
 
         var pageSize = Math.Clamp(query.PageSize, 1, 100);
         var items = await q.Take(pageSize + 1).ToListAsync(cancellationToken);
@@ -63,5 +71,27 @@ public sealed class SqlAuditService : IAuditService
 
         var nextToken = hasMore ? items[^1].Id.ToString() : null;
         return new AuditPage(records, nextToken);
+    }
+
+    /// <inheritdoc />
+    public async ValueTask<AuditRecord?> GetByIdAsync(string id, CancellationToken cancellationToken = default)
+    {
+        if (!long.TryParse(id, out var pk))
+            return null;
+
+        var entity = await _db.AuditLogs.AsNoTracking()
+            .FirstOrDefaultAsync(x => x.Id == pk, cancellationToken);
+        if (entity is null)
+            return null;
+
+        return new AuditRecord(
+            new AuditRecordId(entity.Id.ToString()),
+            new ActorId(entity.Actor),
+            entity.Action,
+            Resource: null,
+            Outcome: "",
+            entity.At,
+            new CorrelationId(null),
+            entity.Details);
     }
 }

@@ -156,6 +156,47 @@ public sealed class ManagementClient : IManagementClient
         return list ?? Array.Empty<RuntimeControlRequestDto>();
     }
 
+    public async Task<AuditTimelinePageDto> GetAuditTimelineAsync(
+        DateTimeOffset? fromUtc = null,
+        DateTimeOffset? toUtc = null,
+        string? actor = null,
+        string? actionPrefix = null,
+        string? moduleId = null,
+        string? scheduleId = null,
+        string? runId = null,
+        string? outcome = null,
+        int pageSize = 50,
+        string? continuationToken = null,
+        CancellationToken cancellationToken = default)
+    {
+        var pairs = new List<string>();
+        if (fromUtc is not null)
+            pairs.Add($"fromUtc={Uri.EscapeDataString(fromUtc.Value.ToString("o"))}");
+        if (toUtc is not null)
+            pairs.Add($"toUtc={Uri.EscapeDataString(toUtc.Value.ToString("o"))}");
+        Add(pairs, "actor", actor);
+        Add(pairs, "actionPrefix", actionPrefix);
+        Add(pairs, "moduleId", moduleId);
+        Add(pairs, "scheduleId", scheduleId);
+        Add(pairs, "runId", runId);
+        Add(pairs, "outcome", outcome);
+        pairs.Add($"pageSize={pageSize}");
+        Add(pairs, "continuationToken", continuationToken);
+
+        var query = pairs.Count > 0 ? "?" + string.Join("&", pairs) : "";
+        var dto = await _http.GetFromJsonAsync<AuditTimelinePageDto>(
+            $"control/audit{query}",
+            cancellationToken).ConfigureAwait(false);
+        return dto ?? new AuditTimelinePageDto([], null);
+    }
+
+    public async Task<AuditTimelineEntryDto?> GetAuditEntryAsync(string id, CancellationToken cancellationToken = default)
+    {
+        return await _http.GetFromJsonAsync<AuditTimelineEntryDto>(
+            $"control/audit/{Uri.EscapeDataString(id)}",
+            cancellationToken).ConfigureAwait(false);
+    }
+
     public async Task<StartOperationResult> StartOperationAsync(
         string operationDefinitionId,
         IReadOnlyDictionary<string, object?>? parameters,

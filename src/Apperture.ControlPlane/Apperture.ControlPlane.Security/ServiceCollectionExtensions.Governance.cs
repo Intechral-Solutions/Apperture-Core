@@ -1,4 +1,5 @@
 using Apperture.Bootstrap;
+using Apperture.ControlPlane.Security.Audit;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Governance;
 using Apperture.ModuleSdk.Abstractions;
@@ -104,6 +105,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IRuntimeModuleCompositionQueryService, RuntimeModuleCompositionQueryService>();
         services.AddScoped<IRuntimeHealthQueryService, RuntimeHealthQueryService>();
         services.AddScoped<IRecoveryQueryService, RecoveryQueryService>();
+        services.AddScoped<IAuditTimelineQueryService, AuditTimelineQueryService>();
         services.AddScoped<ISchedulerLifecycleGuard, SchedulerLifecycleGuard>();
         services.AddHostedService<ModuleCompositionBootstrapHostedService>();
         return services;

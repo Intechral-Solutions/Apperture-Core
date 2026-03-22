@@ -28,7 +28,8 @@ public static class ControlPanelMenuDefinitions
                 Title = null,
                 Items =
                 {
-                    new DomainMenuItem { Text = "Control Center", Href = "/control/center" }
+                    new DomainMenuItem { Text = "Control Center", Href = "/control/center" },
+                    new DomainMenuItem { Text = "Audit Timeline", Href = "/control/audit" }
                 }
             },
             ["Test Suite"] = new DomainMenu

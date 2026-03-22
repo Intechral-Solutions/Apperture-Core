@@ -220,5 +220,8 @@ public sealed class ModuleLifecycleRegistryTests
 
         public ValueTask<AuditPage> QueryAsync(AuditQuery query, CancellationToken cancellationToken = default)
             => ValueTask.FromResult(new AuditPage(Records, null));
+
+        public ValueTask<AuditRecord?> GetByIdAsync(string id, CancellationToken cancellationToken = default)
+            => ValueTask.FromResult<AuditRecord?>(Records.FirstOrDefault(r => r.Id.Value == id));
     }
 }

@@ -8,6 +8,7 @@ namespace Apperture.Core.Application.Services;
 public sealed record AuditQuery(
     ActorId? FilterByActorId = null,
     ResourceDescriptor? Resource = null,
+    string? FilterByActionPrefix = null,
     DateTimeOffset? FromUtc = null,
     DateTimeOffset? ToUtc = null,
     int PageSize = 50,

@@ -45,7 +45,45 @@ public interface IManagementClient
     Task<IReadOnlyList<RuntimeControlRequestDto>> GetRuntimeShutdownRequestsAsync(
         string runtimeId,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Gets audit timeline with optional filters. Epic 32.
+    /// </summary>
+    Task<AuditTimelinePageDto> GetAuditTimelineAsync(
+        DateTimeOffset? fromUtc = null,
+        DateTimeOffset? toUtc = null,
+        string? actor = null,
+        string? actionPrefix = null,
+        string? moduleId = null,
+        string? scheduleId = null,
+        string? runId = null,
+        string? outcome = null,
+        int pageSize = 50,
+        string? continuationToken = null,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Gets a single audit entry by id. Epic 32.
+    /// </summary>
+    Task<AuditTimelineEntryDto?> GetAuditEntryAsync(string id, CancellationToken cancellationToken = default);
 }
+
+public sealed record AuditTimelineEntryDto(
+    string Id,
+    DateTimeOffset Timestamp,
+    string Actor,
+    string Action,
+    string Category,
+    string Outcome,
+    string Summary,
+    string? Details,
+    IReadOnlyList<AuditRelatedReferenceDto> RelatedReferences);
+
+public sealed record AuditRelatedReferenceDto(string Kind, string Id);
+
+public sealed record AuditTimelinePageDto(
+    IReadOnlyList<AuditTimelineEntryDto> Items,
+    string? NextContinuationToken);
 
 public sealed record StartWorkflowResult(
     string RunId,

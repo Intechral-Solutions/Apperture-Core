@@ -349,6 +349,9 @@ public sealed class RuntimeEnrollmentEnvironmentValidationTests
 
         public ValueTask<AuditPage> QueryAsync(AuditQuery query, CancellationToken cancellationToken = default) =>
             ValueTask.FromResult(new AuditPage(Array.Empty<AuditRecord>(), null));
+
+        public ValueTask<AuditRecord?> GetByIdAsync(string id, CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult<AuditRecord?>(null);
     }
 }
 

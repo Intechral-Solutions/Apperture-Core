@@ -16,4 +16,9 @@ public interface IAuditService
     /// Queries audit records with optional filters.
     /// </summary>
     ValueTask<AuditPage> QueryAsync(AuditQuery query, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Gets a single audit record by id, or null if not found.
+    /// </summary>
+    ValueTask<AuditRecord?> GetByIdAsync(string id, CancellationToken cancellationToken = default);
 }
