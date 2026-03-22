@@ -55,6 +55,7 @@
 
                     <div>
                         <label class="block text-xs text-muted">Target kind</label>
+                        <div class="text-xs text-muted mt-0.5">Target options come from the platform catalog (modules, workflows, operations APIs). Permission-gated.</div>
                         <select class="mt-1 w-full rounded border border-default bg-surface px-2 py-2 text-sm"
                                 @onchange="OnTargetKindChanged"
                                 value="@(_targetKind == 0 ? "0" : "1")">

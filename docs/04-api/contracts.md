@@ -54,7 +54,7 @@ The Management API (control plane) exposes REST endpoints for module registry, w
 ## Schedule API (Epic 28, Epic 38)
 
 - **Create** (`POST /api/schedules`): Body `CreateScheduleRequestBody` with `Name`, `RecurrenceExpression`, `TimeZone` (default `UTC`), `Enabled` (default `true`), `TargetJobType` (0=Workflow, 1=Operation), `TargetJobConfiguration` (JSON: `{"workflowDefinitionId":"..."}` or `{"operationDefinitionId":"..."}`). Optional: `ExecutionPolicyRef`, `RuntimePlaneId` (default `local`). On validation failure returns **400** with `{ "errors": ["..."] }`. On success returns **201** with `ScheduleDto` in body.
-- **Update** (`PATCH /api/schedules/{id}`): Body `UpdateScheduleRequestBody` with optional `Name`, `RecurrenceExpression`, `TimeZone`, `Enabled`. Target (kind, configuration) is immutable. On validation failure returns **400** with `{ "errors": ["..."] }`. On success returns **200** with updated `ScheduleDto` in body.
+- **Update** (`PATCH /api/schedules/{id}`): Body `UpdateScheduleRequestBody` with optional `Name`, `RecurrenceExpression`, `TimeZone`, `Enabled`. Target (kind, configuration) is immutable: if `TargetJobType` or `TargetJobConfiguration` is provided, returns **400** with `"Target cannot be changed after creation"`. On validation failure returns **400** with `{ "errors": ["..."] }`. On success returns **200** with updated `ScheduleDto` in body.
 - **Validation**: Cron via Cronos format; timezone via IANA IDs; target config must be valid JSON with required key for chosen `TargetJobType`.
 - **Permissions**: All schedule endpoints require `schedule.manage` (ScheduleGovernanceService.CanManageAsync). Create and edit are not audited (consistent with enable/disable).
 

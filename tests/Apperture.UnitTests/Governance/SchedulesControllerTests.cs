@@ -122,6 +122,50 @@ public sealed class SchedulesControllerTests
         result.Result.Should().BeOfType<BadRequestObjectResult>();
     }
 
+    [Fact]
+    public async Task Update_WithTargetJobType_Returns400_ImmutableTarget()
+    {
+        var scheduleGovernance = new StubScheduleGovernanceService(canManage: true);
+        var scheduleManagement = new UpdateCapableStubScheduleManagementService();
+        var validation = new ScheduleValidationService();
+        var controller = new SchedulesController(scheduleGovernance, scheduleManagement, validation);
+        var body = new UpdateScheduleRequestBody(Name: "NewName", TargetJobType: 1);
+
+        var result = await controller.Update("s1", body, CancellationToken.None);
+
+        result.Result.Should().BeOfType<BadRequestObjectResult>();
+        var badRequest = (BadRequestObjectResult)result.Result!;
+        badRequest.Value.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task Update_WithTargetJobConfiguration_Returns400_ImmutableTarget()
+    {
+        var scheduleGovernance = new StubScheduleGovernanceService(canManage: true);
+        var scheduleManagement = new UpdateCapableStubScheduleManagementService();
+        var validation = new ScheduleValidationService();
+        var controller = new SchedulesController(scheduleGovernance, scheduleManagement, validation);
+        var body = new UpdateScheduleRequestBody(Name: "NewName", TargetJobConfiguration: "{\"workflowDefinitionId\":\"other\"}");
+
+        var result = await controller.Update("s1", body, CancellationToken.None);
+
+        result.Result.Should().BeOfType<BadRequestObjectResult>();
+    }
+
+    [Fact]
+    public async Task Update_WithoutScheduleManage_Returns403()
+    {
+        var scheduleGovernance = new StubScheduleGovernanceService(canManage: false);
+        var scheduleManagement = new UpdateCapableStubScheduleManagementService();
+        var validation = new ScheduleValidationService();
+        var controller = new SchedulesController(scheduleGovernance, scheduleManagement, validation);
+        var body = new UpdateScheduleRequestBody(Name: "NewName");
+
+        var result = await controller.Update("s1", body, CancellationToken.None);
+
+        result.Result.Should().BeOfType<ForbidResult>();
+    }
+
     private sealed class CreateCapableStubScheduleManagementService : IScheduleManagementService
     {
         public ValueTask<ScheduleDefinition?> GetDefinitionAsync(ScheduleId id, CancellationToken cancellationToken = default) =>

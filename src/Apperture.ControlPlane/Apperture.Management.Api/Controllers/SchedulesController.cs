@@ -101,6 +101,8 @@ public sealed class SchedulesController : ControllerBase
     {
         if (!await _scheduleGovernance.CanManageAsync(cancellationToken))
             return Forbid();
+        if (body.TargetJobType is not null || body.TargetJobConfiguration is not null)
+            return BadRequest(new { errors = new[] { "Target cannot be changed after creation. TargetJobType and TargetJobConfiguration are immutable." } });
         var validation = _scheduleValidation.ValidateUpdate(body.Name, body.RecurrenceExpression, body.TimeZone, body.Enabled);
         if (!validation.IsValid)
             return BadRequest(new { errors = validation.Errors });
@@ -231,9 +233,15 @@ public sealed record CreateScheduleRequestBody(
     string? ExecutionPolicyRef = null,
     string? RuntimePlaneId = "local");
 
+/// <summary>
+/// Epic 38: Target kind and configuration are immutable after creation.
+/// If TargetJobType or TargetJobConfiguration is provided, the API returns 400.
+/// </summary>
 public sealed record UpdateScheduleRequestBody(
     string? Name = null,
     string? RecurrenceExpression = null,
     string? TimeZone = null,
-    bool? Enabled = null);
+    bool? Enabled = null,
+    int? TargetJobType = null,
+    string? TargetJobConfiguration = null);
 

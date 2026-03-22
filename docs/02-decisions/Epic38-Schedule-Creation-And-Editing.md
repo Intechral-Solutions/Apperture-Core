@@ -16,6 +16,24 @@ The management API already supported `POST /api/schedules` (create) and `PATCH /
 - **Permissions**: `schedule.manage` gates create and edit (same as enable/disable).
 - **Audit**: Schedule create/edit are not audited today; consistent with enable/disable policy (Epic 34).
 
+## Target Selection Source (Corrective Pass)
+
+The create-form target lists are grounded in real platform truth:
+
+- **Modules**: `GET /api/modules` → platform module catalog (`IModuleWorkflowListingService`). Permission-gated.
+- **Workflows**: `GET /api/modules/{id}/workflows` → platform workflow definitions for the selected module.
+- **Operations**: `GET /api/operations` → operation definitions visible to the caller (operation registry).
+
+The UI does not use a looser client-side source. Options are authoritative for what exists in the platform. The create form displays a brief note to this effect.
+
+## Backend Target Immutability (Corrective Pass)
+
+Target immutability is enforced by the backend, not only reflected in the UI:
+
+- **Update contract**: `UpdateScheduleRequestBody` accepts optional `TargetJobType` and `TargetJobConfiguration` for explicit rejection.
+- **Enforcement**: If either is provided in a PATCH request, the API returns **400** with `"Target cannot be changed after creation. TargetJobType and TargetJobConfiguration are immutable."`
+- **Management client**: Does not send target fields on update; only Name, RecurrenceExpression, TimeZone, Enabled.
+
 ## How to Create a Schedule
 
 1. Navigate to `/schedules/new` (or use "Create Schedule" from the Schedules menu).
@@ -61,6 +79,7 @@ The management API already supported `POST /api/schedules` (create) and `PATCH /
 ## Permissions
 
 - Create and Edit require `schedule.manage` (same as enable/disable). Gated via `ScheduleGovernanceService.CanManageAsync` in the API and `CanManageSchedules` in the UI.
+- **Update authorization**: Proven by `Update_WithoutScheduleManage_Returns403` — PATCH without `schedule.manage` returns 403.
 
 ## Unsupported (V1)
 
