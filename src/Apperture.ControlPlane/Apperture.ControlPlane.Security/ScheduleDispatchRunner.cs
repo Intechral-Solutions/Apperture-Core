@@ -80,7 +80,8 @@ public sealed class ScheduleDispatchRunner : IScheduleDispatchRunner
                         Outcome: "recovered",
                         Timestamp: DateTimeOffset.UtcNow,
                         new CorrelationId($"schedule:{candidate.ScheduleId}:{candidate.FireTimeUtc:O}"),
-                        Details: $"schedule:{candidate.ScheduleId};fire={candidate.FireTimeUtc:O};recovered by host {hostId}"
+                        Details: $"schedule:{candidate.ScheduleId};fire={candidate.FireTimeUtc:O};recovered by host {hostId}",
+                        ScheduleId: candidate.ScheduleId
                     ), ct);
                 }
                 catch { /* best-effort audit */ }
@@ -135,7 +136,8 @@ public sealed class ScheduleDispatchRunner : IScheduleDispatchRunner
                     Outcome: "blocked",
                     Timestamp: DateTimeOffset.UtcNow,
                     new CorrelationId($"schedule:{candidate.ScheduleId}:{candidate.FireTimeUtc:O}"),
-                    Details: $"schedule:{candidate.ScheduleId};Workflow {workflowId.Value} not executable (module disabled or unavailable)"
+                    Details: $"schedule:{candidate.ScheduleId};Workflow {workflowId.Value} not executable (module disabled or unavailable)",
+                    ScheduleId: candidate.ScheduleId
                 ), ct);
             }
             catch { /* best-effort audit */ }
@@ -163,7 +165,8 @@ public sealed class ScheduleDispatchRunner : IScheduleDispatchRunner
                     Outcome: "failed",
                     Timestamp: DateTimeOffset.UtcNow,
                     new CorrelationId($"schedule:{candidate.ScheduleId}:{candidate.FireTimeUtc:O}"),
-                    Details: $"schedule:{candidate.ScheduleId};Workflow start dispatch returned null"
+                    Details: $"schedule:{candidate.ScheduleId};Workflow start dispatch returned null",
+                    ScheduleId: candidate.ScheduleId
                 ), ct);
             }
             catch { /* best-effort audit */ }
@@ -181,7 +184,9 @@ public sealed class ScheduleDispatchRunner : IScheduleDispatchRunner
                 Outcome: "success",
                 Timestamp: DateTimeOffset.UtcNow,
                 new CorrelationId($"schedule:{candidate.ScheduleId}:{candidate.FireTimeUtc:O}"),
-                Details: $"schedule:{candidate.ScheduleId};RunId={result.RunId.Value}"
+                Details: $"schedule:{candidate.ScheduleId};RunId={result.RunId.Value}",
+                ScheduleId: candidate.ScheduleId,
+                RunId: result.RunId.Value
             ), ct);
         }
         catch { /* best-effort audit */ }
@@ -219,7 +224,8 @@ public sealed class ScheduleDispatchRunner : IScheduleDispatchRunner
                     Outcome: "blocked",
                     Timestamp: DateTimeOffset.UtcNow,
                     new CorrelationId($"schedule:{candidate.ScheduleId}:{candidate.FireTimeUtc:O}"),
-                    Details: $"schedule:{candidate.ScheduleId};Operation {operationId.Value} not executable (module disabled or unavailable)"
+                    Details: $"schedule:{candidate.ScheduleId};Operation {operationId.Value} not executable (module disabled or unavailable)",
+                    ScheduleId: candidate.ScheduleId
                 ), ct);
             }
             catch { /* best-effort audit */ }
@@ -246,7 +252,8 @@ public sealed class ScheduleDispatchRunner : IScheduleDispatchRunner
                     Outcome: "failed",
                     Timestamp: DateTimeOffset.UtcNow,
                     new CorrelationId($"schedule:{candidate.ScheduleId}:{candidate.FireTimeUtc:O}"),
-                    Details: $"schedule:{candidate.ScheduleId};Operation start dispatch returned null"
+                    Details: $"schedule:{candidate.ScheduleId};Operation start dispatch returned null",
+                    ScheduleId: candidate.ScheduleId
                 ), ct);
             }
             catch { /* best-effort audit */ }
@@ -264,7 +271,9 @@ public sealed class ScheduleDispatchRunner : IScheduleDispatchRunner
                 Outcome: "success",
                 Timestamp: DateTimeOffset.UtcNow,
                 new CorrelationId($"schedule:{candidate.ScheduleId}:{candidate.FireTimeUtc:O}"),
-                Details: $"schedule:{candidate.ScheduleId};RunId={result.RunId.Value}"
+                Details: $"schedule:{candidate.ScheduleId};RunId={result.RunId.Value}",
+                ScheduleId: candidate.ScheduleId,
+                RunId: result.RunId.Value
             ), ct);
         }
         catch { /* best-effort audit */ }

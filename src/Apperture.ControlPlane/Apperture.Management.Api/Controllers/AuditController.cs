@@ -36,8 +36,7 @@ public sealed class AuditController : ControllerBase
 
     /// <summary>
     /// Lists audit timeline entries with optional filters.
-    /// DB-backed: fromUtc, toUtc, actor, actionPrefix. In-memory (bounded): moduleId, scheduleId, runId, outcome.
-    /// Reference filters apply within the time window only; they are not global indexed search.
+    /// Epic 37: All filters are DB-backed (fromUtc, toUtc, actor, actionPrefix, outcome, moduleId, scheduleId, runId).
     /// Defaults: fromUtc = 24h ago if omitted.
     /// </summary>
     [HttpGet]

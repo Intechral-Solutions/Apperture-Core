@@ -2,7 +2,7 @@
 
 ## Status
 
-Implemented
+Implemented. **Superseded by Epic 37** for filter semantics: outcome, moduleId, scheduleId, runId are now DB-backed. See [Epic37-Audit-Schema-Evolution.md](Epic37-Audit-Schema-Evolution.md).
 
 ## Context
 

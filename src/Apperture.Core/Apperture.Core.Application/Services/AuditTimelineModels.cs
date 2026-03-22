@@ -30,9 +30,8 @@ public sealed record AuditTimelinePage(
 
 /// <summary>
 /// Filter criteria for audit timeline queries.
-/// DB-backed filters (indexed/column): FromUtc, ToUtc, Actor, ActionPrefix.
-/// In-memory filters (applied within fetched window only, not global search): ModuleId, ScheduleId, RunId, Outcome.
-/// When using in-memory filters, a time window is required and results are scoped to the bounded fetch.
+/// Epic 37: All filters are DB-backed (indexed/column): FromUtc, ToUtc, Actor, ActionPrefix, Outcome, ModuleId, ScheduleId, RunId.
+/// Historical rows with null first-class columns are excluded from filter results unless backfilled.
 /// </summary>
 public sealed record AuditFilterCriteria(
     DateTimeOffset? FromUtc = null,

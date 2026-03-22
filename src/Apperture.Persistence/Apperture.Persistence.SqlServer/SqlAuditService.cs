@@ -6,7 +6,8 @@ using Microsoft.EntityFrameworkCore;
 namespace Apperture.Persistence.SqlServer;
 
 /// <summary>
-/// Appends audit records to AuditLogs table. Query supports basic filtering by actor and time.
+/// Appends audit records to AuditLogs table. Epic 37: Outcome and reference columns are first-class.
+/// Query supports DB-backed filtering by actor, time, outcome, moduleId, scheduleId, runId.
 /// </summary>
 public sealed class SqlAuditService : IAuditService
 {
@@ -17,10 +18,8 @@ public sealed class SqlAuditService : IAuditService
     /// <inheritdoc />
     public async ValueTask AppendAsync(AuditRecord record, CancellationToken cancellationToken = default)
     {
-        var details = record.Details ?? record.Outcome;
-        if (!string.IsNullOrEmpty(record.Outcome) && record.Details != null)
-            details = $"{record.Outcome}; {record.Details}";
-        else if (record.Resource is not null)
+        var details = record.Details;
+        if (record.Resource is not null)
             details = (details ?? "") + (string.IsNullOrEmpty(details) ? "" : "; ") + $"Resource={record.Resource}";
 
         _db.AuditLogs.Add(new AuditLogEntity
@@ -28,7 +27,11 @@ public sealed class SqlAuditService : IAuditService
             At = record.Timestamp,
             Actor = record.ActorId.Value,
             Action = record.Action,
-            Details = details
+            Details = details,
+            Outcome = string.IsNullOrEmpty(record.Outcome) ? null : record.Outcome,
+            ModuleId = record.ModuleId,
+            ScheduleId = record.ScheduleId,
+            RunId = record.RunId
         });
         await _db.SaveChangesAsync(cancellationToken);
     }
@@ -49,6 +52,14 @@ public sealed class SqlAuditService : IAuditService
             q = q.Where(x => x.At >= query.FromUtc.Value);
         if (query.ToUtc.HasValue)
             q = q.Where(x => x.At <= query.ToUtc.Value);
+        if (!string.IsNullOrEmpty(query.FilterByOutcome))
+            q = q.Where(x => x.Outcome != null && x.Outcome == query.FilterByOutcome);
+        if (!string.IsNullOrEmpty(query.FilterByModuleId))
+            q = q.Where(x => x.ModuleId != null && x.ModuleId == query.FilterByModuleId);
+        if (!string.IsNullOrEmpty(query.FilterByScheduleId))
+            q = q.Where(x => x.ScheduleId != null && x.ScheduleId == query.FilterByScheduleId);
+        if (!string.IsNullOrEmpty(query.FilterByRunId))
+            q = q.Where(x => x.RunId != null && x.RunId == query.FilterByRunId);
 
         if (!string.IsNullOrEmpty(query.ContinuationToken) && long.TryParse(query.ContinuationToken, out var lastId))
             q = q.Where(x => x.Id < lastId);
@@ -64,10 +75,13 @@ public sealed class SqlAuditService : IAuditService
             new ActorId(e.Actor),
             e.Action,
             Resource: null,
-            Outcome: "",
+            Outcome: e.Outcome ?? "",
             e.At,
             new CorrelationId(null),
-            e.Details)).ToList();
+            e.Details,
+            ModuleId: e.ModuleId,
+            ScheduleId: e.ScheduleId,
+            RunId: e.RunId)).ToList();
 
         var nextToken = hasMore ? items[^1].Id.ToString() : null;
         return new AuditPage(records, nextToken);
@@ -89,9 +103,12 @@ public sealed class SqlAuditService : IAuditService
             new ActorId(entity.Actor),
             entity.Action,
             Resource: null,
-            Outcome: "",
+            Outcome: entity.Outcome ?? "",
             entity.At,
             new CorrelationId(null),
-            entity.Details);
+            entity.Details,
+            ModuleId: entity.ModuleId,
+            ScheduleId: entity.ScheduleId,
+            RunId: entity.RunId);
     }
 }

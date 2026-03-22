@@ -454,7 +454,8 @@ public sealed class SqlModuleRegistryService : IModuleRegistryService
                 result.Succeeded ? "succeeded" : "blocked",
                 DateTimeOffset.UtcNow,
                 new CorrelationId(null),
-                $"{details}; module={result.ModuleId}; state={result.State}; effect={result.Effect}; blockers={blockerSummary}"),
+                $"{details}; module={result.ModuleId}; state={result.State}; effect={result.Effect}; blockers={blockerSummary}",
+                ModuleId: result.ModuleId),
             cancellationToken).ConfigureAwait(false);
     }
 }

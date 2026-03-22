@@ -229,7 +229,8 @@ public sealed class RecoveryController : ControllerBase
                     Outcome: "requested",
                     Timestamp: DateTimeOffset.UtcNow,
                     new CorrelationId(runId),
-                    $"runId={runId};definitionId={definitionId}"),
+                    $"runId={runId};definitionId={definitionId}",
+                    RunId: runId),
                 ct).ConfigureAwait(false);
         }
         catch { /* best-effort */ }
@@ -250,7 +251,8 @@ public sealed class RecoveryController : ControllerBase
                     Outcome: "refused",
                     Timestamp: DateTimeOffset.UtcNow,
                     new CorrelationId(runId),
-                    $"runId={runId};definitionId={definitionId};reason={reason ?? "unknown"}"),
+                    $"runId={runId};definitionId={definitionId};reason={reason ?? "unknown"}",
+                    RunId: runId),
                 ct).ConfigureAwait(false);
         }
         catch { /* best-effort */ }
@@ -271,7 +273,8 @@ public sealed class RecoveryController : ControllerBase
                     Outcome: "dispatched",
                     Timestamp: DateTimeOffset.UtcNow,
                     new CorrelationId(originalRunId),
-                    $"originalRunId={originalRunId};newRunId={newRunId};definitionId={definitionId}"),
+                    $"originalRunId={originalRunId};newRunId={newRunId};definitionId={definitionId}",
+                    RunId: originalRunId),
                 ct).ConfigureAwait(false);
         }
         catch { /* best-effort */ }
@@ -292,7 +295,8 @@ public sealed class RecoveryController : ControllerBase
                     Outcome: "denied",
                     Timestamp: DateTimeOffset.UtcNow,
                     new CorrelationId(runId),
-                    $"runId={runId};reason=permission_missing"),
+                    $"runId={runId};reason=permission_missing",
+                    RunId: runId),
                 ct).ConfigureAwait(false);
         }
         catch { /* best-effort */ }

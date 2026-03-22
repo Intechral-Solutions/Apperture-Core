@@ -248,6 +248,15 @@ public class AppertureDbContext : DbContext
             e.Property(x => x.Id).ValueGeneratedOnAdd();
             e.Property(x => x.Actor).HasMaxLength(256);
             e.Property(x => x.Action).HasMaxLength(128);
+            e.Property(x => x.Outcome).HasMaxLength(64);
+            e.Property(x => x.ModuleId).HasMaxLength(128);
+            e.Property(x => x.ScheduleId).HasMaxLength(128);
+            e.Property(x => x.RunId).HasMaxLength(64);
+            e.HasIndex(x => new { x.At, x.Id }).IsDescending(true, true);
+            e.HasIndex(x => new { x.Outcome, x.At }).HasFilter("[Outcome] IS NOT NULL").IsDescending(false, true);
+            e.HasIndex(x => new { x.ModuleId, x.At }).HasFilter("[ModuleId] IS NOT NULL").IsDescending(false, true);
+            e.HasIndex(x => new { x.ScheduleId, x.At }).HasFilter("[ScheduleId] IS NOT NULL").IsDescending(false, true);
+            e.HasIndex(x => new { x.RunId, x.At }).HasFilter("[RunId] IS NOT NULL").IsDescending(false, true);
         });
 
         modelBuilder.Entity<TelemetryEventEntity>(e =>

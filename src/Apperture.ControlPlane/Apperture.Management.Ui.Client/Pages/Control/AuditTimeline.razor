@@ -9,7 +9,7 @@
     <div class="flex items-center justify-between gap-3">
         <div class="min-w-0">
             <h1 class="text-xl font-semibold text-heading">Audit Timeline</h1>
-            <div class="text-xs text-muted">Platform audit events. Minimal viewer: time, category, actor. Full filters via API.</div>
+            <div class="text-xs text-muted">Platform audit. Filters are DB-backed. Time, category, actor, outcome.</div>
             @if (!string.IsNullOrWhiteSpace(QueryRunId))
             {
                 <div class="mt-2 rounded border border-default bg-surface px-2 py-1 text-xs text-body">
@@ -47,6 +47,23 @@
                 <option value="recovery.">Recovery</option>
                 <option value="module.lifecycle.">Module lifecycle</option>
                 <option value="governance.">Governance</option>
+            </select>
+        </div>
+        <div>
+            <label class="text-xs text-muted">Outcome</label>
+            <select class="ml-1 rounded border border-default bg-surface px-2 py-1 text-sm"
+                    @bind="_outcomeFilter"
+                    @bind:after="LoadAsync">
+                <option value="">All</option>
+                <option value="success">success</option>
+                <option value="succeeded">succeeded</option>
+                <option value="failed">failed</option>
+                <option value="blocked">blocked</option>
+                <option value="Blocked">Blocked</option>
+                <option value="denied">denied</option>
+                <option value="requested">requested</option>
+                <option value="dispatched">dispatched</option>
+                <option value="recovered">recovered</option>
             </select>
         </div>
         <div>
@@ -195,6 +212,7 @@
     private string? _expandedId;
     private string _timeRange = "24";
     private string _actionPrefix = "";
+    private string _outcomeFilter = "";
     private string _actorFilter = "";
 
     private async Task OnActorKeyDown(KeyboardEventArgs e)
@@ -219,6 +237,7 @@
                 toUtc: null,
                 actor: string.IsNullOrWhiteSpace(_actorFilter) ? null : _actorFilter.Trim(),
                 actionPrefix: string.IsNullOrEmpty(_actionPrefix) ? null : _actionPrefix,
+                outcome: string.IsNullOrWhiteSpace(_outcomeFilter) ? null : _outcomeFilter.Trim(),
                 moduleId: string.IsNullOrWhiteSpace(QueryModuleId) ? null : QueryModuleId.Trim(),
                 scheduleId: string.IsNullOrWhiteSpace(QueryScheduleId) ? null : QueryScheduleId.Trim(),
                 runId: string.IsNullOrWhiteSpace(QueryRunId) ? null : QueryRunId.Trim(),
@@ -254,6 +273,7 @@
                 toUtc: null,
                 actor: string.IsNullOrWhiteSpace(_actorFilter) ? null : _actorFilter.Trim(),
                 actionPrefix: string.IsNullOrEmpty(_actionPrefix) ? null : _actionPrefix,
+                outcome: string.IsNullOrWhiteSpace(_outcomeFilter) ? null : _outcomeFilter.Trim(),
                 moduleId: string.IsNullOrWhiteSpace(QueryModuleId) ? null : QueryModuleId.Trim(),
                 scheduleId: string.IsNullOrWhiteSpace(QueryScheduleId) ? null : QueryScheduleId.Trim(),
                 runId: string.IsNullOrWhiteSpace(QueryRunId) ? null : QueryRunId.Trim(),

@@ -4,6 +4,7 @@ namespace Apperture.Core.Application.Services;
 
 /// <summary>
 /// Query parameters for audit record retrieval.
+/// Epic 37: FilterByOutcome, FilterByModuleId, FilterByScheduleId, FilterByRunId are DB-backed.
 /// </summary>
 public sealed record AuditQuery(
     ActorId? FilterByActorId = null,
@@ -12,4 +13,8 @@ public sealed record AuditQuery(
     DateTimeOffset? FromUtc = null,
     DateTimeOffset? ToUtc = null,
     int PageSize = 50,
-    string? ContinuationToken = null);
+    string? ContinuationToken = null,
+    string? FilterByOutcome = null,
+    string? FilterByModuleId = null,
+    string? FilterByScheduleId = null,
+    string? FilterByRunId = null);

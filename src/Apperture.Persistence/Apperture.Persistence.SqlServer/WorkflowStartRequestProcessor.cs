@@ -605,7 +605,8 @@ WHERE RunId = {runId} AND (
                     Outcome: "Blocked",
                     Timestamp: DateTimeOffset.UtcNow,
                     new CorrelationId(runId),
-                    $"runId={runId};definitionId={dne.DefinitionId};kind={dne.Kind};message={dne.Message}"),
+                    $"runId={runId};definitionId={dne.DefinitionId};kind={dne.Kind};message={dne.Message}",
+                    RunId: runId),
                 cancellationToken).ConfigureAwait(false);
         }
         catch

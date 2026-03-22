@@ -120,7 +120,8 @@ public sealed class WorkflowRetryService : IWorkflowRetryService
                     Outcome: "Blocked",
                     Timestamp: DateTimeOffset.UtcNow,
                     new CorrelationId(runId),
-                    $"runId={runId};definitionId={definitionId};reason={BlockedReasonMessage}"),
+                    $"runId={runId};definitionId={definitionId};reason={BlockedReasonMessage}",
+                    RunId: runId),
                 cancellationToken).ConfigureAwait(false);
         }
         catch
