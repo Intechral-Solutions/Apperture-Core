@@ -3,6 +3,7 @@ using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Governance;
 using Apperture.ModuleSdk.Abstractions;
 using Apperture.Core.Application.RuntimeComposition;
+using Apperture.Core.Application.Recovery;
 using Apperture.Core.Application.RuntimeHealth;
 using Apperture.Persistence.SqlServer;
 using Apperture.RuntimePlane.Abstractions;
@@ -102,6 +103,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IControlCenterQueryService, ControlCenterQueryService>();
         services.AddScoped<IRuntimeModuleCompositionQueryService, RuntimeModuleCompositionQueryService>();
         services.AddScoped<IRuntimeHealthQueryService, RuntimeHealthQueryService>();
+        services.AddScoped<IRecoveryQueryService, RecoveryQueryService>();
         services.AddScoped<ISchedulerLifecycleGuard, SchedulerLifecycleGuard>();
         services.AddHostedService<ModuleCompositionBootstrapHostedService>();
         return services;

@@ -133,6 +133,7 @@ public sealed class RuntimeHealthQueryService : IRuntimeHealthQueryService
         CancellationToken ct)
     {
         if (_db is null) return new Dictionary<string, int>(StringComparer.Ordinal);
+        // Contract: RunFailureCapture.DeferredWorkBlockedPrefix is the canonical signal for blocked deferred work.
         var prefix = RunFailureCapture.DeferredWorkBlockedPrefix;
         var runs = await _db.OperationRuns.AsNoTracking()
             .Where(r =>
@@ -271,6 +272,7 @@ public sealed class RuntimeHealthQueryService : IRuntimeHealthQueryService
     {
         if (_db is null)
             return Array.Empty<BlockedDeferredWorkEntry>();
+        // Contract: RunFailureCapture.DeferredWorkBlockedPrefix; see RunFailureCapture docs.
         var prefix = RunFailureCapture.DeferredWorkBlockedPrefix;
         var runs = await _db.OperationRuns.AsNoTracking()
             .Where(r =>

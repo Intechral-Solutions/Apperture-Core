@@ -28,7 +28,7 @@ Epics 26–29 established lifecycle model, runtime composition, scheduler dispat
 
 - **Runtime composition**: `IRuntimeModuleCompositionQueryService` — module lifecycle, effectively executable, in-flight work, execution degraded reason
 - **Schedule state**: `IScheduleManagementService`, `IScheduleRepository` — last outcome, last attempted, target module executable
-- **Blocked deferred work**: `OperationRuns` where `Status=Failed` and `FailureSummary` starts with `[Blocked] ` (RunFailureCapture.DeferredWorkBlockedPrefix)
+- **Blocked deferred work**: `OperationRuns` where `Status=Failed` and `FailureSummary` starts with `[Blocked] ` (RunFailureCapture.DeferredWorkBlockedPrefix). This is an intentional naming contract: writers (e.g. WorkflowStartRequestProcessor, OperationStartRequestProcessor) set FailureSummary via RunFailureCapture when DefinitionNotExecutableException occurs; readers (RuntimeHealthQueryService) use StartsWith(DeferredWorkBlockedPrefix) to detect blocked work. Proven by RuntimeHealthBlockedDeferredSqlServerTests against SQL Server.
 - **Run kind resolution**: `IRunKindResolver` for workflow vs operation attribution
 
 ### 4. Module diagnostics
@@ -66,5 +66,10 @@ Recent runs (configurable window) that failed with lifecycle-blocked semantics. 
 ## Remaining limitations
 
 - Single-host; no distributed health aggregation
-- Blocked deferred work query requires relational DB (InMemory test skipped)
+- Blocked deferred work query requires relational DB (EF InMemory does not reliably translate StartsWith; integration test uses SQL Server)
 - No minimal UI; API layer only
+
+## Epic 30 corrective pass
+
+- **Blocked deferred diagnostics proof**: RuntimeHealthBlockedDeferredSqlServerTests seeds blocked deferred work via SQL Server, invokes RuntimeHealthQueryService, asserts BlockedDeferredWork surfaces and overall status is Degraded. Requires MSSQL_SA_PASSWORD and SQL Server (e.g. Docker on port 1433).
+- **Detection signal**: RunFailureCapture.DeferredWorkBlockedPrefix is the canonical contract. Writers (RunFailureCapture for DefinitionNotExecutableException) and readers (RuntimeHealthQueryService) both reference this constant. No accidental string literals.

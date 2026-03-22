@@ -31,6 +31,9 @@ public static class RunFailureCapture
     /// <summary>
     /// Well-known prefix for lifecycle-blocked deferred work (Epic 27 corrective pass).
     /// Enables operators to filter runs blocked because the module was disabled.
+    /// Contract: all writers of blocked deferred evidence MUST set FailureSummary to start with this prefix.
+    /// Readers (e.g. RuntimeHealthQueryService) use StartsWith(DeferredWorkBlockedPrefix) to detect blocked work.
+    /// See Epic 30 runtime health diagnostics.
     /// </summary>
     public const string DeferredWorkBlockedPrefix = "[Blocked] ";
 

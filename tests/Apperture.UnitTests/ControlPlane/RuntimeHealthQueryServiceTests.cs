@@ -83,67 +83,6 @@ public sealed class RuntimeHealthQueryServiceTests
         snapshot.ModuleDiagnostics.Should().ContainSingle(m => m.ModuleId == "m1" && m.ExecutionDegradedReason == "invalid_persisted_state");
     }
 
-    [Fact(Skip = "Blocked-deferred query requires SQL provider; InMemory database name isolation causes empty results. Coverage via integration tests.")]
-    public async Task GetSnapshotAsync_WhenBlockedDeferredWork_SurfacesInDiagnostics()
-    {
-        var db = NewDb();
-        db.WorkflowInstances.Add(new WorkflowInstanceEntity
-        {
-            Id = "wi1",
-            DefinitionId = "Sample.HelloWorld.HelloWorld",
-            Status = "Failed",
-            CreatedAt = DateTimeOffset.UtcNow.AddHours(-1),
-            UpdatedAt = DateTimeOffset.UtcNow,
-            CorrelationKey = null,
-            CurrentStepName = null,
-            Version = 0
-        });
-        db.OperationRuns.Add(new OperationRunEntity
-        {
-            Id = "run1",
-            WorkflowInstanceId = "wi1",
-            DefinitionId = "Sample.HelloWorld.HelloWorld",
-            Status = "Failed",
-            CreatedAt = DateTimeOffset.UtcNow.AddHours(-1),
-            CompletedAt = DateTimeOffset.UtcNow.AddMinutes(-30),
-            FailureSummary = RunFailureCapture.DeferredWorkBlockedPrefix + "Workflow definition is not effectively active"
-        });
-        db.WorkflowStartRequests.Add(new WorkflowStartRequestEntity
-        {
-            RunId = "run1",
-            WorkflowInstanceId = "wi1",
-            WorkflowDefinitionId = "Sample.HelloWorld.HelloWorld",
-            Status = "Failed",
-            CreatedAt = DateTimeOffset.UtcNow.AddHours(-1)
-        });
-        await db.SaveChangesAsync();
-
-        var descriptor = new ModuleDescriptor("Sample.HelloWorld", "HW", "1.0", null, null, null,
-            [new WorkflowContributionDescriptor("Sample.HelloWorld.HelloWorld", "HW")]);
-        var catalog = new List<ModuleCatalogEntry>
-        {
-            new(descriptor, ModuleLifecycleState.InstalledEnabled, true, true, true, [])
-        };
-        var registry = new StubModuleRegistry(catalog, [descriptor]);
-        var composition = new HostEffectiveModuleSnapshot(
-            DateTimeOffset.UtcNow, [], ["Sample.HelloWorld"],
-            ExecutionSurfaceCatalog.ImmediatelyLifecycleGoverned,
-            ExecutionSurfaceCatalog.RestartBoundSurfaceIds, []);
-        var compositionSvc = new StubCompositionService(composition);
-
-        var services = BuildServicesWithStubs(db, compositionSvc, registry, new StubScheduleManagement([], []), []);
-        await using var scope = services.BuildServiceProvider().CreateAsyncScope();
-        var runKinds = scope.ServiceProvider.GetRequiredService<IRunKindResolver>();
-        var health = new RuntimeHealthQueryService(
-            compositionSvc, registry, new StubScheduleManagement([], []), new StubScheduleRepository([]),
-            runKinds, db);
-
-        var snapshot = await health.GetSnapshotAsync("local", blockedDeferredWindowHours: 48);
-
-        snapshot.BlockedDeferredWork.Should().ContainSingle(b => b.RunId == "run1" && b.DefinitionId == "Sample.HelloWorld.HelloWorld");
-        snapshot.OverallStatus.Should().Be(RuntimeHealthStatus.Degraded, "blocked deferred work should cause degradation");
-    }
-
     [Fact]
     public async Task GetSnapshotAsync_ReturnsCoherentSnapshot()
     {
