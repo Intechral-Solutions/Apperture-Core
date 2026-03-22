@@ -2,7 +2,62 @@
 
 ## Status
 
-Implemented
+Implemented (corrective pass complete)
+
+## Corrective Pass (2026-03-22) — SQL-Backed Verification
+
+Epic 37’s core claims (migration, backfill, DB-backed filters) were not previously verified against a real SQL Server. The corrective pass addressed this.
+
+### Corrective changes made
+
+1. **Test database creation** — `SqlServerTestConfiguration.EnsureTestDatabaseExists` creates `Apperture_IntegrationTests` via master when missing (integration tests previously failed with “database does not exist”).
+2. **Migration discovery** — Added `[DbContext]` and `[Migration]` attributes to `AddAuditFirstClassFields` and `AddScheduleRunClaimedByHostId` migrations; EF Core was not applying them without these.
+3. **Test isolation** — Tests use unique `ActionPrefix` values (`ep37.ordered.`, `ep37.actionprefix.`, etc.) to avoid shared-database interference; `[Collection("SqlServerAudit")]` enforces sequential execution.
+4. **Backfill verification test** — `Migration_Backfill_PopulatesFirstClassFieldsFromDetails` inserts pre-Epic-37 shaped rows (null first-class columns, extractable data in Details), runs backfill SQL, and asserts Outcome/ModuleId/ScheduleId/RunId are populated correctly.
+
+### SQL-backed verification completed
+
+All 9 Epic 37 integration tests run and pass against SQL Server (Docker on localhost:1433):
+
+- Migration applies successfully
+- `Query_ReturnsOrderedEntries_NewestFirst` — ordering and time-range filter
+- `Query_WithActionPrefix_ReturnsFiltered` — action prefix filter
+- `Query_WithRunIdFilter_ReturnsMatching` — runId filter (DB-backed)
+- `GetById_ReturnsDetailWithRefs` — get-by-id with first-class refs
+- `Query_WithOutcomeFilter_ReturnsMatching_DBBacked` — outcome filter
+- `Query_WithOutcomeFilter_ExcludesNullOutcomeRows` — null outcome excluded
+- `Query_WithModuleIdFilter_ReturnsMatching_DBBacked` — moduleId filter
+- `Query_WithScheduleIdFilter_ReturnsMatching_DBBacked` — scheduleId filter
+- `Migration_Backfill_PopulatesFirstClassFieldsFromDetails` — historical backfill
+
+### Backfill behavior verified
+
+`Migration_Backfill_PopulatesFirstClassFieldsFromDetails` proves:
+
+- Rows with null Outcome/ModuleId/ScheduleId/RunId and extractable data in Details
+- Backfill SQL populates Outcome (first segment), ModuleId (`module=`), ScheduleId (`schedule:`), RunId (`runId=` / `RunId=` / `originalRunId=`)
+- Rows lacking extractable values keep nulls
+- Read path returns correct RelatedReferences from backfilled columns
+
+### DB-backed filter behavior verified
+
+Filters for Outcome, ModuleId, ScheduleId, RunId are applied in SQL via `SqlAuditService.QueryAsync`; `AuditTimelineQueryService` passes them to `AuditQuery`. No bounded in-memory fetch; all promoted fields are DB-backed.
+
+### Tests added/updated and actually run
+
+- **Added**: `Migration_Backfill_PopulatesFirstClassFieldsFromDetails`
+- **Updated**: All 8 existing tests with `EnsureTestDatabaseExists`, unique ActionPrefix, sequential collection
+- **Run**: `dotnet test --filter "FullyQualifiedName~AuditTimelineSqlServerTests"` with `MSSQL_SA_PASSWORD` and SQL Server on localhost:1433
+
+### Remaining limitations
+
+1. SQL Server must be running (e.g. `docker compose up -d sqlserver`) and `MSSQL_SA_PASSWORD` set; tests throw if unreachable.
+2. Tests share `Apperture_IntegrationTests`; isolation is via ActionPrefix and sequential execution.
+3. Other integration test classes (e.g. `RuntimeHealthBlockedDeferredSqlServerTests`) do not yet call `EnsureTestDatabaseExists`; they may need similar treatment.
+
+### Closure verdict for Epic 37
+
+**Epic 37 is closed.** Migration, backfill, and DB-backed filters are verified against a real SQL Server. The corrective pass provides provider-backed evidence rather than compile-only confidence.
 
 ## Context
 
@@ -72,7 +127,8 @@ Epic 32 made audit discoverable and operator-usable, but with bounded in-memory 
 - Write: `SqlAuditService`, ScheduleDispatchRunner, RecoveryController, SqlModuleRegistryService, WorkflowStartRequestProcessor, OperationStartRequestProcessor, WorkflowRetryService
 - Query: `AuditQuery`, `SqlAuditService`, `AuditTimelineQueryService`, `AuditTimelineModels`
 - API/UI: `AuditController`, `AuditTimeline.razor`
-- Tests: `AuditTimelineSqlServerTests`
+- Tests: `AuditTimelineSqlServerTests`, `SqlServerTestConfiguration`
+- Corrective pass: `SqlServerTestConfiguration` (EnsureTestDatabaseExists), migration attributes, `AuditTimelineSqlServerTests` (isolation, backfill test)
 
 ## Supersedes
 

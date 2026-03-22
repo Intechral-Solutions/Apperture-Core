@@ -1,3 +1,5 @@
+using Microsoft.Data.SqlClient;
+
 namespace Apperture.IntegrationTests;
 
 /// <summary>
@@ -10,6 +12,27 @@ public static class SqlServerTestConfiguration
     private const string DefaultServer = "localhost,1433";
     private const string DefaultDatabase = "Apperture_IntegrationTests";
     private const string DefaultUser = "sa";
+
+    /// <summary>
+    /// Ensures the test database exists. Call before running migrations when using a fresh SQL Server.
+    /// Connects to master and creates the database if missing.
+    /// </summary>
+    /// <param name="connectionString">Connection string from GetConnectionString (must not be null).</param>
+    public static void EnsureTestDatabaseExists(string connectionString)
+    {
+        var builder = new SqlConnectionStringBuilder(connectionString);
+        var database = builder.InitialCatalog;
+        builder.InitialCatalog = "master";
+
+        using var conn = new SqlConnection(builder.ConnectionString);
+        conn.Open();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = $"""
+            IF NOT EXISTS (SELECT * FROM sys.databases WHERE name = '{database.Replace("'", "''")}')
+            CREATE DATABASE [{database.Replace("]", "]]")}]
+            """;
+        cmd.ExecuteNonQuery();
+    }
 
     /// <summary>
     /// Gets a connection string for SQL Server, or null if not configured (tests should skip).

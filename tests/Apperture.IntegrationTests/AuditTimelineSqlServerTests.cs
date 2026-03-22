@@ -14,7 +14,9 @@ namespace Apperture.IntegrationTests;
 /// <summary>
 /// Integration tests for audit timeline discoverability. Epic 32, Epic 37.
 /// Requires SQL Server (e.g. Docker on port 1433).
+/// Uses a collection to run sequentially and avoid shared-database interference.
 /// </summary>
+[Collection("SqlServerAudit")]
 public sealed class AuditTimelineSqlServerTests
 {
     [Fact]
@@ -27,6 +29,8 @@ public sealed class AuditTimelineSqlServerTests
                 "SQL Server not configured. Set MSSQL_SA_PASSWORD (e.g. in repo-root .env) and ensure SQL Server is running on localhost:1433.");
         }
 
+        SqlServerTestConfiguration.EnsureTestDatabaseExists(connectionString);
+
         var services = new ServiceCollection();
         services.AddApperturePersistence(connectionString);
         services.AddScoped<IAuditService, SqlAuditService>();
@@ -37,20 +41,18 @@ public sealed class AuditTimelineSqlServerTests
         {
             var db = scope.ServiceProvider.GetRequiredService<AppertureDbContext>();
             if (!await db.Database.CanConnectAsync())
-            {
-                throw new InvalidOperationException(
-                    "SQL Server not reachable. Is the server running and is MSSQL_SA_PASSWORD correct?");
-            }
+                throw new InvalidOperationException("SQL Server not reachable. Is the server running and is MSSQL_SA_PASSWORD correct?");
             await db.Database.MigrateAsync();
         }
 
+        var prefix = "ep37.ordered.";
         var baseTime = DateTimeOffset.UtcNow.AddMinutes(-10);
         await using (var scope = provider.CreateAsyncScope())
         {
             var audit = scope.ServiceProvider.GetRequiredService<IAuditService>();
-            await audit.AppendAsync(CreateRecord(baseTime.AddMinutes(1), "scheduler.schedule.dispatched", "system:scheduler", "success; schedule:s1;RunId=r1"));
-            await audit.AppendAsync(CreateRecord(baseTime.AddMinutes(2), RecoveryAuditActionNames.BlockedWorkRetryRequested, "user:alice", "requested; runId=r2;definitionId=wf1"));
-            await audit.AppendAsync(CreateRecord(baseTime.AddMinutes(3), "execution.workflow_retry.blocked", "system", "Blocked; runId=r3;definitionId=wf2;reason=module_disabled"));
+            await audit.AppendAsync(CreateRecord(baseTime.AddMinutes(1), prefix + "dispatched", "system:scheduler", "success; schedule:s1;RunId=r1"));
+            await audit.AppendAsync(CreateRecord(baseTime.AddMinutes(2), prefix + "retry_requested", "user:alice", "requested; runId=r2;definitionId=wf1"));
+            await audit.AppendAsync(CreateRecord(baseTime.AddMinutes(3), prefix + "blocked", "system", "Blocked; runId=r3;definitionId=wf2;reason=module_disabled"));
         }
 
         await using (var scope = provider.CreateAsyncScope())
@@ -59,12 +61,13 @@ public sealed class AuditTimelineSqlServerTests
             var page = await svc.QueryAsync(new AuditFilterCriteria(
                 FromUtc: baseTime,
                 ToUtc: DateTimeOffset.UtcNow.AddMinutes(1),
+                ActionPrefix: prefix,
                 PageSize: 10));
 
             page.Items.Should().HaveCount(3);
-            page.Items[0].Action.Should().Be("execution.workflow_retry.blocked");
-            page.Items[1].Action.Should().Be(RecoveryAuditActionNames.BlockedWorkRetryRequested);
-            page.Items[2].Action.Should().Be("scheduler.schedule.dispatched");
+            page.Items[0].Action.Should().Be(prefix + "blocked");
+            page.Items[1].Action.Should().Be(prefix + "retry_requested");
+            page.Items[2].Action.Should().Be(prefix + "dispatched");
         }
     }
 
@@ -74,6 +77,8 @@ public sealed class AuditTimelineSqlServerTests
         var connectionString = SqlServerTestConfiguration.GetConnectionString();
         if (connectionString is null)
             throw new InvalidOperationException("SQL Server not configured. Set MSSQL_SA_PASSWORD.");
+
+        SqlServerTestConfiguration.EnsureTestDatabaseExists(connectionString);
 
         var services = new ServiceCollection();
         services.AddApperturePersistence(connectionString);
@@ -89,13 +94,14 @@ public sealed class AuditTimelineSqlServerTests
             await db.Database.MigrateAsync();
         }
 
+        var prefix = "ep37.actionprefix.";
         var baseTime = DateTimeOffset.UtcNow.AddMinutes(-5);
         await using (var scope = provider.CreateAsyncScope())
         {
             var audit = scope.ServiceProvider.GetRequiredService<IAuditService>();
-            await audit.AppendAsync(CreateRecord(baseTime, "scheduler.schedule.dispatched", "system:scheduler", "success"));
+            await audit.AppendAsync(CreateRecord(baseTime, prefix + "dispatched", "system:scheduler", "success"));
             await audit.AppendAsync(CreateRecord(baseTime.AddSeconds(1), "recovery.blocked_work.retry_requested", "user:alice", "requested"));
-            await audit.AppendAsync(CreateRecord(baseTime.AddSeconds(2), "scheduler.schedule.blocked_by_lifecycle", "system:scheduler", "blocked"));
+            await audit.AppendAsync(CreateRecord(baseTime.AddSeconds(2), prefix + "blocked", "system:scheduler", "blocked"));
         }
 
         await using (var scope = provider.CreateAsyncScope())
@@ -103,11 +109,11 @@ public sealed class AuditTimelineSqlServerTests
             var svc = scope.ServiceProvider.GetRequiredService<IAuditTimelineQueryService>();
             var page = await svc.QueryAsync(new AuditFilterCriteria(
                 FromUtc: baseTime,
-                ActionPrefix: "scheduler.",
+                ActionPrefix: prefix,
                 PageSize: 10));
 
             page.Items.Should().HaveCount(2);
-            page.Items.Should().OnlyContain(e => e.Action.StartsWith("scheduler."));
+            page.Items.Should().OnlyContain(e => e.Action.StartsWith(prefix));
         }
     }
 
@@ -117,6 +123,8 @@ public sealed class AuditTimelineSqlServerTests
         var connectionString = SqlServerTestConfiguration.GetConnectionString();
         if (connectionString is null)
             throw new InvalidOperationException("SQL Server not configured. Set MSSQL_SA_PASSWORD.");
+
+        SqlServerTestConfiguration.EnsureTestDatabaseExists(connectionString);
 
         var services = new ServiceCollection();
         services.AddApperturePersistence(connectionString);
@@ -160,6 +168,8 @@ public sealed class AuditTimelineSqlServerTests
         var connectionString = SqlServerTestConfiguration.GetConnectionString();
         if (connectionString is null)
             throw new InvalidOperationException("SQL Server not configured. Set MSSQL_SA_PASSWORD.");
+
+        SqlServerTestConfiguration.EnsureTestDatabaseExists(connectionString);
 
         var services = new ServiceCollection();
         services.AddApperturePersistence(connectionString);
@@ -210,6 +220,8 @@ public sealed class AuditTimelineSqlServerTests
         if (connectionString is null)
             throw new InvalidOperationException("SQL Server not configured. Set MSSQL_SA_PASSWORD.");
 
+        SqlServerTestConfiguration.EnsureTestDatabaseExists(connectionString);
+
         var services = new ServiceCollection();
         services.AddApperturePersistence(connectionString);
         services.AddScoped<IAuditService, SqlAuditService>();
@@ -224,21 +236,22 @@ public sealed class AuditTimelineSqlServerTests
             await db.Database.MigrateAsync();
         }
 
+        var prefix = "ep37.outcome.";
         var baseTime = DateTimeOffset.UtcNow.AddMinutes(-3);
         await using (var scope = provider.CreateAsyncScope())
         {
             var audit = scope.ServiceProvider.GetRequiredService<IAuditService>();
-            await audit.AppendAsync(CreateRecord(baseTime, "scheduler.schedule.dispatched", "system:scheduler", "success", outcome: "success"));
-            await audit.AppendAsync(CreateRecord(baseTime.AddSeconds(1), "scheduler.schedule.failed", "system:scheduler", "failed", outcome: "failed"));
-            await audit.AppendAsync(CreateRecord(baseTime.AddSeconds(2), "scheduler.schedule.blocked_by_lifecycle", "system:scheduler", "blocked", outcome: "blocked"));
+            await audit.AppendAsync(CreateRecord(baseTime, prefix + "dispatched", "system:scheduler", "success", outcome: "success"));
+            await audit.AppendAsync(CreateRecord(baseTime.AddSeconds(1), prefix + "failed", "system:scheduler", "failed", outcome: "failed"));
+            await audit.AppendAsync(CreateRecord(baseTime.AddSeconds(2), prefix + "blocked", "system:scheduler", "blocked", outcome: "blocked"));
         }
 
         await using (var scope = provider.CreateAsyncScope())
         {
             var svc = scope.ServiceProvider.GetRequiredService<IAuditTimelineQueryService>();
-            var page = await svc.QueryAsync(new AuditFilterCriteria(FromUtc: baseTime, Outcome: "failed", PageSize: 10));
+            var page = await svc.QueryAsync(new AuditFilterCriteria(FromUtc: baseTime, ActionPrefix: prefix, Outcome: "failed", PageSize: 10));
             page.Items.Should().HaveCount(1);
-            page.Items[0].Action.Should().Be("scheduler.schedule.failed");
+            page.Items[0].Action.Should().Be(prefix + "failed");
             page.Items[0].Outcome.Should().Be("failed");
         }
     }
@@ -249,6 +262,8 @@ public sealed class AuditTimelineSqlServerTests
         var connectionString = SqlServerTestConfiguration.GetConnectionString();
         if (connectionString is null)
             throw new InvalidOperationException("SQL Server not configured. Set MSSQL_SA_PASSWORD.");
+
+        SqlServerTestConfiguration.EnsureTestDatabaseExists(connectionString);
 
         var services = new ServiceCollection();
         services.AddApperturePersistence(connectionString);
@@ -275,7 +290,7 @@ public sealed class AuditTimelineSqlServerTests
         await using (var scope = provider.CreateAsyncScope())
         {
             var svc = scope.ServiceProvider.GetRequiredService<IAuditTimelineQueryService>();
-            var page = await svc.QueryAsync(new AuditFilterCriteria(FromUtc: baseTime, Outcome: "success", PageSize: 10));
+            var page = await svc.QueryAsync(new AuditFilterCriteria(FromUtc: baseTime, ActionPrefix: "test.", Outcome: "success", PageSize: 10));
             page.Items.Should().HaveCount(1);
             page.Items[0].Outcome.Should().Be("success");
         }
@@ -287,6 +302,8 @@ public sealed class AuditTimelineSqlServerTests
         var connectionString = SqlServerTestConfiguration.GetConnectionString();
         if (connectionString is null)
             throw new InvalidOperationException("SQL Server not configured. Set MSSQL_SA_PASSWORD.");
+
+        SqlServerTestConfiguration.EnsureTestDatabaseExists(connectionString);
 
         var services = new ServiceCollection();
         services.AddApperturePersistence(connectionString);
@@ -327,6 +344,8 @@ public sealed class AuditTimelineSqlServerTests
         if (connectionString is null)
             throw new InvalidOperationException("SQL Server not configured. Set MSSQL_SA_PASSWORD.");
 
+        SqlServerTestConfiguration.EnsureTestDatabaseExists(connectionString);
+
         var services = new ServiceCollection();
         services.AddApperturePersistence(connectionString);
         services.AddScoped<IAuditService, SqlAuditService>();
@@ -356,6 +375,140 @@ public sealed class AuditTimelineSqlServerTests
             var page = await svc.QueryAsync(new AuditFilterCriteria(FromUtc: baseTime, ScheduleId: scheduleId, PageSize: 10));
             page.Items.Should().HaveCount(1);
             page.Items[0].RelatedReferences.Should().Contain(r => r.Kind == "schedule" && r.Id == scheduleId);
+        }
+    }
+
+    /// <summary>
+    /// Epic 37: Verifies historical backfill populates Outcome, ModuleId, ScheduleId, RunId from Details.
+    /// Inserts pre-Epic-37 shaped rows (null first-class columns, data in Details), runs backfill SQL, asserts.
+    /// </summary>
+    [Fact]
+    public async Task Migration_Backfill_PopulatesFirstClassFieldsFromDetails()
+    {
+        var connectionString = SqlServerTestConfiguration.GetConnectionString();
+        if (connectionString is null)
+            throw new InvalidOperationException("SQL Server not configured. Set MSSQL_SA_PASSWORD.");
+
+        SqlServerTestConfiguration.EnsureTestDatabaseExists(connectionString);
+
+        var services = new ServiceCollection();
+        services.AddApperturePersistence(connectionString);
+        services.AddScoped<IAuditService, SqlAuditService>();
+        services.AddScoped<IAuditTimelineQueryService, AuditTimelineQueryService>();
+        await using var provider = services.BuildServiceProvider();
+
+        await using (var scope = provider.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppertureDbContext>();
+            if (!await db.Database.CanConnectAsync())
+                throw new InvalidOperationException("SQL Server not reachable.");
+            await db.Database.MigrateAsync();
+        }
+
+        var prefix = "ep37.backfill.";
+        var baseTime = DateTimeOffset.UtcNow.AddMinutes(-1);
+        var at1 = baseTime;
+        var at2 = baseTime.AddSeconds(1);
+        var at3 = baseTime.AddSeconds(2);
+        var at4 = baseTime.AddSeconds(3);
+
+        await using (var scope = provider.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppertureDbContext>();
+            db.Database.ExecuteSqlRaw("""
+                INSERT INTO AuditLogs (At, Actor, Action, Details, Outcome, ModuleId, ScheduleId, RunId)
+                VALUES
+                ({0}, 'system', {1}, 'success; schedule:s-backfill;runId=r-backfill;module=m-backfill', NULL, NULL, NULL, NULL),
+                ({2}, 'system', {3}, 'failed; schedule:other', NULL, NULL, NULL, NULL),
+                ({4}, 'system', {5}, 'blocked', NULL, NULL, NULL, NULL),
+                ({6}, 'system', {7}, 'requested; originalRunId=orig-123', NULL, NULL, NULL, NULL)
+                """,
+                at1, prefix + "dispatched",
+                at2, prefix + "failed",
+                at3, prefix + "blocked",
+                at4, prefix + "retry");
+        }
+
+        await using (var scope = provider.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppertureDbContext>();
+            await db.Database.ExecuteSqlRawAsync("""
+                UPDATE a SET Outcome = seg.FirstSegment
+                FROM AuditLogs a
+                CROSS APPLY (
+                    SELECT LTRIM(RTRIM(LEFT(a.Details, CASE WHEN CHARINDEX(';', ISNULL(a.Details, '')) > 0
+                        THEN CHARINDEX(';', a.Details) - 1 ELSE LEN(a.Details) END))) AS FirstSegment
+                ) seg
+                WHERE a.Outcome IS NULL AND a.Details IS NOT NULL AND LEN(seg.FirstSegment) > 0 AND LEN(seg.FirstSegment) < 128
+                    AND seg.FirstSegment NOT LIKE 'Resource=%' AND seg.FirstSegment NOT LIKE 'runId=%'
+                    AND seg.FirstSegment NOT LIKE 'schedule:%' AND seg.FirstSegment NOT LIKE 'definitionId=%'
+                    AND seg.FirstSegment NOT LIKE 'workflowId=%' AND seg.FirstSegment NOT LIKE 'operationDefinitionId=%'
+                    AND seg.FirstSegment NOT LIKE 'module=%' AND seg.FirstSegment NOT LIKE 'runtimePlaneId=%'
+                """);
+            await db.Database.ExecuteSqlRawAsync("""
+                UPDATE a SET ModuleId = LTRIM(RTRIM(SUBSTRING(a.Details, p.Pos + 7,
+                    CASE WHEN CHARINDEX(';', a.Details, p.Pos + 7) > 0
+                        THEN CHARINDEX(';', a.Details, p.Pos + 7) - p.Pos - 7
+                        ELSE 128 END)))
+                FROM AuditLogs a
+                CROSS APPLY (SELECT NULLIF(PATINDEX('%module=%', a.Details), 0) AS Pos) p
+                WHERE p.Pos > 0 AND a.ModuleId IS NULL
+                """);
+            await db.Database.ExecuteSqlRawAsync("""
+                UPDATE a SET ScheduleId = LTRIM(RTRIM(SUBSTRING(a.Details, p.Pos + 9,
+                    CASE WHEN CHARINDEX(';', a.Details, p.Pos + 9) > 0
+                        THEN CHARINDEX(';', a.Details, p.Pos + 9) - p.Pos - 9
+                        ELSE 128 END)))
+                FROM AuditLogs a
+                CROSS APPLY (SELECT NULLIF(PATINDEX('%schedule:%', a.Details), 0) AS Pos) p
+                WHERE p.Pos > 0 AND a.ScheduleId IS NULL
+                """);
+            await db.Database.ExecuteSqlRawAsync("""
+                UPDATE a SET RunId = LTRIM(RTRIM(SUBSTRING(a.Details, p.Pos + 6,
+                    CASE WHEN CHARINDEX(';', a.Details, p.Pos + 6) > 0
+                        THEN CHARINDEX(';', a.Details, p.Pos + 6) - p.Pos - 6
+                        ELSE 64 END)))
+                FROM AuditLogs a
+                CROSS APPLY (SELECT COALESCE(NULLIF(PATINDEX('%runId=%', a.Details), 0), NULLIF(PATINDEX('%RunId=%', a.Details), 0)) AS Pos) p
+                WHERE a.RunId IS NULL AND a.Details IS NOT NULL AND p.Pos > 0
+                """);
+            await db.Database.ExecuteSqlRawAsync("""
+                UPDATE a SET RunId = LTRIM(RTRIM(SUBSTRING(a.Details, p.Pos + 14,
+                    CASE WHEN CHARINDEX(';', a.Details, p.Pos + 14) > 0
+                        THEN CHARINDEX(';', a.Details, p.Pos + 14) - p.Pos - 14
+                        ELSE 64 END)))
+                FROM AuditLogs a
+                CROSS APPLY (SELECT NULLIF(PATINDEX('%originalRunId=%', a.Details), 0) AS Pos) p
+                WHERE a.RunId IS NULL AND a.Details IS NOT NULL AND p.Pos > 0
+                """);
+        }
+
+        await using (var scope = provider.CreateAsyncScope())
+        {
+            var svc = scope.ServiceProvider.GetRequiredService<IAuditTimelineQueryService>();
+            var page = await svc.QueryAsync(new AuditFilterCriteria(FromUtc: baseTime, ActionPrefix: prefix, PageSize: 20));
+            page.Items.Should().HaveCount(4);
+
+            var dispatched = page.Items.FirstOrDefault(e => e.Action == prefix + "dispatched");
+            dispatched.Should().NotBeNull();
+            dispatched!.Outcome.Should().Be("success");
+            dispatched.RelatedReferences.Should().Contain(r => r.Kind == "schedule" && r.Id == "s-backfill");
+            dispatched.RelatedReferences.Should().Contain(r => r.Kind == "run" && r.Id == "r-backfill");
+            dispatched.RelatedReferences.Should().Contain(r => r.Kind == "module" && r.Id == "m-backfill");
+
+            var failed = page.Items.FirstOrDefault(e => e.Action == prefix + "failed");
+            failed.Should().NotBeNull();
+            failed!.Outcome.Should().Be("failed");
+            failed.RelatedReferences.Should().Contain(r => r.Kind == "schedule" && r.Id == "other");
+
+            var blocked = page.Items.FirstOrDefault(e => e.Action == prefix + "blocked");
+            blocked.Should().NotBeNull();
+            blocked!.Outcome.Should().Be("blocked");
+            blocked.RelatedReferences.Should().BeEmpty();
+
+            var retry = page.Items.FirstOrDefault(e => e.Action == prefix + "retry");
+            retry.Should().NotBeNull();
+            retry!.RelatedReferences.Should().Contain(r => r.Kind == "run" && r.Id == "orig-123");
         }
     }
 

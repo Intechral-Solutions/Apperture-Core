@@ -1,4 +1,6 @@
 using System;
+using Apperture.Persistence.SqlServer;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
@@ -7,6 +9,8 @@ namespace Apperture.Persistence.SqlServer.Migrations
 {
     /// <inheritdoc />
     /// <summary>Epic 37: First-class Outcome, ModuleId, ScheduleId, RunId columns and indexes.</summary>
+    [DbContext(typeof(AppertureDbContext))]
+    [Migration("20260322240000_AddAuditFirstClassFields")]
     public partial class AddAuditFirstClassFields : Migration
     {
         /// <inheritdoc />

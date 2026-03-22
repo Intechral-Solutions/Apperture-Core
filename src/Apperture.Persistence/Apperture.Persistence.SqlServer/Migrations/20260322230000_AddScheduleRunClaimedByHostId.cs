@@ -1,4 +1,6 @@
 using System;
+using Apperture.Persistence.SqlServer;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
@@ -7,6 +9,8 @@ namespace Apperture.Persistence.SqlServer.Migrations
 {
     /// <inheritdoc />
     /// <summary>Epic 36: Multi-host scheduler claim ownership.</summary>
+    [DbContext(typeof(AppertureDbContext))]
+    [Migration("20260322230000_AddScheduleRunClaimedByHostId")]
     public partial class AddScheduleRunClaimedByHostId : Migration
     {
         /// <inheritdoc />
