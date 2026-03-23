@@ -65,8 +65,17 @@
 
     private IReadOnlyList<RuntimeControlRequestDto>? _requests;
     private string? _error;
+    private string? _dataLoadKey;
 
-    protected override Task OnParametersSetAsync() => LoadAsync();
+    protected override async Task OnParametersSetAsync()
+    {
+        await base.OnParametersSetAsync();
+        var key = RuntimeId ?? "";
+        if (key == _dataLoadKey)
+            return;
+        _dataLoadKey = key;
+        await LoadAsync();
+    }
 
     private async Task LoadAsync()
     {

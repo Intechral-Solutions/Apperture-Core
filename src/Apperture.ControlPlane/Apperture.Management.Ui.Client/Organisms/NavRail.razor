@@ -19,7 +19,15 @@
             <div class="flex flex-col space-y-4">
                 @foreach (var m in _menuItems)
                 {
-                    <NavRailItem @attributes="GetParameters(m)" />
+                    <NavRailItem @key="m.Domain"
+                                 IconType="@m.Icon"
+                                 Tooltip="@m.Tooltip"
+                                 AriaLabel="@m.Tooltip"
+                                 Domain="@m.Domain"
+                                 Href="@m.Href"
+                                 CurrentDomain="@CurrentDomainName"
+                                 CurrentPageUri="@NavManager.Uri"
+                                 OnItemClick="HandleNavItemClick" />
                 }
             </div>
             <div class="mt-auto flex justify-center">
@@ -95,25 +103,6 @@
                 _menuItems.Add((icon, domainName, null, domainName));
             }
         }
-    }
-
-    private IDictionary<string, object> GetParameters(
-        (Type Icon, string Tooltip, string? Href, string? Domain) m)
-    {
-        var p = new Dictionary<string, object>
-        {
-            ["IconType"] = m.Icon,
-            ["Tooltip"] = m.Tooltip,
-            ["AriaLabel"] = m.Tooltip,
-            ["OnItemClick"] = EventCallback.Factory.Create<DomainNavClickArgs>(this, HandleNavItemClick),
-            ["CurrentDomain"] = CurrentDomainName,
-            ["CurrentPageUri"] = NavManager.Uri
-        };
-
-        if (!string.IsNullOrEmpty(m.Href)) p["Href"] = m.Href!;
-        if (!string.IsNullOrEmpty(m.Domain)) p["Domain"] = m.Domain!;
-
-        return p;
     }
 
     private async Task HandleLogoClick()

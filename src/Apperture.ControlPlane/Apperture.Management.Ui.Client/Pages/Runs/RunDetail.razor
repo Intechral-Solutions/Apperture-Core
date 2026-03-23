@@ -568,8 +568,17 @@
     private bool _pollingEnabled;
     private PeriodicTimer? _timer;
     private CancellationTokenSource? _pollingCts;
+    private string? _dataLoadKey;
 
-    protected override Task OnParametersSetAsync() => LoadAsync();
+    protected override async Task OnParametersSetAsync()
+    {
+        await base.OnParametersSetAsync();
+        var key = RunId ?? "";
+        if (key == _dataLoadKey)
+            return;
+        _dataLoadKey = key;
+        await LoadAsync();
+    }
     protected override Task OnAfterRenderAsync(bool firstRender)
     {
         if (_pollingEnabled && _pollingCts is null)

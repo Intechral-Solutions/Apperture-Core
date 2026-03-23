@@ -214,14 +214,23 @@
     private string _actionPrefix = "";
     private string _outcomeFilter = "";
     private string _actorFilter = "";
+    private string? _dataLoadKey;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        await base.OnParametersSetAsync();
+        var key = $"{QueryModuleId}|{QueryScheduleId}|{QueryRunId}";
+        if (key == _dataLoadKey)
+            return;
+        _dataLoadKey = key;
+        await LoadAsync();
+    }
 
     private async Task OnActorKeyDown(KeyboardEventArgs e)
     {
         if (e.Key == "Enter")
             await LoadAsync();
     }
-
-    protected override Task OnParametersSetAsync() => LoadAsync();
 
     private async Task LoadAsync()
     {

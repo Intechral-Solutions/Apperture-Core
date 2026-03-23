@@ -238,6 +238,7 @@
     private string _editRecurrence = "";
     private string _editTimeZone = "";
     private bool _editEnabled;
+    private string? _dataLoadKey;
 
     private void StartEdit()
     {
@@ -293,6 +294,11 @@
 
     protected override async Task OnParametersSetAsync()
     {
+        await base.OnParametersSetAsync();
+        var key = ScheduleId ?? "";
+        if (key == _dataLoadKey)
+            return;
+        _dataLoadKey = key;
         await LoadCapabilitiesAsync();
         await LoadAsync();
     }

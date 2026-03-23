@@ -1,4 +1,5 @@
 using Apperture.ControlPlane.Security;
+using Microsoft.Extensions.Logging.Abstractions;
 using Apperture.ControlPlane.Security.Models;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Environment;
@@ -112,7 +113,7 @@ public sealed class Epic34CorrectivePassTests
         var auth = new StubAuthorizationEvaluationService(moduleConfigure: false, scheduleManage: true, recoveryManage: true, auditRead: true, runtimeHealthRead: true);
         var scheduleGov = new StubScheduleGovernanceService(canManage: true);
         var recoveryGov = new StubRecoveryGovernanceService(canRead: true, canManage: true);
-        var service = new OperatorCapabilitiesQueryService(principal, auth, scheduleGov, recoveryGov);
+        var service = new OperatorCapabilitiesQueryService(principal, auth, scheduleGov, recoveryGov, NullLogger<OperatorCapabilitiesQueryService>.Instance);
 
         var dto = await service.GetCapabilitiesAsync(CancellationToken.None);
 
@@ -126,7 +127,7 @@ public sealed class Epic34CorrectivePassTests
         var auth = new StubAuthorizationEvaluationService(moduleConfigure: true, scheduleManage: true, recoveryManage: true, auditRead: true, runtimeHealthRead: true);
         var scheduleGov = new StubScheduleGovernanceService(canManage: false);
         var recoveryGov = new StubRecoveryGovernanceService(canRead: true, canManage: true);
-        var service = new OperatorCapabilitiesQueryService(principal, auth, scheduleGov, recoveryGov);
+        var service = new OperatorCapabilitiesQueryService(principal, auth, scheduleGov, recoveryGov, NullLogger<OperatorCapabilitiesQueryService>.Instance);
 
         var dto = await service.GetCapabilitiesAsync(CancellationToken.None);
 
@@ -140,7 +141,7 @@ public sealed class Epic34CorrectivePassTests
         var auth = new StubAuthorizationEvaluationService(moduleConfigure: true, scheduleManage: true, recoveryManage: true, auditRead: true, runtimeHealthRead: true);
         var scheduleGov = new StubScheduleGovernanceService(canManage: true);
         var recoveryGov = new StubRecoveryGovernanceService(canRead: true, canManage: false);
-        var service = new OperatorCapabilitiesQueryService(principal, auth, scheduleGov, recoveryGov);
+        var service = new OperatorCapabilitiesQueryService(principal, auth, scheduleGov, recoveryGov, NullLogger<OperatorCapabilitiesQueryService>.Instance);
 
         var dto = await service.GetCapabilitiesAsync(CancellationToken.None);
 

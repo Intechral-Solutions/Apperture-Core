@@ -143,9 +143,15 @@
     private bool CanEnable => _module is not null && string.Equals(_module.State, "InstalledDisabled", StringComparison.OrdinalIgnoreCase);
     private bool CanDisable => _module is not null && string.Equals(_module.State, "InstalledEnabled", StringComparison.OrdinalIgnoreCase);
     private bool CanUninstall => _module is not null && string.Equals(_module.State, "InstalledDisabled", StringComparison.OrdinalIgnoreCase);
+    private string? _dataLoadKey;
 
     protected override async Task OnParametersSetAsync()
     {
+        await base.OnParametersSetAsync();
+        var key = ModuleId ?? "";
+        if (key == _dataLoadKey)
+            return;
+        _dataLoadKey = key;
         await LoadCapabilitiesAsync();
         await LoadAsync();
     }

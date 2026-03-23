@@ -37,12 +37,25 @@
         NavManager.LocationChanged += OnLocationChanged;
     }
 
-    public void Dispose() => NavManager.LocationChanged -= OnLocationChanged;
+    private bool _disposed;
+
+    public void Dispose()
+    {
+        if (_disposed)
+            return;
+        _disposed = true;
+        NavManager.LocationChanged -= OnLocationChanged;
+    }
 
     private void OnLocationChanged(object? sender, LocationChangedEventArgs e)
     {
         ResolveAndUpdateCurrentDomain();
-        InvokeAsync(StateHasChanged);
+        _ = InvokeAsync(() =>
+        {
+            if (_disposed)
+                return;
+            StateHasChanged();
+        });
     }
 
     private void ResolveAndUpdateCurrentDomain()

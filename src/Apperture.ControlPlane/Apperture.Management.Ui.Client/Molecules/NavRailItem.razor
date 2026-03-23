@@ -6,11 +6,12 @@
 {
     <a href="@Href"
        class="@ContainerStyle"
+       aria-label="@AriaLabel"
        @onclick="@RaiseClick"
        @onclick:preventDefault="@(OnItemClick.HasDelegate)">
-        <button type="button" class="@EffectiveNavButtonStyle" aria-label="@AriaLabel">
+        <span class="@EffectiveNavButtonStyle inline-flex">
             <DynamicComponent Type="@IconType" Parameters="EffectiveIconParameters" />
-        </button>
+        </span>
         <div class="@TooltipStyle">@Tooltip</div>
     </a>
 }

@@ -118,18 +118,24 @@
     private string? _error;
     private OperatorCapabilitiesDto? _capabilities;
     private bool _capabilitiesLoaded;
+    private string? _dataLoadKey;
 
     protected override async Task OnInitializedAsync()
     {
         try { _capabilities = await Capabilities.GetCapabilitiesAsync(); } catch { _capabilities = new OperatorCapabilitiesDto(false, false, false, false, false, false, false); }
         _capabilitiesLoaded = true;
-        await LoadAsync();
     }
 
     protected override async Task OnParametersSetAsync()
     {
-        if (_capabilitiesLoaded)
-            await LoadAsync();
+        await base.OnParametersSetAsync();
+        if (!_capabilitiesLoaded)
+            return;
+        var key = UserId ?? "";
+        if (key == _dataLoadKey)
+            return;
+        _dataLoadKey = key;
+        await LoadAsync();
     }
 
     private async Task LoadAsync()
