@@ -65,6 +65,13 @@ Write-Host "  API:        http://localhost:9000" -ForegroundColor Gray
 Write-Host "  UI:         http://localhost:9001" -ForegroundColor Gray
 Write-Host ""
 
+# A still-running Management.Host locks bin\Debug outputs; the next `dotnet run` then fails with MSB3027
+# and the new console window exits immediately. Clear listeners from any prior dev session first.
+$DownScript = Join-Path $PSScriptRoot "down.ps1"
+Write-Host "Stopping any prior dev API / UI / worker (ports 9000, 9001)..." -ForegroundColor Cyan
+& $DownScript
+Write-Host ""
+
 # Ensure the Apperture database exists before bootstrapping the host.
 # (Bootstrap validates opening the configured database; migrations run after startup.)
 $envPath = Join-Path $RepoRoot ".env"

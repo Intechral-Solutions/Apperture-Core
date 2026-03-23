@@ -20,9 +20,10 @@ function Get-NetTCPConnectionByPort {
 
 function Stop-ProcessByPort {
     param([int]$Port)
-    $conn = Get-NetTCPConnectionByPort -Port $Port
-    if ($conn) {
-        $owningProcessId = $conn.OwningProcess
+    $conns = @(Get-NetTCPConnectionByPort -Port $Port)
+    if ($conns.Count -eq 0) { return }
+    $pids = $conns | Select-Object -ExpandProperty OwningProcess -Unique
+    foreach ($owningProcessId in $pids) {
         $proc = Get-Process -Id $owningProcessId -ErrorAction SilentlyContinue
         if ($proc) {
             Write-Host "Stopping process on port $Port (PID $owningProcessId): $($proc.ProcessName)" -ForegroundColor Yellow

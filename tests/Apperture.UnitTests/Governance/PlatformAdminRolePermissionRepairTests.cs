@@ -40,6 +40,27 @@ public sealed class PlatformAdminRolePermissionRepairTests
     }
 
     [Fact]
+    public void ApplyAllRepairs_AddsInstanceAuthConfigurationGrants_WhenMissing()
+    {
+        var registry = new InMemoryResourceDescriptorRegistry();
+        new PlatformPermissionSeederService(new StubEnvironmentContext()).Seed(registry);
+
+        var repaired = PlatformAdminRolePermissionRepair.ApplyAllRepairs(Array.Empty<PermissionDescriptor>(), registry);
+
+        repaired.Should().Contain(p =>
+            p.Action == ActionConstants.AuthConfigurationRead &&
+            p.Resource != null &&
+            p.Resource.ResourceType == ResourceTypeConstants.InstanceConfiguration &&
+            p.Resource.ScopeKey == ScopeKeyConstants.Instance);
+        repaired.Should().Contain(p =>
+            p.Action == ActionConstants.AuthUiPolicyManage &&
+            p.Resource!.ResourceType == ResourceTypeConstants.InstanceConfiguration);
+        repaired.Should().Contain(p =>
+            p.Action == ActionConstants.AuthEntraManage &&
+            p.Resource!.ResourceType == ResourceTypeConstants.InstanceConfiguration);
+    }
+
+    [Fact]
     public void ApplyAllRepairs_IsIdempotent_WhenAlreadySatisfied()
     {
         var registry = new InMemoryResourceDescriptorRegistry();

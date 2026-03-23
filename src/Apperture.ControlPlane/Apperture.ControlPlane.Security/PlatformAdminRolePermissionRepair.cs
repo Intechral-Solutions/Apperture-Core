@@ -34,6 +34,16 @@ public static class PlatformAdminRolePermissionRepair
     ];
 
     /// <summary>
+    /// Config — Authentication UI (sign-in chooser, Entra registrations, auth overview). Epic 41+ operator capabilities.
+    /// </summary>
+    public static readonly PermissionDescriptor[] RequiredInstanceAuthConfigurationPermissions =
+    [
+        new(ActionConstants.AuthUiPolicyManage, new ResourceDescriptor(ResourceTypeConstants.InstanceConfiguration, ScopeKeyConstants.Instance)),
+        new(ActionConstants.AuthConfigurationRead, new ResourceDescriptor(ResourceTypeConstants.InstanceConfiguration, ScopeKeyConstants.Instance)),
+        new(ActionConstants.AuthEntraManage, new ResourceDescriptor(ResourceTypeConstants.InstanceConfiguration, ScopeKeyConstants.Instance))
+    ];
+
+    /// <summary>
     /// Operator console surfaces (menus, modules, workflows, schedules, recovery, audit, runtime health).
     /// </summary>
     public static readonly PermissionDescriptor[] RequiredOperatorUiPermissions =
@@ -60,6 +70,7 @@ public static class PlatformAdminRolePermissionRepair
         step = EnsureModuleScopedPermissions(step, registry);
         step = EnsureSet(step, RequiredOperatorUiPermissions);
         step = EnsureSet(step, RequiredGovernanceSurfacePermissions);
+        step = EnsureSet(step, RequiredInstanceAuthConfigurationPermissions);
         return step;
     }
 

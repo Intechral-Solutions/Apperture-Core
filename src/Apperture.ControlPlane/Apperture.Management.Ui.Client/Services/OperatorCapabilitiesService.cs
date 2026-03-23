@@ -38,10 +38,10 @@ public sealed class OperatorCapabilitiesService : IOperatorCapabilitiesService
         }
         catch (Exception ex)
         {
-            // Avoid unhandled renderer exceptions when the API errors; pages still render with deny-all.
-            _logger.LogWarning(ex, "Operator capabilities request failed; using deny-all for this session.");
-            _cached = DenyAll;
-            return _cached;
+            // Avoid unhandled renderer exceptions when the API errors; do not cache failures so a later
+            // authenticated request (e.g. after login, or WASM after prerender) can succeed.
+            _logger.LogWarning(ex, "Operator capabilities request failed; using deny-all until next successful fetch.");
+            return DenyAll;
         }
     }
 }
