@@ -33,7 +33,16 @@ public sealed class OperatorCapabilitiesService : IOperatorCapabilitiesService
             return _cached;
         try
         {
-            _cached = await _client.GetOperatorCapabilitiesAsync(cancellationToken).ConfigureAwait(false);
+            var dto = await _client.GetOperatorCapabilitiesAsync(cancellationToken).ConfigureAwait(false);
+            // Do not cache an all-deny payload: wrong ApiBaseUrl or bad JSON once left sessions stuck on deny-all.
+            if (IsDenyAllCapabilities(dto))
+            {
+                _logger.LogWarning(
+                    "Operator capabilities are all false; not caching. If this persists, check ApiBaseUrl (WASM must reach the management API, e.g. http://localhost:9000/api in Development).");
+                return dto;
+            }
+
+            _cached = dto;
             return _cached;
         }
         catch (Exception ex)
@@ -44,4 +53,9 @@ public sealed class OperatorCapabilitiesService : IOperatorCapabilitiesService
             return DenyAll;
         }
     }
+
+    private static bool IsDenyAllCapabilities(OperatorCapabilitiesDto d) =>
+        !d.CanManageSchedules && !d.CanManageRecovery && !d.CanViewAudit && !d.CanViewRuntimeHealth && !d.CanManageModules
+        && !d.CanViewGovernance && !d.CanAssignPermissions && !d.CanAssignRoles && !d.CanManageAuthUiPolicy
+        && !d.CanViewAuthConfiguration && !d.CanManageEntraTenants;
 }

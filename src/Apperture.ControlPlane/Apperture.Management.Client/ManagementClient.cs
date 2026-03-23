@@ -7,6 +7,16 @@ namespace Apperture.Management.Client;
 
 public sealed class ManagementClient : IManagementClient
 {
+    /// <summary>
+    /// Matches ASP.NET Core default JSON (camelCase) and tolerates casing drift so capability flags deserialize
+    /// reliably; otherwise all booleans default to false and the UI caches deny-all.
+    /// </summary>
+    private static readonly JsonSerializerOptions ApiJsonReadOptions = new()
+    {
+        PropertyNameCaseInsensitive = true,
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+    };
+
     private readonly HttpClient _http;
 
     public ManagementClient(HttpClient http) => _http = http;
@@ -453,7 +463,9 @@ public sealed class ManagementClient : IManagementClient
 
     public async Task<OperatorCapabilitiesDto> GetOperatorCapabilitiesAsync(CancellationToken cancellationToken = default)
     {
-        var dto = await _http.GetFromJsonAsync<OperatorCapabilitiesDto>("control/capabilities", cancellationToken).ConfigureAwait(false);
+        using var response = await _http.GetAsync("control/capabilities", cancellationToken).ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+        var dto = await response.Content.ReadFromJsonAsync<OperatorCapabilitiesDto>(ApiJsonReadOptions, cancellationToken).ConfigureAwait(false);
         return dto ?? new OperatorCapabilitiesDto(false, false, false, false, false, false, false, false, false, false, false);
     }
 

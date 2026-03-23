@@ -18,16 +18,16 @@
     private string RootClass => Kind switch
     {
         PageMessageKind.Error =>
-            "rounded border px-3 py-2 text-sm border-red-300 bg-red-50 text-red-900 dark:border-red-700 dark:bg-red-950/50 dark:text-red-100",
+            "rounded border px-3 py-2 text-sm border-message-error bg-message-error text-message-error-text",
         PageMessageKind.Warning =>
-            "rounded border px-3 py-2 text-sm border-yellow-300 bg-yellow-50 text-yellow-950 dark:border-yellow-700 dark:bg-yellow-950/40 dark:text-yellow-100",
+            "rounded border px-3 py-2 text-sm border-message-warning bg-message-warning text-message-warning-text",
         _ => $"{BoxClass} rounded border px-3 py-2 text-sm text-body"
     };
 
     private string TitleClass => Kind switch
     {
-        PageMessageKind.Error => "font-semibold text-red-950 dark:text-red-50",
-        PageMessageKind.Warning => "font-semibold text-yellow-950 dark:text-yellow-50",
+        PageMessageKind.Error => "font-semibold text-message-error-title",
+        PageMessageKind.Warning => "font-semibold text-message-warning-title",
         _ => "font-semibold text-heading"
     };
 
@@ -36,9 +36,9 @@
         get
         {
             if (Kind == PageMessageKind.Error)
-                return string.IsNullOrWhiteSpace(Title) ? "" : "mt-1 text-red-800 dark:text-red-100";
+                return string.IsNullOrWhiteSpace(Title) ? "" : "mt-1 text-message-error-text";
             if (Kind == PageMessageKind.Warning)
-                return string.IsNullOrWhiteSpace(Title) ? "" : "mt-1 text-yellow-900 dark:text-yellow-100";
+                return string.IsNullOrWhiteSpace(Title) ? "" : "mt-1 text-message-warning-text";
             return string.IsNullOrWhiteSpace(Title) ? "" : "mt-1 text-muted";
         }
     }

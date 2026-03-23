@@ -2202,6 +2202,15 @@
     --color-info-dark: #9333ea;
     --color-focus: #3b82f6;
     --color-focus-ring: #93c5fd;
+    /* Inline alert / PageMessage callouts (semantic; no raw Tailwind yellow/red) */
+    --color-message-warning-bg: var(--color-warning-light);
+    --color-message-warning-border: var(--color-warning);
+    --color-message-warning-title: var(--color-warning-dark);
+    --color-message-warning-text: #422006;
+    --color-message-error-bg: var(--color-error-light);
+    --color-message-error-border: var(--color-error);
+    --color-message-error-title: var(--color-error-dark);
+    --color-message-error-text: #450a0a;
   }
   .dark {
     --color-bg: #0f172a;
@@ -2235,6 +2244,14 @@
     --color-info-dark: #e9d5ff;
     --color-focus: #60a5fa;
     --color-focus-ring: #1e3a8a;
+    --color-message-warning-bg: color-mix(in srgb, var(--color-warning) 14%, var(--color-surface));
+    --color-message-warning-border: color-mix(in srgb, var(--color-warning) 50%, var(--color-border));
+    --color-message-warning-title: var(--color-warning-dark);
+    --color-message-warning-text: var(--color-text-body);
+    --color-message-error-bg: color-mix(in srgb, var(--color-error) 14%, var(--color-surface));
+    --color-message-error-border: color-mix(in srgb, var(--color-error) 50%, var(--color-border));
+    --color-message-error-title: var(--color-error-dark);
+    --color-message-error-text: var(--color-text-body);
   }
   html {
     font-family: var(--font-sans);
@@ -2330,6 +2347,30 @@
   }
   .text-warning {
     color: var(--color-warning);
+  }
+  .border-message-warning {
+    border-color: var(--color-message-warning-border);
+  }
+  .bg-message-warning {
+    background-color: var(--color-message-warning-bg);
+  }
+  .text-message-warning-title {
+    color: var(--color-message-warning-title);
+  }
+  .text-message-warning-text {
+    color: var(--color-message-warning-text);
+  }
+  .border-message-error {
+    border-color: var(--color-message-error-border);
+  }
+  .bg-message-error {
+    background-color: var(--color-message-error-bg);
+  }
+  .text-message-error-title {
+    color: var(--color-message-error-title);
+  }
+  .text-message-error-text {
+    color: var(--color-message-error-text);
   }
   .bg-error {
     background-color: var(--color-error);

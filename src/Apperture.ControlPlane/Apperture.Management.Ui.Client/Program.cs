@@ -15,6 +15,16 @@ builder.Services.Configure<ShellUiOptions>(
     builder.Configuration.GetSection(ShellUiOptions.SectionName));
 
 var apiBaseUrl = builder.Configuration["ApiBaseUrl"] ?? "/api";
+// Relative /api is resolved against the WASM origin. Local dev serves UI on :9001 and API on :9000; if Blazor
+// environment is not Development, appsettings.Development.json is not merged and we would call the wrong host.
+if (!apiBaseUrl.StartsWith("http", StringComparison.OrdinalIgnoreCase)
+    && Uri.TryCreate(builder.HostEnvironment.BaseAddress, UriKind.Absolute, out var wasmBase)
+    && wasmBase.IsLoopback
+    && wasmBase.Port == 9001)
+{
+    apiBaseUrl = "http://localhost:9000/api";
+}
+
 if (!apiBaseUrl.EndsWith("/", StringComparison.Ordinal))
     apiBaseUrl += "/";
 
