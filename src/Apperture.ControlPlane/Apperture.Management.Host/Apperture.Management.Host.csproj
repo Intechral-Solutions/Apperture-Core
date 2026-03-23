@@ -21,5 +21,6 @@
     <ProjectReference Include="..\..\Apperture.Persistence\Apperture.Persistence.SqlServer\Apperture.Persistence.SqlServer.csproj" />
     <ProjectReference Include="..\..\Apperture.RuntimePlane\Apperture.RuntimePlane.DTFx\Apperture.RuntimePlane.DTFx.csproj" />
     <ProjectReference Include="..\..\Apperture.Modules\Sample.HelloWorld\Sample.HelloWorld.Module\Sample.HelloWorld.Module.csproj" />
+    <ProjectReference Include="..\..\Apperture.Modules\Unisa.CampusNexus.PaymentPlans\Unisa.CampusNexus.PaymentPlans.csproj" />
   </ItemGroup>
 </Project>

@@ -3,6 +3,7 @@ using Apperture.ControlPlane.Security;
 using Apperture.Management.Host;
 using Apperture.Persistence.SqlServer;
 using Sample.HelloWorld;
+using Unisa.CampusNexus.PaymentPlans;
 using Apperture.RuntimePlane.DTFx;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
@@ -35,10 +36,11 @@ builder.Services.AddScoped<Apperture.Core.Security.Trust.IRuntimeIdentityService
 builder.Services.Configure<DevTestUserOptions>(builder.Configuration.GetSection(DevTestUserOptions.SectionName));
 builder.Services.Configure<BootstrapPlatformAdminOptions>(builder.Configuration.GetSection(BootstrapPlatformAdminOptions.SectionName));
 builder.Services.AddAppertureGovernance();
-builder.Services.AddKnownModules([new HelloWorldModule()]);
+builder.Services.AddKnownModules([new HelloWorldModule(), new UnisaCampusNexusPaymentPlansModule()]);
 builder.Services.AddAppertureRecovery();
 builder.Services.AddRuntimeSchedulerDispatch();
 builder.Services.AddAppertureConnectorWorkflows();
+builder.Services.AddUnisaCampusNexusPaymentPlansIntegration();
 builder.Services.AddAppertureAuthentication(builder.Configuration);
 builder.Services.AddAuthorization();
 

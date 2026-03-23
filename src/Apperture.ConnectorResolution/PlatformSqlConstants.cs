@@ -11,5 +11,5 @@ public static class PlatformSqlConstants
     /// <summary>
     /// Connector definition id for the platform SQL connector (e.g. instance database).
     /// </summary>
-    public static readonly ConnectorDefinitionId ConnectorDefinitionId = new("Apperture.Platform.Sql");
+    public static readonly ConnectorDefinitionId ConnectorDefinitionId = WellKnownConnectorDefinitionIds.PlatformSql;
 }

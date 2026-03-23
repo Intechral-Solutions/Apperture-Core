@@ -56,5 +56,7 @@
     <PackageVersion Include="Blazor.Heroicons" Version="2.2.0" />
     <PackageVersion Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="10.0.0" />
     <PackageVersion Include="Microsoft.Extensions.Options" Version="10.0.0" />
+    <!-- SFTP (Campus Nexus / file integrations) -->
+    <PackageVersion Include="SSH.NET" Version="2024.2.0" />
   </ItemGroup>
 </Project>

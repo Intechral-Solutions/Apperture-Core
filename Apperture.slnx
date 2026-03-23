@@ -33,6 +33,9 @@
     <Project Path="src/Apperture.ControlPlane/Apperture.Management.Ui.Server/Apperture.Management.Ui.Server.csproj" />
     <Project Path="src/Apperture.ControlPlane/Apperture.Management.Ui.Shared/Apperture.Management.Ui.Shared.csproj" />
   </Folder>
+  <Folder Name="/src/Apperture.Modules/">
+    <Project Path="src/Apperture.Modules/Unisa.CampusNexus.PaymentPlans/Unisa.CampusNexus.PaymentPlans.csproj" />
+  </Folder>
   <Folder Name="/src/Apperture.ModuleSdk/">
     <Project Path="src/Apperture.ModuleSdk/Apperture.ModuleSdk.Abstractions/Apperture.ModuleSdk.Abstractions.csproj" />
     <Project Path="src/Apperture.ModuleSdk/Apperture.ModuleSdk.Testing/Apperture.ModuleSdk.Testing.csproj" />
@@ -40,6 +43,10 @@
   </Folder>
   <Folder Name="/src/Apperture.Persistence/">
     <Project Path="src/Apperture.Persistence/Apperture.Persistence.SqlServer/Apperture.Persistence.SqlServer.csproj" />
+  </Folder>
+  <Folder Name="/src/Apperture.Connectors/">
+    <Project Path="src/Apperture.Connectors/Apperture.Connectors.CampusNexus/Apperture.Connectors.CampusNexus.csproj" />
+    <Project Path="src/Apperture.Connectors/Apperture.Connectors.Sftp/Apperture.Connectors.Sftp.csproj" />
   </Folder>
   <Folder Name="/src/Apperture.Bootstrap/">
     <Project Path="src/Apperture.Bootstrap/Apperture.Bootstrap/Apperture.Bootstrap.csproj" />

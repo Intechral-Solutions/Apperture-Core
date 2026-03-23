@@ -1,4 +1,6 @@
 using System.Data;
+using Apperture.Connectors.CampusNexus;
+using Apperture.Connectors.Sftp;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Connector;
 using Microsoft.Extensions.DependencyInjection;
@@ -26,16 +28,30 @@ public static class ConnectorResolutionServiceCollectionExtensions
     }
 
     /// <summary>
-    /// Registers the platform SQL connector definition and factory.
-    /// If IConnectorDefinitionRegistry is not yet registered, registers InMemoryConnectorDefinitionRegistry and seeds the platform SQL definition.
+    /// Registers platform connector definitions (SQL, Campus Nexus API, SFTP) and their client factories for runtime resolution.
+    /// If <see cref="IConnectorDefinitionRegistry"/> is not yet registered, uses <see cref="InMemoryConnectorDefinitionRegistry"/>.
+    /// Idempotent if called multiple times.
     /// </summary>
     public static IServiceCollection AddPlatformSqlConnector(this IServiceCollection services)
     {
+        if (services.Any(d => d.ServiceType == typeof(IHostedService) && d.ImplementationType == typeof(PlatformConnectorClientFactoriesHostedService)))
+            return services;
+
         services.TryRegisterConnectorDefinitionRegistry();
         services.AddSingleton<IConnectorClientFactory<IDbConnection>, PlatformSqlConnectorClientFactory>();
-        services.AddHostedService<SeedPlatformSqlFactoryHostedService>();
+        services.AddSingleton<IConnectorClientFactory<ICampusNexusApiClient>, CampusNexusApiConnectorClientFactory>();
+        services.AddSingleton<IConnectorClientFactory<ISftpFileClient>, SftpConnectorClientFactory>();
+        services.AddHostedService<PlatformConnectorClientFactoriesHostedService>();
         return services;
     }
+
+    /// <inheritdoc cref="AddPlatformSqlConnector(IServiceCollection)"/>
+    public static IServiceCollection AddPlatformCampusNexusApiConnector(this IServiceCollection services) =>
+        AddPlatformSqlConnector(services);
+
+    /// <inheritdoc cref="AddPlatformSqlConnector(IServiceCollection)"/>
+    public static IServiceCollection AddPlatformSftpConnector(this IServiceCollection services) =>
+        AddPlatformSqlConnector(services);
 
     private static void TryRegisterConnectorDefinitionRegistry(this IServiceCollection services)
     {
@@ -45,31 +61,21 @@ public static class ConnectorResolutionServiceCollectionExtensions
         {
             var registry = new InMemoryConnectorDefinitionRegistry();
             registry.Register(new ConnectorDefinition(
-                PlatformSqlConstants.ConnectorDefinitionId,
+                WellKnownConnectorDefinitionIds.PlatformSql,
                 "Platform SQL",
+                null,
+                new Dictionary<string, string>()));
+            registry.Register(new ConnectorDefinition(
+                WellKnownConnectorDefinitionIds.PlatformCampusNexus,
+                "Campus Nexus API",
+                null,
+                new Dictionary<string, string>()));
+            registry.Register(new ConnectorDefinition(
+                WellKnownConnectorDefinitionIds.PlatformSftp,
+                "SFTP",
                 null,
                 new Dictionary<string, string>()));
             return registry;
         });
     }
-}
-
-internal sealed class SeedPlatformSqlFactoryHostedService : IHostedService
-{
-    private readonly IServiceProvider _serviceProvider;
-
-    public SeedPlatformSqlFactoryHostedService(IServiceProvider serviceProvider)
-    {
-        _serviceProvider = serviceProvider;
-    }
-
-    public Task StartAsync(CancellationToken cancellationToken)
-    {
-        var registry = _serviceProvider.GetRequiredService<IConnectorClientFactoryRegistry>();
-        var factory = _serviceProvider.GetRequiredService<IConnectorClientFactory<IDbConnection>>();
-        registry.Register(PlatformSqlConstants.ConnectorDefinitionId, factory);
-        return Task.CompletedTask;
-    }
-
-    public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 }

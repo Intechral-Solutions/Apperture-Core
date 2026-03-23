@@ -10,8 +10,10 @@ using Apperture.RuntimeHost.Windows.WorkerHost;
 using Apperture.RuntimePlane.Abstractions;
 using Apperture.RuntimePlane.Engine;
 using Apperture.Shared.Kernel;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Sample.HelloWorld;
+using Unisa.CampusNexus.PaymentPlans;
 
 // Windows runtime uses the shared SQL-backed operational secret store (same as Control Plane) with DPAPI protection.
 // There is no separate local-only runtime secret store in the current design.
@@ -63,13 +65,17 @@ builder.Services.AddSingleton<ISchedulerClaimOptions>(sp =>
 });
 builder.Services.AddRuntimeSchedulerDispatch();
 builder.Services.AddPlatformSqlConnector();
+builder.Services.AddUnisaCampusNexusPaymentPlansIntegration(registerCapabilitySlotBootstrap: false);
 
 // Known modules (explicit host-controlled DI list; may include multiple modules for dev/testing and constrained composition).
 // Intended deployment model remains one primary module per process (ADR-0001).
-builder.Services.AddSingleton<IEnumerable<IModule>>(
-    [
-        new HelloWorldModule()
-    ]);
+builder.Services.AddSingleton<HelloWorldModule>();
+builder.Services.AddSingleton(sp => new UnisaCampusNexusPaymentPlansModule(sp.GetRequiredService<IServiceScopeFactory>()));
+builder.Services.AddSingleton<IEnumerable<IModule>>(sp => new IModule[]
+{
+    sp.GetRequiredService<HelloWorldModule>(),
+    sp.GetRequiredService<UnisaCampusNexusPaymentPlansModule>()
+});
 
 builder.Services.AddSingleton<IWorkflowDefinitionResolver, WorkflowDefinitionResolver>();
 builder.Services.AddSingleton<IOperationRegistryService, OperationRegistryService>();

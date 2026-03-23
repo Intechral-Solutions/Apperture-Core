@@ -77,6 +77,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IModuleManifestProvider, KnownModuleManifestProvider>();
         services.AddSingleton<IModuleActivationFilter, RegistryBackedModuleActivationFilter>();
         services.AddSingleton<IConnectorDefinitionRegistry, StubConnectorDefinitionRegistry>();
+        services.AddHostedService<SeedWellKnownConnectorDefinitionsHostedService>();
         services.AddSingleton<IWorkflowModuleResolver, WorkflowModuleResolver>();
         services.AddScoped<IWorkflowDefinitionResolver, Apperture.ModuleSdk.Abstractions.WorkflowDefinitionResolver>();
         services.AddScoped<IExecutablePermissionEvaluator, ExecutablePermissionEvaluator>();

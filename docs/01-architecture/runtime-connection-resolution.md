@@ -44,9 +44,9 @@ Runtime dependency resolution is **slot-bound only**. The single entry point for
 
 The platform-managed SQL connector participates in the same resolution model:
 
-- **ConnectorDefinitionId** — `Apperture.Platform.Sql` (constant in `PlatformSqlConstants`).
+- **ConnectorDefinitionId** — `Apperture.Platform.Sql` (see `WellKnownConnectorDefinitionIds.PlatformSql`; `PlatformSqlConstants` aliases the same id).
 - **IConnectorClientFactory<IDbConnection>** — `PlatformSqlConnectorClientFactory` builds `SqlConnection` from `ResolvedConnectionMaterial` (Server, Database, UserId, Password).
-- **Registration** — Runtime host calls `AddConnectorRepositories()`, `AddConnectorResolution()`, `AddPlatformSqlConnector()` so the worker can resolve slots bound to platform SQL connections.
+- **Registration** — Runtime host calls `AddConnectorRepositories()`, `AddConnectorResolution()`, `AddPlatformSqlConnector()` so the worker can resolve slots bound to platform SQL connections. The same extension also registers **Campus Nexus** (`ICampusNexusApiClient`, id `Apperture.Platform.CampusNexus`) and **SFTP** (`ISftpFileClient`, id `Apperture.Platform.Sftp`); see `ADR-UNISA-CampusNexus-Payment-Plans-Connectors-and-Module.md`.
 
 SQL is not a special-case bypass; it uses the same slot → binding → connection → material → factory → client flow.
 
@@ -78,7 +78,7 @@ When the resolved client type `T` is **IDisposable** or **IAsyncDisposable**, th
 
 ## Implementation Summary
 
-- **Apperture.ConnectorResolution** — Implements `SlotBoundResolver`, `DefaultConnectionResolver`, `ConnectorClientFactoryRegistry`, `ResolvedConnectionMaterialBuilder`, `PlatformSqlConnectorClientFactory`, `InMemoryConnectorDefinitionRegistry`. DI: `AddConnectorResolution()`, `AddPlatformSqlConnector()`.
+- **Apperture.ConnectorResolution** — Implements `SlotBoundResolver`, `DefaultConnectionResolver`, `ConnectorClientFactoryRegistry`, `ResolvedConnectionMaterialBuilder`, `PlatformSqlConnectorClientFactory`, `CampusNexusApiConnectorClientFactory`, `SftpConnectorClientFactory`, `InMemoryConnectorDefinitionRegistry`. DI: `AddConnectorResolution()`, `AddPlatformSqlConnector()` (SQL + Campus Nexus + SFTP definitions and factories).
 - **Persistence** — `AddConnectorRepositories()` registers `IConnectionRepository`, `IBindingRepository` for runtime hosts that need resolution without the full control-plane workflows.
 - **Worker host** — Registers persistence, connector repositories, connector resolution, and platform SQL so `IRuntimeSlotResolver` is available.
 
