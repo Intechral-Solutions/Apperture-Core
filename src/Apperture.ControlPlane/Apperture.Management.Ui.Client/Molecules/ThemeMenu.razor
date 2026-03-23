@@ -5,23 +5,42 @@
 
 <div class="relative" @onclick:stopPropagation="true">
     <button type="button"
-            class="flex items-center gap-1 rounded px-2 py-1.5 text-sm text-body hover:bg-surface-muted"
+            class="flex items-center justify-center rounded p-2 text-body hover:bg-surface-muted"
             aria-expanded="@_open"
             aria-haspopup="true"
+            aria-label="@($"Appearance: {Label(ThemeService.Current)}")"
+            title="@Label(ThemeService.Current)"
             @onclick="Toggle">
-        <span class="text-muted">Theme</span>
-        <span class="text-heading">@ThemeService.Current</span>
+        <ThemePreferenceIcon Preference="ThemeService.Current" Class="h-5 w-5 shrink-0 text-heading" />
     </button>
     @if (_open)
     {
-        <div class="absolute end-0 z-50 mt-1 min-w-40 rounded border border-default bg-surface py-1 text-sm shadow-lg">
+        <div class="absolute end-0 z-50 mt-1 min-w-52 rounded border border-default bg-surface py-1 text-sm shadow-lg"
+             role="menu"
+             aria-label="Theme options">
             @foreach (var p in _prefs)
             {
                 var active = ThemeService.Current == p;
                 <button type="button"
-                        class="block w-full px-3 py-2 text-start hover:bg-surface-muted @(active ? "font-medium text-heading" : "text-body")"
+                        role="menuitemradio"
+                        aria-checked="@active"
+                        class="flex w-full items-center gap-3 px-3 py-2 text-start hover:bg-surface-muted @(active ? "bg-surface-muted/80" : "")"
                         @onclick="() => SelectAsync(p)">
-                    @p
+                    <ThemePreferenceIcon Preference="p" Class="h-5 w-5 shrink-0 text-body" />
+                    <span class="flex-1 @(active ? "font-medium text-heading" : "text-body")">@Label(p)</span>
+                    <span class="flex h-5 w-5 shrink-0 items-center justify-center" aria-hidden="true">
+                        @if (active)
+                        {
+                            <svg class="h-4 w-4 text-heading"
+                                 viewBox="0 0 20 20"
+                                 fill="currentColor"
+                                 aria-hidden="true">
+                                <path fill-rule="evenodd"
+                                      d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
+                                      clip-rule="evenodd" />
+                            </svg>
+                        }
+                    </span>
                 </button>
             }
         </div>
@@ -46,4 +65,12 @@
     }
 
     public void Dispose() => ThemeService.Changed -= OnThemeChanged;
+
+    private static string Label(ThemePreference p) => p switch
+    {
+        ThemePreference.Light => "Light",
+        ThemePreference.Dark => "Dark",
+        ThemePreference.System => "System",
+        _ => p.ToString()
+    };
 }
