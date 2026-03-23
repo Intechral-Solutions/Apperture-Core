@@ -24,14 +24,15 @@ public sealed class ShellHostNavigation
         if (!string.IsNullOrWhiteSpace(configured))
             return Normalize(new Uri(configured, UriKind.Absolute));
 
-        var apiBase = _configuration["ApiBaseUrl"] ?? "/api";
-        if (apiBase.StartsWith("http", StringComparison.OrdinalIgnoreCase))
+        var wasmBase = navigationManager.BaseUri;
+        var resolvedApi = ManagementUiDevApiRouting.ResolveApiBaseUrl(_configuration["ApiBaseUrl"], wasmBase);
+        if (resolvedApi.StartsWith("http", StringComparison.OrdinalIgnoreCase))
         {
-            var apiUri = new Uri(apiBase, UriKind.Absolute);
+            var apiUri = new Uri(resolvedApi, UriKind.Absolute);
             return new Uri($"{apiUri.Scheme}://{apiUri.Authority}/", UriKind.Absolute);
         }
 
-        return new Uri(navigationManager.BaseUri);
+        return new Uri(wasmBase);
     }
 
     private static Uri Normalize(Uri u)

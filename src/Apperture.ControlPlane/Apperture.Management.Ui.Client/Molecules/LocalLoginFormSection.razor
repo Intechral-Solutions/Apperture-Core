@@ -46,7 +46,8 @@
             await Client.LocalLoginAsync(new LocalLoginRequest(_model.Username.Trim(), _model.Password));
             await Session.RefreshAsync();
             var safe = LoginRouteHelper.NormalizeReturnUrl(ReturnPath) ?? LoginRouteHelper.DefaultPostLoginPath;
-            Nav.NavigateTo(safe);
+            // Full load matches credentialed fetch + location.reload(): fresh WASM scope and cookie jar for API :9000.
+            Nav.NavigateTo(safe, forceLoad: true);
         }
         catch (HttpRequestException)
         {
