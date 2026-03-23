@@ -2,7 +2,7 @@ namespace Apperture.ControlPlane.Security.Models;
 
 /// <summary>
 /// Operator UI capabilities derived from principal permissions. Epic 34.
-/// Epic 40: CanViewGovernance (user.read), CanAssignPermissions (permission.assign).
+/// Epic 40: CanViewGovernance (user.read on Role at instance scope), CanAssignPermissions (permission.assign on Role).
 /// Epic 41: CanAssignRoles (role.assign).
 /// </summary>
 public sealed record OperatorCapabilitiesDto(

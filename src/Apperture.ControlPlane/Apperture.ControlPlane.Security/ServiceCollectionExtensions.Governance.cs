@@ -64,6 +64,7 @@ public static class ServiceCollectionExtensions
         // Module permission registration must run before role repair so platform-admin gets module-scoped workflow.execute etc.
         services.AddHostedService<ModulePermissionRegistrationHostedService>();
         services.AddHostedService<PlatformAdminRoleRepairService>();
+        services.AddHostedService<BootstrapPlatformAdminAssignmentHostedService>();
         services.AddHostedService<DevTestUserBootstrapHostedService>();
         services.AddSingleton<IEnumerable<IModule>>(Array.Empty<IModule>());
         services.AddScoped<IModuleRegistryService, SqlModuleRegistryService>();
