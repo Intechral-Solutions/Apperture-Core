@@ -1,5 +1,7 @@
 @using Apperture.Management.Ui.Client.Services
+@using Apperture.Management.Ui.Shared
 @inherits LayoutComponentBase
+@implements IDisposable
 
 @inject DomainMenuService DomainMenuService
 @inject NavigationManager NavManager
@@ -27,6 +29,28 @@
     private bool isControlPanelOpen;
     private bool isControlPanelLocked;
     private string currentDomainName = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await DomainMenuService.LoadMenusAsync();
+        ResolveAndUpdateCurrentDomain();
+        NavManager.LocationChanged += OnLocationChanged;
+    }
+
+    public void Dispose() => NavManager.LocationChanged -= OnLocationChanged;
+
+    private void OnLocationChanged(object? sender, LocationChangedEventArgs e)
+    {
+        ResolveAndUpdateCurrentDomain();
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void ResolveAndUpdateCurrentDomain()
+    {
+        var resolved = ResolveDomainForCurrentUri();
+        if (!string.IsNullOrWhiteSpace(resolved))
+            currentDomainName = resolved;
+    }
 
     private void HandleControlPanelOpen(string domainName)
     {
@@ -64,23 +88,9 @@
     private string ResolveDomainForCurrentUri()
     {
         var path = new Uri(NavManager.Uri).AbsolutePath;
-
-        foreach (var domainName in DomainMenuService.GetValidDomains())
-        {
-            var menu = DomainMenuService.GetDomain(domainName);
-            if (menu?.Items is null) continue;
-
-            foreach (var item in menu.Items)
-            {
-                var href = item.Href;
-                if (string.IsNullOrWhiteSpace(href)) continue;
-
-                // Allow prefix matching so routes like `/runs/{RunId}` still select `Runs`.
-                if (path.StartsWith(href, StringComparison.OrdinalIgnoreCase))
-                    return domainName;
-            }
-        }
-
-        return "";
+        return RouteToSectionResolver.Resolve(
+            path,
+            DomainMenuService.GetDomain,
+            DomainMenuService.GetValidDomains());
     }
 }

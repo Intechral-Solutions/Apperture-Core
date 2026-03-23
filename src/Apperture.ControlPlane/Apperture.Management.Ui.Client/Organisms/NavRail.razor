@@ -1,13 +1,20 @@
+@using Microsoft.AspNetCore.Components.Web
 @using Blazor.Heroicons.Solid
+@using Apperture.Management.Ui.Shared
 @using Apperture.Management.Ui.Shared.Models
 @inject NavigationManager NavManager
 @inject DomainMenuService DomainMenuService
 
 <div id="nav-rail" class="fixed z-60 flex min-h-0 flex-row h-full print:hidden start-0 top-0 @(IsControlPanelOpen ? "" : "w-18")">
     <div class="w-17 flex-none flex flex-col h-full relative border-r border-dashed border-default bg-surface text-body duration-300 z-40">
-        <a href="/" class="logo-link group mt-0.5 mb-8 block p-3 text-muted transition-all duration-200 cursor-pointer">
+        <div role="button"
+             class="logo-link group mt-0.5 mb-8 block p-3 text-muted transition-all duration-200 cursor-pointer @(_isDashboardActive ? "opacity-100" : "opacity-70 hover:opacity-90")"
+             aria-label="Dashboard home"
+             @onclick="HandleLogoClick"
+             @onkeydown="HandleLogoKeyDown"
+             tabindex="0">
             <AppertureLogo WrapperClass="" ShapeClass="w-full" />
-        </a>
+        </div>
         <nav class="flex flex-1 flex-col">
             <div class="flex flex-col space-y-4">
                 @foreach (var m in _menuItems)
@@ -16,7 +23,17 @@
                 }
             </div>
             <div class="mt-auto flex justify-center">
-                <NavRailItem Href="/config" IconType="@typeof(CogIcon)" Tooltip="Configuration" ContainerStyle="group relative inline-block -translate-y-5" NavButtonStyle="h-12 w-12 flex items-center" IconStyle="h-10 w-10 translate-x-1 text-body opacity-60 group-hover:opacity-90" OnItemClick="HandleNavItemClick" />
+                <NavRailItem Href="@ShellSectionRoutes.ConfigHome"
+                             Domain="@SectionOwnerConstants.Config"
+                             IconType="@typeof(CogIcon)"
+                             Tooltip="Configuration"
+                             AriaLabel="Configuration"
+                             CurrentDomain="@CurrentDomainName"
+                             CurrentPageUri="@NavManager.Uri"
+                             ContainerStyle="group relative inline-block -translate-y-5"
+                             NavButtonStyle="h-12 w-12 flex items-center"
+                             IconStyle="@(_isConfigActive ? "h-10 w-10 translate-x-1 text-body opacity-100" : "h-10 w-10 translate-x-1 text-body opacity-60 group-hover:opacity-90")"
+                             OnItemClick="HandleNavItemClick" />
             </div>
         </nav>
     </div>
@@ -31,6 +48,11 @@
     [Parameter] public EventCallback OnControlPanelClose { get; set; }
 
     private List<(Type Icon, string Tooltip, string? Href, string? Domain)> _menuItems = new();
+
+    private bool _isDashboardActive =>
+        string.Equals(CurrentDomainName, SectionOwnerConstants.Dashboard, StringComparison.OrdinalIgnoreCase);
+    private bool _isConfigActive =>
+        string.Equals(CurrentDomainName, SectionOwnerConstants.Config, StringComparison.OrdinalIgnoreCase);
 
     protected override async Task OnInitializedAsync()
     {
@@ -59,7 +81,7 @@
 
         _menuItems = new List<(Type Icon, string Tooltip, string? Href, string? Domain)>();
 
-        foreach (var domainName in DomainMenuService.GetValidDomains())
+        foreach (var domainName in DomainMenuService.GetMiddleDomains())
         {
             var domain = DomainMenuService.GetDomain(domainName);
             if (domain == null) continue;
@@ -84,6 +106,7 @@
         {
             ["IconType"] = m.Icon,
             ["Tooltip"] = m.Tooltip,
+            ["AriaLabel"] = m.Tooltip,
             ["OnItemClick"] = EventCallback.Factory.Create<DomainNavClickArgs>(this, HandleNavItemClick),
             ["CurrentDomain"] = CurrentDomainName,
             ["CurrentPageUri"] = NavManager.Uri
@@ -93,6 +116,22 @@
         if (!string.IsNullOrEmpty(m.Domain)) p["Domain"] = m.Domain!;
 
         return p;
+    }
+
+    private async Task HandleLogoClick()
+    {
+        if (OnControlPanelClose.HasDelegate)
+            await OnControlPanelClose.InvokeAsync();
+        NavManager.NavigateTo(ShellSectionRoutes.DashboardHome);
+    }
+
+    private static bool IsActivationKey(KeyboardEventArgs e) =>
+        e.Key == "Enter" || e.Key == " ";
+
+    private async Task HandleLogoKeyDown(KeyboardEventArgs e)
+    {
+        if (IsActivationKey(e))
+            await HandleLogoClick();
     }
 
     private async Task HandleNavItemClick(DomainNavClickArgs args)

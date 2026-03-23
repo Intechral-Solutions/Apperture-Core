@@ -1,11 +1,12 @@
 @using Microsoft.AspNetCore.Components.Routing
+@using Apperture.Management.Ui.Shared
 @inject NavigationManager Nav
 
 @code {
     protected override void OnInitialized()
     {
-        // Default operator landing is the unified control console.
-        Nav.NavigateTo("/control/center", replace: true);
+        // Root URL enters the platform dashboard; Control Center lives under the Control section.
+        Nav.NavigateTo(ShellSectionRoutes.DashboardHome, replace: true);
     }
 }
 

@@ -1,6 +1,8 @@
 @using Apperture.Management.Ui.Client.Services
+@using Apperture.Management.Ui.Shared
 @using Apperture.Management.Ui.Shared.Models
 @inject DomainMenuService DomainMenuService
+@inject NavigationManager NavManager
 
 <div id="control-panel" class="h-full w-54 bg-surface transition-transform duration-300 z-20 flex flex-col relative overflow-auto border-r border-default text-body @(IsOpen ? "translate-x-0" : "-translate-x-full")">
     @if (Definition is null)
@@ -48,12 +50,12 @@
                             </svg>
                         </div>
 
-                        <ul class="@(_expanded.Contains(item.Text) ? "block" : "hidden") ml-4 border-l border-default">
+                        <ul class="@(_expanded.Contains(item.Text) || HasActiveChild(item) ? "block" : "hidden") ml-4 border-l border-default">
                             @foreach (var child in item.Children)
                             {
                                 <li>
                                     <a href="@child.Href"
-                                       class="block rounded px-3 py-2 text-sm text-body hover:bg-surface-muted">
+                                       class="block rounded px-3 py-2 text-sm @(IsActiveHref(child.Href) ? "font-medium text-heading bg-surface-muted" : "text-body hover:bg-surface-muted")">
                                         @child.Text
                                     </a>
                                 </li>
@@ -63,7 +65,7 @@
                     else
                     {
                         <a href="@item.Href"
-                           class="block rounded px-3 py-2 text-sm text-body hover:bg-surface-muted">
+                           class="block rounded px-3 py-2 text-sm @(IsActiveHref(item.Href) ? "font-medium text-heading bg-surface-muted" : "text-body hover:bg-surface-muted")">
                             @item.Text
                         </a>
                     }
@@ -77,6 +79,7 @@
     [Parameter] public bool IsOpen { get; set; }
     [Parameter] public string DomainName { get; set; } = "";
 
+    private string _currentPath => new Uri(NavManager.Uri).AbsolutePath.TrimEnd('/');
     private DomainMenu? Definition => DomainMenuService.GetDomain(DomainName);
 
     private string? TitleToShow
@@ -92,11 +95,34 @@
 
     private readonly HashSet<string> _expanded = new();
 
+    protected override void OnParametersSet()
+    {
+        if (Definition?.Items is null) return;
+        foreach (var item in Definition.Items.Where(i => i.Children?.Count > 0))
+        {
+            if (HasActiveChild(item))
+                _expanded.Add(item.Text);
+        }
+    }
+
     private void Toggle(string key)
     {
         if (_expanded.Contains(key))
             _expanded.Remove(key);
         else
             _expanded.Add(key);
+    }
+
+    private bool IsActiveHref(string? href)
+    {
+        var path = _currentPath;
+        if (path.Length == 0) path = "/";
+        return NavPathMatching.PathMatchesMenuHref(path, href);
+    }
+
+    private bool HasActiveChild(DomainMenuItem parent)
+    {
+        if (parent.Children is null) return false;
+        return parent.Children.Any(c => IsActiveHref(c.Href));
     }
 }

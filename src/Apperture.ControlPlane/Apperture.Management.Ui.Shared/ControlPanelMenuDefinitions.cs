@@ -11,8 +11,21 @@ public static class ControlPanelMenuDefinitions
     public static Dictionary<string, DomainMenu> GetDefaultMenus()
     {
         // Note: top-level keys are the "domain" names used by the sidebar.
+        // Dashboard and Config are custom zone owners (logo/gear); they are excluded from the middle dynamic loop.
         return new Dictionary<string, DomainMenu>(StringComparer.OrdinalIgnoreCase)
         {
+            [SectionOwnerConstants.Dashboard] = new DomainMenu
+            {
+                Title = null,
+                Items =
+                {
+                    new DomainMenuItem { Text = "Dashboard home", Href = ShellSectionRoutes.DashboardHome },
+                    new DomainMenuItem { Text = "Manage dashboards", Href = "/dashboard/manage" },
+                    new DomainMenuItem { Text = "Add dashboard page", Href = "/dashboard/add" },
+                    new DomainMenuItem { Text = "Delete dashboard page (placeholder)", Href = "/dashboard/delete" },
+                    new DomainMenuItem { Text = "Edit dashboard layout (placeholder)", Href = "/dashboard/layout" }
+                }
+            },
             ["Runs"] = new DomainMenu
             {
                 Title = null,
@@ -105,12 +118,12 @@ public static class ControlPanelMenuDefinitions
                 Title = null,
                 Items = { new DomainMenuItem { Text = "API Explorer", Href = "/tools/explorer" } }
             },
-            ["Config"] = new DomainMenu
+            [SectionOwnerConstants.Config] = new DomainMenu
             {
                 Title = null,
                 Items =
                 {
-                    new DomainMenuItem { Text = "Config", Href = "/config" },
+                    new DomainMenuItem { Text = "Config", Href = ShellSectionRoutes.ConfigHome },
                     new DomainMenuItem
                     {
                         Text = "Governance",

@@ -125,6 +125,12 @@ public class DomainMenuService
 
     public IEnumerable<string> GetValidDomains() => _menus.Keys;
 
+    /// <summary>
+    /// Domains to render in the middle dynamic rail. Excludes Dashboard and Config (custom zone owners).
+    /// </summary>
+    public IEnumerable<string> GetMiddleDomains() =>
+        SectionOwnerConstants.GetMiddleDomains(_menus.Keys);
+
     public DomainMenu? GetDomain(string domainName) =>
         _menus.TryGetValue(domainName, out var def) ? def : null;
 }

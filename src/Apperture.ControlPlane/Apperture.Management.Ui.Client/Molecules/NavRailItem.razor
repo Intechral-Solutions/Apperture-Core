@@ -8,8 +8,8 @@
        class="@ContainerStyle"
        @onclick="@RaiseClick"
        @onclick:preventDefault="@(OnItemClick.HasDelegate)">
-        <button class="@NavButtonStyle">
-            <DynamicComponent Type="@IconType" Parameters="IconParameters" />
+        <button type="button" class="@EffectiveNavButtonStyle" aria-label="@AriaLabel">
+            <DynamicComponent Type="@IconType" Parameters="EffectiveIconParameters" />
         </button>
         <div class="@TooltipStyle">@Tooltip</div>
     </a>
@@ -17,8 +17,8 @@
 else
 {
     <div class="@ContainerStyle" @onclick="@RaiseClick">
-        <button class="@NavButtonStyle">
-            <DynamicComponent Type="@IconType" Parameters="IconParameters" />
+        <button type="button" class="@EffectiveNavButtonStyle" aria-label="@AriaLabel">
+            <DynamicComponent Type="@IconType" Parameters="EffectiveIconParameters" />
         </button>
         <div class="@TooltipStyle">@Tooltip</div>
     </div>
@@ -29,6 +29,8 @@ else
     [Parameter] public string? Domain { get; set; }
     [Parameter] public Type IconType { get; set; } = default!;
     [Parameter] public string Tooltip { get; set; } = string.Empty;
+    /// <summary>Optional accessible name for the rail control (logo/gear use custom markup separately).</summary>
+    [Parameter] public string? AriaLabel { get; set; }
     [Parameter] public string? CurrentDomain { get; set; }
     [Parameter] public string? CurrentPageUri { get; set; }
     [Parameter] public string ContainerStyle { get; set; } = "group relative inline-block";
@@ -47,8 +49,21 @@ else
         "opacity-0 group-hover:opacity-100 transition-opacity duration-200 whitespace-nowrap z-10 pointer-events-none";
     [Parameter] public EventCallback<DomainNavClickArgs> OnItemClick { get; set; }
 
-    private IDictionary<string, object> IconParameters =>
-        new Dictionary<string, object> { ["class"] = IconStyle };
+    private bool IsActive =>
+        !string.IsNullOrEmpty(Domain) &&
+        !string.IsNullOrEmpty(CurrentDomain) &&
+        string.Equals(Domain, CurrentDomain, StringComparison.OrdinalIgnoreCase);
+
+    private string EffectiveNavButtonStyle =>
+        IsActive
+            ? NavButtonStyle + " bg-slate-400 dark:bg-slate-600 bg-opacity-30 dark:bg-opacity-30"
+            : NavButtonStyle;
+
+    private string EffectiveIconClass =>
+        IsActive ? $"{IconStyle} opacity-100" : IconStyle;
+
+    private IDictionary<string, object> EffectiveIconParameters =>
+        new Dictionary<string, object> { ["class"] = EffectiveIconClass };
 
     private async Task RaiseClick()
     {
