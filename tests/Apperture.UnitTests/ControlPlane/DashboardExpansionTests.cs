@@ -1,5 +1,7 @@
 using Apperture.ControlPlane.Dashboard;
 using Apperture.ControlPlane.Security;
+using Apperture.Core.Application.ControlFacade;
+using Apperture.Core.Application.RuntimeHealth;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Governance;
 using Apperture.Core.Domain.Identity;
@@ -32,6 +34,17 @@ public sealed class DashboardExpansionTests
     }
 
     [Fact]
+    public void AttentionConvention_MaxSeverityToken_PicksWorstAcrossList()
+    {
+        DashboardCardAttentionConvention.MaxAttentionSeverityToken(["low", "high", "medium"])
+            .Should().Be("high");
+        DashboardCardAttentionConvention.MaxAttentionSeverityToken(["low", "medium"])
+            .Should().Be("medium");
+        DashboardCardAttentionConvention.MaxAttentionSeverityToken([])
+            .Should().Be("none");
+    }
+
+    [Fact]
     public async Task ExecutionsProvider_NoActor_OmitsCard()
     {
         var runs = new Mock<IRunQueryService>();
@@ -50,14 +63,18 @@ public sealed class DashboardExpansionTests
     public async Task ExecutionsProvider_BuildsCountsAndDrillInWhenFailed()
     {
         var from = DateTimeOffset.UtcNow.AddHours(-24);
+        var all =
+            new List<RunSummaryDto>
+            {
+                new("a", "wi", "def1", WorkflowLifecycleStatusNames.Failed, from.AddHours(1), null, null, null),
+                new("b", "wi", "def1", WorkflowLifecycleStatusNames.Running, from.AddHours(2), null, null, null),
+                new("c", "wi", "def1", WorkflowLifecycleStatusNames.Completed, from.AddHours(3), from.AddHours(4), null, null)
+            };
         var runs = new Mock<IRunQueryService>();
-        runs.Setup(x => x.ListRunsAsync(It.IsAny<RunQueryFilter?>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(
-            [
-                new RunSummaryDto("a", "wi", "def1", WorkflowLifecycleStatusNames.Failed, from.AddHours(1), null, null, null),
-                new RunSummaryDto("b", "wi", "def1", WorkflowLifecycleStatusNames.Running, from.AddHours(2), null, null, null),
-                new RunSummaryDto("c", "wi", "def1", WorkflowLifecycleStatusNames.Completed, from.AddHours(3), from.AddHours(4), null, null)
-            ]);
+        runs.Setup(x => x.ListRunsAsync(It.Is<RunQueryFilter?>(f => f != null && f.Status == WorkflowLifecycleStatusNames.Failed), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(all.Where(r => r.Status == WorkflowLifecycleStatusNames.Failed).ToList());
+        runs.Setup(x => x.ListRunsAsync(It.Is<RunQueryFilter?>(f => f != null && string.IsNullOrWhiteSpace(f.Status)), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(all);
 
         var principal = new Mock<IPrincipalContext>();
         principal.Setup(x => x.GetCurrentActorAsync(It.IsAny<CancellationToken>()))
@@ -75,13 +92,43 @@ public sealed class DashboardExpansionTests
     }
 
     [Fact]
+    public async Task ExecutionsProvider_NoFailed_DrillInUsesWindowWithoutStatus()
+    {
+        var from = DateTimeOffset.UtcNow.AddHours(-24);
+        var all = new List<RunSummaryDto>
+        {
+            new("b", "wi", "def1", WorkflowLifecycleStatusNames.Running, from.AddHours(2), null, null, null)
+        };
+        var runs = new Mock<IRunQueryService>();
+        runs.Setup(x => x.ListRunsAsync(It.Is<RunQueryFilter?>(f => f != null && f.Status == WorkflowLifecycleStatusNames.Failed), It.IsAny<CancellationToken>()))
+            .ReturnsAsync([]);
+        runs.Setup(x => x.ListRunsAsync(It.Is<RunQueryFilter?>(f => f != null && string.IsNullOrWhiteSpace(f.Status)), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(all);
+
+        var principal = new Mock<IPrincipalContext>();
+        principal.Setup(x => x.GetCurrentActorAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Mock.Of<IActor>());
+
+        var sut = new ExecutionsDashboardCardProvider(runs.Object, principal.Object);
+        var card = await sut.BuildAsync();
+
+        card.Should().NotBeNull();
+        card!.NavigationHref.Should().Contain("createdFrom=");
+        card.NavigationHref.Should().NotContain("status=");
+        card.NavigationLabel.Should().Be("View runs");
+    }
+
+    [Fact]
     public async Task SchedulesProvider_CannotManage_OmitsCard()
     {
         var gov = new Mock<IScheduleGovernanceService>();
         gov.Setup(x => x.CanManageAsync(It.IsAny<CancellationToken>())).ReturnsAsync(false);
         var mgmt = new Mock<IScheduleManagementService>();
+        var health = new Mock<IRuntimeHealthQueryService>();
+        var principal = new Mock<IPrincipalContext>();
+        var authz = new Mock<IAuthorizationEvaluationService>();
 
-        var sut = new SchedulesDashboardCardProvider(gov.Object, mgmt.Object);
+        var sut = new SchedulesDashboardCardProvider(gov.Object, mgmt.Object, health.Object, principal.Object, authz.Object);
         var card = await sut.BuildAsync();
 
         card.Should().BeNull();
@@ -117,7 +164,15 @@ public sealed class DashboardExpansionTests
                     1)
             ]);
 
-        var sut = new SchedulesDashboardCardProvider(gov.Object, mgmt.Object);
+        var health = new Mock<IRuntimeHealthQueryService>();
+        var principal = new Mock<IPrincipalContext>();
+        principal.Setup(x => x.GetCurrentActorAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Mock.Of<IActor>());
+        var authz = new Mock<IAuthorizationEvaluationService>();
+        authz.Setup(x => x.EvaluateAsync(It.IsAny<AuthorizationEvaluationContext>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+
+        var sut = new SchedulesDashboardCardProvider(gov.Object, mgmt.Object, health.Object, principal.Object, authz.Object);
         var card = await sut.BuildAsync();
 
         card.Should().NotBeNull();
@@ -125,6 +180,72 @@ public sealed class DashboardExpansionTests
         card.Facts.Should().Contain(f => f.Label == "Definitions" && f.Value == "2");
         card.Facts.Should().Contain(f => f.Label == "Enabled" && f.Value == "1");
         card.Facts.Should().Contain(f => f.Label == "Disabled" && f.Value == "1");
+        health.Verify(x => x.GetSnapshotAsync(It.IsAny<string?>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task SchedulesProvider_WithRuntimeHealth_AddsDegradedFact()
+    {
+        var gov = new Mock<IScheduleGovernanceService>();
+        gov.Setup(x => x.CanManageAsync(It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        var mgmt = new Mock<IScheduleManagementService>();
+        mgmt.Setup(x => x.ListDefinitionsAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(
+            [
+                new ScheduleDefinition(
+                    new ScheduleId("s1"),
+                    "A",
+                    "0 * * * *",
+                    "UTC",
+                    true,
+                    new ScheduledTarget(ScheduledJobType.WorkflowExecution, "{}"),
+                    null,
+                    1)
+            ]);
+
+        var snapshot = new RuntimeHealthSnapshot(
+            DateTimeOffset.UtcNow,
+            RuntimeHealthStatus.Healthy,
+            [],
+            [],
+            [
+                new ScheduleDiagnosticEntry(
+                    "s1",
+                    "A",
+                    true,
+                    0,
+                    "{}",
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    ScheduleHealthStatus.Degraded,
+                    "fail",
+                    true)
+            ],
+            [],
+            [],
+            [],
+            []);
+
+        var health = new Mock<IRuntimeHealthQueryService>();
+        health.Setup(x => x.GetSnapshotAsync(It.IsAny<string?>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(snapshot);
+
+        var principal = new Mock<IPrincipalContext>();
+        principal.Setup(x => x.GetCurrentActorAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Mock.Of<IActor>());
+        var authz = new Mock<IAuthorizationEvaluationService>();
+        authz.Setup(x => x.EvaluateAsync(It.IsAny<AuthorizationEvaluationContext>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+
+        var sut = new SchedulesDashboardCardProvider(gov.Object, mgmt.Object, health.Object, principal.Object, authz.Object);
+        var card = await sut.BuildAsync();
+
+        card.Should().NotBeNull();
+        card!.Attention.Should().Be(DashboardCardAttention.Warning);
+        card.Facts.Should().Contain(f => f.Label == "Degraded or blocked (runtime)" && f.Value == "1");
     }
 
     [Fact]
@@ -163,7 +284,7 @@ public sealed class DashboardExpansionTests
         var card = await sut.BuildAsync();
 
         card.Should().NotBeNull();
-        card!.NavigationHref.Should().Be("/control/audit");
+        card!.NavigationHref.Should().Be("/control/audit?hours=24");
         card.Attention.Should().Be(DashboardCardAttention.Info);
         card.Facts.Should().Contain(f => f.Label == "Events in window" && f.Value == "12");
     }
@@ -210,7 +331,60 @@ public sealed class DashboardExpansionTests
         card.Should().NotBeNull();
         card!.Facts.Should().Contain(f => f.Label == "Roles" && f.Value == "2");
         card.Facts.Should().Contain(f => f.Label == "Custom roles" && f.Value == "1");
-        card.NavigationHref.Should().Be("/config/governance");
+        card.NavigationHref.Should().Be("/config/governance/roles");
+        card.NavigationLabel.Should().Be("View roles");
+    }
+
+    [Fact]
+    public async Task AttentionProvider_UsesMaxSeverity_NotFirstItemOnly()
+    {
+        var attention = new Mock<IControlAttentionQueryService>();
+        attention.Setup(x => x.ListAttentionAsync(It.IsAny<DateTimeOffset>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(
+            [
+                new ControlAttentionItemDto("k", "low", "t", "id", "a", DateTimeOffset.UtcNow.ToString("o"), null),
+                new ControlAttentionItemDto("k", "high", "t", "id2", "b", DateTimeOffset.UtcNow.ToString("o"), null)
+            ]);
+
+        var sut = new AttentionDashboardCardProvider(attention.Object);
+        var card = await sut.BuildAsync();
+
+        card.Should().NotBeNull();
+        card!.Attention.Should().Be(DashboardCardAttention.Critical);
+        card.Facts.Should().Contain(f => f.Label == "Highest severity" && f.Value == "High");
+    }
+
+    [Fact]
+    public async Task RuntimeHealthProvider_BlockedWork_DrillInToBlockedWorkPage()
+    {
+        var snapshot = new RuntimeHealthSnapshot(
+            DateTimeOffset.UtcNow,
+            RuntimeHealthStatus.Degraded,
+            ["r"],
+            [],
+            [],
+            [new BlockedDeferredWorkEntry("run1", "d", "workflow", "m", DateTimeOffset.UtcNow, "x")],
+            [],
+            [],
+            []);
+
+        var health = new Mock<IRuntimeHealthQueryService>();
+        health.Setup(x => x.GetSnapshotAsync(It.IsAny<string?>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(snapshot);
+
+        var principal = new Mock<IPrincipalContext>();
+        principal.Setup(x => x.GetCurrentActorAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Mock.Of<IActor>());
+        var authz = new Mock<IAuthorizationEvaluationService>();
+        authz.Setup(x => x.EvaluateAsync(It.IsAny<AuthorizationEvaluationContext>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+
+        var sut = new RuntimeHealthDashboardCardProvider(health.Object, principal.Object, authz.Object);
+        var card = await sut.BuildAsync();
+
+        card.Should().NotBeNull();
+        card!.NavigationHref.Should().Be("/control/blocked-work");
+        card.NavigationLabel.Should().Be("Open blocked work");
     }
 
     [Fact]
@@ -218,17 +392,19 @@ public sealed class DashboardExpansionTests
     {
         var providers = new IDashboardCardProvider[]
         {
-            new StubProvider(50, new DashboardCard("auth", "summary", "Auth", 50, null, DashboardCardAttention.None, null, [])),
+            new StubProvider(38, new DashboardCard("auth", "summary", "Auth", 38, null, DashboardCardAttention.None, null, [])),
             new StubProvider(10, new DashboardCard("health", "summary", "Health", 10, null, DashboardCardAttention.None, null, [])),
+            new StubProvider(12, new DashboardCard("blocked", "summary", "Blocked", 12, null, DashboardCardAttention.None, null, [])),
             new StubProvider(25, new DashboardCard("ex", "summary", "Ex", 25, null, DashboardCardAttention.None, null, [])),
+            new StubProvider(20, new DashboardCard("attn", "summary", "Attn", 20, null, DashboardCardAttention.None, null, [])),
             new StubProvider(30, new DashboardCard("act", "summary", "Act", 30, null, DashboardCardAttention.None, null, [])),
-            new StubProvider(35, new DashboardCard("sch", "summary", "Sch", 35, null, DashboardCardAttention.None, null, []))
+            new StubProvider(32, new DashboardCard("sch", "summary", "Sch", 32, null, DashboardCardAttention.None, null, []))
         };
 
         var sut = new DashboardDefaultViewService(providers, NullLogger<DashboardDefaultViewService>.Instance);
         var view = await sut.GetDefaultAsync();
 
-        view.Cards.Select(c => c.Id).Should().ContainInOrder("health", "ex", "act", "sch", "auth");
+        view.Cards.Select(c => c.Id).Should().ContainInOrder("health", "blocked", "attn", "ex", "act", "sch", "auth");
     }
 
     [Fact]

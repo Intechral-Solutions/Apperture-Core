@@ -211,6 +211,9 @@
     [SupplyParameterFromQuery(Name = "runId")]
     public string? QueryRunId { get; set; }
 
+    [SupplyParameterFromQuery(Name = "hours")]
+    public string? QueryHours { get; set; }
+
     private AuditTimelinePageDto? _page;
     private bool _loading;
     private bool _forbidden;
@@ -225,11 +228,22 @@
     protected override async Task OnParametersSetAsync()
     {
         await base.OnParametersSetAsync();
-        var key = $"{QueryModuleId}|{QueryScheduleId}|{QueryRunId}";
+        ApplyQueryHoursToTimeRange();
+        var key = $"{QueryModuleId}|{QueryScheduleId}|{QueryRunId}|{_timeRange}";
         if (key == _dataLoadKey)
             return;
         _dataLoadKey = key;
         await LoadAsync();
+    }
+
+    private void ApplyQueryHoursToTimeRange()
+    {
+        if (string.IsNullOrWhiteSpace(QueryHours))
+            return;
+        if (!int.TryParse(QueryHours.Trim(), out var h) || h <= 0)
+            return;
+        // UI select supports 24 or 168; clamp other values into closest supported bucket for a stable experience.
+        _timeRange = h >= 168 ? "168" : "24";
     }
 
     private async Task OnActorKeyDown(KeyboardEventArgs e)

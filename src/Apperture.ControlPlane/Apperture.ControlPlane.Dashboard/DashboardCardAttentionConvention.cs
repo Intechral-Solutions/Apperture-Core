@@ -30,6 +30,64 @@ public static class DashboardCardAttentionConvention
         return DashboardCardAttention.None;
     }
 
+    /// <summary>
+    /// Picks the worst severity token across attention items (list order may be newest-first).
+    /// Returns a normalized token: high, medium, low, or none.
+    /// </summary>
+    public static string MaxAttentionSeverityToken(IEnumerable<string?> severities)
+    {
+        var bestRank = -1;
+        string? bestToken = null;
+        foreach (var s in severities)
+        {
+            var rank = AttentionSeverityRank(s);
+            if (rank > bestRank)
+            {
+                bestRank = rank;
+                bestToken = NormalizeAttentionSeverityToken(s);
+            }
+        }
+
+        return bestRank <= 0 ? "none" : bestToken ?? "none";
+    }
+
+    private static int AttentionSeverityRank(string? rawSeverity)
+    {
+        var raw = rawSeverity?.Trim() ?? "";
+        if (raw.Equals("high", StringComparison.OrdinalIgnoreCase))
+            return 3;
+        if (raw.Equals("medium", StringComparison.OrdinalIgnoreCase))
+            return 2;
+        if (raw.Equals("low", StringComparison.OrdinalIgnoreCase))
+            return 1;
+        return 0;
+    }
+
+    private static string? NormalizeAttentionSeverityToken(string? rawSeverity)
+    {
+        var raw = rawSeverity?.Trim() ?? "";
+        if (raw.Equals("high", StringComparison.OrdinalIgnoreCase))
+            return "high";
+        if (raw.Equals("medium", StringComparison.OrdinalIgnoreCase))
+            return "medium";
+        if (raw.Equals("low", StringComparison.OrdinalIgnoreCase))
+            return "low";
+        return string.IsNullOrEmpty(raw) ? null : raw;
+    }
+
+    /// <summary>
+    /// Schedules card: surface warning when runtime diagnostics show degraded/blocked schedules.
+    /// </summary>
+    public static DashboardCardAttention FromScheduleDefinitionCountsAndHealth(
+        int totalDefinitions,
+        int enabledCount,
+        int degradedOrBlockedScheduleCount)
+    {
+        if (degradedOrBlockedScheduleCount > 0)
+            return DashboardCardAttention.Warning;
+        return FromScheduleDefinitionCounts(totalDefinitions, enabledCount);
+    }
+
     /// <summary>Authentication posture: lockout risk is critical; other warnings stay at warning.</summary>
     public static DashboardCardAttention FromAuthPosture(bool noViableSignIn, int warningCount)
     {
