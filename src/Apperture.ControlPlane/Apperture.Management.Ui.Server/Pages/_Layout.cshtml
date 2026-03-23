@@ -8,6 +8,9 @@
     {
         @* So WASM loads wwwroot/appsettings.Development.json (API on :9000, UI on :9001). *@
         <meta name="blazor-environment" content="Development" />
+        @* Avoid stale prerendered boot config after rebuilds (hashed _framework assets would 404). *@
+        <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate" />
+        <meta http-equiv="Pragma" content="no-cache" />
     }
     <title>Apperture</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' fill='%231a1a2e'/><text x='16' y='22' font-size='18' text-anchor='middle' fill='%23eee'>A</text></svg>" />

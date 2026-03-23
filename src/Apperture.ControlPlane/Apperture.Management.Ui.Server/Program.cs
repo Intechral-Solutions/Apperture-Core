@@ -38,6 +38,27 @@ if (!app.Environment.IsDevelopment())
 {
     app.UseExceptionHandler("/Error");
 }
+else
+{
+    // Prerendered WASM boot config is embedded in HTML. Cached document + fresh _framework
+    // yields 404 on hashed .wasm/.pdb (stale hashes) and Blazor never starts.
+    app.Use(async (context, next) =>
+    {
+        context.Response.OnStarting(static ctx =>
+        {
+            var http = (HttpContext)ctx;
+            var ct = http.Response.ContentType;
+            if (!string.IsNullOrEmpty(ct) &&
+                ct.StartsWith("text/html", StringComparison.OrdinalIgnoreCase))
+            {
+                http.Response.Headers.CacheControl = "no-store, no-cache, must-revalidate, max-age=0";
+                http.Response.Headers.Pragma = "no-cache";
+            }
+            return Task.CompletedTask;
+        }, context);
+        await next();
+    });
+}
 app.UseBlazorFrameworkFiles();
 app.UseStaticFiles(new StaticFileOptions
 {
