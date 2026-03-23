@@ -1,5 +1,6 @@
 using Apperture.ControlPlane.Security;
 using Apperture.Core.Application.RuntimeComposition;
+using Apperture.ModuleSdk.Abstractions;
 using Apperture.Core.Domain.Operations;
 using Apperture.Persistence.SqlServer;
 using Apperture.RuntimePlane.Abstractions;

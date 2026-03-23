@@ -31,7 +31,8 @@ public static class RouteToSectionResolver
         if (p == "/" || NavPathMatching.IsPathUnder(p, ShellSectionRoutes.DashboardHome))
             return SectionOwnerConstants.Dashboard;
 
-        foreach (var domainName in getAllDomainNames)
+        // Stable order so shared hrefs (e.g. /runs) resolve predictably regardless of dictionary/API key order.
+        foreach (var domainName in getAllDomainNames.OrderBy(n => n, StringComparer.OrdinalIgnoreCase))
         {
             if (SectionOwnerConstants.CustomZoneOwners.Contains(domainName))
                 continue;

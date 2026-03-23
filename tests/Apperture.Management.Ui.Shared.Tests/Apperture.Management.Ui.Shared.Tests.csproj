@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Apperture.Management.Ui.Shared.Tests</RootNamespace>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="FluentAssertions" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Apperture.ControlPlane\Apperture.Management.Client\Apperture.Management.Client.csproj" />
+    <ProjectReference Include="..\..\src\Apperture.ControlPlane\Apperture.Management.Ui.Shared\Apperture.Management.Ui.Shared.csproj" />
+  </ItemGroup>
+</Project>

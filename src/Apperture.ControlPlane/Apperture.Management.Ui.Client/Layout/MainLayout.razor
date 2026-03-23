@@ -48,8 +48,7 @@
     private void ResolveAndUpdateCurrentDomain()
     {
         var resolved = ResolveDomainForCurrentUri();
-        if (!string.IsNullOrWhiteSpace(resolved))
-            currentDomainName = resolved;
+        currentDomainName = resolved;
     }
 
     private void HandleControlPanelOpen(string domainName)
@@ -76,9 +75,7 @@
         {
             // Ensure the control panel shows the submenu relevant to the current route.
             await DomainMenuService.LoadMenusAsync();
-            var resolved = ResolveDomainForCurrentUri();
-            if (!string.IsNullOrWhiteSpace(resolved))
-                currentDomainName = resolved;
+            currentDomainName = ResolveDomainForCurrentUri();
 
             isControlPanelOpen = true;
             isControlPanelLocked = true;

@@ -130,6 +130,7 @@ public static class ControlPanelMenuDefinitions
                         Href = "/config/governance",
                         Children = new List<DomainMenuItem>
                         {
+                            new DomainMenuItem { Text = "Overview", Href = "/config/governance" },
                             new DomainMenuItem { Text = "Permission Catalog", Href = "/config/governance/catalog" },
                             new DomainMenuItem { Text = "Roles", Href = "/config/governance/roles" },
                             new DomainMenuItem { Text = "Users", Href = "/config/governance/users" }

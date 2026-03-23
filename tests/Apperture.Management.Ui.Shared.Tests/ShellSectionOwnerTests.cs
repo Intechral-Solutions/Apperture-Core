@@ -153,6 +153,23 @@ public sealed class ShellSectionOwnerTests
     }
 
     [Fact]
+    public void RouteResolver_UnmappedPath_ReturnsEmpty()
+    {
+        var menus = ControlPanelMenuDefinitions.GetDefaultMenus();
+        RouteToSectionResolver.Resolve("/this-route-is-not-in-any-menu", menus.GetValueOrDefault, menus.Keys)
+            .Should().Be(string.Empty);
+    }
+
+    [Fact]
+    public void RouteResolver_RunsPath_StableWhenDomainNamesReverseOrder()
+    {
+        var menus = ControlPanelMenuDefinitions.GetDefaultMenus();
+        var reversedKeys = menus.Keys.OrderByDescending(k => k, StringComparer.OrdinalIgnoreCase);
+        RouteToSectionResolver.Resolve("/runs", menus.GetValueOrDefault, reversedKeys)
+            .Should().Be("Runs");
+    }
+
+    [Fact]
     public void RouteResolver_DashboardHome_ResolvesToDashboard()
     {
         var menus = ControlPanelMenuDefinitions.GetDefaultMenus();

@@ -74,8 +74,7 @@
             ["Control"] = typeof(PlayIcon),
             ["Test Suite"] = typeof(PlayIcon),
             ["Settings"] = typeof(CogIcon),
-            ["Users"] = typeof(UsersIcon),
-            ["Config"] = typeof(ShieldCheckIcon)
+            ["Users"] = typeof(UsersIcon)
         };
 
         _menuItems = new List<(Type Icon, string Tooltip, string? Href, string? Domain)>();
@@ -145,6 +144,8 @@
         {
             if (OnControlPanelOpen.HasDelegate)
                 await OnControlPanelOpen.InvokeAsync(args.Domain);
+            if (string.Equals(args.Domain, SectionOwnerConstants.Config, StringComparison.OrdinalIgnoreCase))
+                NavManager.NavigateTo(ShellSectionRoutes.ConfigHome);
         }
     }
 }
