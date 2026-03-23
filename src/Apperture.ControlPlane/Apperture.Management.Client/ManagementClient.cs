@@ -392,9 +392,45 @@ public sealed class ManagementClient : IManagementClient
         return dto ?? new UserListResponse([], 0);
     }
 
+    public async Task<UserDetailDto?> GetUserAsync(string userId, CancellationToken cancellationToken = default)
+    {
+        return await _http.GetFromJsonAsync<UserDetailDto>($"users/{Uri.EscapeDataString(userId)}", cancellationToken).ConfigureAwait(false);
+    }
+
     public async Task<PrincipalEffectiveAccessDto?> GetEffectiveAccessAsync(string userId, CancellationToken cancellationToken = default)
     {
         return await _http.GetFromJsonAsync<PrincipalEffectiveAccessDto>($"users/{Uri.EscapeDataString(userId)}/effective-access", cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task AssignRoleAsync(string userId, string roleId, CancellationToken cancellationToken = default)
+    {
+        var response = await _http.PostAsJsonAsync(
+            $"users/{Uri.EscapeDataString(userId)}/roles",
+            new { roleId },
+            cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode == HttpStatusCode.BadRequest || response.StatusCode == HttpStatusCode.NotFound)
+        {
+            var msg = await TryGetMessageFromResponseAsync(response, cancellationToken).ConfigureAwait(false);
+            throw new InvalidOperationException(msg ?? "Request failed.");
+        }
+        if (response.StatusCode == HttpStatusCode.Forbidden)
+            throw new HttpRequestException("Not authorized to assign roles.", null, HttpStatusCode.Forbidden);
+        response.EnsureSuccessStatusCode();
+    }
+
+    public async Task RemoveRoleAsync(string userId, string roleId, CancellationToken cancellationToken = default)
+    {
+        var response = await _http.DeleteAsync(
+            $"users/{Uri.EscapeDataString(userId)}/roles/{Uri.EscapeDataString(roleId)}",
+            cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode == HttpStatusCode.NotFound)
+        {
+            var msg = await TryGetMessageFromResponseAsync(response, cancellationToken).ConfigureAwait(false);
+            throw new InvalidOperationException(msg ?? "User or role not found.");
+        }
+        if (response.StatusCode == HttpStatusCode.Forbidden)
+            throw new HttpRequestException("Not authorized to remove roles.", null, HttpStatusCode.Forbidden);
+        response.EnsureSuccessStatusCode();
     }
 
     private static async Task<string?> TryGetMessageFromResponseAsync(HttpResponseMessage response, CancellationToken cancellationToken)
@@ -412,7 +448,7 @@ public sealed class ManagementClient : IManagementClient
     public async Task<OperatorCapabilitiesDto> GetOperatorCapabilitiesAsync(CancellationToken cancellationToken = default)
     {
         var dto = await _http.GetFromJsonAsync<OperatorCapabilitiesDto>("control/capabilities", cancellationToken).ConfigureAwait(false);
-        return dto ?? new OperatorCapabilitiesDto(false, false, false, false, false, false, false);
+        return dto ?? new OperatorCapabilitiesDto(false, false, false, false, false, false, false, false);
     }
 
     public async Task<StartOperationResult> StartOperationAsync(

@@ -31,7 +31,7 @@ public sealed class OperatorCapabilitiesQueryService : IOperatorCapabilitiesQuer
     {
         var actor = await _principalContext.GetCurrentActorAsync(cancellationToken).ConfigureAwait(false);
         if (actor is null)
-            return new OperatorCapabilitiesDto(false, false, false, false, false, false, false);
+            return new OperatorCapabilitiesDto(false, false, false, false, false, false, false, false);
 
         var canManageSchedules = await _scheduleGovernance.CanManageAsync(cancellationToken).ConfigureAwait(false);
         var canManageRecovery = await _recoveryGovernance.CanManageAsync(cancellationToken).ConfigureAwait(false);
@@ -42,6 +42,7 @@ public sealed class OperatorCapabilitiesQueryService : IOperatorCapabilitiesQuer
         // Backend governance endpoints rely on user.read. If a more specific governance-read permission is added, update here.
         var canViewGovernance = await EvaluateAsync(actor, ActionConstants.UserRead, ResourceTypeConstants.Role, cancellationToken).ConfigureAwait(false);
         var canAssignPermissions = await EvaluateAsync(actor, ActionConstants.PermissionAssign, ResourceTypeConstants.Role, cancellationToken).ConfigureAwait(false);
+        var canAssignRoles = await EvaluateAsync(actor, ActionConstants.RoleAssign, ResourceTypeConstants.Role, cancellationToken).ConfigureAwait(false);
 
         return new OperatorCapabilitiesDto(
             canManageSchedules,
@@ -50,7 +51,8 @@ public sealed class OperatorCapabilitiesQueryService : IOperatorCapabilitiesQuer
             canViewRuntimeHealth,
             canManageModules,
             canViewGovernance,
-            canAssignPermissions);
+            canAssignPermissions,
+            canAssignRoles);
     }
 
     private async Task<bool> EvaluateAsync(IActor actor, string action, string resourceType, CancellationToken cancellationToken) =>

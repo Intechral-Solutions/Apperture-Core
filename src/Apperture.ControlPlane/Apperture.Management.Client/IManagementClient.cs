@@ -152,8 +152,17 @@ public interface IManagementClient
     /// <summary>Gets a paginated page of users. Requires user.read.</summary>
     Task<UserListResponse> GetUserPageAsync(int skip, int take, CancellationToken cancellationToken = default);
 
+    /// <summary>Gets a user by id. Requires user.read.</summary>
+    Task<UserDetailDto?> GetUserAsync(string userId, CancellationToken cancellationToken = default);
+
     /// <summary>Gets effective access for a user (merged permissions from roles). Requires user.read.</summary>
     Task<PrincipalEffectiveAccessDto?> GetEffectiveAccessAsync(string userId, CancellationToken cancellationToken = default);
+
+    /// <summary>Assigns a role to a user. Requires role.assign. Throws on 400/403/404.</summary>
+    Task AssignRoleAsync(string userId, string roleId, CancellationToken cancellationToken = default);
+
+    /// <summary>Removes a role from a user. Requires role.assign. Throws on 403/404.</summary>
+    Task RemoveRoleAsync(string userId, string roleId, CancellationToken cancellationToken = default);
 }
 
 public sealed record GovernanceDescriptorResponse(
@@ -196,6 +205,19 @@ public sealed record UserListDto(
     [property: JsonPropertyName("hasEntraLink")] bool HasEntraLink,
     [property: JsonPropertyName("roleIds")] IReadOnlyList<string> RoleIds);
 
+public sealed record UserDetailDto(
+    [property: JsonPropertyName("userId")] string UserId,
+    [property: JsonPropertyName("displayName")] string DisplayName,
+    [property: JsonPropertyName("identityLinks")] IReadOnlyList<IdentityLinkDto> IdentityLinks,
+    [property: JsonPropertyName("roleIds")] IReadOnlyList<string> RoleIds,
+    [property: JsonPropertyName("hasLocalCredential")] bool? HasLocalCredential,
+    [property: JsonPropertyName("isCredentialDisabled")] bool? IsCredentialDisabled);
+
+public sealed record IdentityLinkDto(
+    [property: JsonPropertyName("source")] string Source,
+    [property: JsonPropertyName("externalId")] string ExternalId,
+    [property: JsonPropertyName("lastAuthenticatedAt")] DateTimeOffset? LastAuthenticatedAt);
+
 public sealed record PrincipalEffectiveAccessDto(
     string UserId,
     IReadOnlyList<string> RoleIds,
@@ -208,7 +230,8 @@ public sealed record OperatorCapabilitiesDto(
     bool CanViewRuntimeHealth,
     bool CanManageModules,
     bool CanViewGovernance = false,
-    bool CanAssignPermissions = false);
+    bool CanAssignPermissions = false,
+    bool CanAssignRoles = false);
 
 public sealed record BlockedWorkRetryResult(
     bool Success,

@@ -1,0 +1,72 @@
+@inherits LayoutComponentBase
+@implements IDisposable
+@layout MainLayout
+@inject NavigationManager Nav
+
+<div class="config-host">
+    <div class="border-b border-default bg-surface px-4 py-3">
+        <div class="text-xs text-muted mb-1">Config</div>
+        <div class="flex flex-wrap items-center gap-3">
+            <a href="/config/governance"
+               class="rounded px-3 py-1.5 text-sm font-medium @(IsGovernancePath ? "bg-surface-muted text-body" : "text-muted hover:bg-surface-muted hover:text-body")">
+                Governance
+            </a>
+        </div>
+    </div>
+    @if (IsGovernancePath)
+    {
+        <div class="border-b border-default bg-surface px-4 py-2">
+            <nav class="flex flex-wrap gap-2 text-sm">
+                <a href="/config/governance/catalog"
+                   class="rounded px-2 py-1 @(IsCatalogPath ? "font-medium text-body" : "text-muted hover:text-body")">
+                    Permission Catalog
+                </a>
+                <a href="/config/governance/roles"
+                   class="rounded px-2 py-1 @(IsRolesPath ? "font-medium text-body" : "text-muted hover:text-body")">
+                    Roles
+                </a>
+                <a href="/config/governance/users"
+                   class="rounded px-2 py-1 @(IsUsersPath ? "font-medium text-body" : "text-muted hover:text-body")">
+                    Users
+                </a>
+            </nav>
+        </div>
+    }
+    <div class="config-content">
+        @Body
+    </div>
+</div>
+
+@code {
+    private string _path = "";
+
+    protected override void OnInitialized()
+    {
+        _path = new Uri(Nav.Uri).AbsolutePath;
+        Nav.LocationChanged += OnLocationChanged;
+    }
+
+    protected override void OnParametersSet()
+    {
+        _path = new Uri(Nav.Uri).AbsolutePath;
+    }
+
+    public void Dispose()
+    {
+        Nav.LocationChanged -= OnLocationChanged;
+    }
+
+    private void OnLocationChanged(object? sender, LocationChangedEventArgs e)
+    {
+        _path = new Uri(e.Location).AbsolutePath;
+        InvokeAsync(StateHasChanged);
+    }
+
+    private bool IsGovernancePath => _path.StartsWith("/config/governance", StringComparison.OrdinalIgnoreCase);
+
+    private bool IsCatalogPath => _path.StartsWith("/config/governance/catalog", StringComparison.OrdinalIgnoreCase);
+
+    private bool IsRolesPath => _path.StartsWith("/config/governance/roles", StringComparison.OrdinalIgnoreCase);
+
+    private bool IsUsersPath => _path.StartsWith("/config/governance/users", StringComparison.OrdinalIgnoreCase);
+}

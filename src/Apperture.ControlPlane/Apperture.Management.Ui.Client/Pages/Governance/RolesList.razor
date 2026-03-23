@@ -1,4 +1,5 @@
-@page "/governance/roles"
+@page "/config/governance/roles"
+@layout ConfigLayout
 @using System.Net
 @using Apperture.Management.Client
 @using Apperture.Management.Ui.Client.Services
@@ -9,7 +10,7 @@
 <div class="p-4">
     <div class="flex items-center justify-between gap-3">
         <div class="min-w-0">
-            <div class="text-xs text-muted mb-1">Governance — Roles</div>
+            <div class="text-xs text-muted mb-1">Config — Governance — Roles</div>
             <h1 class="text-xl font-semibold text-heading">Roles</h1>
             <div class="text-xs text-muted">Platform roles and their permission grants. Use the permission catalog to browse available actions and resources.</div>
         </div>
@@ -70,13 +71,13 @@
                     @foreach (var r in _roles)
                     {
                         <tr class="border-b border-default hover:bg-surface-muted cursor-pointer"
-                            @onclick="@(() => Nav.NavigateTo("/governance/roles/" + Uri.EscapeDataString(r.Id)))">
+                            @onclick="@(() => Nav.NavigateTo("/config/governance/roles/" + Uri.EscapeDataString(r.Id)))">
                             <td class="px-3 py-2 font-mono text-xs">@r.Id</td>
                             <td class="px-3 py-2">@r.Name</td>
                             <td class="px-3 py-2">@(r.Description ?? "-")</td>
                             <td class="px-3 py-2">@(r.IsSystemRole ? "Yes" : "No")</td>
                             <td class="px-3 py-2">
-                                <a href="@("/governance/roles/" + Uri.EscapeDataString(r.Id))" class="underline text-sm" @onclick:stopPropagation>View</a>
+                                <a href="@("/config/governance/roles/" + Uri.EscapeDataString(r.Id))" class="underline text-sm" @onclick:stopPropagation>View</a>
                             </td>
                         </tr>
                     }

@@ -1,4 +1,5 @@
-@page "/governance/roles/{RoleId}"
+@page "/config/governance/roles/{RoleId}"
+@layout ConfigLayout
 @using System.Net
 @using Apperture.Management.Client
 @using Apperture.Management.Ui.Client.Services
@@ -9,12 +10,12 @@
 <div class="p-4">
     <div class="flex items-center justify-between gap-3">
         <div class="min-w-0">
-            <div class="text-xs text-muted mb-1"><a href="/governance/roles" class="hover:underline">Roles</a> / Role detail</div>
+            <div class="text-xs text-muted mb-1"><a href="/config/governance/roles" class="hover:underline">Roles</a> / Role detail</div>
             <h1 class="text-xl font-semibold text-heading">Role</h1>
             <div class="mt-1 font-mono text-xs text-muted break-all">@RoleId</div>
         </div>
         <div class="flex items-center gap-2">
-            <a href="/governance/roles" class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface">Back to roles</a>
+            <a href="/config/governance/roles" class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface">Back to roles</a>
             @if (_capabilities?.CanAssignPermissions == true && _detail is not null && !_detail.IsSystemRole && !_editing)
             {
                 <button class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface"

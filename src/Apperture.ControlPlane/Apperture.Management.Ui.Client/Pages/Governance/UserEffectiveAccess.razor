@@ -1,4 +1,5 @@
-@page "/governance/users/{UserId}/effective-access"
+@page "/config/governance/users/{UserId}/role-derived-access"
+@layout ConfigLayout
 @using System.Net
 @using Apperture.Management.Client
 @using Apperture.Management.Ui.Client.Services
@@ -8,12 +9,13 @@
 <div class="p-4">
     <div class="flex items-center justify-between gap-3">
         <div class="min-w-0">
-            <div class="text-xs text-muted mb-1"><a href="/governance/users" class="hover:underline">Users</a> / Role-derived access</div>
+            <div class="text-xs text-muted mb-1"><a href="/config/governance/users" class="hover:underline">Users</a> / Role-derived access</div>
             <h1 class="text-xl font-semibold text-heading">Role-derived access</h1>
             <div class="mt-1 font-mono text-xs text-muted break-all">User @UserId — merged permissions from assigned roles only</div>
         </div>
         <div class="flex items-center gap-2">
-            <a href="/governance/users" class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface">Back to users</a>
+            <a href="@("/config/governance/users/" + Uri.EscapeDataString(UserId))" class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface">Manage role assignments</a>
+            <a href="/config/governance/users" class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface">Back to users</a>
             <button class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface"
                     disabled="@_loading"
                     @onclick="LoadAsync">

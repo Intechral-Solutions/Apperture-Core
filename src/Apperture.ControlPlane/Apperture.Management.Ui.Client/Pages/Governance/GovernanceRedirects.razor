@@ -1,0 +1,32 @@
+@* Epic 41: Redirect old /governance/* routes to /config/governance/* for bookmark compatibility. *@
+@page "/governance/catalog"
+@layout MainLayout
+@page "/governance/roles"
+@page "/governance/roles/{RoleId}"
+@page "/governance/users"
+@page "/governance/users/{UserId}"
+@page "/governance/users/{UserId}/effective-access"
+@inject NavigationManager Nav
+
+<div class="p-4 text-sm text-muted">Redirecting...</div>
+
+@code {
+    [Parameter] public string? RoleId { get; set; }
+    [Parameter] public string? UserId { get; set; }
+
+    protected override void OnInitialized()
+    {
+        var path = new Uri(Nav.Uri).AbsolutePath.TrimEnd('/');
+        var newPath = path switch
+        {
+            "/governance/catalog" => "/config/governance/catalog",
+            "/governance/roles" => "/config/governance/roles",
+            _ when path.StartsWith("/governance/roles/") && !string.IsNullOrEmpty(RoleId) => $"/config/governance/roles/{Uri.EscapeDataString(RoleId)}",
+            "/governance/users" => "/config/governance/users",
+            _ when path.EndsWith("/effective-access") && !string.IsNullOrEmpty(UserId) => $"/config/governance/users/{Uri.EscapeDataString(UserId)}/role-derived-access",
+            _ when path.StartsWith("/governance/users/") && !string.IsNullOrEmpty(UserId) => $"/config/governance/users/{Uri.EscapeDataString(UserId)}",
+            _ => "/config/governance"
+        };
+        Nav.NavigateTo(newPath, replace: true);
+    }
+}
