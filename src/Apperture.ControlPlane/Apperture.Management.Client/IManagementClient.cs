@@ -40,6 +40,7 @@ public interface IManagementClient
     Task<ExternalControlResult> ResumeRunAsync(string runId, CancellationToken cancellationToken = default);
 
     Task<ControlCenterDto> GetControlCenterAsync(CancellationToken cancellationToken = default);
+    Task<DashboardDefaultDto> GetDashboardDefaultAsync(CancellationToken cancellationToken = default);
 
     Task<HostEffectiveModuleSnapshotDto> GetRuntimeCompositionAsync(CancellationToken cancellationToken = default);
 
@@ -515,6 +516,27 @@ public sealed record ControlCenterDto(
     IReadOnlyList<ControlTargetSummaryDto> Targets,
     IReadOnlyList<ControlActivitySummaryDto> RecentActivity,
     IReadOnlyList<ControlAttentionItemDto> AttentionItems);
+
+public sealed record DashboardDefaultDto(
+    [property: JsonPropertyName("scope")] string Scope,
+    [property: JsonPropertyName("title")] string Title,
+    [property: JsonPropertyName("cards")] IReadOnlyList<DashboardCardDto> Cards);
+
+public sealed record DashboardCardDto(
+    [property: JsonPropertyName("id")] string Id,
+    [property: JsonPropertyName("type")] string Type,
+    [property: JsonPropertyName("title")] string Title,
+    [property: JsonPropertyName("order")] int Order,
+    [property: JsonPropertyName("navigationHref")] string? NavigationHref,
+    [property: JsonPropertyName("attention")] string Attention,
+    [property: JsonPropertyName("summary")] string? Summary,
+    [property: JsonPropertyName("facts")] IReadOnlyList<DashboardCardFactDto> Facts,
+    [property: JsonPropertyName("isPlaceholder")] bool IsPlaceholder,
+    [property: JsonPropertyName("placeholderReason")] string? PlaceholderReason);
+
+public sealed record DashboardCardFactDto(
+    [property: JsonPropertyName("label")] string Label,
+    [property: JsonPropertyName("value")] string Value);
 
 public sealed record RuntimeControlRequestDto(
     long Id,

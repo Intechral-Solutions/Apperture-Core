@@ -20,10 +20,10 @@ public static class ControlPanelMenuDefinitions
                 Items =
                 {
                     new DomainMenuItem { Text = "Dashboard home", Href = ShellSectionRoutes.DashboardHome },
-                    new DomainMenuItem { Text = "Manage dashboards", Href = "/dashboard/manage" },
-                    new DomainMenuItem { Text = "Add dashboard page", Href = "/dashboard/add" },
-                    new DomainMenuItem { Text = "Delete dashboard page (placeholder)", Href = "/dashboard/delete" },
-                    new DomainMenuItem { Text = "Edit dashboard layout (placeholder)", Href = "/dashboard/layout" }
+                    new DomainMenuItem { Text = "Manage dashboards (deferred)", Href = "/dashboard/manage" },
+                    new DomainMenuItem { Text = "Add dashboard page (deferred)", Href = "/dashboard/add" },
+                    new DomainMenuItem { Text = "Delete dashboard page (deferred)", Href = "/dashboard/delete" },
+                    new DomainMenuItem { Text = "Edit dashboard layout (deferred)", Href = "/dashboard/layout" }
                 }
             },
             ["Runs"] = new DomainMenu

@@ -114,6 +114,12 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IControlActivityQueryService, ControlActivityQueryService>();
         services.AddScoped<IControlAttentionQueryService, ControlAttentionQueryService>();
         services.AddScoped<IControlCenterQueryService, ControlCenterQueryService>();
+        services.AddScoped<IDashboardCardProvider, RuntimeHealthDashboardCardProvider>();
+        services.AddScoped<IDashboardCardProvider, AttentionDashboardCardProvider>();
+        services.AddScoped<IDashboardCardProvider, RecentActivityDashboardCardProvider>();
+        services.AddScoped<IDashboardCardProvider, BlockedWorkDashboardCardProvider>();
+        services.AddScoped<IDashboardCardProvider, AuthWarningsDashboardCardProvider>();
+        services.AddScoped<IDashboardDefaultViewService, DashboardDefaultViewService>();
         services.AddScoped<IRuntimeModuleCompositionQueryService, RuntimeModuleCompositionQueryService>();
         services.AddScoped<IRuntimeHealthQueryService, RuntimeHealthQueryService>();
         services.AddScoped<IRecoveryQueryService, RecoveryQueryService>();

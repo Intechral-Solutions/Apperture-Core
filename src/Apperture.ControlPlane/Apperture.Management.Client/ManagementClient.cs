@@ -133,6 +133,12 @@ public sealed class ManagementClient : IManagementClient
         return dto ?? new ControlCenterDto([], [], []);
     }
 
+    public async Task<DashboardDefaultDto> GetDashboardDefaultAsync(CancellationToken cancellationToken = default)
+    {
+        var dto = await _http.GetFromJsonAsync<DashboardDefaultDto>("dashboard/default", cancellationToken).ConfigureAwait(false);
+        return dto ?? new DashboardDefaultDto("shared-platform-operator", "Platform Summary", []);
+    }
+
     public async Task<HostEffectiveModuleSnapshotDto> GetRuntimeCompositionAsync(CancellationToken cancellationToken = default)
     {
         var dto = await _http.GetFromJsonAsync<HostEffectiveModuleSnapshotDto>(
