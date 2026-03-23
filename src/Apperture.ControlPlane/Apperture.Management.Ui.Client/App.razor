@@ -1,3 +1,8 @@
+@using Apperture.Management.Ui.Client.Services
+@using Microsoft.JSInterop
+@inject ThemeService ThemeService
+@inject SessionStateService SessionStateService
+
 <Router AppAssembly="@typeof(App).Assembly">
     <Found Context="routeData">
         <RouteView RouteData="@routeData" DefaultLayout="@typeof(MainLayout)" />
@@ -8,3 +13,25 @@
         </LayoutView>
     </NotFound>
 </Router>
+
+@code {
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+            return;
+        try
+        {
+            await ThemeService.InitializeAsync();
+        }
+        catch (JSException)
+        {
+            /* Prerender or JS not available */
+        }
+        catch (InvalidOperationException)
+        {
+            /* JS interop not ready */
+        }
+
+        await SessionStateService.RefreshAsync();
+    }
+}

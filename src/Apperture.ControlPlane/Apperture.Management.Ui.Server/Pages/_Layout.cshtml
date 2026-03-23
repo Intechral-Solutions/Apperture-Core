@@ -10,6 +10,17 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="css/app.css" />
+    <script>
+        (function () {
+            try {
+                var k = 'apperture.theme';
+                var v = localStorage.getItem(k) || 'System';
+                var dark = v === 'Dark' || (v === 'System' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+                document.documentElement.classList.toggle('dark', dark);
+            } catch (e) { }
+        })();
+    </script>
+    <script src="js/apperture-shell.js"></script>
 </head>
 <body id="app">
     @RenderBody()

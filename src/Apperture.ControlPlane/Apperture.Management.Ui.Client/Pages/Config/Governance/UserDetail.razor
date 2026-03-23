@@ -2,18 +2,22 @@
 @layout ConfigLayout
 @using System.Net
 @using Apperture.Management.Client
+@using Apperture.Management.Ui.Client.Organisms
 @using Apperture.Management.Ui.Client.Services
+@using Apperture.Management.Ui.Shared
 @inject IManagementClient Client
 @inject IOperatorCapabilitiesService Capabilities
+@inject IToastService Toasts
 
 <div class="p-4">
-    <div class="flex items-center justify-between gap-3">
-        <div class="min-w-0">
-            <div class="text-xs text-muted mb-1"><a href="/config/governance/users" class="hover:underline">Users</a> / Role assignments</div>
-            <h1 class="text-xl font-semibold text-heading">User — Role assignments</h1>
+    <PageHeader Title="User — Role assignments">
+        <ChildContent>
+            <div class="mt-1 text-xs text-muted">
+                <a href="/config/governance/users" class="hover:underline">Users</a> / Role assignments
+            </div>
             <div class="mt-1 font-mono text-xs text-muted break-all">@UserId</div>
-        </div>
-        <div class="flex items-center gap-2">
+        </ChildContent>
+        <Toolbar>
             <a href="/config/governance/users" class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface">Back to users</a>
             <a href="@("/config/governance/users/" + Uri.EscapeDataString(UserId) + "/role-derived-access")" class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface">View role-derived access</a>
             <button class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface"
@@ -21,8 +25,8 @@
                     @onclick="LoadAsync">
                 Refresh
             </button>
-        </div>
-    </div>
+        </Toolbar>
+    </PageHeader>
 
     <div class="mt-2 rounded border border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-950/30 px-3 py-2 text-xs text-body">
         This page manages <strong>role assignments only</strong>. User identity and credentials are not editable here. To edit role definitions, go to the role detail page.
@@ -30,20 +34,24 @@
 
     @if (!_capabilitiesLoaded)
     {
-        <div class="mt-4 text-sm text-muted">Loading...</div>
+        <div class="mt-4">
+            <PageMessage Kind="PageMessageKind.Loading" Message="Loading…" />
+        </div>
     }
     else if (_capabilities?.CanViewGovernance != true)
     {
-        <div class="mt-4 rounded border border-default bg-surface px-3 py-2 text-sm text-body">
-            <div class="font-semibold">Not authorized</div>
-            <div class="text-muted">You do not have permission to view this user.</div>
+        <div class="mt-4">
+            <PageMessage Kind="PageMessageKind.Forbidden"
+                         Title="Not authorized"
+                         Message="You do not have permission to view this user." />
         </div>
     }
     else if (_forbidden)
     {
-        <div class="mt-4 rounded border border-default bg-surface px-3 py-2 text-sm text-body">
-            <div class="font-semibold">Not authorized</div>
-            <div class="text-muted">You do not have permission to view this user.</div>
+        <div class="mt-4">
+            <PageMessage Kind="PageMessageKind.Forbidden"
+                         Title="Not authorized"
+                         Message="You do not have permission to view this user." />
         </div>
     }
     else
@@ -53,12 +61,6 @@
             <div class="mt-4 rounded border border-red-200 bg-red-50 dark:border-red-800 dark:bg-red-950/30 px-3 py-2 text-sm text-body">
                 <div class="font-semibold">Error</div>
                 <div class="text-muted">@_error</div>
-            </div>
-        }
-        @if (!string.IsNullOrEmpty(_success))
-        {
-            <div class="mt-4 rounded border border-green-200 bg-green-50 dark:border-green-800 dark:bg-green-950/30 px-3 py-2 text-sm text-body">
-                @_success
             </div>
         }
         @if (_user is null)
@@ -163,7 +165,6 @@
     private bool _forbidden;
     private bool _mutating;
     private string? _error;
-    private string? _success;
     private OperatorCapabilitiesDto? _capabilities;
     private bool _capabilitiesLoaded;
     private string? _dataLoadKey;
@@ -192,7 +193,6 @@
 
         _loading = true;
         _error = null;
-        _success = null;
         _forbidden = false;
         try
         {
@@ -229,20 +229,21 @@
 
         _mutating = true;
         _error = null;
-        _success = null;
         try
         {
             await Client.AssignRoleAsync(UserId, _selectedRoleToAssign);
-            _success = "Role assigned.";
+            Toasts.Show(ToastSeverity.Success, "Role assigned.", "Governance");
             await LoadAsync();
         }
         catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.Forbidden)
         {
             _error = "Not authorized to assign roles.";
+            Toasts.Show(ToastSeverity.Error, _error, "Role assignment");
         }
         catch (Exception ex)
         {
             _error = ex.Message;
+            Toasts.Show(ToastSeverity.Error, ex.Message, "Role assignment");
         }
         finally
         {
@@ -256,20 +257,21 @@
 
         _mutating = true;
         _error = null;
-        _success = null;
         try
         {
             await Client.RemoveRoleAsync(UserId, roleId);
-            _success = "Role removed.";
+            Toasts.Show(ToastSeverity.Success, "Role removed.", "Governance");
             await LoadAsync();
         }
         catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.Forbidden)
         {
             _error = "Not authorized to remove roles.";
+            Toasts.Show(ToastSeverity.Error, _error, "Role assignment");
         }
         catch (Exception ex)
         {
             _error = ex.Message;
+            Toasts.Show(ToastSeverity.Error, ex.Message, "Role assignment");
         }
         finally
         {

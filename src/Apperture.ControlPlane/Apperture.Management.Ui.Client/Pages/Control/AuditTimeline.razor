@@ -2,14 +2,14 @@
 @using System.Net
 @using Microsoft.AspNetCore.Components.Web
 @using Apperture.Management.Client
+@using Apperture.Management.Ui.Client.Organisms
 @using Apperture.Management.Ui.Shared
 @inject IManagementClient Client
 
 <div class="p-4">
-    <div class="flex items-center justify-between gap-3">
-        <div class="min-w-0">
-            <h1 class="text-xl font-semibold text-heading">Audit Timeline</h1>
-            <div class="text-xs text-muted">Platform audit. Filters are DB-backed. Time, category, actor, outcome.</div>
+    <PageHeader Title="Audit Timeline"
+                Subtitle="Platform audit. Filters are DB-backed. Time, category, actor, outcome.">
+        <ChildContent>
             @if (!string.IsNullOrWhiteSpace(QueryRunId))
             {
                 <div class="mt-2 rounded border border-default bg-surface px-2 py-1 text-xs text-body">
@@ -17,13 +17,15 @@
                     <a class="ml-1 font-mono underline" href="@($"/runs/{QueryRunId.Trim()}")">Open run @QueryRunId.Trim()</a>
                 </div>
             }
-        </div>
-        <button class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface"
-                disabled="@_loading"
-                @onclick="LoadAsync">
-            Refresh
-        </button>
-    </div>
+        </ChildContent>
+        <Toolbar>
+            <button class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface"
+                    disabled="@_loading"
+                    @onclick="LoadAsync">
+                Refresh
+            </button>
+        </Toolbar>
+    </PageHeader>
 
     <div class="mt-4 flex flex-wrap gap-3">
         <div>
@@ -78,27 +80,31 @@
 
     @if (_forbidden)
     {
-        <div class="mt-4 rounded border border-default bg-surface px-3 py-2 text-sm text-body">
-            <div class="font-semibold">Not authorized</div>
-            <div class="text-muted">You do not have permission to view the audit timeline.</div>
+        <div class="mt-4">
+            <PageMessage Kind="PageMessageKind.Forbidden"
+                         Title="Not authorized"
+                         Message="You do not have permission to view the audit timeline." />
         </div>
     }
     else if (!string.IsNullOrEmpty(_error))
     {
-        <div class="mt-4 rounded border border-default bg-surface px-3 py-2 text-sm text-body">
-            <div class="font-semibold">Error</div>
-            <div class="text-muted">@_error</div>
+        <div class="mt-4">
+            <PageMessage Kind="PageMessageKind.Error" Title="Error" Message="@_error" />
         </div>
     }
     else if (_page is null && !_forbidden)
     {
-        <div class="mt-4 text-sm text-muted">Loading...</div>
+        <div class="mt-4">
+            <PageMessage Kind="PageMessageKind.Loading" Message="Loading…" />
+        </div>
     }
     else
     {
         @if (_page!.Items.Count == 0)
         {
-            <div class="mt-4 text-sm text-muted">No audit events found.</div>
+            <div class="mt-4">
+                <PageMessage Kind="PageMessageKind.Empty" Message="No audit events found." />
+            </div>
         }
         else
         {

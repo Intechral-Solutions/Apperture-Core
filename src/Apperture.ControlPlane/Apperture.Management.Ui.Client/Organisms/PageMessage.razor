@@ -1,0 +1,28 @@
+<div class="@BoxClass rounded border px-3 py-2 text-sm text-body" role="@Role">
+    @if (!string.IsNullOrWhiteSpace(Title))
+    {
+        <div class="font-semibold text-heading">@Title</div>
+    }
+    <div class="@(string.IsNullOrWhiteSpace(Title) ? "" : "mt-1 text-muted")">@Message</div>
+    @ChildContent
+</div>
+
+@code {
+    [Parameter] public PageMessageKind Kind { get; set; } = PageMessageKind.Info;
+    [Parameter] public string? Title { get; set; }
+    [Parameter] public string Message { get; set; } = "";
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    private string Role => Kind == PageMessageKind.Error ? "alert" : "status";
+
+    private string BoxClass => Kind switch
+    {
+        PageMessageKind.Loading => "border-default bg-surface-muted",
+        PageMessageKind.Empty => "border-default bg-surface",
+        PageMessageKind.Info => "border-default bg-surface",
+        PageMessageKind.Warning => "border-yellow-200 bg-yellow-50 dark:border-yellow-800 dark:bg-yellow-950/30",
+        PageMessageKind.Error => "border-red-200 bg-red-50 dark:border-red-800 dark:bg-red-950/30",
+        PageMessageKind.Forbidden => "border-default bg-surface",
+        _ => "border-default bg-surface"
+    };
+}

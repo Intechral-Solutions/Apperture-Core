@@ -512,4 +512,37 @@ public sealed class ManagementClient : IManagementClient
             Effect: "Immediate",
             Blockers: [new ModuleLifecycleBlockerDto("no_response", "Server returned no lifecycle action payload.")]);
     }
+
+    public async Task<MeResponse?> GetMeAsync(CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.GetAsync("auth/me", cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode == HttpStatusCode.Unauthorized)
+            return null;
+        if (response.StatusCode == HttpStatusCode.Forbidden)
+        {
+            throw new HttpRequestException(
+                "Authenticated principal is not linked to a platform user.",
+                null,
+                HttpStatusCode.Forbidden);
+        }
+
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<MeResponse>(cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<LocalLoginResponse> LocalLoginAsync(LocalLoginRequest request, CancellationToken cancellationToken = default)
+    {
+        var response = await _http.PostAsJsonAsync("auth/local/login", request, cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode == HttpStatusCode.Unauthorized)
+            throw new HttpRequestException("Login failed.", null, HttpStatusCode.Unauthorized);
+        response.EnsureSuccessStatusCode();
+        var dto = await response.Content.ReadFromJsonAsync<LocalLoginResponse>(cancellationToken).ConfigureAwait(false);
+        return dto ?? throw new InvalidOperationException("Login response was empty.");
+    }
+
+    public async Task LocalLogoutAsync(CancellationToken cancellationToken = default)
+    {
+        var response = await _http.PostAsync("auth/local/logout", content: null, cancellationToken).ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+    }
 }

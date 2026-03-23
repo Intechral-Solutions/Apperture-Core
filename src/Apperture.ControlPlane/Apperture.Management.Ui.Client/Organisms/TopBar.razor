@@ -1,19 +1,32 @@
-<header id="topbar" class="sticky top-0 flex h-16 w-full items-center justify-between border-b bg-surface px-4 shadow border-default">
+@using Apperture.Management.Ui.Client.Molecules
+@using Apperture.Management.Ui.Shared
+
+<header id="topbar" class="sticky top-0 z-30 flex h-16 w-full items-center justify-between border-b bg-surface px-4 shadow border-default">
     <HamburgerToggle IsOpen="@IsControlPanelOpen"
                      IsLocked="@IsControlPanelLocked"
                      OnToggle="OnHamburgerClick" />
 
-    <div class="flex-1"></div>
+    <div class="hidden min-w-0 flex-1 px-4 text-xs text-muted md:block">
+        @if (!string.IsNullOrWhiteSpace(CurrentSectionName))
+        {
+            <span class="font-medium text-heading">@CurrentSectionName</span>
+        }
+        @if (!string.IsNullOrWhiteSpace(CurrentPath))
+        {
+            <span class="ms-2 font-mono text-subtle">@CurrentPath</span>
+        }
+    </div>
 
-    <div class="flex space-x-4">
-        <span class="text-sm text-muted">Theme</span>
-        <span class="text-sm text-muted">Alerts</span>
-        <span class="text-sm text-muted">Profile</span>
+    <div class="flex items-center gap-2 md:gap-4">
+        <ThemeMenu />
+        <UserAccountMenu />
     </div>
 </header>
 
 @code {
     [Parameter] public bool IsControlPanelLocked { get; set; }
     [Parameter] public bool IsControlPanelOpen { get; set; }
+    [Parameter] public string CurrentSectionName { get; set; } = "";
+    [Parameter] public string CurrentPath { get; set; } = "";
     [Parameter] public EventCallback<bool> OnHamburgerClick { get; set; }
 }

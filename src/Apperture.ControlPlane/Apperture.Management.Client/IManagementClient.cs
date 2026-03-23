@@ -135,6 +135,17 @@ public interface IManagementClient
     /// </summary>
     Task<OperatorCapabilitiesDto> GetOperatorCapabilitiesAsync(CancellationToken cancellationToken = default);
 
+    // --- Auth / session (Epic 42) ---
+
+    /// <summary>Current user for authenticated session. Returns null when unauthenticated (401). Throws on 403 (principal not linked to platform user).</summary>
+    Task<MeResponse?> GetMeAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>Local username/password login. Throws <see cref="HttpRequestException"/> on failure (e.g. 401).</summary>
+    Task<LocalLoginResponse> LocalLoginAsync(LocalLoginRequest request, CancellationToken cancellationToken = default);
+
+    /// <summary>Clears auth cookie (204).</summary>
+    Task LocalLogoutAsync(CancellationToken cancellationToken = default);
+
     // --- Governance admin (Epic 39/40) ---
 
     /// <summary>Gets the governance descriptor catalog (resources and permissions). Requires user.read.</summary>
@@ -482,3 +493,18 @@ public sealed record RuntimeControlRequestDto(
     DateTimeOffset? AppliedAt,
     string? AppliedBy,
     string? LastError);
+
+// --- Auth (Epic 42), aligned with Management.Api AuthController ---
+
+public sealed record MeResponse(
+    [property: JsonPropertyName("userId")] string UserId,
+    [property: JsonPropertyName("displayName")] string DisplayName,
+    [property: JsonPropertyName("roles")] IReadOnlyList<string> Roles);
+
+public sealed record LocalLoginRequest(
+    [property: JsonPropertyName("username")] string Username,
+    [property: JsonPropertyName("password")] string? Password);
+
+public sealed record LocalLoginResponse(
+    [property: JsonPropertyName("userId")] string UserId,
+    [property: JsonPropertyName("displayName")] string DisplayName);

@@ -1,0 +1,110 @@
+@using System.Net.Http
+@using Apperture.Management.Client
+@using Apperture.Management.Ui.Client.Services
+@using Apperture.Management.Ui.Shared.Options
+@using Microsoft.Extensions.Options
+@inject SessionStateService Session
+@inject IManagementClient Client
+@inject ShellHostNavigation HostNav
+@inject IOptions<ShellUiOptions> ShellOpts
+@inject NavigationManager Nav
+<div class="relative" @onclick:stopPropagation="true">
+    @if (Session.State is SessionLoadState.Unknown or SessionLoadState.Loading)
+    {
+        <span class="text-xs text-muted">Signing in…</span>
+    }
+    else if (Session.State == SessionLoadState.Authenticated && Session.User is not null)
+    {
+        <button type="button"
+                class="flex max-w-48 items-center gap-2 rounded px-2 py-1.5 text-start text-sm hover:bg-surface-muted"
+                aria-expanded="@_open"
+                aria-haspopup="true"
+                @onclick="Toggle">
+            <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-surface-muted font-medium text-heading">
+                @Initials(Session.User.DisplayName)
+            </span>
+            <span class="min-w-0">
+                <span class="block truncate font-medium text-heading">@Session.User.DisplayName</span>
+                <span class="block truncate text-xs text-muted" title="@Session.User.UserId">@Session.User.UserId</span>
+            </span>
+        </button>
+        @if (_open)
+        {
+            <div class="absolute end-0 z-50 mt-1 min-w-52 rounded border border-default bg-surface py-1 text-sm shadow-lg">
+                <a href="/account" class="block px-3 py-2 text-body hover:bg-surface-muted">Account</a>
+                <a href="/preferences" class="block px-3 py-2 text-body hover:bg-surface-muted">Preferences</a>
+                <hr class="my-1 border-default" />
+                <button type="button" class="block w-full px-3 py-2 text-start text-body hover:bg-surface-muted" @onclick="SignOutLocalAsync">
+                    Sign out
+                </button>
+                @if (ShellOpts.Value.UseEntraSignIn)
+                {
+                    <button type="button" class="block w-full px-3 py-2 text-start text-xs text-muted hover:bg-surface-muted" @onclick="SignOutHostAsync">
+                        Sign out (end IdP session)
+                    </button>
+                }
+            </div>
+        }
+    }
+    else
+    {
+        <button type="button"
+                class="rounded px-3 py-1.5 text-sm font-medium text-heading hover:bg-surface-muted"
+                @onclick="GoSignInAsync">
+            Sign in
+        </button>
+    }
+</div>
+
+@code {
+    private bool _open;
+
+    private static string Initials(string name)
+    {
+        var parts = name.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (parts.Length == 0)
+            return "?";
+        if (parts.Length == 1)
+            return parts[0].Length >= 2 ? parts[0].Substring(0, 2).ToUpperInvariant() : parts[0].ToUpperInvariant();
+        return string.Concat(parts[0].AsSpan(0, 1), parts[^1].AsSpan(0, 1)).ToUpperInvariant();
+    }
+
+    private void Toggle() => _open = !_open;
+
+    private Task GoSignInAsync()
+    {
+        if (ShellOpts.Value.UseEntraSignIn)
+        {
+            var host = HostNav.GetManagementHostBase(Nav);
+            var url = new Uri(host, "signin").ToString();
+            Nav.NavigateTo(url, forceLoad: true);
+            return Task.CompletedTask;
+        }
+
+        Nav.NavigateTo("/login");
+        return Task.CompletedTask;
+    }
+
+    private async Task SignOutLocalAsync()
+    {
+        _open = false;
+        try
+        {
+            await Client.LocalLogoutAsync();
+        }
+        catch (HttpRequestException)
+        {
+            /* cookie may already be cleared */
+        }
+
+        await Session.RefreshAsync();
+    }
+
+    private void SignOutHostAsync()
+    {
+        _open = false;
+        var host = HostNav.GetManagementHostBase(Nav);
+        var url = new Uri(host, "signout").ToString();
+        Nav.NavigateTo(url, forceLoad: true);
+    }
+}

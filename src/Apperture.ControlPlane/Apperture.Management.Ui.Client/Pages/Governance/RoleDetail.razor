@@ -2,19 +2,22 @@
 @layout ConfigLayout
 @using System.Net
 @using Apperture.Management.Client
+@using Apperture.Management.Ui.Client.Organisms
 @using Apperture.Management.Ui.Client.Services
 @using Apperture.Management.Ui.Shared
 @inject IManagementClient Client
 @inject IOperatorCapabilitiesService Capabilities
+@inject IToastService Toasts
 
 <div class="p-4">
-    <div class="flex items-center justify-between gap-3">
-        <div class="min-w-0">
-            <div class="text-xs text-muted mb-1"><a href="/config/governance/roles" class="hover:underline">Roles</a> / Role detail</div>
-            <h1 class="text-xl font-semibold text-heading">Role</h1>
+    <PageHeader Title="Role">
+        <ChildContent>
+            <div class="mt-1 text-xs text-muted">
+                <a href="/config/governance/roles" class="hover:underline">Roles</a> / Role detail
+            </div>
             <div class="mt-1 font-mono text-xs text-muted break-all">@RoleId</div>
-        </div>
-        <div class="flex items-center gap-2">
+        </ChildContent>
+        <Toolbar>
             <a href="/config/governance/roles" class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface">Back to roles</a>
             @if (_capabilities?.CanAssignPermissions == true && _detail is not null && !_detail.IsSystemRole && !_editing)
             {
@@ -30,25 +33,29 @@
                     @onclick="LoadAsync">
                 Refresh
             </button>
-        </div>
-    </div>
+        </Toolbar>
+    </PageHeader>
 
     @if (!_capabilitiesLoaded)
     {
-        <div class="mt-4 text-sm text-muted">Loading...</div>
+        <div class="mt-4">
+            <PageMessage Kind="PageMessageKind.Loading" Message="Loading…" />
+        </div>
     }
     else if (_capabilities?.CanViewGovernance != true)
     {
-        <div class="mt-4 rounded border border-default bg-surface px-3 py-2 text-sm text-body">
-            <div class="font-semibold">Not authorized</div>
-            <div class="text-muted">You do not have permission to view this role.</div>
+        <div class="mt-4">
+            <PageMessage Kind="PageMessageKind.Forbidden"
+                         Title="Not authorized"
+                         Message="You do not have permission to view this role." />
         </div>
     }
     else if (_forbidden)
     {
-        <div class="mt-4 rounded border border-default bg-surface px-3 py-2 text-sm text-body">
-            <div class="font-semibold">Not authorized</div>
-            <div class="text-muted">You do not have permission to view this role.</div>
+        <div class="mt-4">
+            <PageMessage Kind="PageMessageKind.Forbidden"
+                         Title="Not authorized"
+                         Message="You do not have permission to view this role." />
         </div>
     }
     else if (!string.IsNullOrEmpty(_error))
@@ -289,19 +296,23 @@
             await Client.SetRolePermissionsAsync(RoleId, new SetRolePermissionsRequest(permissions));
             _editing = false;
             _catalog = null;
+            Toasts.Show(ToastSeverity.Success, "Permissions saved for this role.", "Governance");
             await LoadAsync();
         }
         catch (InvalidOperationException ex)
         {
             _error = ex.Message;
+            Toasts.Show(ToastSeverity.Error, ex.Message, "Save permissions");
         }
         catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.Forbidden)
         {
             _error = "Not authorized to assign permissions.";
+            Toasts.Show(ToastSeverity.Error, _error, "Save permissions");
         }
         catch (HttpRequestException ex)
         {
             _error = ex.Message;
+            Toasts.Show(ToastSeverity.Error, ex.Message, "Save permissions");
         }
         finally
         {

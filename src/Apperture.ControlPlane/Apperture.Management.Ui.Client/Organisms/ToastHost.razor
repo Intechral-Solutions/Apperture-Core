@@ -1,0 +1,53 @@
+@using Apperture.Management.Ui.Client.Services
+@using Apperture.Management.Ui.Shared
+@implements IDisposable
+@inject IToastService Toasts
+
+<div class="fixed top-20 end-4 z-[100] flex max-w-sm flex-col gap-2 pointer-events-none print:hidden" aria-live="polite">
+    @foreach (var t in _snapshot)
+    {
+        <div class="@ToastClass(t.Severity) pointer-events-auto flex gap-2 rounded border border-default bg-surface px-3 py-2 text-sm text-body shadow-lg">
+            <div class="min-w-0 flex-1">
+                @if (!string.IsNullOrEmpty(t.Title))
+                {
+                    <div class="font-semibold text-heading">@t.Title</div>
+                }
+                <div class="text-body">@t.Message</div>
+            </div>
+            <button type="button"
+                    class="shrink-0 text-muted hover:text-heading"
+                    aria-label="Dismiss"
+                    @onclick="() => Toasts.Dismiss(t.Id)">
+                ×
+            </button>
+        </div>
+    }
+</div>
+
+@code {
+    private ToastItem[] _snapshot = Array.Empty<ToastItem>();
+
+    protected override void OnInitialized() => Toasts.Changed += OnToastsChanged;
+
+    protected override void OnParametersSet()
+    {
+        _snapshot = Toasts.Toasts.ToArray();
+    }
+
+    private void OnToastsChanged()
+    {
+        _snapshot = Toasts.Toasts.ToArray();
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    private static string ToastClass(ToastSeverity s) => s switch
+    {
+        ToastSeverity.Success => "border-s-4 border-s-green-600",
+        ToastSeverity.Info => "border-s-4 border-s-blue-600",
+        ToastSeverity.Warning => "border-s-4 border-s-yellow-600",
+        ToastSeverity.Error => "border-s-4 border-s-red-600",
+        _ => "border-s-4 border-s-slate-500"
+    };
+
+    public void Dispose() => Toasts.Changed -= OnToastsChanged;
+}

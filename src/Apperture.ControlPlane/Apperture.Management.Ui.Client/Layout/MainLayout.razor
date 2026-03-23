@@ -5,6 +5,7 @@
 
 @inject DomainMenuService DomainMenuService
 @inject NavigationManager NavManager
+@inject SessionStateService SessionState
 
 <div id="main" class="flex h-screen bg-surface-elevated">
     <NavRail IsControlPanelOpen="@isControlPanelOpen"
@@ -14,9 +15,18 @@
              OnControlPanelClose="HandleControlPanelClose" />
 
     <div class="flex min-h-0 flex-1 flex-col @(isControlPanelOpen ? "ml-70" : "ml-17")">
+        @if (SessionState.State == SessionLoadState.ForbiddenUnlinked)
+        {
+            <div class="border-b border-yellow-200 bg-yellow-50 px-4 py-2 text-sm text-body dark:border-yellow-800 dark:bg-yellow-950/40" role="status">
+                You are signed in, but this identity is not linked to a platform user. Some features will be unavailable until an administrator links your account.
+            </div>
+        }
         <TopBar IsControlPanelOpen="@isControlPanelOpen"
                 IsControlPanelLocked="@isControlPanelLocked"
+                CurrentSectionName="@currentDomainName"
+                CurrentPath="@(new Uri(NavManager.Uri).AbsolutePath)"
                 OnHamburgerClick="HandleHamburgerClick" />
+        <ToastHost />
         <div id="content-wrapper" class="flex-1 overflow-y-auto">
             <main class="px-1">
                 @Body
@@ -32,6 +42,7 @@
 
     protected override async Task OnInitializedAsync()
     {
+        SessionState.Changed += OnSessionChanged;
         await DomainMenuService.LoadMenusAsync();
         ResolveAndUpdateCurrentDomain();
         NavManager.LocationChanged += OnLocationChanged;
@@ -44,8 +55,17 @@
         if (_disposed)
             return;
         _disposed = true;
+        SessionState.Changed -= OnSessionChanged;
         NavManager.LocationChanged -= OnLocationChanged;
     }
+
+    private void OnSessionChanged() =>
+        _ = InvokeAsync(() =>
+        {
+            if (_disposed)
+                return;
+            StateHasChanged();
+        });
 
     private void OnLocationChanged(object? sender, LocationChangedEventArgs e)
     {

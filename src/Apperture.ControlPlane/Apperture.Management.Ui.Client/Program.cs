@@ -11,6 +11,8 @@ builder.RootComponents.Add<HeadOutlet>("head::after");
 
 builder.Services.Configure<ControlPanelMenuOptions>(
     builder.Configuration.GetSection("ControlPanelMenuOptions"));
+builder.Services.Configure<ShellUiOptions>(
+    builder.Configuration.GetSection(ShellUiOptions.SectionName));
 
 var apiBaseUrl = builder.Configuration["ApiBaseUrl"] ?? "/api";
 if (!apiBaseUrl.EndsWith("/", StringComparison.Ordinal))
@@ -41,5 +43,7 @@ builder.Services.AddScoped<IManagementClient>(sp =>
     new ManagementClient(sp.GetRequiredService<HttpClient>()));
 
 builder.Services.AddScoped<IOperatorCapabilitiesService, OperatorCapabilitiesService>();
+
+builder.Services.AddAppertureShellServices();
 
 await builder.Build().RunAsync();

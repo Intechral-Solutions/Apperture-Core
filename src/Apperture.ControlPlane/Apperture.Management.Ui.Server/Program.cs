@@ -10,6 +10,8 @@ builder.Services.AddRazorPages();
 // Register client services required for prerendering (NavRail, ControlPanel, etc.)
 builder.Services.Configure<ControlPanelMenuOptions>(
     builder.Configuration.GetSection("ControlPanelMenuOptions"));
+builder.Services.Configure<ShellUiOptions>(
+    builder.Configuration.GetSection(ShellUiOptions.SectionName));
 
 var apiBaseUrl = builder.Configuration["ApiBaseUrl"] ?? "http://localhost:9000/api";
 if (!apiBaseUrl.EndsWith("/", StringComparison.Ordinal))
@@ -28,6 +30,8 @@ builder.Services.AddScoped<DomainMenuService>(sp =>
 });
 
 builder.Services.AddScoped<IOperatorCapabilitiesService, OperatorCapabilitiesService>();
+
+builder.Services.AddAppertureShellServices();
 
 var app = builder.Build();
 if (!app.Environment.IsDevelopment())

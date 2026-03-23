@@ -1,0 +1,49 @@
+@using Apperture.Management.Ui.Client.Services
+@using Apperture.Management.Ui.Shared
+@implements IDisposable
+@inject ThemeService ThemeService
+
+<div class="relative" @onclick:stopPropagation="true">
+    <button type="button"
+            class="flex items-center gap-1 rounded px-2 py-1.5 text-sm text-body hover:bg-surface-muted"
+            aria-expanded="@_open"
+            aria-haspopup="true"
+            @onclick="Toggle">
+        <span class="text-muted">Theme</span>
+        <span class="text-heading">@ThemeService.Current</span>
+    </button>
+    @if (_open)
+    {
+        <div class="absolute end-0 z-50 mt-1 min-w-40 rounded border border-default bg-surface py-1 text-sm shadow-lg">
+            @foreach (var p in _prefs)
+            {
+                var active = ThemeService.Current == p;
+                <button type="button"
+                        class="block w-full px-3 py-2 text-start hover:bg-surface-muted @(active ? "font-medium text-heading" : "text-body")"
+                        @onclick="() => SelectAsync(p)">
+                    @p
+                </button>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private static readonly ThemePreference[] _prefs = [ThemePreference.Light, ThemePreference.Dark, ThemePreference.System];
+
+    private bool _open;
+
+    protected override void OnInitialized() => ThemeService.Changed += OnThemeChanged;
+
+    private void OnThemeChanged() => _ = InvokeAsync(StateHasChanged);
+
+    private void Toggle() => _open = !_open;
+
+    private async Task SelectAsync(ThemePreference p)
+    {
+        _open = false;
+        await ThemeService.SetPreferenceAsync(p);
+    }
+
+    public void Dispose() => ThemeService.Changed -= OnThemeChanged;
+}

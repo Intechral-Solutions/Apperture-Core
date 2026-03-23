@@ -1,0 +1,23 @@
+<div class="mb-4 flex flex-wrap items-start justify-between gap-3">
+    <div class="min-w-0">
+        <h1 class="text-xl font-semibold text-heading">@Title</h1>
+        @if (!string.IsNullOrWhiteSpace(Subtitle))
+        {
+            <div class="mt-1 text-xs text-muted">@Subtitle</div>
+        }
+        @ChildContent
+    </div>
+    @if (Toolbar is not null)
+    {
+        <div class="flex flex-wrap items-center gap-2">
+            @Toolbar
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public string Title { get; set; } = "";
+    [Parameter] public string? Subtitle { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+    [Parameter] public RenderFragment? Toolbar { get; set; }
+}

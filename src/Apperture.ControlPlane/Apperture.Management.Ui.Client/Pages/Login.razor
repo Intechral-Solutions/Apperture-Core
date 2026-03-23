@@ -1,0 +1,93 @@
+@page "/login"
+@layout MainLayout
+@using System.Net.Http
+@using Apperture.Management.Client
+@using Apperture.Management.Ui.Client.Organisms
+@using Apperture.Management.Ui.Client.Services
+@using Apperture.Management.Ui.Shared.Options
+@using Microsoft.AspNetCore.Components.Forms
+@using Microsoft.Extensions.Options
+@inject IManagementClient Client
+@inject SessionStateService Session
+@inject NavigationManager Nav
+@inject IOptions<ShellUiOptions> ShellOpts
+@inject ShellHostNavigation HostNav
+<div class="mx-auto max-w-md p-6">
+    <PageHeader Title="Sign in"
+                Subtitle="Use your platform credentials. This page is for local development sign-in unless Entra is enabled." />
+
+    @if (ShellOpts.Value.UseEntraSignIn)
+    {
+        <div class="mt-4 rounded border border-default bg-surface px-4 py-3 text-sm text-body">
+            <p class="text-muted">Your deployment uses organizational sign-in. Continue to the management host to authenticate.</p>
+            <button type="button"
+                    class="mt-3 w-full rounded bg-surface-muted px-3 py-2 text-sm font-medium text-heading hover:bg-surface"
+                    @onclick="GoEntraAsync">
+                Continue to sign in
+            </button>
+        </div>
+    }
+    else
+    {
+        <EditForm Model="_model" OnValidSubmit="SubmitAsync" class="mt-4 space-y-4">
+            <div>
+                <label class="text-xs text-muted">Username</label>
+                <InputText @bind-Value="_model.Username" class="mt-1 w-full rounded border border-default bg-surface px-2 py-2 text-sm" autocomplete="username" />
+            </div>
+            <div>
+                <label class="text-xs text-muted">Password</label>
+                <InputText type="password" @bind-Value="_model.Password" class="mt-1 w-full rounded border border-default bg-surface px-2 py-2 text-sm" autocomplete="current-password" />
+            </div>
+            @if (!string.IsNullOrEmpty(_error))
+            {
+                <PageMessage Kind="PageMessageKind.Error" Message="@_error" />
+            }
+            <button type="submit" class="w-full rounded bg-surface-muted px-3 py-2 text-sm font-medium text-heading hover:bg-surface disabled:opacity-50" disabled="@_busy">
+                @(_busy ? "Signing in…" : "Sign in")
+            </button>
+        </EditForm>
+    }
+</div>
+
+@code {
+    private readonly LoginModel _model = new();
+    private string? _error;
+    private bool _busy;
+
+    private Task GoEntraAsync()
+    {
+        var host = HostNav.GetManagementHostBase(Nav);
+        Nav.NavigateTo(new Uri(host, "signin").ToString(), forceLoad: true);
+        return Task.CompletedTask;
+    }
+
+    private async Task SubmitAsync()
+    {
+        _error = null;
+        _busy = true;
+        try
+        {
+            await Client.LocalLoginAsync(new LocalLoginRequest(_model.Username.Trim(), _model.Password));
+            await Session.RefreshAsync();
+            Nav.NavigateTo("/");
+        }
+        catch (HttpRequestException)
+        {
+            _error = "Sign-in failed. Check your username and password.";
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private sealed class LoginModel
+    {
+        public string Username { get; set; } = "";
+        public string? Password { get; set; }
+    }
+}
