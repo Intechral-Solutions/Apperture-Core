@@ -520,7 +520,8 @@ public sealed record ControlCenterDto(
 public sealed record DashboardDefaultDto(
     [property: JsonPropertyName("scope")] string Scope,
     [property: JsonPropertyName("title")] string Title,
-    [property: JsonPropertyName("cards")] IReadOnlyList<DashboardCardDto> Cards);
+    [property: JsonPropertyName("cards")] IReadOnlyList<DashboardCardDto> Cards,
+    [property: JsonPropertyName("providerFailureCount")] int ProviderFailureCount = 0);
 
 public sealed record DashboardCardDto(
     [property: JsonPropertyName("id")] string Id,

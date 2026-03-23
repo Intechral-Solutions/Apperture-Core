@@ -1,4 +1,5 @@
 using Apperture.Bootstrap;
+using Apperture.ControlPlane.Dashboard;
 using Apperture.ControlPlane.Security.Audit;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Governance;

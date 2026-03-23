@@ -10,6 +10,7 @@
     <PackageReference Include="Microsoft.Extensions.Options" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\Apperture.ControlPlane.Dashboard\Apperture.ControlPlane.Dashboard.csproj" />
     <ProjectReference Include="..\Apperture.ControlPlane.Security\Apperture.ControlPlane.Security.csproj" />
     <ProjectReference Include="..\..\Apperture.Core\Apperture.Core.Security.Trust\Apperture.Core.Security.Trust.csproj" />
     <ProjectReference Include="..\Apperture.Management.Ui.Shared\Apperture.Management.Ui.Shared.csproj" />

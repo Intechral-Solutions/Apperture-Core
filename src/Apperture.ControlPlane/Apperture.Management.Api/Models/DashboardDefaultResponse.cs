@@ -12,6 +12,10 @@ public sealed class DashboardDefaultResponse
 
     [JsonPropertyName("cards")]
     public IReadOnlyList<DashboardCardResponse> Cards { get; init; } = Array.Empty<DashboardCardResponse>();
+
+    /// <summary>Providers that threw while building cards (failed cards are omitted; see partial-load placeholder if any).</summary>
+    [JsonPropertyName("providerFailureCount")]
+    public int ProviderFailureCount { get; init; }
 }
 
 public sealed class DashboardCardResponse

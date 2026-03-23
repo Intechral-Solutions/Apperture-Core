@@ -26,6 +26,7 @@
     <ProjectReference Include="..\..\src\Apperture.RuntimePlane\Apperture.RuntimePlane.Engine\Apperture.RuntimePlane.Engine.csproj" />
     <ProjectReference Include="..\..\src\Apperture.ModuleSdk\Apperture.ModuleSdk.Abstractions\Apperture.ModuleSdk.Abstractions.csproj" />
     <ProjectReference Include="..\..\src\Apperture.RuntimeHost\Apperture.RuntimeHost.Azure\Apperture.RuntimeHost.Azure.Secrets\Apperture.RuntimeHost.Azure.Secrets.csproj" />
+    <ProjectReference Include="..\..\src\Apperture.ControlPlane\Apperture.ControlPlane.Dashboard\Apperture.ControlPlane.Dashboard.csproj" />
     <ProjectReference Include="..\..\src\Apperture.ControlPlane\Apperture.ControlPlane.Security\Apperture.ControlPlane.Security.csproj" />
     <ProjectReference Include="..\..\src\Apperture.Persistence\Apperture.Persistence.SqlServer\Apperture.Persistence.SqlServer.csproj" />
     <ProjectReference Include="..\..\src\Apperture.ControlPlane\Apperture.Management.Api\Apperture.Management.Api.csproj" />

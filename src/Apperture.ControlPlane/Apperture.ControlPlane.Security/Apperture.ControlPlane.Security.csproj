@@ -17,6 +17,7 @@
     <PackageReference Include="Microsoft.Extensions.Options" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\Apperture.ControlPlane.Dashboard\Apperture.ControlPlane.Dashboard.csproj" />
     <ProjectReference Include="..\..\Apperture.Bootstrap\Apperture.Bootstrap\Apperture.Bootstrap.csproj" />
     <ProjectReference Include="..\..\Apperture.Core\Apperture.Core.Domain\Apperture.Core.Domain.csproj" />
     <ProjectReference Include="..\..\Apperture.Core\Apperture.Core.Application\Apperture.Core.Application.csproj" />

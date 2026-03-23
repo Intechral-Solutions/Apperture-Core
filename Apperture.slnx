@@ -24,6 +24,7 @@
     <Project Path="src/Apperture.Core/Apperture.Core.Security.Trust/Apperture.Core.Security.Trust.csproj" />
   </Folder>
   <Folder Name="/src/Apperture.ControlPlane/">
+    <Project Path="src/Apperture.ControlPlane/Apperture.ControlPlane.Dashboard/Apperture.ControlPlane.Dashboard.csproj" />
     <Project Path="src/Apperture.ControlPlane/Apperture.ControlPlane.Security/Apperture.ControlPlane.Security.csproj" />
     <Project Path="src/Apperture.ControlPlane/Apperture.Management.Api/Apperture.Management.Api.csproj" />
     <Project Path="src/Apperture.ControlPlane/Apperture.Management.Host/Apperture.Management.Host.csproj" />

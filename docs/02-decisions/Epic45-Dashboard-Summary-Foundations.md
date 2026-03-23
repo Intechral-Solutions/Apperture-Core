@@ -14,7 +14,7 @@ Epic 45 establishes a minimal foundation: a shared operator dashboard scope, a s
 ## Decision
 
 1. Dashboard scope is a single shared platform operator view for now.
-2. The default dashboard is composed from provider contributions through `IDashboardCardProvider`.
+2. The default dashboard is composed from provider contributions through `IDashboardCardProvider` (contracts in assembly `Apperture.ControlPlane.Dashboard`; concrete providers register from `Apperture.ControlPlane.Security` today).
 3. The composed model is exposed by `IDashboardDefaultViewService` and `GET /api/dashboard/default`.
 4. The initial cards are:
    - Runtime Health
@@ -31,6 +31,14 @@ Epic 45 establishes a minimal foundation: a shared operator dashboard scope, a s
 - Operators get a truthful dashboard summary backed by current mature query surfaces.
 - Modules and future platform areas can add cards without changing the dashboard page contract.
 - The model stays intentionally minimal and does not lock the platform into a widget framework too early.
+
+## Corrective pass (hardening)
+
+- **Layering**: Core dashboard contracts and composition live in `Apperture.ControlPlane.Dashboard` (neutral control-plane assembly). Card providers that call governance, health, and auth overview services remain in `Apperture.ControlPlane.Security` and implement `IDashboardCardProvider`.
+- **Resilience**: `DashboardDefaultViewService` catches per-provider failures, logs a warning, increments `ProviderFailureCount`, and appends a single truthful placeholder card (`dashboard-partial-load`) when any provider throws so the rest of the dashboard still renders.
+- **Operator copy**: Authentication posture uses `AuthSignInEffectiveExperience.Describe` for the sign-in experience fact; attention/activity facts use light humanization instead of raw internal tokens where cheap.
+- **API/UI**: `GET /api/dashboard/default` exposes `providerFailureCount`; the Dashboard home empty state distinguishes permission-gated emptiness from load failures.
+- **Permissions**: Unchanged intentional behavior — cards the operator cannot access are **omitted** (`null` from provider), not shown as locked tiles.
 
 ## Explicit Deferrals
 

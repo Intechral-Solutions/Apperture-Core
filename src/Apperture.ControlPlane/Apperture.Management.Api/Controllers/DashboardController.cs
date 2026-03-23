@@ -1,4 +1,4 @@
-using Apperture.ControlPlane.Security;
+using Apperture.ControlPlane.Dashboard;
 using Apperture.Management.Api.Models;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -23,6 +23,7 @@ public sealed class DashboardController : ControllerBase
         {
             Scope = view.Scope,
             Title = view.Title,
+            ProviderFailureCount = view.ProviderFailureCount,
             Cards = view.Cards
                 .OrderBy(x => x.Order)
                 .Select(c => new DashboardCardResponse

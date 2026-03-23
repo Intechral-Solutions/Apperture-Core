@@ -1,3 +1,4 @@
+using Apperture.ControlPlane.Dashboard;
 using Apperture.Core.Application.ControlFacade;
 using Apperture.Core.Application.Recovery;
 using Apperture.Core.Application.RuntimeHealth;
@@ -6,68 +7,6 @@ using Apperture.Core.Domain.Governance;
 using Apperture.Shared.Kernel;
 
 namespace Apperture.ControlPlane.Security;
-
-public enum DashboardCardAttention
-{
-    None,
-    Info,
-    Warning,
-    Critical
-}
-
-public sealed record DashboardCardFact(string Label, string Value);
-
-public sealed record DashboardCard(
-    string Id,
-    string Type,
-    string Title,
-    int Order,
-    string? NavigationHref,
-    DashboardCardAttention Attention,
-    string? Summary,
-    IReadOnlyList<DashboardCardFact> Facts,
-    bool IsPlaceholder = false,
-    string? PlaceholderReason = null);
-
-public sealed record DashboardDefaultView(
-    string Scope,
-    string Title,
-    IReadOnlyList<DashboardCard> Cards);
-
-public interface IDashboardCardProvider
-{
-    int Order { get; }
-
-    ValueTask<DashboardCard?> BuildAsync(CancellationToken cancellationToken = default);
-}
-
-public interface IDashboardDefaultViewService
-{
-    ValueTask<DashboardDefaultView> GetDefaultAsync(CancellationToken cancellationToken = default);
-}
-
-public sealed class DashboardDefaultViewService : IDashboardDefaultViewService
-{
-    private readonly IEnumerable<IDashboardCardProvider> _providers;
-
-    public DashboardDefaultViewService(IEnumerable<IDashboardCardProvider> providers) => _providers = providers;
-
-    public async ValueTask<DashboardDefaultView> GetDefaultAsync(CancellationToken cancellationToken = default)
-    {
-        var cards = new List<DashboardCard>();
-        foreach (var provider in _providers.OrderBy(p => p.Order))
-        {
-            var card = await provider.BuildAsync(cancellationToken).ConfigureAwait(false);
-            if (card is not null)
-                cards.Add(card);
-        }
-
-        return new DashboardDefaultView(
-            Scope: "shared-platform-operator",
-            Title: "Platform Summary",
-            Cards: cards);
-    }
-}
 
 internal static class DashboardCardProviderAuth
 {
@@ -138,9 +77,9 @@ public sealed class RuntimeHealthDashboardCardProvider : IDashboardCardProvider
             Summary: snapshot.OverallStatus,
             Facts:
             [
-                new("Degradation reasons", snapshot.DegradationReasons.Count.ToString()),
-                new("Blocked work", snapshot.BlockedDeferredWork.Count.ToString()),
-                new("Anomalies", snapshot.Anomalies.Count.ToString())
+                new DashboardCardFact("Degradation reasons", snapshot.DegradationReasons.Count.ToString()),
+                new DashboardCardFact("Blocked work", snapshot.BlockedDeferredWork.Count.ToString()),
+                new DashboardCardFact("Anomalies", snapshot.Anomalies.Count.ToString())
             ]);
     }
 }
@@ -156,8 +95,8 @@ public sealed class AttentionDashboardCardProvider : IDashboardCardProvider
     public async ValueTask<DashboardCard?> BuildAsync(CancellationToken cancellationToken = default)
     {
         var items = await _attention.ListAttentionAsync(DateTimeOffset.UtcNow.AddHours(-24), 20, cancellationToken).ConfigureAwait(false);
-        var topSeverity = items.Select(i => i.Severity).FirstOrDefault() ?? "none";
-        var attention = topSeverity switch
+        var rawSeverity = items.Select(i => i.Severity).FirstOrDefault() ?? "none";
+        var attention = rawSeverity switch
         {
             "high" => DashboardCardAttention.Critical,
             "medium" => DashboardCardAttention.Warning,
@@ -175,9 +114,22 @@ public sealed class AttentionDashboardCardProvider : IDashboardCardProvider
             Summary: items.Count == 0 ? "No urgent items" : $"{items.Count} item(s) need review",
             Facts:
             [
-                new("Open attention items", items.Count.ToString()),
-                new("Highest severity", topSeverity)
+                new DashboardCardFact("Open attention items", items.Count.ToString()),
+                new DashboardCardFact("Highest severity", FormatAttentionSeverity(rawSeverity))
             ]);
+    }
+
+    private static string FormatAttentionSeverity(string raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw) || raw.Equals("none", StringComparison.OrdinalIgnoreCase))
+            return "None";
+        return raw.ToLowerInvariant() switch
+        {
+            "high" => "High",
+            "medium" => "Medium",
+            "low" => "Low",
+            _ => char.ToUpperInvariant(raw[0]) + (raw.Length > 1 ? raw[1..].ToLowerInvariant() : "")
+        };
     }
 }
 
@@ -205,10 +157,14 @@ public sealed class RecentActivityDashboardCardProvider : IDashboardCardProvider
                 : $"Latest: {latest.OutcomeSummary}",
             Facts:
             [
-                new("Activity in last 24h", items.Count.ToString()),
-                new("Latest status", latest?.CurrentNormalizedStatus ?? "none")
+                new DashboardCardFact("Activity in last 24h", items.Count.ToString()),
+                new DashboardCardFact("Latest status", FormatActivityStatus(latest?.CurrentNormalizedStatus))
             ]);
     }
+
+    private static string FormatActivityStatus(string? normalized) => string.IsNullOrWhiteSpace(normalized) || normalized == "none"
+        ? "None"
+        : char.ToUpperInvariant(normalized[0]) + normalized[1..].ToLowerInvariant();
 }
 
 public sealed class BlockedWorkDashboardCardProvider : IDashboardCardProvider
@@ -242,8 +198,8 @@ public sealed class BlockedWorkDashboardCardProvider : IDashboardCardProvider
             Summary: list.Count == 0 ? "No blocked work" : $"{list.Count} blocked run(s)",
             Facts:
             [
-                new("Blocked runs", list.Count.ToString()),
-                new("Retry-eligible now", retryEligible.ToString())
+                new DashboardCardFact("Blocked runs", list.Count.ToString()),
+                new DashboardCardFact("Retry-eligible now", retryEligible.ToString())
             ]);
     }
 }
@@ -292,6 +248,7 @@ public sealed class AuthWarningsDashboardCardProvider : IDashboardCardProvider
         var overview = await _overview.GetAsync(cancellationToken).ConfigureAwait(false);
         var warningCount = overview.Warnings.Count;
         var attention = warningCount > 0 ? DashboardCardAttention.Warning : DashboardCardAttention.None;
+        var experienceLabel = AuthSignInEffectiveExperience.Describe(overview.EffectiveExperience);
 
         return new DashboardCard(
             Id: "auth-warnings",
@@ -303,8 +260,8 @@ public sealed class AuthWarningsDashboardCardProvider : IDashboardCardProvider
             Summary: warningCount == 0 ? "No authentication warnings" : $"{warningCount} warning(s)",
             Facts:
             [
-                new("Effective experience", overview.EffectiveExperience.ToString()),
-                new("Warnings", warningCount.ToString())
+                new DashboardCardFact("Sign-in experience", experienceLabel),
+                new DashboardCardFact("Warnings", warningCount.ToString())
             ]);
     }
 }

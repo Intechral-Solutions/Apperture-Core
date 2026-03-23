@@ -19,8 +19,15 @@
     }
     else if (_dashboard is null || _dashboard.Cards.Count == 0)
     {
-        <div class="mt-4 rounded border border-base bg-surface p-3 text-sm text-muted">
-            No dashboard cards are available for this operator yet.
+        <div class="mt-4 rounded border border-base bg-surface p-3 text-sm text-muted space-y-2">
+            @if (_dashboard?.ProviderFailureCount > 0)
+            {
+                <p>No dashboard cards could be loaded. One or more summary sources failed; check server logs for details.</p>
+            }
+            else
+            {
+                <p>No dashboard cards are shown for your account. That usually means your role does not include the permissions needed for the available summary sources.</p>
+            }
         </div>
     }
     else
