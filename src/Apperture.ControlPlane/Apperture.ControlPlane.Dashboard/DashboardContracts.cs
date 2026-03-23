@@ -20,7 +20,9 @@ public sealed record DashboardCard(
     string? Summary,
     IReadOnlyList<DashboardCardFact> Facts,
     bool IsPlaceholder = false,
-    string? PlaceholderReason = null);
+    string? PlaceholderReason = null,
+    /// <summary>When set, dashboard UI uses this for the primary navigation link; otherwise a default label is used.</summary>
+    string? NavigationLabel = null);
 
 /// <summary>
 /// Shared default operator dashboard view (non-personalized). See Epic 45 ADR.

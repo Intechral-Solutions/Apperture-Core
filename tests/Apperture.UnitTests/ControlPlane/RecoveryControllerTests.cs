@@ -380,6 +380,9 @@ public sealed class RecoveryControllerTests
         public ValueTask<AuditPage> QueryAsync(AuditQuery query, CancellationToken cancellationToken = default) =>
             ValueTask.FromResult(new AuditPage([], null));
 
+        public ValueTask<int> CountAsync(AuditQuery query, CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(0);
+
         public ValueTask<Apperture.Core.Domain.Audit.AuditRecord?> GetByIdAsync(string id, CancellationToken cancellationToken = default) =>
             ValueTask.FromResult<Apperture.Core.Domain.Audit.AuditRecord?>(null);
     }

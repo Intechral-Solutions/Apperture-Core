@@ -173,6 +173,8 @@ public sealed class RolePermissionAssignmentValidationTests
         public ValueTask AppendAsync(AuditRecord record, CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
         public ValueTask<AuditPage> QueryAsync(AuditQuery query, CancellationToken cancellationToken = default) =>
             ValueTask.FromResult(new AuditPage([], null));
+        public ValueTask<int> CountAsync(AuditQuery query, CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(0);
         public ValueTask<AuditRecord?> GetByIdAsync(string id, CancellationToken cancellationToken = default) =>
             ValueTask.FromResult<AuditRecord?>(null);
     }

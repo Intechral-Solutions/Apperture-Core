@@ -18,6 +18,11 @@ public interface IAuditService
     ValueTask<AuditPage> QueryAsync(AuditQuery query, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Counts audit records matching the same filter fields as <see cref="QueryAsync"/> (ignores pagination and continuation).
+    /// </summary>
+    ValueTask<int> CountAsync(AuditQuery query, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Gets a single audit record by id, or null if not found.
     /// </summary>
     ValueTask<AuditRecord?> GetByIdAsync(string id, CancellationToken cancellationToken = default);

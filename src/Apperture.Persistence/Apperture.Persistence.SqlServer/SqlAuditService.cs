@@ -39,30 +39,9 @@ public sealed class SqlAuditService : IAuditService
     /// <inheritdoc />
     public async ValueTask<AuditPage> QueryAsync(AuditQuery query, CancellationToken cancellationToken = default)
     {
-        var q = _db.AuditLogs.AsNoTracking()
+        var q = ApplyFilters(query, forPaging: true)
             .OrderByDescending(x => x.At)
-            .ThenByDescending(x => x.Id)
-            .AsQueryable();
-
-        if (query.FilterByActorId is { } actorId)
-            q = q.Where(x => x.Actor == actorId.Value);
-        if (!string.IsNullOrEmpty(query.FilterByActionPrefix))
-            q = q.Where(x => x.Action.StartsWith(query.FilterByActionPrefix));
-        if (query.FromUtc.HasValue)
-            q = q.Where(x => x.At >= query.FromUtc.Value);
-        if (query.ToUtc.HasValue)
-            q = q.Where(x => x.At <= query.ToUtc.Value);
-        if (!string.IsNullOrEmpty(query.FilterByOutcome))
-            q = q.Where(x => x.Outcome != null && x.Outcome == query.FilterByOutcome);
-        if (!string.IsNullOrEmpty(query.FilterByModuleId))
-            q = q.Where(x => x.ModuleId != null && x.ModuleId == query.FilterByModuleId);
-        if (!string.IsNullOrEmpty(query.FilterByScheduleId))
-            q = q.Where(x => x.ScheduleId != null && x.ScheduleId == query.FilterByScheduleId);
-        if (!string.IsNullOrEmpty(query.FilterByRunId))
-            q = q.Where(x => x.RunId != null && x.RunId == query.FilterByRunId);
-
-        if (!string.IsNullOrEmpty(query.ContinuationToken) && long.TryParse(query.ContinuationToken, out var lastId))
-            q = q.Where(x => x.Id < lastId);
+            .ThenByDescending(x => x.Id);
 
         var pageSize = Math.Clamp(query.PageSize, 1, 100);
         var items = await q.Take(pageSize + 1).ToListAsync(cancellationToken);
@@ -88,6 +67,10 @@ public sealed class SqlAuditService : IAuditService
     }
 
     /// <inheritdoc />
+    public async ValueTask<int> CountAsync(AuditQuery query, CancellationToken cancellationToken = default) =>
+        await ApplyFilters(query, forPaging: false).CountAsync(cancellationToken).ConfigureAwait(false);
+
+    /// <inheritdoc />
     public async ValueTask<AuditRecord?> GetByIdAsync(string id, CancellationToken cancellationToken = default)
     {
         if (!long.TryParse(id, out var pk))
@@ -110,5 +93,34 @@ public sealed class SqlAuditService : IAuditService
             ModuleId: entity.ModuleId,
             ScheduleId: entity.ScheduleId,
             RunId: entity.RunId);
+    }
+
+    private IQueryable<AuditLogEntity> ApplyFilters(AuditQuery query, bool forPaging)
+    {
+        var q = _db.AuditLogs.AsNoTracking().AsQueryable();
+
+        if (query.FilterByActorId is { } actorId)
+            q = q.Where(x => x.Actor == actorId.Value);
+        if (!string.IsNullOrEmpty(query.FilterByActionPrefix))
+            q = q.Where(x => x.Action.StartsWith(query.FilterByActionPrefix));
+        if (query.FromUtc.HasValue)
+            q = q.Where(x => x.At >= query.FromUtc.Value);
+        if (query.ToUtc.HasValue)
+            q = q.Where(x => x.At <= query.ToUtc.Value);
+        if (!string.IsNullOrEmpty(query.FilterByOutcome))
+            q = q.Where(x => x.Outcome != null && x.Outcome == query.FilterByOutcome);
+        if (!string.IsNullOrEmpty(query.FilterByModuleId))
+            q = q.Where(x => x.ModuleId != null && x.ModuleId == query.FilterByModuleId);
+        if (!string.IsNullOrEmpty(query.FilterByScheduleId))
+            q = q.Where(x => x.ScheduleId != null && x.ScheduleId == query.FilterByScheduleId);
+        if (!string.IsNullOrEmpty(query.FilterByRunId))
+            q = q.Where(x => x.RunId != null && x.RunId == query.FilterByRunId);
+
+        if (forPaging
+            && !string.IsNullOrEmpty(query.ContinuationToken)
+            && long.TryParse(query.ContinuationToken, out var lastId))
+            q = q.Where(x => x.Id < lastId);
+
+        return q;
     }
 }

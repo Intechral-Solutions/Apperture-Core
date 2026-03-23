@@ -35,6 +35,9 @@ public sealed class DashboardCardResponse
     [JsonPropertyName("navigationHref")]
     public string? NavigationHref { get; init; }
 
+    [JsonPropertyName("navigationLabel")]
+    public string? NavigationLabel { get; init; }
+
     [JsonPropertyName("attention")]
     public string Attention { get; init; } = "";
 

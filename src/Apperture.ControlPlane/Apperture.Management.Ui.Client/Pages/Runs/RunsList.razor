@@ -2,6 +2,7 @@
 @using Apperture.Management.Client
 @using Apperture.Management.Ui.Shared
 @using Microsoft.AspNetCore.Components
+@using System.Globalization
 @inject IManagementClient Client
 @inject NavigationManager Nav
 
@@ -12,7 +13,7 @@
             <select class="rounded border border-default bg-surface px-2 py-2 text-sm"
                     disabled="@_loading"
                     @bind="_executionKindFilter"
-                    >
+                    @bind:after="LoadAsync">
                 <option value="">All executions</option>
                 <option value="operation">Operations</option>
                 <option value="workflow">Workflows</option>
@@ -25,12 +26,33 @@
         </div>
     </div>
 
-    @if (!string.IsNullOrWhiteSpace(QueryCorrelationKey))
+    @if (HasUrlFilters)
     {
-        <div class="mt-3 rounded border border-default bg-surface px-3 py-2 text-sm text-body">
-            <span class="text-muted">Filtered by correlation key</span>
-            <span class="ml-2 font-mono text-xs break-all">@QueryCorrelationKey</span>
-            <a href="/runs" class="ml-3 text-xs underline">Clear filter</a>
+        <div class="mt-3 rounded border border-default bg-surface px-3 py-2 text-sm text-body space-y-1">
+            @if (!string.IsNullOrWhiteSpace(QueryCorrelationKey))
+            {
+                <div>
+                    <span class="text-muted">Correlation key</span>
+                    <span class="ml-2 font-mono text-xs break-all">@QueryCorrelationKey</span>
+                </div>
+            }
+            @if (!string.IsNullOrWhiteSpace(QueryStatus))
+            {
+                <div>
+                    <span class="text-muted">Status</span>
+                    <span class="ml-2 font-mono text-xs">@QueryStatus</span>
+                </div>
+            }
+            @if (!string.IsNullOrWhiteSpace(QueryCreatedFromRaw))
+            {
+                <div>
+                    <span class="text-muted">Created from (UTC)</span>
+                    <span class="ml-2 font-mono text-xs break-all">@QueryCreatedFromRaw</span>
+                </div>
+            }
+            <div>
+                <a href="/runs" class="text-xs underline">Clear URL filters</a>
+            </div>
         </div>
     }
 
@@ -95,21 +117,34 @@
     [SupplyParameterFromQuery(Name = "correlationKey")]
     public string? QueryCorrelationKey { get; set; }
 
+    [SupplyParameterFromQuery(Name = "status")]
+    public string? QueryStatus { get; set; }
+
+    [SupplyParameterFromQuery(Name = "createdFrom")]
+    public string? QueryCreatedFromRaw { get; set; }
+
     private IReadOnlyList<RunSummaryDto>? _runs;
     private string? _executionKindFilter;
     private bool _loading;
     private string? _error;
     private string? _dataLoadKey;
 
+    private bool HasUrlFilters =>
+        !string.IsNullOrWhiteSpace(QueryCorrelationKey)
+        || !string.IsNullOrWhiteSpace(QueryStatus)
+        || !string.IsNullOrWhiteSpace(QueryCreatedFromRaw);
+
     protected override async Task OnParametersSetAsync()
     {
         await base.OnParametersSetAsync();
-        var key = QueryCorrelationKey ?? "";
+        var key = BuildLoadKey();
         if (key == _dataLoadKey)
             return;
-        _dataLoadKey = key;
         await LoadAsync();
     }
+
+    private string BuildLoadKey() =>
+        $"{QueryCorrelationKey ?? ""}\u001f{QueryStatus ?? ""}\u001f{QueryCreatedFromRaw ?? ""}\u001f{_executionKindFilter ?? ""}";
 
     private async Task LoadAsync()
     {
@@ -118,8 +153,16 @@
         try
         {
             var corr = string.IsNullOrWhiteSpace(QueryCorrelationKey) ? null : QueryCorrelationKey.Trim();
+            var status = string.IsNullOrWhiteSpace(QueryStatus) ? null : QueryStatus.Trim();
+            DateTimeOffset? createdFrom = null;
+            if (!string.IsNullOrWhiteSpace(QueryCreatedFromRaw)
+                && DateTimeOffset.TryParse(QueryCreatedFromRaw, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var parsed))
+                createdFrom = parsed;
+
             _runs = await Client.GetRunsAsync(new RunQueryFilter(
                 ExecutionKind: _executionKindFilter,
+                Status: status,
+                CreatedFrom: createdFrom,
                 CorrelationKey: corr));
         }
         catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Forbidden)
@@ -135,9 +178,9 @@
         finally
         {
             _loading = false;
+            _dataLoadKey = BuildLoadKey();
         }
     }
 
     private void Open(string runId) => Nav.NavigateTo($"/runs/{runId}");
 }
-

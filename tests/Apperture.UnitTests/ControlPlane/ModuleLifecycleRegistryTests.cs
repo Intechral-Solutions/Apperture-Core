@@ -221,6 +221,16 @@ public sealed class ModuleLifecycleRegistryTests
         public ValueTask<AuditPage> QueryAsync(AuditQuery query, CancellationToken cancellationToken = default)
             => ValueTask.FromResult(new AuditPage(Records, null));
 
+        public ValueTask<int> CountAsync(AuditQuery query, CancellationToken cancellationToken = default)
+        {
+            var q = Records.AsEnumerable();
+            if (query.FromUtc.HasValue)
+                q = q.Where(r => r.Timestamp >= query.FromUtc.Value);
+            if (query.ToUtc.HasValue)
+                q = q.Where(r => r.Timestamp <= query.ToUtc.Value);
+            return ValueTask.FromResult(q.Count());
+        }
+
         public ValueTask<AuditRecord?> GetByIdAsync(string id, CancellationToken cancellationToken = default)
             => ValueTask.FromResult<AuditRecord?>(Records.FirstOrDefault(r => r.Id.Value == id));
     }

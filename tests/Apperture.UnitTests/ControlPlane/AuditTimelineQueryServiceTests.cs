@@ -138,11 +138,32 @@ public sealed class AuditTimelineQueryServiceTests
 
         public ValueTask<AuditPage> QueryAsync(AuditQuery query, CancellationToken cancellationToken = default)
         {
+            var list = Filter(query).OrderByDescending(r => r.Timestamp).ToList();
+            var pageSize = Math.Clamp(query.PageSize, 1, 100);
+            var items = list.Take(pageSize + 1).ToList();
+            var hasMore = items.Count > pageSize;
+            if (hasMore)
+                items.RemoveAt(items.Count - 1);
+            return ValueTask.FromResult(new AuditPage(items, hasMore ? "token" : null));
+        }
+
+        public ValueTask<int> CountAsync(AuditQuery query, CancellationToken cancellationToken = default)
+        {
+            var filtered = Filter(query);
+            return ValueTask.FromResult<int>(filtered.Count());
+        }
+
+        private IEnumerable<AuditRecord> Filter(AuditQuery query)
+        {
             var filtered = _records.AsEnumerable();
             if (query.FilterByActorId is { } actorId)
                 filtered = filtered.Where(r => r.ActorId.Value == actorId.Value);
             if (!string.IsNullOrEmpty(query.FilterByActionPrefix))
                 filtered = filtered.Where(r => r.Action.StartsWith(query.FilterByActionPrefix, StringComparison.Ordinal));
+            if (query.FromUtc.HasValue)
+                filtered = filtered.Where(r => r.Timestamp >= query.FromUtc.Value);
+            if (query.ToUtc.HasValue)
+                filtered = filtered.Where(r => r.Timestamp <= query.ToUtc.Value);
             if (!string.IsNullOrEmpty(query.FilterByRunId))
             {
                 var rid = query.FilterByRunId;
@@ -151,13 +172,7 @@ public sealed class AuditTimelineQueryServiceTests
                     (r.Details?.Contains($"runId={rid}", StringComparison.OrdinalIgnoreCase) == true));
             }
 
-            var list = filtered.OrderByDescending(r => r.Timestamp).ToList();
-            var pageSize = Math.Clamp(query.PageSize, 1, 100);
-            var items = list.Take(pageSize + 1).ToList();
-            var hasMore = items.Count > pageSize;
-            if (hasMore)
-                items.RemoveAt(items.Count - 1);
-            return ValueTask.FromResult(new AuditPage(items, hasMore ? "token" : null));
+            return filtered;
         }
 
         public ValueTask<AuditRecord?> GetByIdAsync(string id, CancellationToken cancellationToken = default) =>
@@ -183,5 +198,8 @@ public sealed class AuditTimelineQueryServiceTests
 
         public ValueTask<AuditRecord?> GetByIdAsync(string id, CancellationToken cancellationToken = default) =>
             _inner.GetByIdAsync(id, cancellationToken);
+
+        public ValueTask<int> CountAsync(AuditQuery query, CancellationToken cancellationToken = default) =>
+            _inner.CountAsync(query, cancellationToken);
     }
 }

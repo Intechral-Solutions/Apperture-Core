@@ -33,6 +33,7 @@ public sealed class DashboardController : ControllerBase
                     Title = c.Title,
                     Order = c.Order,
                     NavigationHref = c.NavigationHref,
+                    NavigationLabel = c.NavigationLabel,
                     Attention = c.Attention.ToString(),
                     Summary = c.Summary,
                     IsPlaceholder = c.IsPlaceholder,

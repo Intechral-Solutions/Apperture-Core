@@ -368,6 +368,9 @@ public sealed class RuntimeControlShutdownTests
         public ValueTask<AuditPage> QueryAsync(AuditQuery query, CancellationToken cancellationToken = default) =>
             ValueTask.FromResult(new AuditPage(Array.Empty<AuditRecord>(), null));
 
+        public ValueTask<int> CountAsync(AuditQuery query, CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(0);
+
         public ValueTask<AuditRecord?> GetByIdAsync(string id, CancellationToken cancellationToken = default) =>
             ValueTask.FromResult<AuditRecord?>(null);
     }

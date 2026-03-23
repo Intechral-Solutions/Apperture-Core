@@ -60,12 +60,7 @@ public sealed class RuntimeHealthDashboardCardProvider : IDashboardCardProvider
             return null;
 
         var snapshot = await _health.GetSnapshotAsync(cancellationToken: cancellationToken).ConfigureAwait(false);
-        var attention = snapshot.OverallStatus switch
-        {
-            RuntimeHealthStatus.Unhealthy => DashboardCardAttention.Critical,
-            RuntimeHealthStatus.Degraded => DashboardCardAttention.Warning,
-            _ => DashboardCardAttention.None
-        };
+        var attention = DashboardCardAttentionConvention.FromRuntimeHealthOverallStatus(snapshot.OverallStatus);
 
         return new DashboardCard(
             Id: "runtime-health",
@@ -80,7 +75,8 @@ public sealed class RuntimeHealthDashboardCardProvider : IDashboardCardProvider
                 new DashboardCardFact("Degradation reasons", snapshot.DegradationReasons.Count.ToString()),
                 new DashboardCardFact("Blocked work", snapshot.BlockedDeferredWork.Count.ToString()),
                 new DashboardCardFact("Anomalies", snapshot.Anomalies.Count.ToString())
-            ]);
+            ],
+            NavigationLabel: "Open control center");
     }
 }
 
@@ -96,27 +92,22 @@ public sealed class AttentionDashboardCardProvider : IDashboardCardProvider
     {
         var items = await _attention.ListAttentionAsync(DateTimeOffset.UtcNow.AddHours(-24), 20, cancellationToken).ConfigureAwait(false);
         var rawSeverity = items.Select(i => i.Severity).FirstOrDefault() ?? "none";
-        var attention = rawSeverity switch
-        {
-            "high" => DashboardCardAttention.Critical,
-            "medium" => DashboardCardAttention.Warning,
-            "low" => DashboardCardAttention.Info,
-            _ => DashboardCardAttention.None
-        };
+        var attention = DashboardCardAttentionConvention.FromAttentionSeverityToken(rawSeverity);
 
         return new DashboardCard(
             Id: "needs-attention",
             Type: "summary",
             Title: "Needs Attention",
             Order: Order,
-            NavigationHref: "/control/blocked-work",
+            NavigationHref: "/control/center",
             Attention: attention,
             Summary: items.Count == 0 ? "No urgent items" : $"{items.Count} item(s) need review",
             Facts:
             [
                 new DashboardCardFact("Open attention items", items.Count.ToString()),
                 new DashboardCardFact("Highest severity", FormatAttentionSeverity(rawSeverity))
-            ]);
+            ],
+            NavigationLabel: "Open control center");
     }
 
     private static string FormatAttentionSeverity(string raw)
@@ -159,7 +150,8 @@ public sealed class RecentActivityDashboardCardProvider : IDashboardCardProvider
             [
                 new DashboardCardFact("Activity in last 24h", items.Count.ToString()),
                 new DashboardCardFact("Latest status", FormatActivityStatus(latest?.CurrentNormalizedStatus))
-            ]);
+            ],
+            NavigationLabel: "Open control center");
     }
 
     private static string FormatActivityStatus(string? normalized) => string.IsNullOrWhiteSpace(normalized) || normalized == "none"
@@ -187,7 +179,7 @@ public sealed class BlockedWorkDashboardCardProvider : IDashboardCardProvider
 
         var list = await _recovery.GetBlockedWorkRemediationAsync(cancellationToken: cancellationToken).ConfigureAwait(false);
         var retryEligible = list.Count(x => x.RetryEligibleNow);
-        var attention = list.Count > 0 ? DashboardCardAttention.Warning : DashboardCardAttention.None;
+        var attention = DashboardCardAttentionConvention.FromBlockedWorkCount(list.Count);
         return new DashboardCard(
             Id: "blocked-work",
             Type: "summary",
@@ -200,7 +192,8 @@ public sealed class BlockedWorkDashboardCardProvider : IDashboardCardProvider
             [
                 new DashboardCardFact("Blocked runs", list.Count.ToString()),
                 new DashboardCardFact("Retry-eligible now", retryEligible.ToString())
-            ]);
+            ],
+            NavigationLabel: "Open blocked work");
     }
 }
 
@@ -247,8 +240,17 @@ public sealed class AuthWarningsDashboardCardProvider : IDashboardCardProvider
 
         var overview = await _overview.GetAsync(cancellationToken).ConfigureAwait(false);
         var warningCount = overview.Warnings.Count;
-        var attention = warningCount > 0 ? DashboardCardAttention.Warning : DashboardCardAttention.None;
+        var noViable = overview.EffectiveExperience == EffectiveAuthExperienceKind.NoViableSignIn;
+        var attention = DashboardCardAttentionConvention.FromAuthPosture(noViable, warningCount);
         var experienceLabel = AuthSignInEffectiveExperience.Describe(overview.EffectiveExperience);
+
+        string summary;
+        if (noViable)
+            summary = "No viable sign-in path — enable local auth or fix Entra.";
+        else if (warningCount == 0)
+            summary = "No authentication warnings";
+        else
+            summary = $"{warningCount} warning(s)";
 
         return new DashboardCard(
             Id: "auth-warnings",
@@ -257,11 +259,12 @@ public sealed class AuthWarningsDashboardCardProvider : IDashboardCardProvider
             Order: Order,
             NavigationHref: "/config/auth",
             Attention: attention,
-            Summary: warningCount == 0 ? "No authentication warnings" : $"{warningCount} warning(s)",
+            Summary: summary,
             Facts:
             [
                 new DashboardCardFact("Sign-in experience", experienceLabel),
                 new DashboardCardFact("Warnings", warningCount.ToString())
-            ]);
+            ],
+            NavigationLabel: "Open authentication settings");
     }
 }

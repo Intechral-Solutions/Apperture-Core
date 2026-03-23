@@ -529,6 +529,7 @@ public sealed record DashboardCardDto(
     [property: JsonPropertyName("title")] string Title,
     [property: JsonPropertyName("order")] int Order,
     [property: JsonPropertyName("navigationHref")] string? NavigationHref,
+    [property: JsonPropertyName("navigationLabel")] string? NavigationLabel,
     [property: JsonPropertyName("attention")] string Attention,
     [property: JsonPropertyName("summary")] string? Summary,
     [property: JsonPropertyName("facts")] IReadOnlyList<DashboardCardFactDto> Facts,
