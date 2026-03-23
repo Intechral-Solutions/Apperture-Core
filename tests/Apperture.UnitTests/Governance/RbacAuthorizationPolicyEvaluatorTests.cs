@@ -1,3 +1,4 @@
+using Apperture.Core.Application;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Governance;
 using Apperture.Core.Domain.Identity;
@@ -78,6 +79,88 @@ public sealed class RbacAuthorizationPolicyEvaluatorTests
             null);
 
         result.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task EvaluateAsync_instance_role_manage_implies_governance_and_auth_admin_at_instance_scope()
+    {
+        var userId = new UserId("user-1");
+        var actor = new TestActor(new ActorId("alice"), ActorKind.Human, "Alice");
+        var role = new Role(
+            new RoleId("role-platform-administrator"),
+            "Platform Administrator",
+            null,
+            [new PermissionDescriptor(ActionConstants.RoleManage, new ResourceDescriptor(ResourceTypeConstants.Role, ScopeKeyConstants.Instance))],
+            true);
+
+        var userResolver = new Mock<IPrincipalToUserResolver>();
+        userResolver.Setup(r => r.ResolveUserIdAsync(actor, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(userId);
+
+        var roleProvider = new Mock<IRoleProvider>();
+        roleProvider.Setup(r => r.GetRolesForUserAsync(userId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync([role]);
+
+        var evaluator = new RbacAuthorizationPolicyEvaluator(
+            userResolver.Object,
+            roleProvider.Object,
+            new ScopeContainmentEvaluator());
+
+        (await evaluator.EvaluateAsync(
+            actor,
+            new PermissionDescriptor(ActionConstants.UserRead, new ResourceDescriptor(ResourceTypeConstants.Role, ScopeKeyConstants.Instance)),
+            null,
+            null)).Should().BeTrue();
+
+        (await evaluator.EvaluateAsync(
+            actor,
+            new PermissionDescriptor(ActionConstants.PermissionAssign, new ResourceDescriptor(ResourceTypeConstants.Role, ScopeKeyConstants.Instance)),
+            null,
+            null)).Should().BeTrue();
+
+        (await evaluator.EvaluateAsync(
+            actor,
+            new PermissionDescriptor(ActionConstants.UserRead, new ResourceDescriptor(ResourceTypeConstants.User, ScopeKeyConstants.Instance)),
+            null,
+            null)).Should().BeTrue();
+
+        (await evaluator.EvaluateAsync(
+            actor,
+            new PermissionDescriptor(ActionConstants.AuthConfigurationRead, new ResourceDescriptor(ResourceTypeConstants.InstanceConfiguration, ScopeKeyConstants.Instance)),
+            null,
+            null)).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task EvaluateAsync_platform_administrator_assignment_grants_governance_when_role_permissions_json_empty()
+    {
+        var userId = new UserId("user-1");
+        var actor = new TestActor(new ActorId("alice"), ActorKind.Human, "Alice");
+        var role = new Role(
+            new RoleId(BootstrapConstants.PlatformAdminRoleId),
+            "Platform Administrator",
+            null,
+            Array.Empty<PermissionDescriptor>(),
+            true);
+
+        var userResolver = new Mock<IPrincipalToUserResolver>();
+        userResolver.Setup(r => r.ResolveUserIdAsync(actor, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(userId);
+
+        var roleProvider = new Mock<IRoleProvider>();
+        roleProvider.Setup(r => r.GetRolesForUserAsync(userId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync([role]);
+
+        var evaluator = new RbacAuthorizationPolicyEvaluator(
+            userResolver.Object,
+            roleProvider.Object,
+            new ScopeContainmentEvaluator());
+
+        (await evaluator.EvaluateAsync(
+            actor,
+            new PermissionDescriptor(ActionConstants.UserRead, new ResourceDescriptor(ResourceTypeConstants.Role, ScopeKeyConstants.Instance)),
+            null,
+            null)).Should().BeTrue();
     }
 
     [Fact]

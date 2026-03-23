@@ -266,15 +266,15 @@ public sealed record PrincipalEffectiveAccessDto(
     IReadOnlyList<RolePermissionEntryDto> Permissions);
 
 public sealed record OperatorCapabilitiesDto(
-    bool CanManageSchedules,
-    bool CanManageRecovery,
-    bool CanViewAudit,
-    bool CanViewRuntimeHealth,
-    bool CanManageModules,
-    bool CanViewGovernance = false,
-    bool CanAssignPermissions = false,
-    bool CanAssignRoles = false,
-    bool CanManageAuthUiPolicy = false,
+    [property: JsonPropertyName("canManageSchedules")] bool CanManageSchedules,
+    [property: JsonPropertyName("canManageRecovery")] bool CanManageRecovery,
+    [property: JsonPropertyName("canViewAudit")] bool CanViewAudit,
+    [property: JsonPropertyName("canViewRuntimeHealth")] bool CanViewRuntimeHealth,
+    [property: JsonPropertyName("canManageModules")] bool CanManageModules,
+    [property: JsonPropertyName("canViewGovernance")] bool CanViewGovernance = false,
+    [property: JsonPropertyName("canAssignPermissions")] bool CanAssignPermissions = false,
+    [property: JsonPropertyName("canAssignRoles")] bool CanAssignRoles = false,
+    [property: JsonPropertyName("canManageAuthUiPolicy")] bool CanManageAuthUiPolicy = false,
     [property: JsonPropertyName("canViewAuthConfiguration")] bool CanViewAuthConfiguration = false,
     [property: JsonPropertyName("canManageEntraTenants")] bool CanManageEntraTenants = false);
 
