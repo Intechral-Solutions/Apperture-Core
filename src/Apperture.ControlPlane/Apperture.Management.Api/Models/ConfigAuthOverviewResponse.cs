@@ -25,6 +25,12 @@ public sealed class ConfigAuthOverviewResponse
     [JsonPropertyName("entraSignInUsesActiveRegistration")]
     public bool EntraSignInUsesActiveRegistration { get; init; }
 
+    [JsonPropertyName("runtimeMayRequireRestartToApplyChanges")]
+    public bool RuntimeMayRequireRestartToApplyChanges { get; init; }
+
+    [JsonPropertyName("runtimeApplicationStatus")]
+    public string RuntimeApplicationStatus { get; init; } = "";
+
     [JsonPropertyName("showLocalSignInInPrimaryChooser")]
     public bool ShowLocalSignInInPrimaryChooser { get; init; }
 

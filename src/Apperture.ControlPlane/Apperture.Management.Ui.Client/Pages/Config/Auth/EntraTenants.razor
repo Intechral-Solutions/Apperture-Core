@@ -30,6 +30,12 @@
     else
     {
         <div class="mt-6 space-y-6 text-sm">
+            @if (_overview is not null)
+            {
+                <PageMessage Kind="@(_overview.RuntimeMayRequireRestartToApplyChanges ? PageMessageKind.Warning : PageMessageKind.Info)"
+                             Message="@_overview.RuntimeApplicationStatus" />
+            }
+
             <div class="overflow-x-auto rounded border border-default">
                 <table class="min-w-full text-left text-xs">
                     <thead class="bg-surface-muted text-heading">
@@ -97,6 +103,7 @@
     private bool _loading = true;
     private bool _busy;
     private IReadOnlyList<EntraTenantListItemDto>? _items;
+    private ConfigAuthOverviewDto? _overview;
     private string _newDisplay = "";
     private string _newAuthority = "";
     private string _newClientId = "";
@@ -121,6 +128,7 @@
     private async Task ReloadAsync()
     {
         _items = await Client.GetEntraTenantsAsync();
+        _overview = await Client.GetConfigAuthOverviewAsync();
     }
 
     private async Task CreateAsync()

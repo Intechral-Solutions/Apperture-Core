@@ -18,6 +18,8 @@ public sealed record AuthenticationAdminOverview(
     string? ActiveEntraRegistrationId,
     string? ActiveEntraRegistrationDisplayName,
     bool EntraSignInUsesActiveRegistration,
+    bool RuntimeMayRequireRestartToApplyChanges,
+    string RuntimeApplicationStatus,
     bool ShowLocalSignInInPrimaryChooser,
     bool PreferEntraInChooser,
     bool AutoRedirectToEntra,
@@ -59,7 +61,6 @@ public sealed class AuthenticationAdminOverviewService : IAuthenticationAdminOve
         var active = await _entraRegistrations.GetActiveAsync(cancellationToken);
 
         var legacyValidator = new EntraAuthOptionsValidator();
-        var legacyValidation = legacyValidator.Validate(null, legacyEntra);
         var entraEnabledInConfig = legacyEntra.Enabled;
 
         var effectiveValidation = legacyValidator.Validate(null, effectiveEntra);
@@ -78,10 +79,19 @@ public sealed class AuthenticationAdminOverviewService : IAuthenticationAdminOve
         var warnings = new List<string>();
         if (snap.EntraMisconfigured)
             warnings.Add("Entra is enabled for this instance but the current configuration is incomplete or invalid.");
+        if (policy.ShowLocalSignInInPrimaryChooser is false && snap.LocalSignInEnabled && snap.EntraSignInEnabled)
+            warnings.Add("Local sign-in is hidden from the primary chooser and available only through /login/local fallback.");
+        if (policy.ShowLocalSignInInPrimaryChooser is false && !snap.EntraSignInEnabled)
+            warnings.Add("Policy asks to hide local sign-in, but Entra is not currently usable; local will still be shown on the primary login page to avoid lockout.");
         if (active is not null && legacyEntra.Enabled && active.Enabled)
             warnings.Add("An active Entra registration in the database is overriding deployment Entra authority and client ID. Restart the management host after changing the active registration so OpenID Connect picks up authority and client changes.");
         if (!snap.LocalSignInEnabled && !snap.EntraSignInEnabled)
             warnings.Add("No viable sign-in method: enable local auth in deployment or fix Entra.");
+
+        var runtimeMayRequireRestart = active is { Enabled: true };
+        var runtimeApplicationStatus = runtimeMayRequireRestart
+            ? "Pending restart/reload confirmation: the active registration is persisted and used by API-derived state, but OpenID Connect handler behavior may lag until host restart."
+            : "No active Entra registration override is currently pending application.";
 
         return new AuthenticationAdminOverview(
             LocalAuthEnabled: snap.LocalSignInEnabled,
@@ -91,6 +101,8 @@ public sealed class AuthenticationAdminOverviewService : IAuthenticationAdminOve
             ActiveEntraRegistrationId: active?.Id,
             ActiveEntraRegistrationDisplayName: active?.DisplayName,
             EntraSignInUsesActiveRegistration: active is { Enabled: true },
+            RuntimeMayRequireRestartToApplyChanges: runtimeMayRequireRestart,
+            RuntimeApplicationStatus: runtimeApplicationStatus,
             ShowLocalSignInInPrimaryChooser: policy.ShowLocalSignInInPrimaryChooser,
             PreferEntraInChooser: policy.PreferEntraInChooser,
             AutoRedirectToEntra: policy.AutoRedirectToEntra,

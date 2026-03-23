@@ -30,6 +30,12 @@
     else
     {
         <div class="mt-6 max-w-xl space-y-6 text-sm text-body">
+            @if (_overview?.RuntimeMayRequireRestartToApplyChanges == true)
+            {
+                <PageMessage Kind="PageMessageKind.Warning"
+                             Message="@_overview.RuntimeApplicationStatus" />
+            }
+
             <section class="rounded border border-default bg-surface p-4">
                 <h2 class="font-medium text-heading">Effective experience (read-only)</h2>
                 <p class="mt-2 text-xs text-body">@(_opts.EffectiveExperienceDescription ?? "—")</p>
@@ -92,6 +98,7 @@
     private bool _loading = true;
     private AuthUiPolicyDto? _policy;
     private AuthSignInOptionsDto? _opts;
+    private ConfigAuthOverviewDto? _overview;
     private bool _showLocal = true;
     private bool _preferEntra;
     private bool _autoRedirect;
@@ -112,6 +119,7 @@
         await SignInOptions.RefreshAsync();
         _opts = SignInOptions.Current;
         _policy = await Client.GetAuthUiPolicyAsync();
+        _overview = await Client.GetConfigAuthOverviewAsync();
         if (_policy is not null)
         {
             _showLocal = _policy.ShowLocalSignInInPrimaryChooser;
@@ -138,6 +146,7 @@
             _policy = await Client.PatchAuthUiPolicyAsync(req);
             await SignInOptions.RefreshAsync();
             _opts = SignInOptions.Current;
+            _overview = await Client.GetConfigAuthOverviewAsync();
             Toasts.Show(ToastSeverity.Success, "Sign-in policy saved.");
         }
         catch (HttpRequestException ex)

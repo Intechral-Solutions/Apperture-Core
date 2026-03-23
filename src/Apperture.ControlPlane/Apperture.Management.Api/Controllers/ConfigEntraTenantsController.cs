@@ -228,6 +228,19 @@ public sealed class ConfigEntraTenantsController : ControllerBase
         if (!target.Enabled)
             return BadRequest(new { message = "Cannot activate a disabled registration." });
 
+        var policy = await _policyRepository.GetAsync(cancellationToken);
+        var legacy = AuthenticationConfigurationGuard.ReadLegacyEntraFromConfiguration(_configuration);
+        var simulated = CloneEntra(legacy);
+        simulated.Enabled = true;
+        simulated.Authority = target.Authority;
+        simulated.ClientId = target.ClientId;
+        if (!string.IsNullOrWhiteSpace(target.CallbackPath))
+            simulated.CallbackPath = target.CallbackPath!;
+
+        var lockout = AuthenticationConfigurationGuard.ValidateNoLockout(_localOptions.Value, policy, simulated);
+        if (lockout is not null)
+            return BadRequest(new { message = lockout });
+
         try
         {
             await _repository.SetActiveAsync(id, cancellationToken);

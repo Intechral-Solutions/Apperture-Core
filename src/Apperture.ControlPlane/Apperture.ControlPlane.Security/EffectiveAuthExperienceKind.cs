@@ -15,6 +15,9 @@ public enum EffectiveAuthExperienceKind
     /// <summary>Entra works; local hidden from primary chooser but available at /login/local.</summary>
     EntraPrimaryLocalFallback,
 
+    /// <summary>Entra works and local auth is disabled in deployment.</summary>
+    EntraOnlyPrimary,
+
     /// <summary>Both Entra and local appear on the primary sign-in page.</summary>
     DualVisible
 }

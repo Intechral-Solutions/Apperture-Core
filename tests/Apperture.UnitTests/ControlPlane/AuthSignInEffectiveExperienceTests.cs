@@ -34,4 +34,20 @@ public sealed class AuthSignInEffectiveExperienceTests
 
         AuthSignInEffectiveExperience.Resolve(s).Should().Be(EffectiveAuthExperienceKind.LocalOnly);
     }
+
+    [Fact]
+    public void Resolve_EntraOnlyPrimary_WhenLocalDisabledAndEntraEnabled()
+    {
+        var s = new AuthSignInOptionsSnapshot(
+            LocalSignInEnabled: false,
+            EntraSignInEnabled: true,
+            EntraMisconfigured: false,
+            ShowLocalSignInInPrimaryChooser: false,
+            PreferEntraInChooser: true,
+            AutoRedirectToEntra: true);
+
+        AuthSignInEffectiveExperience.Resolve(s).Should().Be(EffectiveAuthExperienceKind.EntraOnlyPrimary);
+        AuthSignInEffectiveExperience.Describe(EffectiveAuthExperienceKind.EntraOnlyPrimary)
+            .Should().Contain("Only Microsoft (Entra) sign-in");
+    }
 }

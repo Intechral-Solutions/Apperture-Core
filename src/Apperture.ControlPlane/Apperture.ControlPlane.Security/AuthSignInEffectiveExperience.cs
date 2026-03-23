@@ -23,7 +23,7 @@ public static class AuthSignInEffectiveExperience
 
         // Entra only, local disabled
         if (s.EntraSignInEnabled && !s.LocalSignInEnabled)
-            return EffectiveAuthExperienceKind.EntraPrimaryLocalFallback;
+            return EffectiveAuthExperienceKind.EntraOnlyPrimary;
 
         return EffectiveAuthExperienceKind.NoViableSignIn;
     }
@@ -38,6 +38,8 @@ public static class AuthSignInEffectiveExperience
             "Entra is enabled but misconfigured; users should use local sign-in until Entra is fixed.",
         EffectiveAuthExperienceKind.EntraPrimaryLocalFallback =>
             "Primary sign-in emphasizes Microsoft (Entra); local sign-in remains available at /login/local for recovery.",
+        EffectiveAuthExperienceKind.EntraOnlyPrimary =>
+            "Only Microsoft (Entra) sign-in is available because local auth is disabled in deployment.",
         EffectiveAuthExperienceKind.DualVisible =>
             "Both Microsoft (Entra) and local sign-in appear on the primary sign-in page (ordering follows policy).",
         _ => k.ToString()

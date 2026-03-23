@@ -55,8 +55,15 @@
                         <li class="text-muted">@_overview.EntraMisconfiguredReason</li>
                     }
                     <li>Active Entra registration: @(string.IsNullOrEmpty(_overview.ActiveEntraRegistrationDisplayName) ? "none" : _overview.ActiveEntraRegistrationDisplayName)</li>
-                    <li>Sign-in options use active DB registration for authority/client: @(_overview.EntraSignInUsesActiveRegistration ? "yes" : "no")</li>
+                    <li>Active registration is selected in persisted config: @(_overview.EntraSignInUsesActiveRegistration ? "yes" : "no")</li>
                 </ul>
+                <h3 class="mt-4 text-xs font-medium text-heading">Runtime application status</h3>
+                <p class="mt-1 text-xs text-muted">@_overview.RuntimeApplicationStatus</p>
+                @if (_overview.RuntimeMayRequireRestartToApplyChanges)
+                {
+                    <PageMessage Kind="PageMessageKind.Warning"
+                                 Message="Runtime OIDC behavior may lag after registration changes. Restart the management host to ensure /signin uses the newly active authority and client ID." />
+                }
                 <h3 class="mt-4 text-xs font-medium text-heading">Chooser policy (persisted)</h3>
                 <ul class="mt-1 list-inside list-disc space-y-1 text-xs text-muted">
                     <li>Show local on primary: @_overview.ShowLocalSignInInPrimaryChooser</li>

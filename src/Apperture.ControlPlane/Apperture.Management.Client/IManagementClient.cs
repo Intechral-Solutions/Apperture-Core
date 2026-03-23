@@ -560,6 +560,8 @@ public sealed record ConfigAuthOverviewDto(
     [property: JsonPropertyName("activeEntraRegistrationId")] string? ActiveEntraRegistrationId,
     [property: JsonPropertyName("activeEntraRegistrationDisplayName")] string? ActiveEntraRegistrationDisplayName,
     [property: JsonPropertyName("entraSignInUsesActiveRegistration")] bool EntraSignInUsesActiveRegistration,
+    [property: JsonPropertyName("runtimeMayRequireRestartToApplyChanges")] bool RuntimeMayRequireRestartToApplyChanges,
+    [property: JsonPropertyName("runtimeApplicationStatus")] string RuntimeApplicationStatus,
     [property: JsonPropertyName("showLocalSignInInPrimaryChooser")] bool ShowLocalSignInInPrimaryChooser,
     [property: JsonPropertyName("preferEntraInChooser")] bool PreferEntraInChooser,
     [property: JsonPropertyName("autoRedirectToEntra")] bool AutoRedirectToEntra,

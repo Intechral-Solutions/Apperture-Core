@@ -46,6 +46,8 @@ public sealed class ConfigAuthOverviewController : ControllerBase
             ActiveEntraRegistrationId = o.ActiveEntraRegistrationId,
             ActiveEntraRegistrationDisplayName = o.ActiveEntraRegistrationDisplayName,
             EntraSignInUsesActiveRegistration = o.EntraSignInUsesActiveRegistration,
+            RuntimeMayRequireRestartToApplyChanges = o.RuntimeMayRequireRestartToApplyChanges,
+            RuntimeApplicationStatus = o.RuntimeApplicationStatus,
             ShowLocalSignInInPrimaryChooser = o.ShowLocalSignInInPrimaryChooser,
             PreferEntraInChooser = o.PreferEntraInChooser,
             AutoRedirectToEntra = o.AutoRedirectToEntra,
