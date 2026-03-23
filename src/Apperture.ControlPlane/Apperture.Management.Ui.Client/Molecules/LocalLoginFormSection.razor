@@ -18,13 +18,15 @@
             <label class="text-xs text-muted">Password</label>
             <InputText type="password" @bind-Value="_model.Password" class="mt-1 w-full rounded border border-default bg-surface px-2 py-2 text-sm" autocomplete="current-password" />
         </div>
-        @if (!string.IsNullOrEmpty(_error))
-        {
-            <PageMessage Kind="PageMessageKind.Error" Message="@_error" />
-        }
-        <button type="submit" class="w-full rounded bg-surface-muted px-3 py-2 text-sm font-medium text-heading hover:bg-surface disabled:opacity-50" disabled="@_busy">
-            @(_busy ? "Signing in…" : "Sign in")
-        </button>
+        <div class="mt-6 space-y-3">
+            @if (!string.IsNullOrEmpty(_error))
+            {
+                <PageMessage Kind="PageMessageKind.Error" Message="@_error" />
+            }
+            <button type="submit" class="w-full rounded bg-surface-muted px-3 py-2 text-sm font-medium text-heading hover:bg-surface disabled:opacity-50" disabled="@_busy">
+                @(_busy ? "Signing in…" : "Sign in")
+            </button>
+        </div>
     </EditForm>
 </div>
 
