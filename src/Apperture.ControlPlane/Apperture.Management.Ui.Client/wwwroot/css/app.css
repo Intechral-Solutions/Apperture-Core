@@ -2276,6 +2276,22 @@
   .bg-surface-muted {
     background-color: var(--color-surface-muted);
   }
+  .hover\:bg-surface-muted {
+    &:hover {
+      @media (hover: hover) {
+        background-color: var(--color-surface-muted);
+      }
+    }
+  }
+  /* Blue glow conforming to SVG shape (gear icon); uses theme focus color */
+  .nav-rail-icon-glow {
+    filter: none;
+    transition: filter 200ms ease;
+  }
+  .group:hover .nav-rail-icon-glow,
+  .nav-rail-item-glowing .nav-rail-icon-glow {
+    filter: drop-shadow(0 0 6px var(--color-focus));
+  }
   .text-heading {
     color: var(--color-text-heading);
   }

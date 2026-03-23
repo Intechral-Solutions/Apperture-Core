@@ -39,7 +39,8 @@
                              CurrentPageUri="@NavManager.Uri"
                              ContainerStyle="group relative inline-block -translate-y-5"
                              NavButtonStyle="h-12 w-12 flex items-center"
-                             IconStyle="@(_isConfigActive ? "h-10 w-10 translate-x-1 text-body opacity-100" : "h-10 w-10 translate-x-1 text-body opacity-60 group-hover:opacity-90")"
+                             IconStyle="@GetConfigIconStyle()"
+                             UseGlowEffect="true"
                              OnItemClick="HandleNavItemClick" />
             </div>
         </nav>
@@ -60,6 +61,10 @@
         string.Equals(CurrentDomainName, SectionOwnerConstants.Dashboard, StringComparison.OrdinalIgnoreCase);
     private bool _isConfigActive =>
         string.Equals(CurrentDomainName, SectionOwnerConstants.Config, StringComparison.OrdinalIgnoreCase);
+
+    private string GetConfigIconStyle() =>
+        "h-10 w-10 translate-x-1 text-body transition-opacity duration-200 " +
+        (_isConfigActive ? "opacity-100" : "opacity-60 group-hover:opacity-90");
 
     protected override async Task OnInitializedAsync()
     {

@@ -3,6 +3,7 @@
 @using Apperture.Management.Ui.Shared.Models
 @inject DomainMenuService DomainMenuService
 @inject NavigationManager NavManager
+@implements IDisposable
 
 <div id="control-panel" class="h-full w-54 bg-surface transition-transform duration-300 z-20 flex flex-col relative overflow-auto border-r border-default text-body @(IsOpen ? "translate-x-0" : "-translate-x-full")">
     @if (Definition is null)
@@ -79,7 +80,30 @@
     [Parameter] public bool IsOpen { get; set; }
     [Parameter] public string DomainName { get; set; } = "";
 
+    private bool _disposed;
     private string _currentPath => new Uri(NavManager.Uri).AbsolutePath.TrimEnd('/');
+
+    protected override void OnInitialized()
+    {
+        NavManager.LocationChanged += OnLocationChanged;
+    }
+
+    public void Dispose()
+    {
+        if (_disposed) return;
+        _disposed = true;
+        NavManager.LocationChanged -= OnLocationChanged;
+    }
+
+    private void OnLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
+    {
+        _ = InvokeAsync(() =>
+        {
+            if (_disposed) return;
+            StateHasChanged();
+        });
+    }
+
     private DomainMenu? Definition => DomainMenuService.GetDomain(DomainName);
 
     private string? TitleToShow

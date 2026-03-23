@@ -5,7 +5,7 @@
 @if (!string.IsNullOrEmpty(Href))
 {
     <a href="@Href"
-       class="@ContainerStyle"
+       class="@EffectiveContainerStyle"
        aria-label="@AriaLabel"
        @onclick="@RaiseClick"
        @onclick:preventDefault="@(OnItemClick.HasDelegate)">
@@ -17,7 +17,7 @@
 }
 else
 {
-    <div class="@ContainerStyle" @onclick="@RaiseClick">
+    <div class="@EffectiveContainerStyle" @onclick="@RaiseClick">
         <button type="button" class="@EffectiveNavButtonStyle" aria-label="@AriaLabel">
             <DynamicComponent Type="@IconType" Parameters="EffectiveIconParameters" />
         </button>
@@ -35,6 +35,8 @@ else
     [Parameter] public string? CurrentDomain { get; set; }
     [Parameter] public string? CurrentPageUri { get; set; }
     [Parameter] public string ContainerStyle { get; set; } = "group relative inline-block";
+    /// <summary>When true, uses blue glow on icon instead of tile background for hover/active.</summary>
+    [Parameter] public bool UseGlowEffect { get; set; }
     [Parameter]
     public string NavButtonStyle { get; set; } =
         "p-3 rounded-sm transition-colors duration-200 " +
@@ -55,13 +57,17 @@ else
         !string.IsNullOrEmpty(CurrentDomain) &&
         string.Equals(Domain, CurrentDomain, StringComparison.OrdinalIgnoreCase);
 
+    private string EffectiveContainerStyle =>
+        ContainerStyle + (UseGlowEffect && IsActive ? " nav-rail-item-glowing" : "");
+
     private string EffectiveNavButtonStyle =>
-        IsActive
+        IsActive && !UseGlowEffect
             ? NavButtonStyle + " bg-slate-400 dark:bg-slate-600 bg-opacity-30 dark:bg-opacity-30"
             : NavButtonStyle;
 
     private string EffectiveIconClass =>
-        IsActive ? $"{IconStyle} opacity-100" : IconStyle;
+        (IsActive ? $"{IconStyle} opacity-100" : IconStyle) +
+        (UseGlowEffect ? " nav-rail-icon-glow" : "");
 
     private IDictionary<string, object> EffectiveIconParameters =>
         new Dictionary<string, object> { ["class"] = EffectiveIconClass };
