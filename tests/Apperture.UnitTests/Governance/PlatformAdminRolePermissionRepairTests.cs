@@ -29,12 +29,14 @@ public sealed class PlatformAdminRolePermissionRepairTests
 
         repaired.Should().Contain(p =>
             p.Action == ActionConstants.UserRead &&
-            p.Resource?.ResourceType == ResourceTypeConstants.Role &&
-            p.Resource?.ScopeKey == ScopeKeyConstants.Instance);
+            p.Resource != null &&
+            p.Resource.ResourceType == ResourceTypeConstants.Role &&
+            p.Resource.ScopeKey == ScopeKeyConstants.Instance);
         repaired.Should().Contain(p =>
             p.Action == ActionConstants.PermissionAssign &&
-            p.Resource?.ResourceType == ResourceTypeConstants.Role &&
-            p.Resource?.ScopeKey == ScopeKeyConstants.Instance);
+            p.Resource != null &&
+            p.Resource.ResourceType == ResourceTypeConstants.Role &&
+            p.Resource.ScopeKey == ScopeKeyConstants.Instance);
     }
 
     [Fact]

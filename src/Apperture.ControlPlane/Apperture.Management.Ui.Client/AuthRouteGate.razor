@@ -1,0 +1,87 @@
+@using Apperture.Management.Ui.Client.Services
+@using Apperture.Management.Ui.Shared.Auth
+@implements IDisposable
+@inject SessionStateService Session
+@inject NavigationManager Nav
+
+@if (_blockProtectedShell)
+{
+    <div class="flex min-h-screen items-center justify-center bg-surface-elevated px-4">
+        <p class="text-sm text-muted">Loading session…</p>
+    </div>
+}
+else
+{
+    @ChildContent
+}
+
+@code {
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    private bool _blockProtectedShell;
+
+    protected override void OnInitialized()
+    {
+        Session.Changed += OnSessionChanged;
+        Nav.LocationChanged += OnLocationChanged;
+        UpdateBlocking();
+        _ = ApplyNavigationRulesAsync();
+    }
+
+    public void Dispose()
+    {
+        Session.Changed -= OnSessionChanged;
+        Nav.LocationChanged -= OnLocationChanged;
+    }
+
+    private void OnSessionChanged()
+    {
+        UpdateBlocking();
+        _ = ApplyNavigationRulesAsync();
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    private void OnLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
+    {
+        UpdateBlocking();
+        _ = ApplyNavigationRulesAsync();
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    private void UpdateBlocking()
+    {
+        var path = new Uri(Nav.Uri).AbsolutePath;
+        var pub = LoginRouteHelper.IsPublicPath(path);
+        _blockProtectedShell = !pub && Session.State is SessionLoadState.Unknown or SessionLoadState.Loading;
+    }
+
+    private async Task ApplyNavigationRulesAsync()
+    {
+        var path = new Uri(Nav.Uri).AbsolutePath;
+        await Task.Yield();
+
+        if (LoginRouteHelper.IsPublicPath(path))
+        {
+            if (Session.State == SessionLoadState.Authenticated && Session.User is not null)
+            {
+                var returnUrl = LoginRouteHelper.GetReturnUrlRaw(Nav.Uri);
+                var safe = LoginRouteHelper.NormalizeReturnUrl(returnUrl) ?? LoginRouteHelper.DefaultPostLoginPath;
+                Nav.NavigateTo(safe, replace: true);
+            }
+
+            return;
+        }
+
+        if (Session.State is SessionLoadState.Unknown or SessionLoadState.Loading)
+            return;
+
+        if (Session.State is SessionLoadState.ForbiddenUnlinked or SessionLoadState.Authenticated)
+            return;
+
+        if (Session.State is SessionLoadState.Unauthenticated or SessionLoadState.Error)
+        {
+            var enc = Uri.EscapeDataString(path + new Uri(Nav.Uri).Query);
+            Nav.NavigateTo($"/login?returnUrl={enc}", replace: true);
+        }
+    }
+}

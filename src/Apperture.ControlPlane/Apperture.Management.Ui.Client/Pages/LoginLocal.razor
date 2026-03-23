@@ -1,0 +1,50 @@
+@page "/login/local"
+@layout MainLayout
+@using Apperture.Management.Ui.Client.Molecules
+@using Apperture.Management.Ui.Client.Organisms
+@using Apperture.Management.Ui.Client.Services
+@using Apperture.Management.Ui.Shared.Auth
+@inject AuthSignInOptionsService SignInOptions
+@inject NavigationManager Nav
+
+<div class="mx-auto max-w-md p-6">
+    <PageHeader Title="Local sign-in"
+                Subtitle="Backup sign-in with your platform username and password. Use this if organizational sign-in is unavailable." />
+
+    @if (SignInOptions.LastError is not null)
+    {
+        <PageMessage Kind="PageMessageKind.Error" Message="Could not load sign-in options. Check the management API and try again." />
+    }
+    else if (_opts is not null && !_opts.LocalSignInEnabled)
+    {
+        <PageMessage Kind="PageMessageKind.Error" Message="Local sign-in is disabled for this deployment." />
+    }
+    else if (_opts is not null)
+    {
+        <div class="mt-6">
+            <LocalLoginFormSection ReturnPath="@_returnPath" />
+        </div>
+        <p class="mt-4 text-center text-xs text-muted">
+            <a class="underline hover:text-heading" href="/login@(string.IsNullOrEmpty(_rawReturnQuery) ? "" : "?" + _rawReturnQuery)">Back to main sign-in</a>
+        </p>
+    }
+</div>
+
+@code {
+    private Apperture.Management.Client.AuthSignInOptionsDto? _opts => SignInOptions.Current;
+    private string? _returnPath;
+    private string? _rawReturnQuery;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (SignInOptions.Current is null)
+            await SignInOptions.RefreshAsync();
+
+        var raw = LoginRouteHelper.GetReturnUrlRaw(Nav.Uri);
+        if (raw is not null)
+        {
+            _returnPath = LoginRouteHelper.NormalizeReturnUrl(raw);
+            _rawReturnQuery = $"returnUrl={Uri.EscapeDataString(raw)}";
+        }
+    }
+}

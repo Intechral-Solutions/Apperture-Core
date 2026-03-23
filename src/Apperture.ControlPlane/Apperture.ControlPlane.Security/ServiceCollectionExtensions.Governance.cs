@@ -47,6 +47,7 @@ public static class ServiceCollectionExtensions
             return registry;
         });
         services.AddSingleton<IScopeContainmentEvaluator, ScopeContainmentEvaluator>();
+        services.AddScoped<IInstanceAuthUiPolicyRepository, SqlInstanceAuthUiPolicyRepository>();
         services.AddScoped<IUserRepository, SqlUserRepository>();
         services.AddScoped<IRoleRepository, SqlRoleRepository>();
         services.AddScoped<IPrincipalToUserResolver, SqlPrincipalToUserResolver>();

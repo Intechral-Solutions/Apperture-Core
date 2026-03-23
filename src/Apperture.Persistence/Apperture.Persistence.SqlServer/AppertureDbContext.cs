@@ -43,6 +43,7 @@ public class AppertureDbContext : DbContext
     public DbSet<ScheduleAssignmentEntity> ScheduleAssignments => Set<ScheduleAssignmentEntity>();
     public DbSet<ScheduleRunEntity> ScheduleRuns => Set<ScheduleRunEntity>();
     public DbSet<ScheduleStateEntity> ScheduleStates => Set<ScheduleStateEntity>();
+    public DbSet<InstanceAuthUiPolicyEntity> InstanceAuthUiPolicies => Set<InstanceAuthUiPolicyEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -467,6 +468,14 @@ public class AppertureDbContext : DbContext
             e.Property(x => x.AssignmentId).HasMaxLength(64);
             e.Property(x => x.LastOutcome).HasMaxLength(64);
             e.Property(x => x.LastOutcomeReason).HasMaxLength(2048);
+        });
+
+        modelBuilder.Entity<InstanceAuthUiPolicyEntity>(e =>
+        {
+            e.ToTable("InstanceAuthUiPolicies");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasMaxLength(64);
+            e.Property(x => x.RowVersion).IsRowVersion();
         });
     }
 }

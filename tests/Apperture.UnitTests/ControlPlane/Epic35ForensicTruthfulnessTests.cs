@@ -1,3 +1,4 @@
+using System;
 using Apperture.ControlPlane.Security;
 using Apperture.Management.Ui.Shared;
 using FluentAssertions;
@@ -20,10 +21,10 @@ public sealed class Epic35ForensicTruthfulnessTests
             startCorrelationId: null,
             hasStartRequest: false);
 
-        detail.Should().Contain("insufficient", StringComparison.OrdinalIgnoreCase);
-        detail.Should().Contain("No persisted", StringComparison.OrdinalIgnoreCase);
-        detail.Should().NotContain("schedule", StringComparison.OrdinalIgnoreCase);
-        detail.Should().NotContain("manual", StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("insufficient", detail, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("No persisted", detail, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("schedule", detail, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("manual", detail, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -45,15 +46,15 @@ public sealed class Epic35ForensicTruthfulnessTests
     [Fact]
     public void ModuleLabel_MentionsFromDefinition_SoUiDoesNotOverclaim()
     {
-        Epic33UiDisplayHelpers.RunForensicModuleLabel.Should().Contain("definition", StringComparison.OrdinalIgnoreCase);
-        Epic33UiDisplayHelpers.RunForensicModuleLabel.Should().Contain("Module", StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("definition", Epic33UiDisplayHelpers.RunForensicModuleLabel, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Module", Epic33UiDisplayHelpers.RunForensicModuleLabel, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
     public void ScheduleDisclaimer_ExplicitlyStatesNotPersistedAssociation()
     {
-        Epic33UiDisplayHelpers.RunScheduleInferenceDisclaimer.Should().Contain("inferred", StringComparison.OrdinalIgnoreCase);
-        Epic33UiDisplayHelpers.RunScheduleInferenceDisclaimer.Should().Contain("not a separate persisted", StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("inferred", Epic33UiDisplayHelpers.RunScheduleInferenceDisclaimer, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("not a separate persisted", Epic33UiDisplayHelpers.RunScheduleInferenceDisclaimer, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

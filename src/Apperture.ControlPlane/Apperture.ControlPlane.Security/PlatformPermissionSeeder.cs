@@ -71,6 +71,12 @@ public static class PlatformPermissionSeeder
         Register(registry, ActionConstants.ModuleInstall, ResourceTypeConstants.Module, ScopeKeyConstants.Instance, ResourceFamily.Core);
         Register(registry, ActionConstants.ModuleConfigure, ResourceTypeConstants.Module, ScopeKeyConstants.Instance, ResourceFamily.Core);
 
+        // Instance configuration (sign-in UX policy)
+        registry.RegisterResource(
+            new ResourceDescriptor(ResourceTypeConstants.InstanceConfiguration, ScopeKeyConstants.Instance),
+            ResourceFamily.Administrative);
+        Register(registry, ActionConstants.AuthUiPolicyManage, ResourceTypeConstants.InstanceConfiguration, ScopeKeyConstants.Instance, ResourceFamily.Administrative);
+
         // Administrative
         Register(registry, ActionConstants.ScheduleManage, ResourceTypeConstants.Schedule, ScopeKeyConstants.Instance, ResourceFamily.Administrative);
         Register(registry, ActionConstants.RecoveryRead, ResourceTypeConstants.Recovery, ScopeKeyConstants.Instance, ResourceFamily.Administrative);

@@ -1,0 +1,9 @@
+<button type="button"
+        class="w-full rounded bg-surface-muted px-3 py-2.5 text-sm font-medium text-heading hover:bg-surface"
+        @onclick="OnClick">
+    Continue with Microsoft
+</button>
+
+@code {
+    [Parameter] public EventCallback OnClick { get; set; }
+}

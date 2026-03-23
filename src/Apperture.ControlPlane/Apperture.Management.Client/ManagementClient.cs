@@ -448,7 +448,7 @@ public sealed class ManagementClient : IManagementClient
     public async Task<OperatorCapabilitiesDto> GetOperatorCapabilitiesAsync(CancellationToken cancellationToken = default)
     {
         var dto = await _http.GetFromJsonAsync<OperatorCapabilitiesDto>("control/capabilities", cancellationToken).ConfigureAwait(false);
-        return dto ?? new OperatorCapabilitiesDto(false, false, false, false, false, false, false, false);
+        return dto ?? new OperatorCapabilitiesDto(false, false, false, false, false, false, false, false, false);
     }
 
     public async Task<StartOperationResult> StartOperationAsync(
@@ -544,5 +544,39 @@ public sealed class ManagementClient : IManagementClient
     {
         var response = await _http.PostAsync("auth/local/logout", content: null, cancellationToken).ConfigureAwait(false);
         response.EnsureSuccessStatusCode();
+    }
+
+    public async Task<AuthSignInOptionsDto> GetAuthSignInOptionsAsync(CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.GetAsync("auth/sign-in-options", cancellationToken).ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+        var dto = await response.Content.ReadFromJsonAsync<AuthSignInOptionsDto>(cancellationToken).ConfigureAwait(false);
+        return dto ?? throw new InvalidOperationException("sign-in-options response was empty.");
+    }
+
+    public async Task<AuthUiPolicyDto?> GetAuthUiPolicyAsync(CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.GetAsync("config/auth-ui-policy", cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode == HttpStatusCode.Unauthorized || response.StatusCode == HttpStatusCode.Forbidden)
+            return null;
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<AuthUiPolicyDto>(cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<AuthUiPolicyDto> PatchAuthUiPolicyAsync(UpdateAuthUiPolicyRequest request, CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.PatchAsJsonAsync("config/auth-ui-policy", request, cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode is HttpStatusCode.BadRequest or HttpStatusCode.Conflict or HttpStatusCode.Forbidden)
+        {
+            var detail = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            throw new HttpRequestException(
+                string.IsNullOrWhiteSpace(detail) ? response.ReasonPhrase : detail,
+                null,
+                response.StatusCode);
+        }
+
+        response.EnsureSuccessStatusCode();
+        var dto = await response.Content.ReadFromJsonAsync<AuthUiPolicyDto>(cancellationToken).ConfigureAwait(false);
+        return dto ?? throw new InvalidOperationException("auth-ui-policy patch response was empty.");
     }
 }

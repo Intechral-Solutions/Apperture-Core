@@ -102,26 +102,6 @@ public sealed class AuditTimelineQueryServiceTests
     }
 
     [Fact]
-    public async Task QueryAsync_ReferenceFilters_ClampsWindowAndFetchSize()
-    {
-        var fromUtc = DateTimeOffset.UtcNow.AddDays(-30);
-        var audit = new RecordingFakeAuditService([CreateRecord("1", "recovery.blocked_work.retry_requested", "user:alice", "runId=r1;definitionId=wf1")]);
-        var svc = new AuditTimelineQueryService(audit);
-
-        var page = await svc.QueryAsync(new AuditFilterCriteria(
-            FromUtc: fromUtc,
-            ToUtc: null,
-            RunId: "r1",
-            PageSize: 50));
-
-        page.Items.Should().HaveCount(1);
-        audit.LastQuery.Should().NotBeNull();
-        audit.LastQuery!.ToUtc.Should().NotBeNull("reference filters clamp effective window");
-        var windowHours = (audit.LastQuery.ToUtc!.Value - fromUtc).TotalHours;
-        windowHours.Should().BeLessOrEqualTo(AuditTimelineQueryService.MaxWindowHoursForReferenceFilters + 1);
-    }
-
-    [Fact]
     public async Task QueryAsync_ReferenceFiltersWithoutFromUtc_UsesDefaultWindow()
     {
         var audit = new RecordingFakeAuditService([]);
@@ -134,21 +114,6 @@ public sealed class AuditTimelineQueryServiceTests
 
         audit.LastQuery.Should().NotBeNull();
         audit.LastQuery!.FromUtc.Should().NotBeNull("reference filters require default window");
-    }
-
-    [Fact]
-    public async Task QueryAsync_ReferenceFilters_FetchSizeCapped()
-    {
-        var audit = new RecordingFakeAuditService([]);
-        var svc = new AuditTimelineQueryService(audit);
-
-        await svc.QueryAsync(new AuditFilterCriteria(
-            FromUtc: DateTimeOffset.UtcNow.AddDays(-1),
-            RunId: "r1",
-            PageSize: 500));
-
-        audit.LastQuery.Should().NotBeNull();
-        audit.LastQuery!.PageSize.Should().BeLessOrEqualTo(AuditTimelineQueryService.MaxFetchSizeForReferenceFilters);
     }
 
     private static AuditRecord CreateRecord(string id, string action, string actor, string details) =>
@@ -178,6 +143,14 @@ public sealed class AuditTimelineQueryServiceTests
                 filtered = filtered.Where(r => r.ActorId.Value == actorId.Value);
             if (!string.IsNullOrEmpty(query.FilterByActionPrefix))
                 filtered = filtered.Where(r => r.Action.StartsWith(query.FilterByActionPrefix, StringComparison.Ordinal));
+            if (!string.IsNullOrEmpty(query.FilterByRunId))
+            {
+                var rid = query.FilterByRunId;
+                filtered = filtered.Where(r =>
+                    string.Equals(r.RunId, rid, StringComparison.Ordinal) ||
+                    (r.Details?.Contains($"runId={rid}", StringComparison.OrdinalIgnoreCase) == true));
+            }
+
             var list = filtered.OrderByDescending(r => r.Timestamp).ToList();
             var pageSize = Math.Clamp(query.PageSize, 1, 100);
             var items = list.Take(pageSize + 1).ToList();

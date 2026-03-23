@@ -146,6 +146,15 @@ public interface IManagementClient
     /// <summary>Clears auth cookie (204).</summary>
     Task LocalLogoutAsync(CancellationToken cancellationToken = default);
 
+    /// <summary>Merged sign-in capabilities and chooser policy (anonymous).</summary>
+    Task<AuthSignInOptionsDto> GetAuthSignInOptionsAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>Gets persisted auth UI policy. Returns null on 401/403.</summary>
+    Task<AuthUiPolicyDto?> GetAuthUiPolicyAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>Updates auth UI policy. Throws <see cref="HttpRequestException"/> on 400/403/409.</summary>
+    Task<AuthUiPolicyDto> PatchAuthUiPolicyAsync(UpdateAuthUiPolicyRequest request, CancellationToken cancellationToken = default);
+
     // --- Governance admin (Epic 39/40) ---
 
     /// <summary>Gets the governance descriptor catalog (resources and permissions). Requires user.read.</summary>
@@ -242,7 +251,8 @@ public sealed record OperatorCapabilitiesDto(
     bool CanManageModules,
     bool CanViewGovernance = false,
     bool CanAssignPermissions = false,
-    bool CanAssignRoles = false);
+    bool CanAssignRoles = false,
+    bool CanManageAuthUiPolicy = false);
 
 public sealed record BlockedWorkRetryResult(
     bool Success,
@@ -508,3 +518,23 @@ public sealed record LocalLoginRequest(
 public sealed record LocalLoginResponse(
     [property: JsonPropertyName("userId")] string UserId,
     [property: JsonPropertyName("displayName")] string DisplayName);
+
+public sealed record AuthSignInOptionsDto(
+    [property: JsonPropertyName("localSignInEnabled")] bool LocalSignInEnabled,
+    [property: JsonPropertyName("entraSignInEnabled")] bool EntraSignInEnabled,
+    [property: JsonPropertyName("entraMisconfigured")] bool EntraMisconfigured,
+    [property: JsonPropertyName("showLocalSignInInPrimaryChooser")] bool ShowLocalSignInInPrimaryChooser,
+    [property: JsonPropertyName("preferEntraInChooser")] bool PreferEntraInChooser,
+    [property: JsonPropertyName("autoRedirectToEntra")] bool AutoRedirectToEntra);
+
+public sealed record AuthUiPolicyDto(
+    [property: JsonPropertyName("showLocalSignInInPrimaryChooser")] bool ShowLocalSignInInPrimaryChooser,
+    [property: JsonPropertyName("preferEntraInChooser")] bool PreferEntraInChooser,
+    [property: JsonPropertyName("autoRedirectToEntra")] bool AutoRedirectToEntra,
+    [property: JsonPropertyName("rowVersionBase64")] string? RowVersionBase64);
+
+public sealed record UpdateAuthUiPolicyRequest(
+    [property: JsonPropertyName("showLocalSignInInPrimaryChooser")] bool ShowLocalSignInInPrimaryChooser,
+    [property: JsonPropertyName("preferEntraInChooser")] bool PreferEntraInChooser,
+    [property: JsonPropertyName("autoRedirectToEntra")] bool AutoRedirectToEntra,
+    [property: JsonPropertyName("rowVersionBase64")] string? RowVersionBase64);

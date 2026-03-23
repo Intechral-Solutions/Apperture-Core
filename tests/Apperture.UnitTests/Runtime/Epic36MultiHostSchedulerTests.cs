@@ -5,6 +5,7 @@ using Apperture.Core.Domain.Scheduling;
 using Apperture.ControlPlane.Security;
 using Apperture.ModuleSdk.Abstractions;
 using Apperture.Persistence.SqlServer;
+using Apperture.RuntimePlane.Abstractions;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;

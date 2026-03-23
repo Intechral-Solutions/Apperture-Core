@@ -12,7 +12,7 @@ namespace Apperture.ControlPlane.Security;
 public sealed class OperatorCapabilitiesQueryService : IOperatorCapabilitiesQueryService
 {
     private static readonly OperatorCapabilitiesDto DenyAll =
-        new(false, false, false, false, false, false, false, false);
+        new(false, false, false, false, false, false, false, false, false);
 
     private readonly IPrincipalContext _principalContext;
     private readonly IAuthorizationEvaluationService _authorization;
@@ -52,6 +52,11 @@ public sealed class OperatorCapabilitiesQueryService : IOperatorCapabilitiesQuer
             var canViewGovernance = await EvaluateAsync(actor, ActionConstants.UserRead, ResourceTypeConstants.Role, cancellationToken).ConfigureAwait(false);
             var canAssignPermissions = await EvaluateAsync(actor, ActionConstants.PermissionAssign, ResourceTypeConstants.Role, cancellationToken).ConfigureAwait(false);
             var canAssignRoles = await EvaluateAsync(actor, ActionConstants.RoleAssign, ResourceTypeConstants.Role, cancellationToken).ConfigureAwait(false);
+            var canManageAuthUiPolicy = await EvaluateAsync(
+                actor,
+                ActionConstants.AuthUiPolicyManage,
+                ResourceTypeConstants.InstanceConfiguration,
+                cancellationToken).ConfigureAwait(false);
 
             return new OperatorCapabilitiesDto(
                 canManageSchedules,
@@ -61,7 +66,8 @@ public sealed class OperatorCapabilitiesQueryService : IOperatorCapabilitiesQuer
                 canManageModules,
                 canViewGovernance,
                 canAssignPermissions,
-                canAssignRoles);
+                canAssignRoles,
+                canManageAuthUiPolicy);
         }
         catch (Exception ex)
         {

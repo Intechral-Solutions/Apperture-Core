@@ -1,3 +1,4 @@
+using System;
 using Apperture.ControlPlane.Security;
 using FluentAssertions;
 using Xunit;
@@ -62,7 +63,7 @@ public sealed class RunOriginClassifierTests
         kind.Should().Be(RunOriginKindNames.Scheduled);
         schedId.Should().Be(scheduleId);
         fireUtc.Should().Be(fire);
-        detail.Should().Contain("idempotency", StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("idempotency", detail, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -80,7 +81,7 @@ public sealed class RunOriginClassifierTests
 
         kind.Should().Be(RunOriginKindNames.Scheduled);
         schedId.Should().Be(scheduleId);
-        detail.Should().Contain("correlation", StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("correlation", detail, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

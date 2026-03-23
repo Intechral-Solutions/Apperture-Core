@@ -13,6 +13,7 @@ public static class AppertureUiShellServiceCollectionExtensions
         services.AddScoped<ThemeService>();
         services.AddSingleton<IToastService, ToastService>();
         services.AddScoped<SessionStateService>();
+        services.AddScoped<AuthSignInOptionsService>();
         services.AddScoped<ShellHostNavigation>();
         return services;
     }

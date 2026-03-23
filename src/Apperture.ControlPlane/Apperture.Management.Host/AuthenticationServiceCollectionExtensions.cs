@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 
 namespace Apperture.Management.Host;
@@ -96,6 +97,19 @@ public static class AuthenticationServiceCollectionExtensions
                                 Details: null);
                             await audit.AppendAsync(record, ctx.HttpContext.RequestAborted);
                         }
+                    },
+                    OnRemoteFailure = ctx =>
+                    {
+                        // Blazor WASM dev server is typically on 9001 while this host is on 9000; send users to the UI login surface.
+                        var env = ctx.HttpContext.RequestServices.GetService<IHostEnvironment>();
+                        if (env?.IsDevelopment() == true)
+                        {
+                            var msg = Uri.EscapeDataString(ctx.Failure?.Message ?? "sign_in_failed");
+                            ctx.Response.Redirect($"http://localhost:9001/login?error=oidc&detail={msg}");
+                            ctx.HandleResponse();
+                        }
+
+                        return Task.CompletedTask;
                     }
                 };
             });

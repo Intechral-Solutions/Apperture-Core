@@ -18,6 +18,9 @@ public static class ResourceTypeConstants
     public const string Role = "Role";
     public const string ServiceAccount = "ServiceAccount";
 
+    /// <summary>Instance-wide operator configuration (sign-in UX policy, etc.).</summary>
+    public const string InstanceConfiguration = "InstanceConfiguration";
+
     // Administrative
     public const string Schedule = "Schedule";
     public const string Recovery = "Recovery";

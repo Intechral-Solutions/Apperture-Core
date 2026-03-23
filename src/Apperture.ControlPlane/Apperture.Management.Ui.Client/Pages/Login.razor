@@ -1,93 +1,130 @@
 @page "/login"
 @layout MainLayout
-@using System.Net.Http
-@using Apperture.Management.Client
+@using Apperture.Management.Ui.Client.Molecules
 @using Apperture.Management.Ui.Client.Organisms
 @using Apperture.Management.Ui.Client.Services
+@using Apperture.Management.Ui.Shared.Auth
 @using Apperture.Management.Ui.Shared.Options
-@using Microsoft.AspNetCore.Components.Forms
-@using Microsoft.Extensions.Options
-@inject IManagementClient Client
-@inject SessionStateService Session
-@inject NavigationManager Nav
-@inject IOptions<ShellUiOptions> ShellOpts
+@inject AuthSignInOptionsService SignInOptions
 @inject ShellHostNavigation HostNav
+@inject NavigationManager Nav
+
 <div class="mx-auto max-w-md p-6">
     <PageHeader Title="Sign in"
-                Subtitle="Use your platform credentials. This page is for local development sign-in unless Entra is enabled." />
+                Subtitle="Sign in to the Apperture management console." />
 
-    @if (ShellOpts.Value.UseEntraSignIn)
+    @if (_oidcError)
     {
-        <div class="mt-4 rounded border border-default bg-surface px-4 py-3 text-sm text-body">
-            <p class="text-muted">Your deployment uses organizational sign-in. Continue to the management host to authenticate.</p>
-            <button type="button"
-                    class="mt-3 w-full rounded bg-surface-muted px-3 py-2 text-sm font-medium text-heading hover:bg-surface"
-                    @onclick="GoEntraAsync">
-                Continue to sign in
-            </button>
-        </div>
+        <PageMessage Kind="PageMessageKind.Error" Message="Microsoft sign-in did not complete. You can try again or use local sign-in if it is available." />
     }
-    else
+
+    @if (SignInOptions.LastError is not null)
     {
-        <EditForm Model="_model" OnValidSubmit="SubmitAsync" class="mt-4 space-y-4">
-            <div>
-                <label class="text-xs text-muted">Username</label>
-                <InputText @bind-Value="_model.Username" class="mt-1 w-full rounded border border-default bg-surface px-2 py-2 text-sm" autocomplete="username" />
-            </div>
-            <div>
-                <label class="text-xs text-muted">Password</label>
-                <InputText type="password" @bind-Value="_model.Password" class="mt-1 w-full rounded border border-default bg-surface px-2 py-2 text-sm" autocomplete="current-password" />
-            </div>
-            @if (!string.IsNullOrEmpty(_error))
+        <PageMessage Kind="PageMessageKind.Error" Message="Could not load sign-in options. Check the management API and try again." />
+    }
+    else if (_opts is not null && !_opts.LocalSignInEnabled && !_opts.EntraSignInEnabled)
+    {
+        <PageMessage Kind="PageMessageKind.Error" Message="No sign-in method is enabled. Ask an operator to enable local or Entra authentication." />
+    }
+    else if (_opts is not null && _opts.EntraMisconfigured)
+    {
+        <p class="mt-3 text-xs text-muted">Entra is enabled in configuration but required settings are missing or invalid. Local sign-in may still be available.</p>
+    }
+
+    @if (_opts is not null)
+    {
+        <div class="mt-6 space-y-6">
+            @if (_opts.EntraSignInEnabled)
             {
-                <PageMessage Kind="PageMessageKind.Error" Message="@_error" />
+                @if (_opts.PreferEntraInChooser)
+                {
+                    <EntraSignInButton OnClick="GoEntraAsync" />
+                    @if (_opts.ShowLocalSignInInPrimaryChooser && _opts.LocalSignInEnabled)
+                    {
+                        <p class="text-center text-xs text-muted">or</p>
+                        <LocalLoginFormSection ReturnPath="@_returnPath" />
+                    }
+                }
+                else
+                {
+                    @if (_opts.ShowLocalSignInInPrimaryChooser && _opts.LocalSignInEnabled)
+                    {
+                        <LocalLoginFormSection ReturnPath="@_returnPath" />
+                        <div class="border-t border-default pt-4">
+                            <EntraSignInButton OnClick="GoEntraAsync" />
+                        </div>
+                    }
+                    else
+                    {
+                        <EntraSignInButton OnClick="GoEntraAsync" />
+                    }
+                }
+
+                @if (!_opts.ShowLocalSignInInPrimaryChooser && _opts.LocalSignInEnabled)
+                {
+                    <p class="text-center text-sm">
+                        <a class="text-body underline hover:text-heading" href="/login/local@(string.IsNullOrEmpty(_rawReturnQuery) ? "" : "?" + _rawReturnQuery)">Sign-in problems — use local sign-in</a>
+                    </p>
+                }
             }
-            <button type="submit" class="w-full rounded bg-surface-muted px-3 py-2 text-sm font-medium text-heading hover:bg-surface disabled:opacity-50" disabled="@_busy">
-                @(_busy ? "Signing in…" : "Sign in")
-            </button>
-        </EditForm>
+            else if (_opts.LocalSignInEnabled)
+            {
+                <LocalLoginFormSection ReturnPath="@_returnPath" />
+            }
+        </div>
     }
 </div>
 
 @code {
-    private readonly LoginModel _model = new();
-    private string? _error;
-    private bool _busy;
+    private Apperture.Management.Client.AuthSignInOptionsDto? _opts => SignInOptions.Current;
+    private string? _returnPath;
+    private string? _rawReturnQuery;
+    private bool _autoRedirected;
+    private bool _oidcError;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (SignInOptions.Current is null)
+            await SignInOptions.RefreshAsync();
+
+        var u = new Uri(Nav.Uri);
+        var q = u.Query.TrimStart('?');
+        foreach (var part in q.Split('&', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var i = part.IndexOf('=');
+            if (i <= 0)
+                continue;
+            if (part[..i].Equals("error", StringComparison.OrdinalIgnoreCase) &&
+                Uri.UnescapeDataString(part[(i + 1)..]).Equals("oidc", StringComparison.OrdinalIgnoreCase))
+            {
+                _oidcError = true;
+                break;
+            }
+        }
+
+        var raw = LoginRouteHelper.GetReturnUrlRaw(Nav.Uri);
+        if (raw is not null)
+        {
+            _returnPath = LoginRouteHelper.NormalizeReturnUrl(raw);
+            _rawReturnQuery = $"returnUrl={Uri.EscapeDataString(raw)}";
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _autoRedirected || _opts is null)
+            return;
+        if (_opts.AutoRedirectToEntra && _opts.EntraSignInEnabled)
+        {
+            _autoRedirected = true;
+            await GoEntraAsync();
+        }
+    }
 
     private Task GoEntraAsync()
     {
         var host = HostNav.GetManagementHostBase(Nav);
         Nav.NavigateTo(new Uri(host, "signin").ToString(), forceLoad: true);
         return Task.CompletedTask;
-    }
-
-    private async Task SubmitAsync()
-    {
-        _error = null;
-        _busy = true;
-        try
-        {
-            await Client.LocalLoginAsync(new LocalLoginRequest(_model.Username.Trim(), _model.Password));
-            await Session.RefreshAsync();
-            Nav.NavigateTo("/");
-        }
-        catch (HttpRequestException)
-        {
-            _error = "Sign-in failed. Check your username and password.";
-        }
-        catch (Exception ex)
-        {
-            _error = ex.Message;
-        }
-        finally
-        {
-            _busy = false;
-        }
-    }
-
-    private sealed class LoginModel
-    {
-        public string Username { get; set; } = "";
-        public string? Password { get; set; }
     }
 }

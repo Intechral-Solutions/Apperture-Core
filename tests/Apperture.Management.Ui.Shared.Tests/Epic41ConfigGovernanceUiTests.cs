@@ -70,7 +70,7 @@ public sealed class Epic41ConfigGovernanceUiTests
     [Fact]
     public void OperatorCapabilitiesDto_CanAssignRoles_ReflectsRoleAssign()
     {
-        var dto = new OperatorCapabilitiesDto(false, false, false, false, false, false, false, true);
+        var dto = new OperatorCapabilitiesDto(false, false, false, false, false, false, false, true, false);
         dto.CanAssignRoles.Should().BeTrue();
     }
 }

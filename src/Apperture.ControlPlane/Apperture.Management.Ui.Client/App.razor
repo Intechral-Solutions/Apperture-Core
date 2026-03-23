@@ -2,17 +2,20 @@
 @using Microsoft.JSInterop
 @inject ThemeService ThemeService
 @inject SessionStateService SessionStateService
+@inject AuthSignInOptionsService AuthSignInOptionsService
 
-<Router AppAssembly="@typeof(App).Assembly">
-    <Found Context="routeData">
-        <RouteView RouteData="@routeData" DefaultLayout="@typeof(MainLayout)" />
-    </Found>
-    <NotFound>
-        <LayoutView Layout="@typeof(MainLayout)">
-            <p>Coming soon.</p>
-        </LayoutView>
-    </NotFound>
-</Router>
+<AuthRouteGate>
+    <Router AppAssembly="@typeof(App).Assembly">
+        <Found Context="routeData">
+            <RouteView RouteData="@routeData" DefaultLayout="@typeof(MainLayout)" />
+        </Found>
+        <NotFound>
+            <LayoutView Layout="@typeof(MainLayout)">
+                <p>Coming soon.</p>
+            </LayoutView>
+        </NotFound>
+    </Router>
+</AuthRouteGate>
 
 @code {
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -33,5 +36,6 @@
         }
 
         await SessionStateService.RefreshAsync();
+        await AuthSignInOptionsService.RefreshAsync();
     }
 }

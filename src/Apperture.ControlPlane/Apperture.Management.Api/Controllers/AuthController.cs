@@ -3,6 +3,7 @@ using Apperture.ControlPlane.Security;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Audit;
 using Apperture.Core.Domain.Identity;
+using Apperture.Management.Api.Models;
 using Apperture.Shared.Kernel;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
@@ -33,6 +34,8 @@ public sealed class AuthController : ControllerBase
     private readonly IRoleProvider _roleProvider;
     private readonly IAuditService _audit;
     private readonly LocalAuthOptions _localOptions;
+    private readonly EntraAuthOptions _entraOptions;
+    private readonly IInstanceAuthUiPolicyRepository _authUiPolicyRepository;
 
     public AuthController(
         IUserRepository userRepository,
@@ -42,7 +45,9 @@ public sealed class AuthController : ControllerBase
         IPrincipalToUserResolver principalToUserResolver,
         IRoleProvider roleProvider,
         IAuditService audit,
-        IOptions<LocalAuthOptions> localOptions)
+        IOptions<LocalAuthOptions> localOptions,
+        IOptions<EntraAuthOptions> entraOptions,
+        IInstanceAuthUiPolicyRepository authUiPolicyRepository)
     {
         _userRepository = userRepository;
         _localCredentialRepository = localCredentialRepository;
@@ -52,6 +57,27 @@ public sealed class AuthController : ControllerBase
         _roleProvider = roleProvider;
         _audit = audit;
         _localOptions = localOptions.Value;
+        _entraOptions = entraOptions.Value;
+        _authUiPolicyRepository = authUiPolicyRepository;
+    }
+
+    /// <summary>Merged anonymous-safe sign-in capabilities and chooser policy for the management UI.</summary>
+    [HttpGet("sign-in-options")]
+    [AllowAnonymous]
+    [ProducesResponseType(typeof(AuthSignInOptionsResponse), StatusCodes.Status200OK)]
+    public async Task<ActionResult<AuthSignInOptionsResponse>> GetSignInOptions(CancellationToken cancellationToken)
+    {
+        var policy = await _authUiPolicyRepository.GetAsync(cancellationToken);
+        var snapshot = AuthSignInOptionsMerger.Merge(_localOptions, _entraOptions, policy);
+        return Ok(new AuthSignInOptionsResponse
+        {
+            LocalSignInEnabled = snapshot.LocalSignInEnabled,
+            EntraSignInEnabled = snapshot.EntraSignInEnabled,
+            EntraMisconfigured = snapshot.EntraMisconfigured,
+            ShowLocalSignInInPrimaryChooser = snapshot.ShowLocalSignInInPrimaryChooser,
+            PreferEntraInChooser = snapshot.PreferEntraInChooser,
+            AutoRedirectToEntra = snapshot.AutoRedirectToEntra
+        });
     }
 
     /// <summary>

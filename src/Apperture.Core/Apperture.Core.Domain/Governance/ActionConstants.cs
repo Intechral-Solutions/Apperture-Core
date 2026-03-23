@@ -70,4 +70,7 @@ public static class ActionConstants
     public const string UserManage = "user.manage";
     public const string RoleAssign = "role.assign";
     public const string CredentialManage = "credential.manage";
+
+    /// <summary>Manage persisted sign-in chooser policy for the management UI (instance-scoped).</summary>
+    public const string AuthUiPolicyManage = "auth.ui_policy.manage";
 }
