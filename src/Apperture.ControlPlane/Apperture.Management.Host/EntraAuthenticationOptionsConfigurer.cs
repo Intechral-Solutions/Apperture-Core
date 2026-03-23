@@ -17,7 +17,7 @@ internal sealed class EntraAuthenticationOptionsConfigurer : IConfigureOptions<A
     {
         options.DefaultAuthenticateScheme = AuthenticationServiceCollectionExtensions.CookieScheme;
         options.DefaultSignInScheme = AuthenticationServiceCollectionExtensions.CookieScheme;
-        options.DefaultChallengeScheme = _entra.Value.Enabled
+        options.DefaultChallengeScheme = EntraRuntimeState.IsUsable(_entra.Value)
             ? OpenIdConnectDefaults.AuthenticationScheme
             : CookieAuthenticationDefaults.AuthenticationScheme;
     }

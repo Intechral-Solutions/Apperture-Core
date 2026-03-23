@@ -34,7 +34,21 @@ public static class AuthenticationServiceCollectionExtensions
                 options.ExpireTimeSpan = TimeSpan.FromHours(12);
                 options.SlidingExpiration = true;
             })
-            .AddOpenIdConnect(OpenIdConnectScheme, _ => { });
+            .AddOpenIdConnect(OpenIdConnectScheme, options =>
+            {
+                // Keep OIDC options valid even before Entra runtime config overlays are applied.
+                options.Authority ??= "https://login.microsoftonline.com/common";
+                options.ClientId ??= "Apperture-Entra-Disabled-Placeholder";
+                options.ClientSecret ??= "Apperture-Entra-Disabled-Placeholder";
+                if (!options.CallbackPath.HasValue)
+                    options.CallbackPath = "/signin-oidc";
+                options.ResponseType ??= "code";
+                if (options.Scope.Count == 0)
+                {
+                    options.Scope.Add("openid");
+                    options.Scope.Add("profile");
+                }
+            });
 
         return services;
     }

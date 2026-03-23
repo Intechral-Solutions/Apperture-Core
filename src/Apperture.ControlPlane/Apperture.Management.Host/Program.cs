@@ -51,7 +51,7 @@ app.MapControllers();
 // Entra: redirect to IdP. Local-only: return 401 (client uses POST /api/auth/local/login).
 app.MapGet("/signin", async (HttpContext ctx, IOptions<EntraAuthOptions> entra) =>
 {
-    if (entra.Value.Enabled)
+    if (EntraRuntimeState.IsUsable(entra.Value))
         await ctx.ChallengeAsync(OpenIdConnectDefaults.AuthenticationScheme);
     else
         ctx.Response.StatusCode = StatusCodes.Status401Unauthorized;

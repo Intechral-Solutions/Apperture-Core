@@ -31,6 +31,18 @@ if (-not (Test-Path $WorkerHostProject)) {
     Write-Error "Runtime WorkerHost project not found: $WorkerHostProject"
 }
 
+# global.json pins .NET 10; PATH often only has older SDKs. Prefer user-local install (%USERPROFILE%\dotnet).
+$ResolveScript = Join-Path $PSScriptRoot "Get-DevDotNetSdk.ps1"
+$sdk = & $ResolveScript -RepoRoot $RepoRoot
+$env:DOTNET_ROOT = $sdk.DotNetRoot
+if ($env:PATH -notlike "*$($sdk.DotNetRoot)*") {
+    $env:PATH = "$($sdk.DotNetRoot);$env:PATH"
+}
+$dotnetExe = $sdk.DotNetExe
+$env:APPERTURE_DEV_DOTNET = $dotnetExe
+Write-Host "Using .NET SDK $($sdk.Version) ($dotnetExe)" -ForegroundColor DarkGray
+Write-Host ""
+
 Write-Host "Starting Apperture dev environment (SQL-backed)..." -ForegroundColor Cyan
 Write-Host ""
 
@@ -73,9 +85,11 @@ if ($NoBrowser) {
     $uiArgs = @("run", "--project", $UiServerProject, "--launch-profile", "Ui.Server", "--urls", "http://localhost:9001")
 }
 
-Start-Process -FilePath "dotnet" -ArgumentList $hostArgs -WorkingDirectory $RepoRoot -WindowStyle Normal
+# Use the resolved dotnet.exe (full path). Start-Process "dotnet" can pick Program Files\dotnet and fail on net10.0
+# even when this session's PATH was prepended with the correct SDK root.
+Start-Process -FilePath $dotnetExe -ArgumentList $hostArgs -WorkingDirectory $RepoRoot -WindowStyle Normal
 Start-Sleep -Seconds 2
-Start-Process -FilePath "dotnet" -ArgumentList $uiArgs -WorkingDirectory $RepoRoot -WindowStyle Normal
+Start-Process -FilePath $dotnetExe -ArgumentList $uiArgs -WorkingDirectory $RepoRoot -WindowStyle Normal
 Start-Sleep -Seconds 2
 
 # Start instance-plane worker so workflow runs actually execute steps and persist step instances.
@@ -83,6 +97,6 @@ $workerArgs = @("run", "--project", $WorkerHostProject)
 $env:DOTNET_ENVIRONMENT = "Development"
 $env:ASPNETCORE_ENVIRONMENT = "Development"
 $env:SqlServer__Password = $saPassword
-Start-Process -FilePath "dotnet" -ArgumentList $workerArgs -WorkingDirectory $RepoRoot -WindowStyle Normal
+Start-Process -FilePath $dotnetExe -ArgumentList $workerArgs -WorkingDirectory $RepoRoot -WindowStyle Normal
 
 Write-Host "Dev servers started. Close their windows or run scripts\dev\down.ps1 to stop." -ForegroundColor Green

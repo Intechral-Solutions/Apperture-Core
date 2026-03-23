@@ -18,6 +18,12 @@ param(
 
 $ErrorActionPreference = "Stop"
 $RepoRoot = if ($env:APPERTURE_REPO_ROOT) { $env:APPERTURE_REPO_ROOT } else { (Get-Item $PSScriptRoot).Parent.Parent.FullName }
+$ResolveScript = Join-Path $RepoRoot "scripts\dev\Get-DevDotNetSdk.ps1"
+$sdk = & $ResolveScript -RepoRoot $RepoRoot
+$env:DOTNET_ROOT = $sdk.DotNetRoot
+if ($env:PATH -notlike "*$($sdk.DotNetRoot)*") {
+    $env:PATH = "$($sdk.DotNetRoot);$env:PATH"
+}
 $Solution = Join-Path $RepoRoot "Apperture.slnx"
 
 if (-not (Test-Path $Solution)) {

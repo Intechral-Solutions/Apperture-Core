@@ -24,8 +24,14 @@ internal sealed class EntraOpenIdConnectOptionsConfigurer : IConfigureNamedOptio
             return;
 
         var e = _entra.CurrentValue;
-        if (!e.Enabled)
+        if (!EntraRuntimeState.IsUsable(e))
+        {
+            // The OIDC scheme is always registered so it can be activated consistently (e.g. DB overlay + restart).
+            // When Entra is off, we must still satisfy OpenIdConnectOptions.Validate (non-null ClientId, etc.),
+            // or any handler initialization throws before /signin can return 401. Real challenges use OIDC only when Enabled.
+            ApplyDisabledEntraPlaceholders(options);
             return;
+        }
 
         options.Authority = e.Authority;
         options.ClientId = e.ClientId;
@@ -87,4 +93,20 @@ internal sealed class EntraOpenIdConnectOptionsConfigurer : IConfigureNamedOptio
     }
 
     public void Configure(OpenIdConnectOptions options) => Configure(Options.DefaultName, options);
+
+    /// <summary>
+    /// Values are never used for production sign-in while <see cref="EntraAuthOptions.Enabled"/> is false
+    /// (the host /signin endpoint and default challenge scheme avoid OIDC). They exist only to satisfy framework validation.
+    /// </summary>
+    private static void ApplyDisabledEntraPlaceholders(OpenIdConnectOptions options)
+    {
+        options.Authority = "https://login.microsoftonline.com/common";
+        options.ClientId = "Apperture-Entra-Disabled-Placeholder";
+        options.ClientSecret = "Apperture-Entra-Disabled-Placeholder";
+        options.CallbackPath = "/signin-oidc";
+        options.ResponseType = "code";
+        options.Scope.Clear();
+        options.Scope.Add("openid");
+        options.Scope.Add("profile");
+    }
 }

@@ -22,9 +22,15 @@ if (-not (Test-Path $HostProject)) {
     Write-Error "Management.Host project not found: $HostProject"
 }
 
+$dotnetExe = if (-not [string]::IsNullOrWhiteSpace($env:APPERTURE_DEV_DOTNET) -and (Test-Path -LiteralPath $env:APPERTURE_DEV_DOTNET)) {
+    $env:APPERTURE_DEV_DOTNET
+} else {
+    "dotnet"
+}
+
 if (-not (Test-Path $SecretsPath)) {
     Write-Host "User Secrets not initialized. Setting SqlServer:Password..." -ForegroundColor Yellow
-    dotnet user-secrets set "SqlServer:Password" "YourStrong!Passw0rd" --project $HostProject | Out-Null
+    & $dotnetExe user-secrets set "SqlServer:Password" "YourStrong!Passw0rd" --project $HostProject | Out-Null
     Write-Host "  Set SqlServer:Password to default. Change with: dotnet user-secrets set `"SqlServer:Password`" `"<password>`" --project src/Apperture.ControlPlane/Apperture.Management.Host" -ForegroundColor Gray
 }
 
