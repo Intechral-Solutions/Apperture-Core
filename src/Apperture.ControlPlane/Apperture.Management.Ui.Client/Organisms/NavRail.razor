@@ -23,8 +23,7 @@
                 }
             </div>
             <div class="mt-auto flex justify-center">
-                <NavRailItem Href="@ShellSectionRoutes.ConfigHome"
-                             Domain="@SectionOwnerConstants.Config"
+                <NavRailItem Domain="@SectionOwnerConstants.Config"
                              IconType="@typeof(CogIcon)"
                              Tooltip="Configuration"
                              AriaLabel="Configuration"
@@ -120,8 +119,8 @@
 
     private async Task HandleLogoClick()
     {
-        if (OnControlPanelClose.HasDelegate)
-            await OnControlPanelClose.InvokeAsync();
+        if (OnControlPanelOpen.HasDelegate)
+            await OnControlPanelOpen.InvokeAsync(SectionOwnerConstants.Dashboard);
         NavManager.NavigateTo(ShellSectionRoutes.DashboardHome);
     }
 
