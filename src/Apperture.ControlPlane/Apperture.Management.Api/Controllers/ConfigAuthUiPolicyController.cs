@@ -42,7 +42,7 @@ public sealed class ConfigAuthUiPolicyController : ControllerBase
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<ActionResult<AuthUiPolicyResponse>> Get(CancellationToken cancellationToken)
     {
-        if (!await AuthorizeAsync(cancellationToken))
+        if (!await AuthorizeReadAsync(cancellationToken))
             return Forbid();
 
         var p = await _policyRepository.GetAsync(cancellationToken);
@@ -59,7 +59,7 @@ public sealed class ConfigAuthUiPolicyController : ControllerBase
         [FromBody] UpdateAuthUiPolicyRequestBody body,
         CancellationToken cancellationToken)
     {
-        if (!await AuthorizeAsync(cancellationToken))
+        if (!await AuthorizePolicyManageAsync(cancellationToken))
             return Forbid();
 
         var proposed = new InstanceAuthUiPolicy
@@ -99,7 +99,25 @@ public sealed class ConfigAuthUiPolicyController : ControllerBase
         return Ok(ToDto(updated));
     }
 
-    private async Task<bool> AuthorizeAsync(CancellationToken cancellationToken)
+    private async Task<bool> AuthorizeReadAsync(CancellationToken cancellationToken)
+    {
+        var actor = await _principalContext.GetCurrentActorAsync(cancellationToken);
+        if (actor is null)
+            return false;
+
+        var read = new PermissionDescriptor(
+            ActionConstants.AuthConfigurationRead,
+            new ResourceDescriptor(ResourceTypeConstants.InstanceConfiguration, ScopeKeyConstants.Instance));
+
+        if (await _authorizationEvaluation.EvaluateAsync(
+                new AuthorizationEvaluationContext(actor, read, read.Resource),
+                cancellationToken))
+            return true;
+
+        return await AuthorizePolicyManageAsync(cancellationToken);
+    }
+
+    private async Task<bool> AuthorizePolicyManageAsync(CancellationToken cancellationToken)
     {
         var actor = await _principalContext.GetCurrentActorAsync(cancellationToken);
         if (actor is null)

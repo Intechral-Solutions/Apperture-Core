@@ -126,6 +126,17 @@ public static class ControlPanelMenuDefinitions
                     new DomainMenuItem { Text = "Config", Href = ShellSectionRoutes.ConfigHome },
                     new DomainMenuItem
                     {
+                        Text = "Authentication",
+                        Href = "/config/auth",
+                        Children = new List<DomainMenuItem>
+                        {
+                            new DomainMenuItem { Text = "Overview", Href = "/config/auth" },
+                            new DomainMenuItem { Text = "Sign-in chooser", Href = "/config/auth/sign-in" },
+                            new DomainMenuItem { Text = "Entra registrations", Href = "/config/auth/tenants" }
+                        }
+                    },
+                    new DomainMenuItem
+                    {
                         Text = "Governance",
                         Href = "/config/governance",
                         Children = new List<DomainMenuItem>

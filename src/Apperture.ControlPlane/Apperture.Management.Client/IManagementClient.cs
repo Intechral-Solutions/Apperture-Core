@@ -155,6 +155,27 @@ public interface IManagementClient
     /// <summary>Updates auth UI policy. Throws <see cref="HttpRequestException"/> on 400/403/409.</summary>
     Task<AuthUiPolicyDto> PatchAuthUiPolicyAsync(UpdateAuthUiPolicyRequest request, CancellationToken cancellationToken = default);
 
+    /// <summary>Authentication overview for Config (Epic 44). Returns null on 401/403.</summary>
+    Task<ConfigAuthOverviewDto?> GetConfigAuthOverviewAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>Lists Entra registrations. Returns null on 401/403.</summary>
+    Task<IReadOnlyList<EntraTenantListItemDto>?> GetEntraTenantsAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>Gets one Entra registration. Returns null on 404/401/403.</summary>
+    Task<EntraTenantListItemDto?> GetEntraTenantAsync(string id, CancellationToken cancellationToken = default);
+
+    /// <summary>Creates an Entra registration. Throws on 400/403.</summary>
+    Task<EntraTenantListItemDto> CreateEntraTenantAsync(CreateEntraTenantRequest request, CancellationToken cancellationToken = default);
+
+    /// <summary>Updates an Entra registration. Throws on 400/403/409.</summary>
+    Task<EntraTenantListItemDto> PatchEntraTenantAsync(string id, UpdateEntraTenantRequest request, CancellationToken cancellationToken = default);
+
+    /// <summary>Deletes an Entra registration. Throws on 400/403.</summary>
+    Task DeleteEntraTenantAsync(string id, CancellationToken cancellationToken = default);
+
+    /// <summary>Activates an Entra registration (clears other actives). Throws on 400/403/404.</summary>
+    Task ActivateEntraTenantAsync(string id, CancellationToken cancellationToken = default);
+
     // --- Governance admin (Epic 39/40) ---
 
     /// <summary>Gets the governance descriptor catalog (resources and permissions). Requires user.read.</summary>
@@ -252,7 +273,9 @@ public sealed record OperatorCapabilitiesDto(
     bool CanViewGovernance = false,
     bool CanAssignPermissions = false,
     bool CanAssignRoles = false,
-    bool CanManageAuthUiPolicy = false);
+    bool CanManageAuthUiPolicy = false,
+    [property: JsonPropertyName("canViewAuthConfiguration")] bool CanViewAuthConfiguration = false,
+    [property: JsonPropertyName("canManageEntraTenants")] bool CanManageEntraTenants = false);
 
 public sealed record BlockedWorkRetryResult(
     bool Success,
@@ -525,7 +548,56 @@ public sealed record AuthSignInOptionsDto(
     [property: JsonPropertyName("entraMisconfigured")] bool EntraMisconfigured,
     [property: JsonPropertyName("showLocalSignInInPrimaryChooser")] bool ShowLocalSignInInPrimaryChooser,
     [property: JsonPropertyName("preferEntraInChooser")] bool PreferEntraInChooser,
-    [property: JsonPropertyName("autoRedirectToEntra")] bool AutoRedirectToEntra);
+    [property: JsonPropertyName("autoRedirectToEntra")] bool AutoRedirectToEntra,
+    [property: JsonPropertyName("effectiveExperience")] string? EffectiveExperience = null,
+    [property: JsonPropertyName("effectiveExperienceDescription")] string? EffectiveExperienceDescription = null);
+
+public sealed record ConfigAuthOverviewDto(
+    [property: JsonPropertyName("localAuthEnabled")] bool LocalAuthEnabled,
+    [property: JsonPropertyName("entraEnabledInDeploymentConfiguration")] bool EntraEnabledInDeploymentConfiguration,
+    [property: JsonPropertyName("entraConfigurationValid")] bool EntraConfigurationValid,
+    [property: JsonPropertyName("entraMisconfiguredReason")] string? EntraMisconfiguredReason,
+    [property: JsonPropertyName("activeEntraRegistrationId")] string? ActiveEntraRegistrationId,
+    [property: JsonPropertyName("activeEntraRegistrationDisplayName")] string? ActiveEntraRegistrationDisplayName,
+    [property: JsonPropertyName("entraSignInUsesActiveRegistration")] bool EntraSignInUsesActiveRegistration,
+    [property: JsonPropertyName("showLocalSignInInPrimaryChooser")] bool ShowLocalSignInInPrimaryChooser,
+    [property: JsonPropertyName("preferEntraInChooser")] bool PreferEntraInChooser,
+    [property: JsonPropertyName("autoRedirectToEntra")] bool AutoRedirectToEntra,
+    [property: JsonPropertyName("localShownOnPrimaryLogin")] bool LocalShownOnPrimaryLogin,
+    [property: JsonPropertyName("localFallbackOnly")] bool LocalFallbackOnly,
+    [property: JsonPropertyName("entraSignInEnabled")] bool EntraSignInEnabled,
+    [property: JsonPropertyName("effectiveExperience")] string EffectiveExperience,
+    [property: JsonPropertyName("effectiveExperienceDescription")] string EffectiveExperienceDescription,
+    [property: JsonPropertyName("warnings")] IReadOnlyList<string> Warnings);
+
+public sealed record EntraTenantListItemDto(
+    [property: JsonPropertyName("id")] string Id,
+    [property: JsonPropertyName("displayName")] string DisplayName,
+    [property: JsonPropertyName("authority")] string Authority,
+    [property: JsonPropertyName("clientId")] string ClientId,
+    [property: JsonPropertyName("usesDeploymentSecret")] bool UsesDeploymentSecret,
+    [property: JsonPropertyName("callbackPath")] string? CallbackPath,
+    [property: JsonPropertyName("enabled")] bool Enabled,
+    [property: JsonPropertyName("isActive")] bool IsActive,
+    [property: JsonPropertyName("deploymentSecretConfigured")] bool DeploymentSecretConfigured,
+    [property: JsonPropertyName("rowVersionBase64")] string? RowVersionBase64);
+
+public sealed record CreateEntraTenantRequest(
+    [property: JsonPropertyName("displayName")] string DisplayName,
+    [property: JsonPropertyName("authority")] string Authority,
+    [property: JsonPropertyName("clientId")] string ClientId,
+    [property: JsonPropertyName("usesDeploymentSecret")] bool UsesDeploymentSecret = true,
+    [property: JsonPropertyName("callbackPath")] string? CallbackPath = null,
+    [property: JsonPropertyName("enabled")] bool Enabled = true);
+
+public sealed record UpdateEntraTenantRequest(
+    [property: JsonPropertyName("displayName")] string DisplayName,
+    [property: JsonPropertyName("authority")] string Authority,
+    [property: JsonPropertyName("clientId")] string ClientId,
+    [property: JsonPropertyName("usesDeploymentSecret")] bool UsesDeploymentSecret,
+    [property: JsonPropertyName("callbackPath")] string? CallbackPath,
+    [property: JsonPropertyName("enabled")] bool Enabled,
+    [property: JsonPropertyName("rowVersionBase64")] string? RowVersionBase64);
 
 public sealed record AuthUiPolicyDto(
     [property: JsonPropertyName("showLocalSignInInPrimaryChooser")] bool ShowLocalSignInInPrimaryChooser,

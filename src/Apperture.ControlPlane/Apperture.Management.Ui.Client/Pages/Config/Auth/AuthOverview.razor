@@ -1,0 +1,94 @@
+@page "/config/auth"
+@layout ConfigLayout
+@using Apperture.Management.Client
+@using Apperture.Management.Ui.Client.Organisms
+@using Apperture.Management.Ui.Client.Services
+@inject IManagementClient Client
+@inject IOperatorCapabilitiesService Capabilities
+
+<div class="p-4">
+    <div class="text-xs text-muted mb-1">Config — Authentication</div>
+    <PageHeader Title="Overview"
+                Subtitle="What operators see at sign-in, how that relates to deployment and policy, and recovery paths." />
+
+    @if (!_canView)
+    {
+        <p class="mt-4 text-sm text-muted">You do not have permission to view authentication configuration.</p>
+    }
+    else if (_loading)
+    {
+        <p class="mt-4 text-sm text-muted">Loading…</p>
+    }
+    else if (_overview is null)
+    {
+        <PageMessage Kind="PageMessageKind.Error" Message="Could not load authentication overview." />
+    }
+    else
+    {
+        <div class="mt-6 max-w-3xl space-y-6 text-sm text-body">
+            @if (_overview.Warnings.Count > 0)
+            {
+                foreach (var w in _overview.Warnings)
+                {
+                    <PageMessage Kind="PageMessageKind.Warning" Message="@w" />
+                }
+            }
+
+            <section class="rounded border border-default bg-surface p-4">
+                <h2 class="font-medium text-heading">What users see</h2>
+                <p class="mt-2 text-xs">@_overview.EffectiveExperienceDescription</p>
+                <ul class="mt-3 list-inside list-disc space-y-1 text-xs text-muted">
+                    <li>Local on primary login: @(_overview.LocalShownOnPrimaryLogin ? "yes" : "no")</li>
+                    <li>Local only as fallback at <code class="rounded bg-surface-muted px-1">/login/local</code>: @(_overview.LocalFallbackOnly ? "yes" : "no")</li>
+                    <li>Entra sign-in (effective): @(_overview.EntraSignInEnabled ? "available" : "not available")</li>
+                </ul>
+            </section>
+
+            <section class="rounded border border-default bg-surface p-4">
+                <h2 class="font-medium text-heading">Capabilities vs policy</h2>
+                <ul class="mt-2 list-inside list-disc space-y-1 text-xs">
+                    <li>Local auth (deployment): @(_overview.LocalAuthEnabled ? "enabled" : "disabled")</li>
+                    <li>Entra enabled in deployment configuration: @(_overview.EntraEnabledInDeploymentConfiguration ? "yes" : "no")</li>
+                    <li>Entra configuration valid: @(_overview.EntraConfigurationValid ? "yes" : "no")</li>
+                    @if (!string.IsNullOrEmpty(_overview.EntraMisconfiguredReason))
+                    {
+                        <li class="text-muted">@_overview.EntraMisconfiguredReason</li>
+                    }
+                    <li>Active Entra registration: @(string.IsNullOrEmpty(_overview.ActiveEntraRegistrationDisplayName) ? "none" : _overview.ActiveEntraRegistrationDisplayName)</li>
+                    <li>Sign-in options use active DB registration for authority/client: @(_overview.EntraSignInUsesActiveRegistration ? "yes" : "no")</li>
+                </ul>
+                <h3 class="mt-4 text-xs font-medium text-heading">Chooser policy (persisted)</h3>
+                <ul class="mt-1 list-inside list-disc space-y-1 text-xs text-muted">
+                    <li>Show local on primary: @_overview.ShowLocalSignInInPrimaryChooser</li>
+                    <li>Prefer Entra in chooser: @_overview.PreferEntraInChooser</li>
+                    <li>Auto-redirect to Entra: @_overview.AutoRedirectToEntra</li>
+                </ul>
+            </section>
+
+            <section class="rounded border border-default bg-surface p-4">
+                <h2 class="font-medium text-heading">Recovery</h2>
+                <p class="mt-2 text-xs text-muted">Local backup sign-in: <a class="underline" href="/login/local">/login/local</a></p>
+            </section>
+        </div>
+    }
+</div>
+
+@code {
+    private bool _canView;
+    private bool _loading = true;
+    private ConfigAuthOverviewDto? _overview;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var caps = await Capabilities.GetCapabilitiesAsync();
+        _canView = caps.CanViewAuthConfiguration || caps.CanManageAuthUiPolicy || caps.CanManageEntraTenants;
+        if (!_canView)
+        {
+            _loading = false;
+            return;
+        }
+
+        _overview = await Client.GetConfigAuthOverviewAsync();
+        _loading = false;
+    }
+}

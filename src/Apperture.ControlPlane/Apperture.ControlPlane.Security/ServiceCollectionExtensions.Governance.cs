@@ -12,6 +12,7 @@ using Apperture.Shared.Kernel;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Options;
 
 namespace Apperture.ControlPlane.Security;
 
@@ -48,6 +49,9 @@ public static class ServiceCollectionExtensions
         });
         services.AddSingleton<IScopeContainmentEvaluator, ScopeContainmentEvaluator>();
         services.AddScoped<IInstanceAuthUiPolicyRepository, SqlInstanceAuthUiPolicyRepository>();
+        services.AddScoped<IEntraInstanceRegistrationRepository, SqlEntraInstanceRegistrationRepository>();
+        services.AddSingleton<IPostConfigureOptions<EntraAuthOptions>, EntraAuthOptionsDatabasePostConfigure>();
+        services.AddScoped<IAuthenticationAdminOverviewService, AuthenticationAdminOverviewService>();
         services.AddScoped<IUserRepository, SqlUserRepository>();
         services.AddScoped<IRoleRepository, SqlRoleRepository>();
         services.AddScoped<IPrincipalToUserResolver, SqlPrincipalToUserResolver>();

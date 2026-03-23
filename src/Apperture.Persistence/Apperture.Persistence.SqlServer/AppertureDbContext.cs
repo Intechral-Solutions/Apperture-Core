@@ -44,6 +44,7 @@ public class AppertureDbContext : DbContext
     public DbSet<ScheduleRunEntity> ScheduleRuns => Set<ScheduleRunEntity>();
     public DbSet<ScheduleStateEntity> ScheduleStates => Set<ScheduleStateEntity>();
     public DbSet<InstanceAuthUiPolicyEntity> InstanceAuthUiPolicies => Set<InstanceAuthUiPolicyEntity>();
+    public DbSet<EntraInstanceRegistrationEntity> EntraInstanceRegistrations => Set<EntraInstanceRegistrationEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -476,6 +477,19 @@ public class AppertureDbContext : DbContext
             e.HasKey(x => x.Id);
             e.Property(x => x.Id).HasMaxLength(64);
             e.Property(x => x.RowVersion).IsRowVersion();
+        });
+
+        modelBuilder.Entity<EntraInstanceRegistrationEntity>(e =>
+        {
+            e.ToTable("EntraInstanceRegistrations");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasMaxLength(64);
+            e.Property(x => x.DisplayName).HasMaxLength(256);
+            e.Property(x => x.Authority).HasMaxLength(512);
+            e.Property(x => x.ClientId).HasMaxLength(128);
+            e.Property(x => x.CallbackPath).HasMaxLength(256);
+            e.Property(x => x.RowVersion).IsRowVersion();
+            e.HasIndex(x => x.IsActive).IsUnique().HasFilter("[IsActive] = 1");
         });
     }
 }

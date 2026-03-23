@@ -21,4 +21,10 @@ public sealed class AuthSignInOptionsResponse
 
     [JsonPropertyName("autoRedirectToEntra")]
     public bool AutoRedirectToEntra { get; init; }
+
+    [JsonPropertyName("effectiveExperience")]
+    public string EffectiveExperience { get; init; } = "";
+
+    [JsonPropertyName("effectiveExperienceDescription")]
+    public string EffectiveExperienceDescription { get; init; } = "";
 }

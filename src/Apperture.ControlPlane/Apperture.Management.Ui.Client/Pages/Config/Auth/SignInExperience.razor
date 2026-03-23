@@ -1,0 +1,152 @@
+@page "/config/auth/sign-in"
+@layout ConfigLayout
+@using System.Net.Http
+@using Apperture.Management.Client
+@using Apperture.Management.Ui.Shared
+@using Apperture.Management.Ui.Client.Organisms
+@using Apperture.Management.Ui.Client.Services
+@inject IManagementClient Client
+@inject AuthSignInOptionsService SignInOptions
+@inject IOperatorCapabilitiesService Capabilities
+@inject IToastService Toasts
+
+<div class="p-4">
+    <div class="text-xs text-muted mb-1">Config — Authentication</div>
+    <PageHeader Title="Sign-in chooser"
+                Subtitle="Primary sign-in page: which methods appear and in what order. Local sign-in availability is controlled by deployment; this page only controls chooser visibility and Entra preference." />
+
+    @if (!_canView)
+    {
+        <p class="mt-4 text-sm text-muted">You do not have permission to view sign-in configuration.</p>
+    }
+    else if (_loading)
+    {
+        <p class="mt-4 text-sm text-muted">Loading…</p>
+    }
+    else if (_policy is null || _opts is null)
+    {
+        <PageMessage Kind="PageMessageKind.Error" Message="Could not load policy or sign-in options." />
+    }
+    else
+    {
+        <div class="mt-6 max-w-xl space-y-6 text-sm text-body">
+            <section class="rounded border border-default bg-surface p-4">
+                <h2 class="font-medium text-heading">Effective experience (read-only)</h2>
+                <p class="mt-2 text-xs text-body">@(_opts.EffectiveExperienceDescription ?? "—")</p>
+                @if (!string.IsNullOrEmpty(_opts.EffectiveExperience))
+                {
+                    <p class="mt-1 text-xs text-muted">Label: <code class="rounded bg-surface-muted px-1">@_opts.EffectiveExperience</code></p>
+                }
+            </section>
+
+            <section class="rounded border border-default bg-surface p-4">
+                <h2 class="font-medium text-heading">Capabilities (read-only)</h2>
+                <ul class="mt-2 list-inside list-disc space-y-1 text-xs">
+                    <li>Local sign-in (deployment): @(_opts.LocalSignInEnabled ? "enabled" : "disabled")</li>
+                    <li>Entra sign-in (effective): @(_opts.EntraSignInEnabled ? "enabled" : _opts.EntraMisconfigured ? "misconfigured" : "disabled")</li>
+                </ul>
+                <p class="mt-2 text-xs text-muted">Recovery URL when local is hidden from the primary page: <code class="rounded bg-surface-muted px-1">/login/local</code></p>
+            </section>
+
+            @if (_canManage)
+            {
+                <section class="rounded border border-default bg-surface p-4 space-y-4">
+                    <h2 class="font-medium text-heading">Chooser policy</h2>
+                    <PageMessage Kind="PageMessageKind.Warning"
+                                 Message="You cannot hide local sign-in from the primary page unless Entra sign-in is enabled and correctly configured. The server rejects saves that would lock operators out." />
+                    <label class="flex items-center gap-2">
+                        <input type="checkbox" @bind="_showLocal" />
+                        <span>Show local username/password on the primary sign-in page</span>
+                    </label>
+                    <label class="flex items-center gap-2">
+                        <input type="checkbox" @bind="_preferEntra" />
+                        <span>Prefer Microsoft sign-in when both methods appear on the primary page</span>
+                    </label>
+                    <label class="flex items-center gap-2">
+                        <input type="checkbox" @bind="_autoRedirect" />
+                        <span>Automatically redirect to Microsoft sign-in when policy allows (advanced)</span>
+                    </label>
+                    @if (!string.IsNullOrEmpty(_saveError))
+                    {
+                        <PageMessage Kind="PageMessageKind.Error" Message="@_saveError" />
+                    }
+                    <button type="button"
+                            class="rounded bg-surface-muted px-3 py-2 text-sm font-medium text-heading hover:bg-surface disabled:opacity-50"
+                            disabled="@_saving"
+                            @onclick="SaveAsync">
+                        @(_saving ? "Saving…" : "Save")
+                    </button>
+                </section>
+            }
+            else
+            {
+                <p class="text-xs text-muted">You have read-only access; only users with sign-in policy permission can change these settings.</p>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private bool _canView;
+    private bool _canManage;
+    private bool _loading = true;
+    private AuthUiPolicyDto? _policy;
+    private AuthSignInOptionsDto? _opts;
+    private bool _showLocal = true;
+    private bool _preferEntra;
+    private bool _autoRedirect;
+    private string? _saveError;
+    private bool _saving;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var caps = await Capabilities.GetCapabilitiesAsync();
+        _canManage = caps.CanManageAuthUiPolicy;
+        _canView = caps.CanViewAuthConfiguration || _canManage;
+        if (!_canView)
+        {
+            _loading = false;
+            return;
+        }
+
+        await SignInOptions.RefreshAsync();
+        _opts = SignInOptions.Current;
+        _policy = await Client.GetAuthUiPolicyAsync();
+        if (_policy is not null)
+        {
+            _showLocal = _policy.ShowLocalSignInInPrimaryChooser;
+            _preferEntra = _policy.PreferEntraInChooser;
+            _autoRedirect = _policy.AutoRedirectToEntra;
+        }
+
+        _loading = false;
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_policy is null)
+            return;
+        _saveError = null;
+        _saving = true;
+        try
+        {
+            var req = new UpdateAuthUiPolicyRequest(
+                _showLocal,
+                _preferEntra,
+                _autoRedirect,
+                _policy.RowVersionBase64);
+            _policy = await Client.PatchAuthUiPolicyAsync(req);
+            await SignInOptions.RefreshAsync();
+            _opts = SignInOptions.Current;
+            Toasts.Show(ToastSeverity.Success, "Sign-in policy saved.");
+        }
+        catch (HttpRequestException ex)
+        {
+            _saveError = ex.Message;
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+}

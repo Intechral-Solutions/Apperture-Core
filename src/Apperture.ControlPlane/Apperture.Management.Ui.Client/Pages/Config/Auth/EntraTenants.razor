@@ -1,0 +1,195 @@
+@page "/config/auth/tenants"
+@layout ConfigLayout
+@using System.Net.Http
+@using Apperture.Management.Client
+@using Apperture.Management.Ui.Shared
+@using Apperture.Management.Ui.Client.Organisms
+@using Apperture.Management.Ui.Client.Services
+@inject IManagementClient Client
+@inject IOperatorCapabilitiesService Capabilities
+@inject AuthSignInOptionsService SignInOptions
+@inject IToastService Toasts
+
+<div class="p-4">
+    <div class="text-xs text-muted mb-1">Config — Authentication</div>
+    <PageHeader Title="Entra registrations"
+                Subtitle="Store tenant metadata and choose which registration supplies authority and client ID for sign-in. Client secret stays in deployment configuration for this version. Restart the management host after changing the active registration so OIDC picks up authority and client ID changes." />
+
+    @if (!_canView)
+    {
+        <p class="mt-4 text-sm text-muted">You do not have permission to view Entra registrations.</p>
+    }
+    else if (_loading)
+    {
+        <p class="mt-4 text-sm text-muted">Loading…</p>
+    }
+    else if (_items is null)
+    {
+        <PageMessage Kind="PageMessageKind.Error" Message="Could not load registrations." />
+    }
+    else
+    {
+        <div class="mt-6 space-y-6 text-sm">
+            <div class="overflow-x-auto rounded border border-default">
+                <table class="min-w-full text-left text-xs">
+                    <thead class="bg-surface-muted text-heading">
+                        <tr>
+                            <th class="p-2">Name</th>
+                            <th class="p-2">Active</th>
+                            <th class="p-2">Enabled</th>
+                            <th class="p-2">Secret (deployment)</th>
+                            <th class="p-2"></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var r in _items)
+                        {
+                            <tr class="border-t border-default">
+                                <td class="p-2">
+                                    <div class="font-medium text-heading">@r.DisplayName</div>
+                                    <div class="text-muted break-all">@r.Authority</div>
+                                    <div class="text-muted">Client ID: @r.ClientId</div>
+                                </td>
+                                <td class="p-2">@(r.IsActive ? "Yes" : "—")</td>
+                                <td class="p-2">@(r.Enabled ? "Yes" : "No")</td>
+                                <td class="p-2">@(r.DeploymentSecretConfigured ? "configured" : "missing")</td>
+                                <td class="p-2 space-x-2 whitespace-nowrap">
+                                    @if (_canManage)
+                                    {
+                                        if (!r.IsActive && r.Enabled)
+                                        {
+                                            <button type="button" class="underline disabled:opacity-50" disabled="@_busy" @onclick="() => ActivateAsync(r.Id)">Activate</button>
+                                        }
+                                        <button type="button" class="underline text-red-600 disabled:opacity-50" disabled="@_busy" @onclick="() => DeleteAsync(r.Id)">Delete</button>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+
+            @if (_canManage)
+            {
+                <section class="max-w-xl rounded border border-default bg-surface p-4 space-y-3">
+                    <h2 class="font-medium text-heading">Add registration</h2>
+                    <label class="block text-xs">Display name<input class="mt-1 w-full rounded border border-default px-2 py-1" @bind="_newDisplay" /></label>
+                    <label class="block text-xs">Authority (https) <input class="mt-1 w-full rounded border border-default px-2 py-1" @bind="_newAuthority" /></label>
+                    <label class="block text-xs">Client ID <input class="mt-1 w-full rounded border border-default px-2 py-1" @bind="_newClientId" /></label>
+                    <label class="flex items-center gap-2 text-xs">
+                        <input type="checkbox" @bind="_newUsesDeploymentSecret" disabled="true" />
+                        Use deployment client secret (required in v1)
+                    </label>
+                    @if (!string.IsNullOrEmpty(_formError))
+                    {
+                        <PageMessage Kind="PageMessageKind.Error" Message="@_formError" />
+                    }
+                    <button type="button" class="rounded bg-surface-muted px-3 py-2 text-sm font-medium disabled:opacity-50" disabled="@_busy" @onclick="CreateAsync">Create</button>
+                </section>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private bool _canView;
+    private bool _canManage;
+    private bool _loading = true;
+    private bool _busy;
+    private IReadOnlyList<EntraTenantListItemDto>? _items;
+    private string _newDisplay = "";
+    private string _newAuthority = "";
+    private string _newClientId = "";
+    private bool _newUsesDeploymentSecret = true;
+    private string? _formError;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var caps = await Capabilities.GetCapabilitiesAsync();
+        _canManage = caps.CanManageEntraTenants;
+        _canView = caps.CanViewAuthConfiguration || _canManage;
+        if (!_canView)
+        {
+            _loading = false;
+            return;
+        }
+
+        await ReloadAsync();
+        _loading = false;
+    }
+
+    private async Task ReloadAsync()
+    {
+        _items = await Client.GetEntraTenantsAsync();
+    }
+
+    private async Task CreateAsync()
+    {
+        _formError = null;
+        _busy = true;
+        try
+        {
+            var created = await Client.CreateEntraTenantAsync(new CreateEntraTenantRequest(
+                _newDisplay,
+                _newAuthority,
+                _newClientId,
+                UsesDeploymentSecret: true,
+                CallbackPath: null,
+                Enabled: true));
+            _newDisplay = "";
+            _newAuthority = "";
+            _newClientId = "";
+            await ReloadAsync();
+            await SignInOptions.RefreshAsync();
+            Toasts.Show(ToastSeverity.Success, $"Created registration {created.DisplayName}.");
+        }
+        catch (HttpRequestException ex)
+        {
+            _formError = ex.Message;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task ActivateAsync(string id)
+    {
+        _busy = true;
+        try
+        {
+            await Client.ActivateEntraTenantAsync(id);
+            await ReloadAsync();
+            await SignInOptions.RefreshAsync();
+            Toasts.Show(ToastSeverity.Success, "Active Entra registration updated. Restart the management host if sign-in still uses old authority.");
+        }
+        catch (HttpRequestException ex)
+        {
+            Toasts.Show(ToastSeverity.Error, ex.Message);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task DeleteAsync(string id)
+    {
+        _busy = true;
+        try
+        {
+            await Client.DeleteEntraTenantAsync(id);
+            await ReloadAsync();
+            await SignInOptions.RefreshAsync();
+            Toasts.Show(ToastSeverity.Success, "Registration deleted.");
+        }
+        catch (HttpRequestException ex)
+        {
+            Toasts.Show(ToastSeverity.Error, ex.Message);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

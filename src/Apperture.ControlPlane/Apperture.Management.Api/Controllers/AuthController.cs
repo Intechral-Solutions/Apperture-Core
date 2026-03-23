@@ -68,7 +68,8 @@ public sealed class AuthController : ControllerBase
     public async Task<ActionResult<AuthSignInOptionsResponse>> GetSignInOptions(CancellationToken cancellationToken)
     {
         var policy = await _authUiPolicyRepository.GetAsync(cancellationToken);
-        var snapshot = AuthSignInOptionsMerger.Merge(_localOptions, _entraOptions, policy);
+        var built = AuthSignInSnapshotBuilder.Build(_localOptions, _entraOptions, policy);
+        var snapshot = built.Snapshot;
         return Ok(new AuthSignInOptionsResponse
         {
             LocalSignInEnabled = snapshot.LocalSignInEnabled,
@@ -76,7 +77,9 @@ public sealed class AuthController : ControllerBase
             EntraMisconfigured = snapshot.EntraMisconfigured,
             ShowLocalSignInInPrimaryChooser = snapshot.ShowLocalSignInInPrimaryChooser,
             PreferEntraInChooser = snapshot.PreferEntraInChooser,
-            AutoRedirectToEntra = snapshot.AutoRedirectToEntra
+            AutoRedirectToEntra = snapshot.AutoRedirectToEntra,
+            EffectiveExperience = built.EffectiveExperience.ToString(),
+            EffectiveExperienceDescription = AuthSignInEffectiveExperience.Describe(built.EffectiveExperience)
         });
     }
 

@@ -15,7 +15,7 @@ public interface IOperatorCapabilitiesService
 public sealed class OperatorCapabilitiesService : IOperatorCapabilitiesService
 {
     private static readonly OperatorCapabilitiesDto DenyAll =
-        new(false, false, false, false, false, false, false, false, false);
+        new(false, false, false, false, false, false, false, false, false, false, false);
 
     private readonly IManagementClient _client;
     private readonly ILogger<OperatorCapabilitiesService> _logger;

@@ -448,7 +448,7 @@ public sealed class ManagementClient : IManagementClient
     public async Task<OperatorCapabilitiesDto> GetOperatorCapabilitiesAsync(CancellationToken cancellationToken = default)
     {
         var dto = await _http.GetFromJsonAsync<OperatorCapabilitiesDto>("control/capabilities", cancellationToken).ConfigureAwait(false);
-        return dto ?? new OperatorCapabilitiesDto(false, false, false, false, false, false, false, false, false);
+        return dto ?? new OperatorCapabilitiesDto(false, false, false, false, false, false, false, false, false, false, false);
     }
 
     public async Task<StartOperationResult> StartOperationAsync(
@@ -578,5 +578,105 @@ public sealed class ManagementClient : IManagementClient
         response.EnsureSuccessStatusCode();
         var dto = await response.Content.ReadFromJsonAsync<AuthUiPolicyDto>(cancellationToken).ConfigureAwait(false);
         return dto ?? throw new InvalidOperationException("auth-ui-policy patch response was empty.");
+    }
+
+    public async Task<ConfigAuthOverviewDto?> GetConfigAuthOverviewAsync(CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.GetAsync("config/auth-overview", cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
+            return null;
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<ConfigAuthOverviewDto>(cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<IReadOnlyList<EntraTenantListItemDto>?> GetEntraTenantsAsync(CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.GetAsync("config/auth/entra-tenants", cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
+            return null;
+        response.EnsureSuccessStatusCode();
+        var list = await response.Content.ReadFromJsonAsync<EntraTenantListItemDto[]>(cancellationToken).ConfigureAwait(false);
+        return list ?? Array.Empty<EntraTenantListItemDto>();
+    }
+
+    public async Task<EntraTenantListItemDto?> GetEntraTenantAsync(string id, CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.GetAsync($"config/auth/entra-tenants/{Uri.EscapeDataString(id)}", cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode == HttpStatusCode.NotFound)
+            return null;
+        if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
+            return null;
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<EntraTenantListItemDto>(cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<EntraTenantListItemDto> CreateEntraTenantAsync(CreateEntraTenantRequest request, CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.PostAsJsonAsync("config/auth/entra-tenants", request, cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode is HttpStatusCode.BadRequest or HttpStatusCode.Forbidden)
+        {
+            var detail = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            throw new HttpRequestException(
+                string.IsNullOrWhiteSpace(detail) ? response.ReasonPhrase : detail,
+                null,
+                response.StatusCode);
+        }
+
+        response.EnsureSuccessStatusCode();
+        var dto = await response.Content.ReadFromJsonAsync<EntraTenantListItemDto>(cancellationToken).ConfigureAwait(false);
+        return dto ?? throw new InvalidOperationException("create entra tenant response was empty.");
+    }
+
+    public async Task<EntraTenantListItemDto> PatchEntraTenantAsync(string id, UpdateEntraTenantRequest request, CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.PatchAsJsonAsync(
+            $"config/auth/entra-tenants/{Uri.EscapeDataString(id)}",
+            request,
+            cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode is HttpStatusCode.BadRequest or HttpStatusCode.Forbidden or HttpStatusCode.Conflict)
+        {
+            var detail = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            throw new HttpRequestException(
+                string.IsNullOrWhiteSpace(detail) ? response.ReasonPhrase : detail,
+                null,
+                response.StatusCode);
+        }
+
+        response.EnsureSuccessStatusCode();
+        var dto = await response.Content.ReadFromJsonAsync<EntraTenantListItemDto>(cancellationToken).ConfigureAwait(false);
+        return dto ?? throw new InvalidOperationException("patch entra tenant response was empty.");
+    }
+
+    public async Task DeleteEntraTenantAsync(string id, CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.DeleteAsync($"config/auth/entra-tenants/{Uri.EscapeDataString(id)}", cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode is HttpStatusCode.BadRequest or HttpStatusCode.Forbidden)
+        {
+            var detail = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            throw new HttpRequestException(
+                string.IsNullOrWhiteSpace(detail) ? response.ReasonPhrase : detail,
+                null,
+                response.StatusCode);
+        }
+
+        response.EnsureSuccessStatusCode();
+    }
+
+    public async Task ActivateEntraTenantAsync(string id, CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.PostAsync(
+            $"config/auth/entra-tenants/{Uri.EscapeDataString(id)}/activate",
+            content: null,
+            cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode is HttpStatusCode.BadRequest or HttpStatusCode.Forbidden or HttpStatusCode.NotFound)
+        {
+            var detail = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            throw new HttpRequestException(
+                string.IsNullOrWhiteSpace(detail) ? response.ReasonPhrase : detail,
+                null,
+                response.StatusCode);
+        }
+
+        response.EnsureSuccessStatusCode();
     }
 }

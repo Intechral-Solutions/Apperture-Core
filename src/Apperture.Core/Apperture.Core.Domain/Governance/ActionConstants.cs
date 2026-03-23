@@ -73,4 +73,10 @@ public static class ActionConstants
 
     /// <summary>Manage persisted sign-in chooser policy for the management UI (instance-scoped).</summary>
     public const string AuthUiPolicyManage = "auth.ui_policy.manage";
+
+    /// <summary>Read instance authentication configuration and Entra registrations (overview, list).</summary>
+    public const string AuthConfigurationRead = "auth.configuration.read";
+
+    /// <summary>Create, update, delete, and activate Entra instance registrations.</summary>
+    public const string AuthEntraManage = "auth.entra.manage";
 }

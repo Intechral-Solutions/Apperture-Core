@@ -49,4 +49,23 @@ public sealed class AuthSignInOptionsMergerTests
 
         err.Should().BeNull();
     }
+
+    [Fact]
+    public void Build_IncludesEffectiveExperience_AlignedWithMerge()
+    {
+        var local = new LocalAuthOptions { Enabled = true };
+        var entra = new EntraAuthOptions
+        {
+            Enabled = true,
+            Authority = "https://login.microsoftonline.com/tenant",
+            ClientId = "cid",
+            ClientSecret = "secret"
+        };
+        var policy = new InstanceAuthUiPolicy { ShowLocalSignInInPrimaryChooser = true };
+
+        var built = AuthSignInSnapshotBuilder.Build(local, entra, policy);
+
+        built.Snapshot.EntraSignInEnabled.Should().BeTrue();
+        built.EffectiveExperience.Should().Be(EffectiveAuthExperienceKind.DualVisible);
+    }
 }

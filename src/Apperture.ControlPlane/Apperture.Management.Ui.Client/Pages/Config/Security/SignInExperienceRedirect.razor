@@ -1,0 +1,11 @@
+@* Epic 44: Old route → /config/auth/sign-in *@
+@page "/config/security/sign-in"
+@layout ConfigLayout
+@inject NavigationManager Nav
+
+<div class="p-4 text-sm text-muted">Redirecting…</div>
+
+@code {
+    protected override void OnInitialized() =>
+        Nav.NavigateTo("/config/auth/sign-in", replace: true);
+}
