@@ -82,6 +82,59 @@
                 </div>
             </div>
 
+            @if (_readiness is not null)
+            {
+                <div class="rounded border border-default bg-surface p-3">
+                    <h2 class="text-sm font-semibold text-heading mb-2">Readiness</h2>
+                    <div class="text-xs text-muted mb-2">Derived from declared module slots, integration bindings, connections, and schedules.</div>
+                    <div class="mb-2">
+                        @if (_readiness.IsRunnable)
+                        {
+                            <span class="rounded bg-emerald-500/15 px-2 py-0.5 text-xs font-medium text-emerald-700 dark:text-emerald-300">Runnable</span>
+                        }
+                        else
+                        {
+                            <span class="rounded bg-amber-500/15 px-2 py-0.5 text-xs font-medium text-amber-800 dark:text-amber-200">Not runnable</span>
+                        }
+                    </div>
+                    @if (_readiness.Issues.Length > 0)
+                    {
+                        <ul class="list-disc pl-5 space-y-1 text-sm text-body">
+                            @foreach (var issue in _readiness.Issues)
+                            {
+                                <li>
+                                    <span class="font-mono text-xs text-muted">@issue.Code</span>
+                                    <span class="ml-1">@issue.Message</span>
+                                </li>
+                            }
+                        </ul>
+                    }
+                    else
+                    {
+                        <div class="text-sm text-muted">No blocking issues detected.</div>
+                    }
+                </div>
+            }
+
+            @if (_requiredSlots is { Length: > 0 })
+            {
+                <div class="rounded border border-default bg-surface p-3">
+                    <h2 class="text-sm font-semibold text-heading mb-2">Required slots</h2>
+                    <div class="text-xs text-muted mb-2">Declared by the module for this integration.</div>
+                    <ul class="space-y-1 text-sm">
+                        @foreach (var slot in _requiredSlots)
+                        {
+                            var bound = _bindings?.Any(b => string.Equals(b.SlotName, slot.SlotName, StringComparison.Ordinal) && string.Equals(b.State, "Active", StringComparison.OrdinalIgnoreCase)) == true;
+                            <li class="flex justify-between gap-2">
+                                <span class="font-mono">@slot.SlotName</span>
+                                <span class="text-muted text-xs">@slot.ContractType</span>
+                                <span class="text-xs @(bound ? "text-emerald-600 dark:text-emerald-400" : "text-amber-700 dark:text-amber-300")">@(bound ? "Bound" : "Unbound")</span>
+                            </li>
+                        }
+                    </ul>
+                </div>
+            }
+
             <div class="rounded border border-default bg-surface p-3">
                 <h2 class="text-sm font-semibold text-heading mb-2">Module instance settings</h2>
                 <div class="text-xs text-muted mb-2">Key-value pairs. Module-specific schema support is deferred.</div>
@@ -267,8 +320,11 @@
             </div>
 
             <div class="rounded border border-default bg-surface p-3">
-                <h2 class="text-sm font-semibold text-heading mb-2">Deferred</h2>
-                <div class="text-xs text-muted">Runtime deployment: not yet implemented.</div>
+                <h2 class="text-sm font-semibold text-heading mb-2">Runtime and lineage</h2>
+                <div class="text-xs text-muted space-y-2">
+                    <p>Workflow runs started with an integration id (manual start, schedules, or retry) store <span class="font-mono">IntegrationId</span> on the run and instance. The worker resolves slots using that id when present.</p>
+                    <p>Configure <span class="font-mono">Apperture:IntegrationExecution:DefaultIntegrationId</span> or environment <span class="font-mono">APERTURE_INTEGRATION_ID</span> only when a single integration is deployed per worker and persisted starts omit integration id.</p>
+                </div>
             </div>
         </div>
     }
@@ -280,6 +336,8 @@
     private IntegrationDto? _integration;
     private IReadOnlyList<IntegrationBindingDto>? _bindings;
     private IReadOnlyList<ScheduleDto>? _schedules;
+    private IntegrationReadinessDto? _readiness;
+    private IntegrationModuleSlotSummaryDto[]? _requiredSlots;
     private IReadOnlyList<ModuleSlotDto>? _moduleSlots;
     private IReadOnlyList<EligibleConnectionDto>? _eligibleConnections;
     private IReadOnlyList<WorkflowDto>? _workflows;
@@ -328,11 +386,47 @@
         _error = null;
         try
         {
-            _integration = await Client.GetIntegrationAsync(IntegrationId);
-            if (_integration is not null)
+            var detail = await Client.GetIntegrationOperatorDetailAsync(IntegrationId);
+            if (detail is null)
             {
-                _bindings = await Client.GetIntegrationBindingsAsync(IntegrationId);
-                _schedules = await Client.GetIntegrationSchedulesAsync(IntegrationId);
+                _integration = null;
+                _bindings = null;
+                _schedules = null;
+                _readiness = null;
+                _requiredSlots = null;
+            }
+            else
+            {
+                _integration = new IntegrationDto(
+                    detail.Id,
+                    detail.DisplayName,
+                    detail.ModuleId,
+                    detail.ScopeKey,
+                    detail.State,
+                    detail.Settings,
+                    detail.CreatedAt,
+                    detail.UpdatedAt);
+                _readiness = detail.Readiness;
+                _requiredSlots = detail.RequiredSlots;
+                _bindings = detail.Bindings.Select(b => new IntegrationBindingDto(
+                    b.Id,
+                    IntegrationId,
+                    detail.ModuleId,
+                    b.SlotName,
+                    b.ContractType,
+                    b.ConnectionId,
+                    b.CapabilityId,
+                    b.State)).ToList();
+                _schedules = detail.Schedules.Select(s => new ScheduleDto(
+                    s.Id,
+                    s.Name,
+                    s.RecurrenceExpression,
+                    "UTC",
+                    s.Enabled,
+                    0,
+                    null,
+                    1,
+                    s.IntegrationId)).ToList();
             }
         }
         catch (HttpRequestException ex)
@@ -397,6 +491,7 @@
             _integration = await Client.UpdateIntegrationAsync(IntegrationId, new UpdateIntegrationRequest(Settings: cleaned));
             Toasts.Show(ToastSeverity.Success, "Settings saved.");
             _editingSettings = false;
+            await LoadAsync();
         }
         catch (HttpRequestException ex)
         {
@@ -441,8 +536,8 @@
         {
             await Client.CreateIntegrationBindingAsync(IntegrationId, new CreateIntegrationBindingRequest(_bindingSlot, _moduleSlots?.First(s => s.SlotName == _bindingSlot).ContractType ?? "", _bindingConnectionId));
             Toasts.Show(ToastSeverity.Success, "Binding added.");
-            _bindings = await Client.GetIntegrationBindingsAsync(IntegrationId);
             _addingBinding = false;
+            await LoadAsync();
         }
         catch (HttpRequestException ex)
         {
@@ -462,7 +557,7 @@
         {
             await Client.DeleteIntegrationBindingAsync(IntegrationId, b.Id);
             Toasts.Show(ToastSeverity.Success, "Binding removed.");
-            _bindings = await Client.GetIntegrationBindingsAsync(IntegrationId);
+            await LoadAsync();
         }
         catch (HttpRequestException ex)
         {
@@ -502,8 +597,8 @@
                 0,
                 targetConfig));
             Toasts.Show(ToastSeverity.Success, "Schedule created.");
-            _schedules = await Client.GetIntegrationSchedulesAsync(IntegrationId);
             _addingSchedule = false;
+            await LoadAsync();
         }
         catch (HttpRequestException ex)
         {

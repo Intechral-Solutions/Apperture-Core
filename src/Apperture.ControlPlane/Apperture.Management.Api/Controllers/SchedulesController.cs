@@ -67,6 +67,17 @@ public sealed class SchedulesController : ControllerBase
     {
         if (!await _scheduleGovernance.CanManageAsync(cancellationToken))
             return Forbid();
+        if (string.IsNullOrWhiteSpace(body.IntegrationId))
+        {
+            return BadRequest(new
+            {
+                errors = new[]
+                {
+                    "IntegrationId is required. Create schedules under POST /api/integrations/{integrationId}/schedules so the schedule is owned by an integration."
+                }
+            });
+        }
+
         var validation = _scheduleValidation.ValidateCreate(
             body.Name,
             body.RecurrenceExpression,
@@ -79,7 +90,7 @@ public sealed class SchedulesController : ControllerBase
         var jobType = (ScheduledJobType)(body.TargetJobType ?? 0);
         var id = Guid.NewGuid().ToString("N")[..24];
         var target = new ScheduledTarget(jobType, body.TargetJobConfiguration!);
-        var integrationId = string.IsNullOrEmpty(body.IntegrationId) ? null : new IntegrationId(body.IntegrationId);
+        var integrationId = new IntegrationId(body.IntegrationId!);
         var definition = new ScheduleDefinition(
             new ScheduleId(id),
             body.Name,

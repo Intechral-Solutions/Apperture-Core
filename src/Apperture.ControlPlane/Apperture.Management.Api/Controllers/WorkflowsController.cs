@@ -51,9 +51,19 @@ public sealed class WorkflowsController : ControllerBase
             new WorkflowDefinitionId(workflowId),
             parameters,
             body?.IdempotencyKey,
-            body?.CorrelationId);
+            body?.CorrelationId,
+            RetryOfRunId: null,
+            IntegrationId: body?.IntegrationId);
 
-        var dispatchResult = await _dispatch.StartAsync(request, cancellationToken);
+        WorkflowStartDispatchResult? dispatchResult;
+        try
+        {
+            dispatchResult = await _dispatch.StartAsync(request, cancellationToken);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { error = ex.Message });
+        }
         if (dispatchResult is null)
         {
             await TryAppendStartBlockedAuditAsync(

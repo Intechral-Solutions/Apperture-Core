@@ -109,6 +109,11 @@ public interface IManagementClient
     Task<IntegrationDto?> GetIntegrationAsync(string id, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Operator detail: integration, readiness, required slots, bindings, schedules (Epic 54).
+    /// </summary>
+    Task<IntegrationOperatorDetailDto?> GetIntegrationOperatorDetailAsync(string id, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Creates an integration. Epic 49.
     /// </summary>
     Task<IntegrationDto> CreateIntegrationAsync(CreateIntegrationRequest request, CancellationToken cancellationToken = default);

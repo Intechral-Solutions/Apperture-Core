@@ -19,4 +19,13 @@ public interface IRuntimeSlotResolver
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The resolved client, or null if the slot has no active connection binding.</returns>
     ValueTask<T?> ResolveSlotAsync<T>(string moduleId, string slotName, CancellationToken cancellationToken = default) where T : class;
+
+    /// <summary>
+    /// Resolves using an integration-scoped binding when <paramref name="integrationId"/> is set; otherwise legacy (moduleId, slotName) resolution.
+    /// </summary>
+    ValueTask<T?> ResolveSlotAsync<T>(
+        string moduleId,
+        string slotName,
+        string? integrationId,
+        CancellationToken cancellationToken = default) where T : class;
 }

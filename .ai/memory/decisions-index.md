@@ -12,4 +12,5 @@ Architecture decision records (ADRs) live in [docs/02-decisions/](../../docs/02-
 | [ADR-0022](../../docs/02-decisions/ADR-0022-declared-execution-result-contracts.md) | Declared execution result contracts (unified success/failure authoring intent) |
 | [ADR-0023](../../docs/02-decisions/ADR-0023-execution-contract-author-guidance-and-validation-signals.md) | Author guidance taxonomy and lightweight validation signals for execution contracts |
 | [ADR-0027](../../docs/02-decisions/ADR-0027-connector-definitions-not-platform-clients.md) | Connector definitions vs platform-managed clients (Epic 52 correction; supersedes ADR-0026) |
+| [ADR-0028](../../docs/02-decisions/ADR-0028-integration-canonical-deployment-unit.md) | Integration as canonical deployment, binding, and scheduling unit (Epic 54) |
 | [Epic 35](../../docs/02-decisions/Epic35-Run-Inspection-Forensics.md) | Run inspection and execution forensics (`ForensicContext`, origin inference, schedule convention, UI cross-nav) |

@@ -52,3 +52,7 @@ ADR-0024 established Integration as the operator-facing deployment/configuration
 
 - Migration of legacy bindings/schedules to Integrations is deferred
 - Code comments in `SlotBoundResolver` and `GetBySlotAsync` document deferred Integration-scoped resolution
+
+## Follow-up: Epic 54 (ADR-0028)
+
+[ADR-0028](./ADR-0028-integration-canonical-deployment-unit.md) tightens the model: integration-scoped binding create is required; module-level binding POST is retired (410); new schedules require `IntegrationId`; `SlotBoundResolver` uses integration scope when an integration id is supplied; workflow persistence carries optional `IntegrationId` for lineage; control plane exposes integration readiness and operator detail APIs.

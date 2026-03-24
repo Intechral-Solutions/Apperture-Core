@@ -69,6 +69,7 @@ public sealed class StartRequestWorker : BackgroundService
                 var definitionResolver = scope.ServiceProvider.GetRequiredService<IWorkflowDefinitionResolver>();
                 var moduleRegistry = scope.ServiceProvider.GetRequiredService<IModuleRegistryService>();
                 var audit = scope.ServiceProvider.GetService<IAuditService>();
+                var integrationExecution = scope.ServiceProvider.GetService<IOptions<IntegrationExecutionOptions>>();
                 var processor = new WorkflowStartRequestProcessor(
                     db,
                     executor,
@@ -77,7 +78,8 @@ public sealed class StartRequestWorker : BackgroundService
                     _leaseOptions,
                     _logger,
                     moduleRegistry,
-                    audit);
+                    audit,
+                    integrationExecution);
                 var operationRegistry = scope.ServiceProvider.GetRequiredService<IOperationRegistryService>();
                 var operationProcessor = new OperationStartRequestProcessor(
                     db,

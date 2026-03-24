@@ -12,6 +12,11 @@ public interface IStepExecutionContext
     string ModuleId { get; }
 
     /// <summary>
+    /// Integration this execution is scoped to, when known (Epic 54); affects slot resolution.
+    /// </summary>
+    string? IntegrationId { get; }
+
+    /// <summary>
     /// Resolves the slot to a live client of type T. Returns null if no active connection binding exists for the slot.
     /// Caller must dispose the result when T is IDisposable or IAsyncDisposable.
     /// </summary>

@@ -34,6 +34,7 @@ public sealed class WorkflowStartRequestProcessor
     private readonly ILogger? _logger;
     private readonly string _workerId;
     private readonly WorkflowStartRequestLeaseOptions _leaseOptions;
+    private readonly IntegrationExecutionOptions? _integrationExecution;
 
     public WorkflowStartRequestProcessor(
         AppertureDbContext db,
@@ -43,7 +44,8 @@ public sealed class WorkflowStartRequestProcessor
         IOptions<WorkflowStartRequestLeaseOptions> leaseOptions,
         ILogger? logger = null,
         IModuleRegistryService? moduleRegistry = null,
-        IAuditService? audit = null)
+        IAuditService? audit = null,
+        IOptions<IntegrationExecutionOptions>? integrationExecution = null)
     {
         _db = db;
         _executor = executor;
@@ -53,6 +55,7 @@ public sealed class WorkflowStartRequestProcessor
         _logger = logger;
         _moduleRegistry = moduleRegistry;
         _audit = audit;
+        _integrationExecution = integrationExecution?.Value;
     }
 
     public async Task<bool> TryClaimAsync(string runId, CancellationToken cancellationToken = default)
@@ -312,7 +315,16 @@ WHERE RunId = {runId} AND (
                         instance.CurrentStepName,
                         instance.Version);
 
-                    lastStepResult = await _executor.ExecuteStepAsync(definition, stepName, domainInstance, parameters, cancellationToken);
+                    var integrationScope = request.IntegrationId
+                        ?? instance.IntegrationId
+                        ?? _integrationExecution?.DefaultIntegrationId;
+                    lastStepResult = await _executor.ExecuteStepAsync(
+                        definition,
+                        stepName,
+                        domainInstance,
+                        parameters,
+                        integrationScope,
+                        cancellationToken);
 
                     activeStep.Status = WorkflowLifecycleStatusNames.Completed;
                     activeStep.EndedAt = DateTimeOffset.UtcNow;

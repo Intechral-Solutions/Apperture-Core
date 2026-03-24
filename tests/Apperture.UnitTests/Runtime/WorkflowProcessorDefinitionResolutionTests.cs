@@ -81,6 +81,14 @@ public sealed class WorkflowProcessorDefinitionResolutionTests
     {
         public ValueTask<T?> ResolveSlotAsync<T>(string moduleId, string slotName, CancellationToken cancellationToken = default)
             where T : class =>
+            ResolveSlotAsync<T>(moduleId, slotName, null, cancellationToken);
+
+        public ValueTask<T?> ResolveSlotAsync<T>(
+            string moduleId,
+            string slotName,
+            string? integrationId,
+            CancellationToken cancellationToken = default)
+            where T : class =>
             ValueTask.FromResult<T?>(null);
     }
 

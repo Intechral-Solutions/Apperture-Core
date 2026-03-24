@@ -63,7 +63,17 @@ public sealed class CronScheduleEvaluator : IScheduleEvaluator
                 continue;
             }
 
-            var occurrences = cron.GetOccurrences(fromUtc.UtcDateTime, asOfUtc.UtcDateTime, tz);
+            List<DateTime> occurrences;
+            try
+            {
+                occurrences = cron.GetOccurrences(fromUtc.UtcDateTime, asOfUtc.UtcDateTime, tz).ToList();
+            }
+            catch (ArgumentException ex) when (ex.ParamName == "fromUtc")
+            {
+                // Cronos requires fromUtc < toUtc (strict). Skip this assignment when LastAttemptedUtc+1s meets or exceeds asOfUtc.
+                continue;
+            }
+
             foreach (var occ in occurrences)
             {
                 var fireUtc = new DateTimeOffset(occ, TimeSpan.Zero);

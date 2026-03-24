@@ -37,30 +37,20 @@ public sealed class BindingsController : ControllerBase
     }
 
     /// <summary>
-    /// Creates a binding from a connection to the slot.
+    /// Legacy route: binding creation is no longer supported without an Integration (Epic 54).
     /// </summary>
     [HttpPost("binding")]
-    public async Task<ActionResult<BindingDto>> Bind(string moduleId, string slotName, [FromBody] CreateBindingRequestBody body, CancellationToken cancellationToken)
+    [ProducesResponseType(StatusCodes.Status410Gone)]
+    public IActionResult Bind(string moduleId, string slotName, [FromBody] CreateBindingRequestBody? body, CancellationToken cancellationToken)
     {
-        try
-        {
-            var binding = await _bindingService.CreateBindingAsync(
-                moduleId,
-                slotName,
-                body.ContractType,
-                new ConnectionId(body.ConnectionId),
-                integrationId: null,
-                cancellationToken);
-            return CreatedAtAction(nameof(Get), new { moduleId, slotName }, ToDto(binding));
-        }
-        catch (UnauthorizedAccessException)
-        {
-            return Forbid();
-        }
-        catch (InvalidOperationException ex)
-        {
-            return BadRequest(new { error = ex.Message });
-        }
+        return StatusCode(
+            StatusCodes.Status410Gone,
+            new
+            {
+                error = "Module-scoped binding creation is no longer supported.",
+                usePath = "POST /api/integrations/{integrationId}/bindings",
+                message = "Create bindings under the integration that deploys this module; the integration supplies ModuleId and ownership."
+            });
     }
 
     /// <summary>

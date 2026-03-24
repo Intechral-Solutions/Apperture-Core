@@ -10,15 +10,14 @@ namespace Apperture.Core.Application.Services;
 public interface IBindingService
 {
     /// <summary>
-    /// Creates a binding from a slot to a connection.
-    /// When integrationId is provided, the binding is owned by that Integration (moduleId from Integration).
+    /// Creates a binding from a slot to a connection, owned by the given Integration (Epic 54).
     /// </summary>
     ValueTask<Binding> CreateBindingAsync(
         string moduleId,
         string slotName,
         string contractType,
         ConnectionId connectionId,
-        IntegrationId? integrationId = null,
+        IntegrationId integrationId,
         CancellationToken cancellationToken = default);
 
     /// <summary>

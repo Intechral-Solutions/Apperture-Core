@@ -340,6 +340,15 @@ public sealed class OperationStartRequestProcessorTests
             Calls++;
             return ValueTask.FromResult<object?>(null);
         }
+
+        public ValueTask<object?> ExecuteStepAsync(
+            WorkflowDefinition definition,
+            string stepName,
+            WorkflowInstance instance,
+            IReadOnlyDictionary<string, object?>? parameters,
+            string? integrationId,
+            CancellationToken cancellationToken) =>
+            ExecuteStepAsync(definition, stepName, instance, parameters, cancellationToken);
     }
 
     private sealed class ThrowingExecutor : IWorkflowExecutor
@@ -351,6 +360,15 @@ public sealed class OperationStartRequestProcessorTests
             IReadOnlyDictionary<string, object?>? parameters,
             CancellationToken cancellationToken = default)
             => throw new InvalidOperationException("boom");
+
+        public ValueTask<object?> ExecuteStepAsync(
+            WorkflowDefinition definition,
+            string stepName,
+            WorkflowInstance instance,
+            IReadOnlyDictionary<string, object?>? parameters,
+            string? integrationId,
+            CancellationToken cancellationToken) =>
+            ExecuteStepAsync(definition, stepName, instance, parameters, cancellationToken);
     }
 
     private sealed class DeclaredFailureExecutor : IWorkflowExecutor
@@ -362,6 +380,15 @@ public sealed class OperationStartRequestProcessorTests
             IReadOnlyDictionary<string, object?>? parameters,
             CancellationToken cancellationToken = default)
             => throw OperatorExecutionResult.FailWithheld("declared-op-withheld");
+
+        public ValueTask<object?> ExecuteStepAsync(
+            WorkflowDefinition definition,
+            string stepName,
+            WorkflowInstance instance,
+            IReadOnlyDictionary<string, object?>? parameters,
+            string? integrationId,
+            CancellationToken cancellationToken) =>
+            ExecuteStepAsync(definition, stepName, instance, parameters, cancellationToken);
     }
 
     private sealed class TestLogger : ILogger

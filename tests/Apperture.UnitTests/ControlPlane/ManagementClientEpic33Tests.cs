@@ -93,7 +93,7 @@ public sealed class ManagementClientEpic33Tests
         var handler = new CreateScheduleCaptureHandler(HttpStatusCode.Created, created);
         var client = new ManagementClient(new HttpClient(handler) { BaseAddress = new Uri("https://api.example/") });
 
-        var request = new CreateScheduleRequest("Test", "0 * * * *", "UTC", true, 0, "{\"workflowDefinitionId\":\"wf1\"}", null, "local");
+        var request = new CreateScheduleRequest("Test", "0 * * * *", "UTC", true, 0, "{\"workflowDefinitionId\":\"wf1\"}", null, "local", IntegrationId: "integration-client-test");
         var result = await client.CreateScheduleAsync(request);
 
         result.Id.Should().Be("s123");
@@ -109,7 +109,7 @@ public sealed class ManagementClientEpic33Tests
         var handler = new CreateScheduleCaptureHandler(HttpStatusCode.BadRequest, response);
         var client = new ManagementClient(new HttpClient(handler) { BaseAddress = new Uri("https://api.example/") });
 
-        var request = new CreateScheduleRequest("", "bad", "UTC", true, 0, "{}", null, "local");
+        var request = new CreateScheduleRequest("", "bad", "UTC", true, 0, "{}", null, "local", IntegrationId: "integration-client-test");
         var act = () => client.CreateScheduleAsync(request);
 
         await act.Should().ThrowAsync<ScheduleValidationException>()

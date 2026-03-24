@@ -20,4 +20,15 @@ public interface IWorkflowExecutor
         WorkflowInstance instance,
         IReadOnlyDictionary<string, object?>? parameters,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Executes a step with optional integration scope for slot resolution (Epic 54).
+    /// </summary>
+    ValueTask<object?> ExecuteStepAsync(
+        WorkflowDefinition definition,
+        string stepName,
+        WorkflowInstance instance,
+        IReadOnlyDictionary<string, object?>? parameters,
+        string? integrationId,
+        CancellationToken cancellationToken);
 }

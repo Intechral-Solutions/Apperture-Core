@@ -16,6 +16,14 @@ namespace Apperture.UnitTests.Runtime;
 
 public sealed class ScheduleDispatchTests
 {
+    /// <summary>
+    /// Fixed clock so * * * * * always has exactly one tick in (lastAttempted+1s, asOf]: 12:01:00 ∈ (12:00:01, 12:01:30].
+    /// Wall-clock-based seeds fail when UtcNow sits in the last ~34s of a minute (no minute boundary in the window).
+    /// </summary>
+    private static readonly DateTimeOffset DeterministicAsOfUtc = new(2025, 6, 15, 12, 1, 30, 0, TimeSpan.Zero);
+
+    private static readonly DateTimeOffset DeterministicLastAttemptedUtc = new(2025, 6, 15, 12, 0, 0, 0, TimeSpan.Zero);
+
     private static AppertureDbContext NewDb()
     {
         var opts = new DbContextOptionsBuilder<AppertureDbContext>()
@@ -84,8 +92,11 @@ public sealed class ScheduleDispatchTests
         SeedScheduleWithWorkflowTarget(db, "s1", "a1", "Sample.HelloWorld.HelloWorld", "0 * * * *", "UTC", lastAttemptedUtc: null);
         await db.SaveChangesAsync();
 
+        // 14:03Z → lookback from 13:58Z includes the 14:00 hourly tick (deterministic; avoids wall-clock flakiness).
+        var asOfUtc = new DateTimeOffset(2025, 6, 15, 14, 3, 0, 0, TimeSpan.Zero);
+
         var services = new ServiceCollection();
-        services.AddScoped<AppertureDbContext>(_ => db);
+        services.AddSingleton(db);
         services.AddScoped<IScheduleRepository, SqlScheduleRepository>();
         services.AddScoped<IScheduleEvaluator, CronScheduleEvaluator>();
         services.AddScoped<IAuditService, SqlAuditService>();
@@ -106,7 +117,7 @@ public sealed class ScheduleDispatchTests
         await using (var scope = services.BuildServiceProvider().CreateAsyncScope())
         {
             var runner = scope.ServiceProvider.GetRequiredService<IScheduleDispatchRunner>();
-            await runner.RunCycleAsync(new RuntimePlaneId("local"), DateTimeOffset.UtcNow);
+            await runner.RunCycleAsync(new RuntimePlaneId("local"), asOfUtc);
 
             var ctx = scope.ServiceProvider.GetRequiredService<AppertureDbContext>();
             var startRequestCount = await ctx.WorkflowStartRequests.AsNoTracking().CountAsync();
@@ -209,14 +220,12 @@ public sealed class ScheduleDispatchTests
     private static async Task<(int StartRequestCount, string RunOutcome)> RunSchedulerCycleAndGetResultsAsync(bool moduleEnabled, string? workflowDefinitionId)
     {
         var db = NewDb();
-        var now = DateTimeOffset.UtcNow;
-        // Use every-minute cron and state so evaluator window yields exactly 1 due firing.
-        // fromUtc = lastAttemptedUtc + 1s; ~35s keeps window under 1 min to avoid 2 occurrences.
-        SeedScheduleWithWorkflowTarget(db, "s1", "a1", workflowDefinitionId, "* * * * *", "UTC", lastAttemptedUtc: now.AddSeconds(-35));
+        // Every-minute cron + state: exactly one tick in (lastAttempted+1s, asOfUtc] (see Deterministic* constants).
+        SeedScheduleWithWorkflowTarget(db, "s1", "a1", workflowDefinitionId, "* * * * *", "UTC", lastAttemptedUtc: DeterministicLastAttemptedUtc);
         await db.SaveChangesAsync();
 
         var services = new ServiceCollection();
-        services.AddScoped<AppertureDbContext>(_ => db);
+        services.AddSingleton(db);
 
         services.AddScoped<IScheduleRepository, SqlScheduleRepository>();
         services.AddScoped<IScheduleEvaluator, CronScheduleEvaluator>();
@@ -243,7 +252,7 @@ public sealed class ScheduleDispatchTests
         await using (var scope = services.BuildServiceProvider().CreateAsyncScope())
         {
             var runner = scope.ServiceProvider.GetRequiredService<IScheduleDispatchRunner>();
-            await runner.RunCycleAsync(new RuntimePlaneId("local"), DateTimeOffset.UtcNow);
+            await runner.RunCycleAsync(new RuntimePlaneId("local"), DeterministicAsOfUtc);
 
             var ctx = scope.ServiceProvider.GetRequiredService<AppertureDbContext>();
             var startRequestCount = await ctx.WorkflowStartRequests.AsNoTracking().CountAsync();
@@ -255,12 +264,11 @@ public sealed class ScheduleDispatchTests
     private static async Task<(int OperationRequestCount, string RunOutcome)> RunSchedulerCycleForOperationAsync(bool moduleEnabled, string? operationDefinitionId)
     {
         var db = NewDb();
-        var now = DateTimeOffset.UtcNow;
-        SeedScheduleWithOperationTarget(db, "s1", "a1", operationDefinitionId, "* * * * *", "UTC", lastAttemptedUtc: now.AddSeconds(-35));
+        SeedScheduleWithOperationTarget(db, "s1", "a1", operationDefinitionId, "* * * * *", "UTC", lastAttemptedUtc: DeterministicLastAttemptedUtc);
         await db.SaveChangesAsync();
 
         var services = new ServiceCollection();
-        services.AddScoped<AppertureDbContext>(_ => db);
+        services.AddSingleton(db);
         services.AddScoped<IScheduleRepository, SqlScheduleRepository>();
         services.AddScoped<IScheduleEvaluator, CronScheduleEvaluator>();
         services.AddScoped<IAuditService, SqlAuditService>();
@@ -284,7 +292,7 @@ public sealed class ScheduleDispatchTests
         await using (var scope = services.BuildServiceProvider().CreateAsyncScope())
         {
             var runner = scope.ServiceProvider.GetRequiredService<IScheduleDispatchRunner>();
-            await runner.RunCycleAsync(new RuntimePlaneId("local"), DateTimeOffset.UtcNow);
+            await runner.RunCycleAsync(new RuntimePlaneId("local"), DeterministicAsOfUtc);
 
             var ctx = scope.ServiceProvider.GetRequiredService<AppertureDbContext>();
             var opRequestCount = await ctx.OperationStartRequests.AsNoTracking().CountAsync();

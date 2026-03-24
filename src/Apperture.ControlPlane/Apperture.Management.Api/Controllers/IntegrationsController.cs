@@ -16,10 +16,14 @@ namespace Apperture.Management.Api.Controllers;
 public sealed class IntegrationsController : ControllerBase
 {
     private readonly IIntegrationManagementService _integrationService;
+    private readonly IIntegrationReadinessService _readinessService;
 
-    public IntegrationsController(IIntegrationManagementService integrationService)
+    public IntegrationsController(
+        IIntegrationManagementService integrationService,
+        IIntegrationReadinessService readinessService)
     {
         _integrationService = integrationService;
+        _readinessService = readinessService;
     }
 
     /// <summary>
@@ -32,6 +36,44 @@ public sealed class IntegrationsController : ControllerBase
         {
             var integrations = await _integrationService.ListIntegrationsAsync(cancellationToken);
             return Ok(integrations.Select(ToDto).ToList());
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return Forbid();
+        }
+    }
+
+    /// <summary>
+    /// Evidence-based readiness: runnable flag and actionable issues from slots, bindings, connections, schedules.
+    /// </summary>
+    [HttpGet("{id}/readiness")]
+    public async Task<ActionResult<IntegrationReadinessProjection>> GetReadiness(string id, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var projection = await _readinessService.GetReadinessAsync(new IntegrationId(id), cancellationToken);
+            if (projection is null)
+                return NotFound();
+            return Ok(projection);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return Forbid();
+        }
+    }
+
+    /// <summary>
+    /// Operator view: integration metadata, readiness, required slots, bindings, and schedules in one response.
+    /// </summary>
+    [HttpGet("{id}/detail")]
+    public async Task<ActionResult<IntegrationOperatorDetailProjection>> GetDetail(string id, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var detail = await _readinessService.GetOperatorDetailAsync(new IntegrationId(id), cancellationToken);
+            if (detail is null)
+                return NotFound();
+            return Ok(detail);
         }
         catch (UnauthorizedAccessException)
         {

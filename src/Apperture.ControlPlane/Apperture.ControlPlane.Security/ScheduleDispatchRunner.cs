@@ -50,8 +50,9 @@ public sealed class ScheduleDispatchRunner : IScheduleDispatchRunner
         var hostId = _hostIdentity.HostId;
         var staleCutoffUtc = asOfUtc.AddMinutes(-_claimOptions.ClaimLeaseMinutes);
 
-        var due = await _evaluator.GetDueAsync(planeId, asOfUtc, ct);
-        var stale = await _repo.GetRecoverableStaleCandidatesAsync(planeId, staleCutoffUtc, ct);
+        var due = (await _evaluator.GetDueAsync(planeId, asOfUtc, ct)).Select(NormalizeFireUtc).ToList();
+        var stale = (await _repo.GetRecoverableStaleCandidatesAsync(planeId, staleCutoffUtc, ct)).Select(NormalizeFireUtc).ToList();
+        // Normalize so the same UTC instant always matches (due vs stale dedup and unique index on ScheduleRuns).
         var candidates = due
             .Concat(stale.Where(s => !due.Any(d => d.ScheduleId == s.ScheduleId && d.FireTimeUtc == s.FireTimeUtc)))
             .ToList();
@@ -61,6 +62,9 @@ public sealed class ScheduleDispatchRunner : IScheduleDispatchRunner
             await ProcessDueAsync(candidate, hostId, staleCutoffUtc, ct);
         }
     }
+
+    private static ScheduleFireCandidate NormalizeFireUtc(ScheduleFireCandidate c) =>
+        new(c.ScheduleId, c.AssignmentId, new DateTimeOffset(c.FireTimeUtc.UtcDateTime, TimeSpan.Zero));
 
     private async Task ProcessDueAsync(ScheduleFireCandidate candidate, string hostId, DateTimeOffset staleCutoffUtc, CancellationToken ct)
     {
@@ -149,7 +153,8 @@ public sealed class ScheduleDispatchRunner : IScheduleDispatchRunner
             Parameters: null,
             IdempotencyKey: $"schedule:{candidate.ScheduleId}:{candidate.FireTimeUtc:O}",
             CorrelationId: $"schedule:{candidate.ScheduleId}",
-            RetryOfRunId: null);
+            RetryOfRunId: null,
+            IntegrationId: definition.IntegrationId?.Value);
 
         var result = await _workflowDispatch.StartAsync(request, ct);
         if (result is null)

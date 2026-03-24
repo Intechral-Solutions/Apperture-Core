@@ -28,6 +28,14 @@ builder.Services.Configure<WorkflowStartRequestLeaseOptions>(
     builder.Configuration.GetSection("WorkflowStartRequestLease"));
 builder.Services.Configure<OperationStartRequestLeaseOptions>(
     builder.Configuration.GetSection("OperationStartRequestLease"));
+builder.Services.Configure<IntegrationExecutionOptions>(
+    builder.Configuration.GetSection(IntegrationExecutionOptions.SectionName));
+builder.Services.PostConfigure<IntegrationExecutionOptions>(opts =>
+{
+    opts.DefaultIntegrationId ??=
+        builder.Configuration["APERTURE_INTEGRATION_ID"]
+        ?? builder.Configuration["Apperture:IntegrationExecution:DefaultIntegrationId"];
+});
 
 builder.Services.Configure<RuntimeHostIdentityOptions>(opts =>
 {

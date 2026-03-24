@@ -674,6 +674,15 @@ public sealed class StartRequestWorkerTests
 
             return null;
         }
+
+        public ValueTask<object?> ExecuteStepAsync(
+            WorkflowDefinition definition,
+            string stepName,
+            WorkflowInstance instance,
+            IReadOnlyDictionary<string, object?>? parameters,
+            string? integrationId,
+            CancellationToken cancellationToken) =>
+            ExecuteStepAsync(definition, stepName, instance, parameters, cancellationToken);
     }
 }
 
@@ -686,6 +695,15 @@ internal sealed class NoOpExecutor : IWorkflowExecutor
         IReadOnlyDictionary<string, object?>? parameters,
         CancellationToken cancellationToken = default)
         => ValueTask.FromResult<object?>(null);
+
+    public ValueTask<object?> ExecuteStepAsync(
+        WorkflowDefinition definition,
+        string stepName,
+        WorkflowInstance instance,
+        IReadOnlyDictionary<string, object?>? parameters,
+        string? integrationId,
+        CancellationToken cancellationToken) =>
+        ExecuteStepAsync(definition, stepName, instance, parameters, cancellationToken);
 }
 
 internal sealed class ThrowingExecutor : IWorkflowExecutor
@@ -697,6 +715,15 @@ internal sealed class ThrowingExecutor : IWorkflowExecutor
         IReadOnlyDictionary<string, object?>? parameters,
         CancellationToken cancellationToken = default)
         => throw new InvalidOperationException("boom");
+
+    public ValueTask<object?> ExecuteStepAsync(
+        WorkflowDefinition definition,
+        string stepName,
+        WorkflowInstance instance,
+        IReadOnlyDictionary<string, object?>? parameters,
+        string? integrationId,
+        CancellationToken cancellationToken) =>
+        ExecuteStepAsync(definition, stepName, instance, parameters, cancellationToken);
 }
 
 internal sealed class DeclaredFailureExecutor : IWorkflowExecutor
@@ -708,6 +735,15 @@ internal sealed class DeclaredFailureExecutor : IWorkflowExecutor
         IReadOnlyDictionary<string, object?>? parameters,
         CancellationToken cancellationToken = default)
         => throw OperatorExecutionResult.FailInline("declared failure", new { reason = "declared-inline" });
+
+    public ValueTask<object?> ExecuteStepAsync(
+        WorkflowDefinition definition,
+        string stepName,
+        WorkflowInstance instance,
+        IReadOnlyDictionary<string, object?>? parameters,
+        string? integrationId,
+        CancellationToken cancellationToken) =>
+        ExecuteStepAsync(definition, stepName, instance, parameters, cancellationToken);
 }
 
 internal sealed class DeclaredSuccessExecutor : IWorkflowExecutor
@@ -719,6 +755,15 @@ internal sealed class DeclaredSuccessExecutor : IWorkflowExecutor
         IReadOnlyDictionary<string, object?>? parameters,
         CancellationToken cancellationToken = default)
         => ValueTask.FromResult<object?>(OperatorExecutionResult.SuccessInline(new { message = "declared-success" }));
+
+    public ValueTask<object?> ExecuteStepAsync(
+        WorkflowDefinition definition,
+        string stepName,
+        WorkflowInstance instance,
+        IReadOnlyDictionary<string, object?>? parameters,
+        string? integrationId,
+        CancellationToken cancellationToken) =>
+        ExecuteStepAsync(definition, stepName, instance, parameters, cancellationToken);
 }
 
 internal sealed class OwnershipStealingExecutor : IWorkflowExecutor
@@ -747,6 +792,15 @@ internal sealed class OwnershipStealingExecutor : IWorkflowExecutor
 
         return null;
     }
+
+    public ValueTask<object?> ExecuteStepAsync(
+        WorkflowDefinition definition,
+        string stepName,
+        WorkflowInstance instance,
+        IReadOnlyDictionary<string, object?>? parameters,
+        string? integrationId,
+        CancellationToken cancellationToken) =>
+        ExecuteStepAsync(definition, stepName, instance, parameters, cancellationToken);
 }
 
 internal sealed class SingleDefinitionResolver : IWorkflowDefinitionResolver

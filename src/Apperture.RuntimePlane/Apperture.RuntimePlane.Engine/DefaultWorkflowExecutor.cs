@@ -20,18 +20,28 @@ public sealed class DefaultWorkflowExecutor : IWorkflowExecutor
     }
 
     /// <inheritdoc />
+    public ValueTask<object?> ExecuteStepAsync(
+        WorkflowDefinition definition,
+        string stepName,
+        WorkflowInstance instance,
+        IReadOnlyDictionary<string, object?>? parameters,
+        CancellationToken cancellationToken = default) =>
+        ExecuteStepAsync(definition, stepName, instance, parameters, integrationId: null, cancellationToken);
+
+    /// <inheritdoc />
     public async ValueTask<object?> ExecuteStepAsync(
         WorkflowDefinition definition,
         string stepName,
         WorkflowInstance instance,
         IReadOnlyDictionary<string, object?>? parameters,
-        CancellationToken cancellationToken = default)
+        string? integrationId,
+        CancellationToken cancellationToken)
     {
         var handler = _registry.Get(definition.ModuleId, stepName);
         if (handler is null)
             return null;
 
-        var context = new StepExecutionContext(_resolver, definition.ModuleId);
+        var context = new StepExecutionContext(_resolver, definition.ModuleId, integrationId);
         var parametersDict = parameters ?? new Dictionary<string, object?>();
         return await handler.ExecuteAsync(context, parametersDict, cancellationToken);
     }

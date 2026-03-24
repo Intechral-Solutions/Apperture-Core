@@ -12,6 +12,10 @@ public sealed class WorkflowStartRequestEntity
     public string? ParametersJson { get; set; }
     public string? IdempotencyKey { get; set; }
     public string? CorrelationId { get; set; }
+
+    /// <summary>Integration that owns this start request, when known (Epic 54).</summary>
+    public string? IntegrationId { get; set; }
+
     public DateTimeOffset CreatedAt { get; set; }
 
     public string Status { get; set; } = Apperture.RuntimePlane.Abstractions.WorkflowLifecycleStatusNames.Requested;

@@ -91,12 +91,17 @@ public sealed class SqlScheduleRepository : IScheduleRepository
 
     public async ValueTask<bool> RunExistsAsync(string scheduleId, DateTimeOffset fireTimeUtc, CancellationToken ct = default)
     {
+        var instant = fireTimeUtc.UtcDateTime;
         return await _db.ScheduleRuns.AsNoTracking()
-            .AnyAsync(x => x.ScheduleId == scheduleId && x.FireTimeUtc == fireTimeUtc, ct);
+            .AnyAsync(x => x.ScheduleId == scheduleId && x.FireTimeUtc.UtcDateTime == instant, ct);
     }
 
     public async ValueTask<bool> TryClaimFireAsync(string scheduleId, DateTimeOffset fireTimeUtc, string assignmentId, string hostId, CancellationToken ct = default)
     {
+        // InMemory does not reliably enforce unique indexes on DateTimeOffset; treat existing row as lost claim race.
+        if (await RunExistsAsync(scheduleId, fireTimeUtc, ct))
+            return false;
+
         try
         {
             _db.ScheduleRuns.Add(new ScheduleRunEntity
@@ -140,11 +145,55 @@ public sealed class SqlScheduleRepository : IScheduleRepository
     public async ValueTask<bool> TryRecoverStaleClaimAsync(string scheduleId, DateTimeOffset fireTimeUtc, string assignmentId, string hostId, DateTimeOffset staleCutoffUtc, CancellationToken ct = default)
     {
         var now = DateTimeOffset.UtcNow;
-        var rows = await _db.Database.ExecuteSqlInterpolatedAsync($@"
-            UPDATE ScheduleRuns SET ClaimedByHostId = {hostId}, StartedAtUtc = {now}
-            WHERE ScheduleId = {scheduleId} AND FireTimeUtc = {fireTimeUtc} AND Outcome = N'InProgress' AND StartedAtUtc < {staleCutoffUtc}
-            ", ct);
-        return rows == 1;
+        var isInMemory = _db.Database.ProviderName?.Contains("InMemory", StringComparison.Ordinal) == true;
+
+        // InMemory provider does not support ExecuteUpdateAsync.
+        if (!isInMemory)
+        {
+            var rows = await _db.ScheduleRuns
+                .Where(r =>
+                    r.ScheduleId == scheduleId &&
+                    r.FireTimeUtc == fireTimeUtc &&
+                    r.Outcome == "InProgress" &&
+                    r.StartedAtUtc < staleCutoffUtc)
+                .ExecuteUpdateAsync(
+                    setters => setters
+                        .SetProperty(r => r.ClaimedByHostId, hostId)
+                        .SetProperty(r => r.StartedAtUtc, now),
+                    ct);
+            if (rows == 1)
+                return true;
+        }
+
+        ScheduleRunEntity? run;
+        if (isInMemory)
+        {
+            var instant = fireTimeUtc.UtcDateTime;
+            var candidates = await _db.ScheduleRuns
+                .Where(r =>
+                    r.ScheduleId == scheduleId &&
+                    r.Outcome == "InProgress" &&
+                    r.StartedAtUtc < staleCutoffUtc)
+                .ToListAsync(ct);
+            run = candidates.FirstOrDefault(r => r.FireTimeUtc.UtcDateTime == instant);
+        }
+        else
+        {
+            run = await _db.ScheduleRuns.FirstOrDefaultAsync(
+                r =>
+                    r.ScheduleId == scheduleId &&
+                    r.FireTimeUtc == fireTimeUtc &&
+                    r.Outcome == "InProgress" &&
+                    r.StartedAtUtc < staleCutoffUtc,
+                ct);
+        }
+
+        if (run is null)
+            return false;
+        run.ClaimedByHostId = hostId;
+        run.StartedAtUtc = now;
+        await _db.SaveChangesAsync(ct);
+        return true;
     }
 
     /// <inheritdoc cref="IScheduleRepository.GetInProgressRunClaimAsync"/>
@@ -161,8 +210,9 @@ public sealed class SqlScheduleRepository : IScheduleRepository
 
     public async ValueTask CompleteRunAsync(string scheduleId, DateTimeOffset fireTimeUtc, string outcome, string? outcomeReason, string? runId, CancellationToken ct = default)
     {
+        var instant = fireTimeUtc.UtcDateTime;
         var run = await _db.ScheduleRuns.FirstOrDefaultAsync(
-            x => x.ScheduleId == scheduleId && x.FireTimeUtc == fireTimeUtc, ct);
+            x => x.ScheduleId == scheduleId && x.FireTimeUtc.UtcDateTime == instant, ct);
         if (run is null)
             return;
         run.CompletedAtUtc = DateTimeOffset.UtcNow;

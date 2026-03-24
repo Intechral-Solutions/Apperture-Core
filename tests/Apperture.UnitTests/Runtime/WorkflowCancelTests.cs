@@ -150,6 +150,15 @@ public sealed class WorkflowCancelTests
             Calls++;
             return ValueTask.FromResult<object?>(null);
         }
+
+        public ValueTask<object?> ExecuteStepAsync(
+            WorkflowDefinition definition,
+            string stepName,
+            WorkflowInstance instance,
+            IReadOnlyDictionary<string, object?>? parameters,
+            string? integrationId,
+            CancellationToken cancellationToken) =>
+            ExecuteStepAsync(definition, stepName, instance, parameters, cancellationToken);
     }
 
     private sealed class CancelAfterFirstStepExecutor : IWorkflowExecutor
@@ -180,6 +189,15 @@ public sealed class WorkflowCancelTests
             }
             return null;
         }
+
+        public ValueTask<object?> ExecuteStepAsync(
+            WorkflowDefinition definition,
+            string stepName,
+            WorkflowInstance instance,
+            IReadOnlyDictionary<string, object?>? parameters,
+            string? integrationId,
+            CancellationToken cancellationToken) =>
+            ExecuteStepAsync(definition, stepName, instance, parameters, cancellationToken);
     }
 
     private sealed class SingleDefinitionResolver : IWorkflowDefinitionResolver
@@ -222,5 +240,14 @@ public sealed class WorkflowCancelTests
 
             return null;
         }
+
+        public ValueTask<object?> ExecuteStepAsync(
+            WorkflowDefinition definition,
+            string stepName,
+            WorkflowInstance instance,
+            IReadOnlyDictionary<string, object?>? parameters,
+            string? integrationId,
+            CancellationToken cancellationToken) =>
+            ExecuteStepAsync(definition, stepName, instance, parameters, cancellationToken);
     }
 }

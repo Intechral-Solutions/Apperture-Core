@@ -69,8 +69,10 @@ The control plane can govern connector-related resources through these applicati
 ### API Endpoints
 - `GET /api/connector-definitions`, `GET /api/connector-definitions/{id}` — Read-only catalog (`connector.definition.read`). See [ADR-0027](../02-decisions/ADR-0027-connector-definitions-not-platform-clients.md).
 - `GET/POST/PATCH/DELETE /connections` — Connection CRUD and retire
-- `GET/POST/DELETE /modules/{moduleId}/slots/{slotName}/binding` — Binding get, create, revoke
-- `GET /modules/{moduleId}/slots/{slotName}/eligible-connections?contractType=X` — List eligible connections
+- `GET/DELETE /api/modules/{moduleId}/slots/{slotName}/binding` — Legacy slot binding read/revoke; **POST create returns 410** — create bindings via `POST /api/integrations/{integrationId}/bindings` ([ADR-0028](../02-decisions/ADR-0028-integration-canonical-deployment-unit.md)).
+- `GET /api/modules/{moduleId}/slots/{slotName}/eligible-connections?contractType=X` — List eligible connections
+- `GET/POST /api/integrations/{integrationId}/bindings` — Integration-scoped binding list and create (canonical)
+- `GET /api/integrations/{id}/detail`, `GET /api/integrations/{id}/readiness` — Operator view and evidence-based readiness (Epic 54)
 
 ### Source of truth for connector definitions (Epic 52A / 53)
 

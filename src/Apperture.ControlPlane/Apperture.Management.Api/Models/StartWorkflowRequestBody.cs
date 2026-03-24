@@ -13,4 +13,7 @@ public sealed class StartWorkflowRequestBody
 
     /// <summary>Optional correlation id.</summary>
     public string? CorrelationId { get; init; }
+
+    /// <summary>Optional integration id when starting in the context of a deployment (Epic 54); must match the workflow's module.</summary>
+    public string? IntegrationId { get; init; }
 }

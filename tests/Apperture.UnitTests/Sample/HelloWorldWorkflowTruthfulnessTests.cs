@@ -175,6 +175,14 @@ public sealed class HelloWorldWorkflowTruthfulnessTests
             string moduleId,
             string slotName,
             CancellationToken cancellationToken = default)
+            where T : class =>
+            ResolveSlotAsync<T>(moduleId, slotName, null, cancellationToken);
+
+        public ValueTask<T?> ResolveSlotAsync<T>(
+            string moduleId,
+            string slotName,
+            string? integrationId,
+            CancellationToken cancellationToken = default)
             where T : class
         {
             if (!string.Equals(slotName, "Db", StringComparison.Ordinal))
@@ -191,6 +199,8 @@ public sealed class HelloWorldWorkflowTruthfulnessTests
     private sealed class StubStepExecutionContext(string moduleId) : IStepExecutionContext
     {
         public string ModuleId { get; } = moduleId;
+
+        public string? IntegrationId => null;
 
         public ValueTask<T?> ResolveSlotAsync<T>(string slotName, CancellationToken cancellationToken = default)
             where T : class

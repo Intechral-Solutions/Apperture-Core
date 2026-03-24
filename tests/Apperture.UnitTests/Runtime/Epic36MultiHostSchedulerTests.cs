@@ -19,6 +19,14 @@ namespace Apperture.UnitTests.Runtime;
 /// </summary>
 public sealed class Epic36MultiHostSchedulerTests
 {
+    /// <summary>See ScheduleDispatchTests: wall-clock * * * * * seeds miss a minute tick in the last ~34s of a minute.</summary>
+    private static readonly DateTimeOffset DeterministicAsOfUtc = new(2025, 6, 15, 12, 1, 30, 0, TimeSpan.Zero);
+
+    private static readonly DateTimeOffset DeterministicLastAttemptedUtc = new(2025, 6, 15, 12, 0, 0, 0, TimeSpan.Zero);
+
+    /// <summary>Due fire for the deterministic every-minute cron window above.</summary>
+    private static readonly DateTimeOffset DeterministicFireUtc = new(2025, 6, 15, 12, 1, 0, 0, TimeSpan.Zero);
+
     private static AppertureDbContext NewDb()
     {
         var opts = new DbContextOptionsBuilder<AppertureDbContext>()
@@ -34,15 +42,14 @@ public sealed class Epic36MultiHostSchedulerTests
     public async Task TwoHosts_OneDueSchedule_OnlyOneDispatch()
     {
         var db = NewDb();
-        var now = DateTimeOffset.UtcNow;
-        SeedScheduleWithWorkflowTarget(db, "s1", "a1", "Sample.HelloWorld.HelloWorld", "* * * * *", "UTC", now.AddSeconds(-35));
+        SeedScheduleWithWorkflowTarget(db, "s1", "a1", "Sample.HelloWorld.HelloWorld", "* * * * *", "UTC", DeterministicLastAttemptedUtc);
         await db.SaveChangesAsync();
 
         var services = CreateServices(db, "hostA");
         await using (var scopeA = services.BuildServiceProvider().CreateAsyncScope())
         {
             var runnerA = scopeA.ServiceProvider.GetRequiredService<IScheduleDispatchRunner>();
-            await runnerA.RunCycleAsync(new RuntimePlaneId("local"), now);
+            await runnerA.RunCycleAsync(new RuntimePlaneId("local"), DeterministicAsOfUtc);
         }
 
         var startCountAfterA = await db.WorkflowStartRequests.AsNoTracking().CountAsync();
@@ -53,11 +60,40 @@ public sealed class Epic36MultiHostSchedulerTests
         await using (var scopeB = servicesB.BuildServiceProvider().CreateAsyncScope())
         {
             var runnerB = scopeB.ServiceProvider.GetRequiredService<IScheduleDispatchRunner>();
-            await runnerB.RunCycleAsync(new RuntimePlaneId("local"), now.AddSeconds(1));
+            await runnerB.RunCycleAsync(new RuntimePlaneId("local"), DeterministicAsOfUtc.AddSeconds(1));
         }
 
         var startCountAfterB = await db.WorkflowStartRequests.AsNoTracking().CountAsync();
         startCountAfterB.Should().Be(1, "hostB should not create a second dispatch");
+    }
+
+    [Fact]
+    public async Task TryRecoverStaleClaimAsync_InMemory_UpdatesClaimedByHostId()
+    {
+        var db = NewDb();
+        var asOfUtc = new DateTimeOffset(2025, 6, 15, 12, 0, 0, TimeSpan.Zero);
+        var fireUtc = new DateTimeOffset(2025, 1, 1, 0, 0, 0, TimeSpan.Zero);
+        SeedScheduleWithWorkflowTarget(db, "s1", "a1", "Sample.HelloWorld.HelloWorld", "0 0 1 1 *", "UTC", lastAttemptedUtc: null);
+        await db.SaveChangesAsync();
+        db.ScheduleRuns.Add(new ScheduleRunEntity
+        {
+            ScheduleId = "s1",
+            AssignmentId = "a1",
+            FireTimeUtc = fireUtc,
+            StartedAtUtc = asOfUtc.AddMinutes(-10),
+            Outcome = "InProgress",
+            ClaimedByHostId = "crashed-host"
+        });
+        await db.SaveChangesAsync();
+
+        var repo = new SqlScheduleRepository(db);
+        var staleCutoff = asOfUtc.AddMinutes(-5);
+        var stale = await repo.GetRecoverableStaleCandidatesAsync(new RuntimePlaneId("local"), staleCutoff);
+        stale.Should().ContainSingle();
+        var ok = await repo.TryRecoverStaleClaimAsync("s1", fireUtc, "a1", "recovery-host", staleCutoff);
+        ok.Should().BeTrue();
+        var run = await db.ScheduleRuns.AsNoTracking().SingleAsync(r => r.ScheduleId == "s1" && r.FireTimeUtc == fireUtc);
+        run.ClaimedByHostId.Should().Be("recovery-host");
     }
 
     /// <summary>
@@ -68,12 +104,10 @@ public sealed class Epic36MultiHostSchedulerTests
     public async Task StaleClaimRecovery_RecoversAndDispatches()
     {
         var db = NewDb();
-        var now = DateTimeOffset.UtcNow;
-        // Use "59 * * * *" so one fire per hour; set LastAttemptedUtc so evaluator window has one fire
-        var fireUtc = new DateTimeOffset(now.Year, now.Month, now.Day, now.Hour, 59, 0, TimeSpan.Zero);
-        if (fireUtc >= now)
-            fireUtc = fireUtc.AddHours(-1);
-        SeedScheduleWithWorkflowTarget(db, "s1", "a1", "Sample.HelloWorld.HelloWorld", "59 * * * *", "UTC", fireUtc.AddMinutes(-2));
+        // Fixed clock + yearly cron: no occurrence in the first-run 5-minute lookback, so only stale recovery runs (avoids TryClaimFireAsync inserting a second row for a different cron instant).
+        var asOfUtc = new DateTimeOffset(2025, 6, 15, 12, 0, 0, TimeSpan.Zero);
+        var fireUtc = new DateTimeOffset(2025, 1, 1, 0, 0, 0, TimeSpan.Zero);
+        SeedScheduleWithWorkflowTarget(db, "s1", "a1", "Sample.HelloWorld.HelloWorld", "0 0 1 1 *", "UTC", lastAttemptedUtc: null);
         await db.SaveChangesAsync();
 
         // Seed an InProgress run with very old StartedAtUtc (simulate host crash)
@@ -82,7 +116,7 @@ public sealed class Epic36MultiHostSchedulerTests
             ScheduleId = "s1",
             AssignmentId = "a1",
             FireTimeUtc = fireUtc,
-            StartedAtUtc = now.AddMinutes(-10), // > 5 min ago => stale
+            StartedAtUtc = asOfUtc.AddMinutes(-10),
             Outcome = "InProgress",
             ClaimedByHostId = "crashed-host"
         });
@@ -92,7 +126,7 @@ public sealed class Epic36MultiHostSchedulerTests
         await using (var scope = services.BuildServiceProvider().CreateAsyncScope())
         {
             var runner = scope.ServiceProvider.GetRequiredService<IScheduleDispatchRunner>();
-            await runner.RunCycleAsync(new RuntimePlaneId("local"), now);
+            await runner.RunCycleAsync(new RuntimePlaneId("local"), asOfUtc);
         }
 
         var run = await db.ScheduleRuns.AsNoTracking().FirstAsync(r => r.ScheduleId == "s1" && r.FireTimeUtc == fireUtc);
@@ -109,8 +143,7 @@ public sealed class Epic36MultiHostSchedulerTests
     public async Task LoserHost_DoesNotDispatch()
     {
         var db = NewDb();
-        var now = DateTimeOffset.UtcNow;
-        SeedScheduleWithWorkflowTarget(db, "s1", "a1", "Sample.HelloWorld.HelloWorld", "* * * * *", "UTC", now.AddSeconds(-35));
+        SeedScheduleWithWorkflowTarget(db, "s1", "a1", "Sample.HelloWorld.HelloWorld", "* * * * *", "UTC", DeterministicLastAttemptedUtc);
         await db.SaveChangesAsync();
 
         // Host A claims and completes
@@ -118,7 +151,7 @@ public sealed class Epic36MultiHostSchedulerTests
         await using (var scopeA = servicesA.BuildServiceProvider().CreateAsyncScope())
         {
             var runnerA = scopeA.ServiceProvider.GetRequiredService<IScheduleDispatchRunner>();
-            await runnerA.RunCycleAsync(new RuntimePlaneId("local"), now);
+            await runnerA.RunCycleAsync(new RuntimePlaneId("local"), DeterministicAsOfUtc);
         }
 
         // Host B runs immediately after (claim not stale) - should find nothing to do
@@ -126,7 +159,7 @@ public sealed class Epic36MultiHostSchedulerTests
         await using (var scopeB = servicesB.BuildServiceProvider().CreateAsyncScope())
         {
             var runnerB = scopeB.ServiceProvider.GetRequiredService<IScheduleDispatchRunner>();
-            await runnerB.RunCycleAsync(new RuntimePlaneId("local"), now.AddSeconds(1));
+            await runnerB.RunCycleAsync(new RuntimePlaneId("local"), DeterministicAsOfUtc.AddSeconds(1));
         }
 
         var startCount = await db.WorkflowStartRequests.AsNoTracking().CountAsync();
@@ -140,21 +173,20 @@ public sealed class Epic36MultiHostSchedulerTests
     public async Task ScheduleDetail_WhenInProgressRun_ReturnsClaimedByHostId()
     {
         var db = NewDb();
-        var now = DateTimeOffset.UtcNow;
-        SeedScheduleWithWorkflowTarget(db, "s1", "a1", "Sample.HelloWorld.HelloWorld", "* * * * *", "UTC", now.AddSeconds(-35));
+        SeedScheduleWithWorkflowTarget(db, "s1", "a1", "Sample.HelloWorld.HelloWorld", "* * * * *", "UTC", DeterministicLastAttemptedUtc);
         db.ScheduleRuns.Add(new ScheduleRunEntity
         {
             ScheduleId = "s1",
             AssignmentId = "a1",
-            FireTimeUtc = now,
-            StartedAtUtc = now.AddMinutes(-1),
+            FireTimeUtc = DeterministicFireUtc,
+            StartedAtUtc = DeterministicAsOfUtc.AddMinutes(-1),
             Outcome = "InProgress",
             ClaimedByHostId = "my-host"
         });
         await db.SaveChangesAsync();
 
         var services = new ServiceCollection();
-        services.AddScoped<AppertureDbContext>(_ => db);
+        services.AddSingleton(db);
         services.AddScoped<IScheduleRepository, SqlScheduleRepository>();
         services.AddSingleton<ISchedulerClaimOptions>(new DefaultSchedulerClaimOptions(5));
         services.AddScoped<IScheduleManagementService, SqlScheduleManagementService>();
@@ -166,7 +198,7 @@ public sealed class Epic36MultiHostSchedulerTests
         detail.Should().NotBeNull();
         detail!.InProgressClaim.Should().NotBeNull();
         detail.InProgressClaim!.ClaimedByHostId.Should().Be("my-host");
-        detail.InProgressClaim.ClaimedAtUtc.Should().BeCloseTo(now.AddMinutes(-1), TimeSpan.FromSeconds(1));
+        detail.InProgressClaim.ClaimedAtUtc.Should().BeCloseTo(DeterministicAsOfUtc.AddMinutes(-1), TimeSpan.FromSeconds(1));
     }
 
     /// <summary>
@@ -176,15 +208,14 @@ public sealed class Epic36MultiHostSchedulerTests
     public async Task GetInProgressRunClaimAsync_ReturnsNull_WhenOnlyCompletedRun()
     {
         var db = NewDb();
-        var now = DateTimeOffset.UtcNow;
-        SeedScheduleWithWorkflowTarget(db, "s1", "a1", "Sample.HelloWorld.HelloWorld", "* * * * *", "UTC", now.AddSeconds(-35));
+        SeedScheduleWithWorkflowTarget(db, "s1", "a1", "Sample.HelloWorld.HelloWorld", "* * * * *", "UTC", DeterministicLastAttemptedUtc);
         db.ScheduleRuns.Add(new ScheduleRunEntity
         {
             ScheduleId = "s1",
             AssignmentId = "a1",
-            FireTimeUtc = now,
-            StartedAtUtc = now.AddMinutes(-2),
-            CompletedAtUtc = now.AddMinutes(-1),
+            FireTimeUtc = DeterministicFireUtc,
+            StartedAtUtc = DeterministicAsOfUtc.AddMinutes(-2),
+            CompletedAtUtc = DeterministicAsOfUtc.AddMinutes(-1),
             Outcome = "Dispatched",
             ClaimedByHostId = "old-host"
         });
@@ -195,7 +226,7 @@ public sealed class Epic36MultiHostSchedulerTests
         claim.Should().BeNull();
 
         var services = new ServiceCollection();
-        services.AddScoped<AppertureDbContext>(_ => db);
+        services.AddSingleton(db);
         services.AddScoped<IScheduleRepository, SqlScheduleRepository>();
         services.AddSingleton<ISchedulerClaimOptions>(new DefaultSchedulerClaimOptions(5));
         services.AddScoped<IScheduleManagementService, SqlScheduleManagementService>();
@@ -212,21 +243,20 @@ public sealed class Epic36MultiHostSchedulerTests
     public async Task InProgressClaim_IsStale_WhenStartedBeforeLeaseWindow()
     {
         var db = NewDb();
-        var now = DateTimeOffset.UtcNow;
-        SeedScheduleWithWorkflowTarget(db, "s1", "a1", "Sample.HelloWorld.HelloWorld", "* * * * *", "UTC", now.AddSeconds(-35));
+        SeedScheduleWithWorkflowTarget(db, "s1", "a1", "Sample.HelloWorld.HelloWorld", "* * * * *", "UTC", DeterministicLastAttemptedUtc);
         db.ScheduleRuns.Add(new ScheduleRunEntity
         {
             ScheduleId = "s1",
             AssignmentId = "a1",
-            FireTimeUtc = now,
-            StartedAtUtc = now.AddMinutes(-10),
+            FireTimeUtc = DeterministicFireUtc,
+            StartedAtUtc = DeterministicAsOfUtc.AddMinutes(-10),
             Outcome = "InProgress",
             ClaimedByHostId = "slow-host"
         });
         await db.SaveChangesAsync();
 
         var services = new ServiceCollection();
-        services.AddScoped<AppertureDbContext>(_ => db);
+        services.AddSingleton(db);
         services.AddScoped<IScheduleRepository, SqlScheduleRepository>();
         services.AddSingleton<ISchedulerClaimOptions>(new DefaultSchedulerClaimOptions(5));
         services.AddScoped<IScheduleManagementService, SqlScheduleManagementService>();
@@ -244,7 +274,7 @@ public sealed class Epic36MultiHostSchedulerTests
     {
         var db = NewDb();
         var now = DateTimeOffset.UtcNow;
-        SeedScheduleWithWorkflowTarget(db, "s1", "a1", "Sample.HelloWorld.HelloWorld", "* * * * *", "UTC", now.AddSeconds(-35));
+        SeedScheduleWithWorkflowTarget(db, "s1", "a1", "Sample.HelloWorld.HelloWorld", "* * * * *", "UTC", DeterministicLastAttemptedUtc);
         db.ScheduleRuns.Add(new ScheduleRunEntity
         {
             ScheduleId = "s1",
@@ -257,7 +287,7 @@ public sealed class Epic36MultiHostSchedulerTests
         await db.SaveChangesAsync();
 
         var services = new ServiceCollection();
-        services.AddScoped<AppertureDbContext>(_ => db);
+        services.AddSingleton(db);
         services.AddScoped<IScheduleRepository, SqlScheduleRepository>();
         services.AddSingleton<ISchedulerClaimOptions>(new DefaultSchedulerClaimOptions(5));
         services.AddScoped<IScheduleManagementService, SqlScheduleManagementService>();
@@ -273,7 +303,7 @@ public sealed class Epic36MultiHostSchedulerTests
     private static ServiceCollection CreateServices(AppertureDbContext db, string hostId, int claimLeaseMinutes = 5)
     {
         var services = new ServiceCollection();
-        services.AddScoped<AppertureDbContext>(_ => db);
+        services.AddSingleton(db);
         services.AddScoped<IScheduleRepository, SqlScheduleRepository>();
         services.AddScoped<IScheduleEvaluator, CronScheduleEvaluator>();
         services.AddScoped<IAuditService, SqlAuditService>();

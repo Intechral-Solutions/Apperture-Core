@@ -38,6 +38,16 @@ public sealed class WorkflowStartDispatchService : IWorkflowStartDispatchService
         if (definition is null)
             return null;
 
+        if (!string.IsNullOrWhiteSpace(request.IntegrationId))
+        {
+            var integ = await _db.Integrations.AsNoTracking()
+                .FirstOrDefaultAsync(x => x.Id == request.IntegrationId, cancellationToken);
+            if (integ is null)
+                throw new InvalidOperationException($"Integration '{request.IntegrationId}' was not found.");
+            if (!string.Equals(integ.ModuleId, definition.ModuleId, StringComparison.Ordinal))
+                throw new InvalidOperationException("The integration's module does not match this workflow's module.");
+        }
+
         if (!string.IsNullOrWhiteSpace(request.IdempotencyKey))
         {
             var existing = await _db.WorkflowStartRequests.AsNoTracking()
@@ -76,6 +86,7 @@ public sealed class WorkflowStartDispatchService : IWorkflowStartDispatchService
                     CreatedAt = now,
                     UpdatedAt = now,
                     CorrelationKey = request.CorrelationId,
+                    IntegrationId = request.IntegrationId,
                     CurrentStepName = null,
                     Version = 0
                 });
@@ -89,7 +100,8 @@ public sealed class WorkflowStartDispatchService : IWorkflowStartDispatchService
                     CreatedAt = now,
                     CompletedAt = null,
                     CorrelationKey = request.CorrelationId,
-                    RetryOfRunId = request.RetryOfRunId
+                    RetryOfRunId = request.RetryOfRunId,
+                    IntegrationId = request.IntegrationId
                 });
 
                 _db.WorkflowStartRequests.Add(new WorkflowStartRequestEntity
@@ -100,6 +112,7 @@ public sealed class WorkflowStartDispatchService : IWorkflowStartDispatchService
                     ParametersJson = SerializeParameters(request.Parameters),
                     IdempotencyKey = request.IdempotencyKey,
                     CorrelationId = request.CorrelationId,
+                    IntegrationId = request.IntegrationId,
                     CreatedAt = now,
                     Status = WorkflowLifecycleStatusNames.Requested,
                     ClaimedAt = null,

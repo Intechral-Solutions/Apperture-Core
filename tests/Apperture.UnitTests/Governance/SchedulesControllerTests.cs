@@ -58,7 +58,8 @@ public sealed class SchedulesControllerTests
             0,
             "{\"workflowDefinitionId\":\"Mod.Ns.Workflow1\"}",
             null,
-            "local");
+            "local",
+            IntegrationId: "integration-test-01");
 
         var result = await controller.Create(body, CancellationToken.None);
 
@@ -85,7 +86,8 @@ public sealed class SchedulesControllerTests
             0,
             "{\"workflowDefinitionId\":\"Mod.Ns.Workflow1\"}",
             null,
-            "local");
+            "local",
+            IntegrationId: "integration-test-01");
 
         var result = await controller.Create(body, CancellationToken.None);
 

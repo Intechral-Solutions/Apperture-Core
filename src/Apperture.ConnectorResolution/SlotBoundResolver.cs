@@ -1,13 +1,12 @@
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Connector;
+using Apperture.Core.Domain.Integration;
 
 namespace Apperture.ConnectorResolution;
 
 /// <summary>
-/// Runtime slot resolver: resolves only via (moduleId, slotName) using binding and connection lookup.
-/// No connection-by-id; binding is the gate.
-/// Integration-scoped resolution is deferred: when multiple bindings exist for a slot (Integration-owned
-/// and legacy), the repository returns the first match. No Integration-aware selection is performed.
+/// Runtime slot resolver: resolves via binding and connection lookup. When <see cref="IntegrationId"/> is provided,
+/// uses integration-scoped bindings; otherwise uses legacy (moduleId, slotName) lookup.
 /// </summary>
 public sealed class SlotBoundResolver : IRuntimeSlotResolver
 {
@@ -26,9 +25,30 @@ public sealed class SlotBoundResolver : IRuntimeSlotResolver
     }
 
     /// <inheritdoc />
-    public async ValueTask<T?> ResolveSlotAsync<T>(string moduleId, string slotName, CancellationToken cancellationToken = default) where T : class
+    public ValueTask<T?> ResolveSlotAsync<T>(string moduleId, string slotName, CancellationToken cancellationToken = default) where T : class =>
+        ResolveSlotAsync<T>(moduleId, slotName, integrationId: null, cancellationToken);
+
+    /// <inheritdoc />
+    public async ValueTask<T?> ResolveSlotAsync<T>(
+        string moduleId,
+        string slotName,
+        string? integrationId,
+        CancellationToken cancellationToken = default) where T : class
     {
-        var binding = await _bindingRepository.GetBySlotAsync(moduleId, slotName, cancellationToken);
+        Binding? binding;
+        if (!string.IsNullOrWhiteSpace(integrationId))
+        {
+            binding = await _bindingRepository.GetBySlotAndIntegrationAsync(
+                moduleId,
+                slotName,
+                new IntegrationId(integrationId),
+                cancellationToken);
+        }
+        else
+        {
+            binding = await _bindingRepository.GetBySlotAsync(moduleId, slotName, cancellationToken);
+        }
+
         if (binding is null || binding.State != BindingState.Active)
             return null;
 

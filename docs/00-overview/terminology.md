@@ -11,3 +11,4 @@ See [.ai/memory/glossary.md](../../.ai/memory/glossary.md) for the canonical glo
 - **Step** — Unit of execution within a workflow
 - **Control plane** — Management API, UI, registry, schedules, audit
 - **Instance plane** — Worker execution, DTFx/Durable Functions, step execution
+- **Integration** — Operator-facing unit that composes a module deployment: settings, integration-scoped slot bindings, integration-scoped schedules, and (when configured) lineage to workflow runs. See [ADR-0028](../02-decisions/ADR-0028-integration-canonical-deployment-unit.md).

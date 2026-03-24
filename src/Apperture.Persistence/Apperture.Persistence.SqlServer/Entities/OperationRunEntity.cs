@@ -11,6 +11,9 @@ public sealed class OperationRunEntity
     public string? CorrelationKey { get; set; }
     public string? RetryOfRunId { get; set; }
 
+    /// <summary>Integration this workflow run belongs to, when known (Epic 54).</summary>
+    public string? IntegrationId { get; set; }
+
     /// <summary>
     /// Captured output from the last step on successful terminal completion. Serialized JSON or null.
     /// </summary>

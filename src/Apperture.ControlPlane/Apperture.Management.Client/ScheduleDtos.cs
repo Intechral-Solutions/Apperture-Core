@@ -20,7 +20,8 @@ public sealed record CreateScheduleRequest(
     int? TargetJobType = 0,
     string? TargetJobConfiguration = null,
     string? ExecutionPolicyRef = null,
-    string? RuntimePlaneId = "local");
+    string? RuntimePlaneId = "local",
+    string? IntegrationId = null);
 
 /// <summary>Epic 38: Update schedule request. Shape matches API UpdateScheduleRequestBody.</summary>
 public sealed record UpdateScheduleRequest(

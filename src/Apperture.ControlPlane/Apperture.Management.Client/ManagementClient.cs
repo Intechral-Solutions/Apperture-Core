@@ -271,6 +271,14 @@ public sealed class ManagementClient : IManagementClient
             cancellationToken).ConfigureAwait(false);
     }
 
+    public async Task<IntegrationOperatorDetailDto?> GetIntegrationOperatorDetailAsync(string id, CancellationToken cancellationToken = default)
+    {
+        return await _http.GetFromJsonAsync<IntegrationOperatorDetailDto>(
+            $"integrations/{Uri.EscapeDataString(id)}/detail",
+            ApiJsonReadOptions,
+            cancellationToken).ConfigureAwait(false);
+    }
+
     public async Task<IntegrationDto> CreateIntegrationAsync(CreateIntegrationRequest request, CancellationToken cancellationToken = default)
     {
         var response = await _http.PostAsJsonAsync("integrations", request, cancellationToken).ConfigureAwait(false);
@@ -399,7 +407,8 @@ public sealed class ManagementClient : IManagementClient
             TargetJobType = request.TargetJobType ?? 0,
             request.TargetJobConfiguration,
             request.ExecutionPolicyRef,
-            RuntimePlaneId = request.RuntimePlaneId ?? "local"
+            RuntimePlaneId = request.RuntimePlaneId ?? "local",
+            request.IntegrationId
         };
         var response = await _http.PostAsJsonAsync("schedules", body, cancellationToken).ConfigureAwait(false);
         if (response.StatusCode == System.Net.HttpStatusCode.BadRequest)

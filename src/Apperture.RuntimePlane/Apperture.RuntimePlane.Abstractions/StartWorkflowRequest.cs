@@ -13,4 +13,6 @@ public sealed record StartWorkflowRequest(
     IReadOnlyDictionary<string, object?>? Parameters,
     string? IdempotencyKey,
     string? CorrelationId,
-    string? RetryOfRunId = null);
+    string? RetryOfRunId = null,
+    /// <summary>Optional integration this run belongs to (Epic 54); used for slot resolution and operator lineage.</summary>
+    string? IntegrationId = null);
