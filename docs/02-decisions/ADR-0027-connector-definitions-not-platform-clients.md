@@ -41,4 +41,4 @@ This ADR **supersedes** ADR-0026. The Epic 51 client-definition model is **remov
 ### Neutral
 
 - ADR-0026 remains in the repo as historical context but is **superseded** by this record.
-- **Catalog source of truth (Epic 52A):** Connector definitions are materialized in **`IConnectorDefinitionRegistry`** (host-seeded / contributor-registered). A SQL `ConnectorDefinitions` table may exist for schema continuity but is **not** the authoritative catalog until an explicit persistence-backed path is implemented end-to-end. See [connector-resource-family](../01-architecture/connector-resource-family.md).
+- **Catalog source of truth (Epic 52A / 53):** Connector definitions are materialized in **`IConnectorDefinitionRegistry`** (host-seeded / contributor-registered). The obsolete SQL `ConnectorDefinitions` table was **dropped** in Epic 53; there is no parallel persisted definition catalog. See [connector-resource-family](../01-architecture/connector-resource-family.md).

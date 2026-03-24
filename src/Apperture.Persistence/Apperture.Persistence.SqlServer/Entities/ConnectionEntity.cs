@@ -3,6 +3,8 @@ namespace Apperture.Persistence.SqlServer;
 public sealed class ConnectionEntity
 {
     public string Id { get; set; } = "";
+
+    /// <summary>Logical id of the connector kind; must exist in <see cref="Apperture.Core.Application.Services.IConnectorDefinitionRegistry"/>, not in a SQL definitions table.</summary>
     public string ConnectorDefinitionId { get; set; } = "";
     public string Name { get; set; } = "";
     public string ConfigJson { get; set; } = "{}";

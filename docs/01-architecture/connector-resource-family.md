@@ -68,15 +68,17 @@ The control plane can govern connector-related resources through these applicati
 
 ### API Endpoints
 - `GET /api/connector-definitions`, `GET /api/connector-definitions/{id}` — Read-only catalog (`connector.definition.read`). See [ADR-0027](../02-decisions/ADR-0027-connector-definitions-not-platform-clients.md).
-
-### Source of truth for connector definitions (Epic 52A)
-
-The **authoritative catalog** for the control plane and runtime resolution is **`IConnectorDefinitionRegistry`**: in-process definitions registered at host startup (well-known platform definitions, optional module contributors). The management API reads from that registry only.
-
-The **`ConnectorDefinitions`** SQL table and **`ConnectorDefinitionEntity`** exist for historical schema evolution but are **not** the catalog source of truth today; nothing in the control-plane or connector-resolution paths loads definitions from that table for listing or validation. Do not treat the table as authoritative until a persistence-backed catalog is explicitly implemented end-to-end.
 - `GET/POST/PATCH/DELETE /connections` — Connection CRUD and retire
 - `GET/POST/DELETE /modules/{moduleId}/slots/{slotName}/binding` — Binding get, create, revoke
 - `GET /modules/{moduleId}/slots/{slotName}/eligible-connections?contractType=X` — List eligible connections
+
+### Source of truth for connector definitions (Epic 52A / 53)
+
+The **authoritative catalog** for the control plane and runtime resolution is **`IConnectorDefinitionRegistry`**: in-process definitions registered at host startup (well-known platform definitions, optional module contributors). The management API reads from that registry only.
+
+**Persisted `Connection` rows** store **`ConnectorDefinitionId`** as a logical reference to those registry identities; there is no separate SQL catalog of definitions.
+
+The legacy **`ConnectorDefinitions`** table was **removed** (Epic 53). Do not reintroduce a persisted definition catalog without an explicit ADR and an end-to-end authoritative read path.
 
 ### Eligibility Rules (Minimal)
 - Connection.State == Active

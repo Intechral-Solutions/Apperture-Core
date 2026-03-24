@@ -105,6 +105,10 @@ namespace Apperture.Persistence.SqlServer.Migrations
                         .HasMaxLength(512)
                         .HasColumnType("nvarchar(512)");
 
+                    b.Property<string>("IntegrationId")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
                     b.Property<string>("ModuleId")
                         .IsRequired()
                         .HasMaxLength(128)
@@ -168,31 +172,6 @@ namespace Apperture.Persistence.SqlServer.Migrations
                     b.HasKey("Id");
 
                     b.ToTable("Connections", (string)null);
-                });
-
-            modelBuilder.Entity("Apperture.Persistence.SqlServer.ConnectorDefinitionEntity", b =>
-                {
-                    b.Property<string>("Id")
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
-
-                    b.Property<string>("ModuleId")
-                        .HasMaxLength(128)
-                        .HasColumnType("nvarchar(128)");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasMaxLength(256)
-                        .HasColumnType("nvarchar(256)");
-
-                    b.Property<string>("RequiredInputSchemaJson")
-                        .IsRequired()
-                        .HasMaxLength(4096)
-                        .HasColumnType("nvarchar(max)");
-
-                    b.HasKey("Id");
-
-                    b.ToTable("ConnectorDefinitions", (string)null);
                 });
 
             modelBuilder.Entity("Apperture.Persistence.SqlServer.EnrollmentTokenEntity", b =>
@@ -351,6 +330,49 @@ namespace Apperture.Persistence.SqlServer.Migrations
                     b.HasKey("Id");
 
                     b.ToTable("InstanceAuthUiPolicies", (string)null);
+                });
+
+            modelBuilder.Entity("Apperture.Persistence.SqlServer.IntegrationEntity", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("DisplayName")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("ModuleId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<string>("ScopeKey")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("SettingsJson")
+                        .HasMaxLength(8192)
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("State")
+                        .HasColumnType("int");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("Integrations", (string)null);
                 });
 
             modelBuilder.Entity("Apperture.Persistence.SqlServer.LocalCredentialEntity", b =>
@@ -889,6 +911,10 @@ namespace Apperture.Persistence.SqlServer.Migrations
                     b.Property<string>("ExecutionPolicyRef")
                         .HasMaxLength(256)
                         .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("IntegrationId")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
 
                     b.Property<string>("Name")
                         .IsRequired()

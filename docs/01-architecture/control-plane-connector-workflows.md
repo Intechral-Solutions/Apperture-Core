@@ -14,7 +14,7 @@ The control plane governs connector-related resources through application servic
 |----------|---------|-------------|-------|
 | List connections | IConnectionManagementService.ListConnectionsAsync | connection.read | Returns connections visible in actor scope |
 | Get connection | IConnectionManagementService.GetConnectionAsync | connection.read | Instance-level check |
-| Create connection | IConnectionManagementService.CreateConnectionAsync | connection.create | Validates connector definition exists |
+| Create connection | IConnectionManagementService.CreateConnectionAsync | connection.create | Validates connector definition exists in **`IConnectorDefinitionRegistry`** (not from SQL definition rows) |
 | Update connection | IConnectionManagementService.UpdateConnectionAsync | connection.update | Metadata/config only |
 | Retire connection | IConnectionManagementService.RetireConnectionAsync | connection.delete | Sets ConnectionState.Retired |
 

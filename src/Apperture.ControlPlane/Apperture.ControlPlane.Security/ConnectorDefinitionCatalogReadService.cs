@@ -7,6 +7,7 @@ namespace Apperture.ControlPlane.Security;
 
 /// <summary>
 /// Authorized catalog read using <c>connector.definition.read</c> on <see cref="ResourceTypeConstants.ConnectorDefinition"/> at instance scope.
+/// Lists definitions from <see cref="IConnectorDefinitionRegistry"/> only.
 /// </summary>
 public sealed class ConnectorDefinitionCatalogReadService : IConnectorDefinitionCatalogReadService
 {
