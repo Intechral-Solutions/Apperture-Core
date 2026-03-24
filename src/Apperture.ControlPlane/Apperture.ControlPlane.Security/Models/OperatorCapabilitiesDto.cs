@@ -8,7 +8,7 @@ namespace Apperture.ControlPlane.Security.Models;
 /// Epic 44: CanViewAuthConfiguration (auth.configuration.read), CanManageEntraTenants (auth.entra.manage).
 /// Epic 48: CanViewConnections (connection.read).
 /// Epic 49: CanViewIntegrations (integration.read), CanManageIntegrations (integration.create or integration.update).
-/// Epic 52: CanViewConnectorDefinitions (connector.manage on ConnectorDefinition at instance scope).
+/// Epic 52 / 52A: CanViewConnectorDefinitions (connector.definition.read on ConnectorDefinition at instance scope).
 /// </summary>
 public sealed record OperatorCapabilitiesDto(
     bool CanManageSchedules,

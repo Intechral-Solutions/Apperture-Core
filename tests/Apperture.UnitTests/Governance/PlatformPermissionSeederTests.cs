@@ -38,6 +38,9 @@ public sealed class PlatformPermissionSeederTests
         permissions.Should().Contain(p =>
             p.Action == ActionConstants.AuditRead &&
             p.Resource != null && p.Resource.ResourceType == ResourceTypeConstants.AuditPolicy);
+        permissions.Should().Contain(p =>
+            p.Action == ActionConstants.ConnectorDefinitionRead &&
+            p.Resource != null && p.Resource.ResourceType == ResourceTypeConstants.ConnectorDefinition);
     }
 
     [Fact]
@@ -63,5 +66,6 @@ public sealed class PlatformPermissionSeederTests
         ActionConstants.ConnectionRead.Should().Be("connection.read");
         ActionConstants.BindingAssign.Should().Be("binding.assign");
         ActionConstants.OperationExecute.Should().Be("operation.execute");
+        ActionConstants.ConnectorDefinitionRead.Should().Be("connector.definition.read");
     }
 }

@@ -55,12 +55,12 @@ public static class PlatformAdminRolePermissionRepair
     ];
 
     /// <summary>
-    /// Connections and connector-definition catalog (Epic 48, Epic 52).
+    /// Connections and connector-definition catalog read (Epic 48, Epic 52, Epic 52A).
     /// </summary>
     public static readonly PermissionDescriptor[] RequiredConnectorOperatorPermissions =
     [
         new(ActionConstants.ConnectionRead, new ResourceDescriptor(ResourceTypeConstants.Connection, ScopeKeyConstants.Instance)),
-        new(ActionConstants.ConnectorManage, new ResourceDescriptor(ResourceTypeConstants.ConnectorDefinition, ScopeKeyConstants.Instance))
+        new(ActionConstants.ConnectorDefinitionRead, new ResourceDescriptor(ResourceTypeConstants.ConnectorDefinition, ScopeKeyConstants.Instance))
     ];
 
     /// <summary>

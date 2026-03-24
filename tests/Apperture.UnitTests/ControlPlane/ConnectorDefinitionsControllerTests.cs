@@ -41,6 +41,25 @@ public sealed class ConnectorDefinitionsControllerTests
     }
 
     [Fact]
+    public async Task List_ReturnsCatalogPayloadWithExpectedShape()
+    {
+        var def = CreateSampleDefinition();
+        var readService = new StubCatalogReadService([def]);
+        var controller = new ConnectorDefinitionsController(readService);
+
+        var result = await controller.List(CancellationToken.None);
+
+        var okResult = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var list = okResult.Value.Should().BeAssignableTo<IReadOnlyList<ConnectorDefinitionCatalogDto>>().Subject;
+        var dto = list.Should().ContainSingle().Subject;
+        dto.Id.Should().NotBeNullOrWhiteSpace();
+        dto.Name.Should().NotBeNullOrWhiteSpace();
+        dto.Fields.Should().NotBeNull();
+        dto.Fields.Should().ContainSingle(f => f.Key == "BaseUrl" && f.DisplayName == "API base URL" && f.IsSecret == false);
+        dto.Capabilities.Should().NotBeNull();
+    }
+
+    [Fact]
     public async Task List_WhenUnauthorized_Returns403Forbid()
     {
         var readService = new StubCatalogReadService(throwsUnauthorized: true);

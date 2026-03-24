@@ -63,6 +63,7 @@ public static class PlatformPermissionSeeder
         Register(registry, ActionConstants.ConnectionRead, ResourceTypeConstants.Connection, ScopeKeyConstants.Instance, ResourceFamily.Connector);
         Register(registry, ActionConstants.ConnectionUpdate, ResourceTypeConstants.Connection, ScopeKeyConstants.Instance, ResourceFamily.Connector);
         Register(registry, ActionConstants.ConnectionDelete, ResourceTypeConstants.Connection, ScopeKeyConstants.Instance, ResourceFamily.Connector);
+        Register(registry, ActionConstants.ConnectorDefinitionRead, ResourceTypeConstants.ConnectorDefinition, ScopeKeyConstants.Instance, ResourceFamily.Connector);
         Register(registry, ActionConstants.ConnectorManage, ResourceTypeConstants.ConnectorDefinition, ScopeKeyConstants.Instance, ResourceFamily.Connector);
         Register(registry, ActionConstants.BindingCreate, ResourceTypeConstants.Binding, ScopeKeyConstants.Instance, ResourceFamily.Connector);
         Register(registry, ActionConstants.BindingRead, ResourceTypeConstants.Binding, ScopeKeyConstants.Instance, ResourceFamily.Connector);

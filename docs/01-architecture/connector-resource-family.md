@@ -20,7 +20,8 @@ The connector resource family is one governed resource family among many. It par
 
 | Action | Resource type | Use |
 |--------|---------------|-----|
-| connector.manage | ConnectorDefinition | View/manage connector definitions |
+| connector.definition.read | ConnectorDefinition | Read the connector-definition catalog (management API shape metadata) |
+| connector.manage | ConnectorDefinition | Reserved for future mutating/admin semantics on connector definitions (not used for catalog read) |
 | connection.create, read, update, delete | Connection | Administrative connection lifecycle |
 | binding.create, read, delete, assign, revoke | Binding | Binding/delegation management |
 | capability.consume | CapabilitySlot | Operational use when resolving connection for slot |
@@ -38,7 +39,7 @@ The optional `resourceIdentity` enables instance-level and future ownership chec
 
 ## Distinctions
 
-- **Administrative** — connection CRUD, connector.manage, mapping.manage. Configuration and lifecycle.
+- **Administrative** — connection CRUD, connector.definition.read (catalog browse), connector.manage (reserved for future definition admin), mapping.manage. Configuration and lifecycle.
 - **Binding/delegation** — binding.assign, binding.revoke. Explicit delegation of a resource to a slot.
 - **Operational** — capability.consume. Using a bound connection during module execution.
 
@@ -66,7 +67,13 @@ The control plane can govern connector-related resources through these applicati
 - UnauthorizedAccessException thrown when actor is null or permission denied
 
 ### API Endpoints
-- `GET /connector-definitions` — Read-only catalog of connector definitions (connection shape metadata; `connector.manage`). See [ADR-0027](../02-decisions/ADR-0027-connector-definitions-not-platform-clients.md).
+- `GET /api/connector-definitions`, `GET /api/connector-definitions/{id}` — Read-only catalog (`connector.definition.read`). See [ADR-0027](../02-decisions/ADR-0027-connector-definitions-not-platform-clients.md).
+
+### Source of truth for connector definitions (Epic 52A)
+
+The **authoritative catalog** for the control plane and runtime resolution is **`IConnectorDefinitionRegistry`**: in-process definitions registered at host startup (well-known platform definitions, optional module contributors). The management API reads from that registry only.
+
+The **`ConnectorDefinitions`** SQL table and **`ConnectorDefinitionEntity`** exist for historical schema evolution but are **not** the catalog source of truth today; nothing in the control-plane or connector-resolution paths loads definitions from that table for listing or validation. Do not treat the table as authoritative until a persistence-backed catalog is explicitly implemented end-to-end.
 - `GET/POST/PATCH/DELETE /connections` — Connection CRUD and retire
 - `GET/POST/DELETE /modules/{moduleId}/slots/{slotName}/binding` — Binding get, create, revoke
 - `GET /modules/{moduleId}/slots/{slotName}/eligible-connections?contractType=X` — List eligible connections
@@ -86,7 +93,7 @@ Connections have **ConnectionState**: Active or Retired. Retired connections are
 ## Scaffolded vs Deferred
 
 **Implemented:**
-- EF persistence for Connection, Binding, ConnectorDefinition
+- EF persistence for Connection, Binding (connector definitions: registry-backed only; see “Source of truth” above)
 - IConnectionRepository, IBindingRepository, Sql implementations
 - IConnectionManagementService, IBindingService (full implementations with auth)
 - IBindingEligibilityService, IModuleSlotRegistry

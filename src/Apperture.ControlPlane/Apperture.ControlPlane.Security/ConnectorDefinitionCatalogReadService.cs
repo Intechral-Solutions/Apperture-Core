@@ -6,7 +6,7 @@ using Apperture.Shared.Kernel;
 namespace Apperture.ControlPlane.Security;
 
 /// <summary>
-/// Authorized catalog read using <c>connector.manage</c> on <see cref="ResourceTypeConstants.ConnectorDefinition"/> at instance scope.
+/// Authorized catalog read using <c>connector.definition.read</c> on <see cref="ResourceTypeConstants.ConnectorDefinition"/> at instance scope.
 /// </summary>
 public sealed class ConnectorDefinitionCatalogReadService : IConnectorDefinitionCatalogReadService
 {
@@ -50,7 +50,7 @@ public sealed class ConnectorDefinitionCatalogReadService : IConnectorDefinition
             new AuthorizationEvaluationContext(
                 actor,
                 new PermissionDescriptor(
-                    ActionConstants.ConnectorManage,
+                    ActionConstants.ConnectorDefinitionRead,
                     new ResourceDescriptor(ResourceTypeConstants.ConnectorDefinition, ScopeKeyConstants.Instance)),
                 null),
             cancellationToken).ConfigureAwait(false);

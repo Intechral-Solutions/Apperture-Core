@@ -110,7 +110,7 @@ public sealed class Epic34CorrectivePassTests
     public async Task OperatorCapabilitiesQueryService_CanManageModules_False_WhenAuthDeniesModuleConfigure()
     {
         var principal = new StubPrincipalContext();
-        var auth = new StubAuthorizationEvaluationService(moduleConfigure: false, scheduleManage: true, recoveryManage: true, auditRead: true, runtimeHealthRead: true);
+        var auth = new StubAuthorizationEvaluationService(moduleConfigure: false, scheduleManage: true, recoveryManage: true, auditRead: true, runtimeHealthRead: true, connectorDefinitionRead: true);
         var scheduleGov = new StubScheduleGovernanceService(canManage: true);
         var recoveryGov = new StubRecoveryGovernanceService(canRead: true, canManage: true);
         var service = new OperatorCapabilitiesQueryService(principal, auth, scheduleGov, recoveryGov, NullLogger<OperatorCapabilitiesQueryService>.Instance);
@@ -124,7 +124,7 @@ public sealed class Epic34CorrectivePassTests
     public async Task OperatorCapabilitiesQueryService_CanManageSchedules_False_WhenScheduleGovernanceDenies()
     {
         var principal = new StubPrincipalContext();
-        var auth = new StubAuthorizationEvaluationService(moduleConfigure: true, scheduleManage: true, recoveryManage: true, auditRead: true, runtimeHealthRead: true);
+        var auth = new StubAuthorizationEvaluationService(moduleConfigure: true, scheduleManage: true, recoveryManage: true, auditRead: true, runtimeHealthRead: true, connectorDefinitionRead: true);
         var scheduleGov = new StubScheduleGovernanceService(canManage: false);
         var recoveryGov = new StubRecoveryGovernanceService(canRead: true, canManage: true);
         var service = new OperatorCapabilitiesQueryService(principal, auth, scheduleGov, recoveryGov, NullLogger<OperatorCapabilitiesQueryService>.Instance);
@@ -138,7 +138,7 @@ public sealed class Epic34CorrectivePassTests
     public async Task OperatorCapabilitiesQueryService_CanManageRecovery_False_WhenRecoveryGovernanceDenies()
     {
         var principal = new StubPrincipalContext();
-        var auth = new StubAuthorizationEvaluationService(moduleConfigure: true, scheduleManage: true, recoveryManage: true, auditRead: true, runtimeHealthRead: true);
+        var auth = new StubAuthorizationEvaluationService(moduleConfigure: true, scheduleManage: true, recoveryManage: true, auditRead: true, runtimeHealthRead: true, connectorDefinitionRead: true);
         var scheduleGov = new StubScheduleGovernanceService(canManage: true);
         var recoveryGov = new StubRecoveryGovernanceService(canRead: true, canManage: false);
         var service = new OperatorCapabilitiesQueryService(principal, auth, scheduleGov, recoveryGov, NullLogger<OperatorCapabilitiesQueryService>.Instance);
@@ -146,6 +146,26 @@ public sealed class Epic34CorrectivePassTests
         var dto = await service.GetCapabilitiesAsync(CancellationToken.None);
 
         dto.CanManageRecovery.Should().BeFalse("capability must reflect RecoveryGovernanceService.CanManageAsync");
+    }
+
+    [Fact]
+    public async Task OperatorCapabilitiesQueryService_CanViewConnectorDefinitions_False_WhenAuthDeniesConnectorDefinitionRead()
+    {
+        var principal = new StubPrincipalContext();
+        var auth = new StubAuthorizationEvaluationService(
+            moduleConfigure: true,
+            scheduleManage: true,
+            recoveryManage: true,
+            auditRead: true,
+            runtimeHealthRead: true,
+            connectorDefinitionRead: false);
+        var scheduleGov = new StubScheduleGovernanceService(canManage: true);
+        var recoveryGov = new StubRecoveryGovernanceService(canRead: true, canManage: true);
+        var service = new OperatorCapabilitiesQueryService(principal, auth, scheduleGov, recoveryGov, NullLogger<OperatorCapabilitiesQueryService>.Instance);
+
+        var dto = await service.GetCapabilitiesAsync(CancellationToken.None);
+
+        dto.CanViewConnectorDefinitions.Should().BeFalse("capability must reflect connector.definition.read denial");
     }
 
     // --- Stubs ---
@@ -245,19 +265,22 @@ public sealed class Epic34CorrectivePassTests
         private readonly bool _recoveryManage;
         private readonly bool _auditRead;
         private readonly bool _runtimeHealthRead;
+        private readonly bool _connectorDefinitionRead;
 
         public StubAuthorizationEvaluationService(
             bool moduleConfigure = true,
             bool scheduleManage = true,
             bool recoveryManage = true,
             bool auditRead = true,
-            bool runtimeHealthRead = true)
+            bool runtimeHealthRead = true,
+            bool connectorDefinitionRead = true)
         {
             _moduleConfigure = moduleConfigure;
             _scheduleManage = scheduleManage;
             _recoveryManage = recoveryManage;
             _auditRead = auditRead;
             _runtimeHealthRead = runtimeHealthRead;
+            _connectorDefinitionRead = connectorDefinitionRead;
         }
 
         public ValueTask<bool> EvaluateAsync(AuthorizationEvaluationContext context, CancellationToken cancellationToken = default)
@@ -273,6 +296,8 @@ public sealed class Epic34CorrectivePassTests
                 return ValueTask.FromResult(_auditRead);
             if (perm.Action == ActionConstants.RuntimeHealthRead && perm.Resource?.ResourceType == ResourceTypeConstants.RuntimeHealth)
                 return ValueTask.FromResult(_runtimeHealthRead);
+            if (perm.Action == ActionConstants.ConnectorDefinitionRead && perm.Resource?.ResourceType == ResourceTypeConstants.ConnectorDefinition)
+                return ValueTask.FromResult(_connectorDefinitionRead);
             return ValueTask.FromResult(true);
         }
     }

@@ -33,6 +33,10 @@ public class AppertureDbContext : DbContext
     public DbSet<ConnectionEntity> Connections => Set<ConnectionEntity>();
     public DbSet<IntegrationEntity> Integrations => Set<IntegrationEntity>();
     public DbSet<BindingEntity> Bindings => Set<BindingEntity>();
+
+    /// <summary>
+    /// Not populated for catalog listing; definitions are served from <c>IConnectorDefinitionRegistry</c>. Kept for schema/migration continuity.
+    /// </summary>
     public DbSet<ConnectorDefinitionEntity> ConnectorDefinitions => Set<ConnectorDefinitionEntity>();
     public DbSet<UserEntity> Users => Set<UserEntity>();
     public DbSet<IdentityLinkEntity> IdentityLinks => Set<IdentityLinkEntity>();

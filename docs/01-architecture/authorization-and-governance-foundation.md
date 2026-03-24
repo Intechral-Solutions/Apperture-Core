@@ -215,9 +215,9 @@ See [Epic34-Management-Authorization-Hardening](../02-decisions/Epic34-Managemen
 The first concrete governed resource family (connectors, connections, slots, bindings) participates in auth via `IGovernedResource` and `IGovernedResourceIdentity`. See [Connector Resource Family](connector-resource-family.md) for details.
 
 - **Resource types:** ConnectorDefinition, Connection, Binding, MappingDefinition, CapabilitySlot (ResourceTypeConstants)
-- **Actions:** connection.create/read/update/delete, connector.manage, binding.create/read/delete/assign/revoke, capability.consume, mapping.manage (ActionConstants)
-- **Where checks belong:** connector definitions (connector.manage); connection CRUD (connection.*); binding (binding.assign/revoke); slot resolution (capability.consume)
-- **Distinctions:** Administrative (connection CRUD, connector.manage), binding/delegation (binding.assign/revoke), operational (capability.consume)
+- **Actions:** connection.create/read/update/delete, connector.definition.read, connector.manage, binding.create/read/delete/assign/revoke, capability.consume, mapping.manage (ActionConstants)
+- **Where checks belong:** connector-definition catalog read (connector.definition.read); future definition admin (connector.manage); connection CRUD (connection.*); binding (binding.assign/revoke); slot resolution (capability.consume)
+- **Distinctions:** Administrative (connection CRUD, connector.definition.read for catalog browse, connector.manage reserved for future definition mutations), binding/delegation (binding.assign/revoke), operational (capability.consume)
 
 ## Principal resolution (Epic 1)
 

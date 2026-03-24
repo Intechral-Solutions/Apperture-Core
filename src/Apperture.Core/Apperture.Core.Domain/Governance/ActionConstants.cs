@@ -19,6 +19,10 @@ public static class ActionConstants
     public const string ConnectionDelete = "connection.delete";
 
     // Connector
+    /// <summary>Read the connector-definition catalog (shape metadata) at instance scope. Epic 52A.</summary>
+    public const string ConnectorDefinitionRead = "connector.definition.read";
+
+    /// <summary>Administrative actions on connector definitions (reserved for mutating control-plane semantics).</summary>
     public const string ConnectorManage = "connector.manage";
 
     // Binding

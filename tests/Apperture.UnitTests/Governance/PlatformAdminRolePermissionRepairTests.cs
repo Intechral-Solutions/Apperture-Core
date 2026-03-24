@@ -97,4 +97,14 @@ public sealed class PlatformAdminRolePermissionRepairTests
         PlatformAdminRolePermissionRepair.RequiredGovernanceSurfacePermissions[1].Action.Should().Be(ActionConstants.PermissionAssign);
         PlatformAdminRolePermissionRepair.RequiredGovernanceSurfacePermissions[1].Resource!.ResourceType.Should().Be(ResourceTypeConstants.Role);
     }
+
+    [Fact]
+    public void RequiredConnectorOperatorPermissions_UsesDefinitionRead_NotManage_ForCatalog()
+    {
+        PlatformAdminRolePermissionRepair.RequiredConnectorOperatorPermissions.Should().Contain(p =>
+            p.Action == ActionConstants.ConnectorDefinitionRead &&
+            p.Resource!.ResourceType == ResourceTypeConstants.ConnectorDefinition);
+        PlatformAdminRolePermissionRepair.RequiredConnectorOperatorPermissions.Should().NotContain(p =>
+            p.Action == ActionConstants.ConnectorManage);
+    }
 }

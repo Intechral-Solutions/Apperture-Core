@@ -84,7 +84,7 @@ public sealed class OperatorCapabilitiesQueryService : IOperatorCapabilitiesQuer
                 cancellationToken).ConfigureAwait(false);
             var canViewConnectorDefinitions = await EvaluateAsync(
                 actor,
-                ActionConstants.ConnectorManage,
+                ActionConstants.ConnectorDefinitionRead,
                 ResourceTypeConstants.ConnectorDefinition,
                 cancellationToken).ConfigureAwait(false);
 
