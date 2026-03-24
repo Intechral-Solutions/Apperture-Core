@@ -1,0 +1,194 @@
+@page "/connections"
+@using Apperture.Management.Client
+@using Apperture.Management.Ui.Client.Services
+@using Apperture.Management.Ui.Client.Organisms
+@inject IManagementClient Client
+@inject IOperatorCapabilitiesService Capabilities
+@inject NavigationManager Nav
+
+<div class="p-4">
+    <PageHeader Title="Connections" Subtitle="Connections and clients. Connections tab shows connection resources; Clients tab is deferred.">
+        <Toolbar>
+            @if (_capabilities?.CanViewConnections == true)
+            {
+                <a href="/connections/new" class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface">Add connection</a>
+                <button type="button"
+                        class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface disabled:opacity-50"
+                        disabled="@_loading"
+                        @onclick="LoadAsync">
+                    Refresh
+                </button>
+            }
+        </Toolbar>
+    </PageHeader>
+
+    @if (!_capabilitiesLoaded)
+    {
+        <PageMessage Kind="PageMessageKind.Loading" Message="Loading…" />
+    }
+    else if (_capabilities?.CanViewConnections != true)
+    {
+        <PageMessage Kind="PageMessageKind.Forbidden"
+                     Title="Not authorized"
+                     Message="You do not have permission to view connections." />
+    }
+    else
+    {
+        <div class="mt-4 flex gap-2 border-b border-default">
+            <button type="button"
+                    class="px-3 py-2 text-sm font-medium @(_activeTab == "connections" ? "text-heading border-b-2 border-body -mb-px" : "text-muted hover:text-body")"
+                    @onclick="@(() => SetTab("connections"))">
+                Connections
+            </button>
+            <button type="button"
+                    class="px-3 py-2 text-sm font-medium @(_activeTab == "clients" ? "text-heading border-b-2 border-body -mb-px" : "text-muted hover:text-body")"
+                    @onclick="@(() => SetTab("clients"))">
+                Clients
+            </button>
+        </div>
+
+        @if (_activeTab == "connections")
+        {
+            @* Connections tab content *@
+            @if (!string.IsNullOrEmpty(_error))
+            {
+                <PageMessage Kind="PageMessageKind.Error" Title="Error" Message="@_error" />
+            }
+            else if (_connections is null)
+            {
+                <PageMessage Kind="PageMessageKind.Loading" Message="Loading connections…" />
+            }
+            else if (_connections.Count == 0)
+            {
+                <PageMessage Kind="PageMessageKind.Empty" Message="No connections found." />
+            }
+            else
+            {
+                <div class="mt-4 overflow-x-auto rounded border border-default bg-surface">
+                    <table class="min-w-full text-left text-sm text-body">
+                        <thead class="border-b border-default text-xs text-muted">
+                            <tr>
+                                <th class="px-3 py-2">Name</th>
+                                <th class="px-3 py-2">Connector</th>
+                                <th class="px-3 py-2">State</th>
+                                <th class="px-3 py-2">Scope</th>
+                                <th class="px-3 py-2">Used In</th>
+                                <th class="px-3 py-2"></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var c in _connections)
+                            {
+                                <tr class="border-b border-default hover:bg-surface-muted cursor-pointer"
+                                    @onclick="@(() => Nav.NavigateTo("/connections/" + Uri.EscapeDataString(c.Id)))">
+                                    <td class="px-3 py-2 font-medium">@c.Name</td>
+                                    <td class="px-3 py-2 font-mono text-xs">@c.ConnectorDefinitionId</td>
+                                    <td class="px-3 py-2">@c.State</td>
+                                    <td class="px-3 py-2 text-muted">@(c.ScopeKey ?? "—")</td>
+                                    <td class="px-3 py-2">
+                                        @if (c.UsedIn is { Count: > 0 })
+                                        {
+                                            <div class="flex flex-wrap gap-x-2 gap-y-1">
+                                                @foreach (var u in c.UsedIn)
+                                                {
+                                                    <a href="@("/modules/" + Uri.EscapeDataString(u.ModuleId))"
+                                                       class="underline text-xs hover:text-heading"
+                                                       @onclick:stopPropagation>
+                                                        @u.ModuleId, @u.SlotName
+                                                    </a>
+                                                }
+                                            </div>
+                                        }
+                                        else
+                                        {
+                                            <span class="text-muted">—</span>
+                                        }
+                                    </td>
+                                    <td class="px-3 py-2">
+                                        <a href="@("/connections/" + Uri.EscapeDataString(c.Id))" class="underline text-sm" @onclick:stopPropagation>Open</a>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        }
+        else
+        {
+            <DeferredClientsPlaceholder />
+        }
+    }
+</div>
+
+@code {
+    private IReadOnlyList<ConnectionDto>? _connections;
+    private OperatorCapabilitiesDto? _capabilities;
+    private bool _capabilitiesLoaded;
+    private bool _loading;
+    private string? _error;
+    private string _activeTab = "connections";
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _capabilities = await Capabilities.GetCapabilitiesAsync();
+        }
+        catch
+        {
+            _capabilities = new OperatorCapabilitiesDto(false, false, false, false, false, false, false, false, false, false, false, false);
+        }
+        _capabilitiesLoaded = true;
+
+        if (_capabilities?.CanViewConnections == true)
+        {
+            var uri = new Uri(Nav.Uri);
+            if (!string.IsNullOrEmpty(uri.Query))
+            {
+                var query = uri.Query.TrimStart('?');
+                foreach (var part in query.Split('&'))
+                {
+                    var kv = part.Split('=', 2, StringSplitOptions.None);
+                    if (kv.Length == 2 && string.Equals(kv[0], "tab", StringComparison.OrdinalIgnoreCase)
+                        && string.Equals(kv[1], "clients", StringComparison.OrdinalIgnoreCase))
+                    {
+                        _activeTab = "clients";
+                        break;
+                    }
+                }
+            }
+
+            await LoadAsync();
+        }
+    }
+
+    private void SetTab(string tab)
+    {
+        _activeTab = tab;
+        var uri = new Uri(Nav.Uri);
+        var basePath = uri.GetLeftPart(UriPartial.Path);
+        var newUri = tab == "clients" ? $"{basePath}?tab=clients" : basePath;
+        if (Nav.Uri != newUri)
+            Nav.NavigateTo(newUri);
+    }
+
+    private async Task LoadAsync()
+    {
+        if (_capabilities?.CanViewConnections != true) return;
+        _loading = true;
+        _error = null;
+        try
+        {
+            _connections = await Client.GetConnectionsAsync();
+        }
+        catch (HttpRequestException ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+}

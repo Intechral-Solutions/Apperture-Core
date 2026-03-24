@@ -1,0 +1,158 @@
+@page "/connections/{ConnectionId}"
+@using Apperture.Management.Client
+@using Apperture.Management.Ui.Client.Services
+@using Apperture.Management.Ui.Client.Organisms
+@inject IManagementClient Client
+@inject IOperatorCapabilitiesService Capabilities
+@inject NavigationManager Nav
+
+<div class="p-4">
+    <PageHeader Title="Connection" Subtitle="@ConnectionId">
+        <Toolbar>
+            <a href="/connections" class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface">Back to list</a>
+            <button type="button"
+                    class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface disabled:opacity-50"
+                    disabled="@_loading"
+                    @onclick="LoadAsync">
+                Refresh
+            </button>
+        </Toolbar>
+    </PageHeader>
+
+    @if (!_capabilitiesLoaded)
+    {
+        <PageMessage Kind="PageMessageKind.Loading" Message="Loading…" />
+    }
+    else if (_capabilities?.CanViewConnections != true)
+    {
+        <PageMessage Kind="PageMessageKind.Forbidden"
+                     Title="Not authorized"
+                     Message="You do not have permission to view connection details." />
+    }
+    else if (!string.IsNullOrEmpty(_error))
+    {
+        <PageMessage Kind="PageMessageKind.Error" Title="Error" Message="@_error" />
+    }
+    else if (_connection is null)
+    {
+        <PageMessage Kind="PageMessageKind.Loading" Message="Loading connection…" />
+    }
+    else
+    {
+        <div class="mt-4 space-y-4">
+            <div class="rounded border border-default bg-surface p-3">
+                <h2 class="text-sm font-semibold text-heading mb-2">Details</h2>
+                <div class="grid grid-cols-1 gap-2 md:grid-cols-2">
+                    <div>
+                        <div class="text-xs text-muted">Name</div>
+                        <div class="text-sm text-body">@_connection.Name</div>
+                    </div>
+                    <div>
+                        <div class="text-xs text-muted">Connector definition</div>
+                        <div class="text-sm font-mono text-body">@_connection.ConnectorDefinitionId</div>
+                    </div>
+                    <div>
+                        <div class="text-xs text-muted">State</div>
+                        <div class="text-sm text-body">@_connection.State</div>
+                    </div>
+                    <div>
+                        <div class="text-xs text-muted">Scope</div>
+                        <div class="text-sm text-body">@(_connection.ScopeKey ?? "—")</div>
+                    </div>
+                    <div>
+                        <div class="text-xs text-muted">Owner</div>
+                        <div class="text-sm text-body">@(_connection.OwnerId ?? "—")</div>
+                    </div>
+                </div>
+                @if (_connection.Config is { Count: > 0 })
+                {
+                    <div class="mt-3">
+                        <div class="text-xs text-muted">Config</div>
+                        <div class="mt-1 rounded bg-surface-muted px-2 py-2 font-mono text-xs">
+                            @foreach (var kv in _connection.Config)
+                            {
+                                <div>@kv.Key = @kv.Value</div>
+                            }
+                        </div>
+                    </div>
+                }
+                @if (_connection.SecretRefs is { Count: > 0 })
+                {
+                    <div class="mt-3">
+                        <div class="text-xs text-muted">Secret refs</div>
+                        <div class="mt-1 text-sm text-muted">
+                            @string.Join(", ", _connection.SecretRefs.Keys)
+                        </div>
+                    </div>
+                }
+            </div>
+
+            <div class="rounded border border-default bg-surface p-3">
+                <h2 class="text-sm font-semibold text-heading mb-2">Used In</h2>
+                @if (_connection.UsedIn is { Count: > 0 })
+                {
+                    <ul class="space-y-1">
+                        @foreach (var u in _connection.UsedIn)
+                        {
+                            <li>
+                                <a href="@("/modules/" + Uri.EscapeDataString(u.ModuleId))"
+                                   class="underline text-sm hover:text-heading">
+                                    Module @u.ModuleId, Slot @u.SlotName (@u.ContractType)
+                                </a>
+                            </li>
+                        }
+                    </ul>
+                }
+                else
+                {
+                    <div class="text-sm text-muted">This connection is not used by any module slot bindings.</div>
+                }
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public string ConnectionId { get; set; } = "";
+
+    private ConnectionDto? _connection;
+    private OperatorCapabilitiesDto? _capabilities;
+    private bool _capabilitiesLoaded;
+    private bool _loading;
+    private string? _error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _capabilities = await Capabilities.GetCapabilitiesAsync();
+        }
+        catch
+        {
+            _capabilities = new OperatorCapabilitiesDto(false, false, false, false, false, false, false, false, false, false, false, false);
+        }
+        _capabilitiesLoaded = true;
+
+        if (_capabilities?.CanViewConnections == true)
+            await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        if (_capabilities?.CanViewConnections != true || string.IsNullOrEmpty(ConnectionId)) return;
+        _loading = true;
+        _error = null;
+        try
+        {
+            _connection = await Client.GetConnectionAsync(ConnectionId);
+        }
+        catch (HttpRequestException ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+}

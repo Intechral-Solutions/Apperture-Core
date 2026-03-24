@@ -79,6 +79,16 @@ public interface IManagementClient
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Lists connections with Used In projection. Epic 48.
+    /// </summary>
+    Task<IReadOnlyList<ConnectionDto>> GetConnectionsAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Gets a connection by id with Used In projection. Epic 48.
+    /// </summary>
+    Task<ConnectionDto?> GetConnectionAsync(string id, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Lists schedules. Epic 28/33.
     /// </summary>
     Task<IReadOnlyList<ScheduleDto>> GetSchedulesAsync(CancellationToken cancellationToken = default);
@@ -276,7 +286,23 @@ public sealed record OperatorCapabilitiesDto(
     bool CanAssignRoles = false,
     bool CanManageAuthUiPolicy = false,
     [property: JsonPropertyName("canViewAuthConfiguration")] bool CanViewAuthConfiguration = false,
-    [property: JsonPropertyName("canManageEntraTenants")] bool CanManageEntraTenants = false);
+    [property: JsonPropertyName("canManageEntraTenants")] bool CanManageEntraTenants = false,
+    [property: JsonPropertyName("canViewConnections")] bool CanViewConnections = false);
+
+/// <summary>Where a connection is consumed (e.g. module slot binding). Epic 48.</summary>
+public sealed record ConnectionUsedInEntry(string ModuleId, string SlotName, string ContractType);
+
+/// <summary>Connection resource with Used In projection. Epic 48.</summary>
+public sealed record ConnectionDto(
+    string Id,
+    string ConnectorDefinitionId,
+    string Name,
+    IReadOnlyDictionary<string, string> Config,
+    IReadOnlyDictionary<string, string> SecretRefs,
+    string? ScopeKey,
+    string? OwnerId,
+    string State,
+    IReadOnlyList<ConnectionUsedInEntry> UsedIn);
 
 public sealed record BlockedWorkRetryResult(
     bool Success,

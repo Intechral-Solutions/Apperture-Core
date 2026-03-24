@@ -91,17 +91,8 @@ public static class ControlPanelMenuDefinitions
                 Title = null,
                 Items =
                 {
-                    new DomainMenuItem { Text = "Active Connections", Href = "/connections" },
+                    new DomainMenuItem { Text = "Connections", Href = "/connections" },
                     new DomainMenuItem { Text = "Add Connection", Href = "/connections/new" }
-                }
-            },
-            ["Clients"] = new DomainMenu
-            {
-                Title = null,
-                Items =
-                {
-                    new DomainMenuItem { Text = "All Clients", Href = "/clients" },
-                    new DomainMenuItem { Text = "Create Client", Href = "/clients/new" }
                 }
             },
             ["Schedules"] = new DomainMenu

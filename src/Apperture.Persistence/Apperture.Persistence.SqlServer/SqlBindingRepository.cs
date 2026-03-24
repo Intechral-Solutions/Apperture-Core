@@ -30,6 +30,15 @@ public sealed class SqlBindingRepository : IBindingRepository
     }
 
     /// <inheritdoc />
+    public async ValueTask<IReadOnlyList<Binding>> GetByConnectionIdAsync(ConnectionId connectionId, CancellationToken cancellationToken = default)
+    {
+        var entities = await _db.Bindings.AsNoTracking()
+            .Where(e => e.ConnectionId == connectionId.Value)
+            .ToListAsync(cancellationToken);
+        return entities.Select(ToDomain).ToList();
+    }
+
+    /// <inheritdoc />
     public async ValueTask AddAsync(Binding binding, CancellationToken cancellationToken = default)
     {
         var entity = ToEntity(binding);

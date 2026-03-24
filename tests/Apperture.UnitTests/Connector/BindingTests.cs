@@ -1,6 +1,9 @@
+using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Connector;
 using Apperture.Core.Domain.Governance;
+using Apperture.Persistence.SqlServer;
 using FluentAssertions;
+using Microsoft.EntityFrameworkCore;
 using Xunit;
 
 namespace Apperture.UnitTests.Connector;
@@ -39,5 +42,50 @@ public sealed class BindingTests
             BindingState.Active);
 
         binding.SlotScopeKey.Should().Be("module:MyModule:slot:ApiClient");
+    }
+
+    [Fact]
+    public async Task SqlBindingRepository_GetByConnectionIdAsync_ReturnsBindingsForConnection()
+    {
+        var opts = new DbContextOptionsBuilder<AppertureDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString("N"))
+            .Options;
+        await using var db = new AppertureDbContext(opts);
+        db.Bindings.Add(new BindingEntity
+        {
+            Id = "b1",
+            ModuleId = "ModA",
+            SlotName = "Db",
+            ContractType = "IDbConnection",
+            ConnectionId = "conn-1",
+            State = (int)BindingState.Active
+        });
+        db.Bindings.Add(new BindingEntity
+        {
+            Id = "b2",
+            ModuleId = "ModB",
+            SlotName = "Api",
+            ContractType = "HttpClient",
+            ConnectionId = "conn-1",
+            State = (int)BindingState.Active
+        });
+        db.Bindings.Add(new BindingEntity
+        {
+            Id = "b3",
+            ModuleId = "ModC",
+            SlotName = "Other",
+            ContractType = "IDbConnection",
+            ConnectionId = "conn-2",
+            State = (int)BindingState.Active
+        });
+        await db.SaveChangesAsync();
+
+        var repo = new SqlBindingRepository(db);
+        var result = await repo.GetByConnectionIdAsync(new ConnectionId("conn-1"));
+
+        result.Should().HaveCount(2);
+        result.Should().Contain(b => b.ModuleId == "ModA" && b.SlotName == "Db");
+        result.Should().Contain(b => b.ModuleId == "ModB" && b.SlotName == "Api");
+        result.Should().NotContain(b => b.ConnectionId!.Value == "conn-2");
     }
 }

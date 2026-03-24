@@ -226,6 +226,20 @@ public sealed class ManagementClient : IManagementClient
             cancellationToken).ConfigureAwait(false);
     }
 
+    public async Task<IReadOnlyList<ConnectionDto>> GetConnectionsAsync(CancellationToken cancellationToken = default)
+    {
+        var list = await _http.GetFromJsonAsync<ConnectionDto[]>("connections", ApiJsonReadOptions, cancellationToken).ConfigureAwait(false);
+        return list ?? Array.Empty<ConnectionDto>();
+    }
+
+    public async Task<ConnectionDto?> GetConnectionAsync(string id, CancellationToken cancellationToken = default)
+    {
+        return await _http.GetFromJsonAsync<ConnectionDto>(
+            $"connections/{Uri.EscapeDataString(id)}",
+            ApiJsonReadOptions,
+            cancellationToken).ConfigureAwait(false);
+    }
+
     public async Task<IReadOnlyList<ScheduleDto>> GetSchedulesAsync(CancellationToken cancellationToken = default)
     {
         var list = await _http.GetFromJsonAsync<ScheduleDto[]>("schedules", cancellationToken).ConfigureAwait(false);
@@ -466,7 +480,7 @@ public sealed class ManagementClient : IManagementClient
         using var response = await _http.GetAsync("control/capabilities", cancellationToken).ConfigureAwait(false);
         response.EnsureSuccessStatusCode();
         var dto = await response.Content.ReadFromJsonAsync<OperatorCapabilitiesDto>(ApiJsonReadOptions, cancellationToken).ConfigureAwait(false);
-        return dto ?? new OperatorCapabilitiesDto(false, false, false, false, false, false, false, false, false, false, false);
+        return dto ?? new OperatorCapabilitiesDto(false, false, false, false, false, false, false, false, false, false, false, false);
     }
 
     public async Task<StartOperationResult> StartOperationAsync(

@@ -18,6 +18,11 @@ public interface IBindingRepository
     ValueTask<Binding?> GetByIdAsync(BindingId id, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Gets all bindings that reference the given connection. Used for Used In projection.
+    /// </summary>
+    ValueTask<IReadOnlyList<Binding>> GetByConnectionIdAsync(ConnectionId connectionId, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Adds a new binding.
     /// </summary>
     ValueTask AddAsync(Binding binding, CancellationToken cancellationToken = default);
