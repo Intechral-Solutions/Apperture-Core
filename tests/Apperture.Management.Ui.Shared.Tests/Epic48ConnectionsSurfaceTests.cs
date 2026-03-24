@@ -60,27 +60,26 @@ public sealed class Epic48ConnectionsSurfaceTests
     }
 
     [Fact]
-    public void ClientDefinitionDto_Shape_Epic51()
+    public void ConnectorDefinitionCatalogDto_Shape_Epic52()
     {
-        var operations = new[]
+        var fields = new[]
         {
-            new ClientOperationMetadataDto("ExecuteCommand", "Execute API Command", null, true, true, null)
+            new ConnectionFieldCatalogDto("BaseUrl", "API base URL", false, "Root URL")
         };
-        var dto = new ClientDefinitionDto(
-            "Apperture.Platform.CampusNexus.Client",
-            "Campus Nexus API Client",
-            "Higher-level client",
+        var dto = new ConnectorDefinitionCatalogDto(
             "Apperture.Platform.CampusNexus",
+            "Campus Nexus API",
             null,
-            false,
-            operations);
-        dto.Id.Should().Be("Apperture.Platform.CampusNexus.Client");
-        dto.DisplayName.Should().Be("Campus Nexus API Client");
-        dto.RequiredConnectorDefinitionId.Should().Be("Apperture.Platform.CampusNexus");
+            "HTTP API connector.",
+            fields,
+            "None");
+        dto.Id.Should().Be("Apperture.Platform.CampusNexus");
+        dto.Name.Should().Be("Campus Nexus API");
         dto.ModuleId.Should().BeNull();
-        dto.UsesGateway.Should().BeFalse();
-        dto.Operations.Should().HaveCount(1);
-        dto.Operations[0].OperationKey.Should().Be("ExecuteCommand");
-        dto.Operations[0].DisplayName.Should().Be("Execute API Command");
+        dto.Description.Should().Contain("HTTP");
+        dto.Fields.Should().HaveCount(1);
+        dto.Fields[0].Key.Should().Be("BaseUrl");
+        dto.Fields[0].IsSecret.Should().BeFalse();
+        dto.Capabilities.Should().Be("None");
     }
 }

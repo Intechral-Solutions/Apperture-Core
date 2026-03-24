@@ -15,7 +15,7 @@ public interface IOperatorCapabilitiesService
 public sealed class OperatorCapabilitiesService : IOperatorCapabilitiesService
 {
     private static readonly OperatorCapabilitiesDto DenyAll =
-        new(false, false, false, false, false, false, false, false, false, false, false, false);
+        new(false, false, false, false, false, false, false, false, false, false, false, false, false, false, false);
 
     private readonly IManagementClient _client;
     private readonly ILogger<OperatorCapabilitiesService> _logger;
@@ -57,5 +57,6 @@ public sealed class OperatorCapabilitiesService : IOperatorCapabilitiesService
     private static bool IsDenyAllCapabilities(OperatorCapabilitiesDto d) =>
         !d.CanManageSchedules && !d.CanManageRecovery && !d.CanViewAudit && !d.CanViewRuntimeHealth && !d.CanManageModules
         && !d.CanViewGovernance && !d.CanAssignPermissions && !d.CanAssignRoles && !d.CanManageAuthUiPolicy
-        && !d.CanViewAuthConfiguration && !d.CanManageEntraTenants && !d.CanViewConnections;
+        && !d.CanViewAuthConfiguration && !d.CanManageEntraTenants && !d.CanViewConnections
+        && !d.CanViewIntegrations && !d.CanManageIntegrations && !d.CanViewConnectorDefinitions;
 }

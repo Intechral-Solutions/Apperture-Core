@@ -20,7 +20,7 @@ public static class UnisaCampusNexusPaymentPlansServiceCollectionExtensions
 
         services.AddScoped<IUnisaPaymentPlanManagementService, UnisaPaymentPlanManagementService>();
         services.AddScoped<UnisaPaymentPlanArrangementRepository>();
-        services.AddSingleton<IClientDefinitionProvider, CampusNexusClientDefinitionProvider>();
+        services.AddSingleton<IConnectorDefinitionContributor, CampusNexusConnectorDefinitionContributor>();
         return services;
     }
 }

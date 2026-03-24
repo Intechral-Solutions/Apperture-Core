@@ -12,5 +12,8 @@ public interface IConnectorDefinition
     string Name { get; }
     string? ModuleId { get; }
     IReadOnlyDictionary<string, string> RequiredInputSchema { get; }
+    string? Description { get; }
+    IReadOnlyList<ConnectionFieldDescriptor> ConnectionFields { get; }
+    ConnectorCapabilities Capabilities { get; }
     IGovernedResourceIdentity GetIdentity();
 }

@@ -60,21 +60,9 @@ public static class ConnectorResolutionServiceCollectionExtensions
         services.AddSingleton<IConnectorDefinitionRegistry>(_ =>
         {
             var registry = new InMemoryConnectorDefinitionRegistry();
-            registry.Register(new ConnectorDefinition(
-                WellKnownConnectorDefinitionIds.PlatformSql,
-                "Platform SQL",
-                null,
-                new Dictionary<string, string>()));
-            registry.Register(new ConnectorDefinition(
-                WellKnownConnectorDefinitionIds.PlatformCampusNexus,
-                "Campus Nexus API",
-                null,
-                new Dictionary<string, string>()));
-            registry.Register(new ConnectorDefinition(
-                WellKnownConnectorDefinitionIds.PlatformSftp,
-                "SFTP",
-                null,
-                new Dictionary<string, string>()));
+            registry.Register(WellKnownConnectorDefinitions.CreatePlatformSql());
+            registry.Register(WellKnownConnectorDefinitions.CreatePlatformCampusNexusMinimal());
+            registry.Register(WellKnownConnectorDefinitions.CreatePlatformSftp());
             return registry;
         });
     }

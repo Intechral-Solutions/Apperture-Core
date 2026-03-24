@@ -66,6 +66,7 @@ The control plane can govern connector-related resources through these applicati
 - UnauthorizedAccessException thrown when actor is null or permission denied
 
 ### API Endpoints
+- `GET /connector-definitions` — Read-only catalog of connector definitions (connection shape metadata; `connector.manage`). See [ADR-0027](../02-decisions/ADR-0027-connector-definitions-not-platform-clients.md).
 - `GET/POST/PATCH/DELETE /connections` — Connection CRUD and retire
 - `GET/POST/DELETE /modules/{moduleId}/slots/{slotName}/binding` — Binding get, create, revoke
 - `GET /modules/{moduleId}/slots/{slotName}/eligible-connections?contractType=X` — List eligible connections
@@ -98,7 +99,7 @@ Connections have **ConnectionState**: Active or Retired. Retired connections are
 - Secret/material resolution inside pipeline; connector factories receive material only
 
 **Deferred:**
-- Connector management UI (beyond minimal API)
+- Rich connector management UI (full create/edit flows for connections remain incremental)
 - Module slot discovery from manifests
 - Audit emission for resolution events; capability.consume at resolution time
 
@@ -107,3 +108,4 @@ Connections have **ConnectionState**: Active or Retired. Retired connections are
 - [Authorization and Governance Foundation](authorization-and-governance-foundation.md)
 - [ADR-0012](../02-decisions/ADR-0012-authorization-evaluation-model.md)
 - [ADR-0013](../02-decisions/ADR-0013-action-and-scope-naming-conventions.md)
+- [ADR-0027](../02-decisions/ADR-0027-connector-definitions-not-platform-clients.md) — Connector definitions vs platform-managed clients (Epic 52)

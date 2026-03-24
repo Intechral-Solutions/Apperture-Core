@@ -240,16 +240,19 @@ public sealed class ManagementClient : IManagementClient
             cancellationToken).ConfigureAwait(false);
     }
 
-    public async Task<IReadOnlyList<ClientDefinitionDto>> GetClientDefinitionsAsync(CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<ConnectorDefinitionCatalogDto>> GetConnectorDefinitionsAsync(CancellationToken cancellationToken = default)
     {
-        var list = await _http.GetFromJsonAsync<ClientDefinitionDto[]>("clients", ApiJsonReadOptions, cancellationToken).ConfigureAwait(false);
-        return list ?? Array.Empty<ClientDefinitionDto>();
+        var list = await _http.GetFromJsonAsync<ConnectorDefinitionCatalogDto[]>(
+            "connector-definitions",
+            ApiJsonReadOptions,
+            cancellationToken).ConfigureAwait(false);
+        return list ?? Array.Empty<ConnectorDefinitionCatalogDto>();
     }
 
-    public async Task<ClientDefinitionDto?> GetClientDefinitionAsync(string id, CancellationToken cancellationToken = default)
+    public async Task<ConnectorDefinitionCatalogDto?> GetConnectorDefinitionAsync(string id, CancellationToken cancellationToken = default)
     {
-        return await _http.GetFromJsonAsync<ClientDefinitionDto>(
-            $"clients/{Uri.EscapeDataString(id)}",
+        return await _http.GetFromJsonAsync<ConnectorDefinitionCatalogDto>(
+            $"connector-definitions/{Uri.EscapeDataString(id)}",
             ApiJsonReadOptions,
             cancellationToken).ConfigureAwait(false);
     }
@@ -599,7 +602,7 @@ public sealed class ManagementClient : IManagementClient
         using var response = await _http.GetAsync("control/capabilities", cancellationToken).ConfigureAwait(false);
         response.EnsureSuccessStatusCode();
         var dto = await response.Content.ReadFromJsonAsync<OperatorCapabilitiesDto>(ApiJsonReadOptions, cancellationToken).ConfigureAwait(false);
-        return dto ?? new OperatorCapabilitiesDto(false, false, false, false, false, false, false, false, false, false, false, false);
+        return dto ?? new OperatorCapabilitiesDto(false, false, false, false, false, false, false, false, false, false, false, false, false, false, false);
     }
 
     public async Task<StartOperationResult> StartOperationAsync(

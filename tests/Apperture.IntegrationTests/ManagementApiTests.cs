@@ -42,4 +42,12 @@ public sealed class ManagementApiTests : IClassFixture<ManagementApiWebApplicati
         var response = await client.GetAsync("/api/integrations/unknown-id/schedules");
         response.StatusCode.Should().BeOneOf(HttpStatusCode.NotFound, HttpStatusCode.Unauthorized);
     }
+
+    [Fact]
+    public async Task Get_connector_definitions_requires_auth_or_returns_ok_when_anonymous_allowed()
+    {
+        var client = _factory.CreateClient();
+        var response = await client.GetAsync("/api/connector-definitions");
+        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.Unauthorized, HttpStatusCode.Forbidden);
+    }
 }

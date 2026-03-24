@@ -4,6 +4,7 @@ using Apperture.Core.Application.RuntimeComposition;
 using Apperture.Core.Application.RuntimeHealth;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Environment;
+using Apperture.Core.Domain.Integration;
 using Apperture.Core.Domain.Scheduling;
 using Apperture.ModuleSdk.Abstractions;
 using Apperture.Persistence.SqlServer;
@@ -286,6 +287,8 @@ public sealed class RecoveryWorkflowRemediationSqlServerTests
         public ValueTask<ScheduleDefinition?> GetDefinitionAsync(ScheduleId id, CancellationToken ct = default) =>
             ValueTask.FromResult<ScheduleDefinition?>(null);
         public ValueTask<IReadOnlyList<ScheduleDefinition>> ListDefinitionsAsync(CancellationToken ct = default) =>
+            ValueTask.FromResult<IReadOnlyList<ScheduleDefinition>>([]);
+        public ValueTask<IReadOnlyList<ScheduleDefinition>> GetByIntegrationIdAsync(IntegrationId integrationId, CancellationToken ct = default) =>
             ValueTask.FromResult<IReadOnlyList<ScheduleDefinition>>([]);
         public ValueTask AddDefinitionAsync(ScheduleDefinition d, CancellationToken ct = default) => ValueTask.CompletedTask;
         public ValueTask UpdateDefinitionAsync(ScheduleDefinition d, CancellationToken ct = default) => ValueTask.CompletedTask;

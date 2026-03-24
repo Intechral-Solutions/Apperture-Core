@@ -99,3 +99,4 @@ When the resolved client type `T` is **IDisposable** or **IAsyncDisposable**, th
 - [Connector Resource Family](connector-resource-family.md)
 - [Control-Plane Connector Workflows](control-plane-connector-workflows.md)
 - [Authorization and Governance Foundation](authorization-and-governance-foundation.md)
+- [ADR-0027](../02-decisions/ADR-0027-connector-definitions-not-platform-clients.md) — Platform catalogs connector definitions and connections; typed clients are not a management-plane invocation layer.

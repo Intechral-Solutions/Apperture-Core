@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Superseded by [ADR-0027](./ADR-0027-connector-definitions-not-platform-clients.md)
 
 ## Context
 

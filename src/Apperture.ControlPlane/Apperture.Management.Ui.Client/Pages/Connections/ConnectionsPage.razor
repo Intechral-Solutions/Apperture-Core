@@ -7,7 +7,7 @@
 @inject NavigationManager Nav
 
 <div class="p-4">
-    <PageHeader Title="Connections" Subtitle="Connections and clients. Connections tab shows connection resources; Clients tab lists available client definitions.">
+    <PageHeader Title="Connections" Subtitle="Manage connection instances and browse connector definitions (connection shape only — not executable client operations).">
         <Toolbar>
             @if (_capabilities?.CanViewConnections == true)
             {
@@ -26,30 +26,38 @@
     {
         <PageMessage Kind="PageMessageKind.Loading" Message="Loading…" />
     }
-    else if (_capabilities?.CanViewConnections != true)
+    else if (!CanAccessPage)
     {
         <PageMessage Kind="PageMessageKind.Forbidden"
                      Title="Not authorized"
-                     Message="You do not have permission to view connections." />
+                     Message="You do not have permission to view connections or connector definitions." />
     }
     else
     {
-        <div class="mt-4 flex gap-2 border-b border-default">
-            <button type="button"
-                    class="px-3 py-2 text-sm font-medium @(_activeTab == "connections" ? "text-heading border-b-2 border-body -mb-px" : "text-muted hover:text-body")"
-                    @onclick="@(() => SetTab("connections"))">
-                Connections
-            </button>
-            <button type="button"
-                    class="px-3 py-2 text-sm font-medium @(_activeTab == "clients" ? "text-heading border-b-2 border-body -mb-px" : "text-muted hover:text-body")"
-                    @onclick="@(() => SetTab("clients"))">
-                Clients
-            </button>
-        </div>
-
-        @if (_activeTab == "connections")
+        @if (ShowTabs)
         {
-            @* Connections tab content *@
+            <div class="mt-4 flex gap-2 border-b border-default">
+                @if (_capabilities?.CanViewConnections == true)
+                {
+                    <button type="button"
+                            class="px-3 py-2 text-sm font-medium @(_activeTab == "connections" ? "text-heading border-b-2 border-body -mb-px" : "text-muted hover:text-body")"
+                            @onclick="@(() => SetTab("connections"))">
+                        Connections
+                    </button>
+                }
+                @if (_capabilities?.CanViewConnectorDefinitions == true)
+                {
+                    <button type="button"
+                            class="px-3 py-2 text-sm font-medium @(_activeTab == "connectors" ? "text-heading border-b-2 border-body -mb-px" : "text-muted hover:text-body")"
+                            @onclick="@(() => SetTab("connectors"))">
+                        Connectors
+                    </button>
+                }
+            </div>
+        }
+
+        @if (_activeTab == "connections" && _capabilities?.CanViewConnections == true)
+        {
             @if (!string.IsNullOrEmpty(_error))
             {
                 <PageMessage Kind="PageMessageKind.Error" Title="Error" Message="@_error" />
@@ -114,9 +122,9 @@
                 </div>
             }
         }
-        else
+        else if (_activeTab == "connectors" && _capabilities?.CanViewConnectorDefinitions == true)
         {
-            <ClientsListContent />
+            <ConnectorsListContent />
         }
     }
 </div>
@@ -129,6 +137,12 @@
     private string? _error;
     private string _activeTab = "connections";
 
+    private bool CanAccessPage =>
+        _capabilities?.CanViewConnections == true || _capabilities?.CanViewConnectorDefinitions == true;
+
+    private bool ShowTabs =>
+        _capabilities?.CanViewConnections == true && _capabilities?.CanViewConnectorDefinitions == true;
+
     protected override async Task OnInitializedAsync()
     {
         try
@@ -137,30 +151,38 @@
         }
         catch
         {
-            _capabilities = new OperatorCapabilitiesDto(false, false, false, false, false, false, false, false, false, false, false, false);
+            _capabilities = new OperatorCapabilitiesDto(false, false, false, false, false, false, false, false, false, false, false, false, false, false, false);
         }
         _capabilitiesLoaded = true;
 
-        if (_capabilities?.CanViewConnections == true)
+        if (!CanAccessPage)
+            return;
+
+        if (_capabilities?.CanViewConnections != true && _capabilities?.CanViewConnectorDefinitions == true)
+            _activeTab = "connectors";
+
+        var uri = new Uri(Nav.Uri);
+        if (!string.IsNullOrEmpty(uri.Query))
         {
-            var uri = new Uri(Nav.Uri);
-            if (!string.IsNullOrEmpty(uri.Query))
+            var query = uri.Query.TrimStart('?');
+            foreach (var part in query.Split('&'))
             {
-                var query = uri.Query.TrimStart('?');
-                foreach (var part in query.Split('&'))
+                var kv = part.Split('=', 2, StringSplitOptions.None);
+                if (kv.Length == 2 && string.Equals(kv[0], "tab", StringComparison.OrdinalIgnoreCase))
                 {
-                    var kv = part.Split('=', 2, StringSplitOptions.None);
-                    if (kv.Length == 2 && string.Equals(kv[0], "tab", StringComparison.OrdinalIgnoreCase)
-                        && string.Equals(kv[1], "clients", StringComparison.OrdinalIgnoreCase))
-                    {
-                        _activeTab = "clients";
-                        break;
-                    }
+                    if (string.Equals(kv[1], "connectors", StringComparison.OrdinalIgnoreCase)
+                        && _capabilities?.CanViewConnectorDefinitions == true)
+                        _activeTab = "connectors";
+                    else if (string.Equals(kv[1], "connections", StringComparison.OrdinalIgnoreCase)
+                             && _capabilities?.CanViewConnections == true)
+                        _activeTab = "connections";
+                    break;
                 }
             }
-
-            await LoadAsync();
         }
+
+        if (_capabilities?.CanViewConnections == true)
+            await LoadAsync();
     }
 
     private void SetTab(string tab)
@@ -168,7 +190,7 @@
         _activeTab = tab;
         var uri = new Uri(Nav.Uri);
         var basePath = uri.GetLeftPart(UriPartial.Path);
-        var newUri = tab == "clients" ? $"{basePath}?tab=clients" : basePath;
+        var newUri = tab == "connectors" ? $"{basePath}?tab=connectors" : basePath;
         if (Nav.Uri != newUri)
             Nav.NavigateTo(newUri);
     }

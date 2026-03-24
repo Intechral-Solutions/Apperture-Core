@@ -24,4 +24,9 @@ public sealed record ModuleManifest(string Id, string Name, string Version, stri
     /// Optional governed action declarations contributed by this module.
     /// </summary>
     public IReadOnlyList<ModuleGovernedActionDeclaration>? GovernedActions { get; init; } = null;
+
+    /// <summary>
+    /// Optional documentation of connector definitions associated with this module (not a runtime registry).
+    /// </summary>
+    public IReadOnlyList<ConnectorDefinitionDeclaration>? ConnectorDefinitions { get; init; }
 }

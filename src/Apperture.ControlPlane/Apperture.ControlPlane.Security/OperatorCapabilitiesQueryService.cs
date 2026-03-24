@@ -12,7 +12,7 @@ namespace Apperture.ControlPlane.Security;
 public sealed class OperatorCapabilitiesQueryService : IOperatorCapabilitiesQueryService
 {
     private static readonly OperatorCapabilitiesDto DenyAll =
-        new(false, false, false, false, false, false, false, false, false, false, false, false, false, false);
+        new(false, false, false, false, false, false, false, false, false, false, false, false, false, false, false);
 
     private readonly IPrincipalContext _principalContext;
     private readonly IAuthorizationEvaluationService _authorization;
@@ -82,6 +82,11 @@ public sealed class OperatorCapabilitiesQueryService : IOperatorCapabilitiesQuer
                 ActionConstants.IntegrationCreate,
                 ResourceTypeConstants.Integration,
                 cancellationToken).ConfigureAwait(false);
+            var canViewConnectorDefinitions = await EvaluateAsync(
+                actor,
+                ActionConstants.ConnectorManage,
+                ResourceTypeConstants.ConnectorDefinition,
+                cancellationToken).ConfigureAwait(false);
 
             return new OperatorCapabilitiesDto(
                 canManageSchedules,
@@ -97,7 +102,8 @@ public sealed class OperatorCapabilitiesQueryService : IOperatorCapabilitiesQuer
                 canManageEntraTenants,
                 canViewConnections,
                 canViewIntegrations,
-                canManageIntegrations);
+                canManageIntegrations,
+                canViewConnectorDefinitions);
         }
         catch (Exception ex)
         {

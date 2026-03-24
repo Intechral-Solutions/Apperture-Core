@@ -89,14 +89,14 @@ public interface IManagementClient
     Task<ConnectionDto?> GetConnectionAsync(string id, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Lists available client definitions. Epic 51.
+    /// Lists connector definitions (catalog metadata; not executable client operations). Epic 52.
     /// </summary>
-    Task<IReadOnlyList<ClientDefinitionDto>> GetClientDefinitionsAsync(CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<ConnectorDefinitionCatalogDto>> GetConnectorDefinitionsAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Gets a client definition by id. Epic 51.
+    /// Gets a connector definition by id. Epic 52.
     /// </summary>
-    Task<ClientDefinitionDto?> GetClientDefinitionAsync(string id, CancellationToken cancellationToken = default);
+    Task<ConnectorDefinitionCatalogDto?> GetConnectorDefinitionAsync(string id, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Lists integrations. Epic 49.
@@ -359,7 +359,8 @@ public sealed record OperatorCapabilitiesDto(
     [property: JsonPropertyName("canManageEntraTenants")] bool CanManageEntraTenants = false,
     [property: JsonPropertyName("canViewConnections")] bool CanViewConnections = false,
     [property: JsonPropertyName("canViewIntegrations")] bool CanViewIntegrations = false,
-    [property: JsonPropertyName("canManageIntegrations")] bool CanManageIntegrations = false);
+    [property: JsonPropertyName("canManageIntegrations")] bool CanManageIntegrations = false,
+    [property: JsonPropertyName("canViewConnectorDefinitions")] bool CanViewConnectorDefinitions = false);
 
 /// <summary>Integration resource. Epic 49, Epic 50.</summary>
 public sealed record IntegrationDto(
@@ -416,24 +417,21 @@ public sealed record ConnectionUsedInEntry(
     string? IntegrationId = null,
     string? IntegrationDisplayName = null);
 
-/// <summary>Client definition. Epic 51.</summary>
-public sealed record ClientDefinitionDto(
-    string Id,
+/// <summary>Connection field shape for a connector definition (catalog). Epic 52.</summary>
+public sealed record ConnectionFieldCatalogDto(
+    string Key,
     string DisplayName,
-    string? Description,
-    string RequiredConnectorDefinitionId,
-    string? ModuleId,
-    bool UsesGateway,
-    IReadOnlyList<ClientOperationMetadataDto> Operations);
+    bool IsSecret,
+    string? Description);
 
-/// <summary>Client operation metadata. Epic 51.</summary>
-public sealed record ClientOperationMetadataDto(
-    string OperationKey,
-    string DisplayName,
+/// <summary>Connector definition catalog entry (shape of connections, not operations). Epic 52.</summary>
+public sealed record ConnectorDefinitionCatalogDto(
+    string Id,
+    string Name,
+    string? ModuleId,
     string? Description,
-    bool IsOperatorFacing,
-    bool MayRequireUserInputs,
-    string? ParameterHint);
+    IReadOnlyList<ConnectionFieldCatalogDto> Fields,
+    string Capabilities);
 
 /// <summary>Connection resource with Used In projection. Epic 48.</summary>
 public sealed record ConnectionDto(

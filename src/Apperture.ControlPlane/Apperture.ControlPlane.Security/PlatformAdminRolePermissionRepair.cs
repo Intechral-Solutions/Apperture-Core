@@ -55,6 +55,15 @@ public static class PlatformAdminRolePermissionRepair
     ];
 
     /// <summary>
+    /// Connections and connector-definition catalog (Epic 48, Epic 52).
+    /// </summary>
+    public static readonly PermissionDescriptor[] RequiredConnectorOperatorPermissions =
+    [
+        new(ActionConstants.ConnectionRead, new ResourceDescriptor(ResourceTypeConstants.Connection, ScopeKeyConstants.Instance)),
+        new(ActionConstants.ConnectorManage, new ResourceDescriptor(ResourceTypeConstants.ConnectorDefinition, ScopeKeyConstants.Instance))
+    ];
+
+    /// <summary>
     /// Operator console surfaces (menus, modules, workflows, schedules, recovery, audit, runtime health).
     /// </summary>
     public static readonly PermissionDescriptor[] RequiredOperatorUiPermissions =
@@ -80,6 +89,7 @@ public static class PlatformAdminRolePermissionRepair
         var step = EnsureSet(deduped, RequiredAuthAdminPermissions);
         step = EnsureModuleScopedPermissions(step, registry);
         step = EnsureSet(step, RequiredOperatorUiPermissions);
+        step = EnsureSet(step, RequiredConnectorOperatorPermissions);
         step = EnsureSet(step, RequiredIntegrationPermissions);
         step = EnsureSet(step, RequiredGovernanceSurfacePermissions);
         step = EnsureSet(step, RequiredInstanceAuthConfigurationPermissions);

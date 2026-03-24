@@ -17,7 +17,7 @@ UNISA payment plan integrations need governed connections to Campus Nexus (HTTP)
 
 2. **Runtime registration** — `AddPlatformSqlConnector()` registers all three definitions (in-memory registry on worker) and factories on `IConnectorClientFactoryRegistry` via `PlatformConnectorClientFactoriesHostedService`.
 
-3. **Control plane** — `SeedWellKnownConnectorDefinitionsHostedService` registers the same three definitions into `StubConnectorDefinitionRegistry` so connection CRUD and bindings can reference them.
+3. **Control plane** — `SeedWellKnownConnectorDefinitionsHostedService` registers the same three definitions into `StubConnectorDefinitionRegistry` so connection CRUD and bindings can reference them. `CampusNexusConnectorDefinitionContributor` (registered with the UNISA module) enriches the Campus Nexus entry with connection-field catalog metadata for operators; see [ADR-0027](./ADR-0027-connector-definitions-not-platform-clients.md).
 
 4. **Connection material (Campus Nexus)** — `BaseUrl`, `AuthMode` (`ApiKey` | `Basic`), plus `ApiKey` or `Username`/`Password` in resolved material.
 

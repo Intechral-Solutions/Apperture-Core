@@ -4,6 +4,8 @@ namespace Apperture.Core.Application.Services;
 /// Single runtime entry point for obtaining a live connection-backed client.
 /// Resolves by (moduleId, slotName) only; requires an active connection binding for the slot.
 /// No connection-by-id or arbitrary connection resolution for module code.
+/// The platform does not invoke connector operations; modules use connector packages and typed
+/// connector client factories with material delivered through this slot-bound path.
 /// </summary>
 public interface IRuntimeSlotResolver
 {

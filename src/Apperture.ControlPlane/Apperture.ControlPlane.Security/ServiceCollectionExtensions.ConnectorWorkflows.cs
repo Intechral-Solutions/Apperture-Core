@@ -21,8 +21,7 @@ public static class ConnectorWorkflowServiceCollectionExtensions
         services.AddScoped<IBindingEligibilityService, BindingEligibilityService>();
         services.AddScoped<IConnectionManagementService, ConnectionManagementService>();
         services.AddScoped<IBindingService, BindingService>();
-        services.AddScoped<IClientDefinitionQueryService, ClientDefinitionQueryService>();
-        services.AddScoped<IClientDefinitionReadService, ClientDefinitionReadService>();
+        services.AddScoped<IConnectorDefinitionCatalogReadService, ConnectorDefinitionCatalogReadService>();
         return services;
     }
 }
