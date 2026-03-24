@@ -6,6 +6,8 @@ namespace Apperture.ConnectorResolution;
 /// <summary>
 /// Runtime slot resolver: resolves only via (moduleId, slotName) using binding and connection lookup.
 /// No connection-by-id; binding is the gate.
+/// Integration-scoped resolution is deferred: when multiple bindings exist for a slot (Integration-owned
+/// and legacy), the repository returns the first match. No Integration-aware selection is performed.
 /// </summary>
 public sealed class SlotBoundResolver : IRuntimeSlotResolver
 {

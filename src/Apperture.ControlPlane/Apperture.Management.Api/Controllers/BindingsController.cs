@@ -49,6 +49,7 @@ public sealed class BindingsController : ControllerBase
                 slotName,
                 body.ContractType,
                 new ConnectionId(body.ConnectionId),
+                integrationId: null,
                 cancellationToken);
             return CreatedAtAction(nameof(Get), new { moduleId, slotName }, ToDto(binding));
         }
@@ -101,6 +102,7 @@ public sealed class BindingsController : ControllerBase
 
     private static BindingDto ToDto(Binding b) => new(
         b.Id.Value,
+        b.IntegrationId?.Value,
         b.ModuleId,
         b.SlotName,
         b.ContractType,
@@ -111,6 +113,7 @@ public sealed class BindingsController : ControllerBase
 
 public sealed record BindingDto(
     string Id,
+    string? IntegrationId,
     string ModuleId,
     string SlotName,
     string ContractType,

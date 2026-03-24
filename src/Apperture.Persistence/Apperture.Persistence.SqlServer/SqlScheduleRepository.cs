@@ -1,5 +1,6 @@
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Environment;
+using Apperture.Core.Domain.Integration;
 using Apperture.Core.Domain.Scheduling;
 using Microsoft.EntityFrameworkCore;
 
@@ -27,6 +28,14 @@ public sealed class SqlScheduleRepository : IScheduleRepository
         return entities.Select(ToDefinition).ToList();
     }
 
+    public async ValueTask<IReadOnlyList<ScheduleDefinition>> GetByIntegrationIdAsync(IntegrationId integrationId, CancellationToken ct = default)
+    {
+        var entities = await _db.ScheduleDefinitions.AsNoTracking()
+            .Where(e => e.IntegrationId == integrationId.Value)
+            .ToListAsync(ct);
+        return entities.Select(ToDefinition).ToList();
+    }
+
     public async ValueTask AddDefinitionAsync(ScheduleDefinition d, CancellationToken ct = default)
     {
         _db.ScheduleDefinitions.Add(ToDefinitionEntity(d));
@@ -45,6 +54,7 @@ public sealed class SqlScheduleRepository : IScheduleRepository
         e.TargetJobConfigurationJson = d.Target.JobConfiguration;
         e.ExecutionPolicyRef = d.ExecutionPolicyRef;
         e.Version = d.Version;
+        e.IntegrationId = d.IntegrationId?.Value;
         await _db.SaveChangesAsync(ct);
     }
 
@@ -209,11 +219,13 @@ public sealed class SqlScheduleRepository : IScheduleRepository
         e.Enabled,
         new ScheduledTarget((ScheduledJobType)e.TargetJobType, e.TargetJobConfigurationJson),
         e.ExecutionPolicyRef,
-        e.Version);
+        e.Version,
+        e.IntegrationId is not null ? new IntegrationId(e.IntegrationId) : null);
 
     private static ScheduleDefinitionEntity ToDefinitionEntity(ScheduleDefinition d) => new()
     {
         Id = d.Id.Value,
+        IntegrationId = d.IntegrationId?.Value,
         Name = d.Name,
         RecurrenceExpression = d.RecurrenceExpression,
         TimeZone = d.TimeZone,

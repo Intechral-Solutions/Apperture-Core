@@ -1,4 +1,5 @@
 using Apperture.Core.Domain.Connector;
+using Apperture.Core.Domain.Integration;
 
 namespace Apperture.Core.Application.Services;
 
@@ -9,8 +10,19 @@ public interface IBindingRepository
 {
     /// <summary>
     /// Gets the binding for a slot. Returns null if none exists.
+    /// Legacy: returns first match for (moduleId, slotName). Integration-scoped resolution is deferred.
     /// </summary>
     ValueTask<Binding?> GetBySlotAsync(string moduleId, string slotName, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Gets all bindings owned by the given Integration. Epic 50.
+    /// </summary>
+    ValueTask<IReadOnlyList<Binding>> GetByIntegrationIdAsync(IntegrationId integrationId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Gets the binding for a slot within an Integration. Returns null if none exists.
+    /// </summary>
+    ValueTask<Binding?> GetBySlotAndIntegrationAsync(string moduleId, string slotName, IntegrationId integrationId, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Gets a binding by id.

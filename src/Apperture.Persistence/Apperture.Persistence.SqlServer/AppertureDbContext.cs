@@ -348,6 +348,7 @@ public class AppertureDbContext : DbContext
             e.Property(x => x.ModuleId).HasMaxLength(128);
             e.Property(x => x.ScopeKey).HasMaxLength(256);
             e.Property(x => x.State);
+            e.Property(x => x.SettingsJson).HasMaxLength(8192);
             e.Property<byte[]>("RowVersion").IsRowVersion();
         });
 

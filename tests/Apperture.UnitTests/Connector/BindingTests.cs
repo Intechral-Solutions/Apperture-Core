@@ -15,6 +15,7 @@ public sealed class BindingTests
     {
         var binding = new Binding(
             new BindingId("bind-1"),
+            null,
             "ModuleA",
             "DbConnection",
             "System.Data.IDbConnection",
@@ -34,6 +35,7 @@ public sealed class BindingTests
     {
         var binding = new Binding(
             new BindingId("b1"),
+            null,
             "MyModule",
             "ApiClient",
             "HttpClient",

@@ -114,6 +114,41 @@ public interface IManagementClient
     Task DeleteIntegrationAsync(string id, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Lists bindings for an integration. Epic 50.
+    /// </summary>
+    Task<IReadOnlyList<IntegrationBindingDto>> GetIntegrationBindingsAsync(string integrationId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Creates a binding for an integration. Epic 50.
+    /// </summary>
+    Task<IntegrationBindingDto> CreateIntegrationBindingAsync(string integrationId, CreateIntegrationBindingRequest request, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Deletes a binding from an integration. Epic 50.
+    /// </summary>
+    Task DeleteIntegrationBindingAsync(string integrationId, string bindingId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Gets connections eligible for binding to a slot of an integration's module. Epic 50.
+    /// </summary>
+    Task<IReadOnlyList<EligibleConnectionDto>> GetIntegrationEligibleConnectionsAsync(string integrationId, string slotName, string contractType, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Gets capability slots for an integration's module. Epic 50.
+    /// </summary>
+    Task<IReadOnlyList<ModuleSlotDto>> GetIntegrationModuleSlotsAsync(string integrationId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Lists schedules for an integration. Epic 50.
+    /// </summary>
+    Task<IReadOnlyList<ScheduleDto>> GetIntegrationSchedulesAsync(string integrationId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Creates a schedule for an integration. Epic 50.
+    /// </summary>
+    Task<ScheduleDto> CreateIntegrationScheduleAsync(string integrationId, CreateIntegrationScheduleRequest request, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Lists schedules. Epic 28/33.
     /// </summary>
     Task<IReadOnlyList<ScheduleDto>> GetSchedulesAsync(CancellationToken cancellationToken = default);
@@ -316,29 +351,60 @@ public sealed record OperatorCapabilitiesDto(
     [property: JsonPropertyName("canViewIntegrations")] bool CanViewIntegrations = false,
     [property: JsonPropertyName("canManageIntegrations")] bool CanManageIntegrations = false);
 
-/// <summary>Integration resource. Epic 49.</summary>
+/// <summary>Integration resource. Epic 49, Epic 50.</summary>
 public sealed record IntegrationDto(
     string Id,
     string DisplayName,
     string ModuleId,
     string? ScopeKey,
     string State,
+    IReadOnlyDictionary<string, string>? Settings,
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt);
 
-/// <summary>Request to create an integration. Epic 49.</summary>
+/// <summary>Request to create an integration. Epic 49, Epic 50.</summary>
 public sealed record CreateIntegrationRequest(
     string DisplayName,
     string ModuleId,
-    string? ScopeKey = null);
+    string? ScopeKey = null,
+    IReadOnlyDictionary<string, string>? Settings = null);
 
-/// <summary>Request to update an integration. Epic 49.</summary>
+/// <summary>Request to update an integration. Epic 49, Epic 50.</summary>
 public sealed record UpdateIntegrationRequest(
     string? DisplayName = null,
-    string? State = null);
+    string? State = null,
+    IReadOnlyDictionary<string, string>? Settings = null);
 
-/// <summary>Where a connection is consumed (e.g. module slot binding). Epic 48.</summary>
-public sealed record ConnectionUsedInEntry(string ModuleId, string SlotName, string ContractType);
+/// <summary>Binding owned by an Integration. Epic 50.</summary>
+public sealed record IntegrationBindingDto(
+    string Id,
+    string? IntegrationId,
+    string ModuleId,
+    string SlotName,
+    string ContractType,
+    string? ConnectionId,
+    string? CapabilityId,
+    string State);
+
+/// <summary>Request to create an integration binding. Epic 50.</summary>
+public sealed record CreateIntegrationBindingRequest(
+    string SlotName,
+    string ContractType,
+    string ConnectionId);
+
+/// <summary>Connection eligible for binding. Epic 50.</summary>
+public sealed record EligibleConnectionDto(string Id, string Name, string ConnectorDefinitionId);
+
+/// <summary>Capability slot declared by a module. Epic 50.</summary>
+public sealed record ModuleSlotDto(string ModuleId, string SlotName, string ContractType);
+
+/// <summary>Where a connection is consumed (e.g. module slot binding). Epic 48, Epic 50.</summary>
+public sealed record ConnectionUsedInEntry(
+    string ModuleId,
+    string SlotName,
+    string ContractType,
+    string? IntegrationId = null,
+    string? IntegrationDisplayName = null);
 
 /// <summary>Connection resource with Used In projection. Epic 48.</summary>
 public sealed record ConnectionDto(

@@ -101,6 +101,7 @@ public sealed class IntegrationManagementService : IIntegrationManagementService
             request.ModuleId,
             request.ScopeKey,
             IntegrationState.Active,
+            request.Settings,
             now,
             now);
 
@@ -134,6 +135,7 @@ public sealed class IntegrationManagementService : IIntegrationManagementService
         {
             DisplayName = request.DisplayName ?? existing.DisplayName,
             State = request.State ?? existing.State,
+            Settings = request.Settings ?? existing.Settings,
             UpdatedAt = now
         };
 

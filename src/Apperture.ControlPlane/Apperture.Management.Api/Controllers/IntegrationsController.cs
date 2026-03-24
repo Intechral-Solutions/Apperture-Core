@@ -66,7 +66,7 @@ public sealed class IntegrationsController : ControllerBase
     {
         try
         {
-            var request = new CreateIntegrationRequest(body.DisplayName, body.ModuleId, body.ScopeKey);
+            var request = new CreateIntegrationRequest(body.DisplayName, body.ModuleId, body.ScopeKey, body.Settings);
             var integration = await _integrationService.CreateIntegrationAsync(request, cancellationToken);
             return CreatedAtAction(nameof(Get), new { id = integration.Id.Value }, ToDto(integration));
         }
@@ -91,7 +91,7 @@ public sealed class IntegrationsController : ControllerBase
             IntegrationState? integrationState = null;
             if (body.State is not null && Enum.TryParse<IntegrationState>(body.State, ignoreCase: true, out var parsed))
                 integrationState = parsed;
-            var request = new UpdateIntegrationRequest(body.DisplayName, integrationState);
+            var request = new UpdateIntegrationRequest(body.DisplayName, integrationState, body.Settings);
             var integration = await _integrationService.UpdateIntegrationAsync(new IntegrationId(id), request, cancellationToken);
             return Ok(ToDto(integration));
         }
@@ -136,6 +136,7 @@ public sealed class IntegrationsController : ControllerBase
         i.ModuleId,
         i.ScopeKey,
         i.State.ToString(),
+        i.Settings,
         i.CreatedAt,
         i.UpdatedAt);
 }
@@ -146,14 +147,17 @@ public sealed record IntegrationDto(
     string ModuleId,
     string? ScopeKey,
     string State,
+    IReadOnlyDictionary<string, string>? Settings,
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt);
 
 public sealed record CreateIntegrationRequestBody(
     string DisplayName,
     string ModuleId,
-    string? ScopeKey);
+    string? ScopeKey,
+    IReadOnlyDictionary<string, string>? Settings = null);
 
 public sealed record UpdateIntegrationRequestBody(
     string? DisplayName,
-    string? State);
+    string? State,
+    IReadOnlyDictionary<string, string>? Settings = null);

@@ -1,5 +1,16 @@
 namespace Apperture.Management.Client;
 
+/// <summary>Epic 50: Create schedule for Integration. Shape matches API CreateIntegrationScheduleRequestBody.</summary>
+public sealed record CreateIntegrationScheduleRequest(
+    string Name,
+    string RecurrenceExpression,
+    string? TimeZone = "UTC",
+    bool Enabled = true,
+    int? TargetJobType = 0,
+    string? TargetJobConfiguration = null,
+    string? ExecutionPolicyRef = null,
+    string? RuntimePlaneId = "local");
+
 /// <summary>Epic 38: Create schedule request. Shape matches API CreateScheduleRequestBody.</summary>
 public sealed record CreateScheduleRequest(
     string Name,
@@ -40,7 +51,8 @@ public sealed record ScheduleDto(
     bool Enabled,
     int TargetJobType,
     string? TargetJobConfiguration,
-    int Version);
+    int Version,
+    string? IntegrationId = null);
 
 /// <summary>
 /// Schedule with execution state for operator visibility. Epic 28, Epic 36 (claim visibility).

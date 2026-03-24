@@ -1,6 +1,7 @@
 using Apperture.ControlPlane.Security;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Environment;
+using Apperture.Core.Domain.Integration;
 using Apperture.Core.Domain.Scheduling;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -78,6 +79,7 @@ public sealed class SchedulesController : ControllerBase
         var jobType = (ScheduledJobType)(body.TargetJobType ?? 0);
         var id = Guid.NewGuid().ToString("N")[..24];
         var target = new ScheduledTarget(jobType, body.TargetJobConfiguration!);
+        var integrationId = string.IsNullOrEmpty(body.IntegrationId) ? null : new IntegrationId(body.IntegrationId);
         var definition = new ScheduleDefinition(
             new ScheduleId(id),
             body.Name,
@@ -86,7 +88,8 @@ public sealed class SchedulesController : ControllerBase
             body.Enabled,
             target,
             body.ExecutionPolicyRef,
-            Version: 1);
+            Version: 1,
+            integrationId);
         await _scheduleManagement.CreateScheduleAsync(definition, cancellationToken);
         var planeId = new RuntimePlaneId(body.RuntimePlaneId ?? "local");
         await _scheduleManagement.AssignToRuntimePlaneAsync(definition.Id, planeId, null, cancellationToken);
@@ -164,7 +167,8 @@ public sealed class SchedulesController : ControllerBase
         d.Enabled,
         (int)d.Target.JobType,
         d.Target.JobConfiguration,
-        d.Version);
+        d.Version,
+        d.IntegrationId?.Value);
 
     private static ScheduleDetailDto ToDetailDto(ScheduleWithExecutionState detail)
     {
@@ -200,7 +204,8 @@ public sealed record ScheduleDto(
     bool Enabled,
     int TargetJobType,
     string? TargetJobConfiguration,
-    int Version);
+    int Version,
+    string? IntegrationId = null);
 
 /// <summary>
 /// Schedule with execution state for operator visibility. Epic 28, Epic 36 (claim visibility).
@@ -231,7 +236,8 @@ public sealed record CreateScheduleRequestBody(
     int? TargetJobType = 0,
     string? TargetJobConfiguration = null,
     string? ExecutionPolicyRef = null,
-    string? RuntimePlaneId = "local");
+    string? RuntimePlaneId = "local",
+    string? IntegrationId = null);
 
 /// <summary>
 /// Epic 38: Target kind and configuration are immutable after creation.

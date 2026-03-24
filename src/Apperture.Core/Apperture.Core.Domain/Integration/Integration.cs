@@ -4,8 +4,7 @@ using Apperture.Shared.Kernel;
 namespace Apperture.Core.Domain.Integration;
 
 /// <summary>
-/// Operator-facing configured instance of a module. Will eventually own settings, bindings, schedules, and runtime deployment.
-/// Epic 49.
+/// Operator-facing configured instance of a module. Owns settings, bindings, schedules. Epic 49, Epic 50.
 /// </summary>
 public sealed record Integration(
     IntegrationId Id,
@@ -13,6 +12,7 @@ public sealed record Integration(
     string ModuleId,
     string? ScopeKey,
     IntegrationState State,
+    IReadOnlyDictionary<string, string>? Settings,
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt) : IGovernedResource
 {

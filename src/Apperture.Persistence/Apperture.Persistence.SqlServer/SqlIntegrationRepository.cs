@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Governance;
 using Apperture.Core.Domain.Integration;
@@ -53,6 +54,9 @@ public sealed class SqlIntegrationRepository : IIntegrationRepository
         entity.ModuleId = integration.ModuleId;
         entity.ScopeKey = integration.ScopeKey;
         entity.State = (int)integration.State;
+        entity.SettingsJson = integration.Settings is { Count: > 0 }
+            ? JsonSerializer.Serialize(integration.Settings)
+            : null;
         entity.UpdatedAt = integration.UpdatedAt;
 
         await _db.SaveChangesAsync(cancellationToken);
@@ -64,6 +68,7 @@ public sealed class SqlIntegrationRepository : IIntegrationRepository
         e.ModuleId,
         e.ScopeKey,
         (IntegrationState)e.State,
+        DeserializeSettings(e.SettingsJson),
         e.CreatedAt,
         e.UpdatedAt);
 
@@ -74,9 +79,20 @@ public sealed class SqlIntegrationRepository : IIntegrationRepository
         ModuleId = i.ModuleId,
         ScopeKey = i.ScopeKey,
         State = (int)i.State,
+        SettingsJson = i.Settings is { Count: > 0 }
+            ? JsonSerializer.Serialize(i.Settings)
+            : null,
         CreatedAt = i.CreatedAt,
         UpdatedAt = i.UpdatedAt
     };
+
+    private static IReadOnlyDictionary<string, string>? DeserializeSettings(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+            return null;
+        var dict = JsonSerializer.Deserialize<Dictionary<string, string>>(json);
+        return dict is { Count: > 0 } ? dict : null;
+    }
 
     private static bool IsScopeContained(string inner, string outer)
     {

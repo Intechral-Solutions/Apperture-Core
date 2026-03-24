@@ -95,10 +95,20 @@
                         @foreach (var u in _connection.UsedIn)
                         {
                             <li>
-                                <a href="@("/modules/" + Uri.EscapeDataString(u.ModuleId))"
-                                   class="underline text-sm hover:text-heading">
-                                    Module @u.ModuleId, Slot @u.SlotName (@u.ContractType)
-                                </a>
+                                @if (!string.IsNullOrEmpty(u.IntegrationId))
+                                {
+                                    <a href="@("/integrations/" + Uri.EscapeDataString(u.IntegrationId))"
+                                       class="underline text-sm hover:text-heading">
+                                        @(u.IntegrationDisplayName ?? "Integration") (@u.ModuleId, Slot @u.SlotName)
+                                    </a>
+                                }
+                                else
+                                {
+                                    <a href="@("/modules/" + Uri.EscapeDataString(u.ModuleId))"
+                                       class="underline text-sm hover:text-heading">
+                                        Module @u.ModuleId, Slot @u.SlotName (@u.ContractType)
+                                    </a>
+                                }
                             </li>
                         }
                     </ul>

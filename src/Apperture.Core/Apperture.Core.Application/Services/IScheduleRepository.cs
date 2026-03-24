@@ -1,15 +1,21 @@
 using Apperture.Core.Domain.Environment;
+using Apperture.Core.Domain.Integration;
 using Apperture.Core.Domain.Scheduling;
 
 namespace Apperture.Core.Application.Services;
 
 /// <summary>
-/// Schedule persistence for definitions, assignments, runs, and state. Epic 28.
+/// Schedule persistence for definitions, assignments, runs, and state. Epic 28, Epic 50.
 /// </summary>
 public interface IScheduleRepository
 {
     ValueTask<ScheduleDefinition?> GetDefinitionAsync(ScheduleId id, CancellationToken cancellationToken = default);
     ValueTask<IReadOnlyList<ScheduleDefinition>> ListDefinitionsAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Gets schedules owned by the given Integration. Epic 50.
+    /// </summary>
+    ValueTask<IReadOnlyList<ScheduleDefinition>> GetByIntegrationIdAsync(IntegrationId integrationId, CancellationToken cancellationToken = default);
     ValueTask AddDefinitionAsync(ScheduleDefinition definition, CancellationToken cancellationToken = default);
     ValueTask UpdateDefinitionAsync(ScheduleDefinition definition, CancellationToken cancellationToken = default);
 

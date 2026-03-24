@@ -1,6 +1,7 @@
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Connector;
 using Apperture.Core.Domain.Governance;
+using Apperture.Core.Domain.Integration;
 using Apperture.Shared.Kernel;
 
 namespace Apperture.ControlPlane.Security;
@@ -15,19 +16,22 @@ public sealed class BindingService : IBindingService
     private readonly IBindingRepository _bindingRepository;
     private readonly IConnectionRepository _connectionRepository;
     private readonly IBindingEligibilityService _eligibilityService;
+    private readonly IIntegrationRepository _integrationRepository;
 
     public BindingService(
         IPrincipalContext principalContext,
         IAuthorizationService auth,
         IBindingRepository bindingRepository,
         IConnectionRepository connectionRepository,
-        IBindingEligibilityService eligibilityService)
+        IBindingEligibilityService eligibilityService,
+        IIntegrationRepository integrationRepository)
     {
         _principalContext = principalContext;
         _auth = auth;
         _bindingRepository = bindingRepository;
         _connectionRepository = connectionRepository;
         _eligibilityService = eligibilityService;
+        _integrationRepository = integrationRepository;
     }
 
     /// <inheritdoc />
@@ -36,11 +40,34 @@ public sealed class BindingService : IBindingService
         string slotName,
         string contractType,
         ConnectionId connectionId,
+        IntegrationId? integrationId = null,
         CancellationToken cancellationToken = default)
     {
         var actor = await _principalContext.GetCurrentActorAsync(cancellationToken);
         if (actor is null)
             throw new UnauthorizedAccessException("No authenticated actor.");
+
+        if (integrationId is { } integrationIdVal)
+        {
+            var integration = await _integrationRepository.GetByIdAsync(integrationIdVal, cancellationToken)
+                ?? throw new InvalidOperationException($"Integration {integrationIdVal.Value} not found.");
+            if (integration.ModuleId != moduleId)
+                throw new InvalidOperationException($"Integration module {integration.ModuleId} does not match binding module {moduleId}.");
+
+            var identity = integration.GetIdentity();
+            var allowedIntegration = await _auth.EvaluateAsync(
+                actor,
+                new PermissionDescriptor(ActionConstants.IntegrationUpdate, GovernedResourceDescriptor.FromIdentity(identity)),
+                GovernedResourceDescriptor.FromIdentity(identity),
+                identity,
+                cancellationToken);
+            if (!allowedIntegration)
+                throw new UnauthorizedAccessException("Not authorized to manage bindings for this integration.");
+
+            var existing = await _bindingRepository.GetBySlotAndIntegrationAsync(moduleId, slotName, integrationIdVal, cancellationToken);
+            if (existing is not null && existing.State == BindingState.Active)
+                throw new InvalidOperationException($"Slot {slotName} is already bound for this integration.");
+        }
 
         var slotScopeKey = ScopeKeyConstants.Slot(moduleId, slotName);
         var allowed = await _auth.EvaluateAsync(
@@ -56,8 +83,8 @@ public sealed class BindingService : IBindingService
         if (!eligible.Any(c => c.Id.Value == connectionId.Value))
             throw new InvalidOperationException($"Connection {connectionId.Value} is not eligible for binding to slot {moduleId}:{slotName}.");
 
-        var id = new BindingId(Guid.NewGuid().ToString("N")[..24]);
-        var binding = new Binding(id, moduleId, slotName, contractType, connectionId, null, BindingState.Active);
+        var bindingId = new BindingId(Guid.NewGuid().ToString("N")[..24]);
+        var binding = new Binding(bindingId, integrationId, moduleId, slotName, contractType, connectionId, null, BindingState.Active);
 
         await _bindingRepository.AddAsync(binding, cancellationToken);
         return binding;
@@ -86,7 +113,7 @@ public sealed class BindingService : IBindingService
             throw new UnauthorizedAccessException("Not authorized to assign bindings to this slot.");
 
         var id = new BindingId(Guid.NewGuid().ToString("N")[..24]);
-        var binding = new Binding(id, moduleId, slotName, contractType, null, capabilityId, BindingState.Active);
+        var binding = new Binding(id, null, moduleId, slotName, contractType, null, capabilityId, BindingState.Active);
 
         await _bindingRepository.AddAsync(binding, cancellationToken);
         return binding;

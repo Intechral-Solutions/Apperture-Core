@@ -1,20 +1,24 @@
 using Apperture.Core.Domain.Connector;
+using Apperture.Core.Domain.Integration;
 
 namespace Apperture.Core.Application.Services;
 
 /// <summary>
 /// Manages bindings: create/delete slot-to-connection delegations; resolve slot to bound connection/capability.
+/// Epic 50: IntegrationId for Integration-owned bindings.
 /// </summary>
 public interface IBindingService
 {
     /// <summary>
     /// Creates a binding from a slot to a connection.
+    /// When integrationId is provided, the binding is owned by that Integration (moduleId from Integration).
     /// </summary>
     ValueTask<Binding> CreateBindingAsync(
         string moduleId,
         string slotName,
         string contractType,
         ConnectionId connectionId,
+        IntegrationId? integrationId = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>

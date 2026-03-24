@@ -13,13 +13,16 @@ public sealed class ConnectionsController : ControllerBase
 {
     private readonly IConnectionManagementService _connectionService;
     private readonly IBindingRepository _bindingRepository;
+    private readonly IIntegrationRepository _integrationRepository;
 
     public ConnectionsController(
         IConnectionManagementService connectionService,
-        IBindingRepository bindingRepository)
+        IBindingRepository bindingRepository,
+        IIntegrationRepository integrationRepository)
     {
         _connectionService = connectionService;
         _bindingRepository = bindingRepository;
+        _integrationRepository = integrationRepository;
     }
 
     /// <summary>
@@ -35,7 +38,7 @@ public sealed class ConnectionsController : ControllerBase
             foreach (var c in connections)
             {
                 var bindings = await _bindingRepository.GetByConnectionIdAsync(c.Id, cancellationToken);
-                result.Add(ToDto(c, bindings));
+                result.Add(await ToDtoAsync(c, bindings, cancellationToken));
             }
             return Ok(result);
         }
@@ -57,7 +60,7 @@ public sealed class ConnectionsController : ControllerBase
             if (connection is null)
                 return NotFound();
             var bindings = await _bindingRepository.GetByConnectionIdAsync(connection.Id, cancellationToken);
-            return Ok(ToDto(connection, bindings));
+            return Ok(await ToDtoAsync(connection, bindings, cancellationToken));
         }
         catch (UnauthorizedAccessException)
         {
@@ -82,7 +85,7 @@ public sealed class ConnectionsController : ControllerBase
                 body.OwnerId);
             var connection = await _connectionService.CreateConnectionAsync(request, cancellationToken);
             var bindings = await _bindingRepository.GetByConnectionIdAsync(connection.Id, cancellationToken);
-            return CreatedAtAction(nameof(Get), new { id = connection.Id.Value }, ToDto(connection, bindings));
+            return CreatedAtAction(nameof(Get), new { id = connection.Id.Value }, await ToDtoAsync(connection, bindings, cancellationToken));
         }
         catch (UnauthorizedAccessException)
         {
@@ -105,7 +108,7 @@ public sealed class ConnectionsController : ControllerBase
             var request = new UpdateConnectionRequest(body.Name, body.Config, body.SecretRefs);
             var connection = await _connectionService.UpdateConnectionAsync(new ConnectionId(id), request, cancellationToken);
             var bindings = await _bindingRepository.GetByConnectionIdAsync(connection.Id, cancellationToken);
-            return Ok(ToDto(connection, bindings));
+            return Ok(await ToDtoAsync(connection, bindings, cancellationToken));
         }
         catch (UnauthorizedAccessException)
         {
@@ -138,13 +141,22 @@ public sealed class ConnectionsController : ControllerBase
         }
     }
 
-    private static ConnectionDto ToDto(
+    private async Task<ConnectionDto> ToDtoAsync(
         Core.Domain.Connector.Connection c,
-        IReadOnlyList<Binding> bindings)
+        IReadOnlyList<Binding> bindings,
+        CancellationToken cancellationToken)
     {
-        var usedIn = bindings
-            .Select(b => new ConnectionUsedInEntry(b.ModuleId, b.SlotName, b.ContractType))
-            .ToList();
+        var usedIn = new List<ConnectionUsedInEntry>();
+        foreach (var b in bindings)
+        {
+            string? integrationDisplayName = null;
+            if (b.IntegrationId is { } integrationId)
+            {
+                var integration = await _integrationRepository.GetByIdAsync(integrationId, cancellationToken);
+                integrationDisplayName = integration?.DisplayName;
+            }
+            usedIn.Add(new ConnectionUsedInEntry(b.ModuleId, b.SlotName, b.ContractType, b.IntegrationId?.Value, integrationDisplayName));
+        }
         return new ConnectionDto(
             c.Id.Value,
             c.ConnectorDefinitionId.Value,
@@ -159,9 +171,14 @@ public sealed class ConnectionsController : ControllerBase
 }
 
 /// <summary>
-/// Represents where a connection is consumed (e.g. module slot binding). Epic 48.
+/// Represents where a connection is consumed (e.g. module slot binding). Epic 48, Epic 50.
 /// </summary>
-public sealed record ConnectionUsedInEntry(string ModuleId, string SlotName, string ContractType);
+public sealed record ConnectionUsedInEntry(
+    string ModuleId,
+    string SlotName,
+    string ContractType,
+    string? IntegrationId = null,
+    string? IntegrationDisplayName = null);
 
 public sealed record ConnectionDto(
     string Id,
