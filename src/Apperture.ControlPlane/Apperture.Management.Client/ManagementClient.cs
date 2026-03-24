@@ -240,6 +240,20 @@ public sealed class ManagementClient : IManagementClient
             cancellationToken).ConfigureAwait(false);
     }
 
+    public async Task<IReadOnlyList<ClientDefinitionDto>> GetClientDefinitionsAsync(CancellationToken cancellationToken = default)
+    {
+        var list = await _http.GetFromJsonAsync<ClientDefinitionDto[]>("clients", ApiJsonReadOptions, cancellationToken).ConfigureAwait(false);
+        return list ?? Array.Empty<ClientDefinitionDto>();
+    }
+
+    public async Task<ClientDefinitionDto?> GetClientDefinitionAsync(string id, CancellationToken cancellationToken = default)
+    {
+        return await _http.GetFromJsonAsync<ClientDefinitionDto>(
+            $"clients/{Uri.EscapeDataString(id)}",
+            ApiJsonReadOptions,
+            cancellationToken).ConfigureAwait(false);
+    }
+
     public async Task<IReadOnlyList<IntegrationDto>> GetIntegrationsAsync(CancellationToken cancellationToken = default)
     {
         var list = await _http.GetFromJsonAsync<IntegrationDto[]>("integrations", ApiJsonReadOptions, cancellationToken).ConfigureAwait(false);

@@ -58,4 +58,29 @@ public sealed class Epic48ConnectionsSurfaceTests
             false, false, false, false, false, false, false, false, false, false, false, true);
         dto.CanViewConnections.Should().BeTrue();
     }
+
+    [Fact]
+    public void ClientDefinitionDto_Shape_Epic51()
+    {
+        var operations = new[]
+        {
+            new ClientOperationMetadataDto("ExecuteCommand", "Execute API Command", null, true, true, null)
+        };
+        var dto = new ClientDefinitionDto(
+            "Apperture.Platform.CampusNexus.Client",
+            "Campus Nexus API Client",
+            "Higher-level client",
+            "Apperture.Platform.CampusNexus",
+            null,
+            false,
+            operations);
+        dto.Id.Should().Be("Apperture.Platform.CampusNexus.Client");
+        dto.DisplayName.Should().Be("Campus Nexus API Client");
+        dto.RequiredConnectorDefinitionId.Should().Be("Apperture.Platform.CampusNexus");
+        dto.ModuleId.Should().BeNull();
+        dto.UsesGateway.Should().BeFalse();
+        dto.Operations.Should().HaveCount(1);
+        dto.Operations[0].OperationKey.Should().Be("ExecuteCommand");
+        dto.Operations[0].DisplayName.Should().Be("Execute API Command");
+    }
 }

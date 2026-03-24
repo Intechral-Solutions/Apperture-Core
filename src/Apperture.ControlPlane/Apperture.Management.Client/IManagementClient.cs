@@ -89,6 +89,16 @@ public interface IManagementClient
     Task<ConnectionDto?> GetConnectionAsync(string id, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Lists available client definitions. Epic 51.
+    /// </summary>
+    Task<IReadOnlyList<ClientDefinitionDto>> GetClientDefinitionsAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Gets a client definition by id. Epic 51.
+    /// </summary>
+    Task<ClientDefinitionDto?> GetClientDefinitionAsync(string id, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Lists integrations. Epic 49.
     /// </summary>
     Task<IReadOnlyList<IntegrationDto>> GetIntegrationsAsync(CancellationToken cancellationToken = default);
@@ -405,6 +415,25 @@ public sealed record ConnectionUsedInEntry(
     string ContractType,
     string? IntegrationId = null,
     string? IntegrationDisplayName = null);
+
+/// <summary>Client definition. Epic 51.</summary>
+public sealed record ClientDefinitionDto(
+    string Id,
+    string DisplayName,
+    string? Description,
+    string RequiredConnectorDefinitionId,
+    string? ModuleId,
+    bool UsesGateway,
+    IReadOnlyList<ClientOperationMetadataDto> Operations);
+
+/// <summary>Client operation metadata. Epic 51.</summary>
+public sealed record ClientOperationMetadataDto(
+    string OperationKey,
+    string DisplayName,
+    string? Description,
+    bool IsOperatorFacing,
+    bool MayRequireUserInputs,
+    string? ParameterHint);
 
 /// <summary>Connection resource with Used In projection. Epic 48.</summary>
 public sealed record ConnectionDto(

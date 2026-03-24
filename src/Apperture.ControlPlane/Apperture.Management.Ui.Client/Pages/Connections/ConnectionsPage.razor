@@ -7,7 +7,7 @@
 @inject NavigationManager Nav
 
 <div class="p-4">
-    <PageHeader Title="Connections" Subtitle="Connections and clients. Connections tab shows connection resources; Clients tab is deferred.">
+    <PageHeader Title="Connections" Subtitle="Connections and clients. Connections tab shows connection resources; Clients tab lists available client definitions.">
         <Toolbar>
             @if (_capabilities?.CanViewConnections == true)
             {
@@ -116,7 +116,7 @@
         }
         else
         {
-            <DeferredClientsPlaceholder />
+            <ClientsListContent />
         }
     }
 </div>
