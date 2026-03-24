@@ -1,0 +1,121 @@
+@page "/integrations"
+@using Apperture.Management.Client
+@using Apperture.Management.Ui.Client.Services
+@using Apperture.Management.Ui.Client.Organisms
+@inject IManagementClient Client
+@inject IOperatorCapabilitiesService Capabilities
+@inject NavigationManager Nav
+
+<div class="p-4">
+    <PageHeader Title="Integrations" Subtitle="Configured instances of modules. Each integration references a module definition and will eventually own settings, connection bindings, and schedules.">
+        <Toolbar>
+            @if (_capabilities?.CanManageIntegrations == true)
+            {
+                <a href="/integrations/new" class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface">Create Integration</a>
+            }
+            <button type="button"
+                    class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface disabled:opacity-50"
+                    disabled="@_loading"
+                    @onclick="LoadAsync">
+                Refresh
+            </button>
+        </Toolbar>
+    </PageHeader>
+
+    @if (!_capabilitiesLoaded)
+    {
+        <PageMessage Kind="PageMessageKind.Loading" Message="Loading…" />
+    }
+    else if (_capabilities?.CanViewIntegrations != true)
+    {
+        <PageMessage Kind="PageMessageKind.Forbidden"
+                     Title="Not authorized"
+                     Message="You do not have permission to view integrations." />
+    }
+    else if (!string.IsNullOrEmpty(_error))
+    {
+        <PageMessage Kind="PageMessageKind.Error" Title="Error" Message="@_error" />
+    }
+    else if (_integrations is null)
+    {
+        <PageMessage Kind="PageMessageKind.Loading" Message="Loading integrations…" />
+    }
+    else if (_integrations.Count == 0)
+    {
+        <PageMessage Kind="PageMessageKind.Empty" Message="No integrations found." />
+    }
+    else
+    {
+        <div class="mt-4 overflow-x-auto rounded border border-default bg-surface">
+            <table class="min-w-full text-left text-sm text-body">
+                <thead class="border-b border-default text-xs text-muted">
+                    <tr>
+                        <th class="px-3 py-2">Display Name</th>
+                        <th class="px-3 py-2">Module definition</th>
+                        <th class="px-3 py-2">State</th>
+                        <th class="px-3 py-2">Created</th>
+                        <th class="px-3 py-2"></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var i in _integrations)
+                    {
+                        <tr class="border-b border-default hover:bg-surface-muted cursor-pointer"
+                            @onclick="@(() => Nav.NavigateTo("/integrations/" + Uri.EscapeDataString(i.Id)))">
+                            <td class="px-3 py-2 font-medium">@i.DisplayName</td>
+                            <td class="px-3 py-2 font-mono text-xs">@i.ModuleId</td>
+                            <td class="px-3 py-2">@i.State</td>
+                            <td class="px-3 py-2 text-muted">@i.CreatedAt.ToString("yyyy-MM-dd")</td>
+                            <td class="px-3 py-2">
+                                <a href="@("/integrations/" + Uri.EscapeDataString(i.Id))" class="underline text-sm" @onclick:stopPropagation>Open</a>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
+
+@code {
+    private IReadOnlyList<IntegrationDto>? _integrations;
+    private OperatorCapabilitiesDto? _capabilities;
+    private bool _capabilitiesLoaded;
+    private bool _loading;
+    private string? _error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _capabilities = await Capabilities.GetCapabilitiesAsync();
+        }
+        catch
+        {
+            _capabilities = new OperatorCapabilitiesDto(false, false, false, false, false, false, false, false, false, false, false, false, false, false);
+        }
+        _capabilitiesLoaded = true;
+
+        if (_capabilities?.CanViewIntegrations == true)
+            await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        if (_capabilities?.CanViewIntegrations != true) return;
+        _loading = true;
+        _error = null;
+        try
+        {
+            _integrations = await Client.GetIntegrationsAsync();
+        }
+        catch (HttpRequestException ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+}

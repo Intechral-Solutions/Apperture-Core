@@ -1,0 +1,109 @@
+@page "/integrations/new"
+@using Apperture.Management.Client
+@using Apperture.Management.Ui.Client.Services
+@using Apperture.Management.Ui.Client.Organisms
+@inject IManagementClient Client
+@inject IOperatorCapabilitiesService Capabilities
+@inject NavigationManager Nav
+
+<div class="p-4">
+    <PageHeader Title="Create Integration" Subtitle="Module = reusable capability definition. Integration = configured instance of a module for a particular purpose.">
+        <Toolbar>
+            <a href="/integrations" class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface">Back to list</a>
+        </Toolbar>
+    </PageHeader>
+
+    @if (!_capabilitiesLoaded)
+    {
+        <PageMessage Kind="PageMessageKind.Loading" Message="Loading…" />
+    }
+    else if (_capabilities?.CanManageIntegrations != true)
+    {
+        <PageMessage Kind="PageMessageKind.Forbidden"
+                     Title="Not authorized"
+                     Message="You do not have permission to create integrations." />
+    }
+    else if (!string.IsNullOrEmpty(_error))
+    {
+        <PageMessage Kind="PageMessageKind.Error" Title="Error" Message="@_error" />
+    }
+    else
+    {
+        <div class="mt-4 rounded border border-default bg-surface p-4">
+            <form class="grid gap-4 md:grid-cols-2" @onsubmit="SubmitAsync" @onsubmit:preventDefault>
+                <div>
+                    <label class="block text-xs text-muted">Display Name (required)</label>
+                    <input class="mt-1 w-full rounded border border-default bg-surface px-2 py-2 text-sm"
+                           @bind="_displayName"
+                           required />
+                </div>
+                <div>
+                    <label class="block text-xs text-muted">Module definition (required)</label>
+                    <input class="mt-1 w-full rounded border border-default bg-surface px-2 py-2 text-sm font-mono"
+                           @bind="_moduleId"
+                           placeholder="e.g. Sample.HelloWorld"
+                           required />
+                    <div class="mt-0.5 text-xs text-muted">Reference to the module capability (e.g. Sample.HelloWorld)</div>
+                </div>
+                <div class="md:col-span-2">
+                    <label class="block text-xs text-muted">Scope key (optional)</label>
+                    <input class="mt-1 w-full rounded border border-default bg-surface px-2 py-2 text-sm font-mono"
+                           @bind="_scopeKey"
+                           placeholder="instance (default if empty)" />
+                    <div class="mt-0.5 text-xs text-muted">Environment/context; leave empty for instance scope.</div>
+                </div>
+                <div class="md:col-span-2">
+                    <button type="submit"
+                            class="rounded bg-body px-3 py-2 text-sm text-surface hover:bg-body/90 disabled:opacity-50"
+                            disabled="@_submitting">
+                        @(_submitting ? "Creating…" : "Create Integration")
+                    </button>
+                </div>
+            </form>
+        </div>
+    }
+</div>
+
+@code {
+    private string _displayName = "";
+    private string _moduleId = "";
+    private string? _scopeKey;
+    private OperatorCapabilitiesDto? _capabilities;
+    private bool _capabilitiesLoaded;
+    private bool _submitting;
+    private string? _error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _capabilities = await Capabilities.GetCapabilitiesAsync();
+        }
+        catch
+        {
+            _capabilities = new OperatorCapabilitiesDto(false, false, false, false, false, false, false, false, false, false, false, false, false, false);
+        }
+        _capabilitiesLoaded = true;
+    }
+
+    private async Task SubmitAsync()
+    {
+        if (_capabilities?.CanManageIntegrations != true || string.IsNullOrWhiteSpace(_displayName) || string.IsNullOrWhiteSpace(_moduleId)) return;
+        _submitting = true;
+        _error = null;
+        try
+        {
+            var request = new CreateIntegrationRequest(_displayName.Trim(), _moduleId.Trim(), string.IsNullOrWhiteSpace(_scopeKey) ? null : _scopeKey.Trim());
+            var integration = await Client.CreateIntegrationAsync(request);
+            Nav.NavigateTo("/integrations/" + Uri.EscapeDataString(integration.Id));
+        }
+        catch (HttpRequestException ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _submitting = false;
+        }
+    }
+}

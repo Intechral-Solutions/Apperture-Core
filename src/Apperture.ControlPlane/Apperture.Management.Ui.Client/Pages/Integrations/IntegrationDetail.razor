@@ -1,0 +1,162 @@
+@page "/integrations/{IntegrationId}"
+@using Apperture.Management.Client
+@using Apperture.Management.Ui.Client.Services
+@using Apperture.Management.Ui.Client.Organisms
+@inject IManagementClient Client
+@inject IOperatorCapabilitiesService Capabilities
+@inject NavigationManager Nav
+@inject IJSRuntime JSRuntime
+
+<div class="p-4">
+    <PageHeader Title="Integration" Subtitle="@IntegrationId">
+        <Toolbar>
+            <a href="/integrations" class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface">Back to list</a>
+            <button type="button"
+                    class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface disabled:opacity-50"
+                    disabled="@_loading"
+                    @onclick="LoadAsync">
+                Refresh
+            </button>
+            @if (_capabilities?.CanManageIntegrations == true && _integration is not null)
+            {
+                <button type="button"
+                        class="rounded bg-destructive px-3 py-2 text-sm text-destructive-fg hover:bg-destructive/90 disabled:opacity-50"
+                        disabled="@_deleting"
+                        @onclick="ConfirmDeleteAsync">
+                    Delete
+                </button>
+            }
+        </Toolbar>
+    </PageHeader>
+
+    @if (!_capabilitiesLoaded)
+    {
+        <PageMessage Kind="PageMessageKind.Loading" Message="Loading…" />
+    }
+    else if (_capabilities?.CanViewIntegrations != true)
+    {
+        <PageMessage Kind="PageMessageKind.Forbidden"
+                     Title="Not authorized"
+                     Message="You do not have permission to view integration details." />
+    }
+    else if (!string.IsNullOrEmpty(_error))
+    {
+        <PageMessage Kind="PageMessageKind.Error" Title="Error" Message="@_error" />
+    }
+    else if (_integration is null)
+    {
+        <PageMessage Kind="PageMessageKind.Loading" Message="Loading integration…" />
+    }
+    else
+    {
+        <div class="mt-4 space-y-4">
+            <div class="rounded border border-default bg-surface p-3">
+                <h2 class="text-sm font-semibold text-heading mb-2">Details</h2>
+                <div class="grid grid-cols-1 gap-2 md:grid-cols-2">
+                    <div>
+                        <div class="text-xs text-muted">Display Name</div>
+                        <div class="text-sm text-body">@_integration.DisplayName</div>
+                    </div>
+                    <div>
+                        <div class="text-xs text-muted">Module definition</div>
+                        <div class="text-sm font-mono text-body">@_integration.ModuleId</div>
+                    </div>
+                    <div>
+                        <div class="text-xs text-muted">Scope key</div>
+                        <div class="text-sm text-body">@(_integration.ScopeKey ?? "—")</div>
+                    </div>
+                    <div>
+                        <div class="text-xs text-muted">State</div>
+                        <div class="text-sm text-body">@_integration.State</div>
+                    </div>
+                    <div>
+                        <div class="text-xs text-muted">Created</div>
+                        <div class="text-sm text-body">@_integration.CreatedAt.ToString("yyyy-MM-dd HH:mm")</div>
+                    </div>
+                    <div>
+                        <div class="text-xs text-muted">Updated</div>
+                        <div class="text-sm text-body">@_integration.UpdatedAt.ToString("yyyy-MM-dd HH:mm")</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="rounded border border-default bg-surface p-3">
+                <h2 class="text-sm font-semibold text-heading mb-2">What this integration will own (not yet implemented)</h2>
+                <ul class="list-disc pl-4 text-sm text-muted space-y-1">
+                    <li>Instance settings</li>
+                    <li>Connection bindings</li>
+                    <li>Schedules</li>
+                    <li>Runtime deployment</li>
+                </ul>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public string IntegrationId { get; set; } = "";
+
+    private IntegrationDto? _integration;
+    private OperatorCapabilitiesDto? _capabilities;
+    private bool _capabilitiesLoaded;
+    private bool _loading;
+    private bool _deleting;
+    private string? _error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _capabilities = await Capabilities.GetCapabilitiesAsync();
+        }
+        catch
+        {
+            _capabilities = new OperatorCapabilitiesDto(false, false, false, false, false, false, false, false, false, false, false, false, false, false);
+        }
+        _capabilitiesLoaded = true;
+
+        if (_capabilities?.CanViewIntegrations == true)
+            await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        if (_capabilities?.CanViewIntegrations != true || string.IsNullOrEmpty(IntegrationId)) return;
+        _loading = true;
+        _error = null;
+        try
+        {
+            _integration = await Client.GetIntegrationAsync(IntegrationId);
+        }
+        catch (HttpRequestException ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task ConfirmDeleteAsync()
+    {
+        if (_integration is null || _capabilities?.CanManageIntegrations != true) return;
+        if (!await JSRuntime.InvokeAsync<bool>("confirm", $"Delete integration \"{_integration.DisplayName}\"? This cannot be undone."))
+            return;
+        _deleting = true;
+        _error = null;
+        try
+        {
+            await Client.DeleteIntegrationAsync(IntegrationId);
+            Nav.NavigateTo("/integrations");
+        }
+        catch (HttpRequestException ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _deleting = false;
+        }
+    }
+}

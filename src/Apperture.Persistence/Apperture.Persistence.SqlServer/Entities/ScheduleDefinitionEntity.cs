@@ -6,6 +6,7 @@ namespace Apperture.Persistence.SqlServer;
 public sealed class ScheduleDefinitionEntity
 {
     public string Id { get; set; } = "";
+    public string? IntegrationId { get; set; }
     public string Name { get; set; } = "";
     public string RecurrenceExpression { get; set; } = "";
     public string TimeZone { get; set; } = "";

@@ -44,6 +44,17 @@ public static class PlatformAdminRolePermissionRepair
     ];
 
     /// <summary>
+    /// Integration management. Epic 49.
+    /// </summary>
+    public static readonly PermissionDescriptor[] RequiredIntegrationPermissions =
+    [
+        new(ActionConstants.IntegrationCreate, new ResourceDescriptor(ResourceTypeConstants.Integration, ScopeKeyConstants.Instance)),
+        new(ActionConstants.IntegrationRead, new ResourceDescriptor(ResourceTypeConstants.Integration, ScopeKeyConstants.Instance)),
+        new(ActionConstants.IntegrationUpdate, new ResourceDescriptor(ResourceTypeConstants.Integration, ScopeKeyConstants.Instance)),
+        new(ActionConstants.IntegrationDelete, new ResourceDescriptor(ResourceTypeConstants.Integration, ScopeKeyConstants.Instance))
+    ];
+
+    /// <summary>
     /// Operator console surfaces (menus, modules, workflows, schedules, recovery, audit, runtime health).
     /// </summary>
     public static readonly PermissionDescriptor[] RequiredOperatorUiPermissions =
@@ -69,6 +80,7 @@ public static class PlatformAdminRolePermissionRepair
         var step = EnsureSet(deduped, RequiredAuthAdminPermissions);
         step = EnsureModuleScopedPermissions(step, registry);
         step = EnsureSet(step, RequiredOperatorUiPermissions);
+        step = EnsureSet(step, RequiredIntegrationPermissions);
         step = EnsureSet(step, RequiredGovernanceSurfacePermissions);
         step = EnsureSet(step, RequiredInstanceAuthConfigurationPermissions);
         return step;

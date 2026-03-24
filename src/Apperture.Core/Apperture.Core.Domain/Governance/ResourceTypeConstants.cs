@@ -33,6 +33,9 @@ public static class ResourceTypeConstants
     public const string ExternalInstance = "ExternalInstance";
     public const string GrantedCapability = "GrantedCapability";
 
+    /// <summary>Integration — configured instance of a module (Epic 49).</summary>
+    public const string Integration = "Integration";
+
     // Connector family
     public const string ConnectorDefinition = "ConnectorDefinition";
     public const string Connection = "Connection";

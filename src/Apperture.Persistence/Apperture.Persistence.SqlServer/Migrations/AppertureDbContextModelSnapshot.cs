@@ -92,6 +92,10 @@ namespace Apperture.Persistence.SqlServer.Migrations
                         .HasMaxLength(64)
                         .HasColumnType("nvarchar(64)");
 
+                    b.Property<string>("IntegrationId")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
                     b.Property<string>("CapabilityId")
                         .HasMaxLength(128)
                         .HasColumnType("nvarchar(128)");
@@ -121,6 +125,45 @@ namespace Apperture.Persistence.SqlServer.Migrations
                     b.HasKey("Id");
 
                     b.ToTable("Bindings", (string)null);
+                });
+
+            modelBuilder.Entity("Apperture.Persistence.SqlServer.IntegrationEntity", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("DisplayName")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("ModuleId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<string>("ScopeKey")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<int>("State")
+                        .HasColumnType("int");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("Integrations", (string)null);
                 });
 
             modelBuilder.Entity("Apperture.Persistence.SqlServer.ConnectionEntity", b =>
@@ -972,6 +1015,10 @@ namespace Apperture.Persistence.SqlServer.Migrations
             modelBuilder.Entity("Apperture.Persistence.SqlServer.ScheduleDefinitionEntity", b =>
                 {
                     b.Property<string>("Id")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("IntegrationId")
                         .HasMaxLength(64)
                         .HasColumnType("nvarchar(64)");
 

@@ -240,6 +240,42 @@ public sealed class ManagementClient : IManagementClient
             cancellationToken).ConfigureAwait(false);
     }
 
+    public async Task<IReadOnlyList<IntegrationDto>> GetIntegrationsAsync(CancellationToken cancellationToken = default)
+    {
+        var list = await _http.GetFromJsonAsync<IntegrationDto[]>("integrations", ApiJsonReadOptions, cancellationToken).ConfigureAwait(false);
+        return list ?? Array.Empty<IntegrationDto>();
+    }
+
+    public async Task<IntegrationDto?> GetIntegrationAsync(string id, CancellationToken cancellationToken = default)
+    {
+        return await _http.GetFromJsonAsync<IntegrationDto>(
+            $"integrations/{Uri.EscapeDataString(id)}",
+            ApiJsonReadOptions,
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<IntegrationDto> CreateIntegrationAsync(CreateIntegrationRequest request, CancellationToken cancellationToken = default)
+    {
+        var response = await _http.PostAsJsonAsync("integrations", request, cancellationToken).ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+        var result = await response.Content.ReadFromJsonAsync<IntegrationDto>(ApiJsonReadOptions, cancellationToken).ConfigureAwait(false);
+        return result ?? throw new InvalidOperationException("Unexpected null response from CreateIntegration.");
+    }
+
+    public async Task<IntegrationDto> UpdateIntegrationAsync(string id, UpdateIntegrationRequest request, CancellationToken cancellationToken = default)
+    {
+        var response = await _http.PatchAsJsonAsync($"integrations/{Uri.EscapeDataString(id)}", request, cancellationToken).ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+        var result = await response.Content.ReadFromJsonAsync<IntegrationDto>(ApiJsonReadOptions, cancellationToken).ConfigureAwait(false);
+        return result ?? throw new InvalidOperationException("Unexpected null response from UpdateIntegration.");
+    }
+
+    public async Task DeleteIntegrationAsync(string id, CancellationToken cancellationToken = default)
+    {
+        var response = await _http.DeleteAsync($"integrations/{Uri.EscapeDataString(id)}", cancellationToken).ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+    }
+
     public async Task<IReadOnlyList<ScheduleDto>> GetSchedulesAsync(CancellationToken cancellationToken = default)
     {
         var list = await _http.GetFromJsonAsync<ScheduleDto[]>("schedules", cancellationToken).ConfigureAwait(false);

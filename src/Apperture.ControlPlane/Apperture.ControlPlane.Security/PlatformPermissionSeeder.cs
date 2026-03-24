@@ -52,6 +52,12 @@ public static class PlatformPermissionSeeder
 
     private static void SeedCore(IResourceDescriptorRegistry registry)
     {
+        // Integration (Epic 49)
+        Register(registry, ActionConstants.IntegrationCreate, ResourceTypeConstants.Integration, ScopeKeyConstants.Instance, ResourceFamily.Core);
+        Register(registry, ActionConstants.IntegrationRead, ResourceTypeConstants.Integration, ScopeKeyConstants.Instance, ResourceFamily.Core);
+        Register(registry, ActionConstants.IntegrationUpdate, ResourceTypeConstants.Integration, ScopeKeyConstants.Instance, ResourceFamily.Core);
+        Register(registry, ActionConstants.IntegrationDelete, ResourceTypeConstants.Integration, ScopeKeyConstants.Instance, ResourceFamily.Core);
+
         // Connector family
         Register(registry, ActionConstants.ConnectionCreate, ResourceTypeConstants.Connection, ScopeKeyConstants.Instance, ResourceFamily.Connector);
         Register(registry, ActionConstants.ConnectionRead, ResourceTypeConstants.Connection, ScopeKeyConstants.Instance, ResourceFamily.Connector);

@@ -7,6 +7,7 @@ namespace Apperture.ControlPlane.Security.Models;
 /// Epic 43: CanManageAuthUiPolicy (auth.ui_policy.manage on InstanceConfiguration).
 /// Epic 44: CanViewAuthConfiguration (auth.configuration.read), CanManageEntraTenants (auth.entra.manage).
 /// Epic 48: CanViewConnections (connection.read).
+/// Epic 49: CanViewIntegrations (integration.read), CanManageIntegrations (integration.create or integration.update).
 /// </summary>
 public sealed record OperatorCapabilitiesDto(
     bool CanManageSchedules,
@@ -20,4 +21,6 @@ public sealed record OperatorCapabilitiesDto(
     bool CanManageAuthUiPolicy = false,
     bool CanViewAuthConfiguration = false,
     bool CanManageEntraTenants = false,
-    bool CanViewConnections = false);
+    bool CanViewConnections = false,
+    bool CanViewIntegrations = false,
+    bool CanManageIntegrations = false);

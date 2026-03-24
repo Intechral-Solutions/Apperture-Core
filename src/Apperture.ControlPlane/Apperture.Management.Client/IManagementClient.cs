@@ -89,6 +89,31 @@ public interface IManagementClient
     Task<ConnectionDto?> GetConnectionAsync(string id, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Lists integrations. Epic 49.
+    /// </summary>
+    Task<IReadOnlyList<IntegrationDto>> GetIntegrationsAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Gets an integration by id. Epic 49.
+    /// </summary>
+    Task<IntegrationDto?> GetIntegrationAsync(string id, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Creates an integration. Epic 49.
+    /// </summary>
+    Task<IntegrationDto> CreateIntegrationAsync(CreateIntegrationRequest request, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Updates an integration. Epic 49.
+    /// </summary>
+    Task<IntegrationDto> UpdateIntegrationAsync(string id, UpdateIntegrationRequest request, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Deletes an integration. Epic 49.
+    /// </summary>
+    Task DeleteIntegrationAsync(string id, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Lists schedules. Epic 28/33.
     /// </summary>
     Task<IReadOnlyList<ScheduleDto>> GetSchedulesAsync(CancellationToken cancellationToken = default);
@@ -287,7 +312,30 @@ public sealed record OperatorCapabilitiesDto(
     bool CanManageAuthUiPolicy = false,
     [property: JsonPropertyName("canViewAuthConfiguration")] bool CanViewAuthConfiguration = false,
     [property: JsonPropertyName("canManageEntraTenants")] bool CanManageEntraTenants = false,
-    [property: JsonPropertyName("canViewConnections")] bool CanViewConnections = false);
+    [property: JsonPropertyName("canViewConnections")] bool CanViewConnections = false,
+    [property: JsonPropertyName("canViewIntegrations")] bool CanViewIntegrations = false,
+    [property: JsonPropertyName("canManageIntegrations")] bool CanManageIntegrations = false);
+
+/// <summary>Integration resource. Epic 49.</summary>
+public sealed record IntegrationDto(
+    string Id,
+    string DisplayName,
+    string ModuleId,
+    string? ScopeKey,
+    string State,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset UpdatedAt);
+
+/// <summary>Request to create an integration. Epic 49.</summary>
+public sealed record CreateIntegrationRequest(
+    string DisplayName,
+    string ModuleId,
+    string? ScopeKey = null);
+
+/// <summary>Request to update an integration. Epic 49.</summary>
+public sealed record UpdateIntegrationRequest(
+    string? DisplayName = null,
+    string? State = null);
 
 /// <summary>Where a connection is consumed (e.g. module slot binding). Epic 48.</summary>
 public sealed record ConnectionUsedInEntry(string ModuleId, string SlotName, string ContractType);

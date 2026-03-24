@@ -31,6 +31,7 @@ public class AppertureDbContext : DbContext
     public DbSet<EnrollmentTokenEntity> EnrollmentTokens => Set<EnrollmentTokenEntity>();
     public DbSet<RuntimeIdentityEntity> RuntimeIdentities => Set<RuntimeIdentityEntity>();
     public DbSet<ConnectionEntity> Connections => Set<ConnectionEntity>();
+    public DbSet<IntegrationEntity> Integrations => Set<IntegrationEntity>();
     public DbSet<BindingEntity> Bindings => Set<BindingEntity>();
     public DbSet<ConnectorDefinitionEntity> ConnectorDefinitions => Set<ConnectorDefinitionEntity>();
     public DbSet<UserEntity> Users => Set<UserEntity>();
@@ -338,11 +339,24 @@ public class AppertureDbContext : DbContext
             e.Property(x => x.RowVersion).IsRowVersion();
         });
 
+        modelBuilder.Entity<IntegrationEntity>(e =>
+        {
+            e.ToTable("Integrations");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasMaxLength(64);
+            e.Property(x => x.DisplayName).HasMaxLength(256);
+            e.Property(x => x.ModuleId).HasMaxLength(128);
+            e.Property(x => x.ScopeKey).HasMaxLength(256);
+            e.Property(x => x.State);
+            e.Property<byte[]>("RowVersion").IsRowVersion();
+        });
+
         modelBuilder.Entity<BindingEntity>(e =>
         {
             e.ToTable("Bindings");
             e.HasKey(x => x.Id);
             e.Property(x => x.Id).HasMaxLength(64);
+            e.Property(x => x.IntegrationId).HasMaxLength(64);
             e.Property(x => x.ModuleId).HasMaxLength(128);
             e.Property(x => x.SlotName).HasMaxLength(128);
             e.Property(x => x.ContractType).HasMaxLength(512);
@@ -431,6 +445,7 @@ public class AppertureDbContext : DbContext
             e.ToTable("ScheduleDefinitions");
             e.HasKey(x => x.Id);
             e.Property(x => x.Id).HasMaxLength(64);
+            e.Property(x => x.IntegrationId).HasMaxLength(64);
             e.Property(x => x.Name).HasMaxLength(256);
             e.Property(x => x.RecurrenceExpression).HasMaxLength(256);
             e.Property(x => x.TimeZone).HasMaxLength(128);

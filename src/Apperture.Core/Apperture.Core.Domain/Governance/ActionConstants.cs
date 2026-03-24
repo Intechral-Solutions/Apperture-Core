@@ -6,6 +6,12 @@ namespace Apperture.Core.Domain.Governance;
 /// </summary>
 public static class ActionConstants
 {
+    // Integration (Epic 49)
+    public const string IntegrationCreate = "integration.create";
+    public const string IntegrationRead = "integration.read";
+    public const string IntegrationUpdate = "integration.update";
+    public const string IntegrationDelete = "integration.delete";
+
     // Connection
     public const string ConnectionCreate = "connection.create";
     public const string ConnectionRead = "connection.read";
