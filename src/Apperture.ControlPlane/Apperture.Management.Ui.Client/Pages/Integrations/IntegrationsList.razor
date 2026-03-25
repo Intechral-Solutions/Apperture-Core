@@ -180,29 +180,43 @@
                                 }
                             </td>
                             <td class="px-3 py-2 text-sm" @onclick:stopPropagation="true">
-                                @if (string.Equals(row.OperationalState, "Active", StringComparison.OrdinalIgnoreCase) && row.ExpectedRuns.HasRecurringScheduleExpectation)
+                                @{
+                                    var showExpectedRunsColumn = string.Equals(row.OperationalState, "Active", StringComparison.OrdinalIgnoreCase)
+                                        && (row.ExpectedRuns.HasRecurringScheduleExpectation
+                                            || !string.IsNullOrWhiteSpace(row.ExpectedRuns.OperatorSummaryLine));
+                                }
+                                @if (showExpectedRunsColumn)
                                 {
                                     @if (!string.IsNullOrWhiteSpace(row.ExpectedRuns.OperatorSummaryLine))
                                     {
                                         <div class="@(row.ExpectedRuns.HasUnexpectedSilence ? "text-warning text-xs" : "text-muted text-xs")">@row.ExpectedRuns.OperatorSummaryLine</div>
                                     }
-                                    @if (row.ExpectedRuns.LastExpectedFireUtc is { } lastExpected)
+                                    @if (row.ExpectedRuns.ExpectedRunInGracePeriod
+                                        && row.ExpectedRuns.ExpectedRunGraceAnchorUtc is { } graceAnchor
+                                        && !string.IsNullOrWhiteSpace(row.ExpectedRuns.ExpectedRunGraceReason))
                                     {
-                                        <div class="text-muted text-xs">Last expected fire: @lastExpected.UtcDateTime.ToString("u")</div>
+                                        <div class="text-muted text-xs">Grace anchor: @graceAnchor.UtcDateTime.ToString("u") (@row.ExpectedRuns.ExpectedRunGraceReason)</div>
                                     }
-                                    @if (!string.IsNullOrWhiteSpace(row.ExpectedRuns.LastScheduleOriginAuthorizedRunId))
+                                    @if (row.ExpectedRuns.HasRecurringScheduleExpectation)
                                     {
-                                        <div class="mt-1">
-                                            <a class="text-xs underline"
-                                               href="@("/runs/" + Uri.EscapeDataString(row.ExpectedRuns.LastScheduleOriginAuthorizedRunId!))">Last schedule-fired run</a>
-                                        </div>
-                                    }
-                                    @if (!string.IsNullOrWhiteSpace(row.ExpectedRuns.ReferenceScheduleId))
-                                    {
-                                        <div class="mt-1 flex flex-wrap gap-x-2 gap-y-1">
-                                            <a class="text-xs underline" href="@("/schedules/" + Uri.EscapeDataString(row.ExpectedRuns.ReferenceScheduleId!))">Schedule</a>
-                                            <a class="text-xs underline" href="@($"/integrations/{Uri.EscapeDataString(row.Id)}#schedules")">Integration schedules</a>
-                                        </div>
+                                        @if (row.ExpectedRuns.LastExpectedFireUtc is { } lastExpected)
+                                        {
+                                            <div class="text-muted text-xs">Last expected fire: @lastExpected.UtcDateTime.ToString("u")</div>
+                                        }
+                                        @if (!string.IsNullOrWhiteSpace(row.ExpectedRuns.LastScheduleOriginAuthorizedRunId))
+                                        {
+                                            <div class="mt-1">
+                                                <a class="text-xs underline"
+                                                   href="@("/runs/" + Uri.EscapeDataString(row.ExpectedRuns.LastScheduleOriginAuthorizedRunId!))">Last schedule-fired run</a>
+                                            </div>
+                                        }
+                                        @if (!string.IsNullOrWhiteSpace(row.ExpectedRuns.ReferenceScheduleId))
+                                        {
+                                            <div class="mt-1 flex flex-wrap gap-x-2 gap-y-1">
+                                                <a class="text-xs underline" href="@("/schedules/" + Uri.EscapeDataString(row.ExpectedRuns.ReferenceScheduleId!))">Schedule</a>
+                                                <a class="text-xs underline" href="@($"/integrations/{Uri.EscapeDataString(row.Id)}#schedules")">Integration schedules</a>
+                                            </div>
+                                        }
                                     }
                                 }
                                 else

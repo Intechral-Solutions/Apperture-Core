@@ -6,7 +6,7 @@ using Cronos;
 namespace Apperture.Core.Application.Scheduling;
 
 /// <summary>
-/// Cron/timezone-aware schedule expectation evaluation for fleet silence (Epic 65).
+/// Cron/timezone-aware schedule expectation evaluation for fleet silence (Epic 65, Epic 66 lifecycle grace).
 /// Cronos + timezone handling matches the production schedule runner (see CronScheduleEvaluator in persistence).
 /// </summary>
 public sealed class ScheduleExpectationEvaluator : IScheduleExpectationEvaluator
@@ -35,6 +35,7 @@ public sealed class ScheduleExpectationEvaluator : IScheduleExpectationEvaluator
 
         if (!expectsRecurring)
         {
+            var disabledSummary = DisabledScheduleSummary(context);
             return new ScheduleExpectationEvaluation(
                 false,
                 false,
@@ -45,11 +46,23 @@ public sealed class ScheduleExpectationEvaluator : IScheduleExpectationEvaluator
                 null,
                 null,
                 ScheduleExpectationEvaluationStatus.NoExpectation,
-                null);
+                disabledSummary);
         }
 
-        var inGrace = context.UtcNow - context.IntegrationCreatedAtUtc
-            < IntegrationFleetExpectedRunEvidence.SilenceGraceAfterIntegrationCreate;
+        var duration = IntegrationFleetExpectedRunEvidence.SilenceGraceAfterScheduleLifecycleAnchor;
+        var inIntegrationGrace = context.UtcNow - context.IntegrationCreatedAtUtc < duration;
+
+        var (inScheduleGrace, scheduleGraceAnchor, scheduleGraceReason) =
+            ResolveScheduleLifecycleGrace(qualifying, context.UtcNow, duration);
+
+        var inGrace = inIntegrationGrace || inScheduleGrace;
+
+        var (graceReason, graceAnchor) = PickGraceWinner(
+            context.IntegrationCreatedAtUtc,
+            inIntegrationGrace,
+            scheduleGraceAnchor,
+            scheduleGraceReason,
+            inScheduleGrace);
 
         var fromUtc = context.WindowStartUtc.UtcDateTime;
         var toUtc = context.UtcNow.UtcDateTime;
@@ -74,6 +87,7 @@ public sealed class ScheduleExpectationEvaluator : IScheduleExpectationEvaluator
 
         if (inGrace)
         {
+            var summary = GraceSummaryLine(graceReason);
             return new ScheduleExpectationEvaluation(
                 true,
                 hasExpected,
@@ -84,7 +98,9 @@ public sealed class ScheduleExpectationEvaluator : IScheduleExpectationEvaluator
                 satisfied ? run!.RunId : null,
                 satisfied ? run!.RunAt : null,
                 ScheduleExpectationEvaluationStatus.Grace,
-                "Within grace period after integration creation.");
+                summary,
+                graceReason,
+                graceAnchor);
         }
 
         if (!hasExpected)
@@ -129,6 +145,112 @@ public sealed class ScheduleExpectationEvaluator : IScheduleExpectationEvaluator
             ScheduleExpectationEvaluationStatus.MissingExpectedRun,
             "No schedule-origin run was found after the last expected fire time.");
     }
+
+    private static string? DisabledScheduleSummary(ScheduleExpectationEvaluationContext context)
+    {
+        var shape = context.Schedules
+            .Where(s =>
+                s.IntegrationId == context.IntegrationId
+                && !string.IsNullOrWhiteSpace(s.RecurrenceExpression)
+                && (s.Target.JobType == ScheduledJobType.WorkflowExecution
+                    || s.Target.JobType == ScheduledJobType.ModuleOperationExecution))
+            .ToList();
+
+        if (shape.Count == 0)
+            return null;
+
+        if (shape.All(s => !s.Enabled))
+            return "No run was due because the schedule is disabled.";
+
+        return null;
+    }
+
+    /// <summary>
+    /// Among qualifying enabled schedules, the most recent in-window lifecycle anchor (conservative aggregate).
+    /// </summary>
+    private static (
+        bool InScheduleGrace,
+        DateTimeOffset? BestAnchor,
+        ScheduleExpectationGraceReason? Reason) ResolveScheduleLifecycleGrace(
+        IReadOnlyList<ScheduleDefinition> qualifying,
+        DateTimeOffset utcNow,
+        TimeSpan duration)
+    {
+        DateTimeOffset? bestAnchor = null;
+        ScheduleExpectationGraceReason? bestReason = null;
+
+        foreach (var s in qualifying)
+        {
+            var (anchor, reason) = ScheduleGraceContribution(s.Lifecycle);
+            if (anchor is null || reason is null)
+                continue;
+            if (utcNow - anchor >= duration)
+                continue;
+            if (bestAnchor is null || anchor > bestAnchor)
+            {
+                bestAnchor = anchor;
+                bestReason = reason;
+            }
+        }
+
+        return (bestAnchor is not null, bestAnchor, bestReason);
+    }
+
+    private static (DateTimeOffset? Anchor, ScheduleExpectationGraceReason? Reason) ScheduleGraceContribution(
+        ScheduleLifecycleEvidence? life)
+    {
+        if (life is null)
+            return (null, null);
+
+        var e = life.LastScheduleEnabledAtUtc;
+        var m = life.MaterialScheduleSemanticsChangedAtUtc;
+        if (e is null && m is null)
+            return (null, null);
+
+        if (e is null)
+            return (m, ScheduleExpectationGraceReason.RecentlyMateriallyChanged);
+        if (m is null)
+            return (e, ScheduleExpectationGraceReason.RecentlyEnabled);
+        if (e > m)
+            return (e, ScheduleExpectationGraceReason.RecentlyEnabled);
+        if (m > e)
+            return (m, ScheduleExpectationGraceReason.RecentlyMateriallyChanged);
+
+        return (e, ScheduleExpectationGraceReason.RecentlyEnabled);
+    }
+
+    private static (ScheduleExpectationGraceReason? Reason, DateTimeOffset? Anchor) PickGraceWinner(
+        DateTimeOffset integrationCreatedAtUtc,
+        bool inIntegrationGrace,
+        DateTimeOffset? scheduleGraceAnchor,
+        ScheduleExpectationGraceReason? scheduleGraceReason,
+        bool inScheduleGrace)
+    {
+        (DateTimeOffset Anchor, ScheduleExpectationGraceReason Reason)? best = null;
+
+        if (inIntegrationGrace)
+            best = (integrationCreatedAtUtc, ScheduleExpectationGraceReason.IntegrationCreated);
+
+        if (inScheduleGrace && scheduleGraceAnchor is { } schAnchor && scheduleGraceReason is { } schReason)
+        {
+            if (best is null || schAnchor > best.Value.Anchor)
+                best = (schAnchor, schReason);
+        }
+
+        if (best is null)
+            return (null, null);
+
+        return (best.Value.Reason, best.Value.Anchor);
+    }
+
+    private static string GraceSummaryLine(ScheduleExpectationGraceReason? reason) =>
+        reason switch
+        {
+            ScheduleExpectationGraceReason.IntegrationCreated => "Within grace period after integration creation.",
+            ScheduleExpectationGraceReason.RecentlyEnabled => "Within grace period after schedule enablement.",
+            ScheduleExpectationGraceReason.RecentlyMateriallyChanged => "Within grace period after schedule change.",
+            _ => "Within grace period."
+        };
 
     private static ScheduleExpectationEvaluation IdleInactive() =>
         new(

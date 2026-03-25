@@ -311,7 +311,9 @@ public sealed class IntegrationsController : ControllerBase
                 r.ExpectedRuns.ExpectedFireCountInWindow,
                 r.ExpectedRuns.ExpectedRunSatisfied,
                 r.ExpectedRuns.ExpectedRunInGracePeriod,
-                r.ExpectedRuns.OperatorSummaryLine),
+                r.ExpectedRuns.OperatorSummaryLine,
+                r.ExpectedRuns.ExpectedRunGraceReason,
+                r.ExpectedRuns.ExpectedRunGraceAnchorUtc),
             r.AttentionTokens.ToArray(),
             r.TopIssueCodes.ToArray());
 

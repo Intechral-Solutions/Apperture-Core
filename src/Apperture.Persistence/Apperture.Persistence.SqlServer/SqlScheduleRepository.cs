@@ -55,6 +55,13 @@ public sealed class SqlScheduleRepository : IScheduleRepository
         e.ExecutionPolicyRef = d.ExecutionPolicyRef;
         e.Version = d.Version;
         e.IntegrationId = d.IntegrationId?.Value;
+        if (d.Lifecycle is { } life)
+        {
+            e.LastScheduleEnabledAtUtc = life.LastScheduleEnabledAtUtc;
+            e.LastScheduleDisabledAtUtc = life.LastScheduleDisabledAtUtc;
+            e.MaterialScheduleSemanticsChangedAtUtc = life.MaterialScheduleSemanticsChangedAtUtc;
+        }
+
         await _db.SaveChangesAsync(ct);
     }
 
@@ -261,30 +268,56 @@ public sealed class SqlScheduleRepository : IScheduleRepository
             e.LastSuccessfulDispatchUtc);
     }
 
-    private static ScheduleDefinition ToDefinition(ScheduleDefinitionEntity e) => new(
-        new ScheduleId(e.Id),
-        e.Name,
-        e.RecurrenceExpression,
-        e.TimeZone,
-        e.Enabled,
-        new ScheduledTarget((ScheduledJobType)e.TargetJobType, e.TargetJobConfigurationJson),
-        e.ExecutionPolicyRef,
-        e.Version,
-        e.IntegrationId is not null ? new IntegrationId(e.IntegrationId) : null);
-
-    private static ScheduleDefinitionEntity ToDefinitionEntity(ScheduleDefinition d) => new()
+    private static ScheduleDefinition ToDefinition(ScheduleDefinitionEntity e)
     {
-        Id = d.Id.Value,
-        IntegrationId = d.IntegrationId?.Value,
-        Name = d.Name,
-        RecurrenceExpression = d.RecurrenceExpression,
-        TimeZone = d.TimeZone,
-        Enabled = d.Enabled,
-        TargetJobType = (int)d.Target.JobType,
-        TargetJobConfigurationJson = d.Target.JobConfiguration,
-        ExecutionPolicyRef = d.ExecutionPolicyRef,
-        Version = d.Version
-    };
+        ScheduleLifecycleEvidence? life = null;
+        if (e.LastScheduleEnabledAtUtc is not null
+            || e.LastScheduleDisabledAtUtc is not null
+            || e.MaterialScheduleSemanticsChangedAtUtc is not null)
+        {
+            life = new ScheduleLifecycleEvidence(
+                e.LastScheduleEnabledAtUtc,
+                e.LastScheduleDisabledAtUtc,
+                e.MaterialScheduleSemanticsChangedAtUtc);
+        }
+
+        return new ScheduleDefinition(
+            new ScheduleId(e.Id),
+            e.Name,
+            e.RecurrenceExpression,
+            e.TimeZone,
+            e.Enabled,
+            new ScheduledTarget((ScheduledJobType)e.TargetJobType, e.TargetJobConfigurationJson),
+            e.ExecutionPolicyRef,
+            e.Version,
+            e.IntegrationId is not null ? new IntegrationId(e.IntegrationId) : null,
+            life);
+    }
+
+    private static ScheduleDefinitionEntity ToDefinitionEntity(ScheduleDefinition d)
+    {
+        var e = new ScheduleDefinitionEntity
+        {
+            Id = d.Id.Value,
+            IntegrationId = d.IntegrationId?.Value,
+            Name = d.Name,
+            RecurrenceExpression = d.RecurrenceExpression,
+            TimeZone = d.TimeZone,
+            Enabled = d.Enabled,
+            TargetJobType = (int)d.Target.JobType,
+            TargetJobConfigurationJson = d.Target.JobConfiguration,
+            ExecutionPolicyRef = d.ExecutionPolicyRef,
+            Version = d.Version
+        };
+        if (d.Lifecycle is { } life)
+        {
+            e.LastScheduleEnabledAtUtc = life.LastScheduleEnabledAtUtc;
+            e.LastScheduleDisabledAtUtc = life.LastScheduleDisabledAtUtc;
+            e.MaterialScheduleSemanticsChangedAtUtc = life.MaterialScheduleSemanticsChangedAtUtc;
+        }
+
+        return e;
+    }
 
     private static ScheduleAssignment ToAssignment(ScheduleAssignmentEntity e) => new(
         new ScheduleAssignmentId(e.Id),

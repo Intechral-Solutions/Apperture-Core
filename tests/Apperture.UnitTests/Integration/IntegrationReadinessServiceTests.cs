@@ -906,4 +906,96 @@ public sealed class IntegrationReadinessServiceTests
         row.ExpectedRuns.ExpectedRunEvaluationStatus.Should().Be("Satisfied");
         row.AttentionTokens.Should().NotContain(IntegrationFleetAttention.Tokens.ExpectedRunMissing);
     }
+
+    [Fact]
+    public async Task ListFleet_recent_schedule_lifecycle_grace_suppresses_expected_run_missing()
+    {
+        var createdOld = DateTimeOffset.Parse("2024-01-01T00:00:00Z");
+        var integration = new DomainIntegration(
+            IntId,
+            "My integration",
+            "Sample.Mod",
+            null,
+            IntegrationState.Active,
+            null,
+            createdOld,
+            Now);
+
+        var connId = new ConnectionId("conn1");
+        var binding = new Binding(
+            new BindingId("bind1"),
+            IntId,
+            "Sample.Mod",
+            "Db",
+            "System.Data.IDbConnection",
+            connId,
+            null,
+            BindingState.Active);
+        var connection = new Connection(
+            connId,
+            new ConnectorDefinitionId("sql"),
+            "SQL",
+            new Dictionary<string, string>(),
+            new Dictionary<string, string>(),
+            null,
+            null,
+            ConnectionState.Active);
+
+        var anchor = DateTimeOffset.Parse("2024-12-31T12:00:00Z");
+        var schedule = new ScheduleDefinition(
+            new ScheduleId("sch-fleet-grace"),
+            "Daily",
+            "0 0 * * *",
+            "UTC",
+            true,
+            new ScheduledTarget(ScheduledJobType.WorkflowExecution, "{}"),
+            null,
+            1,
+            IntId,
+            new ScheduleLifecycleEvidence(anchor, null, anchor));
+
+        var mgmt = new Mock<IIntegrationManagementService>();
+        mgmt.Setup(x => x.ListIntegrationsAsync(It.IsAny<CancellationToken>())).ReturnsAsync(new List<DomainIntegration> { integration });
+
+        var slots = new Mock<IModuleSlotRegistry>();
+        slots.Setup(x => x.GetSlotsForModule("Sample.Mod"))
+            .Returns(new List<ICapabilitySlot>
+            {
+                new TestSlot { ModuleId = "Sample.Mod", SlotName = "Db", ContractType = "System.Data.IDbConnection" }
+            });
+
+        var bindRepo = new Mock<IBindingRepository>();
+        bindRepo.Setup(x => x.GetByIntegrationIdAsync(IntId, It.IsAny<CancellationToken>())).ReturnsAsync(new List<Binding> { binding });
+
+        var connRepo = new Mock<IConnectionRepository>();
+        connRepo.Setup(x => x.GetByIdAsync(connId, It.IsAny<CancellationToken>())).ReturnsAsync(connection);
+
+        var elig = new Mock<IBindingEligibilityService>();
+        elig.Setup(x => x.GetEligibleConnectionsAsync("Sample.Mod", "Db", "System.Data.IDbConnection", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<Connection> { connection });
+
+        var schedRepo = new Mock<IScheduleRepository>();
+        schedRepo.Setup(x => x.GetByIntegrationIdAsync(IntId, It.IsAny<CancellationToken>())).ReturnsAsync(new List<ScheduleDefinition> { schedule });
+
+        var runQuery = RunQueryAllEmpty();
+
+        var sut = new IntegrationReadinessService(
+            mgmt.Object,
+            slots.Object,
+            bindRepo.Object,
+            connRepo.Object,
+            elig.Object,
+            schedRepo.Object,
+            new AdvisoryConnectionVerificationReadinessPolicy(),
+            runQuery.Object,
+            new ScheduleExpectationEvaluator(),
+            FleetUtcClock);
+
+        var fleet = await sut.ListFleetAsync(new IntegrationFleetQuery());
+        var row = fleet.Should().ContainSingle().Subject;
+        row.ExpectedRuns.HasUnexpectedSilence.Should().BeFalse();
+        row.ExpectedRuns.ExpectedRunInGracePeriod.Should().BeTrue();
+        row.ExpectedRuns.ExpectedRunGraceReason.Should().NotBeNullOrWhiteSpace();
+        row.AttentionTokens.Should().NotContain(IntegrationFleetAttention.Tokens.ExpectedRunMissing);
+    }
 }

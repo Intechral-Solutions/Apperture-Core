@@ -23,6 +23,9 @@ public static class IntegrationFleetRunEvidence
 public static class IntegrationFleetExpectedRunEvidence
 {
     public static readonly TimeSpan SilenceGraceAfterIntegrationCreate = TimeSpan.FromHours(48);
+
+    /// <summary>Epic 66: same duration as integration-create grace; named for schedule lifecycle anchors.</summary>
+    public static readonly TimeSpan SilenceGraceAfterScheduleLifecycleAnchor = SilenceGraceAfterIntegrationCreate;
 }
 
 /// <summary>
@@ -84,7 +87,9 @@ public sealed record IntegrationFleetExpectedRunAttention(
     int ExpectedFireCountInWindow,
     bool ExpectedRunSatisfied,
     bool ExpectedRunInGracePeriod,
-    string? OperatorSummaryLine);
+    string? OperatorSummaryLine,
+    string? ExpectedRunGraceReason,
+    DateTimeOffset? ExpectedRunGraceAnchorUtc);
 
 /// <summary>
 /// One row of the integration fleet overview. Epic 61; Epic 62 operational run slice; Epic 63 expected-run silence.
@@ -226,7 +231,9 @@ public static class IntegrationFleetAttention
             evaluation.ExpectedFireCountInWindow,
             evaluation.SatisfiedByAuthorizedScheduleOriginRun,
             evaluation.InGracePeriod,
-            evaluation.OperatorSummaryLine);
+            evaluation.OperatorSummaryLine,
+            evaluation.GraceReason?.ToString(),
+            evaluation.GraceAnchorUtc);
     }
 
     /// <summary>

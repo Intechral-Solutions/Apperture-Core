@@ -189,6 +189,7 @@ public sealed class Epic36MultiHostSchedulerTests
         services.AddSingleton(db);
         services.AddScoped<IScheduleRepository, SqlScheduleRepository>();
         services.AddSingleton<ISchedulerClaimOptions>(new DefaultSchedulerClaimOptions(5));
+        services.AddSingleton(TimeProvider.System);
         services.AddScoped<IScheduleManagementService, SqlScheduleManagementService>();
 
         await using var scope = services.BuildServiceProvider().CreateAsyncScope();
@@ -229,6 +230,7 @@ public sealed class Epic36MultiHostSchedulerTests
         services.AddSingleton(db);
         services.AddScoped<IScheduleRepository, SqlScheduleRepository>();
         services.AddSingleton<ISchedulerClaimOptions>(new DefaultSchedulerClaimOptions(5));
+        services.AddSingleton(TimeProvider.System);
         services.AddScoped<IScheduleManagementService, SqlScheduleManagementService>();
         await using var scope = services.BuildServiceProvider().CreateAsyncScope();
         var detail = await scope.ServiceProvider.GetRequiredService<IScheduleManagementService>()
@@ -259,6 +261,7 @@ public sealed class Epic36MultiHostSchedulerTests
         services.AddSingleton(db);
         services.AddScoped<IScheduleRepository, SqlScheduleRepository>();
         services.AddSingleton<ISchedulerClaimOptions>(new DefaultSchedulerClaimOptions(5));
+        services.AddSingleton(TimeProvider.System);
         services.AddScoped<IScheduleManagementService, SqlScheduleManagementService>();
 
         await using var scope = services.BuildServiceProvider().CreateAsyncScope();
@@ -290,6 +293,7 @@ public sealed class Epic36MultiHostSchedulerTests
         services.AddSingleton(db);
         services.AddScoped<IScheduleRepository, SqlScheduleRepository>();
         services.AddSingleton<ISchedulerClaimOptions>(new DefaultSchedulerClaimOptions(5));
+        services.AddSingleton(TimeProvider.System);
         services.AddScoped<IScheduleManagementService, SqlScheduleManagementService>();
 
         await using var scope = services.BuildServiceProvider().CreateAsyncScope();

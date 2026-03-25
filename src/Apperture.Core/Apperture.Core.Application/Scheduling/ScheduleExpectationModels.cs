@@ -15,6 +15,14 @@ public enum ScheduleExpectationEvaluationStatus
     MissingExpectedRun
 }
 
+/// <summary>Epic 66: which persisted anchor explains an active grace window.</summary>
+public enum ScheduleExpectationGraceReason
+{
+    IntegrationCreated,
+    RecentlyEnabled,
+    RecentlyMateriallyChanged
+}
+
 /// <summary>
 /// Latest authorized schedule-origin run evidence used to test satisfaction (Epic 64).
 /// </summary>
@@ -47,4 +55,6 @@ public sealed record ScheduleExpectationEvaluation(
     string? LastSatisfyingScheduleOriginRunId,
     DateTimeOffset? LastSatisfyingScheduleOriginRunAt,
     ScheduleExpectationEvaluationStatus Status,
-    string? OperatorSummaryLine);
+    string? OperatorSummaryLine,
+    ScheduleExpectationGraceReason? GraceReason = null,
+    DateTimeOffset? GraceAnchorUtc = null);

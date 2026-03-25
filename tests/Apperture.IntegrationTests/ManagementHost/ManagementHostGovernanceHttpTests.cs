@@ -1086,6 +1086,8 @@ public sealed class ManagementHostGovernanceHttpTests
         expected.GetProperty("expectedRunSatisfied").ValueKind.Should().BeOneOf(JsonValueKind.True, JsonValueKind.False);
         expected.GetProperty("expectedRunInGracePeriod").ValueKind.Should().BeOneOf(JsonValueKind.True, JsonValueKind.False);
         expected.GetProperty("operatorSummaryLine").ValueKind.Should().BeOneOf(JsonValueKind.String, JsonValueKind.Null);
+        expected.GetProperty("expectedRunGraceReason").ValueKind.Should().BeOneOf(JsonValueKind.String, JsonValueKind.Null);
+        expected.GetProperty("expectedRunGraceAnchorUtc").ValueKind.Should().BeOneOf(JsonValueKind.String, JsonValueKind.Null);
     }
 
     [Fact]

@@ -70,7 +70,9 @@ public sealed class IntegrationFleetExpectedRunAttentionTests
             null,
             null,
             ScheduleExpectationEvaluationStatus.Grace,
-            "Within grace period after integration creation.");
+            "Within grace period after integration creation.",
+            ScheduleExpectationGraceReason.IntegrationCreated,
+            DateTimeOffset.Parse("2025-06-01T00:00:00Z"));
         var a = IntegrationFleetAttention.FromScheduleExpectationEvaluation(
             eval,
             "s1",
@@ -79,6 +81,8 @@ public sealed class IntegrationFleetExpectedRunAttentionTests
             DateTimeOffset.Parse("2025-06-15T09:00:00Z"));
         a.HasUnexpectedSilence.Should().BeFalse();
         a.ExpectedRunInGracePeriod.Should().BeTrue();
+        a.ExpectedRunGraceReason.Should().Be(nameof(ScheduleExpectationGraceReason.IntegrationCreated));
+        a.ExpectedRunGraceAnchorUtc.Should().Be(DateTimeOffset.Parse("2025-06-01T00:00:00Z"));
     }
 
     [Fact]
@@ -182,5 +186,6 @@ public sealed class IntegrationFleetExpectedRunAttentionTests
         var r = evaluator.Evaluate(ctx);
         r.ExpectsRecurringRuns.Should().BeFalse();
         r.Status.Should().Be(ScheduleExpectationEvaluationStatus.NoExpectation);
+        r.OperatorSummaryLine.Should().Be("No run was due because the schedule is disabled.");
     }
 }

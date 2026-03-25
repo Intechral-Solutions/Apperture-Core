@@ -15,4 +15,13 @@ public sealed class ScheduleDefinitionEntity
     public string? TargetJobConfigurationJson { get; set; }
     public string? ExecutionPolicyRef { get; set; }
     public int Version { get; set; }
+
+    /// <summary>Epic 66: last transition to enabled or create-as-enabled.</summary>
+    public DateTimeOffset? LastScheduleEnabledAtUtc { get; set; }
+
+    /// <summary>Epic 66: last transition to disabled.</summary>
+    public DateTimeOffset? LastScheduleDisabledAtUtc { get; set; }
+
+    /// <summary>Epic 66: last material change to cron or timezone.</summary>
+    public DateTimeOffset? MaterialScheduleSemanticsChangedAtUtc { get; set; }
 }

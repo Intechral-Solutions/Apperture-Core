@@ -6,6 +6,7 @@ namespace Apperture.Core.Domain.Scheduling;
 /// Canonical schedule metadata and recurrence. Aggregate root.
 /// Epic 28: Target added for workflow/operation dispatch.
 /// Epic 50: IntegrationId when schedule is owned by an Integration.
+/// Epic 66: optional persisted lifecycle evidence for grace correctness.
 /// </summary>
 public sealed record ScheduleDefinition(
     ScheduleId Id,
@@ -16,4 +17,5 @@ public sealed record ScheduleDefinition(
     ScheduledTarget Target,
     string? ExecutionPolicyRef,
     int Version,
-    IntegrationId? IntegrationId = null);
+    IntegrationId? IntegrationId = null,
+    ScheduleLifecycleEvidence? Lifecycle = null);

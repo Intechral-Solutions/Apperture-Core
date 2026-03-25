@@ -110,6 +110,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IModuleWorkflowListingService, ModuleWorkflowListingService>();
         services.AddScoped<IWorkflowStartAuthorizationService, WorkflowStartAuthorizationService>();
         services.AddScoped<IScheduleGovernanceService, ScheduleGovernanceService>();
+        services.TryAddSingleton(TimeProvider.System);
         services.AddScoped<IScheduleValidationService, ScheduleValidationService>();
         services.AddScoped<IRecoveryGovernanceService, RecoveryGovernanceService>();
         services.AddScoped<IOperatorCapabilitiesQueryService, OperatorCapabilitiesQueryService>();

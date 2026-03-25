@@ -49,7 +49,9 @@ public sealed record IntegrationFleetExpectedRunAttentionDto(
     int ExpectedFireCountInWindow,
     bool ExpectedRunSatisfied,
     bool ExpectedRunInGracePeriod,
-    string? OperatorSummaryLine);
+    string? OperatorSummaryLine,
+    string? ExpectedRunGraceReason,
+    DateTimeOffset? ExpectedRunGraceAnchorUtc);
 
 /// <summary>Epic 61: one row of GET integrations/fleet. Epic 62: operational run slice.</summary>
 public sealed record IntegrationFleetRowDto(
