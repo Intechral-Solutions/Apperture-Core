@@ -10,6 +10,7 @@ namespace Apperture.Core.Application;
 /// Orchestration state and history (e.g. Durable Functions) must never persist ResolvedSecret,
 /// SecretMaterial, or other types that carry secret material. Only SecretRef-like identifiers
 /// may cross orchestration boundaries.
+/// Module procedure parameters use the same check before persistence (ADR-0031); plain strings are not validated as secrets.
 /// </remarks>
 public static class OrchestrationSafeValidator
 {

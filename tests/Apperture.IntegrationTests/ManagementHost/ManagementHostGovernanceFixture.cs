@@ -27,6 +27,9 @@ public sealed class ManagementHostGovernanceFixture : IAsyncLifetime
     private const string WorkflowOnlyProcedureLauncherPermissionsJson =
         """[{"action":"integration.read","resource":{"resourceType":"Integration","scopeKey":"instance"}},{"action":"workflow.execute","resource":{"resourceType":"WorkflowInstance","scopeKey":"module:Sample.HelloWorld"}}]""";
 
+    private const string IntegrationAuthoringPermissionsJson =
+        """[{"action":"integration.create","resource":{"resourceType":"Integration","scopeKey":"instance"}},{"action":"integration.read","resource":{"resourceType":"Integration","scopeKey":"instance"}},{"action":"integration.update","resource":{"resourceType":"Integration","scopeKey":"instance"}},{"action":"binding.assign","resource":{"resourceType":"Binding","scopeKey":"instance"}},{"action":"schedule.manage","resource":{"resourceType":"Schedule","scopeKey":"instance"}}]""";
+
     public string? ConnectionString { get; private set; }
 
     public bool SqlAvailable { get; private set; }
@@ -223,6 +226,7 @@ IF NOT EXISTS (SELECT 1 FROM sys.databases WHERE name = N'{catalog}')
         await EnsureForeignModuleIntegrationForHarnessAsync(db).ConfigureAwait(false);
         await EnsureProcedureLauncherPrincipalAsync(db).ConfigureAwait(false);
         await EnsureWorkflowOnlyProcedureLauncherPrincipalAsync(db).ConfigureAwait(false);
+        await EnsureIntegrationAuthoringPrincipalAsync(db).ConfigureAwait(false);
         await EnsureHelloWorldModuleEnabledForHarnessAsync(db).ConfigureAwait(false);
     }
 
@@ -373,6 +377,60 @@ IF NOT EXISTS (SELECT 1 FROM sys.databases WHERE name = N'{catalog}')
             {
                 UserId = ManagementGovernanceTestConstants.UserWorkflowOnlyProcedureLauncher,
                 RoleId = ManagementGovernanceTestConstants.RoleWorkflowOnlyProcedureLauncher
+            });
+
+        await db.SaveChangesAsync().ConfigureAwait(false);
+    }
+
+    private static async Task EnsureIntegrationAuthoringPrincipalAsync(AppertureDbContext db)
+    {
+        if (await db.Users.AnyAsync(u => u.Id == ManagementGovernanceTestConstants.UserIntegrationAuthoring).ConfigureAwait(false))
+        {
+            var role = await db.Roles.SingleAsync(r => r.Id == ManagementGovernanceTestConstants.RoleIntegrationAuthoring)
+                .ConfigureAwait(false);
+            if (!string.Equals(role.PermissionsJson, IntegrationAuthoringPermissionsJson, StringComparison.Ordinal))
+            {
+                role.PermissionsJson = IntegrationAuthoringPermissionsJson;
+                await db.SaveChangesAsync().ConfigureAwait(false);
+            }
+
+            return;
+        }
+
+        const int localSource = (int)IdentitySource.Local;
+
+        db.Roles.Add(
+            new RoleEntity
+            {
+                Id = ManagementGovernanceTestConstants.RoleIntegrationAuthoring,
+                Name = "Governance test — integration authoring",
+                Description = "Epic 57 harness",
+                PermissionsJson = IntegrationAuthoringPermissionsJson,
+                IsSystemRole = false
+            });
+
+        db.Users.Add(
+            new UserEntity
+            {
+                Id = ManagementGovernanceTestConstants.UserIntegrationAuthoring,
+                DisplayName = "Governance test — integration authoring",
+                IsBreakGlassEligible = false
+            });
+
+        db.IdentityLinks.Add(
+            new IdentityLinkEntity
+            {
+                Id = ManagementGovernanceTestConstants.LinkIntegrationAuthoring,
+                UserId = ManagementGovernanceTestConstants.UserIntegrationAuthoring,
+                Source = localSource,
+                ExternalId = ManagementGovernanceTestConstants.ExternalIntegrationAuthoringOperator
+            });
+
+        db.UserRoles.Add(
+            new UserRoleEntity
+            {
+                UserId = ManagementGovernanceTestConstants.UserIntegrationAuthoring,
+                RoleId = ManagementGovernanceTestConstants.RoleIntegrationAuthoring
             });
 
         await db.SaveChangesAsync().ConfigureAwait(false);

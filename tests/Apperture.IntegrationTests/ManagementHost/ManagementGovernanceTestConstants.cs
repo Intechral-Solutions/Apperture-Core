@@ -20,6 +20,7 @@ internal static class ManagementGovernanceTestConstants
     internal const string ExternalConnectorCatalogReader = "test-governance-connector-catalog-reader";
     internal const string ExternalIntegrationReader = "test-governance-integration-reader";
     internal const string ExternalIntegrationScheduleOperator = "test-governance-integration-schedule-op";
+    internal const string ExternalIntegrationAuthoringOperator = "test-governance-integration-authoring-op";
 
     /// <summary>integration.read + workflow.execute + operation.execute (Sample.HelloWorld) for procedure launch HTTP tests (Epic 56A/56B).</summary>
     internal const string ExternalProcedureLauncher = "test-governance-procedure-launcher";
@@ -32,6 +33,7 @@ internal static class ManagementGovernanceTestConstants
     internal const string UserConnectorReader = "usrgoverncnctdefread0001";
     internal const string UserIntegrationReader = "usrgovernintegread000001";
     internal const string UserIntegrationSchedule = "usrgovernintegsched00001";
+    internal const string UserIntegrationAuthoring = "usrgovernintegauthor0001";
 
     internal const string UserProcedureLauncher = "usrgovernproclaunch00001";
 
@@ -42,6 +44,7 @@ internal static class ManagementGovernanceTestConstants
     internal const string RoleConnectorCatalogReader = "rolgoverncnctdefread0001";
     internal const string RoleIntegrationReader = "rolgovernintegread000001";
     internal const string RoleIntegrationSchedule = "rolgovernintegsched00001";
+    internal const string RoleIntegrationAuthoring = "rolgovernintegauthor0001";
 
     internal const string RoleProcedureLauncher = "rolgovernproclaunch00001";
 
@@ -52,6 +55,7 @@ internal static class ManagementGovernanceTestConstants
     internal const string LinkConnectorReader = "idlkgrvncndefread0000001";
     internal const string LinkIntegrationReader = "idlkgrvnintegread0000001";
     internal const string LinkIntegrationSchedule = "idlkgrvnintegschd0000001";
+    internal const string LinkIntegrationAuthoring = "idlkgrvnintegauth0000001";
 
     internal const string LinkProcedureLauncher = "idlkgrvnproclaunch000001";
 

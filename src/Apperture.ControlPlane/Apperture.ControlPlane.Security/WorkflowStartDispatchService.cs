@@ -171,6 +171,9 @@ public sealed class WorkflowStartDispatchService : IWorkflowStartDispatchService
 
     private static string NewId() => Guid.NewGuid().ToString("N")[..24];
 
+    /// <summary>
+    /// Persists start parameters as a JSON object (ADR-0031). Not a stable key-order contract; same approach as <see cref="OperationStartDispatchService"/>.
+    /// </summary>
     private static string? SerializeParameters(IReadOnlyDictionary<string, object?>? parameters)
     {
         if (parameters is null || parameters.Count == 0)

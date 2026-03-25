@@ -28,7 +28,7 @@
                 {
                     <input type="checkbox" class="mt-1 h-4 w-4 rounded border border-default"
                            checked="@GetBool(f.Key)"
-                           @onchange="e => SetBool(f.Key, e.Value is bool bb ? bb : string.Equals(e.Value?.ToString(), "true", StringComparison.OrdinalIgnoreCase))" />
+                           @onchange="e => OnBoolChanged(f.Key, e)" />
                 }
                 else if (string.Equals(f.Type, "int", StringComparison.OrdinalIgnoreCase) || string.Equals(f.Type, "decimal", StringComparison.OrdinalIgnoreCase))
                 {
@@ -103,6 +103,14 @@
         Values.TryGetValue(key, out var v) && v is true;
 
     private void SetBool(string key, bool value) => Values[key] = value;
+
+    private void OnBoolChanged(string key, ChangeEventArgs e)
+    {
+        var value = e.Value is bool bb
+            ? bb
+            : string.Equals(e.Value?.ToString(), "true", StringComparison.OrdinalIgnoreCase);
+        SetBool(key, value);
+    }
 
     /// <summary>Populate <paramref name="target"/> from field defaults.</summary>
     public static void SeedValues(IReadOnlyList<IntegrationProcedureParameterFieldDto> fields, Dictionary<string, object?> target)

@@ -1,13 +1,14 @@
 @page "/integrations/new"
 @using Apperture.Management.Client
 @using Apperture.Management.Ui.Client.Services
+@using Apperture.Management.Ui.Client.Services.Wizard
 @using Apperture.Management.Ui.Client.Organisms
 @inject IManagementClient Client
 @inject IOperatorCapabilitiesService Capabilities
 @inject NavigationManager Nav
 
 <div class="p-4">
-    <PageHeader Title="Create Integration" Subtitle="Module = reusable capability definition. Integration = configured instance of a module for a particular purpose.">
+    <PageHeader Title="Integration Authoring Wizard" Subtitle="Create an integration, then continue directly to bindings, readiness remediation, schedules, and procedures.">
         <Toolbar>
             <a href="/integrations" class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface">Back to list</a>
         </Toolbar>
@@ -29,42 +30,114 @@
     }
     else
     {
-        <div class="mt-4 rounded border border-default bg-surface p-4">
-            <form class="grid gap-4 md:grid-cols-2" @onsubmit="SubmitAsync" @onsubmit:preventDefault>
-                <div>
-                    <label class="block text-xs text-muted">Display Name (required)</label>
-                    <input class="mt-1 w-full rounded border border-default bg-surface px-2 py-2 text-sm"
-                           @bind="_displayName"
-                           required />
-                </div>
-                <div>
-                    <label class="block text-xs text-muted">Module definition (required)</label>
-                    <input class="mt-1 w-full rounded border border-default bg-surface px-2 py-2 text-sm font-mono"
-                           @bind="_moduleId"
-                           placeholder="e.g. Sample.HelloWorld"
-                           required />
-                    <div class="mt-0.5 text-xs text-muted">Reference to the module capability (e.g. Sample.HelloWorld)</div>
-                </div>
-                <div class="md:col-span-2">
-                    <label class="block text-xs text-muted">Scope key (optional)</label>
-                    <input class="mt-1 w-full rounded border border-default bg-surface px-2 py-2 text-sm font-mono"
-                           @bind="_scopeKey"
-                           placeholder="instance (default if empty)" />
-                    <div class="mt-0.5 text-xs text-muted">Environment/context; leave empty for instance scope.</div>
-                </div>
-                <div class="md:col-span-2">
-                    <button type="submit"
-                            class="rounded bg-body px-3 py-2 text-sm text-surface hover:bg-body/90 disabled:opacity-50"
-                            disabled="@_submitting">
-                        @(_submitting ? "Creating…" : "Create Integration")
+        <div class="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-[320px,1fr]">
+            <WizardFlowPanel Title="Authoring flow"
+                             Description="Integration is the deployment center: choose module, capture metadata, create, then continue in detail wizard."
+                             Steps="@_wizard.Steps"
+                             StepStates="@_wizardStepMap"
+                             CurrentStepId="@_wizard.CurrentStepId"
+                             OnSelect="OnWizardStepSelectedAsync" />
+
+            <div class="rounded border border-default bg-surface p-4">
+                @if (string.Equals(_wizard.CurrentStepId, StepChooseModule, StringComparison.Ordinal))
+                {
+                    <div class="text-sm font-semibold text-heading">Step 1: Select module</div>
+                    <div class="mt-1 text-xs text-muted">Only effectively active modules are shown.</div>
+                    @if (_modulesLoading)
+                    {
+                        <div class="mt-3 text-sm text-muted">Loading modules…</div>
+                    }
+                    else if (_availableModules.Count == 0)
+                    {
+                        <div class="mt-3 text-sm text-body">No eligible modules are currently active.</div>
+                    }
+                    else
+                    {
+                        <div class="mt-3">
+                            <label class="block text-xs text-muted">Module definition</label>
+                            <select class="mt-1 w-full rounded border border-default bg-surface px-2 py-2 text-sm"
+                                    @bind="_moduleId"
+                                    @bind:after="OnModuleChanged">
+                                <option value="">Select…</option>
+                                @foreach (var m in _availableModules)
+                                {
+                                    <option value="@m.Id">@m.Name (@m.Id)</option>
+                                }
+                            </select>
+                            @if (!string.IsNullOrWhiteSpace(SelectedModuleDescription))
+                            {
+                                <div class="mt-2 text-xs text-muted">@SelectedModuleDescription</div>
+                            }
+                        </div>
+                    }
+                }
+                else
+                {
+                    <div class="text-sm font-semibold text-heading">Step 2: Integration metadata</div>
+                    <div class="mt-1 text-xs text-muted">This creates the integration and routes you to configuration/remediation.</div>
+                    <form class="mt-3 grid gap-4 md:grid-cols-2" @onsubmit="SubmitAsync" @onsubmit:preventDefault>
+                        <div>
+                            <label class="block text-xs text-muted">Display Name (required)</label>
+                            <input class="mt-1 w-full rounded border border-default bg-surface px-2 py-2 text-sm"
+                                   @bind="_displayName"
+                                   required />
+                        </div>
+                        <div>
+                            <label class="block text-xs text-muted">Module definition</label>
+                            <input class="mt-1 w-full rounded border border-default bg-surface px-2 py-2 text-sm font-mono"
+                                   value="@_moduleId"
+                                   readonly />
+                        </div>
+                        <div class="md:col-span-2">
+                            <label class="block text-xs text-muted">Scope key (optional)</label>
+                            <input class="mt-1 w-full rounded border border-default bg-surface px-2 py-2 text-sm font-mono"
+                                   @bind="_scopeKey"
+                                   placeholder="instance (default if empty)" />
+                            <div class="mt-0.5 text-xs text-muted">Environment/context; leave empty for instance scope.</div>
+                        </div>
+                        <div class="md:col-span-2">
+                            <button type="submit"
+                                    class="rounded bg-body px-3 py-2 text-sm text-surface hover:bg-body/90 disabled:opacity-50"
+                                    disabled="@(_submitting || !CanCreate())">
+                                @(_submitting ? "Creating…" : "Create Integration")
+                            </button>
+                        </div>
+                    </form>
+                }
+
+                <div class="mt-4 flex gap-2">
+                    <button type="button"
+                            class="rounded bg-surface-muted px-2 py-1 text-sm text-body hover:bg-surface disabled:opacity-50"
+                            disabled="@(!CanMovePrevious())"
+                            @onclick="MovePreviousAsync">
+                        Previous
+                    </button>
+                    <button type="button"
+                            class="rounded bg-body px-2 py-1 text-sm text-surface hover:bg-body/90 disabled:opacity-50"
+                            disabled="@(!CanMoveNext())"
+                            @onclick="MoveNextAsync">
+                        Next
                     </button>
                 </div>
-            </form>
+            </div>
         </div>
     }
 </div>
 
 @code {
+    private const string StepChooseModule = "module";
+    private const string StepMetadata = "metadata";
+
+    private readonly WizardFlowController _wizard = new(
+        [
+            new WizardStepDefinition(StepChooseModule, "Choose module", "Pick an eligible module to instantiate."),
+            new WizardStepDefinition(StepMetadata, "Set metadata", "Name and scope for the integration.")
+        ]);
+
+    private readonly Dictionary<string, WizardStepState> _wizardStepMap = new(StringComparer.Ordinal);
+    private IReadOnlyList<ModuleDto> _availableModules = Array.Empty<ModuleDto>();
+    private bool _modulesLoading;
+
     private string _displayName = "";
     private string _moduleId = "";
     private string? _scopeKey;
@@ -72,30 +145,119 @@
     private bool _capabilitiesLoaded;
     private bool _submitting;
     private string? _error;
+    private string? SelectedModuleDescription =>
+        _availableModules.FirstOrDefault(m => string.Equals(m.Id, _moduleId, StringComparison.Ordinal))?.Description;
 
     protected override async Task OnInitializedAsync()
     {
         try
         {
             _capabilities = await Capabilities.GetCapabilitiesAsync();
+            if (_capabilities?.CanManageIntegrations == true)
+                await LoadEligibleModulesAsync();
         }
         catch
         {
             _capabilities = new OperatorCapabilitiesDto(false, false, false, false, false, false, false, false, false, false, false, false, false, false);
         }
         _capabilitiesLoaded = true;
+        RecomputeWizardStates();
+    }
+
+    private async Task LoadEligibleModulesAsync()
+    {
+        _modulesLoading = true;
+        try
+        {
+            var modules = await Client.GetModulesAsync();
+            _availableModules = modules
+                .Where(m => m.EffectivelyActive)
+                .OrderBy(m => m.Name, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(m => m.Id, StringComparer.Ordinal)
+                .ToArray();
+        }
+        finally
+        {
+            _modulesLoading = false;
+        }
+    }
+
+    private bool CanMoveNext()
+    {
+        if (string.Equals(_wizard.CurrentStepId, StepChooseModule, StringComparison.Ordinal))
+            return !string.IsNullOrWhiteSpace(_moduleId);
+        return false;
+    }
+
+    private bool CanMovePrevious() =>
+        string.Equals(_wizard.CurrentStepId, StepMetadata, StringComparison.Ordinal);
+
+    private bool CanCreate() =>
+        !string.IsNullOrWhiteSpace(_displayName)
+        && !string.IsNullOrWhiteSpace(_moduleId)
+        && _capabilities?.CanManageIntegrations == true;
+
+    private Task MoveNextAsync()
+    {
+        if (CanMoveNext())
+            _wizard.TryMoveNext();
+        RecomputeWizardStates();
+        return Task.CompletedTask;
+    }
+
+    private Task MovePreviousAsync()
+    {
+        _wizard.TryMovePrevious();
+        RecomputeWizardStates();
+        return Task.CompletedTask;
+    }
+
+    private Task OnWizardStepSelectedAsync(string stepId)
+    {
+        _wizard.NavigateTo(stepId);
+        RecomputeWizardStates();
+        return Task.CompletedTask;
+    }
+
+    private Task OnModuleChanged()
+    {
+        RecomputeWizardStates();
+        return Task.CompletedTask;
+    }
+
+    private void RecomputeWizardStates()
+    {
+        var states = new[]
+        {
+            new WizardStepState(
+                StepChooseModule,
+                string.Equals(_wizard.CurrentStepId, StepChooseModule, StringComparison.Ordinal)
+                    ? WizardStepStatus.Current
+                    : (string.IsNullOrWhiteSpace(_moduleId) ? WizardStepStatus.Pending : WizardStepStatus.Complete)),
+            new WizardStepState(
+                StepMetadata,
+                string.Equals(_wizard.CurrentStepId, StepMetadata, StringComparison.Ordinal)
+                    ? WizardStepStatus.Current
+                    : (CanCreate() ? WizardStepStatus.Pending : WizardStepStatus.Blocked),
+                string.IsNullOrWhiteSpace(_moduleId) ? "Select a module first." : null)
+        };
+
+        _wizard.SetStates(states);
+        _wizardStepMap.Clear();
+        foreach (var s in states)
+            _wizardStepMap[s.StepId] = s;
     }
 
     private async Task SubmitAsync()
     {
-        if (_capabilities?.CanManageIntegrations != true || string.IsNullOrWhiteSpace(_displayName) || string.IsNullOrWhiteSpace(_moduleId)) return;
+        if (!CanCreate()) return;
         _submitting = true;
         _error = null;
         try
         {
             var request = new CreateIntegrationRequest(_displayName.Trim(), _moduleId.Trim(), string.IsNullOrWhiteSpace(_scopeKey) ? null : _scopeKey.Trim());
             var integration = await Client.CreateIntegrationAsync(request);
-            Nav.NavigateTo("/integrations/" + Uri.EscapeDataString(integration.Id));
+            Nav.NavigateTo("/integrations/" + Uri.EscapeDataString(integration.Id) + "?wizard=1&step=bindings");
         }
         catch (HttpRequestException ex)
         {

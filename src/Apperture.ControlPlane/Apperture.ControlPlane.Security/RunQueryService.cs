@@ -108,7 +108,9 @@ public sealed class RunQueryService : IRunQueryService
                     r.CompletedAt,
                     r.CorrelationKey,
                     r.RetryOfRunId,
-                    RunKindNames.Operation));
+                    RunKindNames.Operation,
+                    r.IntegrationId,
+                    r.ProcedureId));
             }
             catch (UnauthorizedAccessException)
             {

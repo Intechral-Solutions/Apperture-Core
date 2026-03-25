@@ -47,6 +47,39 @@ public sealed class RunQueryServiceTests
     }
 
     [Fact]
+    public async Task ListRunsAsync_OperationRun_IncludesIntegrationAndProcedureId()
+    {
+        var db = NewDb();
+        db.OperationRuns.Add(new OperationRunEntity
+        {
+            Id = "rop",
+            WorkflowInstanceId = "i-op",
+            DefinitionId = "op.def",
+            Status = WorkflowLifecycleStatusNames.Completed,
+            CreatedAt = DateTimeOffset.UtcNow,
+            IntegrationId = "int-proc-1",
+            ProcedureId = "mod.proc.op"
+        });
+        db.OperationStartRequests.Add(new OperationStartRequestEntity
+        {
+            RunId = "rop",
+            OperationInstanceId = "i-op",
+            OperationDefinitionId = "op.def",
+            CreatedAt = DateTimeOffset.UtcNow,
+            Status = WorkflowLifecycleStatusNames.Requested
+        });
+        await db.SaveChangesAsync();
+
+        var service = NewService(db);
+        var list = await service.ListRunsAsync(new RunQueryFilter(ExecutionKind: "operation"));
+
+        list.Should().ContainSingle();
+        list[0].RunId.Should().Be("rop");
+        list[0].IntegrationId.Should().Be("int-proc-1");
+        list[0].ProcedureId.Should().Be("mod.proc.op");
+    }
+
+    [Fact]
     public async Task ListRunsAsync_WhenExecutionKindOperationFilter_ReturnsOnlyOperationRuns()
     {
         var db = NewDb();
@@ -276,7 +309,9 @@ public sealed class RunQueryServiceTests
             WorkflowInstanceId = "i-op",
             DefinitionId = "op.def",
             Status = WorkflowLifecycleStatusNames.Failed,
-            CreatedAt = DateTimeOffset.UtcNow
+            CreatedAt = DateTimeOffset.UtcNow,
+            IntegrationId = "int-op-run",
+            ProcedureId = "mod.proc.failed"
         });
         db.OperationStartRequests.Add(new OperationStartRequestEntity
         {
@@ -326,6 +361,8 @@ public sealed class RunQueryServiceTests
         detail.StartClaimedBy.Should().Be("worker-op");
         detail.StartRequestedAt.Should().NotBeNull();
         detail.StartClaimedAt.Should().NotBeNull();
+        detail.IntegrationId.Should().Be("int-op-run");
+        detail.ProcedureId.Should().Be("mod.proc.failed");
     }
 
     [Fact]
@@ -349,7 +386,9 @@ public sealed class RunQueryServiceTests
             DefinitionId = "Sample.HelloWorld.HelloWorld",
             Status = WorkflowLifecycleStatusNames.Running,
             CreatedAt = DateTimeOffset.UtcNow.AddMinutes(-5),
-            CorrelationKey = "corr-1"
+            CorrelationKey = "corr-1",
+            IntegrationId = "int-wf-proc",
+            ProcedureId = "Sample.HelloWorld.procedures.greet"
         });
         db.WorkflowStartRequests.Add(new WorkflowStartRequestEntity
         {
@@ -362,7 +401,9 @@ public sealed class RunQueryServiceTests
             IdempotencyKey = "idem-wf-1",
             CorrelationId = "corr-wf-1",
             ClaimedBy = "worker-1",
-            ClaimedAt = DateTimeOffset.UtcNow.AddMinutes(-4)
+            ClaimedAt = DateTimeOffset.UtcNow.AddMinutes(-4),
+            IntegrationId = "int-wf-proc",
+            ProcedureId = "Sample.HelloWorld.procedures.greet"
         });
         db.WorkflowLifecycleEvents.Add(new WorkflowLifecycleEventEntity
         {
@@ -418,6 +459,8 @@ public sealed class RunQueryServiceTests
         detail.StartClaimedBy.Should().Be("worker-1");
         detail.StartRequestedAt.Should().NotBeNull();
         detail.StartClaimedAt.Should().NotBeNull();
+        detail.IntegrationId.Should().Be("int-wf-proc");
+        detail.ProcedureId.Should().Be("Sample.HelloWorld.procedures.greet");
     }
 
     [Fact]

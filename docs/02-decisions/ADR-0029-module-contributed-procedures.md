@@ -18,7 +18,7 @@ Operators need a deliberate, auditable way to trigger module behavior from the m
 
 4. **Launch** — Launch is **not** a generic connector RPC. `POST .../procedures/{procedureId}/launch` validates orchestration-safe parameters, optionally evaluates procedure-level permissions, then calls `IWorkflowStartDispatchService` or `IOperationStartDispatchService` with `IntegrationId` and `ProcedureId` for persisted provenance.
 
-5. **Provenance** — Optional `ProcedureId` is stored on workflow/operation start requests and runs (alongside existing `IntegrationId` on workflows). Run queries expose these fields when present.
+5. **Provenance** — `ProcedureId` and `IntegrationId` are stored on workflow/operation **runs**, **instances**, and **start requests**; start parameters are stored as JSON on the start request. Run detail and visibility rules are specified in [ADR-0031](./ADR-0031-procedure-provenance-and-parameter-visibility.md).
 
 6. **Non-goals** — No platform-managed connector operation catalog, no arbitrary RPC tunnel, no second permission system beyond procedure overrides plus existing start authorization.
 

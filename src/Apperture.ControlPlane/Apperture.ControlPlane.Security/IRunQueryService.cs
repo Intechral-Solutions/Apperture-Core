@@ -64,6 +64,11 @@ public sealed record RunForensicContextDto(
 /// <param name="CurrentStepName">
 /// Same field as <see cref="WorkflowInstanceEntity.CurrentStepName"/>: when <paramref name="Status"/> is <c>parked</c>, this is the next step to run after resume; when <c>running</c>, reflects current step progression.
 /// </param>
+/// <param name="StartParametersJson">
+/// Full JSON persisted on the workflow/operation start request after launch validation (see ADR-0031). No field-level redaction; authorized run readers see the stored blob as-is.
+/// </param>
+/// <param name="IntegrationId">Integration from which this run was started when known (procedure launches and integration-scoped starts; ADR-0031).</param>
+/// <param name="ProcedureId">Module procedure id when this run was started via the procedures API; null for direct starts (ADR-0031).</param>
 public sealed record RunDetailDto(
     string RunId,
     string ExecutionInstanceId,

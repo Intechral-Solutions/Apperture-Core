@@ -1,0 +1,77 @@
+@using Apperture.Management.Ui.Client.Services.Wizard
+
+<div class="rounded border border-default bg-surface p-3">
+    @if (!string.IsNullOrWhiteSpace(Title))
+    {
+        <div class="text-sm font-semibold text-heading">@Title</div>
+    }
+    @if (!string.IsNullOrWhiteSpace(Description))
+    {
+        <div class="mt-1 text-xs text-muted">@Description</div>
+    }
+    <ol class="mt-3 space-y-2">
+        @foreach (var step in Steps)
+        {
+            var state = ResolveState(step.Id);
+            var clickable = OnSelect.HasDelegate && state.Status is not WizardStepStatus.Blocked;
+            <li class="flex items-start justify-between gap-2 rounded border border-default bg-surface-muted/30 px-2 py-2">
+                <div class="min-w-0">
+                    <div class="flex items-center gap-2">
+                        <span class="text-xs font-mono text-muted">@step.Id</span>
+                        <button type="button"
+                                class="text-left text-sm font-medium @(step.Id == CurrentStepId ? "text-heading underline" : "text-body") disabled:opacity-60"
+                                disabled="@(!clickable)"
+                                @onclick="() => SelectStepAsync(step.Id)">
+                            @step.Title
+                        </button>
+                        <span class="@StatusBadgeClass(state.Status) text-xs">@StatusLabel(state.Status)</span>
+                    </div>
+                    @if (!string.IsNullOrWhiteSpace(step.Description))
+                    {
+                        <div class="mt-1 text-xs text-muted">@step.Description</div>
+                    }
+                    @if (state.Status == WizardStepStatus.Blocked && !string.IsNullOrWhiteSpace(state.BlockedReason))
+                    {
+                        <div class="mt-1 text-xs text-amber-800 dark:text-amber-200">@state.BlockedReason</div>
+                    }
+                </div>
+            </li>
+        }
+    </ol>
+</div>
+
+@code {
+    [Parameter] public string? Title { get; set; } = "Setup progress";
+    [Parameter] public string? Description { get; set; }
+    [Parameter] public IReadOnlyList<WizardStepDefinition> Steps { get; set; } = Array.Empty<WizardStepDefinition>();
+    [Parameter] public IReadOnlyDictionary<string, WizardStepState> StepStates { get; set; } = new Dictionary<string, WizardStepState>(StringComparer.Ordinal);
+    [Parameter] public string? CurrentStepId { get; set; }
+    [Parameter] public EventCallback<string> OnSelect { get; set; }
+
+    private WizardStepState ResolveState(string stepId)
+    {
+        if (StepStates.TryGetValue(stepId, out var state))
+            return state;
+        if (string.Equals(stepId, CurrentStepId, StringComparison.Ordinal))
+            return new WizardStepState(stepId, WizardStepStatus.Current);
+        return new WizardStepState(stepId, WizardStepStatus.Pending);
+    }
+
+    private static string StatusLabel(WizardStepStatus status) => status switch
+    {
+        WizardStepStatus.Complete => "complete",
+        WizardStepStatus.Current => "current",
+        WizardStepStatus.Blocked => "blocked",
+        _ => "pending"
+    };
+
+    private static string StatusBadgeClass(WizardStepStatus status) => status switch
+    {
+        WizardStepStatus.Complete => "rounded bg-emerald-500/15 px-2 py-0.5 text-emerald-700 dark:text-emerald-300",
+        WizardStepStatus.Current => "rounded bg-body/10 px-2 py-0.5 text-body",
+        WizardStepStatus.Blocked => "rounded bg-amber-500/15 px-2 py-0.5 text-amber-800 dark:text-amber-200",
+        _ => "rounded bg-surface-muted px-2 py-0.5 text-muted"
+    };
+
+    private Task SelectStepAsync(string stepId) => OnSelect.InvokeAsync(stepId);
+}

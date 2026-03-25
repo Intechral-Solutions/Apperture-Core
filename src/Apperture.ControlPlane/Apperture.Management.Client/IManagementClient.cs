@@ -537,6 +537,7 @@ public sealed record RunForensicContextDto(
     string? ModuleExecutionHint,
     IReadOnlyList<RunInvestigationHintDto> InvestigationHints);
 
+/// <summary>Run detail from <c>GET /api/runs/{id}</c>. <see cref="StartParametersJson"/>, <see cref="IntegrationId"/>, and <see cref="ProcedureId"/> follow ADR-0031 (full start JSON for authorized readers; no field redaction today).</summary>
 public sealed record RunDetailDto(
     string RunId,
     string ExecutionInstanceId,

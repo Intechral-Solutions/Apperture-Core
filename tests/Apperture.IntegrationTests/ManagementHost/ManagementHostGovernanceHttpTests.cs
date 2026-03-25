@@ -108,6 +108,43 @@ public sealed class ManagementHostGovernanceHttpTests
     }
 
     [Fact]
+    public async Task Post_integration_create_then_detail_shows_required_slots_and_actionable_readiness()
+    {
+        AssertSqlAvailable();
+        using var client = _fixture.CreateAuthenticatedClient(ManagementGovernanceTestConstants.ExternalIntegrationAuthoringOperator);
+        var createResponse = await client.PostAsJsonAsync(
+            "/api/integrations",
+            new
+            {
+                displayName = "Epic57 slot workflow",
+                moduleId = "Unisa.CampusNexus.PaymentPlans",
+                scopeKey = "instance"
+            });
+        createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var createdJson = await createResponse.Content.ReadAsStringAsync();
+        using var createdDoc = JsonDocument.Parse(createdJson);
+        var integrationId = createdDoc.RootElement.GetProperty("id").GetString();
+        integrationId.Should().NotBeNullOrWhiteSpace();
+        var createdIntegrationId = integrationId!;
+
+        var detailResponse = await client.GetAsync($"/api/integrations/{createdIntegrationId}/detail");
+        detailResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var detailJson = await detailResponse.Content.ReadAsStringAsync();
+        using var detailDoc = JsonDocument.Parse(detailJson);
+        var root = detailDoc.RootElement;
+        root.GetProperty("moduleId").GetString().Should().Be("Unisa.CampusNexus.PaymentPlans");
+        var requiredSlots = root.GetProperty("requiredSlots");
+        requiredSlots.ValueKind.Should().Be(JsonValueKind.Array);
+        requiredSlots.GetArrayLength().Should().BeGreaterThan(0);
+
+        var readiness = root.GetProperty("readiness");
+        readiness.GetProperty("isRunnable").GetBoolean().Should().BeFalse();
+        var issues = readiness.GetProperty("issues");
+        issues.ValueKind.Should().Be(JsonValueKind.Array);
+        issues.EnumerateArray().Select(i => i.GetProperty("code").GetString()).Should().Contain("missing_slot_binding");
+    }
+
+    [Fact]
     public async Task Get_integration_procedures_without_auth_returns_401()
     {
         AssertSqlAvailable();
@@ -350,6 +387,81 @@ public sealed class ManagementHostGovernanceHttpTests
             opDoc.RootElement.GetProperty("launchKind").GetString().Should().Be("operation");
             opDoc.RootElement.GetProperty("operationInstanceId").GetString().Should().NotBeNullOrEmpty();
         }
+    }
+
+    [Fact]
+    public async Task Get_run_after_procedure_launch_shows_provenance_and_start_parameters_when_runnable()
+    {
+        AssertSqlAvailable();
+        using var client = _fixture.CreateAuthenticatedClient(ManagementGovernanceTestConstants.ExternalProcedureLauncher);
+        var readinessResponse = await client.GetAsync(
+            $"/api/integrations/{ManagementGovernanceTestConstants.SeededIntegrationId}/readiness");
+        readinessResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var readinessJson = await readinessResponse.Content.ReadAsStringAsync();
+        using var readinessDoc = JsonDocument.Parse(readinessJson);
+        if (!readinessDoc.RootElement.GetProperty("isRunnable").GetBoolean())
+            return;
+
+        const string wfParamValue = "Epic56C-wf-provenance";
+        var wf = await client.PostAsJsonAsync(
+            $"/api/integrations/{ManagementGovernanceTestConstants.SeededIntegrationId}/procedures/Sample.HelloWorld.procedures.greet/launch",
+            new { parameters = new Dictionary<string, object?> { ["name"] = wfParamValue } });
+        wf.StatusCode.Should().Be(HttpStatusCode.Accepted);
+        string? wfRunId;
+        using (var launchDoc = JsonDocument.Parse(await wf.Content.ReadAsStringAsync()))
+        {
+            wfRunId = launchDoc.RootElement.GetProperty("runId").GetString();
+            launchDoc.RootElement.GetProperty("launchKind").GetString().Should().Be("workflow");
+        }
+
+        var wfDetailResponse = await client.GetAsync($"/api/runs/{wfRunId}");
+        wfDetailResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var wfDetailJson = await wfDetailResponse.Content.ReadAsStringAsync();
+        using (var wfDetail = JsonDocument.Parse(wfDetailJson))
+        {
+            wfDetail.RootElement.GetProperty("executionKind").GetString().Should().Be("workflow");
+            wfDetail.RootElement.GetProperty("integrationId").GetString().Should().Be(ManagementGovernanceTestConstants.SeededIntegrationId);
+            wfDetail.RootElement.GetProperty("procedureId").GetString().Should().Be("Sample.HelloWorld.procedures.greet");
+            var startJson = wfDetail.RootElement.GetProperty("startParametersJson").GetString();
+            startJson.Should().NotBeNullOrWhiteSpace();
+            startJson.Should().Contain(wfParamValue);
+        }
+
+        const string opParamValue = "Epic56C-op-provenance";
+        var op = await client.PostAsJsonAsync(
+            $"/api/integrations/{ManagementGovernanceTestConstants.SeededIntegrationId}/procedures/Sample.HelloWorld.procedures.opPing/launch",
+            new { parameters = new Dictionary<string, object?> { ["message"] = opParamValue } });
+        op.StatusCode.Should().Be(HttpStatusCode.Accepted);
+        string? opRunId;
+        using (var opLaunchDoc = JsonDocument.Parse(await op.Content.ReadAsStringAsync()))
+        {
+            opRunId = opLaunchDoc.RootElement.GetProperty("runId").GetString();
+            opLaunchDoc.RootElement.GetProperty("launchKind").GetString().Should().Be("operation");
+        }
+
+        var opDetailResponse = await client.GetAsync($"/api/runs/{opRunId}");
+        opDetailResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var opDetailJson = await opDetailResponse.Content.ReadAsStringAsync();
+        using (var opDetail = JsonDocument.Parse(opDetailJson))
+        {
+            opDetail.RootElement.GetProperty("executionKind").GetString().Should().Be("operation");
+            opDetail.RootElement.GetProperty("integrationId").GetString().Should().Be(ManagementGovernanceTestConstants.SeededIntegrationId);
+            opDetail.RootElement.GetProperty("procedureId").GetString().Should().Be("Sample.HelloWorld.procedures.opPing");
+            var opStartJson = opDetail.RootElement.GetProperty("startParametersJson").GetString();
+            opStartJson.Should().NotBeNullOrWhiteSpace();
+            opStartJson.Should().Contain(opParamValue);
+        }
+
+        var listResponse = await client.GetAsync("/api/runs?executionKind=operation");
+        listResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var listJson = await listResponse.Content.ReadAsStringAsync();
+        using var listDoc = JsonDocument.Parse(listJson);
+        listDoc.RootElement.ValueKind.Should().Be(JsonValueKind.Array);
+        var opRow = listDoc.RootElement.EnumerateArray().FirstOrDefault(e =>
+            string.Equals(e.GetProperty("runId").GetString(), opRunId, StringComparison.Ordinal));
+        opRow.ValueKind.Should().NotBe(JsonValueKind.Undefined);
+        opRow.GetProperty("integrationId").GetString().Should().Be(ManagementGovernanceTestConstants.SeededIntegrationId);
+        opRow.GetProperty("procedureId").GetString().Should().Be("Sample.HelloWorld.procedures.opPing");
     }
 
     [Fact]

@@ -47,3 +47,4 @@ Epic 56 introduced module-contributed procedures and integration-scoped listing,
 ### Neutral
 
 - Extends [ADR-0029](./ADR-0029-module-contributed-procedures.md); does not reintroduce generic connector/client operations.
+- **Persistence and run-detail visibility** for procedure launches are specified in [ADR-0031](./ADR-0031-procedure-provenance-and-parameter-visibility.md).

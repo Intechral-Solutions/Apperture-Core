@@ -273,6 +273,20 @@
                 <div class="text-sm font-semibold text-heading">Start request</div>
                 <div class="text-xs text-muted">Persisted start metadata for this execution run.</div>
                 <div class="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2">
+                    @if (!string.IsNullOrWhiteSpace(_detail.IntegrationId))
+                    {
+                        <div>
+                            <div class="text-xs text-muted">Integration</div>
+                            <div class="text-sm font-mono break-all">@_detail.IntegrationId</div>
+                        </div>
+                    }
+                    @if (!string.IsNullOrWhiteSpace(_detail.ProcedureId))
+                    {
+                        <div>
+                            <div class="text-xs text-muted">Procedure</div>
+                            <div class="text-sm font-mono break-all">@_detail.ProcedureId</div>
+                        </div>
+                    }
                     <div>
                         <div class="text-xs text-muted">Requested</div>
                         <div class="text-sm text-body">@Fmt(_detail.StartRequestedAt)</div>
@@ -297,9 +311,9 @@
                 @if (!string.IsNullOrWhiteSpace(_detail.StartParametersJson))
                 {
                     <div class="mt-2">
-                        <div class="text-xs text-muted">Parameters JSON</div>
+                        <div class="text-xs text-muted">Start parameters (JSON)</div>
                         <div class="mt-1 text-xs text-muted">
-                            Operator-supplied start parameters as persisted on the start request (Epic 56A). Treat as potentially sensitive (PII, business data); future redaction policies may limit visibility. Secret-bearing types are rejected at launch.
+                            Full payload persisted on the start request after validation (ADR-0031). Intended for non-secret operational inputs; secret-bearing .NET types are rejected at launch. Plain strings are not redacted—do not put secrets here. May include PII or business data; a future sensitive-field model could change visibility.
                         </div>
                         <pre class="mt-1 max-h-64 overflow-auto rounded border border-default bg-surface-muted p-2 text-xs text-body"><code>@_detail.StartParametersJson</code></pre>
                     </div>
