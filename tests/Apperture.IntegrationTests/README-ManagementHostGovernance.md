@@ -10,8 +10,12 @@ This folder exercises the **real** [Apperture.Management.Host](../../src/Appertu
 | `MSSQL_SA_PASSWORD` | Required for other **SqlServer** integration tests (`SqlServerTestConfiguration`) using database `Apperture_IntegrationTests` by default. |
 | `MSSQL_TEST_SERVER` | Optional; default `localhost,1433`. |
 | `MSSQL_TEST_DATABASE` | Optional; default `Apperture_IntegrationTests`. |
+| `APPERTURE_TEST_SFTP_HOST` | Hostname/IP for controlled SFTP verification proof (Epic 59A). Default `127.0.0.1`. |
+| `APPERTURE_TEST_SFTP_PORT` | SFTP port for Epic 59A tests. Default `2222`. |
+| `APPERTURE_TEST_SFTP_USERNAME` | Username for known-good SFTP verification. Default `apperture`. |
+| `APPERTURE_TEST_SFTP_PASSWORD` | Password for known-good SFTP verification. Default `AppertureSftp59a!`. |
 
-**CI:** [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml) starts a SQL Server 2022 service container, waits for port 1433, sets `APPERTURE_TEST_SQL` (catalog `Apperture_ManagementGovernanceTests`) and `MSSQL_SA_PASSWORD` / `MSSQL_TEST_SERVER` so the full integration project runs against the same ephemeral instance. The pipeline fails if any test fails.
+**CI:** [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml) starts SQL Server and a controlled SFTP container, waits for ports (`1433`, `2222`), sets `APPERTURE_TEST_SQL` and `APPERTURE_TEST_SFTP_*` variables, then runs the full integration project. This includes Epic 59A SFTP verification proof tests.
 
 ## Running tests locally
 
@@ -33,9 +37,22 @@ $env:APPERTURE_TEST_SQL = "Server=127.0.0.1,1433;User Id=sa;Password=YourStrong!
 dotnet test tests/Apperture.IntegrationTests/Apperture.IntegrationTests.csproj
 ```
 
+For Epic 59A SFTP verification proof locally, start an SFTP container and set SFTP env vars:
+
+```powershell
+docker run --name apperture-test-sftp -p 2222:22 -d atmoz/sftp apperture:AppertureSftp59a!:1001:100:upload
+$env:APPERTURE_TEST_SFTP_HOST = "127.0.0.1"
+$env:APPERTURE_TEST_SFTP_PORT = "2222"
+$env:APPERTURE_TEST_SFTP_USERNAME = "apperture"
+$env:APPERTURE_TEST_SFTP_PASSWORD = "AppertureSftp59a!"
+dotnet test tests/Apperture.IntegrationTests/Apperture.IntegrationTests.csproj --filter "FullyQualifiedName~Sftp"
+```
+
 **Prerequisites:** SQL Server reachable with SA (or equivalent) credentials; `TrustServerCertificate=True` is typical for dev containers. LocalDB works if you point `APPERTURE_TEST_SQL` at `(localdb)\mssqllocaldb` and ensure the instance is running.
 
 If SQL is unreachable, `ManagementHostGovernanceFixture` sets `SqlAvailable = false` and each governance test fails fast with a message explaining the requirement (no silent pass).
+
+If SFTP is unreachable, Epic 59A tests fail fast with a message describing required `APPERTURE_TEST_SFTP_*` settings.
 
 ## How it works
 

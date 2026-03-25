@@ -1,6 +1,7 @@
 using System.Linq;
 using System.Net;
 using System.Net.Http.Json;
+using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
 using Apperture.ControlPlane.Security.Models;
@@ -23,6 +24,46 @@ public sealed class ManagementHostGovernanceHttpTests
         Assert.True(
             _fixture.SqlAvailable,
             $"These tests require SQL Server or LocalDB. Set {ManagementGovernanceTestConstants.ConnectionStringEnvironmentVariable} or install LocalDB. Connection attempted: {_fixture.ConnectionString}");
+    }
+
+    private static (string Host, string Port, string Username, string Password) GetSftpTestSettings() =>
+        (
+            Environment.GetEnvironmentVariable(ManagementGovernanceTestConstants.SftpHostEnvironmentVariable) ?? ManagementGovernanceTestConstants.DefaultSftpHost,
+            Environment.GetEnvironmentVariable(ManagementGovernanceTestConstants.SftpPortEnvironmentVariable) ?? ManagementGovernanceTestConstants.DefaultSftpPort,
+            Environment.GetEnvironmentVariable(ManagementGovernanceTestConstants.SftpUsernameEnvironmentVariable) ?? ManagementGovernanceTestConstants.DefaultSftpUsername,
+            Environment.GetEnvironmentVariable(ManagementGovernanceTestConstants.SftpPasswordEnvironmentVariable) ?? ManagementGovernanceTestConstants.DefaultSftpPassword
+        );
+
+    private static string? FindIssueForConnection(JsonElement readiness, string code, string connectionId)
+    {
+        foreach (var issue in readiness.GetProperty("issues").EnumerateArray())
+        {
+            if (string.Equals(issue.GetProperty("code").GetString(), code, StringComparison.Ordinal)
+                && string.Equals(issue.TryGetProperty("connectionId", out var connEl) ? connEl.GetString() : null, connectionId, StringComparison.Ordinal))
+            {
+                return issue.TryGetProperty("severity", out var sev) ? sev.GetString() : null;
+            }
+        }
+
+        return null;
+    }
+
+    private static async Task<bool> IsTcpEndpointReachableAsync(string host, string port, int timeoutMs = 3000)
+    {
+        if (!int.TryParse(port, out var parsedPort))
+            return false;
+
+        try
+        {
+            using var tcp = new TcpClient();
+            using var cts = new CancellationTokenSource(timeoutMs);
+            await tcp.ConnectAsync(host, parsedPort, cts.Token);
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     [Fact]
@@ -298,6 +339,145 @@ public sealed class ManagementHostGovernanceHttpTests
             .EnumerateArray()
             .Any(issue => string.Equals(issue.GetProperty("code").GetString(), "connection_unverified", StringComparison.Ordinal))
             .Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Post_sftp_test_connect_persists_and_updates_readiness_across_unverified_success_failed()
+    {
+        AssertSqlAvailable();
+        var (sftpHost, sftpPort, sftpUser, sftpPassword) = GetSftpTestSettings();
+        var reachable = await IsTcpEndpointReachableAsync(sftpHost, sftpPort);
+        reachable.Should().BeTrue(
+            $"Epic 59A requires controlled SFTP endpoint at {sftpHost}:{sftpPort}. Set {ManagementGovernanceTestConstants.SftpHostEnvironmentVariable}/{ManagementGovernanceTestConstants.SftpPortEnvironmentVariable} and start the test SFTP container.");
+        using var client = _fixture.CreateAuthenticatedClient(ManagementGovernanceTestConstants.ExternalIntegrationAuthoringOperator);
+
+        // 1) Create integration for module with SFTP slot.
+        var createIntegration = await client.PostAsJsonAsync("/api/integrations", new
+        {
+            displayName = "Epic59A SFTP readiness proof",
+            moduleId = "Unisa.CampusNexus.PaymentPlans",
+            scopeKey = "instance"
+        });
+        createIntegration.StatusCode.Should().Be(HttpStatusCode.Created);
+        using var createdIntegrationDoc = JsonDocument.Parse(await createIntegration.Content.ReadAsStringAsync());
+        var integrationId = createdIntegrationDoc.RootElement.GetProperty("id").GetString();
+        integrationId.Should().NotBeNullOrWhiteSpace();
+
+        // 2) Find SFTP-required slot.
+        var detailResponse = await client.GetAsync($"/api/integrations/{integrationId}/detail");
+        detailResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var detailDoc = JsonDocument.Parse(await detailResponse.Content.ReadAsStringAsync());
+        var requiredSlots = detailDoc.RootElement.GetProperty("requiredSlots").EnumerateArray().ToArray();
+        var sftpSlot = requiredSlots.FirstOrDefault(slot =>
+            slot.GetProperty("contractType").GetString()?.Contains("ISftpFileClient", StringComparison.Ordinal) == true);
+        sftpSlot.ValueKind.Should().NotBe(JsonValueKind.Undefined, "module should expose an SFTP slot for Epic 59A proof.");
+        var slotName = sftpSlot.GetProperty("slotName").GetString();
+        var contractType = sftpSlot.GetProperty("contractType").GetString();
+        slotName.Should().NotBeNullOrWhiteSpace();
+        contractType.Should().NotBeNullOrWhiteSpace();
+
+        // 3) Create SFTP connection with known-good credentials.
+        var createConnection = await client.PostAsJsonAsync("/api/connections", new
+        {
+            connectorDefinitionId = "Apperture.Platform.Sftp",
+            name = $"Epic59A SFTP {Guid.NewGuid():N}"[..24],
+            config = new Dictionary<string, string>
+            {
+                ["Host"] = sftpHost,
+                ["Port"] = sftpPort,
+                ["Username"] = sftpUser
+            },
+            secretRefs = new Dictionary<string, string>
+            {
+                ["Password"] = sftpPassword
+            },
+            scopeKey = "instance"
+        });
+        createConnection.StatusCode.Should().Be(HttpStatusCode.Created);
+        using var createdConnectionDoc = JsonDocument.Parse(await createConnection.Content.ReadAsStringAsync());
+        var connectionId = createdConnectionDoc.RootElement.GetProperty("id").GetString();
+        connectionId.Should().NotBeNullOrWhiteSpace();
+
+        // 4) Bind connection to SFTP slot.
+        var bind = await client.PostAsJsonAsync($"/api/integrations/{integrationId}/bindings", new
+        {
+            slotName,
+            contractType,
+            connectionId
+        });
+        bind.StatusCode.Should().Be(HttpStatusCode.Created);
+
+        // 5) Assert unverified advisory before running test-connect.
+        var unverifiedDetail = await client.GetAsync($"/api/integrations/{integrationId}/detail");
+        unverifiedDetail.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var unverifiedDoc = JsonDocument.Parse(await unverifiedDetail.Content.ReadAsStringAsync());
+        var unverifiedSeverity = FindIssueForConnection(
+            unverifiedDoc.RootElement.GetProperty("readiness"),
+            "connection_unverified",
+            connectionId!);
+        unverifiedSeverity.Should().Be("Advisory");
+
+        // 6) Test-connect success.
+        var testConnectSuccess = await client.PostAsync($"/api/connections/{connectionId}/test-connect", null);
+        testConnectSuccess.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var successDoc = JsonDocument.Parse(await testConnectSuccess.Content.ReadAsStringAsync());
+        successDoc.RootElement.GetProperty("supportsVerification").GetBoolean().Should().BeTrue();
+        successDoc.RootElement.GetProperty("lastVerificationStatus").GetString().Should().Be("Success");
+        successDoc.RootElement.GetProperty("lastVerificationAtUtc").GetString().Should().NotBeNullOrWhiteSpace();
+        successDoc.RootElement.GetProperty("lastVerificationSummary").GetString().Should().NotBeNullOrWhiteSpace();
+
+        // 7) Assert persisted projection from fresh GET.
+        var getAfterSuccess = await client.GetAsync($"/api/connections/{connectionId}");
+        getAfterSuccess.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var persistedSuccessDoc = JsonDocument.Parse(await getAfterSuccess.Content.ReadAsStringAsync());
+        persistedSuccessDoc.RootElement.GetProperty("lastVerificationStatus").GetString().Should().Be("Success");
+        persistedSuccessDoc.RootElement.GetProperty("lastVerificationAtUtc").GetString().Should().NotBeNullOrWhiteSpace();
+
+        // 8) Success should clear verification advisories for this bound connection.
+        var successDetail = await client.GetAsync($"/api/integrations/{integrationId}/detail");
+        successDetail.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var successDetailDoc = JsonDocument.Parse(await successDetail.Content.ReadAsStringAsync());
+        FindIssueForConnection(successDetailDoc.RootElement.GetProperty("readiness"), "connection_unverified", connectionId!)
+            .Should().BeNull();
+        FindIssueForConnection(successDetailDoc.RootElement.GetProperty("readiness"), "connection_verification_failed", connectionId!)
+            .Should().BeNull();
+
+        // 9) Update connection to a known-bad password and verify failure path.
+        using var patchRequest = new HttpRequestMessage(HttpMethod.Patch, $"/api/connections/{connectionId}")
+        {
+            Content = JsonContent.Create(new
+            {
+                secretRefs = new Dictionary<string, string>
+                {
+                    ["Password"] = "wrong-password-epic59a"
+                }
+            })
+        };
+        var patchResponse = await client.SendAsync(patchRequest);
+        patchResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var testConnectFailed = await client.PostAsync($"/api/connections/{connectionId}/test-connect", null);
+        testConnectFailed.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var failedDoc = JsonDocument.Parse(await testConnectFailed.Content.ReadAsStringAsync());
+        failedDoc.RootElement.GetProperty("lastVerificationStatus").GetString().Should().Be("Failed");
+        failedDoc.RootElement.GetProperty("lastVerificationAtUtc").GetString().Should().NotBeNullOrWhiteSpace();
+        failedDoc.RootElement.GetProperty("lastVerificationSummary").GetString().Should().NotBeNullOrWhiteSpace();
+
+        var getAfterFailure = await client.GetAsync($"/api/connections/{connectionId}");
+        getAfterFailure.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var persistedFailureDoc = JsonDocument.Parse(await getAfterFailure.Content.ReadAsStringAsync());
+        persistedFailureDoc.RootElement.GetProperty("lastVerificationStatus").GetString().Should().Be("Failed");
+        persistedFailureDoc.RootElement.GetProperty("lastVerificationSummary").GetString().Should().NotBeNullOrWhiteSpace();
+
+        // 10) Failure should surface deterministic advisory readiness issue.
+        var failedDetail = await client.GetAsync($"/api/integrations/{integrationId}/detail");
+        failedDetail.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var failedDetailDoc = JsonDocument.Parse(await failedDetail.Content.ReadAsStringAsync());
+        var failedSeverity = FindIssueForConnection(
+            failedDetailDoc.RootElement.GetProperty("readiness"),
+            "connection_verification_failed",
+            connectionId!);
+        failedSeverity.Should().Be("Advisory");
     }
 
     [Fact]

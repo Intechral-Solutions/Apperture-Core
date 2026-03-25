@@ -1,10 +1,13 @@
 using System;
 using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 
 #nullable disable
 
 namespace Apperture.Persistence.SqlServer.Migrations
 {
+    [DbContext(typeof(AppertureDbContext))]
+    [Migration("20260325110000_AddConnectionVerificationColumns")]
     public partial class AddConnectionVerificationColumns : Migration
     {
         protected override void Up(MigrationBuilder migrationBuilder)

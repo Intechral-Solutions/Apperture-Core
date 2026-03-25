@@ -15,6 +15,10 @@ jobs:
       APPERTURE_CI_MSSQL_SA_PASSWORD: "AppertureCi_Governance55a!"
       MSSQL_SA_PASSWORD: "AppertureCi_Governance55a!"
       MSSQL_TEST_SERVER: "127.0.0.1,1433"
+      APPERTURE_TEST_SFTP_HOST: "127.0.0.1"
+      APPERTURE_TEST_SFTP_PORT: "2222"
+      APPERTURE_TEST_SFTP_USERNAME: "apperture"
+      APPERTURE_TEST_SFTP_PASSWORD: "AppertureSftp59a!"
     services:
       sqlserver:
         image: mcr.microsoft.com/mssql/server:2022-latest
@@ -23,6 +27,19 @@ jobs:
           MSSQL_SA_PASSWORD: ${{ env.APPERTURE_CI_MSSQL_SA_PASSWORD }}
         ports:
           - 1433:1433
+      sftp:
+        image: atmoz/sftp:latest
+        ports:
+          - 2222:22
+        volumes:
+          - /tmp/apperture-sftp-upload:/home/apperture/upload
+        options: >-
+          --health-cmd "sh -c 'echo healthy'"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+        env:
+          SFTP_USERS: "apperture:${{ env.APPERTURE_TEST_SFTP_PASSWORD }}:1001:100:upload"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -46,6 +63,19 @@ jobs:
           done
           # Allow time for SQL auth after the port accepts connections.
           sleep 8
+
+      - name: Wait for SFTP
+        shell: bash
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 60); do
+            if (echo > /dev/tcp/127.0.0.1/2222) 2>/dev/null; then
+              echo "SFTP port is open (attempt $i)"
+              break
+            fi
+            echo "Waiting for SFTP port... ($i/60)"
+            sleep 2
+          done
 
       - name: Restore
         run: dotnet restore Apperture.slnx

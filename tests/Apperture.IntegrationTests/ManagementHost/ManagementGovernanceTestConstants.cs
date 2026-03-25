@@ -10,6 +10,16 @@ internal static class ManagementGovernanceTestConstants
     internal const string DefaultLocalDbConnectionString =
         "Server=(localdb)\\mssqllocaldb;Database=Apperture_ManagementGovernanceTests;Trusted_Connection=True;TrustServerCertificate=True;";
 
+    internal const string SftpHostEnvironmentVariable = "APPERTURE_TEST_SFTP_HOST";
+    internal const string SftpPortEnvironmentVariable = "APPERTURE_TEST_SFTP_PORT";
+    internal const string SftpUsernameEnvironmentVariable = "APPERTURE_TEST_SFTP_USERNAME";
+    internal const string SftpPasswordEnvironmentVariable = "APPERTURE_TEST_SFTP_PASSWORD";
+
+    internal const string DefaultSftpHost = "127.0.0.1";
+    internal const string DefaultSftpPort = "2222";
+    internal const string DefaultSftpUsername = "apperture";
+    internal const string DefaultSftpPassword = "AppertureSftp59a!";
+
     /// <summary>24-char integration id seeded for governed integration HTTP tests.</summary>
     internal const string SeededIntegrationId = "intgovertestseed00000001";
 
