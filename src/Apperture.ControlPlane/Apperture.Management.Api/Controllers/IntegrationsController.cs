@@ -55,6 +55,7 @@ public sealed class IntegrationsController : ControllerBase
         [FromQuery] bool? verificationConcern,
         [FromQuery] string? verification,
         [FromQuery] bool? hasOperationalFailure,
+        [FromQuery] bool? hasUnexpectedSilence,
         [FromQuery] string? attention,
         [FromQuery] string? sort,
         CancellationToken cancellationToken)
@@ -76,6 +77,7 @@ public sealed class IntegrationsController : ControllerBase
                 VerificationConcern: verificationConcern,
                 Verification: verification,
                 HasOperationalFailure: hasOperationalFailure,
+                HasUnexpectedSilence: hasUnexpectedSilence,
                 AttentionTokens: attentionTokens,
                 Sort: sort);
             var rows = await _readinessService.ListFleetAsync(query, cancellationToken);
@@ -297,6 +299,11 @@ public sealed class IntegrationsController : ControllerBase
                 r.OperationalRuns.HasRepeatedRecentFailures,
                 r.OperationalRuns.MostRecentAuthorizedRunFailed,
                 r.OperationalRuns.EvidenceWindowStartUtc),
+            new Apperture.Management.Client.IntegrationFleetExpectedRunAttentionDto(
+                r.ExpectedRuns.HasRecurringScheduleExpectation,
+                r.ExpectedRuns.HasUnexpectedSilence,
+                r.ExpectedRuns.ReferenceScheduleId,
+                r.ExpectedRuns.ExpectationEvidenceWindowStartUtc),
             r.AttentionTokens.ToArray(),
             r.TopIssueCodes.ToArray());
 

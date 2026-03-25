@@ -162,8 +162,20 @@ public sealed class IntegrationReadinessService : IIntegrationReadinessService
                 s.LatestAuthorizedRunStatus,
                 s.LatestAuthorizedRunAt);
 
+            var utcNow = DateTimeOffset.UtcNow;
+            var expectedRuns = IntegrationFleetAttention.BuildExpectedRunAttention(
+                state,
+                integration.CreatedAt,
+                utcNow,
+                attention,
+                readiness,
+                schedules,
+                integration.Id,
+                operationalRuns);
+
             var tokens = IntegrationFleetAttention.ToAttentionTokens(attention).ToList();
             IntegrationFleetAttention.AppendOperationalAttentionTokens(tokens, state, operationalRuns);
+            IntegrationFleetAttention.AppendExpectedRunAttentionTokens(tokens, expectedRuns);
 
             rows.Add(new IntegrationFleetRowProjection(
                 integration.Id.Value,
@@ -176,6 +188,7 @@ public sealed class IntegrationReadinessService : IIntegrationReadinessService
                 readiness,
                 attention,
                 operationalRuns,
+                expectedRuns,
                 tokens,
                 topCodes));
         }
@@ -239,6 +252,13 @@ public sealed class IntegrationReadinessService : IIntegrationReadinessService
                 : q.Where(r => !r.OperationalRuns.HasRecentOperationalFailure);
         }
 
+        if (query.HasUnexpectedSilence is { } hasSilence)
+        {
+            q = hasSilence
+                ? q.Where(r => r.ExpectedRuns.HasUnexpectedSilence)
+                : q.Where(r => !r.ExpectedRuns.HasUnexpectedSilence);
+        }
+
         if (query.AttentionTokens is { Count: > 0 } wanted)
         {
             var normalized = wanted
@@ -285,6 +305,11 @@ public sealed class IntegrationReadinessService : IIntegrationReadinessService
                 ? rows.OrderByDescending(r => r.OperationalRuns.MostRecentFailedRunAt ?? DateTimeOffset.MinValue)
                     .ThenBy(r => r.DisplayName, StringComparer.OrdinalIgnoreCase)
                 : rows.OrderBy(r => r.OperationalRuns.MostRecentFailedRunAt ?? DateTimeOffset.MaxValue)
+                    .ThenBy(r => r.DisplayName, StringComparer.OrdinalIgnoreCase),
+            "unexpectedsilence" => desc
+                ? rows.OrderByDescending(r => r.ExpectedRuns.HasUnexpectedSilence)
+                    .ThenBy(r => r.DisplayName, StringComparer.OrdinalIgnoreCase)
+                : rows.OrderBy(r => r.ExpectedRuns.HasUnexpectedSilence)
                     .ThenBy(r => r.DisplayName, StringComparer.OrdinalIgnoreCase),
             _ => desc
                 ? rows.OrderByDescending(r => r.DisplayName, StringComparer.OrdinalIgnoreCase)

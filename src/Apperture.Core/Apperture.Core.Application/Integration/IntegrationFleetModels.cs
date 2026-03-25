@@ -1,3 +1,5 @@
+using Apperture.Core.Domain.Integration;
+using Apperture.Core.Domain.Scheduling;
 using Apperture.Core.Domain.Workflow;
 
 namespace Apperture.Core.Application.Integration;
@@ -15,6 +17,14 @@ public static class IntegrationFleetRunEvidence
 }
 
 /// <summary>
+/// Epic 63: grace before flagging “unexpected silence” on new integrations.
+/// </summary>
+public static class IntegrationFleetExpectedRunEvidence
+{
+    public static readonly TimeSpan SilenceGraceAfterIntegrationCreate = TimeSpan.FromHours(48);
+}
+
+/// <summary>
 /// Query for fleet list filtering and sort. Epic 61; Epic 62 operational filters.
 /// </summary>
 public sealed record IntegrationFleetQuery(
@@ -25,6 +35,7 @@ public sealed record IntegrationFleetQuery(
     bool? VerificationConcern = null,
     string? Verification = null,
     bool? HasOperationalFailure = null,
+    bool? HasUnexpectedSilence = null,
     IReadOnlyList<string>? AttentionTokens = null,
     string? Sort = null);
 
@@ -58,7 +69,17 @@ public sealed record IntegrationFleetOperationalRunAttention(
     DateTimeOffset? EvidenceWindowStartUtc);
 
 /// <summary>
-/// One row of the integration fleet overview. Epic 61; Epic 62 operational run slice.
+/// Epic 63: schedule + run window evidence for “expected execution” vs unexpected silence.
+/// See ADR Epic 63 for eligibility rules and batch-cap caveats (same as Epic 62 runs).
+/// </summary>
+public sealed record IntegrationFleetExpectedRunAttention(
+    bool HasRecurringScheduleExpectation,
+    bool HasUnexpectedSilence,
+    string? ReferenceScheduleId,
+    DateTimeOffset? ExpectationEvidenceWindowStartUtc);
+
+/// <summary>
+/// One row of the integration fleet overview. Epic 61; Epic 62 operational run slice; Epic 63 expected-run silence.
 /// </summary>
 public sealed record IntegrationFleetRowProjection(
     string Id,
@@ -71,6 +92,7 @@ public sealed record IntegrationFleetRowProjection(
     IntegrationReadinessProjection Readiness,
     IntegrationFleetAttentionFlags Attention,
     IntegrationFleetOperationalRunAttention OperationalRuns,
+    IntegrationFleetExpectedRunAttention ExpectedRuns,
     IReadOnlyList<string> AttentionTokens,
     IReadOnlyList<string> TopIssueCodes);
 
@@ -93,6 +115,7 @@ public static class IntegrationFleetAttention
         public const string VerificationUnavailable = "verification_unavailable";
         public const string OperationalFailure = "operational_failure";
         public const string RepeatedOperationalFailure = "repeated_operational_failure";
+        public const string ExpectedRunMissing = "expected_run_missing";
     }
 
     public static IntegrationFleetAttentionFlags Compute(
@@ -159,6 +182,63 @@ public static class IntegrationFleetAttention
             tokens.Add(Tokens.OperationalFailure);
         if (operationalRuns.HasRepeatedRecentFailures)
             tokens.Add(Tokens.RepeatedOperationalFailure);
+    }
+
+    /// <summary>
+    /// Epic 63: append when <see cref="IntegrationFleetExpectedRunAttention.HasUnexpectedSilence"/> is true.
+    /// </summary>
+    public static void AppendExpectedRunAttentionTokens(
+        IList<string> tokens,
+        IntegrationFleetExpectedRunAttention expectedRuns)
+    {
+        if (expectedRuns.HasUnexpectedSilence)
+            tokens.Add(Tokens.ExpectedRunMissing);
+    }
+
+    /// <summary>
+    /// Epic 63: recurring schedule expectation + silence vs Epic 62 authorized run window.
+    /// </summary>
+    public static IntegrationFleetExpectedRunAttention BuildExpectedRunAttention(
+        string operationalState,
+        DateTimeOffset integrationCreatedAt,
+        DateTimeOffset utcNow,
+        IntegrationFleetAttentionFlags attentionFlags,
+        IntegrationReadinessProjection readiness,
+        IReadOnlyList<ScheduleDefinition> schedules,
+        IntegrationId integrationId,
+        IntegrationFleetOperationalRunAttention operationalRuns)
+    {
+        var active = string.Equals(operationalState, "Active", StringComparison.OrdinalIgnoreCase);
+        if (!active)
+        {
+            return new IntegrationFleetExpectedRunAttention(false, false, null, null);
+        }
+
+        var qualifying = schedules
+            .Where(s =>
+                s.Enabled
+                && s.IntegrationId == integrationId
+                && !string.IsNullOrWhiteSpace(s.RecurrenceExpression))
+            .OrderBy(s => s.Id.Value, StringComparer.Ordinal)
+            .ToList();
+
+        var hasRecurringExpectation = readiness.IsRunnable
+            && !attentionFlags.HasConfigBlockingReadiness
+            && qualifying.Count > 0;
+
+        var windowStart = operationalRuns.EvidenceWindowStartUtc;
+        var pastGrace = utcNow - integrationCreatedAt >= IntegrationFleetExpectedRunEvidence.SilenceGraceAfterIntegrationCreate;
+        var noAuthorizedRunInWindow = operationalRuns.LastAuthorizedRunAt is null;
+
+        var hasUnexpectedSilence = hasRecurringExpectation && pastGrace && noAuthorizedRunInWindow;
+
+        var referenceId = qualifying.Count > 0 ? qualifying[0].Id.Value : null;
+
+        return new IntegrationFleetExpectedRunAttention(
+            hasRecurringExpectation,
+            hasUnexpectedSilence,
+            referenceId,
+            windowStart);
     }
 
     /// <summary>

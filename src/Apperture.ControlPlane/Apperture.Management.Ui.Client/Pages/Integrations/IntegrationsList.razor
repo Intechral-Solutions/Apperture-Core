@@ -9,7 +9,7 @@
 @inject NavigationManager Nav
 
 <div class="p-4">
-    <PageHeader Title="Integrations" Subtitle="Fleet overview: configuration/readiness and verification (left columns) vs recent run failures in the evidence window (Ops). Open a row for remediation; use links to jump to failed runs or the filtered run list.">
+    <PageHeader Title="Integrations" Subtitle="Fleet overview: configuration/readiness and verification; Ops (7d) for failed runs; Expected runs flags active scheduled integrations with no authorized run in the window (not paused/blocked/unscheduled). Open a row for remediation; use links for runs and schedules.">
         <Toolbar>
             @if (_capabilities?.CanManageIntegrations == true)
             {
@@ -98,6 +98,14 @@
                 </select>
             </label>
             <label class="flex flex-col gap-1">
+                <span class="text-xs text-muted">Unexpected silence</span>
+                <select class="rounded border border-default bg-surface px-2 py-1.5 text-body" @bind="_filterHasUnexpectedSilence" @bind:after="LoadAsync">
+                    <option value="">All</option>
+                    <option value="true">Expected run missing</option>
+                    <option value="false">Not silent</option>
+                </select>
+            </label>
+            <label class="flex flex-col gap-1">
                 <span class="text-xs text-muted">Sort</span>
                 <select class="rounded border border-default bg-surface px-2 py-1.5 text-body" @bind="_sort" @bind:after="LoadAsync">
                     <option value="">Name (A–Z)</option>
@@ -106,6 +114,7 @@
                     <option value="moduleId">Module id</option>
                     <option value="-recentFailedCount">Recent failures (most)</option>
                     <option value="-lastFailedAt">Last failed (newest)</option>
+                    <option value="-unexpectedSilence">Unexpected silence first</option>
                 </select>
             </label>
         </div>
@@ -122,6 +131,7 @@
                         <th class="px-3 py-2">Advisory</th>
                         <th class="px-3 py-2">Verify</th>
                         <th class="px-3 py-2">Ops (7d)</th>
+                        <th class="px-3 py-2">Expected runs</th>
                         <th class="px-3 py-2">Attention</th>
                         <th class="px-3 py-2"></th>
                     </tr>
@@ -163,6 +173,30 @@
                                             </div>
                                         }
                                     </div>
+                                }
+                                else
+                                {
+                                    <span class="text-muted">—</span>
+                                }
+                            </td>
+                            <td class="px-3 py-2 text-sm" @onclick:stopPropagation="true">
+                                @if (string.Equals(row.OperationalState, "Active", StringComparison.OrdinalIgnoreCase) && row.ExpectedRuns.HasRecurringScheduleExpectation)
+                                {
+                                    @if (row.ExpectedRuns.HasUnexpectedSilence)
+                                    {
+                                        <span class="text-muted">No recent run</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="text-muted">OK</span>
+                                    }
+                                    @if (!string.IsNullOrWhiteSpace(row.ExpectedRuns.ReferenceScheduleId))
+                                    {
+                                        <div class="mt-1 flex flex-wrap gap-x-2 gap-y-1">
+                                            <a class="text-xs underline" href="@("/schedules/" + Uri.EscapeDataString(row.ExpectedRuns.ReferenceScheduleId!))">Schedule</a>
+                                            <a class="text-xs underline" href="@($"/integrations/{Uri.EscapeDataString(row.Id)}#schedules")">Integration schedules</a>
+                                        </div>
+                                    }
                                 }
                                 else
                                 {
@@ -224,6 +258,7 @@
     private string _filterHasAdvisory = "";
     private string _filterVerificationConcern = "";
     private string _filterHasOperationalFailure = "";
+    private string _filterHasUnexpectedSilence = "";
     private string _sort = "";
 
     protected override async Task OnInitializedAsync()
@@ -256,6 +291,7 @@
                 HasAdvisory: ParseNullableBool(_filterHasAdvisory),
                 VerificationConcern: ParseNullableBool(_filterVerificationConcern),
                 HasOperationalFailure: ParseNullableBool(_filterHasOperationalFailure),
+                HasUnexpectedSilence: ParseNullableBool(_filterHasUnexpectedSilence),
                 Sort: string.IsNullOrWhiteSpace(_sort) ? null : _sort);
             _fleet = await Client.GetIntegrationFleetAsync(q);
         }

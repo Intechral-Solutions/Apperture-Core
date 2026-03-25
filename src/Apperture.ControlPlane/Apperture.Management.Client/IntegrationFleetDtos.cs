@@ -9,6 +9,7 @@ public sealed record IntegrationFleetQueryParams(
     bool? VerificationConcern = null,
     string? Verification = null,
     bool? HasOperationalFailure = null,
+    bool? HasUnexpectedSilence = null,
     string? Attention = null,
     string? Sort = null);
 
@@ -35,6 +36,13 @@ public sealed record IntegrationFleetOperationalRunAttentionDto(
     bool MostRecentAuthorizedRunFailed,
     DateTimeOffset? EvidenceWindowStartUtc);
 
+/// <summary>Epic 63: expected recurring runs vs unexpected silence in the run evidence window.</summary>
+public sealed record IntegrationFleetExpectedRunAttentionDto(
+    bool HasRecurringScheduleExpectation,
+    bool HasUnexpectedSilence,
+    string? ReferenceScheduleId,
+    DateTimeOffset? ExpectationEvidenceWindowStartUtc);
+
 /// <summary>Epic 61: one row of GET integrations/fleet. Epic 62: operational run slice.</summary>
 public sealed record IntegrationFleetRowDto(
     string Id,
@@ -47,5 +55,6 @@ public sealed record IntegrationFleetRowDto(
     IntegrationReadinessDto Readiness,
     IntegrationFleetAttentionFlagsDto Attention,
     IntegrationFleetOperationalRunAttentionDto OperationalRuns,
+    IntegrationFleetExpectedRunAttentionDto ExpectedRuns,
     string[] AttentionTokens,
     string[] TopIssueCodes);

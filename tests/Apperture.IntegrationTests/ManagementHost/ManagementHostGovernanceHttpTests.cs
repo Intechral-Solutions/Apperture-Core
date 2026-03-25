@@ -1075,6 +1075,9 @@ public sealed class ManagementHostGovernanceHttpTests
         ops.GetProperty("hasRecentOperationalFailure").ValueKind.Should().BeOneOf(JsonValueKind.True, JsonValueKind.False);
         ops.GetProperty("hasRepeatedRecentFailures").ValueKind.Should().BeOneOf(JsonValueKind.True, JsonValueKind.False);
         ops.GetProperty("mostRecentAuthorizedRunFailed").ValueKind.Should().BeOneOf(JsonValueKind.True, JsonValueKind.False);
+        var expected = seeded.GetProperty("expectedRuns");
+        expected.GetProperty("hasRecurringScheduleExpectation").ValueKind.Should().BeOneOf(JsonValueKind.True, JsonValueKind.False);
+        expected.GetProperty("hasUnexpectedSilence").ValueKind.Should().BeOneOf(JsonValueKind.True, JsonValueKind.False);
     }
 
     [Fact]

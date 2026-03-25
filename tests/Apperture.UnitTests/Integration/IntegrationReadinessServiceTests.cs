@@ -376,6 +376,8 @@ public sealed class IntegrationReadinessServiceTests
         row.OperationalRuns.HasRecentOperationalFailure.Should().BeFalse();
         row.AttentionTokens.Should().NotContain(IntegrationFleetAttention.Tokens.OperationalFailure);
         row.AttentionTokens.Should().NotContain(IntegrationFleetAttention.Tokens.RepeatedOperationalFailure);
+        row.ExpectedRuns.HasUnexpectedSilence.Should().BeFalse();
+        row.AttentionTokens.Should().NotContain(IntegrationFleetAttention.Tokens.ExpectedRunMissing);
         runQuery.Verify(x => x.GetFleetOperationalRunSignalsAsync(
             It.Is<IReadOnlyList<string>>(ids => ids.Count == 0),
             It.IsAny<DateTimeOffset>(),
@@ -440,11 +442,108 @@ public sealed class IntegrationReadinessServiceTests
         row.OperationalRuns.MostRecentAuthorizedRunFailed.Should().BeTrue();
         row.AttentionTokens.Should().Contain(IntegrationFleetAttention.Tokens.OperationalFailure);
         row.AttentionTokens.Should().Contain(IntegrationFleetAttention.Tokens.RepeatedOperationalFailure);
+        row.ExpectedRuns.HasUnexpectedSilence.Should().BeFalse();
+        row.AttentionTokens.Should().NotContain(IntegrationFleetAttention.Tokens.ExpectedRunMissing);
 
         var filteredOut = await sut.ListFleetAsync(new IntegrationFleetQuery(HasOperationalFailure: false));
         filteredOut.Should().BeEmpty();
 
         var filteredIn = await sut.ListFleetAsync(new IntegrationFleetQuery(HasOperationalFailure: true));
         filteredIn.Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task ListFleet_active_runnable_scheduled_no_run_gets_expected_run_missing_and_filter()
+    {
+        var createdOld = DateTimeOffset.Parse("2024-01-01T00:00:00Z");
+        var integration = new DomainIntegration(
+            IntId,
+            "My integration",
+            "Sample.Mod",
+            null,
+            IntegrationState.Active,
+            null,
+            createdOld,
+            Now);
+
+        var connId = new ConnectionId("conn1");
+        var binding = new Binding(
+            new BindingId("bind1"),
+            IntId,
+            "Sample.Mod",
+            "Db",
+            "System.Data.IDbConnection",
+            connId,
+            null,
+            BindingState.Active);
+        var connection = new Connection(
+            connId,
+            new ConnectorDefinitionId("sql"),
+            "SQL",
+            new Dictionary<string, string>(),
+            new Dictionary<string, string>(),
+            null,
+            null,
+            ConnectionState.Active);
+
+        var schedule = new ScheduleDefinition(
+            new ScheduleId("sch-fleet-63"),
+            "Daily",
+            "0 0 * * *",
+            "UTC",
+            true,
+            new ScheduledTarget(ScheduledJobType.WorkflowExecution, "{}"),
+            null,
+            1,
+            IntId);
+
+        var mgmt = new Mock<IIntegrationManagementService>();
+        mgmt.Setup(x => x.ListIntegrationsAsync(It.IsAny<CancellationToken>())).ReturnsAsync(new List<DomainIntegration> { integration });
+
+        var slots = new Mock<IModuleSlotRegistry>();
+        slots.Setup(x => x.GetSlotsForModule("Sample.Mod"))
+            .Returns(new List<ICapabilitySlot>
+            {
+                new TestSlot { ModuleId = "Sample.Mod", SlotName = "Db", ContractType = "System.Data.IDbConnection" }
+            });
+
+        var bindRepo = new Mock<IBindingRepository>();
+        bindRepo.Setup(x => x.GetByIntegrationIdAsync(IntId, It.IsAny<CancellationToken>())).ReturnsAsync(new List<Binding> { binding });
+
+        var connRepo = new Mock<IConnectionRepository>();
+        connRepo.Setup(x => x.GetByIdAsync(connId, It.IsAny<CancellationToken>())).ReturnsAsync(connection);
+
+        var elig = new Mock<IBindingEligibilityService>();
+        elig.Setup(x => x.GetEligibleConnectionsAsync("Sample.Mod", "Db", "System.Data.IDbConnection", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<Connection> { connection });
+
+        var schedRepo = new Mock<IScheduleRepository>();
+        schedRepo.Setup(x => x.GetByIntegrationIdAsync(IntId, It.IsAny<CancellationToken>())).ReturnsAsync(new List<ScheduleDefinition> { schedule });
+
+        var runQuery = RunQueryAllEmpty();
+
+        var sut = new IntegrationReadinessService(
+            mgmt.Object,
+            slots.Object,
+            bindRepo.Object,
+            connRepo.Object,
+            elig.Object,
+            schedRepo.Object,
+            new AdvisoryConnectionVerificationReadinessPolicy(),
+            runQuery.Object);
+
+        var fleet = await sut.ListFleetAsync(new IntegrationFleetQuery());
+        var row = fleet.Should().ContainSingle().Subject;
+        row.Readiness.IsRunnable.Should().BeTrue();
+        row.ExpectedRuns.HasRecurringScheduleExpectation.Should().BeTrue();
+        row.ExpectedRuns.HasUnexpectedSilence.Should().BeTrue();
+        row.ExpectedRuns.ReferenceScheduleId.Should().Be("sch-fleet-63");
+        row.AttentionTokens.Should().Contain(IntegrationFleetAttention.Tokens.ExpectedRunMissing);
+
+        var silentOnly = await sut.ListFleetAsync(new IntegrationFleetQuery(HasUnexpectedSilence: true));
+        silentOnly.Should().ContainSingle();
+
+        var notSilent = await sut.ListFleetAsync(new IntegrationFleetQuery(HasUnexpectedSilence: false));
+        notSilent.Should().BeEmpty();
     }
 }

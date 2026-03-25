@@ -312,6 +312,8 @@ public sealed class ManagementClient : IManagementClient
             parts.Add($"verification={Uri.EscapeDataString(q.Verification)}");
         if (q.HasOperationalFailure is not null)
             parts.Add($"hasOperationalFailure={(q.HasOperationalFailure.Value ? "true" : "false")}");
+        if (q.HasUnexpectedSilence is not null)
+            parts.Add($"hasUnexpectedSilence={(q.HasUnexpectedSilence.Value ? "true" : "false")}");
         if (!string.IsNullOrWhiteSpace(q.Attention))
             parts.Add($"attention={Uri.EscapeDataString(q.Attention)}");
         if (!string.IsNullOrWhiteSpace(q.Sort))
