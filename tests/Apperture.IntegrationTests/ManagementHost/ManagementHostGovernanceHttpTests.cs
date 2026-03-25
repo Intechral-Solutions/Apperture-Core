@@ -1047,4 +1047,65 @@ public sealed class ManagementHostGovernanceHttpTests
         dto.CanViewConnectorDefinitions.Should().BeFalse();
         dto.CanManageSchedules.Should().BeFalse();
     }
+
+    [Fact]
+    public async Task Get_integrations_fleet_returns_rows_with_readiness_and_attention_shape()
+    {
+        AssertSqlAvailable();
+        using var client = _fixture.CreateAuthenticatedClient(ManagementGovernanceTestConstants.ExternalIntegrationReader);
+        var response = await client.GetAsync("/api/integrations/fleet");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        doc.RootElement.ValueKind.Should().Be(JsonValueKind.Array);
+        var seeded = doc.RootElement.EnumerateArray()
+            .FirstOrDefault(e => e.GetProperty("id").GetString() == ManagementGovernanceTestConstants.SeededIntegrationId);
+        seeded.ValueKind.Should().NotBe(JsonValueKind.Undefined);
+        seeded.GetProperty("operationalState").GetString().Should().NotBeNullOrWhiteSpace();
+        var readiness = seeded.GetProperty("readiness");
+        var runnableKind = readiness.GetProperty("isRunnable").ValueKind;
+        (runnableKind == JsonValueKind.True || runnableKind == JsonValueKind.False).Should().BeTrue();
+        readiness.GetProperty("blockingIssueCount").TryGetInt32(out _).Should().BeTrue();
+        readiness.GetProperty("advisoryIssueCount").TryGetInt32(out _).Should().BeTrue();
+        seeded.GetProperty("attention").GetProperty("hasConfigBlockingReadiness").ValueKind
+            .Should().BeOneOf(JsonValueKind.True, JsonValueKind.False);
+        seeded.GetProperty("attentionTokens").ValueKind.Should().Be(JsonValueKind.Array);
+        seeded.GetProperty("topIssueCodes").ValueKind.Should().Be(JsonValueKind.Array);
+    }
+
+    [Fact]
+    public async Task Get_integrations_fleet_without_integration_read_returns_403()
+    {
+        AssertSqlAvailable();
+        using var client = _fixture.CreateAuthenticatedClient(ManagementGovernanceTestConstants.ExternalConnectorCatalogReader);
+        var response = await client.GetAsync("/api/integrations/fleet");
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [Fact]
+    public async Task Get_integrations_fleet_state_inactive_includes_deactivated_integration_only_in_that_filter()
+    {
+        AssertSqlAvailable();
+        using var authoring = _fixture.CreateAuthenticatedClient(ManagementGovernanceTestConstants.ExternalIntegrationAuthoringOperator);
+        var createResponse = await authoring.PostAsJsonAsync(
+            "/api/integrations",
+            new
+            {
+                displayName = "Epic61 fleet inactive filter",
+                moduleId = ManagementGovernanceTestConstants.HelloWorldModuleId,
+                scopeKey = "instance"
+            });
+        createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        using var createdDoc = JsonDocument.Parse(await createResponse.Content.ReadAsStringAsync());
+        var integrationId = createdDoc.RootElement.GetProperty("id").GetString();
+        integrationId.Should().NotBeNullOrWhiteSpace();
+        var deactivate = await authoring.PostAsync($"/api/integrations/{integrationId}/deactivate", null);
+        deactivate.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var reader = _fixture.CreateAuthenticatedClient(ManagementGovernanceTestConstants.ExternalIntegrationReader);
+        var fleetInactive = await reader.GetAsync("/api/integrations/fleet?state=Inactive");
+        fleetInactive.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var doc = JsonDocument.Parse(await fleetInactive.Content.ReadAsStringAsync());
+        doc.RootElement.EnumerateArray().Any(e => e.GetProperty("id").GetString() == integrationId).Should().BeTrue();
+        doc.RootElement.EnumerateArray().Any(e => e.GetProperty("id").GetString() == ManagementGovernanceTestConstants.SeededIntegrationId).Should().BeFalse();
+    }
 }

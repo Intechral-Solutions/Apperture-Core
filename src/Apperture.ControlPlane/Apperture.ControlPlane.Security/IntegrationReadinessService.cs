@@ -117,6 +117,132 @@ public sealed class IntegrationReadinessService : IIntegrationReadinessService
             scheduleSummaries);
     }
 
+    /// <inheritdoc />
+    public async ValueTask<IReadOnlyList<IntegrationFleetRowProjection>> ListFleetAsync(
+        IntegrationFleetQuery query,
+        CancellationToken cancellationToken = default)
+    {
+        var integrations = await _integrationManagement.ListIntegrationsAsync(cancellationToken);
+        var rows = new List<IntegrationFleetRowProjection>(integrations.Count);
+        foreach (var integration in integrations)
+        {
+            var bindings = await _bindingRepository.GetByIntegrationIdAsync(integration.Id, cancellationToken);
+            var schedules = await _scheduleRepository.GetByIntegrationIdAsync(integration.Id, cancellationToken);
+            var readiness = await EvaluateReadinessAsync(integration, bindings, schedules, cancellationToken);
+            var state = integration.State.ToString();
+            var attention = IntegrationFleetAttention.Compute(state, readiness);
+            var tokens = IntegrationFleetAttention.ToAttentionTokens(attention);
+            var topCodes = IntegrationFleetAttention.TopIssueCodes(readiness);
+            rows.Add(new IntegrationFleetRowProjection(
+                integration.Id.Value,
+                integration.DisplayName,
+                integration.ModuleId,
+                integration.ScopeKey,
+                state,
+                integration.CreatedAt,
+                integration.UpdatedAt,
+                readiness,
+                attention,
+                tokens,
+                topCodes));
+        }
+
+        var filtered = ApplyFleetFilters(rows, query);
+        return ApplyFleetSort(filtered, query.Sort);
+    }
+
+    private static List<IntegrationFleetRowProjection> ApplyFleetFilters(
+        List<IntegrationFleetRowProjection> rows,
+        IntegrationFleetQuery query)
+    {
+        IEnumerable<IntegrationFleetRowProjection> q = rows;
+        if (!string.IsNullOrWhiteSpace(query.State) &&
+            Enum.TryParse<IntegrationState>(query.State, ignoreCase: true, out var stateEnum))
+        {
+            var stateStr = stateEnum.ToString();
+            q = q.Where(r => string.Equals(r.OperationalState, stateStr, StringComparison.OrdinalIgnoreCase));
+        }
+
+        if (query.Runnable is { } runnable)
+            q = q.Where(r => r.Readiness.IsRunnable == runnable);
+
+        if (query.HasBlocking is { } hasBlocking)
+        {
+            q = hasBlocking
+                ? q.Where(r => r.Readiness.BlockingIssueCount > 0)
+                : q.Where(r => r.Readiness.BlockingIssueCount == 0);
+        }
+
+        if (query.HasAdvisory is { } hasAdvisory)
+        {
+            q = hasAdvisory
+                ? q.Where(r => r.Readiness.AdvisoryIssueCount > 0)
+                : q.Where(r => r.Readiness.AdvisoryIssueCount == 0);
+        }
+
+        if (query.VerificationConcern == true)
+        {
+            q = q.Where(r =>
+                r.Attention.HasVerificationFailed ||
+                r.Attention.HasVerificationUnverified ||
+                r.Attention.HasVerificationUnavailable);
+        }
+
+        if (!string.IsNullOrWhiteSpace(query.Verification))
+        {
+            q = query.Verification.Trim().ToLowerInvariant() switch
+            {
+                "failed" => q.Where(r => r.Attention.HasVerificationFailed),
+                "unverified" => q.Where(r => r.Attention.HasVerificationUnverified),
+                "unavailable" => q.Where(r => r.Attention.HasVerificationUnavailable),
+                _ => q
+            };
+        }
+
+        if (query.AttentionTokens is { Count: > 0 } wanted)
+        {
+            var normalized = wanted
+                .Select(t => t.Trim().ToLowerInvariant())
+                .Where(t => t.Length > 0)
+                .Distinct(StringComparer.Ordinal)
+                .ToHashSet(StringComparer.Ordinal);
+            if (normalized.Count > 0)
+            {
+                q = q.Where(r => r.AttentionTokens.Any(t => normalized.Contains(t.ToLowerInvariant())));
+            }
+        }
+
+        return q.ToList();
+    }
+
+    private static IReadOnlyList<IntegrationFleetRowProjection> ApplyFleetSort(
+        List<IntegrationFleetRowProjection> rows,
+        string? sort)
+    {
+        if (string.IsNullOrWhiteSpace(sort))
+        {
+            return rows
+                .OrderBy(r => r.DisplayName, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
+
+        var desc = sort.StartsWith('-');
+        var key = (desc ? sort[1..] : sort).Trim();
+        IOrderedEnumerable<IntegrationFleetRowProjection> ordered = key.ToLowerInvariant() switch
+        {
+            "moduleid" => desc
+                ? rows.OrderByDescending(r => r.ModuleId, StringComparer.OrdinalIgnoreCase)
+                : rows.OrderBy(r => r.ModuleId, StringComparer.OrdinalIgnoreCase),
+            "updatedat" => desc
+                ? rows.OrderByDescending(r => r.UpdatedAt)
+                : rows.OrderBy(r => r.UpdatedAt),
+            _ => desc
+                ? rows.OrderByDescending(r => r.DisplayName, StringComparer.OrdinalIgnoreCase)
+                : rows.OrderBy(r => r.DisplayName, StringComparer.OrdinalIgnoreCase)
+        };
+        return ordered.ToList();
+    }
+
     private async Task<IntegrationReadinessProjection> EvaluateReadinessAsync(
         DomainIntegration integration,
         IReadOnlyList<Binding> bindings,

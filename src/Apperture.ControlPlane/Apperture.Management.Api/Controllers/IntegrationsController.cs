@@ -44,6 +44,48 @@ public sealed class IntegrationsController : ControllerBase
     }
 
     /// <summary>
+    /// Fleet overview: integrations with readiness, blocking/advisory counts, verification signals, and attention tokens. Epic 61.
+    /// </summary>
+    [HttpGet("fleet")]
+    public async Task<ActionResult<IReadOnlyList<Apperture.Management.Client.IntegrationFleetRowDto>>> Fleet(
+        [FromQuery] string? state,
+        [FromQuery] bool? runnable,
+        [FromQuery] bool? hasBlocking,
+        [FromQuery] bool? hasAdvisory,
+        [FromQuery] bool? verificationConcern,
+        [FromQuery] string? verification,
+        [FromQuery] string? attention,
+        [FromQuery] string? sort,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            IReadOnlyList<string>? attentionTokens = null;
+            if (!string.IsNullOrWhiteSpace(attention))
+            {
+                attentionTokens = attention.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                    .ToList();
+            }
+
+            var query = new IntegrationFleetQuery(
+                State: state,
+                Runnable: runnable,
+                HasBlocking: hasBlocking,
+                HasAdvisory: hasAdvisory,
+                VerificationConcern: verificationConcern,
+                Verification: verification,
+                AttentionTokens: attentionTokens,
+                Sort: sort);
+            var rows = await _readinessService.ListFleetAsync(query, cancellationToken);
+            return Ok(rows.Select(ToFleetDto).ToList());
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return Forbid();
+        }
+    }
+
+    /// <summary>
     /// Evidence-based readiness: runnable flag and actionable issues from slots, bindings, connections, schedules.
     /// </summary>
     [HttpGet("{id}/readiness")]
@@ -108,7 +150,7 @@ public sealed class IntegrationsController : ControllerBase
     {
         try
         {
-            var request = new CreateIntegrationRequest(body.DisplayName, body.ModuleId, body.ScopeKey, body.Settings);
+            var request = new Apperture.Core.Application.Integration.CreateIntegrationRequest(body.DisplayName, body.ModuleId, body.ScopeKey, body.Settings);
             var integration = await _integrationService.CreateIntegrationAsync(request, cancellationToken);
             return CreatedAtAction(nameof(Get), new { id = integration.Id.Value }, ToDto(integration));
         }
@@ -133,7 +175,7 @@ public sealed class IntegrationsController : ControllerBase
             IntegrationState? integrationState = null;
             if (body.State is not null && Enum.TryParse<IntegrationState>(body.State, ignoreCase: true, out var parsed))
                 integrationState = parsed;
-            var request = new UpdateIntegrationRequest(body.DisplayName, integrationState, body.Settings);
+            var request = new Apperture.Core.Application.Integration.UpdateIntegrationRequest(body.DisplayName, integrationState, body.Settings);
             var integration = await _integrationService.UpdateIntegrationAsync(new IntegrationId(id), request, cancellationToken);
             return Ok(ToDto(integration));
         }
@@ -223,6 +265,42 @@ public sealed class IntegrationsController : ControllerBase
         i.Settings,
         i.CreatedAt,
         i.UpdatedAt);
+
+    private static Apperture.Management.Client.IntegrationFleetRowDto ToFleetDto(IntegrationFleetRowProjection r) =>
+        new(
+            r.Id,
+            r.DisplayName,
+            r.ModuleId,
+            r.ScopeKey,
+            r.OperationalState,
+            r.CreatedAt,
+            r.UpdatedAt,
+            ToReadinessDto(r.Readiness),
+            new Apperture.Management.Client.IntegrationFleetAttentionFlagsDto(
+                r.Attention.IsInactiveOperational,
+                r.Attention.IsRetired,
+                r.Attention.HasConfigBlockingReadiness,
+                r.Attention.HasAdvisoryOnly,
+                r.Attention.HasVerificationFailed,
+                r.Attention.HasVerificationUnverified,
+                r.Attention.HasVerificationUnavailable),
+            r.AttentionTokens.ToArray(),
+            r.TopIssueCodes.ToArray());
+
+    private static Apperture.Management.Client.IntegrationReadinessDto ToReadinessDto(IntegrationReadinessProjection p) =>
+        new(
+            p.IntegrationId,
+            p.ModuleId,
+            p.IsRunnable,
+            p.BlockingIssueCount,
+            p.AdvisoryIssueCount,
+            p.Issues.Select(i => new Apperture.Management.Client.IntegrationReadinessIssueDto(
+                i.Code,
+                i.Message,
+                i.SlotName,
+                i.BindingId,
+                i.ConnectionId,
+                i.Severity)).ToArray());
 }
 
 public sealed record IntegrationDto(

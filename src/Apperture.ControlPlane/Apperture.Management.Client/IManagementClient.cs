@@ -114,6 +114,13 @@ public interface IManagementClient
     Task<IReadOnlyList<IntegrationDto>> GetIntegrationsAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Fleet overview with readiness and attention signals. Epic 61.
+    /// </summary>
+    Task<IReadOnlyList<IntegrationFleetRowDto>> GetIntegrationFleetAsync(
+        IntegrationFleetQueryParams? query = null,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Gets an integration by id. Epic 49.
     /// </summary>
     Task<IntegrationDto?> GetIntegrationAsync(string id, CancellationToken cancellationToken = default);

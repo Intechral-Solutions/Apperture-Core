@@ -283,6 +283,39 @@ public sealed class ManagementClient : IManagementClient
         return list ?? Array.Empty<IntegrationDto>();
     }
 
+    public async Task<IReadOnlyList<IntegrationFleetRowDto>> GetIntegrationFleetAsync(
+        IntegrationFleetQueryParams? query = null,
+        CancellationToken cancellationToken = default)
+    {
+        var path = BuildIntegrationFleetPath(query);
+        var list = await _http.GetFromJsonAsync<IntegrationFleetRowDto[]>(path, ApiJsonReadOptions, cancellationToken).ConfigureAwait(false);
+        return list ?? Array.Empty<IntegrationFleetRowDto>();
+    }
+
+    private static string BuildIntegrationFleetPath(IntegrationFleetQueryParams? q)
+    {
+        if (q is null)
+            return "integrations/fleet";
+        var parts = new List<string>();
+        if (!string.IsNullOrWhiteSpace(q.State))
+            parts.Add($"state={Uri.EscapeDataString(q.State)}");
+        if (q.Runnable is not null)
+            parts.Add($"runnable={(q.Runnable.Value ? "true" : "false")}");
+        if (q.HasBlocking is not null)
+            parts.Add($"hasBlocking={(q.HasBlocking.Value ? "true" : "false")}");
+        if (q.HasAdvisory is not null)
+            parts.Add($"hasAdvisory={(q.HasAdvisory.Value ? "true" : "false")}");
+        if (q.VerificationConcern is not null)
+            parts.Add($"verificationConcern={(q.VerificationConcern.Value ? "true" : "false")}");
+        if (!string.IsNullOrWhiteSpace(q.Verification))
+            parts.Add($"verification={Uri.EscapeDataString(q.Verification)}");
+        if (!string.IsNullOrWhiteSpace(q.Attention))
+            parts.Add($"attention={Uri.EscapeDataString(q.Attention)}");
+        if (!string.IsNullOrWhiteSpace(q.Sort))
+            parts.Add($"sort={Uri.EscapeDataString(q.Sort)}");
+        return parts.Count == 0 ? "integrations/fleet" : $"integrations/fleet?{string.Join("&", parts)}";
+    }
+
     public async Task<IntegrationDto?> GetIntegrationAsync(string id, CancellationToken cancellationToken = default)
     {
         return await _http.GetFromJsonAsync<IntegrationDto>(

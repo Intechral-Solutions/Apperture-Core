@@ -2,12 +2,14 @@
 @using Apperture.Management.Client
 @using Apperture.Management.Ui.Client.Services
 @using Apperture.Management.Ui.Client.Organisms
+@using Apperture.Management.Ui.Shared
 @inject IManagementClient Client
 @inject IOperatorCapabilitiesService Capabilities
+@inject IToastService Toasts
 @inject NavigationManager Nav
 
 <div class="p-4">
-    <PageHeader Title="Integrations" Subtitle="Configured instances of modules. Each integration references a module definition and will eventually own settings, connection bindings, and schedules.">
+    <PageHeader Title="Integrations" Subtitle="Fleet overview: operational state, readiness (blocking vs advisory), verification signals, and quick actions. Open a row for full remediation.">
         <Toolbar>
             @if (_capabilities?.CanManageIntegrations == true)
             {
@@ -36,38 +38,128 @@
     {
         <PageMessage Kind="PageMessageKind.Error" Title="Error" Message="@_error" />
     }
-    else if (_integrations is null)
+    else if (_fleet is null)
     {
         <PageMessage Kind="PageMessageKind.Loading" Message="Loading integrations…" />
     }
-    else if (_integrations.Count == 0)
+    else if (_fleet.Count == 0)
     {
-        <PageMessage Kind="PageMessageKind.Empty" Message="No integrations found." />
+        <PageMessage Kind="PageMessageKind.Empty" Message="No integrations match the current filters." />
     }
     else
     {
+        <div class="mt-4 flex flex-wrap items-end gap-3 rounded border border-default bg-surface-muted/40 p-3 text-sm">
+            <label class="flex flex-col gap-1">
+                <span class="text-xs text-muted">State</span>
+                <select class="rounded border border-default bg-surface px-2 py-1.5 text-body" @bind="_filterState" @bind:after="LoadAsync">
+                    <option value="">All</option>
+                    <option value="Active">Active</option>
+                    <option value="Inactive">Inactive</option>
+                    <option value="Retired">Retired</option>
+                </select>
+            </label>
+            <label class="flex flex-col gap-1">
+                <span class="text-xs text-muted">Runnable</span>
+                <select class="rounded border border-default bg-surface px-2 py-1.5 text-body" @bind="_filterRunnable" @bind:after="LoadAsync">
+                    <option value="">All</option>
+                    <option value="true">Yes</option>
+                    <option value="false">No</option>
+                </select>
+            </label>
+            <label class="flex flex-col gap-1">
+                <span class="text-xs text-muted">Blocking issues</span>
+                <select class="rounded border border-default bg-surface px-2 py-1.5 text-body" @bind="_filterHasBlocking" @bind:after="LoadAsync">
+                    <option value="">All</option>
+                    <option value="true">Has blocking</option>
+                    <option value="false">None</option>
+                </select>
+            </label>
+            <label class="flex flex-col gap-1">
+                <span class="text-xs text-muted">Advisory issues</span>
+                <select class="rounded border border-default bg-surface px-2 py-1.5 text-body" @bind="_filterHasAdvisory" @bind:after="LoadAsync">
+                    <option value="">All</option>
+                    <option value="true">Has advisory</option>
+                    <option value="false">None</option>
+                </select>
+            </label>
+            <label class="flex flex-col gap-1">
+                <span class="text-xs text-muted">Verification</span>
+                <select class="rounded border border-default bg-surface px-2 py-1.5 text-body" @bind="_filterVerificationConcern" @bind:after="LoadAsync">
+                    <option value="">All</option>
+                    <option value="true">Any concern</option>
+                </select>
+            </label>
+            <label class="flex flex-col gap-1">
+                <span class="text-xs text-muted">Sort</span>
+                <select class="rounded border border-default bg-surface px-2 py-1.5 text-body" @bind="_sort" @bind:after="LoadAsync">
+                    <option value="">Name (A–Z)</option>
+                    <option value="-updatedAt">Updated (newest)</option>
+                    <option value="updatedAt">Updated (oldest)</option>
+                    <option value="moduleId">Module id</option>
+                </select>
+            </label>
+        </div>
+
         <div class="mt-4 overflow-x-auto rounded border border-default bg-surface">
             <table class="min-w-full text-left text-sm text-body">
                 <thead class="border-b border-default text-xs text-muted">
                     <tr>
-                        <th class="px-3 py-2">Display Name</th>
-                        <th class="px-3 py-2">Module definition</th>
+                        <th class="px-3 py-2">Display name</th>
+                        <th class="px-3 py-2">Module</th>
                         <th class="px-3 py-2">State</th>
-                        <th class="px-3 py-2">Created</th>
+                        <th class="px-3 py-2">Runnable</th>
+                        <th class="px-3 py-2">Block</th>
+                        <th class="px-3 py-2">Advisory</th>
+                        <th class="px-3 py-2">Verify</th>
+                        <th class="px-3 py-2">Attention</th>
                         <th class="px-3 py-2"></th>
                     </tr>
                 </thead>
                 <tbody>
-                    @foreach (var i in _integrations)
+                    @foreach (var row in _fleet)
                     {
                         <tr class="border-b border-default hover:bg-surface-muted cursor-pointer"
-                            @onclick="@(() => Nav.NavigateTo("/integrations/" + Uri.EscapeDataString(i.Id)))">
-                            <td class="px-3 py-2 font-medium">@i.DisplayName</td>
-                            <td class="px-3 py-2 font-mono text-xs">@i.ModuleId</td>
-                            <td class="px-3 py-2">@i.State</td>
-                            <td class="px-3 py-2 text-muted">@i.CreatedAt.ToString("yyyy-MM-dd")</td>
+                            @onclick="@(() => Nav.NavigateTo("/integrations/" + Uri.EscapeDataString(row.Id)))">
+                            <td class="px-3 py-2 font-medium">@row.DisplayName</td>
+                            <td class="px-3 py-2 font-mono text-xs">@row.ModuleId</td>
+                            <td class="px-3 py-2">@row.OperationalState</td>
+                            <td class="px-3 py-2">@(row.Readiness.IsRunnable ? "Yes" : "No")</td>
+                            <td class="px-3 py-2">@row.Readiness.BlockingIssueCount</td>
+                            <td class="px-3 py-2">@row.Readiness.AdvisoryIssueCount</td>
+                            <td class="px-3 py-2 text-muted">@VerificationLabel(row.Attention)</td>
                             <td class="px-3 py-2">
-                                <a href="@("/integrations/" + Uri.EscapeDataString(i.Id))" class="underline text-sm" @onclick:stopPropagation>Open</a>
+                                <div class="flex flex-wrap gap-1">
+                                    @foreach (var t in row.AttentionTokens)
+                                    {
+                                        <span class="rounded bg-surface-muted px-1.5 py-0.5 text-xs font-mono text-muted">@t</span>
+                                    }
+                                </div>
+                            </td>
+                            <td class="px-3 py-2 whitespace-nowrap" @onclick:stopPropagation="true">
+                                <a href="@("/integrations/" + Uri.EscapeDataString(row.Id))" class="mr-2 underline text-sm">Open</a>
+                                @if (_capabilities?.CanManageIntegrations == true &&
+                                     (string.Equals(row.OperationalState, "Active", StringComparison.OrdinalIgnoreCase) ||
+                                      string.Equals(row.OperationalState, "Inactive", StringComparison.OrdinalIgnoreCase)))
+                                {
+                                    @if (string.Equals(row.OperationalState, "Active", StringComparison.OrdinalIgnoreCase))
+                                    {
+                                        <button type="button"
+                                                class="rounded bg-surface-muted px-2 py-1 text-xs text-body hover:bg-surface disabled:opacity-50"
+                                                disabled="@_loading"
+                                                @onclick="@(() => DeactivateRowAsync(row.Id))">
+                                            Deactivate
+                                        </button>
+                                    }
+                                    else
+                                    {
+                                        <button type="button"
+                                                class="rounded bg-body px-2 py-1 text-xs text-surface hover:bg-body/90 disabled:opacity-50"
+                                                disabled="@_loading"
+                                                @onclick="@(() => ActivateRowAsync(row.Id))">
+                                            Activate
+                                        </button>
+                                    }
+                                }
                             </td>
                         </tr>
                     }
@@ -78,11 +170,18 @@
 </div>
 
 @code {
-    private IReadOnlyList<IntegrationDto>? _integrations;
+    private IReadOnlyList<IntegrationFleetRowDto>? _fleet;
     private OperatorCapabilitiesDto? _capabilities;
     private bool _capabilitiesLoaded;
     private bool _loading;
     private string? _error;
+
+    private string _filterState = "";
+    private string _filterRunnable = "";
+    private string _filterHasBlocking = "";
+    private string _filterHasAdvisory = "";
+    private string _filterVerificationConcern = "";
+    private string _sort = "";
 
     protected override async Task OnInitializedAsync()
     {
@@ -107,7 +206,14 @@
         _error = null;
         try
         {
-            _integrations = await Client.GetIntegrationsAsync();
+            var q = new IntegrationFleetQueryParams(
+                State: string.IsNullOrWhiteSpace(_filterState) ? null : _filterState,
+                Runnable: ParseNullableBool(_filterRunnable),
+                HasBlocking: ParseNullableBool(_filterHasBlocking),
+                HasAdvisory: ParseNullableBool(_filterHasAdvisory),
+                VerificationConcern: ParseNullableBool(_filterVerificationConcern),
+                Sort: string.IsNullOrWhiteSpace(_sort) ? null : _sort);
+            _fleet = await Client.GetIntegrationFleetAsync(q);
         }
         catch (HttpRequestException ex)
         {
@@ -116,6 +222,50 @@
         finally
         {
             _loading = false;
+        }
+    }
+
+    private static bool? ParseNullableBool(string s)
+    {
+        if (string.IsNullOrEmpty(s)) return null;
+        if (string.Equals(s, "true", StringComparison.OrdinalIgnoreCase)) return true;
+        if (string.Equals(s, "false", StringComparison.OrdinalIgnoreCase)) return false;
+        return null;
+    }
+
+    private static string VerificationLabel(IntegrationFleetAttentionFlagsDto f)
+    {
+        if (f.HasVerificationFailed) return "Failed";
+        if (f.HasVerificationUnavailable) return "Unavailable";
+        if (f.HasVerificationUnverified) return "Unverified";
+        return "OK";
+    }
+
+    private async Task ActivateRowAsync(string id)
+    {
+        try
+        {
+            await Client.ActivateIntegrationAsync(id);
+            Toasts.Show(ToastSeverity.Success, "Integration activated.");
+            await LoadAsync();
+        }
+        catch (HttpRequestException ex)
+        {
+            Toasts.Show(ToastSeverity.Error, ex.Message);
+        }
+    }
+
+    private async Task DeactivateRowAsync(string id)
+    {
+        try
+        {
+            await Client.DeactivateIntegrationAsync(id);
+            Toasts.Show(ToastSeverity.Success, "Integration deactivated.");
+            await LoadAsync();
+        }
+        catch (HttpRequestException ex)
+        {
+            Toasts.Show(ToastSeverity.Error, ex.Message);
         }
     }
 }

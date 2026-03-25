@@ -19,4 +19,11 @@ public interface IIntegrationReadinessService
     /// </summary>
     /// <returns>null if the integration does not exist.</returns>
     ValueTask<IntegrationOperatorDetailProjection?> GetOperatorDetailAsync(IntegrationId id, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Fleet overview: visible integrations with readiness and attention flags. Epic 61.
+    /// </summary>
+    ValueTask<IReadOnlyList<IntegrationFleetRowProjection>> ListFleetAsync(
+        IntegrationFleetQuery query,
+        CancellationToken cancellationToken = default);
 }
