@@ -52,7 +52,12 @@ public sealed class ConnectorDefinitionsController : ControllerBase
         d.Name,
         d.ModuleId,
         d.Description,
-        d.ConnectionFields.Select(f => new ConnectionFieldCatalogDto(f.Key, f.DisplayName, f.IsSecret, f.Description))
+        d.ConnectionFields.Select(f => new ConnectionFieldCatalogDto(
+                f.Key,
+                f.DisplayName,
+                f.IsSecret,
+                f.Description,
+                d.RequiredInputSchema.ContainsKey(f.Key)))
             .ToList(),
         d.Capabilities.ToString());
 }

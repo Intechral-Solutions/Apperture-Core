@@ -89,6 +89,11 @@ public interface IManagementClient
     Task<ConnectionDto?> GetConnectionAsync(string id, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Creates a first-class connection resource. Epic 58.
+    /// </summary>
+    Task<ConnectionDto> CreateConnectionAsync(CreateConnectionRequest request, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Lists connector definitions (catalog metadata; not executable client operations). Epic 52.
     /// </summary>
     Task<IReadOnlyList<ConnectorDefinitionCatalogDto>> GetConnectorDefinitionsAsync(CancellationToken cancellationToken = default);
@@ -448,7 +453,8 @@ public sealed record ConnectionFieldCatalogDto(
     string Key,
     string DisplayName,
     bool IsSecret,
-    string? Description);
+    string? Description,
+    bool IsRequired = false);
 
 /// <summary>Connector definition catalog entry (shape of connections, not operations). Epic 52.</summary>
 public sealed record ConnectorDefinitionCatalogDto(
@@ -470,6 +476,15 @@ public sealed record ConnectionDto(
     string? OwnerId,
     string State,
     IReadOnlyList<ConnectionUsedInEntry> UsedIn);
+
+/// <summary>Request to create a connection resource.</summary>
+public sealed record CreateConnectionRequest(
+    string ConnectorDefinitionId,
+    string Name,
+    IReadOnlyDictionary<string, string>? Config = null,
+    IReadOnlyDictionary<string, string>? SecretRefs = null,
+    string? ScopeKey = null,
+    string? OwnerId = null);
 
 public sealed record BlockedWorkRetryResult(
     bool Success,

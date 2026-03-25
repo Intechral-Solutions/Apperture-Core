@@ -145,6 +145,101 @@ public sealed class ManagementHostGovernanceHttpTests
     }
 
     [Fact]
+    public async Task Post_integration_create_connection_then_bind_improves_missing_slot_binding_readiness()
+    {
+        AssertSqlAvailable();
+        using var client = _fixture.CreateAuthenticatedClient(ManagementGovernanceTestConstants.ExternalIntegrationAuthoringOperator);
+
+        var createIntegrationResponse = await client.PostAsJsonAsync(
+            "/api/integrations",
+            new
+            {
+                displayName = "Epic58 create-and-bind",
+                moduleId = "Unisa.CampusNexus.PaymentPlans",
+                scopeKey = "instance"
+            });
+        createIntegrationResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        using var createdDoc = JsonDocument.Parse(await createIntegrationResponse.Content.ReadAsStringAsync());
+        var integrationId = createdDoc.RootElement.GetProperty("id").GetString();
+        integrationId.Should().NotBeNullOrWhiteSpace();
+        var createdIntegrationId = integrationId!;
+
+        var beforeDetailResponse = await client.GetAsync($"/api/integrations/{createdIntegrationId}/detail");
+        beforeDetailResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var beforeDoc = JsonDocument.Parse(await beforeDetailResponse.Content.ReadAsStringAsync());
+        var requiredSlots = beforeDoc.RootElement.GetProperty("requiredSlots").EnumerateArray().ToArray();
+        requiredSlots.Length.Should().BeGreaterThan(0);
+        var targetSlot = requiredSlots.FirstOrDefault(slot =>
+            slot.GetProperty("contractType").GetString()?.Contains("IDbConnection", StringComparison.Ordinal) == true);
+        targetSlot.ValueKind.Should().NotBe(JsonValueKind.Undefined);
+        var slotName = targetSlot.GetProperty("slotName").GetString();
+        var contractType = targetSlot.GetProperty("contractType").GetString();
+        slotName.Should().NotBeNullOrWhiteSpace();
+        contractType.Should().NotBeNullOrWhiteSpace();
+
+        var beforeMissingSlotIssueCount = beforeDoc.RootElement.GetProperty("readiness").GetProperty("issues")
+            .EnumerateArray()
+            .Count(issue => string.Equals(issue.GetProperty("code").GetString(), "missing_slot_binding", StringComparison.Ordinal));
+
+        var createConnectionResponse = await client.PostAsJsonAsync(
+            "/api/connections",
+            new
+            {
+                connectorDefinitionId = "Apperture.Platform.Sql",
+                name = $"Epic58 SQL {Guid.NewGuid():N}"[..24],
+                config = new Dictionary<string, string>
+                {
+                    ["Server"] = "localhost",
+                    ["Database"] = "TestDb",
+                    ["UserId"] = "sa"
+                },
+                secretRefs = new Dictionary<string, string>
+                {
+                    ["Password"] = "local:test/password"
+                },
+                scopeKey = "instance"
+            });
+        createConnectionResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        using var connectionDoc = JsonDocument.Parse(await createConnectionResponse.Content.ReadAsStringAsync());
+        var connectionId = connectionDoc.RootElement.GetProperty("id").GetString();
+        connectionId.Should().NotBeNullOrWhiteSpace();
+        var createdConnectionId = connectionId!;
+
+        var eligibleResponse = await client.GetAsync(
+            $"/api/integrations/{createdIntegrationId}/bindings/eligible-connections?slotName={Uri.EscapeDataString(slotName!)}&contractType={Uri.EscapeDataString(contractType!)}");
+        eligibleResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var eligibleDoc = JsonDocument.Parse(await eligibleResponse.Content.ReadAsStringAsync());
+        eligibleDoc.RootElement.EnumerateArray()
+            .Select(item => item.GetProperty("id").GetString())
+            .Should().Contain(createdConnectionId);
+
+        var bindResponse = await client.PostAsJsonAsync(
+            $"/api/integrations/{createdIntegrationId}/bindings",
+            new
+            {
+                slotName,
+                contractType,
+                connectionId = createdConnectionId
+            });
+        bindResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+
+        var afterDetailResponse = await client.GetAsync($"/api/integrations/{createdIntegrationId}/detail");
+        afterDetailResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var afterDoc = JsonDocument.Parse(await afterDetailResponse.Content.ReadAsStringAsync());
+        afterDoc.RootElement.GetProperty("bindings")
+            .EnumerateArray()
+            .Any(b =>
+                string.Equals(b.GetProperty("slotName").GetString(), slotName, StringComparison.Ordinal)
+                && string.Equals(b.GetProperty("connectionId").GetString(), createdConnectionId, StringComparison.Ordinal))
+            .Should().BeTrue();
+
+        var afterMissingSlotIssueCount = afterDoc.RootElement.GetProperty("readiness").GetProperty("issues")
+            .EnumerateArray()
+            .Count(issue => string.Equals(issue.GetProperty("code").GetString(), "missing_slot_binding", StringComparison.Ordinal));
+        afterMissingSlotIssueCount.Should().BeLessThan(beforeMissingSlotIssueCount);
+    }
+
+    [Fact]
     public async Task Get_integration_procedures_without_auth_returns_401()
     {
         AssertSqlAvailable();
