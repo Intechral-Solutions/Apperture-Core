@@ -15,18 +15,18 @@ namespace Apperture.Management.Api.Controllers;
 [Authorize]
 public sealed class IntegrationBindingsController : ControllerBase
 {
-    private readonly IIntegrationRepository _integrationRepository;
+    private readonly IIntegrationManagementService _integrationManagement;
     private readonly IBindingRepository _bindingRepository;
     private readonly IBindingService _bindingService;
     private readonly IModuleSlotRegistry _moduleSlotRegistry;
 
     public IntegrationBindingsController(
-        IIntegrationRepository integrationRepository,
+        IIntegrationManagementService integrationManagement,
         IBindingRepository bindingRepository,
         IBindingService bindingService,
         IModuleSlotRegistry moduleSlotRegistry)
     {
-        _integrationRepository = integrationRepository;
+        _integrationManagement = integrationManagement;
         _bindingRepository = bindingRepository;
         _bindingService = bindingService;
         _moduleSlotRegistry = moduleSlotRegistry;
@@ -41,7 +41,7 @@ public sealed class IntegrationBindingsController : ControllerBase
         try
         {
             var id = new IntegrationId(integrationId);
-            var integration = await _integrationRepository.GetByIdAsync(id, cancellationToken);
+            var integration = await _integrationManagement.GetIntegrationAsync(id, cancellationToken);
             if (integration is null)
                 return NotFound();
 
@@ -63,7 +63,7 @@ public sealed class IntegrationBindingsController : ControllerBase
         try
         {
             var id = new IntegrationId(integrationId);
-            var integration = await _integrationRepository.GetByIdAsync(id, cancellationToken);
+            var integration = await _integrationManagement.GetIntegrationAsync(id, cancellationToken);
             if (integration is null)
                 return NotFound();
 
@@ -89,7 +89,7 @@ public sealed class IntegrationBindingsController : ControllerBase
         try
         {
             var id = new IntegrationId(integrationId);
-            var integration = await _integrationRepository.GetByIdAsync(id, cancellationToken);
+            var integration = await _integrationManagement.GetIntegrationAsync(id, cancellationToken);
             if (integration is null)
                 return NotFound();
 
@@ -115,7 +115,7 @@ public sealed class IntegrationBindingsController : ControllerBase
         try
         {
             var id = new IntegrationId(integrationId);
-            var integration = await _integrationRepository.GetByIdAsync(id, cancellationToken);
+            var integration = await _integrationManagement.GetIntegrationAsync(id, cancellationToken);
             if (integration is null)
                 return NotFound();
 
@@ -147,6 +147,10 @@ public sealed class IntegrationBindingsController : ControllerBase
         try
         {
             var id = new IntegrationId(integrationId);
+            var integration = await _integrationManagement.GetIntegrationAsync(id, cancellationToken);
+            if (integration is null)
+                return NotFound();
+
             var binding = await _bindingRepository.GetByIdAsync(new BindingId(bindingId), cancellationToken);
             if (binding is null)
                 return NotFound();

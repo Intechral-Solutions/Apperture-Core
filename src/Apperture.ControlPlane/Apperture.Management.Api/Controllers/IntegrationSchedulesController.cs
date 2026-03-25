@@ -16,20 +16,20 @@ namespace Apperture.Management.Api.Controllers;
 [Authorize]
 public sealed class IntegrationSchedulesController : ControllerBase
 {
-    private readonly IIntegrationRepository _integrationRepository;
+    private readonly IIntegrationManagementService _integrationManagement;
     private readonly IScheduleRepository _scheduleRepository;
     private readonly IScheduleManagementService _scheduleManagement;
     private readonly IScheduleGovernanceService _scheduleGovernance;
     private readonly IScheduleValidationService _scheduleValidation;
 
     public IntegrationSchedulesController(
-        IIntegrationRepository integrationRepository,
+        IIntegrationManagementService integrationManagement,
         IScheduleRepository scheduleRepository,
         IScheduleManagementService scheduleManagement,
         IScheduleGovernanceService scheduleGovernance,
         IScheduleValidationService scheduleValidation)
     {
-        _integrationRepository = integrationRepository;
+        _integrationManagement = integrationManagement;
         _scheduleRepository = scheduleRepository;
         _scheduleManagement = scheduleManagement;
         _scheduleGovernance = scheduleGovernance;
@@ -45,7 +45,7 @@ public sealed class IntegrationSchedulesController : ControllerBase
         try
         {
             var id = new IntegrationId(integrationId);
-            var integration = await _integrationRepository.GetByIdAsync(id, cancellationToken);
+            var integration = await _integrationManagement.GetIntegrationAsync(id, cancellationToken);
             if (integration is null)
                 return NotFound();
 
@@ -70,7 +70,7 @@ public sealed class IntegrationSchedulesController : ControllerBase
         try
         {
             var id = new IntegrationId(integrationId);
-            var integration = await _integrationRepository.GetByIdAsync(id, cancellationToken);
+            var integration = await _integrationManagement.GetIntegrationAsync(id, cancellationToken);
             if (integration is null)
                 return NotFound();
 

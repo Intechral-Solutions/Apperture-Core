@@ -13,7 +13,9 @@
     <PackageReference Include="xunit.runner.visualstudio" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\..\src\Apperture.ControlPlane\Apperture.ControlPlane.Security\Apperture.ControlPlane.Security.csproj" />
     <ProjectReference Include="..\..\src\Apperture.ControlPlane\Apperture.Management.Api\Apperture.Management.Api.csproj" />
+    <ProjectReference Include="..\..\src\Apperture.ControlPlane\Apperture.Management.Host\Apperture.Management.Host.csproj" />
     <ProjectReference Include="..\..\src\Apperture.Persistence\Apperture.Persistence.SqlServer\Apperture.Persistence.SqlServer.csproj" />
   </ItemGroup>
 </Project>
