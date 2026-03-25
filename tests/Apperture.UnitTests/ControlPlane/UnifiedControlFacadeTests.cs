@@ -6,6 +6,7 @@ using Apperture.Persistence.SqlServer;
 using Apperture.Shared.Kernel;
 using Apperture.RuntimePlane.Abstractions;
 using Apperture.Core.Domain.Operations;
+using Apperture.Core.Domain.Workflow;
 using Apperture.Core.Domain.Governance;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Security.Trust;
@@ -291,10 +292,10 @@ public sealed class UnifiedControlFacadeTests
     }
 
     [Theory]
-    [InlineData(Apperture.RuntimePlane.Abstractions.RuntimeControlStatusNames.Queued, ControlFacade.NormalizedRequested, "in_progress", "Runtime shutdown request is queued.")]
-    [InlineData(Apperture.RuntimePlane.Abstractions.RuntimeControlStatusNames.Applied, ControlFacade.NormalizedSucceeded, "succeeded", "Runtime shutdown applied.")]
-    [InlineData(Apperture.RuntimePlane.Abstractions.RuntimeControlStatusNames.Rejected, ControlFacade.NormalizedFailed, "failed", "Runtime shutdown request failed.")]
-    [InlineData(Apperture.RuntimePlane.Abstractions.RuntimeControlStatusNames.Failed, ControlFacade.NormalizedFailed, "failed", "Runtime shutdown request failed.")]
+    [InlineData(RuntimeControlStatusNames.Queued, ControlFacade.NormalizedRequested, "in_progress", "Runtime shutdown request is queued.")]
+    [InlineData(RuntimeControlStatusNames.Applied, ControlFacade.NormalizedSucceeded, "succeeded", "Runtime shutdown applied.")]
+    [InlineData(RuntimeControlStatusNames.Rejected, ControlFacade.NormalizedFailed, "failed", "Runtime shutdown request failed.")]
+    [InlineData(RuntimeControlStatusNames.Failed, ControlFacade.NormalizedFailed, "failed", "Runtime shutdown request failed.")]
     public async Task ControlActivityQuery_RuntimeShutdownNormalization_MapsStatuses(
         string runtimeControlStatus,
         string expectedNormalizedStatus,
@@ -314,13 +315,13 @@ public sealed class UnifiedControlFacadeTests
         var request = new Apperture.ControlPlane.Security.RuntimeControlRequestResult(
             Id: 42,
             RuntimeId: runtimeId,
-            ControlKind: Apperture.RuntimePlane.Abstractions.RuntimeControlKindNames.Shutdown,
+            ControlKind: RuntimeControlKindNames.Shutdown,
             Status: runtimeControlStatus,
             RequestedAt: DateTimeOffset.UtcNow.AddMinutes(-10),
             RequestedBy: "operator",
-            AppliedAt: runtimeControlStatus == Apperture.RuntimePlane.Abstractions.RuntimeControlStatusNames.Queued ? null : DateTimeOffset.UtcNow.AddMinutes(-5),
-            AppliedBy: runtimeControlStatus == Apperture.RuntimePlane.Abstractions.RuntimeControlStatusNames.Queued ? null : "worker",
-            LastError: runtimeControlStatus == Apperture.RuntimePlane.Abstractions.RuntimeControlStatusNames.Failed ? "boom" : null);
+            AppliedAt: runtimeControlStatus == RuntimeControlStatusNames.Queued ? null : DateTimeOffset.UtcNow.AddMinutes(-5),
+            AppliedBy: runtimeControlStatus == RuntimeControlStatusNames.Queued ? null : "worker",
+            LastError: runtimeControlStatus == RuntimeControlStatusNames.Failed ? "boom" : null);
 
         var db = NewDb();
         var service = new ControlActivityQueryService(
@@ -390,8 +391,8 @@ public sealed class UnifiedControlFacadeTests
             RunId = "run-99",
             WorkflowInstanceId = "i-wf-1",
             WorkflowDefinitionId = "wf-1",
-            ControlKind = Apperture.RuntimePlane.Abstractions.WorkflowExternalControlKindNames.Park,
-            Status = Apperture.RuntimePlane.Abstractions.WorkflowExternalControlStatusNames.Rejected,
+            ControlKind = WorkflowExternalControlKindNames.Park,
+            Status = WorkflowExternalControlStatusNames.Rejected,
             RequestedAt = DateTimeOffset.UtcNow.AddMinutes(-5),
             RequestedBy = "operator",
             AppliedAt = null,
@@ -428,8 +429,8 @@ public sealed class UnifiedControlFacadeTests
             RunId = "run-99",
             WorkflowInstanceId = "i-wf-1",
             WorkflowDefinitionId = "wf-1",
-            ControlKind = Apperture.RuntimePlane.Abstractions.WorkflowExternalControlKindNames.Park,
-            Status = Apperture.RuntimePlane.Abstractions.WorkflowExternalControlStatusNames.Rejected,
+            ControlKind = WorkflowExternalControlKindNames.Park,
+            Status = WorkflowExternalControlStatusNames.Rejected,
             RequestedAt = DateTimeOffset.UtcNow.AddMinutes(-5),
             RequestedBy = "operator",
             AppliedAt = null,

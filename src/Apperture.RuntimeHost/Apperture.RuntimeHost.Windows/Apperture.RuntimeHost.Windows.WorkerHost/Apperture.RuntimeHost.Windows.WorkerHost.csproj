@@ -8,6 +8,7 @@
     <PackageReference Include="Microsoft.Extensions.Hosting" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\..\..\Apperture.Core\Apperture.Core.Domain\Apperture.Core.Domain.csproj" />
     <ProjectReference Include="..\..\..\Apperture.Bootstrap\Apperture.Bootstrap\Apperture.Bootstrap.csproj" />
     <ProjectReference Include="..\..\..\Apperture.ControlPlane\Apperture.ControlPlane.Security\Apperture.ControlPlane.Security.csproj" />
     <ProjectReference Include="..\..\..\Apperture.ConnectorResolution\Apperture.ConnectorResolution.csproj" />

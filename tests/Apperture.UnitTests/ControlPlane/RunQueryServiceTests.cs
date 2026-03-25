@@ -2,6 +2,7 @@ using Apperture.ControlPlane.Security;
 using Apperture.Core.Application.RuntimeComposition;
 using Apperture.ModuleSdk.Abstractions;
 using Apperture.Core.Domain.Operations;
+using Apperture.Core.Domain.Workflow;
 using Apperture.Persistence.SqlServer;
 using Apperture.RuntimePlane.Abstractions;
 using FluentAssertions;

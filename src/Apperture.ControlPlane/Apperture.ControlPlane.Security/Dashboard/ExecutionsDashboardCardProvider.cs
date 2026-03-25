@@ -1,5 +1,6 @@
 using Apperture.ControlPlane.Dashboard;
 using Apperture.Core.Application.Services;
+using Apperture.Core.Domain.Workflow;
 using Apperture.RuntimePlane.Abstractions;
 
 namespace Apperture.ControlPlane.Security;

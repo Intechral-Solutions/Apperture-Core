@@ -6,6 +6,7 @@ using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Governance;
 using Apperture.Core.Domain.Identity;
 using Apperture.Core.Domain.Scheduling;
+using Apperture.Core.Domain.Workflow;
 using Apperture.Management.Api.Controllers;
 using Apperture.Shared.Kernel;
 using Apperture.RuntimePlane.Abstractions;

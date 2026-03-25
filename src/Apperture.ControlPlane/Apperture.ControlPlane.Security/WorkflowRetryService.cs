@@ -2,6 +2,7 @@ using System.Text.Json;
 using Apperture.Core.Application;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Audit;
+using Apperture.Core.Domain.Workflow;
 using Apperture.Persistence.SqlServer;
 using Apperture.Shared.Kernel;
 using Apperture.RuntimePlane.Abstractions;

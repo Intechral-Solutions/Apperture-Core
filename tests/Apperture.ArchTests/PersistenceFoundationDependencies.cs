@@ -7,7 +7,8 @@ namespace Apperture.ArchTests;
 /// Enforces dependency rules for the persistence foundation.
 /// See docs/01-architecture/persistence-foundation.md and bootstrap-and-secrets-boundary.md.
 /// Persistence must not reference Bootstrap (connection string resolution belongs to Bootstrap)
-/// or RuntimePlane.Abstractions (workflow engine abstractions); it only receives a connection string and uses Core.Security.Secrets.
+/// or RuntimePlane.Abstractions (portable workflow engine contracts / executor surface). Persisted lifecycle string
+/// vocabulary lives in Core.Domain.Workflow. Start-request processors that invoke IWorkflowExecutor live in RuntimePlane.Engine.
 /// </summary>
 public sealed class PersistenceFoundationDependencies
 {

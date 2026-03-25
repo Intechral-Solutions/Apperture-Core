@@ -1,5 +1,6 @@
 using Apperture.ControlPlane.Security;
 using Apperture.Core.Application.Services;
+using Apperture.Core.Domain.Workflow;
 using Apperture.Persistence.SqlServer;
 using Apperture.RuntimePlane.Abstractions;
 using Apperture.Shared.Kernel;

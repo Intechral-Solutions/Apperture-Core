@@ -1,4 +1,4 @@
-using Apperture.RuntimePlane.Abstractions;
+using Apperture.Core.Domain.Workflow;
 
 namespace Apperture.Persistence.SqlServer;
 

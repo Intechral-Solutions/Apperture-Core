@@ -4,6 +4,7 @@ using Apperture.Core.Application.ControlFacade;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Governance;
 using Apperture.Core.Domain.Operations;
+using Apperture.Core.Domain.Workflow;
 using Apperture.Core.Security.Trust;
 using Apperture.Persistence.SqlServer;
 using Apperture.RuntimePlane.Abstractions;

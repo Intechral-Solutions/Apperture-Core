@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Operations;
+using Apperture.Core.Domain.Workflow;
 using Apperture.Persistence.SqlServer;
 using Apperture.Persistence.SqlServer.Options;
 using Apperture.RuntimePlane.Abstractions;

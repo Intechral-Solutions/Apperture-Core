@@ -1,7 +1,8 @@
-namespace Apperture.RuntimePlane.Abstractions;
+namespace Apperture.Core.Domain.Workflow;
 
 /// <summary>
-/// Shared workflow lifecycle vocabulary used by control-plane services, persistence, and workers.
+/// Shared workflow lifecycle vocabulary persisted in SQL and used by control plane, workers, and queries.
+/// Lives in Core.Domain so persistence does not depend on RuntimePlane assemblies.
 /// </summary>
 public static class WorkflowLifecycleStatusNames
 {
@@ -32,4 +33,42 @@ public static class WorkflowLifecycleEventNames
     public const string StepStarted = "workflow.step_started";
     public const string StepCompleted = "workflow.step_completed";
     public const string StepFailed = "workflow.step_failed";
+}
+
+/// <summary>
+/// External control request kinds the workflow runtime recipient model can accept.
+/// </summary>
+public static class WorkflowExternalControlKindNames
+{
+    public const string Park = "park";
+    public const string Resume = "resume";
+}
+
+/// <summary>
+/// Durable lifecycle state for queued workflow external control requests.
+/// </summary>
+public static class WorkflowExternalControlStatusNames
+{
+    public const string Queued = "queued";
+    public const string Applied = "applied";
+    public const string Rejected = "rejected";
+}
+
+/// <summary>
+/// External control request kinds the runtime recipient model can accept.
+/// </summary>
+public static class RuntimeControlKindNames
+{
+    public const string Shutdown = "shutdown";
+}
+
+/// <summary>
+/// Durable lifecycle state for queued runtime external control requests.
+/// </summary>
+public static class RuntimeControlStatusNames
+{
+    public const string Queued = "queued";
+    public const string Applied = "applied";
+    public const string Rejected = "rejected";
+    public const string Failed = "failed";
 }

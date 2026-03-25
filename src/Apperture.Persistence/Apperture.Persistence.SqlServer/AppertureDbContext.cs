@@ -4,7 +4,7 @@ namespace Apperture.Persistence.SqlServer;
 
 /// <summary>
 /// Shared EF Core DbContext for platform data: workflow instances, audit, telemetry, and future control-plane schema.
-/// Used by Control Plane and Windows runtime; does not depend on workflow engine abstractions (RuntimePlane).
+/// Used by Control Plane and Windows runtime; schema vocabulary for persisted lifecycle strings lives in Core.Domain.Workflow (not RuntimePlane assemblies).
 /// </summary>
 public class AppertureDbContext : DbContext
 {

@@ -8,6 +8,7 @@
     <PackageReference Include="Microsoft.Extensions.Http" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\..\Apperture.Core\Apperture.Core.Domain\Apperture.Core.Domain.csproj" />
     <ProjectReference Include="..\..\Apperture.Shared\Apperture.Shared.Kernel\Apperture.Shared.Kernel.csproj" />
     <ProjectReference Include="..\..\Apperture.RuntimePlane\Apperture.RuntimePlane.Abstractions\Apperture.RuntimePlane.Abstractions.csproj" />
   </ItemGroup>

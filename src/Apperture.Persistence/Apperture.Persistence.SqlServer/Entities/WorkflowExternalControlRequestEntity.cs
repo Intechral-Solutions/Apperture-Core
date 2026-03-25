@@ -1,3 +1,5 @@
+using Apperture.Core.Domain.Workflow;
+
 namespace Apperture.Persistence.SqlServer;
 
 /// <summary>
@@ -11,7 +13,7 @@ public sealed class WorkflowExternalControlRequestEntity
     public string WorkflowInstanceId { get; set; } = "";
     public string WorkflowDefinitionId { get; set; } = "";
     public string ControlKind { get; set; } = "";
-    public string Status { get; set; } = Apperture.RuntimePlane.Abstractions.WorkflowExternalControlStatusNames.Queued;
+    public string Status { get; set; } = WorkflowExternalControlStatusNames.Queued;
     public DateTimeOffset RequestedAt { get; set; }
     public string? RequestedBy { get; set; }
     public DateTimeOffset? AppliedAt { get; set; }

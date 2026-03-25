@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Apperture.Core.Domain.Operations;
+using Apperture.Core.Domain.Workflow;
 using Apperture.Persistence.SqlServer;
 using Apperture.RuntimePlane.Abstractions;
 using Microsoft.EntityFrameworkCore;

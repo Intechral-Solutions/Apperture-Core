@@ -8,7 +8,7 @@ public sealed class RuntimeAbstractionsDependencies
     [Fact]
     public void Runtime_Abstractions_Should_Reference_Only_Kernel()
     {
-        // RuntimePlane.Abstractions should not reference Engine, Persistence, DTFx, or DurableFunctions
+        // RuntimePlane.Abstractions may reference Core.Domain (shared workflow vocabulary) but not Engine, Persistence, DTFx, or DurableFunctions.
         var abstractionsAssembly = typeof(Apperture.RuntimePlane.Abstractions.WorkflowDefinitionId).Assembly;
         var result = Types.InAssembly(abstractionsAssembly)
             .Should()

@@ -1,3 +1,5 @@
+using Apperture.Core.Domain.Workflow;
+
 namespace Apperture.Persistence.SqlServer;
 
 /// <summary>
@@ -15,7 +17,7 @@ public sealed class OperationStartRequestEntity
 
     public DateTimeOffset CreatedAt { get; set; }
 
-    public string Status { get; set; } = Apperture.RuntimePlane.Abstractions.WorkflowLifecycleStatusNames.Requested;
+    public string Status { get; set; } = WorkflowLifecycleStatusNames.Requested;
     public DateTimeOffset? ClaimedAt { get; set; }
     public string? ClaimedBy { get; set; }
     public string? LastError { get; set; }

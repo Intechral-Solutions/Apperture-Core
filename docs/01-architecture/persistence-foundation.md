@@ -18,7 +18,7 @@ Persistence Foundation does **not** own:
 - Secret metadata or enrollment tokens (those are stored in the shared schema but owned by other subsystems)
 - Runtime trust or operational auth
 
-**Dependency direction:** Persistence does not reference RuntimePlane or Bootstrap. It only receives a connection string from the host and uses `Apperture.Core.Security.Secrets` for secret store/resolver contracts. Connection string resolution belongs to Bootstrap (or the host).
+**Dependency direction:** Persistence does not reference Bootstrap or **RuntimePlane** assemblies. It receives a connection string from the host and uses `Apperture.Core.Security.Secrets` for secret store/resolver contracts. Persisted workflow/runtime control **string vocabulary** (status/event names) lives in `Apperture.Core.Domain.Workflow` so EF entities do not reference RuntimePlane. Instance-plane **start-request processors** that call `IWorkflowExecutor` are implemented in `Apperture.RuntimePlane.Engine` (they depend on Persistence + Abstractions, not the other way around). Connection string resolution belongs to Bootstrap (or the host).
 
 ## What Belongs to Bootstrap
 
