@@ -19,6 +19,7 @@ public static class IntegrationServiceCollectionExtensions
         services.AddScoped<IIntegrationRepository, SqlIntegrationRepository>();
         services.AddScoped<IIntegrationManagementService, IntegrationManagementService>();
         services.AddSingleton<IScheduleExpectationEvaluator, ScheduleExpectationEvaluator>();
+        services.AddScoped<IIntegrationScheduleDiagnosticsService, IntegrationScheduleDiagnosticsService>();
         services.AddScoped<IIntegrationReadinessService, IntegrationReadinessService>();
         services.AddScoped<IIntegrationProcedureService, IntegrationProcedureService>();
         return services;

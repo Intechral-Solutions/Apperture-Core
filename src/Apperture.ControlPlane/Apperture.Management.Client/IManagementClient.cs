@@ -126,6 +126,13 @@ public interface IManagementClient
     Task<IntegrationDto?> GetIntegrationAsync(string id, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Operator schedule diagnostics (expected-fire truth + grace evidence). Epic 67.
+    /// </summary>
+    Task<IntegrationScheduleDiagnosticsDto?> GetIntegrationScheduleDiagnosticsAsync(
+        string integrationId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Operator detail: integration, readiness, required slots, bindings, schedules (Epic 54).
     /// </summary>
     Task<IntegrationOperatorDetailDto?> GetIntegrationOperatorDetailAsync(string id, CancellationToken cancellationToken = default);

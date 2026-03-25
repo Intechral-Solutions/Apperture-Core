@@ -197,6 +197,66 @@ public sealed class RunQueryService : IRunQueryService
         return result;
     }
 
+    public async ValueTask<IReadOnlyDictionary<string, IReadOnlyList<FleetScheduleOriginRunEvidence>>> GetAuthorizedScheduleOriginRunsAsync(
+        IReadOnlyList<string> integrationIds,
+        DateTimeOffset sinceUtc,
+        int maxRunsPerIntegration,
+        CancellationToken cancellationToken = default)
+    {
+        var result = new Dictionary<string, List<FleetScheduleOriginRunEvidence>>(StringComparer.Ordinal);
+        var idSet = integrationIds.Distinct(StringComparer.Ordinal).ToHashSet(StringComparer.Ordinal);
+        if (idSet.Count == 0)
+            return result.ToDictionary(k => k.Key, v => (IReadOnlyList<FleetScheduleOriginRunEvidence>)v.Value);
+
+        var maxCandidates = Math.Max(1, maxRunsPerIntegration) * idSet.Count;
+        var candidates = await _db.OperationRuns.AsNoTracking()
+            .Where(r =>
+                r.IntegrationId != null
+                && idSet.Contains(r.IntegrationId!)
+                && r.CreatedAt >= sinceUtc
+                && (
+                    r.ExecutionOrigin == RunExecutionOriginNames.Schedule
+                    || (string.IsNullOrEmpty(r.ExecutionOrigin)
+                        && r.CorrelationKey != null
+                        && r.CorrelationKey.StartsWith("schedule:"))))
+            .OrderByDescending(r => r.CreatedAt)
+            .Take(maxCandidates)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        if (candidates.Count == 0)
+            return result.ToDictionary(k => k.Key, v => (IReadOnlyList<FleetScheduleOriginRunEvidence>)v.Value);
+
+        var runKinds = await _runKinds.ResolveRunKindsAsync(candidates.Select(r => r.Id).ToArray(), cancellationToken)
+            .ConfigureAwait(false);
+
+        // Preserve auth filtering: only project and include runs we are authorized to read.
+        foreach (var r in candidates)
+        {
+            if (string.IsNullOrEmpty(r.IntegrationId) || !idSet.Contains(r.IntegrationId))
+                continue;
+            if (!runKinds.TryGetValue(r.Id, out var runKind))
+                continue;
+
+            var dto = await TryProjectAuthorizedRunAsync(r, runKind, filter: null, cancellationToken).ConfigureAwait(false);
+            if (dto is null || string.IsNullOrEmpty(dto.IntegrationId))
+                continue;
+
+            if (!result.TryGetValue(dto.IntegrationId, out var list))
+            {
+                list = new List<FleetScheduleOriginRunEvidence>(maxRunsPerIntegration);
+                result[dto.IntegrationId] = list;
+            }
+
+            if (list.Count >= maxRunsPerIntegration)
+                continue;
+
+            list.Add(new FleetScheduleOriginRunEvidence(dto.RunId, dto.CreatedAt));
+        }
+
+        return result.ToDictionary(k => k.Key, v => (IReadOnlyList<FleetScheduleOriginRunEvidence>)v.Value);
+    }
+
     private sealed class FleetRunAgg
     {
         public int FailedCount;

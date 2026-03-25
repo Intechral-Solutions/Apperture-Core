@@ -1,7 +1,6 @@
 using Apperture.Core.Application.Integration;
 using Apperture.Core.Domain.Integration;
 using Apperture.Core.Domain.Scheduling;
-using Cronos;
 
 namespace Apperture.Core.Application.Scheduling;
 
@@ -71,7 +70,7 @@ public sealed class ScheduleExpectationEvaluator : IScheduleExpectationEvaluator
         if (toUtc > fromUtc)
         {
             foreach (var schedule in qualifying)
-                TryCollectFires(schedule, fromUtc, toUtc, fireInstants);
+                ScheduleExpectedFireCollector.TryCollectFires(schedule, fromUtc, toUtc, fireInstants);
         }
 
         var count = fireInstants.Count;
@@ -265,43 +264,5 @@ public sealed class ScheduleExpectationEvaluator : IScheduleExpectationEvaluator
             ScheduleExpectationEvaluationStatus.NoExpectation,
             null);
 
-    private static void TryCollectFires(
-        ScheduleDefinition schedule,
-        DateTime fromUtc,
-        DateTime toUtc,
-        SortedSet<DateTime> sink)
-    {
-        TimeZoneInfo tz;
-        try
-        {
-            tz = TimeZoneInfo.FindSystemTimeZoneById(schedule.TimeZone);
-        }
-        catch
-        {
-            tz = TimeZoneInfo.Utc;
-        }
-
-        CronExpression cron;
-        try
-        {
-            cron = CronExpression.Parse(schedule.RecurrenceExpression);
-        }
-        catch
-        {
-            return;
-        }
-
-        IReadOnlyList<DateTime> occurrences;
-        try
-        {
-            occurrences = cron.GetOccurrences(fromUtc, toUtc, tz).ToList();
-        }
-        catch (ArgumentException ex) when (ex.ParamName == "fromUtc")
-        {
-            return;
-        }
-
-        foreach (var occ in occurrences)
-            sink.Add(occ);
-    }
+    // Expected-fire occurrence logic lives in ScheduleExpectedFireCollector (Epic 66/67 truth boundary).
 }

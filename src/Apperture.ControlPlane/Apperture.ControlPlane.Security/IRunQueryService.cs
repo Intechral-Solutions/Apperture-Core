@@ -24,6 +24,16 @@ public interface IRunQueryService
         DateTimeOffset sinceUtc,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Epic 67: bounded list of authorized schedule-origin runs in <paramref name="sinceUtc"/>..now window.
+    /// Used by schedule diagnostics to build an evidence timeline; does not change Epic 64 satisfaction semantics.
+    /// </summary>
+    ValueTask<IReadOnlyDictionary<string, IReadOnlyList<FleetScheduleOriginRunEvidence>>> GetAuthorizedScheduleOriginRunsAsync(
+        IReadOnlyList<string> integrationIds,
+        DateTimeOffset sinceUtc,
+        int maxRunsPerIntegration,
+        CancellationToken cancellationToken = default);
+
     ValueTask<RunDetailDto?> GetRunAsync(OperationRunId id, CancellationToken cancellationToken = default);
 }
 

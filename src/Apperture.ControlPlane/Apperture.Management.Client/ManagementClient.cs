@@ -329,6 +329,16 @@ public sealed class ManagementClient : IManagementClient
             cancellationToken).ConfigureAwait(false);
     }
 
+    public async Task<IntegrationScheduleDiagnosticsDto?> GetIntegrationScheduleDiagnosticsAsync(
+        string integrationId,
+        CancellationToken cancellationToken = default)
+    {
+        return await _http.GetFromJsonAsync<IntegrationScheduleDiagnosticsDto>(
+            $"integrations/{Uri.EscapeDataString(integrationId)}/schedule-diagnostics",
+            ApiJsonReadOptions,
+            cancellationToken).ConfigureAwait(false);
+    }
+
     public async Task<IntegrationOperatorDetailDto?> GetIntegrationOperatorDetailAsync(string id, CancellationToken cancellationToken = default)
     {
         return await _http.GetFromJsonAsync<IntegrationOperatorDetailDto>(

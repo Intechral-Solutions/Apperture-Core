@@ -267,6 +267,14 @@ public sealed class RunsControllerTests
             ValueTask.FromResult<IReadOnlyDictionary<string, FleetScheduleOriginRunEvidence>>(
                 new Dictionary<string, FleetScheduleOriginRunEvidence>(StringComparer.Ordinal));
 
+        public ValueTask<IReadOnlyDictionary<string, IReadOnlyList<FleetScheduleOriginRunEvidence>>> GetAuthorizedScheduleOriginRunsAsync(
+            IReadOnlyList<string> integrationIds,
+            DateTimeOffset sinceUtc,
+            int maxRunsPerIntegration,
+            CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult<IReadOnlyDictionary<string, IReadOnlyList<FleetScheduleOriginRunEvidence>>>(
+                new Dictionary<string, IReadOnlyList<FleetScheduleOriginRunEvidence>>(StringComparer.Ordinal));
+
         public ValueTask<RunDetailDto?> GetRunAsync(Apperture.RuntimePlane.Abstractions.OperationRunId id, CancellationToken cancellationToken = default) =>
             ValueTask.FromResult(_get(id.Value));
     }

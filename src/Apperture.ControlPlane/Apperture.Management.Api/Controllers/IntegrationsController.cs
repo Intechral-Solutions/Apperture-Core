@@ -17,13 +17,16 @@ public sealed class IntegrationsController : ControllerBase
 {
     private readonly IIntegrationManagementService _integrationService;
     private readonly IIntegrationReadinessService _readinessService;
+    private readonly IIntegrationScheduleDiagnosticsService _scheduleDiagnostics;
 
     public IntegrationsController(
         IIntegrationManagementService integrationService,
-        IIntegrationReadinessService readinessService)
+        IIntegrationReadinessService readinessService,
+        IIntegrationScheduleDiagnosticsService scheduleDiagnostics)
     {
         _integrationService = integrationService;
         _readinessService = readinessService;
+        _scheduleDiagnostics = scheduleDiagnostics;
     }
 
     /// <summary>
@@ -120,6 +123,27 @@ public sealed class IntegrationsController : ControllerBase
             if (detail is null)
                 return NotFound();
             return Ok(detail);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return Forbid();
+        }
+    }
+
+    /// <summary>
+    /// Epic 67: schedule diagnostics and expected-fire evidence timeline.
+    /// </summary>
+    [HttpGet("{id}/schedule-diagnostics")]
+    public async Task<ActionResult<Apperture.Management.Client.IntegrationScheduleDiagnosticsDto?>> GetScheduleDiagnostics(
+        string id,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var projection = await _scheduleDiagnostics.GetDiagnosticsAsync(new IntegrationId(id), cancellationToken);
+            if (projection is null)
+                return NotFound();
+            return Ok(ToDiagnosticsDto(projection));
         }
         catch (UnauthorizedAccessException)
         {
@@ -331,6 +355,33 @@ public sealed class IntegrationsController : ControllerBase
                 i.BindingId,
                 i.ConnectionId,
                 i.Severity)).ToArray());
+
+    private static Apperture.Management.Client.IntegrationScheduleDiagnosticsDto ToDiagnosticsDto(
+        IntegrationScheduleDiagnosticsProjection p) =>
+        new(
+            p.IntegrationId.Value,
+            p.HasRecurringScheduleExpectation,
+            p.EvaluationStatus.ToString(),
+            p.InGracePeriod,
+            p.GraceReason?.ToString(),
+            p.GraceAnchorUtc,
+            p.MostRecentExpectedFireUtc,
+            p.LastSatisfyingScheduleOriginAuthorizedRunId,
+            p.LastSatisfyingScheduleOriginAuthorizedRunAt,
+            p.ReferenceScheduleId,
+            p.ReferenceScheduleEnabled,
+            p.LastScheduleEnabledAtUtc,
+            p.LastScheduleDisabledAtUtc,
+            p.MaterialScheduleSemanticsChangedAtUtc,
+            p.LastAuthorizedRunId,
+            p.LastAuthorizedRunStatus,
+            p.LastAuthorizedRunAt,
+            p.RecentExpectedFires.Select(e => new Apperture.Management.Client.ExpectedFireDiagnosticDto(
+                e.ExpectedFireUtc,
+                e.Outcome.ToString(),
+                e.SatisfyingScheduleOriginAuthorizedRunId,
+                e.SatisfyingScheduleOriginAuthorizedRunAt,
+                e.SuppressedByGraceReason?.ToString())).ToList());
 }
 
 public sealed record IntegrationDto(

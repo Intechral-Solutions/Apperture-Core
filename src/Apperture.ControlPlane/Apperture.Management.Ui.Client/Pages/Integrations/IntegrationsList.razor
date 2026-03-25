@@ -197,6 +197,11 @@
                                     {
                                         <div class="text-muted text-xs">Grace anchor: @graceAnchor.UtcDateTime.ToString("u") (@row.ExpectedRuns.ExpectedRunGraceReason)</div>
                                     }
+
+                                    <div class="mt-1">
+                                        <a class="text-xs underline" href="@($"/integrations/{Uri.EscapeDataString(row.Id)}/schedule-diagnostics")">Schedule diagnostics</a>
+                                    </div>
+
                                     @if (row.ExpectedRuns.HasRecurringScheduleExpectation)
                                     {
                                         @if (row.ExpectedRuns.LastExpectedFireUtc is { } lastExpected)
