@@ -3,7 +3,7 @@ using Apperture.Core.Domain.Procedures;
 namespace Apperture.Core.Application.Services;
 
 /// <summary>
-/// Resolves module-declared procedures aggregated from manifests at startup.
+/// Resolves module-declared procedures from manifests, reflecting the current module activation filter (rebuilt when enabled modules change).
 /// </summary>
 public interface IProcedureRegistryService
 {

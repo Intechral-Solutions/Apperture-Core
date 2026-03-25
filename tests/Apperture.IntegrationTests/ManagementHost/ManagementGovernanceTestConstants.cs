@@ -21,8 +21,11 @@ internal static class ManagementGovernanceTestConstants
     internal const string ExternalIntegrationReader = "test-governance-integration-reader";
     internal const string ExternalIntegrationScheduleOperator = "test-governance-integration-schedule-op";
 
-    /// <summary>integration.read + workflow.execute (Sample.HelloWorld module) for procedure launch HTTP tests (Epic 56A).</summary>
+    /// <summary>integration.read + workflow.execute + operation.execute (Sample.HelloWorld) for procedure launch HTTP tests (Epic 56A/56B).</summary>
     internal const string ExternalProcedureLauncher = "test-governance-procedure-launcher";
+
+    /// <summary>integration.read + workflow.execute only (no operation.execute) for operation-forbidden HTTP tests (Epic 56B).</summary>
+    internal const string ExternalWorkflowOnlyProcedureLauncher = "test-governance-wf-only-proc-launch";
 
     // User ids (24 chars)
     internal const string UserAuthNoPerms = "usrgovernauthnoperm00001";
@@ -32,6 +35,8 @@ internal static class ManagementGovernanceTestConstants
 
     internal const string UserProcedureLauncher = "usrgovernproclaunch00001";
 
+    internal const string UserWorkflowOnlyProcedureLauncher = "usrgovernwfonlyproc00001";
+
     // Role ids
     internal const string RoleNoEffectivePermissions = "rolgovernemptyperm000001";
     internal const string RoleConnectorCatalogReader = "rolgoverncnctdefread0001";
@@ -40,6 +45,8 @@ internal static class ManagementGovernanceTestConstants
 
     internal const string RoleProcedureLauncher = "rolgovernproclaunch00001";
 
+    internal const string RoleWorkflowOnlyProcedureLauncher = "rolgovernwfonlyproc00001";
+
     // Identity link entity ids (<= 64; fixed for idempotent seed)
     internal const string LinkAuthNoPerms = "idlkgrvnauthnoperm000001";
     internal const string LinkConnectorReader = "idlkgrvncndefread0000001";
@@ -47,4 +54,9 @@ internal static class ManagementGovernanceTestConstants
     internal const string LinkIntegrationSchedule = "idlkgrvnintegschd0000001";
 
     internal const string LinkProcedureLauncher = "idlkgrvnproclaunch000001";
+
+    internal const string LinkWorkflowOnlyProcedureLauncher = "idlkgrvnwfonlyprcl000001";
+
+    /// <summary>Second integration (different module id) for procedure / integration mismatch HTTP tests (Epic 56B).</summary>
+    internal const string SeededIntegrationForeignModuleId = "intgovertestwrongmd000001";
 }

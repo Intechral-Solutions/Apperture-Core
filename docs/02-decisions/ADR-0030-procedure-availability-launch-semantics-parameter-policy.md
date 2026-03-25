@@ -28,6 +28,10 @@ Epic 56 introduced module-contributed procedures and integration-scoped listing,
    - Run detail exposes **`StartParametersJson`** when present, subject to the same operator visibility rules as other run metadata.  
    - **No field-level redaction** in this ADR: values are shown as persisted. **Secret-bearing .NET types** remain rejected at launch via `OrchestrationSafeValidator`. Operators should treat JSON as potentially sensitive (PII/business data); future work may add redaction or policy-driven withholding without changing the persistence model.
 
+5. **Procedure registry vs module activation (Epic 56B)**  
+   - `IProcedureRegistryService` implementations rebuild the in-memory procedure catalog when the **enabled-module set** (per `IModuleActivationFilter`) changes, using a stable activation signature so the catalog does not stay empty or stale after installs are enabled post-startup.  
+   - Hosts without a filter treat all discovered modules as contributing procedures; the signature still tracks the module id set so catalog rebuild semantics stay explicit.
+
 ## Consequences
 
 ### Positive

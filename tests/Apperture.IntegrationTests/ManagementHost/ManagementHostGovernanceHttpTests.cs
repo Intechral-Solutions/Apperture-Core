@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text;
@@ -142,6 +143,8 @@ public sealed class ManagementHostGovernanceHttpTests
             p.TryGetProperty("launchable", out var launchable).Should().BeTrue();
             p.TryGetProperty("blockedReasonCodes", out var blocked).Should().BeTrue();
             blocked.ValueKind.Should().Be(JsonValueKind.Array);
+            p.TryGetProperty("launchKind", out var launchKind).Should().BeTrue();
+            var kind = launchKind.GetString();
             if (!isRunnable)
             {
                 launchable.GetBoolean().Should().BeFalse();
@@ -149,9 +152,17 @@ public sealed class ManagementHostGovernanceHttpTests
             }
             else
             {
-                // Integration reader lacks workflow.execute; list stays truthful (Epic 56A).
+                // Integration reader lacks workflow / operation start rights; list stays truthful (Epic 56A/56B).
                 launchable.GetBoolean().Should().BeFalse();
-                blocked.EnumerateArray().Select(x => x.GetString()).Should().Contain("insufficient_workflow_permission");
+                if (string.Equals(kind, "workflow", StringComparison.Ordinal))
+                {
+                    blocked.EnumerateArray().Select(x => x.GetString()).Should().Contain("insufficient_workflow_permission");
+                }
+                else
+                {
+                    string.Equals(kind, "operation", StringComparison.Ordinal).Should().BeTrue("expected workflow or operation procedure from HelloWorld");
+                    blocked.EnumerateArray().Select(x => x.GetString()).Should().Contain("insufficient_operation_permission");
+                }
             }
         }
     }
@@ -217,6 +228,143 @@ public sealed class ManagementHostGovernanceHttpTests
         var json = await response.Content.ReadAsStringAsync();
         using var doc = JsonDocument.Parse(json);
         doc.RootElement.GetProperty("code").GetString().Should().Be("invalid_parameters");
+    }
+
+    [Fact]
+    public async Task Post_integration_procedure_launch_operation_invalid_parameters_returns_400()
+    {
+        AssertSqlAvailable();
+        using var client = _fixture.CreateAuthenticatedClient(ManagementGovernanceTestConstants.ExternalProcedureLauncher);
+        var response = await client.PostAsJsonAsync(
+            $"/api/integrations/{ManagementGovernanceTestConstants.SeededIntegrationId}/procedures/Sample.HelloWorld.procedures.opPing/launch",
+            new { parameters = new Dictionary<string, object?>() });
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var json = await response.Content.ReadAsStringAsync();
+        using var doc = JsonDocument.Parse(json);
+        doc.RootElement.GetProperty("code").GetString().Should().Be("invalid_parameters");
+    }
+
+    [Fact]
+    public async Task Post_integration_procedure_launch_unknown_integration_returns_404()
+    {
+        AssertSqlAvailable();
+        using var client = _fixture.CreateAuthenticatedClient(ManagementGovernanceTestConstants.ExternalProcedureLauncher);
+        var response = await client.PostAsJsonAsync(
+            "/api/integrations/intgovernmissing00000001/procedures/Sample.HelloWorld.procedures.opPing/launch",
+            new { parameters = new Dictionary<string, object?> { ["message"] = "x" } });
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        var json = await response.Content.ReadAsStringAsync();
+        using var doc = JsonDocument.Parse(json);
+        doc.RootElement.GetProperty("code").GetString().Should().Be("integration_not_found");
+    }
+
+    [Fact]
+    public async Task Post_integration_procedure_launch_procedure_wrong_module_returns_404()
+    {
+        AssertSqlAvailable();
+        using var client = _fixture.CreateAuthenticatedClient(ManagementGovernanceTestConstants.ExternalProcedureLauncher);
+        var response = await client.PostAsJsonAsync(
+            $"/api/integrations/{ManagementGovernanceTestConstants.SeededIntegrationForeignModuleId}/procedures/Sample.HelloWorld.procedures.opPing/launch",
+            new { parameters = new Dictionary<string, object?> { ["message"] = "x" } });
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        var json = await response.Content.ReadAsStringAsync();
+        using var doc = JsonDocument.Parse(json);
+        doc.RootElement.GetProperty("code").GetString().Should().Be("procedure_wrong_module");
+    }
+
+    [Fact]
+    public async Task Post_integration_procedure_launch_workflow_only_principal_operation_forbidden_when_runnable()
+    {
+        AssertSqlAvailable();
+        using var client = _fixture.CreateAuthenticatedClient(ManagementGovernanceTestConstants.ExternalWorkflowOnlyProcedureLauncher);
+        var readinessResponse = await client.GetAsync(
+            $"/api/integrations/{ManagementGovernanceTestConstants.SeededIntegrationId}/readiness");
+        readinessResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var readinessJson = await readinessResponse.Content.ReadAsStringAsync();
+        using var readinessDoc = JsonDocument.Parse(readinessJson);
+        if (!readinessDoc.RootElement.GetProperty("isRunnable").GetBoolean())
+            return;
+
+        var response = await client.PostAsJsonAsync(
+            $"/api/integrations/{ManagementGovernanceTestConstants.SeededIntegrationId}/procedures/Sample.HelloWorld.procedures.opPing/launch",
+            new { parameters = new Dictionary<string, object?> { ["message"] = "from-test" } });
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        var json = await response.Content.ReadAsStringAsync();
+        using var doc = JsonDocument.Parse(json);
+        doc.RootElement.GetProperty("code").GetString().Should().Be("operation_start_forbidden");
+    }
+
+    [Fact]
+    public async Task Post_integration_procedure_launch_operation_conflict_when_not_ready()
+    {
+        AssertSqlAvailable();
+        using var client = _fixture.CreateAuthenticatedClient(ManagementGovernanceTestConstants.ExternalProcedureLauncher);
+        var readinessResponse = await client.GetAsync(
+            $"/api/integrations/{ManagementGovernanceTestConstants.SeededIntegrationId}/readiness");
+        readinessResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var readinessJson = await readinessResponse.Content.ReadAsStringAsync();
+        using var readinessDoc = JsonDocument.Parse(readinessJson);
+        if (readinessDoc.RootElement.GetProperty("isRunnable").GetBoolean())
+            return;
+
+        var response = await client.PostAsJsonAsync(
+            $"/api/integrations/{ManagementGovernanceTestConstants.SeededIntegrationId}/procedures/Sample.HelloWorld.procedures.opPing/launch",
+            new { parameters = new Dictionary<string, object?> { ["message"] = "x" } });
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        var json = await response.Content.ReadAsStringAsync();
+        using var doc = JsonDocument.Parse(json);
+        doc.RootElement.GetProperty("code").GetString().Should().Be("integration_not_ready");
+    }
+
+    [Fact]
+    public async Task Post_integration_procedure_launch_workflow_and_operation_accepted_when_runnable()
+    {
+        AssertSqlAvailable();
+        using var client = _fixture.CreateAuthenticatedClient(ManagementGovernanceTestConstants.ExternalProcedureLauncher);
+        var readinessResponse = await client.GetAsync(
+            $"/api/integrations/{ManagementGovernanceTestConstants.SeededIntegrationId}/readiness");
+        readinessResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var readinessJson = await readinessResponse.Content.ReadAsStringAsync();
+        using var readinessDoc = JsonDocument.Parse(readinessJson);
+        if (!readinessDoc.RootElement.GetProperty("isRunnable").GetBoolean())
+            return;
+
+        var wf = await client.PostAsJsonAsync(
+            $"/api/integrations/{ManagementGovernanceTestConstants.SeededIntegrationId}/procedures/Sample.HelloWorld.procedures.greet/launch",
+            new { parameters = new Dictionary<string, object?> { ["name"] = "Epic56B" } });
+        wf.StatusCode.Should().Be(HttpStatusCode.Accepted);
+        var wfJson = await wf.Content.ReadAsStringAsync();
+        using (var wfDoc = JsonDocument.Parse(wfJson))
+        {
+            wfDoc.RootElement.GetProperty("launchKind").GetString().Should().Be("workflow");
+            wfDoc.RootElement.GetProperty("workflowInstanceId").GetString().Should().NotBeNullOrEmpty();
+        }
+
+        var op = await client.PostAsJsonAsync(
+            $"/api/integrations/{ManagementGovernanceTestConstants.SeededIntegrationId}/procedures/Sample.HelloWorld.procedures.opPing/launch",
+            new { parameters = new Dictionary<string, object?> { ["message"] = "Epic56B-op" } });
+        op.StatusCode.Should().Be(HttpStatusCode.Accepted);
+        var opJson = await op.Content.ReadAsStringAsync();
+        using (var opDoc = JsonDocument.Parse(opJson))
+        {
+            opDoc.RootElement.GetProperty("launchKind").GetString().Should().Be("operation");
+            opDoc.RootElement.GetProperty("operationInstanceId").GetString().Should().NotBeNullOrEmpty();
+        }
+    }
+
+    [Fact]
+    public async Task Get_integration_procedure_detail_operation_returns_shape()
+    {
+        AssertSqlAvailable();
+        using var client = _fixture.CreateAuthenticatedClient(ManagementGovernanceTestConstants.ExternalIntegrationReader);
+        var response = await client.GetAsync(
+            $"/api/integrations/{ManagementGovernanceTestConstants.SeededIntegrationId}/procedures/Sample.HelloWorld.procedures.opPing");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var json = await response.Content.ReadAsStringAsync();
+        using var doc = JsonDocument.Parse(json);
+        doc.RootElement.GetProperty("launchKind").GetString().Should().Be("operation");
+        doc.RootElement.GetProperty("targetDefinitionId").GetString().Should().Be("Sample.HelloWorld.DoWork");
+        doc.RootElement.GetProperty("parameterFields").ValueKind.Should().Be(JsonValueKind.Array);
     }
 
     [Fact]

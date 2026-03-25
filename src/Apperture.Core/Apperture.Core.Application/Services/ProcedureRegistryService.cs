@@ -4,7 +4,8 @@ using Apperture.ModuleSdk.Abstractions;
 namespace Apperture.Core.Application.Services;
 
 /// <summary>
-/// In-memory procedure registry built from module manifests at first use (lifecycle-governed like operations).
+/// In-memory procedure registry built from module manifests. Rebuilds when the enabled-module set changes
+/// (Epic 56B) so catalog state cannot stay empty after module installs become effective.
 /// </summary>
 public sealed class ProcedureRegistryService : IProcedureRegistryService
 {
@@ -15,7 +16,8 @@ public sealed class ProcedureRegistryService : IProcedureRegistryService
     private readonly Dictionary<string, List<ProcedureDefinition>> _byModule = new(StringComparer.Ordinal);
 
     private readonly SemaphoreSlim _initGate = new(1, 1);
-    private bool _initialized;
+    private string? _lastActivationSignature;
+    private bool _hasCatalog;
 
     public ProcedureRegistryService(IEnumerable<IModule> modules, IModuleActivationFilter? activationFilter = null)
     {
@@ -49,14 +51,19 @@ public sealed class ProcedureRegistryService : IProcedureRegistryService
 
     private async ValueTask EnsureInitializedAsync(CancellationToken cancellationToken)
     {
-        if (_initialized)
+        var signature = await ComputeActivationSignatureAsync(cancellationToken).ConfigureAwait(false);
+        if (_hasCatalog && string.Equals(signature, _lastActivationSignature, StringComparison.Ordinal))
             return;
 
         await _initGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            if (_initialized)
+            signature = await ComputeActivationSignatureAsync(cancellationToken).ConfigureAwait(false);
+            if (_hasCatalog && string.Equals(signature, _lastActivationSignature, StringComparison.Ordinal))
                 return;
+
+            _byId.Clear();
+            _byModule.Clear();
 
             foreach (var module in _modules)
             {
@@ -98,12 +105,43 @@ public sealed class ProcedureRegistryService : IProcedureRegistryService
                 }
             }
 
-            _initialized = true;
+            _lastActivationSignature = signature;
+            _hasCatalog = true;
         }
         finally
         {
             _initGate.Release();
         }
+    }
+
+    /// <summary>
+    /// Stable signature of which modules currently contribute procedures (order-independent).
+    /// </summary>
+    private async ValueTask<string> ComputeActivationSignatureAsync(CancellationToken cancellationToken)
+    {
+        if (_activationFilter is null)
+        {
+            var allIds = _modules
+                .Select(m => m.GetManifest().Id)
+                .Where(id => !string.IsNullOrWhiteSpace(id))
+                .Distinct(StringComparer.Ordinal)
+                .OrderBy(id => id, StringComparer.Ordinal)
+                .ToList();
+            return string.Join('|', allIds);
+        }
+
+        var enabled = new List<string>();
+        foreach (var module in _modules)
+        {
+            var manifest = module.GetManifest();
+            if (string.IsNullOrWhiteSpace(manifest.Id))
+                continue;
+            if (await _activationFilter.IsEnabledAsync(manifest.Id, cancellationToken).ConfigureAwait(false))
+                enabled.Add(manifest.Id);
+        }
+
+        enabled.Sort(StringComparer.Ordinal);
+        return string.Join('|', enabled);
     }
 
     private static void Validate(ProcedureDefinition definition)

@@ -32,7 +32,15 @@ public sealed class HelloWorldModule : IModule, IModuleStepHandlerRegistrar, IOp
                 Category: "Demo",
                 ProcedureLaunchKind.Workflow,
                 DefinitionId.Value,
-                """{"fields":[{"key":"name","type":"string","required":true,"label":"Name","help":"Shown in the DoWork step output."}]}""")
+                """{"fields":[{"key":"name","type":"string","required":true,"label":"Name","help":"Shown in the DoWork step output."}]}"""),
+            new ModuleProcedureDeclaration(
+                "Sample.HelloWorld.procedures.opPing",
+                "Operation ping",
+                "Starts the Sample.HelloWorld.DoWork operation with a message (procedure launch / provenance).",
+                Category: "Demo",
+                ProcedureLaunchKind.Operation,
+                OperationDefId.Value,
+                """{"fields":[{"key":"message","type":"string","required":true,"label":"Message","help":"Persisted on the operation start request."}]}""")
         ]
     };
 
@@ -59,7 +67,7 @@ public sealed class HelloWorldModule : IModule, IModuleStepHandlerRegistrar, IOp
             "DoWork",
             ModuleId,
             OperationCategory.Command,
-            ParameterSchema: null,
+            ParameterSchema: """{"fields":[{"key":"message","type":"string","required":false}]}""",
             RequiredPermissions:
             [
                 new PermissionDescriptor(

@@ -22,6 +22,9 @@ public sealed class ManagementHostGovernanceFixture : IAsyncLifetime
         """[{"action":"integration.read","resource":{"resourceType":"Integration","scopeKey":"instance"}},{"action":"schedule.manage","resource":{"resourceType":"Schedule","scopeKey":"instance"}}]""";
 
     private const string ProcedureLauncherPermissionsJson =
+        """[{"action":"integration.read","resource":{"resourceType":"Integration","scopeKey":"instance"}},{"action":"workflow.execute","resource":{"resourceType":"WorkflowInstance","scopeKey":"module:Sample.HelloWorld"}},{"action":"operation.execute","resource":{"resourceType":"OperationDefinition","scopeKey":"module:Sample.HelloWorld"}}]""";
+
+    private const string WorkflowOnlyProcedureLauncherPermissionsJson =
         """[{"action":"integration.read","resource":{"resourceType":"Integration","scopeKey":"instance"}},{"action":"workflow.execute","resource":{"resourceType":"WorkflowInstance","scopeKey":"module:Sample.HelloWorld"}}]""";
 
     public string? ConnectionString { get; private set; }
@@ -201,22 +204,25 @@ IF NOT EXISTS (SELECT 1 FROM sys.databases WHERE name = N'{catalog}')
             new UserRoleEntity { UserId = ManagementGovernanceTestConstants.UserIntegrationReader, RoleId = ManagementGovernanceTestConstants.RoleIntegrationReader },
             new UserRoleEntity { UserId = ManagementGovernanceTestConstants.UserIntegrationSchedule, RoleId = ManagementGovernanceTestConstants.RoleIntegrationSchedule });
 
-        db.Integrations.Add(new IntegrationEntity
-        {
-            Id = ManagementGovernanceTestConstants.SeededIntegrationId,
-            DisplayName = "Governance test integration",
-            ModuleId = ManagementGovernanceTestConstants.HelloWorldModuleId,
-            ScopeKey = null,
-            State = 0,
-            SettingsJson = null,
-            CreatedAt = now,
-            UpdatedAt = now
-        });
+        db.Integrations.Add(
+            new IntegrationEntity
+            {
+                Id = ManagementGovernanceTestConstants.SeededIntegrationId,
+                DisplayName = "Governance test integration",
+                ModuleId = ManagementGovernanceTestConstants.HelloWorldModuleId,
+                ScopeKey = null,
+                State = 0,
+                SettingsJson = null,
+                CreatedAt = now,
+                UpdatedAt = now
+            });
 
         await db.SaveChangesAsync().ConfigureAwait(false);
         }
 
+        await EnsureForeignModuleIntegrationForHarnessAsync(db).ConfigureAwait(false);
         await EnsureProcedureLauncherPrincipalAsync(db).ConfigureAwait(false);
+        await EnsureWorkflowOnlyProcedureLauncherPrincipalAsync(db).ConfigureAwait(false);
         await EnsureHelloWorldModuleEnabledForHarnessAsync(db).ConfigureAwait(false);
     }
 
@@ -251,10 +257,43 @@ IF NOT EXISTS (SELECT 1 FROM sys.databases WHERE name = N'{catalog}')
         await db.SaveChangesAsync().ConfigureAwait(false);
     }
 
+    private static async Task EnsureForeignModuleIntegrationForHarnessAsync(AppertureDbContext db)
+    {
+        if (await db.Integrations.AnyAsync(i => i.Id == ManagementGovernanceTestConstants.SeededIntegrationForeignModuleId)
+                .ConfigureAwait(false))
+            return;
+
+        var now = DateTimeOffset.UtcNow;
+        db.Integrations.Add(
+            new IntegrationEntity
+            {
+                Id = ManagementGovernanceTestConstants.SeededIntegrationForeignModuleId,
+                DisplayName = "Governance test — foreign module integration",
+                ModuleId = "Governance.Test.ForeignModule",
+                ScopeKey = null,
+                State = 0,
+                SettingsJson = null,
+                CreatedAt = now,
+                UpdatedAt = now
+            });
+
+        await db.SaveChangesAsync().ConfigureAwait(false);
+    }
+
     private static async Task EnsureProcedureLauncherPrincipalAsync(AppertureDbContext db)
     {
         if (await db.Users.AnyAsync(u => u.Id == ManagementGovernanceTestConstants.UserProcedureLauncher).ConfigureAwait(false))
+        {
+            var role = await db.Roles.SingleAsync(r => r.Id == ManagementGovernanceTestConstants.RoleProcedureLauncher)
+                .ConfigureAwait(false);
+            if (!string.Equals(role.PermissionsJson, ProcedureLauncherPermissionsJson, StringComparison.Ordinal))
+            {
+                role.PermissionsJson = ProcedureLauncherPermissionsJson;
+                await db.SaveChangesAsync().ConfigureAwait(false);
+            }
+
             return;
+        }
 
         const int localSource = (int)IdentitySource.Local;
 
@@ -263,7 +302,7 @@ IF NOT EXISTS (SELECT 1 FROM sys.databases WHERE name = N'{catalog}')
             {
                 Id = ManagementGovernanceTestConstants.RoleProcedureLauncher,
                 Name = "Governance test — procedure launcher",
-                Description = "Epic 56A harness",
+                Description = "Epic 56A/56B harness",
                 PermissionsJson = ProcedureLauncherPermissionsJson,
                 IsSystemRole = false
             });
@@ -290,6 +329,50 @@ IF NOT EXISTS (SELECT 1 FROM sys.databases WHERE name = N'{catalog}')
             {
                 UserId = ManagementGovernanceTestConstants.UserProcedureLauncher,
                 RoleId = ManagementGovernanceTestConstants.RoleProcedureLauncher
+            });
+
+        await db.SaveChangesAsync().ConfigureAwait(false);
+    }
+
+    private static async Task EnsureWorkflowOnlyProcedureLauncherPrincipalAsync(AppertureDbContext db)
+    {
+        if (await db.Users.AnyAsync(u => u.Id == ManagementGovernanceTestConstants.UserWorkflowOnlyProcedureLauncher).ConfigureAwait(false))
+            return;
+
+        const int localSource = (int)IdentitySource.Local;
+
+        db.Roles.Add(
+            new RoleEntity
+            {
+                Id = ManagementGovernanceTestConstants.RoleWorkflowOnlyProcedureLauncher,
+                Name = "Governance test — workflow-only procedure launcher",
+                Description = "Epic 56B harness",
+                PermissionsJson = WorkflowOnlyProcedureLauncherPermissionsJson,
+                IsSystemRole = false
+            });
+
+        db.Users.Add(
+            new UserEntity
+            {
+                Id = ManagementGovernanceTestConstants.UserWorkflowOnlyProcedureLauncher,
+                DisplayName = "Governance test — workflow-only procedure launcher",
+                IsBreakGlassEligible = false
+            });
+
+        db.IdentityLinks.Add(
+            new IdentityLinkEntity
+            {
+                Id = ManagementGovernanceTestConstants.LinkWorkflowOnlyProcedureLauncher,
+                UserId = ManagementGovernanceTestConstants.UserWorkflowOnlyProcedureLauncher,
+                Source = localSource,
+                ExternalId = ManagementGovernanceTestConstants.ExternalWorkflowOnlyProcedureLauncher
+            });
+
+        db.UserRoles.Add(
+            new UserRoleEntity
+            {
+                UserId = ManagementGovernanceTestConstants.UserWorkflowOnlyProcedureLauncher,
+                RoleId = ManagementGovernanceTestConstants.RoleWorkflowOnlyProcedureLauncher
             });
 
         await db.SaveChangesAsync().ConfigureAwait(false);
