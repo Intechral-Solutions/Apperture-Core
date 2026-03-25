@@ -1,11 +1,12 @@
 using Apperture.ControlPlane.Security;
+using Apperture.Management.Api.Models;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Apperture.Management.Api.Controllers;
 
 /// <summary>
-/// Module procedures scoped to an integration (ADR-0029).
+/// Module procedures scoped to an integration (ADR-0029, Epic 56A hardened semantics).
 /// </summary>
 [ApiController]
 [Route("api/integrations/{integrationId}/procedures")]
@@ -49,42 +50,46 @@ public sealed class IntegrationProceduresController : ControllerBase
         {
             return Forbid();
         }
-        catch (InvalidOperationException ex)
-        {
-            return Conflict(new { error = ex.Message });
-        }
     }
 
     [HttpPost("{procedureId}/launch")]
-    public async Task<ActionResult> Launch(
+    public async Task<IActionResult> Launch(
         string integrationId,
         string procedureId,
-        [FromBody] IntegrationProcedureLaunchRequest? body,
+        [FromBody] IntegrationProcedureLaunchBody? body,
         CancellationToken cancellationToken)
     {
         try
         {
-            var result = await _procedures.LaunchAsync(
+            var request = new IntegrationProcedureLaunchRequest(
+                IntegrationProcedureLaunchBody.CoerceParameters(body?.Parameters),
+                body?.IdempotencyKey,
+                body?.CorrelationId);
+            var outcome = await _procedures.LaunchAsync(
                 integrationId,
                 procedureId,
-                body ?? new IntegrationProcedureLaunchRequest(null, null, null),
+                request,
                 cancellationToken);
-            if (result is null)
-                return NotFound(new { error = "Integration, procedure, or executable target was not found." });
 
-            return Accepted(result);
+            return outcome switch
+            {
+                IntegrationProcedureLaunchOutcome.Succeeded ok => Accepted(ok.Response),
+                IntegrationProcedureLaunchOutcome.Failed f => LaunchError(f.Code, f.Message),
+                _ => StatusCode(500, new { code = "unknown", error = "Unexpected launch outcome." })
+            };
         }
         catch (UnauthorizedAccessException)
         {
             return Forbid();
         }
-        catch (InvalidOperationException ex) when (ex.Message.Contains("not ready", StringComparison.OrdinalIgnoreCase))
+    }
+
+    private static ObjectResult LaunchError(IntegrationProcedureLaunchErrorCode code, string message)
+    {
+        var status = code.ToHttpStatus();
+        return new ObjectResult(new { code = code.ToApiCode(), error = message })
         {
-            return Conflict(new { error = ex.Message });
-        }
-        catch (InvalidOperationException ex)
-        {
-            return BadRequest(new { error = ex.Message });
-        }
+            StatusCode = status
+        };
     }
 }

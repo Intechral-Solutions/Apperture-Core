@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text;
 using System.Text.Json;
 using Apperture.ControlPlane.Security.Models;
 using FluentAssertions;
@@ -135,8 +136,87 @@ public sealed class ManagementHostGovernanceHttpTests
         ready.GetBoolean().Should().Be(isRunnable);
         var procedures = root.GetProperty("procedures");
         procedures.ValueKind.Should().Be(JsonValueKind.Array);
+        procedures.GetArrayLength().Should().BeGreaterThan(0, "HelloWorld module contributes at least one procedure in the governance host.");
+        foreach (var p in procedures.EnumerateArray())
+        {
+            p.TryGetProperty("launchable", out var launchable).Should().BeTrue();
+            p.TryGetProperty("blockedReasonCodes", out var blocked).Should().BeTrue();
+            blocked.ValueKind.Should().Be(JsonValueKind.Array);
+            if (!isRunnable)
+            {
+                launchable.GetBoolean().Should().BeFalse();
+                blocked.EnumerateArray().Select(x => x.GetString()).Should().Contain("integration_not_ready");
+            }
+            else
+            {
+                // Integration reader lacks workflow.execute; list stays truthful (Epic 56A).
+                launchable.GetBoolean().Should().BeFalse();
+                blocked.EnumerateArray().Select(x => x.GetString()).Should().Contain("insufficient_workflow_permission");
+            }
+        }
+    }
+
+    [Fact]
+    public async Task Get_integration_procedures_unknown_integration_returns_404()
+    {
+        AssertSqlAvailable();
+        using var client = _fixture.CreateAuthenticatedClient(ManagementGovernanceTestConstants.ExternalIntegrationReader);
+        var response = await client.GetAsync("/api/integrations/intgovernmissing00000001/procedures");
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
+    public async Task Get_integration_procedure_detail_unknown_procedure_returns_404()
+    {
+        AssertSqlAvailable();
+        using var client = _fixture.CreateAuthenticatedClient(ManagementGovernanceTestConstants.ExternalIntegrationReader);
+        var response = await client.GetAsync(
+            $"/api/integrations/{ManagementGovernanceTestConstants.SeededIntegrationId}/procedures/no.such.procedure.id.here");
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
+    public async Task Post_integration_procedure_launch_integration_reader_forbidden_or_conflict_when_not_ready()
+    {
+        AssertSqlAvailable();
+        using var client = _fixture.CreateAuthenticatedClient(ManagementGovernanceTestConstants.ExternalIntegrationReader);
+        var readinessResponse = await client.GetAsync(
+            $"/api/integrations/{ManagementGovernanceTestConstants.SeededIntegrationId}/readiness");
+        readinessResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var readinessJson = await readinessResponse.Content.ReadAsStringAsync();
+        using var readinessDoc = JsonDocument.Parse(readinessJson);
+        var isRunnable = readinessDoc.RootElement.GetProperty("isRunnable").GetBoolean();
+
+        using var content = new StringContent("""{"parameters":{"name":"t"}}""", Encoding.UTF8, "application/json");
+        var response = await client.PostAsync(
+            $"/api/integrations/{ManagementGovernanceTestConstants.SeededIntegrationId}/procedures/Sample.HelloWorld.procedures.greet/launch",
+            content);
+        var json = await response.Content.ReadAsStringAsync();
+        using var doc = JsonDocument.Parse(json);
         if (!isRunnable)
-            procedures.GetArrayLength().Should().Be(0);
+        {
+            response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+            doc.RootElement.GetProperty("code").GetString().Should().Be("integration_not_ready");
+        }
+        else
+        {
+            response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+            doc.RootElement.GetProperty("code").GetString().Should().Be("workflow_start_forbidden");
+        }
+    }
+
+    [Fact]
+    public async Task Post_integration_procedure_launch_procedure_launcher_invalid_parameters_returns_400()
+    {
+        AssertSqlAvailable();
+        using var client = _fixture.CreateAuthenticatedClient(ManagementGovernanceTestConstants.ExternalProcedureLauncher);
+        var response = await client.PostAsJsonAsync(
+            $"/api/integrations/{ManagementGovernanceTestConstants.SeededIntegrationId}/procedures/Sample.HelloWorld.procedures.greet/launch",
+            new { parameters = new Dictionary<string, object?>() });
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var json = await response.Content.ReadAsStringAsync();
+        using var doc = JsonDocument.Parse(json);
+        doc.RootElement.GetProperty("code").GetString().Should().Be("invalid_parameters");
     }
 
     [Fact]

@@ -63,19 +63,19 @@ public sealed class IntegrationProcedureService : IIntegrationProcedureService
         if (readiness is null)
             return null;
 
-        if (!readiness.IsRunnable)
-            return new IntegrationProcedureListResponse(false, Array.Empty<IntegrationProcedureSummaryDto>());
-
+        var integrationReady = readiness.IsRunnable;
         var moduleProcedures = await _procedures.GetByModuleAsync(integration.ModuleId, cancellationToken);
         var list = new List<IntegrationProcedureSummaryDto>();
         foreach (var p in moduleProcedures.OrderBy(x => x.Id, StringComparer.Ordinal))
         {
-            if (!await IsTargetExecutableAsync(p, cancellationToken).ConfigureAwait(false))
-                continue;
-            list.Add(ToSummary(p));
+            var targetOk = await IsTargetExecutableAsync(p, cancellationToken).ConfigureAwait(false);
+            var permOk = await HasProcedurePermissionsAsync(p, cancellationToken).ConfigureAwait(false);
+            var executionStartOk = !targetOk || await HasExecutionStartPermissionAsync(p, cancellationToken).ConfigureAwait(false);
+            var blocked = BuildBlockedCodes(integrationReady, targetOk, permOk, executionStartOk, p.LaunchKind);
+            list.Add(ToSummary(p, blocked.Count == 0, blocked));
         }
 
-        return new IntegrationProcedureListResponse(true, list);
+        return new IntegrationProcedureListResponse(integrationReady, list);
     }
 
     /// <inheritdoc />
@@ -89,16 +89,16 @@ public sealed class IntegrationProcedureService : IIntegrationProcedureService
         var readiness = await _readiness.GetReadinessAsync(id, cancellationToken);
         if (readiness is null)
             return null;
-        if (!readiness.IsRunnable)
-            throw new InvalidOperationException("Integration is not ready to run procedures.");
 
         var procedure = await _procedures.GetProcedureAsync(procedureId, cancellationToken);
         if (procedure is null || !string.Equals(procedure.ModuleId, integration.ModuleId, StringComparison.Ordinal))
             return null;
 
-        if (!await IsTargetExecutableAsync(procedure, cancellationToken).ConfigureAwait(false))
-            return null;
-
+        var integrationReady = readiness.IsRunnable;
+        var targetOk = await IsTargetExecutableAsync(procedure, cancellationToken).ConfigureAwait(false);
+        var permOk = await HasProcedurePermissionsAsync(procedure, cancellationToken).ConfigureAwait(false);
+        var executionStartOk = !targetOk || await HasExecutionStartPermissionAsync(procedure, cancellationToken).ConfigureAwait(false);
+        var blocked = BuildBlockedCodes(integrationReady, targetOk, permOk, executionStartOk, procedure.LaunchKind);
         var fields = ParseParameterFields(procedure.ParameterSchema);
         return new IntegrationProcedureDetailDto(
             procedure.Id,
@@ -107,11 +107,13 @@ public sealed class IntegrationProcedureService : IIntegrationProcedureService
             procedure.Category,
             LaunchKindToken(procedure.LaunchKind),
             procedure.TargetDefinitionId,
+            blocked.Count == 0,
+            blocked,
             fields);
     }
 
     /// <inheritdoc />
-    public async ValueTask<IntegrationProcedureLaunchResponse?> LaunchAsync(
+    public async ValueTask<IntegrationProcedureLaunchOutcome> LaunchAsync(
         string integrationId,
         string procedureId,
         IntegrationProcedureLaunchRequest request,
@@ -120,22 +122,47 @@ public sealed class IntegrationProcedureService : IIntegrationProcedureService
         var id = new IntegrationId(integrationId);
         var integration = await _integrations.GetIntegrationAsync(id, cancellationToken);
         if (integration is null)
-            return null;
+            return new IntegrationProcedureLaunchOutcome.Failed(
+                IntegrationProcedureLaunchErrorCode.IntegrationNotFound,
+                $"Integration '{integrationId}' was not found.");
 
         var readiness = await _readiness.GetReadinessAsync(id, cancellationToken);
         if (readiness is null)
-            return null;
+            return new IntegrationProcedureLaunchOutcome.Failed(
+                IntegrationProcedureLaunchErrorCode.IntegrationReadinessUnavailable,
+                "Integration readiness could not be resolved.");
+
         if (!readiness.IsRunnable)
-            throw new InvalidOperationException("Integration is not ready to run procedures.");
+            return new IntegrationProcedureLaunchOutcome.Failed(
+                IntegrationProcedureLaunchErrorCode.IntegrationNotReady,
+                "Integration is not runnable; resolve readiness issues before launching a procedure.");
 
         var procedure = await _procedures.GetProcedureAsync(procedureId, cancellationToken);
-        if (procedure is null || !string.Equals(procedure.ModuleId, integration.ModuleId, StringComparison.Ordinal))
-            return null;
+        if (procedure is null)
+            return new IntegrationProcedureLaunchOutcome.Failed(
+                IntegrationProcedureLaunchErrorCode.ProcedureNotFound,
+                $"Procedure '{procedureId}' was not found.");
+
+        if (!string.Equals(procedure.ModuleId, integration.ModuleId, StringComparison.Ordinal))
+            return new IntegrationProcedureLaunchOutcome.Failed(
+                IntegrationProcedureLaunchErrorCode.ProcedureWrongModule,
+                "Procedure does not belong to this integration's module.");
 
         if (!await IsTargetExecutableAsync(procedure, cancellationToken).ConfigureAwait(false))
-            return null;
+            return new IntegrationProcedureLaunchOutcome.Failed(
+                IntegrationProcedureLaunchErrorCode.TargetNotExecutable,
+                "Procedure target definition is missing, not registered, or not owned by the module.");
 
-        await EnsureProcedurePermissionsAsync(procedure, cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await EnsureProcedurePermissionsAsync(procedure, cancellationToken).ConfigureAwait(false);
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return new IntegrationProcedureLaunchOutcome.Failed(
+                IntegrationProcedureLaunchErrorCode.ProcedurePermissionDenied,
+                ex.Message);
+        }
 
         IReadOnlyDictionary<string, object?>? parameters = request.Parameters;
         if (!string.IsNullOrWhiteSpace(procedure.ParameterSchema) &&
@@ -150,10 +177,21 @@ public sealed class IntegrationProcedureService : IIntegrationProcedureService
         }
         catch (ArgumentException ex)
         {
-            throw new InvalidOperationException(ex.Message, ex);
+            return new IntegrationProcedureLaunchOutcome.Failed(
+                IntegrationProcedureLaunchErrorCode.InvalidParameters,
+                ex.Message);
         }
 
-        OrchestrationSafeValidator.ValidateParameters(parameters);
+        try
+        {
+            OrchestrationSafeValidator.ValidateParameters(parameters);
+        }
+        catch (ArgumentException ex)
+        {
+            return new IntegrationProcedureLaunchOutcome.Failed(
+                IntegrationProcedureLaunchErrorCode.UnsafeOrchestrationParameters,
+                ex.Message);
+        }
 
         var integValue = integration.Id.Value;
         switch (procedure.LaunchKind)
@@ -161,7 +199,17 @@ public sealed class IntegrationProcedureService : IIntegrationProcedureService
             case ProcedureLaunchKind.Workflow:
             {
                 var wfId = new WorkflowDefinitionId(procedure.TargetDefinitionId);
-                await _workflowStartAuth.EnsureCanStartWorkflowAsync(wfId, cancellationToken).ConfigureAwait(false);
+                try
+                {
+                    await _workflowStartAuth.EnsureCanStartWorkflowAsync(wfId, cancellationToken).ConfigureAwait(false);
+                }
+                catch (UnauthorizedAccessException ex)
+                {
+                    return new IntegrationProcedureLaunchOutcome.Failed(
+                        IntegrationProcedureLaunchErrorCode.WorkflowStartForbidden,
+                        ex.Message);
+                }
+
                 var dispatchResult = await _workflowDispatch.StartAsync(
                     new StartWorkflowRequest(
                         wfId,
@@ -173,20 +221,33 @@ public sealed class IntegrationProcedureService : IIntegrationProcedureService
                         ProcedureId: procedure.Id),
                     cancellationToken).ConfigureAwait(false);
                 if (dispatchResult is null)
-                    return null;
+                    return new IntegrationProcedureLaunchOutcome.Failed(
+                        IntegrationProcedureLaunchErrorCode.DispatchFailed,
+                        "Workflow start dispatch did not complete; the definition may be unavailable.");
 
-                return new IntegrationProcedureLaunchResponse(
-                    dispatchResult.RunId.Value,
-                    dispatchResult.WorkflowInstanceId.Value,
-                    OperationInstanceId: null,
-                    dispatchResult.WorkflowDefinitionId.Value,
-                    dispatchResult.Status,
-                    "workflow");
+                return new IntegrationProcedureLaunchOutcome.Succeeded(
+                    new IntegrationProcedureLaunchResponse(
+                        dispatchResult.RunId.Value,
+                        dispatchResult.WorkflowInstanceId.Value,
+                        OperationInstanceId: null,
+                        dispatchResult.WorkflowDefinitionId.Value,
+                        dispatchResult.Status,
+                        "workflow"));
             }
             case ProcedureLaunchKind.Operation:
             {
                 var opId = new OperationId(procedure.TargetDefinitionId);
-                await _operationStartAuth.EnsureCanStartOperationAsync(opId, cancellationToken).ConfigureAwait(false);
+                try
+                {
+                    await _operationStartAuth.EnsureCanStartOperationAsync(opId, cancellationToken).ConfigureAwait(false);
+                }
+                catch (UnauthorizedAccessException ex)
+                {
+                    return new IntegrationProcedureLaunchOutcome.Failed(
+                        IntegrationProcedureLaunchErrorCode.OperationStartForbidden,
+                        ex.Message);
+                }
+
                 var dispatchResult = await _operationDispatch.StartAsync(
                     new StartOperationRequest(
                         procedure.TargetDefinitionId,
@@ -197,18 +258,76 @@ public sealed class IntegrationProcedureService : IIntegrationProcedureService
                         procedure.Id),
                     cancellationToken).ConfigureAwait(false);
                 if (dispatchResult is null)
-                    return null;
+                    return new IntegrationProcedureLaunchOutcome.Failed(
+                        IntegrationProcedureLaunchErrorCode.DispatchFailed,
+                        "Operation start dispatch did not complete; the definition may be unavailable.");
 
-                return new IntegrationProcedureLaunchResponse(
-                    dispatchResult.RunId.Value,
-                    WorkflowInstanceId: null,
-                    dispatchResult.OperationInstanceId.Value,
-                    dispatchResult.OperationDefinitionId.Value,
-                    dispatchResult.Status,
-                    "operation");
+                return new IntegrationProcedureLaunchOutcome.Succeeded(
+                    new IntegrationProcedureLaunchResponse(
+                        dispatchResult.RunId.Value,
+                        WorkflowInstanceId: null,
+                        dispatchResult.OperationInstanceId.Value,
+                        dispatchResult.OperationDefinitionId.Value,
+                        dispatchResult.Status,
+                        "operation"));
             }
             default:
-                throw new InvalidOperationException($"Unsupported launch kind '{procedure.LaunchKind}'.");
+                return new IntegrationProcedureLaunchOutcome.Failed(
+                    IntegrationProcedureLaunchErrorCode.DispatchFailed,
+                    $"Unsupported launch kind '{procedure.LaunchKind}'.");
+        }
+    }
+
+    private static IReadOnlyList<string> BuildBlockedCodes(
+        bool integrationReady,
+        bool targetOk,
+        bool procedurePermissionsOk,
+        bool executionStartOk,
+        ProcedureLaunchKind launchKind)
+    {
+        var codes = new List<string>(5);
+        if (!integrationReady)
+            codes.Add(ProcedureBlockedReasonCodes.IntegrationNotReady);
+        if (!targetOk)
+            codes.Add(ProcedureBlockedReasonCodes.TargetNotExecutable);
+        if (!procedurePermissionsOk)
+            codes.Add(ProcedureBlockedReasonCodes.InsufficientProcedurePermission);
+        if (!executionStartOk)
+        {
+            codes.Add(launchKind == ProcedureLaunchKind.Workflow
+                ? ProcedureBlockedReasonCodes.InsufficientWorkflowPermission
+                : ProcedureBlockedReasonCodes.InsufficientOperationPermission);
+        }
+
+        return codes;
+    }
+
+    /// <summary>
+    /// Whether the current actor may start the procedure's target (mirrors launch-time auth; list/detail stay truthful).
+    /// </summary>
+    private async ValueTask<bool> HasExecutionStartPermissionAsync(ProcedureDefinition procedure, CancellationToken cancellationToken)
+    {
+        try
+        {
+            switch (procedure.LaunchKind)
+            {
+                case ProcedureLaunchKind.Workflow:
+                    await _workflowStartAuth
+                        .EnsureCanStartWorkflowAsync(new WorkflowDefinitionId(procedure.TargetDefinitionId), cancellationToken)
+                        .ConfigureAwait(false);
+                    return true;
+                case ProcedureLaunchKind.Operation:
+                    await _operationStartAuth
+                        .EnsureCanStartOperationAsync(new OperationId(procedure.TargetDefinitionId), cancellationToken)
+                        .ConfigureAwait(false);
+                    return true;
+                default:
+                    return false;
+            }
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return false;
         }
     }
 
@@ -224,6 +343,18 @@ public sealed class IntegrationProcedureService : IIntegrationProcedureService
         var allowed = await _permissionEvaluator.EvaluateAllAsync(actor, required, cancellationToken).ConfigureAwait(false);
         if (!allowed)
             throw new UnauthorizedAccessException("Not authorized for this procedure.");
+    }
+
+    private async ValueTask<bool> HasProcedurePermissionsAsync(ProcedureDefinition procedure, CancellationToken cancellationToken)
+    {
+        if (procedure.RequiredPermissions is not { Count: > 0 })
+            return true;
+
+        var actor = await _principalContext.GetCurrentActorAsync(cancellationToken).ConfigureAwait(false);
+        if (actor is null)
+            return false;
+
+        return await _permissionEvaluator.EvaluateAllAsync(actor, procedure.RequiredPermissions, cancellationToken).ConfigureAwait(false);
     }
 
     private async ValueTask<bool> IsTargetExecutableAsync(ProcedureDefinition procedure, CancellationToken cancellationToken)
@@ -247,14 +378,16 @@ public sealed class IntegrationProcedureService : IIntegrationProcedureService
         }
     }
 
-    private static IntegrationProcedureSummaryDto ToSummary(ProcedureDefinition p) =>
+    private static IntegrationProcedureSummaryDto ToSummary(ProcedureDefinition p, bool launchable, IReadOnlyList<string> blocked) =>
         new(
             p.Id,
             p.DisplayName,
             p.Description,
             p.Category,
             LaunchKindToken(p.LaunchKind),
-            p.TargetDefinitionId);
+            p.TargetDefinitionId,
+            launchable,
+            blocked);
 
     private static string LaunchKindToken(ProcedureLaunchKind kind) =>
         kind switch

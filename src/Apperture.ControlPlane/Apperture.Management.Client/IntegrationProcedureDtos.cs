@@ -13,13 +13,16 @@ public sealed record IntegrationProcedureParameterFieldDto(
     string? Label,
     string? DefaultJson);
 
+/// <summary>Epic 56A: server-owned launchability; <see cref="BlockedReasonCodes"/> empty when <see cref="Launchable"/>.</summary>
 public sealed record IntegrationProcedureItemDto(
     string Id,
     string DisplayName,
     string? Description,
     string? Category,
     string LaunchKind,
-    string TargetDefinitionId);
+    string TargetDefinitionId,
+    bool Launchable,
+    IReadOnlyList<string> BlockedReasonCodes);
 
 public sealed record IntegrationProcedureListDto(bool IntegrationReady, IReadOnlyList<IntegrationProcedureItemDto> Procedures);
 
@@ -30,6 +33,8 @@ public sealed record IntegrationProcedureDetailDto(
     string? Category,
     string LaunchKind,
     string TargetDefinitionId,
+    bool Launchable,
+    IReadOnlyList<string> BlockedReasonCodes,
     IReadOnlyList<IntegrationProcedureParameterFieldDto> ParameterFields);
 
 public sealed record IntegrationProcedureLaunchResultDto(
@@ -39,3 +44,11 @@ public sealed record IntegrationProcedureLaunchResultDto(
     string ExecutionDefinitionId,
     string Status,
     string LaunchKind);
+
+/// <summary>Outcome of procedure launch including API error body when unsuccessful (Epic 56A).</summary>
+public sealed record IntegrationProcedureLaunchClientResult(
+    bool Succeeded,
+    IntegrationProcedureLaunchResultDto? Result,
+    int StatusCode,
+    string? ErrorCode,
+    string? ErrorMessage);

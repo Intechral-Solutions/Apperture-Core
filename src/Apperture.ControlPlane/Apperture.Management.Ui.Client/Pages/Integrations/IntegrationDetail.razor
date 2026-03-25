@@ -118,7 +118,7 @@
 
             <div class="rounded border border-default bg-surface p-3">
                 <h2 class="text-sm font-semibold text-heading mb-2">Procedures</h2>
-                <div class="text-xs text-muted mb-2">Module-declared actions for this integration when it is runnable (ADR-0029).</div>
+                <div class="text-xs text-muted mb-2">Module-declared operator actions (ADR-0029). Availability and launchability come from the server; blocked reasons explain what must change.</div>
                 @if (_procedureLoading)
                 {
                     <div class="text-sm text-muted">Loading procedures…</div>
@@ -131,16 +131,18 @@
                 {
                     <div class="text-sm text-muted">No procedure data.</div>
                 }
-                else if (!_procedureList.IntegrationReady)
-                {
-                    <div class="text-sm text-body">Procedures are hidden until the integration is runnable. Fix readiness issues above.</div>
-                }
                 else if (_procedureList.Procedures.Count == 0)
                 {
-                    <div class="text-sm text-muted">This module has no procedures for this integration.</div>
+                    <div class="text-sm text-muted">This module declares no procedures.</div>
                 }
                 else
                 {
+                    @if (!_procedureList.IntegrationReady)
+                    {
+                        <div class="mb-2 rounded border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-xs text-amber-900 dark:text-amber-100">
+                            Integration is not runnable; procedures are listed but launch is blocked until readiness passes.
+                        </div>
+                    }
                     <div class="flex flex-wrap gap-2 mb-3">
                         @foreach (var p in _procedureList.Procedures)
                         {
@@ -148,6 +150,10 @@
                                     class="rounded px-2 py-1 text-xs font-mono @(string.Equals(_selectedProcedureId, p.Id, StringComparison.Ordinal) ? "bg-body text-surface" : "bg-surface-muted text-body hover:bg-surface")"
                                     @onclick="() => SelectProcedureAsync(p.Id)">
                                 @p.DisplayName
+                                @if (!p.Launchable)
+                                {
+                                    <span class="ml-1 text-amber-600 dark:text-amber-300" title="Blocked">●</span>
+                                }
                             </button>
                         }
                     </div>
@@ -160,10 +166,19 @@
                                 <div class="text-xs text-muted mt-1">@_selectedProcedureDetail.Description</div>
                             }
                             <div class="text-xs text-muted mt-1 font-mono">@_selectedProcedureDetail.Id · @_selectedProcedureDetail.LaunchKind → @_selectedProcedureDetail.TargetDefinitionId</div>
+                            @if (!_selectedProcedureDetail.Launchable && _selectedProcedureDetail.BlockedReasonCodes.Count > 0)
+                            {
+                                <ul class="mt-2 list-disc pl-5 text-xs text-amber-800 dark:text-amber-200">
+                                    @foreach (var code in _selectedProcedureDetail.BlockedReasonCodes)
+                                    {
+                                        <li><span class="font-mono">@code</span> — @DescribeBlockedReason(code)</li>
+                                    }
+                                </ul>
+                            }
                             <ProcedureParameterForm Fields="@_selectedProcedureDetail.ParameterFields" Values="@_procedureParamValues" />
                             <button type="button"
                                     class="mt-3 rounded bg-body px-3 py-2 text-sm text-surface hover:bg-body/90 disabled:opacity-50"
-                                    disabled="@_procedureLaunching"
+                                    disabled="@(_procedureLaunching || !_selectedProcedureDetail.Launchable)"
                                     @onclick="LaunchSelectedProcedureAsync">
                                 Launch
                             </button>
@@ -553,20 +568,23 @@
         _procedureError = null;
         try
         {
-            var result = await Client.LaunchIntegrationProcedureAsync(
+            var outcome = await Client.LaunchIntegrationProcedureAsync(
                 IntegrationId,
                 _selectedProcedureId,
                 _procedureParamValues,
                 null,
                 null);
-            if (result is null)
+            if (!outcome.Succeeded || outcome.Result is null)
             {
-                Toasts.Show(ToastSeverity.Error, "Launch failed: not found.");
+                var detail = string.IsNullOrEmpty(outcome.ErrorMessage)
+                    ? $"HTTP {outcome.StatusCode}"
+                    : $"{outcome.ErrorCode ?? "error"}: {outcome.ErrorMessage}";
+                Toasts.Show(ToastSeverity.Error, $"Launch failed ({detail}).");
                 return;
             }
 
             Toasts.Show(ToastSeverity.Success, "Run requested.");
-            Nav.NavigateTo($"/runs/{result.RunId}");
+            Nav.NavigateTo($"/runs/{outcome.Result.RunId}");
         }
         catch (HttpRequestException ex)
         {
@@ -577,6 +595,17 @@
             _procedureLaunching = false;
         }
     }
+
+    private static string DescribeBlockedReason(string code) =>
+        code switch
+        {
+            "integration_not_ready" => "Resolve readiness issues for this integration.",
+            "target_not_executable" => "Workflow or operation target is missing or not registered for this module.",
+            "insufficient_procedure_permission" => "Your role does not satisfy this procedure's required permissions.",
+            "insufficient_workflow_permission" => "You cannot start this workflow (e.g. missing workflow.execute for the module).",
+            "insufficient_operation_permission" => "You cannot start this operation (e.g. missing operation.execute).",
+            _ => "See platform documentation or contact an administrator."
+        };
 
     private void StartSettingsEdit()
     {

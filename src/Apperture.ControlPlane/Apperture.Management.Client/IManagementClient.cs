@@ -114,19 +114,19 @@ public interface IManagementClient
     Task<IntegrationOperatorDetailDto?> GetIntegrationOperatorDetailAsync(string id, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Lists module procedures available for an integration when readiness allows (ADR-0029).
+    /// Lists module procedures for an integration with server-owned launchability (ADR-0029, Epic 56A).
     /// </summary>
     Task<IntegrationProcedureListDto?> GetIntegrationProceduresAsync(string integrationId, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Procedure definition for form rendering (ADR-0029).
+    /// Procedure definition for form rendering (ADR-0029, Epic 56A).
     /// </summary>
     Task<IntegrationProcedureDetailDto?> GetIntegrationProcedureAsync(string integrationId, string procedureId, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Launches a procedure; returns null when the integration or procedure is not found (404).
+    /// Launches a procedure. On failure, <see cref="IntegrationProcedureLaunchClientResult"/> carries HTTP status and API <c>code</c>/<c>error</c> body when present.
     /// </summary>
-    Task<IntegrationProcedureLaunchResultDto?> LaunchIntegrationProcedureAsync(
+    Task<IntegrationProcedureLaunchClientResult> LaunchIntegrationProcedureAsync(
         string integrationId,
         string procedureId,
         IReadOnlyDictionary<string, object?>? parameters,

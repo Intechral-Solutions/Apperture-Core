@@ -305,7 +305,7 @@ public sealed class ManagementClient : IManagementClient
         return await response.Content.ReadFromJsonAsync<IntegrationProcedureDetailDto>(ApiJsonReadOptions, cancellationToken).ConfigureAwait(false);
     }
 
-    public async Task<IntegrationProcedureLaunchResultDto?> LaunchIntegrationProcedureAsync(
+    public async Task<IntegrationProcedureLaunchClientResult> LaunchIntegrationProcedureAsync(
         string integrationId,
         string procedureId,
         IReadOnlyDictionary<string, object?>? parameters,
@@ -318,10 +318,33 @@ public sealed class ManagementClient : IManagementClient
             new { parameters, idempotencyKey, correlationId },
             ApiJsonReadOptions,
             cancellationToken).ConfigureAwait(false);
-        if (response.StatusCode == HttpStatusCode.NotFound)
-            return null;
-        response.EnsureSuccessStatusCode();
-        return await response.Content.ReadFromJsonAsync<IntegrationProcedureLaunchResultDto>(ApiJsonReadOptions, cancellationToken).ConfigureAwait(false);
+
+        var status = (int)response.StatusCode;
+        if (response.StatusCode == HttpStatusCode.Accepted)
+        {
+            var dto = await response.Content.ReadFromJsonAsync<IntegrationProcedureLaunchResultDto>(ApiJsonReadOptions, cancellationToken).ConfigureAwait(false);
+            return new IntegrationProcedureLaunchClientResult(true, dto, status, null, null);
+        }
+
+        var (code, message) = await TryReadProcedureErrorBodyAsync(response, cancellationToken).ConfigureAwait(false);
+        return new IntegrationProcedureLaunchClientResult(false, null, status, code, message ?? response.ReasonPhrase);
+    }
+
+    private static async Task<(string? Code, string? Error)> TryReadProcedureErrorBodyAsync(HttpResponseMessage response, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+            using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken).ConfigureAwait(false);
+            var root = doc.RootElement;
+            string? code = root.TryGetProperty("code", out var c) ? c.GetString() : null;
+            string? error = root.TryGetProperty("error", out var e) ? e.GetString() : null;
+            return (code, error);
+        }
+        catch
+        {
+            return (null, null);
+        }
     }
 
     public async Task<IntegrationDto> CreateIntegrationAsync(CreateIntegrationRequest request, CancellationToken cancellationToken = default)

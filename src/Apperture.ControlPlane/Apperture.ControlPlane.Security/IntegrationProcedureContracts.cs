@@ -18,7 +18,9 @@ public sealed record IntegrationProcedureSummaryDto(
     string? Description,
     string? Category,
     string LaunchKind,
-    string TargetDefinitionId);
+    string TargetDefinitionId,
+    bool Launchable,
+    IReadOnlyList<string> BlockedReasonCodes);
 
 public sealed record IntegrationProcedureDetailDto(
     string Id,
@@ -27,6 +29,8 @@ public sealed record IntegrationProcedureDetailDto(
     string? Category,
     string LaunchKind,
     string TargetDefinitionId,
+    bool Launchable,
+    IReadOnlyList<string> BlockedReasonCodes,
     IReadOnlyList<IntegrationProcedureParameterFieldDto> ParameterFields);
 
 public sealed record IntegrationProcedureListResponse(
@@ -47,7 +51,7 @@ public sealed record IntegrationProcedureLaunchResponse(
     string LaunchKind);
 
 /// <summary>
-/// Integration-scoped procedure listing, detail, and launch (ADR-0029).
+/// Integration-scoped procedure listing, detail, and launch (ADR-0029, Epic 56A semantics).
 /// </summary>
 public interface IIntegrationProcedureService
 {
@@ -55,7 +59,7 @@ public interface IIntegrationProcedureService
 
     ValueTask<IntegrationProcedureDetailDto?> GetProcedureAsync(string integrationId, string procedureId, CancellationToken cancellationToken = default);
 
-    ValueTask<IntegrationProcedureLaunchResponse?> LaunchAsync(
+    ValueTask<IntegrationProcedureLaunchOutcome> LaunchAsync(
         string integrationId,
         string procedureId,
         IntegrationProcedureLaunchRequest request,
