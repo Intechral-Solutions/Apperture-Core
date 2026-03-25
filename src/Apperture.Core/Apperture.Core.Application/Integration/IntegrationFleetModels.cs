@@ -1,3 +1,4 @@
+using Apperture.Core.Application.Scheduling;
 using Apperture.Core.Domain.Integration;
 using Apperture.Core.Domain.Scheduling;
 using Apperture.Core.Domain.Workflow;
@@ -69,8 +70,7 @@ public sealed record IntegrationFleetOperationalRunAttention(
     DateTimeOffset? EvidenceWindowStartUtc);
 
 /// <summary>
-/// Epic 63/64: schedule + run window evidence for “expected execution” vs unexpected silence.
-/// Silence uses schedule-origin authorized runs only (Epic 64); see ADRs Epic 63/64.
+/// Epic 63–65: schedule-aware expected execution vs silence; schedule-origin satisfaction (Epic 64); evaluator status (Epic 65).
 /// </summary>
 public sealed record IntegrationFleetExpectedRunAttention(
     bool HasRecurringScheduleExpectation,
@@ -78,7 +78,13 @@ public sealed record IntegrationFleetExpectedRunAttention(
     string? ReferenceScheduleId,
     DateTimeOffset? ExpectationEvidenceWindowStartUtc,
     string? LastScheduleOriginAuthorizedRunId,
-    DateTimeOffset? LastScheduleOriginAuthorizedRunAt);
+    DateTimeOffset? LastScheduleOriginAuthorizedRunAt,
+    string ExpectedRunEvaluationStatus,
+    DateTimeOffset? LastExpectedFireUtc,
+    int ExpectedFireCountInWindow,
+    bool ExpectedRunSatisfied,
+    bool ExpectedRunInGracePeriod,
+    string? OperatorSummaryLine);
 
 /// <summary>
 /// One row of the integration fleet overview. Epic 61; Epic 62 operational run slice; Epic 63 expected-run silence.
@@ -198,54 +204,29 @@ public static class IntegrationFleetAttention
     }
 
     /// <summary>
-    /// Epic 63/64: recurring schedule expectation; silence when no authorized <b>schedule-origin</b> run in the evidence window.
-    /// Manual/procedure runs do not clear silence. <paramref name="evidenceWindowStartUtc"/> aligns with Epic 62 operational window for Active rows.
+    /// Epic 65: maps <see cref="ScheduleExpectationEvaluation"/> to the fleet row slice.
     /// </summary>
-    public static IntegrationFleetExpectedRunAttention BuildExpectedRunAttention(
-        string operationalState,
-        DateTimeOffset integrationCreatedAt,
-        DateTimeOffset utcNow,
-        IntegrationFleetAttentionFlags attentionFlags,
-        IntegrationReadinessProjection readiness,
-        IReadOnlyList<ScheduleDefinition> schedules,
-        IntegrationId integrationId,
-        DateTimeOffset? evidenceWindowStartUtc,
-        DateTimeOffset? lastScheduleOriginAuthorizedRunAt,
-        string? lastScheduleOriginAuthorizedRunId)
+    public static IntegrationFleetExpectedRunAttention FromScheduleExpectationEvaluation(
+        ScheduleExpectationEvaluation evaluation,
+        string? referenceScheduleId,
+        DateTimeOffset? expectationEvidenceWindowStartUtc,
+        string? latestScheduleOriginAuthorizedRunId,
+        DateTimeOffset? latestScheduleOriginAuthorizedRunAt)
     {
-        var active = string.Equals(operationalState, "Active", StringComparison.OrdinalIgnoreCase);
-        if (!active)
-        {
-            return new IntegrationFleetExpectedRunAttention(false, false, null, null, null, null);
-        }
-
-        var qualifying = schedules
-            .Where(s =>
-                s.Enabled
-                && s.IntegrationId == integrationId
-                && !string.IsNullOrWhiteSpace(s.RecurrenceExpression))
-            .OrderBy(s => s.Id.Value, StringComparer.Ordinal)
-            .ToList();
-
-        var hasRecurringExpectation = readiness.IsRunnable
-            && !attentionFlags.HasConfigBlockingReadiness
-            && qualifying.Count > 0;
-
-        var windowStart = evidenceWindowStartUtc;
-        var pastGrace = utcNow - integrationCreatedAt >= IntegrationFleetExpectedRunEvidence.SilenceGraceAfterIntegrationCreate;
-        var noScheduleOriginRunInWindow = lastScheduleOriginAuthorizedRunAt is null;
-
-        var hasUnexpectedSilence = hasRecurringExpectation && pastGrace && noScheduleOriginRunInWindow;
-
-        var referenceId = qualifying.Count > 0 ? qualifying[0].Id.Value : null;
-
+        var silent = evaluation.Status == ScheduleExpectationEvaluationStatus.MissingExpectedRun;
         return new IntegrationFleetExpectedRunAttention(
-            hasRecurringExpectation,
-            hasUnexpectedSilence,
-            referenceId,
-            windowStart,
-            lastScheduleOriginAuthorizedRunId,
-            lastScheduleOriginAuthorizedRunAt);
+            evaluation.ExpectsRecurringRuns,
+            silent,
+            referenceScheduleId,
+            expectationEvidenceWindowStartUtc,
+            latestScheduleOriginAuthorizedRunId,
+            latestScheduleOriginAuthorizedRunAt,
+            evaluation.Status.ToString(),
+            evaluation.MostRecentExpectedFireUtc,
+            evaluation.ExpectedFireCountInWindow,
+            evaluation.SatisfiedByAuthorizedScheduleOriginRun,
+            evaluation.InGracePeriod,
+            evaluation.OperatorSummaryLine);
     }
 
     /// <summary>

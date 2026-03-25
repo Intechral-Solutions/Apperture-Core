@@ -182,13 +182,13 @@
                             <td class="px-3 py-2 text-sm" @onclick:stopPropagation="true">
                                 @if (string.Equals(row.OperationalState, "Active", StringComparison.OrdinalIgnoreCase) && row.ExpectedRuns.HasRecurringScheduleExpectation)
                                 {
-                                    @if (row.ExpectedRuns.HasUnexpectedSilence)
+                                    @if (!string.IsNullOrWhiteSpace(row.ExpectedRuns.OperatorSummaryLine))
                                     {
-                                        <span class="text-muted">No scheduled run</span>
+                                        <div class="@(row.ExpectedRuns.HasUnexpectedSilence ? "text-warning text-xs" : "text-muted text-xs")">@row.ExpectedRuns.OperatorSummaryLine</div>
                                     }
-                                    else
+                                    @if (row.ExpectedRuns.LastExpectedFireUtc is { } lastExpected)
                                     {
-                                        <span class="text-muted">OK</span>
+                                        <div class="text-muted text-xs">Last expected fire: @lastExpected.UtcDateTime.ToString("u")</div>
                                     }
                                     @if (!string.IsNullOrWhiteSpace(row.ExpectedRuns.LastScheduleOriginAuthorizedRunId))
                                     {

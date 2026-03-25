@@ -1,3 +1,4 @@
+using Apperture.Core.Application.Scheduling;
 using Apperture.Core.Application.Services;
 using Apperture.Persistence.SqlServer;
 using Microsoft.Extensions.DependencyInjection;
@@ -17,6 +18,8 @@ public static class IntegrationServiceCollectionExtensions
     {
         services.AddScoped<IIntegrationRepository, SqlIntegrationRepository>();
         services.AddScoped<IIntegrationManagementService, IntegrationManagementService>();
+        services.AddSingleton(TimeProvider.System);
+        services.AddSingleton<IScheduleExpectationEvaluator, ScheduleExpectationEvaluator>();
         services.AddScoped<IIntegrationReadinessService, IntegrationReadinessService>();
         services.AddScoped<IIntegrationProcedureService, IntegrationProcedureService>();
         return services;

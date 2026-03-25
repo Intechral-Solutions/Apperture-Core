@@ -305,7 +305,13 @@ public sealed class IntegrationsController : ControllerBase
                 r.ExpectedRuns.ReferenceScheduleId,
                 r.ExpectedRuns.ExpectationEvidenceWindowStartUtc,
                 r.ExpectedRuns.LastScheduleOriginAuthorizedRunId,
-                r.ExpectedRuns.LastScheduleOriginAuthorizedRunAt),
+                r.ExpectedRuns.LastScheduleOriginAuthorizedRunAt,
+                r.ExpectedRuns.ExpectedRunEvaluationStatus,
+                r.ExpectedRuns.LastExpectedFireUtc,
+                r.ExpectedRuns.ExpectedFireCountInWindow,
+                r.ExpectedRuns.ExpectedRunSatisfied,
+                r.ExpectedRuns.ExpectedRunInGracePeriod,
+                r.ExpectedRuns.OperatorSummaryLine),
             r.AttentionTokens.ToArray(),
             r.TopIssueCodes.ToArray());
 

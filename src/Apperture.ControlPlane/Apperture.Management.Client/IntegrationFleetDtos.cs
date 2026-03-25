@@ -36,14 +36,20 @@ public sealed record IntegrationFleetOperationalRunAttentionDto(
     bool MostRecentAuthorizedRunFailed,
     DateTimeOffset? EvidenceWindowStartUtc);
 
-/// <summary>Epic 63/64: expected recurring runs vs unexpected silence (schedule-origin runs only for silence; Epic 64).</summary>
+/// <summary>Epic 63–65: schedule-aware expectation vs silence; schedule-origin satisfaction (Epic 64); evaluation status (Epic 65).</summary>
 public sealed record IntegrationFleetExpectedRunAttentionDto(
     bool HasRecurringScheduleExpectation,
     bool HasUnexpectedSilence,
     string? ReferenceScheduleId,
     DateTimeOffset? ExpectationEvidenceWindowStartUtc,
     string? LastScheduleOriginAuthorizedRunId,
-    DateTimeOffset? LastScheduleOriginAuthorizedRunAt);
+    DateTimeOffset? LastScheduleOriginAuthorizedRunAt,
+    string ExpectedRunEvaluationStatus,
+    DateTimeOffset? LastExpectedFireUtc,
+    int ExpectedFireCountInWindow,
+    bool ExpectedRunSatisfied,
+    bool ExpectedRunInGracePeriod,
+    string? OperatorSummaryLine);
 
 /// <summary>Epic 61: one row of GET integrations/fleet. Epic 62: operational run slice.</summary>
 public sealed record IntegrationFleetRowDto(

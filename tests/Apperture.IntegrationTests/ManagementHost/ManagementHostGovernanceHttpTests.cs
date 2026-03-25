@@ -1080,6 +1080,12 @@ public sealed class ManagementHostGovernanceHttpTests
         expected.GetProperty("hasUnexpectedSilence").ValueKind.Should().BeOneOf(JsonValueKind.True, JsonValueKind.False);
         expected.GetProperty("lastScheduleOriginAuthorizedRunId").ValueKind.Should().BeOneOf(JsonValueKind.String, JsonValueKind.Null);
         expected.GetProperty("lastScheduleOriginAuthorizedRunAt").ValueKind.Should().BeOneOf(JsonValueKind.String, JsonValueKind.Null);
+        expected.GetProperty("expectedRunEvaluationStatus").ValueKind.Should().Be(JsonValueKind.String);
+        expected.GetProperty("lastExpectedFireUtc").ValueKind.Should().BeOneOf(JsonValueKind.String, JsonValueKind.Null);
+        expected.GetProperty("expectedFireCountInWindow").TryGetInt32(out _).Should().BeTrue();
+        expected.GetProperty("expectedRunSatisfied").ValueKind.Should().BeOneOf(JsonValueKind.True, JsonValueKind.False);
+        expected.GetProperty("expectedRunInGracePeriod").ValueKind.Should().BeOneOf(JsonValueKind.True, JsonValueKind.False);
+        expected.GetProperty("operatorSummaryLine").ValueKind.Should().BeOneOf(JsonValueKind.String, JsonValueKind.Null);
     }
 
     [Fact]

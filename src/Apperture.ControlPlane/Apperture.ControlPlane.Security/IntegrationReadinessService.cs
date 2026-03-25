@@ -1,4 +1,5 @@
 using Apperture.Core.Application.Integration;
+using Apperture.Core.Application.Scheduling;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Connector;
 using Apperture.Core.Domain.Integration;
@@ -18,6 +19,8 @@ public sealed class IntegrationReadinessService : IIntegrationReadinessService
     private readonly IScheduleRepository _scheduleRepository;
     private readonly IConnectionVerificationReadinessPolicy _verificationReadinessPolicy;
     private readonly IRunQueryService _runQuery;
+    private readonly IScheduleExpectationEvaluator _scheduleExpectation;
+    private readonly TimeProvider _timeProvider;
 
     public IntegrationReadinessService(
         IIntegrationManagementService integrationManagement,
@@ -27,7 +30,9 @@ public sealed class IntegrationReadinessService : IIntegrationReadinessService
         IBindingEligibilityService eligibilityService,
         IScheduleRepository scheduleRepository,
         IConnectionVerificationReadinessPolicy verificationReadinessPolicy,
-        IRunQueryService runQuery)
+        IRunQueryService runQuery,
+        IScheduleExpectationEvaluator scheduleExpectation,
+        TimeProvider timeProvider)
     {
         _integrationManagement = integrationManagement;
         _moduleSlotRegistry = moduleSlotRegistry;
@@ -37,6 +42,8 @@ public sealed class IntegrationReadinessService : IIntegrationReadinessService
         _scheduleRepository = scheduleRepository;
         _verificationReadinessPolicy = verificationReadinessPolicy;
         _runQuery = runQuery;
+        _scheduleExpectation = scheduleExpectation;
+        _timeProvider = timeProvider;
     }
 
     /// <inheritdoc />
@@ -126,7 +133,8 @@ public sealed class IntegrationReadinessService : IIntegrationReadinessService
         CancellationToken cancellationToken = default)
     {
         var integrations = await _integrationManagement.ListIntegrationsAsync(cancellationToken);
-        var sinceUtc = DateTimeOffset.UtcNow - IntegrationFleetRunEvidence.Lookback;
+        var utcNow = _timeProvider.GetUtcNow();
+        var sinceUtc = utcNow - IntegrationFleetRunEvidence.Lookback;
         var activeIds = integrations
             .Where(i => i.State == IntegrationState.Active)
             .Select(i => i.Id.Value)
@@ -168,19 +176,28 @@ public sealed class IntegrationReadinessService : IIntegrationReadinessService
                 s.LatestAuthorizedRunStatus,
                 s.LatestAuthorizedRunAt);
 
-            var utcNow = DateTimeOffset.UtcNow;
             scheduleOriginByIntegration.TryGetValue(integration.Id.Value, out var scheduleOrigin);
-            var expectedRuns = IntegrationFleetAttention.BuildExpectedRunAttention(
+            var windowStart = operationalRuns.EvidenceWindowStartUtc ?? sinceUtc;
+            var evalCtx = new ScheduleExpectationEvaluationContext(
                 state,
-                integration.CreatedAt,
                 utcNow,
+                windowStart,
+                integration.CreatedAt,
                 attention,
                 readiness,
-                schedules,
                 integration.Id,
+                schedules,
+                scheduleOrigin is null
+                    ? null
+                    : new ScheduleOriginRunEvidenceInput(scheduleOrigin.AuthorizedRunId, scheduleOrigin.AuthorizedRunAt));
+            var evaluation = _scheduleExpectation.Evaluate(evalCtx);
+            var refSched = ReferenceScheduleIdForFleet(schedules, integration.Id);
+            var expectedRuns = IntegrationFleetAttention.FromScheduleExpectationEvaluation(
+                evaluation,
+                refSched,
                 operationalRuns.EvidenceWindowStartUtc,
-                scheduleOrigin?.AuthorizedRunAt,
-                scheduleOrigin?.AuthorizedRunId);
+                scheduleOrigin?.AuthorizedRunId,
+                scheduleOrigin?.AuthorizedRunAt);
 
             var tokens = IntegrationFleetAttention.ToAttentionTokens(attention).ToList();
             IntegrationFleetAttention.AppendOperationalAttentionTokens(tokens, state, operationalRuns);
@@ -523,4 +540,21 @@ public sealed class IntegrationReadinessService : IIntegrationReadinessService
         string? bindingId,
         string? connectionId) =>
         new(code, message, slotName, bindingId, connectionId, IntegrationReadinessIssueSeverity.Blocking.ToString());
+
+    /// <summary>
+    /// First qualifying workflow/operation schedule id (stable ordering), aligned with <see cref="ScheduleExpectationEvaluator"/>.
+    /// </summary>
+    private static string? ReferenceScheduleIdForFleet(
+        IReadOnlyList<ScheduleDefinition> schedules,
+        IntegrationId integrationId) =>
+        schedules
+            .Where(s =>
+                s.Enabled
+                && s.IntegrationId == integrationId
+                && !string.IsNullOrWhiteSpace(s.RecurrenceExpression)
+                && (s.Target.JobType == ScheduledJobType.WorkflowExecution
+                    || s.Target.JobType == ScheduledJobType.ModuleOperationExecution))
+            .OrderBy(s => s.Id.Value, StringComparer.Ordinal)
+            .FirstOrDefault()
+            ?.Id.Value;
 }
