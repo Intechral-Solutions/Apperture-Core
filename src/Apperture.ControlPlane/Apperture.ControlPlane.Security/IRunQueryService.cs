@@ -16,6 +16,14 @@ public interface IRunQueryService
         int maxRows,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Epic 64: per integration, newest schedule-origin run in the window that passes read authorization (explicit <c>ExecutionOrigin</c> or legacy <c>schedule:</c> correlation).
+    /// </summary>
+    ValueTask<IReadOnlyDictionary<string, FleetScheduleOriginRunEvidence>> GetLatestAuthorizedScheduleOriginRunsAsync(
+        IReadOnlyList<string> integrationIds,
+        DateTimeOffset sinceUtc,
+        CancellationToken cancellationToken = default);
+
     ValueTask<RunDetailDto?> GetRunAsync(OperationRunId id, CancellationToken cancellationToken = default);
 }
 
@@ -29,6 +37,9 @@ public sealed record FleetOperationalRunSignals(
     string? LatestAuthorizedRunId,
     string? LatestAuthorizedRunStatus,
     DateTimeOffset? LatestAuthorizedRunAt);
+
+/// <summary>Epic 64: latest authorized schedule-origin run in the fleet lookback window.</summary>
+public sealed record FleetScheduleOriginRunEvidence(string? AuthorizedRunId, DateTimeOffset? AuthorizedRunAt);
 
 /// <param name="Take">
 /// When set, caps rows after SQL filters and ordering and <b>before</b> per-run authorization.
@@ -56,7 +67,8 @@ public sealed record RunSummaryDto(
     string? RetryOfRunId,
     string ExecutionKind = "workflow",
     string? IntegrationId = null,
-    string? ProcedureId = null);
+    string? ProcedureId = null,
+    string? ExecutionOrigin = null);
 
 /// <summary>
 /// Operator hint for cross-navigation from run forensics. Epic 35.

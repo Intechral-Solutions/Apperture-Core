@@ -1078,6 +1078,8 @@ public sealed class ManagementHostGovernanceHttpTests
         var expected = seeded.GetProperty("expectedRuns");
         expected.GetProperty("hasRecurringScheduleExpectation").ValueKind.Should().BeOneOf(JsonValueKind.True, JsonValueKind.False);
         expected.GetProperty("hasUnexpectedSilence").ValueKind.Should().BeOneOf(JsonValueKind.True, JsonValueKind.False);
+        expected.GetProperty("lastScheduleOriginAuthorizedRunId").ValueKind.Should().BeOneOf(JsonValueKind.String, JsonValueKind.Null);
+        expected.GetProperty("lastScheduleOriginAuthorizedRunAt").ValueKind.Should().BeOneOf(JsonValueKind.String, JsonValueKind.Null);
     }
 
     [Fact]

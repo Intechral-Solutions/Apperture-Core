@@ -49,7 +49,8 @@ public sealed class RunActionAvailabilityQueryService : IRunActionAvailabilityQu
                 x.CorrelationKey,
                 x.RetryOfRunId,
                 x.IntegrationId,
-                x.ProcedureId
+                x.ProcedureId,
+                x.ExecutionOrigin
             })
             .FirstOrDefaultAsync(cancellationToken);
         if (run is null)
@@ -92,7 +93,8 @@ public sealed class RunActionAvailabilityQueryService : IRunActionAvailabilityQu
             RetryOfRunId: run.RetryOfRunId,
             ExecutionKind: isWorkflow ? RunKindNames.Workflow : RunKindNames.Operation,
             IntegrationId: run.IntegrationId,
-            ProcedureId: run.ProcedureId);
+            ProcedureId: run.ProcedureId,
+            ExecutionOrigin: run.ExecutionOrigin);
 
         return await _projection.ProjectExecutionRunActionsAsync(summary, hasQueuedPark, hasQueuedResume, cancellationToken);
     }

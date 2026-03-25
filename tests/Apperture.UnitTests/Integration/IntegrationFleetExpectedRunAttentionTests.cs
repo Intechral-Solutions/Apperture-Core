@@ -35,8 +35,6 @@ public sealed class IntegrationFleetExpectedRunAttentionTests
     [Fact]
     public void BuildExpectedRunAttention_inactive_no_expectation_or_silence()
     {
-        var op = IntegrationFleetAttention.BuildOperationalRunAttention(
-            "Inactive", Utc, 0, null, null, null, null, null);
         var a = IntegrationFleetAttention.BuildExpectedRunAttention(
             "Inactive",
             CreatedOld,
@@ -45,7 +43,9 @@ public sealed class IntegrationFleetExpectedRunAttentionTests
             RunnableReadiness(),
             new[] { EnabledSchedule() },
             IntId,
-            op);
+            null,
+            null,
+            null);
         a.HasRecurringScheduleExpectation.Should().BeFalse();
         a.HasUnexpectedSilence.Should().BeFalse();
     }
@@ -55,8 +55,6 @@ public sealed class IntegrationFleetExpectedRunAttentionTests
     {
         var attention = new IntegrationFleetAttentionFlags(
             false, false, true, false, false, false, false);
-        var op = IntegrationFleetAttention.BuildOperationalRunAttention(
-            "Active", Utc, 0, null, null, null, null, null);
         var a = IntegrationFleetAttention.BuildExpectedRunAttention(
             "Active",
             CreatedOld,
@@ -65,7 +63,9 @@ public sealed class IntegrationFleetExpectedRunAttentionTests
             RunnableReadiness(),
             new[] { EnabledSchedule() },
             IntId,
-            op);
+            Utc,
+            null,
+            null);
         a.HasRecurringScheduleExpectation.Should().BeFalse();
         a.HasUnexpectedSilence.Should().BeFalse();
     }
@@ -73,8 +73,6 @@ public sealed class IntegrationFleetExpectedRunAttentionTests
     [Fact]
     public void BuildExpectedRunAttention_no_schedule_no_silence()
     {
-        var op = IntegrationFleetAttention.BuildOperationalRunAttention(
-            "Active", Utc, 0, null, null, null, null, null);
         var a = IntegrationFleetAttention.BuildExpectedRunAttention(
             "Active",
             CreatedOld,
@@ -83,7 +81,9 @@ public sealed class IntegrationFleetExpectedRunAttentionTests
             RunnableReadiness(),
             Array.Empty<ScheduleDefinition>(),
             IntId,
-            op);
+            Utc,
+            null,
+            null);
         a.HasRecurringScheduleExpectation.Should().BeFalse();
         a.HasUnexpectedSilence.Should().BeFalse();
     }
@@ -91,8 +91,6 @@ public sealed class IntegrationFleetExpectedRunAttentionTests
     [Fact]
     public void BuildExpectedRunAttention_inside_grace_no_silence()
     {
-        var op = IntegrationFleetAttention.BuildOperationalRunAttention(
-            "Active", Utc, 0, null, null, null, null, null);
         var a = IntegrationFleetAttention.BuildExpectedRunAttention(
             "Active",
             CreatedNew,
@@ -101,23 +99,16 @@ public sealed class IntegrationFleetExpectedRunAttentionTests
             RunnableReadiness(),
             new[] { EnabledSchedule() },
             IntId,
-            op);
+            Utc,
+            null,
+            null);
         a.HasRecurringScheduleExpectation.Should().BeTrue();
         a.HasUnexpectedSilence.Should().BeFalse();
     }
 
     [Fact]
-    public void BuildExpectedRunAttention_has_authorized_run_no_silence()
+    public void BuildExpectedRunAttention_has_schedule_origin_run_no_silence()
     {
-        var op = IntegrationFleetAttention.BuildOperationalRunAttention(
-            "Active",
-            Utc,
-            0,
-            null,
-            null,
-            "run-1",
-            WorkflowLifecycleStatusNames.Completed,
-            Utc.AddDays(-1));
         var a = IntegrationFleetAttention.BuildExpectedRunAttention(
             "Active",
             CreatedOld,
@@ -126,16 +117,18 @@ public sealed class IntegrationFleetExpectedRunAttentionTests
             RunnableReadiness(),
             new[] { EnabledSchedule() },
             IntId,
-            op);
+            Utc,
+            Utc.AddDays(-1),
+            "run-sched-1");
         a.HasRecurringScheduleExpectation.Should().BeTrue();
         a.HasUnexpectedSilence.Should().BeFalse();
+        a.LastScheduleOriginAuthorizedRunId.Should().Be("run-sched-1");
+        a.LastScheduleOriginAuthorizedRunAt.Should().Be(Utc.AddDays(-1));
     }
 
     [Fact]
-    public void BuildExpectedRunAttention_eligible_no_run_is_silent()
+    public void BuildExpectedRunAttention_eligible_no_schedule_origin_run_is_silent()
     {
-        var op = IntegrationFleetAttention.BuildOperationalRunAttention(
-            "Active", Utc, 0, null, null, null, null, null);
         var a = IntegrationFleetAttention.BuildExpectedRunAttention(
             "Active",
             CreatedOld,
@@ -144,7 +137,9 @@ public sealed class IntegrationFleetExpectedRunAttentionTests
             RunnableReadiness(),
             new[] { EnabledSchedule() },
             IntId,
-            op);
+            Utc,
+            null,
+            null);
         a.HasRecurringScheduleExpectation.Should().BeTrue();
         a.HasUnexpectedSilence.Should().BeTrue();
         a.ReferenceScheduleId.Should().Be("s1");

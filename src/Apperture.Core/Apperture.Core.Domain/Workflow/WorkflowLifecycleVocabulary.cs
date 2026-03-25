@@ -72,3 +72,12 @@ public static class RuntimeControlStatusNames
     public const string Rejected = "rejected";
     public const string Failed = "failed";
 }
+
+/// <summary>
+/// Persisted on operation runs (<c>OperationRuns.ExecutionOrigin</c>) to distinguish schedule-fired vs manual/procedure starts (Epic 64).
+/// </summary>
+public static class RunExecutionOriginNames
+{
+    public const string Schedule = "schedule";
+    public const string Manual = "manual";
+}

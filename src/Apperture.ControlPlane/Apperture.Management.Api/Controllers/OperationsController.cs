@@ -1,6 +1,7 @@
 using Apperture.Core.Domain.Operations;
 using Apperture.ControlPlane.Security;
 using Apperture.Core.Application;
+using Apperture.Core.Domain.Workflow;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Audit;
 using Apperture.Management.Api.Models;
@@ -168,7 +169,8 @@ public sealed class OperationsController : ControllerBase
             body?.IdempotencyKey,
             body?.CorrelationId,
             body?.IntegrationId,
-            body?.ProcedureId);
+            body?.ProcedureId,
+            ExecutionOrigin: RunExecutionOriginNames.Manual);
 
         OperationStartDispatchResult? dispatchResult;
         try

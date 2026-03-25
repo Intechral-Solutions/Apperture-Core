@@ -151,6 +151,52 @@ public sealed class RunQueryService : IRunQueryService
         return result;
     }
 
+    public async ValueTask<IReadOnlyDictionary<string, FleetScheduleOriginRunEvidence>> GetLatestAuthorizedScheduleOriginRunsAsync(
+        IReadOnlyList<string> integrationIds,
+        DateTimeOffset sinceUtc,
+        CancellationToken cancellationToken = default)
+    {
+        var result = new Dictionary<string, FleetScheduleOriginRunEvidence>(StringComparer.Ordinal);
+        var idSet = integrationIds.Distinct(StringComparer.Ordinal).ToHashSet(StringComparer.Ordinal);
+        if (idSet.Count == 0)
+            return result;
+
+        var candidates = await _db.OperationRuns.AsNoTracking()
+            .Where(r =>
+                r.IntegrationId != null
+                && idSet.Contains(r.IntegrationId!)
+                && r.CreatedAt >= sinceUtc
+                && (
+                    r.ExecutionOrigin == RunExecutionOriginNames.Schedule
+                    || (string.IsNullOrEmpty(r.ExecutionOrigin)
+                        && r.CorrelationKey != null
+                        && r.CorrelationKey.StartsWith("schedule:"))))
+            .GroupBy(r => r.IntegrationId!)
+            .Select(g => g.OrderByDescending(x => x.CreatedAt).First())
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        if (candidates.Count == 0)
+            return result;
+
+        var runKinds = await _runKinds.ResolveRunKindsAsync(candidates.Select(r => r.Id).ToArray(), cancellationToken)
+            .ConfigureAwait(false);
+
+        foreach (var r in candidates)
+        {
+            if (string.IsNullOrEmpty(r.IntegrationId) || !idSet.Contains(r.IntegrationId))
+                continue;
+            if (!runKinds.TryGetValue(r.Id, out var runKind))
+                continue;
+            var dto = await TryProjectAuthorizedRunAsync(r, runKind, filter: null, cancellationToken).ConfigureAwait(false);
+            if (dto is null || string.IsNullOrEmpty(dto.IntegrationId))
+                continue;
+            result[dto.IntegrationId] = new FleetScheduleOriginRunEvidence(dto.RunId, dto.CreatedAt);
+        }
+
+        return result;
+    }
+
     private sealed class FleetRunAgg
     {
         public int FailedCount;
@@ -188,7 +234,8 @@ public sealed class RunQueryService : IRunQueryService
                     r.RetryOfRunId,
                     RunKindNames.Workflow,
                     r.IntegrationId,
-                    r.ProcedureId);
+                    r.ProcedureId,
+                    r.ExecutionOrigin);
             }
 
             if (string.Equals(filter?.ExecutionKind, RunKindNames.Workflow, StringComparison.OrdinalIgnoreCase))
@@ -213,7 +260,8 @@ public sealed class RunQueryService : IRunQueryService
                 r.RetryOfRunId,
                 RunKindNames.Operation,
                 r.IntegrationId,
-                r.ProcedureId);
+                r.ProcedureId,
+                r.ExecutionOrigin);
         }
         catch (UnauthorizedAccessException)
         {

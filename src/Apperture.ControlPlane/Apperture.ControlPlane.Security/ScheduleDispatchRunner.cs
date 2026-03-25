@@ -6,6 +6,7 @@ using Apperture.Core.Domain.Environment;
 using Apperture.Core.Domain.Integration;
 using Apperture.Core.Domain.Operations;
 using Apperture.Core.Domain.Scheduling;
+using Apperture.Core.Domain.Workflow;
 using Apperture.RuntimePlane.Abstractions;
 using Apperture.Shared.Kernel;
 
@@ -161,7 +162,9 @@ public sealed class ScheduleDispatchRunner : IScheduleDispatchRunner
             IdempotencyKey: $"schedule:{candidate.ScheduleId}:{candidate.FireTimeUtc:O}",
             CorrelationId: $"schedule:{candidate.ScheduleId}",
             RetryOfRunId: null,
-            IntegrationId: definition.IntegrationId?.Value);
+            IntegrationId: definition.IntegrationId?.Value,
+            ProcedureId: null,
+            ExecutionOrigin: RunExecutionOriginNames.Schedule);
 
         var result = await _workflowDispatch.StartAsync(request, ct);
         if (result is null)
@@ -252,7 +255,9 @@ public sealed class ScheduleDispatchRunner : IScheduleDispatchRunner
             Parameters: null,
             IdempotencyKey: $"schedule:{candidate.ScheduleId}:{candidate.FireTimeUtc:O}",
             CorrelationId: $"schedule:{candidate.ScheduleId}",
-            IntegrationId: definition.IntegrationId?.Value);
+            IntegrationId: definition.IntegrationId?.Value,
+            ProcedureId: null,
+            ExecutionOrigin: RunExecutionOriginNames.Schedule);
 
         var result = await _operationDispatch.StartAsync(request, ct);
         if (result is null)

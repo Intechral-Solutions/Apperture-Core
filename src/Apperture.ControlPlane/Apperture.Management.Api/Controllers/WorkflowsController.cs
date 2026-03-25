@@ -2,6 +2,7 @@ using Apperture.ControlPlane.Security;
 using Apperture.Core.Application;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Audit;
+using Apperture.Core.Domain.Workflow;
 using Apperture.Management.Api.Models;
 using Apperture.RuntimePlane.Abstractions;
 using Apperture.Shared.Kernel;
@@ -54,7 +55,8 @@ public sealed class WorkflowsController : ControllerBase
             body?.CorrelationId,
             RetryOfRunId: null,
             IntegrationId: body?.IntegrationId,
-            ProcedureId: body?.ProcedureId);
+            ProcedureId: body?.ProcedureId,
+            ExecutionOrigin: RunExecutionOriginNames.Manual);
 
         WorkflowStartDispatchResult? dispatchResult;
         try

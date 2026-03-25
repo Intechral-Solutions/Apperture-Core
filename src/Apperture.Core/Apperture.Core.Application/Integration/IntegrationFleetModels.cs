@@ -69,14 +69,16 @@ public sealed record IntegrationFleetOperationalRunAttention(
     DateTimeOffset? EvidenceWindowStartUtc);
 
 /// <summary>
-/// Epic 63: schedule + run window evidence for “expected execution” vs unexpected silence.
-/// See ADR Epic 63 for eligibility rules and batch-cap caveats (same as Epic 62 runs).
+/// Epic 63/64: schedule + run window evidence for “expected execution” vs unexpected silence.
+/// Silence uses schedule-origin authorized runs only (Epic 64); see ADRs Epic 63/64.
 /// </summary>
 public sealed record IntegrationFleetExpectedRunAttention(
     bool HasRecurringScheduleExpectation,
     bool HasUnexpectedSilence,
     string? ReferenceScheduleId,
-    DateTimeOffset? ExpectationEvidenceWindowStartUtc);
+    DateTimeOffset? ExpectationEvidenceWindowStartUtc,
+    string? LastScheduleOriginAuthorizedRunId,
+    DateTimeOffset? LastScheduleOriginAuthorizedRunAt);
 
 /// <summary>
 /// One row of the integration fleet overview. Epic 61; Epic 62 operational run slice; Epic 63 expected-run silence.
@@ -196,7 +198,8 @@ public static class IntegrationFleetAttention
     }
 
     /// <summary>
-    /// Epic 63: recurring schedule expectation + silence vs Epic 62 authorized run window.
+    /// Epic 63/64: recurring schedule expectation; silence when no authorized <b>schedule-origin</b> run in the evidence window.
+    /// Manual/procedure runs do not clear silence. <paramref name="evidenceWindowStartUtc"/> aligns with Epic 62 operational window for Active rows.
     /// </summary>
     public static IntegrationFleetExpectedRunAttention BuildExpectedRunAttention(
         string operationalState,
@@ -206,12 +209,14 @@ public static class IntegrationFleetAttention
         IntegrationReadinessProjection readiness,
         IReadOnlyList<ScheduleDefinition> schedules,
         IntegrationId integrationId,
-        IntegrationFleetOperationalRunAttention operationalRuns)
+        DateTimeOffset? evidenceWindowStartUtc,
+        DateTimeOffset? lastScheduleOriginAuthorizedRunAt,
+        string? lastScheduleOriginAuthorizedRunId)
     {
         var active = string.Equals(operationalState, "Active", StringComparison.OrdinalIgnoreCase);
         if (!active)
         {
-            return new IntegrationFleetExpectedRunAttention(false, false, null, null);
+            return new IntegrationFleetExpectedRunAttention(false, false, null, null, null, null);
         }
 
         var qualifying = schedules
@@ -226,11 +231,11 @@ public static class IntegrationFleetAttention
             && !attentionFlags.HasConfigBlockingReadiness
             && qualifying.Count > 0;
 
-        var windowStart = operationalRuns.EvidenceWindowStartUtc;
+        var windowStart = evidenceWindowStartUtc;
         var pastGrace = utcNow - integrationCreatedAt >= IntegrationFleetExpectedRunEvidence.SilenceGraceAfterIntegrationCreate;
-        var noAuthorizedRunInWindow = operationalRuns.LastAuthorizedRunAt is null;
+        var noScheduleOriginRunInWindow = lastScheduleOriginAuthorizedRunAt is null;
 
-        var hasUnexpectedSilence = hasRecurringExpectation && pastGrace && noAuthorizedRunInWindow;
+        var hasUnexpectedSilence = hasRecurringExpectation && pastGrace && noScheduleOriginRunInWindow;
 
         var referenceId = qualifying.Count > 0 ? qualifying[0].Id.Value : null;
 
@@ -238,7 +243,9 @@ public static class IntegrationFleetAttention
             hasRecurringExpectation,
             hasUnexpectedSilence,
             referenceId,
-            windowStart);
+            windowStart,
+            lastScheduleOriginAuthorizedRunId,
+            lastScheduleOriginAuthorizedRunAt);
     }
 
     /// <summary>

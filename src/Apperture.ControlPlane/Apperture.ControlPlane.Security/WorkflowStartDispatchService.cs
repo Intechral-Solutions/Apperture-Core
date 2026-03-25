@@ -1,8 +1,8 @@
 using System.Text.Json;
 using Apperture.Core.Domain.Workflow;
+using Apperture.RuntimePlane.Abstractions;
 using Apperture.ModuleSdk.Abstractions;
 using Apperture.Persistence.SqlServer;
-using Apperture.RuntimePlane.Abstractions;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 
@@ -106,7 +106,8 @@ public sealed class WorkflowStartDispatchService : IWorkflowStartDispatchService
                     CorrelationKey = request.CorrelationId,
                     RetryOfRunId = request.RetryOfRunId,
                     IntegrationId = request.IntegrationId,
-                    ProcedureId = request.ProcedureId
+                    ProcedureId = request.ProcedureId,
+                    ExecutionOrigin = request.ExecutionOrigin
                 });
 
                 _db.WorkflowStartRequests.Add(new WorkflowStartRequestEntity

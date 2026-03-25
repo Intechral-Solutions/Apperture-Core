@@ -5,6 +5,7 @@ using Apperture.Core.Application.Validation;
 using Apperture.Core.Domain.Integration;
 using Apperture.Core.Domain.Operations;
 using Apperture.Core.Domain.Procedures;
+using Apperture.Core.Domain.Workflow;
 using Apperture.ModuleSdk.Abstractions;
 using Apperture.RuntimePlane.Abstractions;
 using Apperture.Shared.Kernel;
@@ -224,7 +225,8 @@ public sealed class IntegrationProcedureService : IIntegrationProcedureService
                         request.CorrelationId,
                         RetryOfRunId: null,
                         IntegrationId: integValue,
-                        ProcedureId: procedure.Id),
+                        ProcedureId: procedure.Id,
+                        ExecutionOrigin: RunExecutionOriginNames.Manual),
                     cancellationToken).ConfigureAwait(false);
                 if (dispatchResult is null)
                     return new IntegrationProcedureLaunchOutcome.Failed(
@@ -261,7 +263,8 @@ public sealed class IntegrationProcedureService : IIntegrationProcedureService
                         request.IdempotencyKey,
                         request.CorrelationId,
                         integValue,
-                        procedure.Id),
+                        procedure.Id,
+                        ExecutionOrigin: RunExecutionOriginNames.Manual),
                     cancellationToken).ConfigureAwait(false);
                 if (dispatchResult is null)
                     return new IntegrationProcedureLaunchOutcome.Failed(

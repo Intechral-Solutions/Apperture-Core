@@ -17,5 +17,7 @@ public sealed record StartOperationRequest(
     /// <summary>Optional integration this run belongs to (parity with workflows; ADR-0029).</summary>
     string? IntegrationId = null,
     /// <summary>Optional module procedure that launched this run (ADR-0029).</summary>
-    string? ProcedureId = null);
+    string? ProcedureId = null,
+    /// <summary><see cref="Apperture.Core.Domain.Workflow.RunExecutionOriginNames"/> when known (Epic 64).</summary>
+    string? ExecutionOrigin = null);
 

@@ -9,7 +9,7 @@
 @inject NavigationManager Nav
 
 <div class="p-4">
-    <PageHeader Title="Integrations" Subtitle="Fleet overview: configuration/readiness and verification; Ops (7d) for failed runs; Expected runs flags active scheduled integrations with no authorized run in the window (not paused/blocked/unscheduled). Open a row for remediation; use links for runs and schedules.">
+    <PageHeader Title="Integrations" Subtitle="Fleet overview: configuration/readiness and verification; Ops (7d) for failed runs; Expected runs flags active scheduled integrations with no schedule-fired authorized run in the window—manual/procedure runs do not clear that signal (not paused/blocked/unscheduled). Open a row for remediation; use links for runs and schedules.">
         <Toolbar>
             @if (_capabilities?.CanManageIntegrations == true)
             {
@@ -184,11 +184,18 @@
                                 {
                                     @if (row.ExpectedRuns.HasUnexpectedSilence)
                                     {
-                                        <span class="text-muted">No recent run</span>
+                                        <span class="text-muted">No scheduled run</span>
                                     }
                                     else
                                     {
                                         <span class="text-muted">OK</span>
+                                    }
+                                    @if (!string.IsNullOrWhiteSpace(row.ExpectedRuns.LastScheduleOriginAuthorizedRunId))
+                                    {
+                                        <div class="mt-1">
+                                            <a class="text-xs underline"
+                                               href="@("/runs/" + Uri.EscapeDataString(row.ExpectedRuns.LastScheduleOriginAuthorizedRunId!))">Last schedule-fired run</a>
+                                        </div>
                                     }
                                     @if (!string.IsNullOrWhiteSpace(row.ExpectedRuns.ReferenceScheduleId))
                                     {

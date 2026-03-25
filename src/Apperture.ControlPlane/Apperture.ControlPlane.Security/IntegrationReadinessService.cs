@@ -140,6 +140,12 @@ public sealed class IntegrationReadinessService : IIntegrationReadinessService
                 cancellationToken)
             .ConfigureAwait(false);
 
+        var scheduleOriginByIntegration = await _runQuery.GetLatestAuthorizedScheduleOriginRunsAsync(
+                activeIds,
+                sinceUtc,
+                cancellationToken)
+            .ConfigureAwait(false);
+
         var rows = new List<IntegrationFleetRowProjection>(integrations.Count);
         foreach (var integration in integrations)
         {
@@ -163,6 +169,7 @@ public sealed class IntegrationReadinessService : IIntegrationReadinessService
                 s.LatestAuthorizedRunAt);
 
             var utcNow = DateTimeOffset.UtcNow;
+            scheduleOriginByIntegration.TryGetValue(integration.Id.Value, out var scheduleOrigin);
             var expectedRuns = IntegrationFleetAttention.BuildExpectedRunAttention(
                 state,
                 integration.CreatedAt,
@@ -171,7 +178,9 @@ public sealed class IntegrationReadinessService : IIntegrationReadinessService
                 readiness,
                 schedules,
                 integration.Id,
-                operationalRuns);
+                operationalRuns.EvidenceWindowStartUtc,
+                scheduleOrigin?.AuthorizedRunAt,
+                scheduleOrigin?.AuthorizedRunId);
 
             var tokens = IntegrationFleetAttention.ToAttentionTokens(attention).ToList();
             IntegrationFleetAttention.AppendOperationalAttentionTokens(tokens, state, operationalRuns);

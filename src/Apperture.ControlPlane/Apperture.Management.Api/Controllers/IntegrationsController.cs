@@ -303,7 +303,9 @@ public sealed class IntegrationsController : ControllerBase
                 r.ExpectedRuns.HasRecurringScheduleExpectation,
                 r.ExpectedRuns.HasUnexpectedSilence,
                 r.ExpectedRuns.ReferenceScheduleId,
-                r.ExpectedRuns.ExpectationEvidenceWindowStartUtc),
+                r.ExpectedRuns.ExpectationEvidenceWindowStartUtc,
+                r.ExpectedRuns.LastScheduleOriginAuthorizedRunId,
+                r.ExpectedRuns.LastScheduleOriginAuthorizedRunAt),
             r.AttentionTokens.ToArray(),
             r.TopIssueCodes.ToArray());
 

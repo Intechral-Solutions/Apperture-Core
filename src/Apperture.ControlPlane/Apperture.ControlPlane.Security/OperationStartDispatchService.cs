@@ -2,9 +2,9 @@ using System.Text.Json;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Operations;
 using Apperture.Core.Domain.Workflow;
+using Apperture.RuntimePlane.Abstractions;
 using Apperture.Persistence.SqlServer;
 using Apperture.Persistence.SqlServer.Options;
-using Apperture.RuntimePlane.Abstractions;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -104,7 +104,8 @@ public sealed class OperationStartDispatchService : IOperationStartDispatchServi
                     CorrelationKey = request.CorrelationId,
                     RetryOfRunId = null,
                     IntegrationId = request.IntegrationId,
-                    ProcedureId = request.ProcedureId
+                    ProcedureId = request.ProcedureId,
+                    ExecutionOrigin = request.ExecutionOrigin
                 });
 
                 _db.OperationStartRequests.Add(new OperationStartRequestEntity
