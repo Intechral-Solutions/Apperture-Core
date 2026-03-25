@@ -64,7 +64,9 @@ public sealed class ManagementHostGovernanceHttpTests
         var first = doc.RootElement[0];
         first.GetProperty("id").GetString().Should().NotBeNullOrEmpty();
         first.GetProperty("name").GetString().Should().NotBeNullOrEmpty();
-        first.GetProperty("moduleId").GetString().Should().NotBeNullOrEmpty();
+        first.GetProperty("capabilities").GetString().Should().NotBeNullOrEmpty();
+        first.TryGetProperty("fields", out var fields).Should().BeTrue();
+        fields.ValueKind.Should().Be(JsonValueKind.Array);
     }
 
     [Fact]

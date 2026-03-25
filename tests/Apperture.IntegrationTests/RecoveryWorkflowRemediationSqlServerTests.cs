@@ -139,7 +139,8 @@ public sealed class RecoveryWorkflowRemediationSqlServerTests
             resultBlocked.Should().NotBeNull();
             resultBlocked!.IsBlocked.Should().BeTrue("definition resolver returns null when disabled");
             resultBlocked.RunId.Should().BeNull();
-            (await db.OperationRuns.CountAsync()).Should().Be(1, "no new run when blocked");
+            (await db.OperationRuns.CountAsync(r => r.WorkflowInstanceId == instanceId))
+                .Should().Be(1, "no new run when blocked for this instance");
         }
 
         toggleableComposition.SetSnapshot(compositionEnabled);

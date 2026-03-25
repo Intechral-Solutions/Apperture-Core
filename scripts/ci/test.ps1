@@ -3,6 +3,9 @@
     Runs Apperture tests (unit, integration, arch, e2e).
 .DESCRIPTION
     Executes dotnet test for the solution. Use -Filter to run a subset.
+    For Management Host governance + other SqlServer integration tests locally, set APPERTURE_TEST_SQL
+    and MSSQL_SA_PASSWORD (see tests/Apperture.IntegrationTests/README-ManagementHostGovernance.md).
+    GitHub Actions sets these via the SQL Server service container in .github/workflows/ci.yml.
 .EXAMPLE
     .\test.ps1
     .\test.ps1 -Filter "UnitTests"

@@ -9,6 +9,20 @@ on:
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
+    # SA password for the ephemeral SQL Server service only (not a production secret).
+    # MSSQL_* enables SqlServerTestConfiguration (other integration tests); keep password identical to the service.
+    env:
+      APPERTURE_CI_MSSQL_SA_PASSWORD: "AppertureCi_Governance55a!"
+      MSSQL_SA_PASSWORD: "AppertureCi_Governance55a!"
+      MSSQL_TEST_SERVER: "127.0.0.1,1433"
+    services:
+      sqlserver:
+        image: mcr.microsoft.com/mssql/server:2022-latest
+        env:
+          ACCEPT_EULA: "Y"
+          MSSQL_SA_PASSWORD: ${{ env.APPERTURE_CI_MSSQL_SA_PASSWORD }}
+        ports:
+          - 1433:1433
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -18,6 +32,21 @@ jobs:
         with:
           dotnet-version: "10.0.x"
 
+      - name: Wait for SQL Server
+        shell: bash
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 60); do
+            if (echo > /dev/tcp/127.0.0.1/1433) 2>/dev/null; then
+              echo "SQL Server port is open (attempt $i)"
+              break
+            fi
+            echo "Waiting for SQL Server port... ($i/60)"
+            sleep 2
+          done
+          # Allow time for SQL auth after the port accepts connections.
+          sleep 8
+
       - name: Restore
         run: dotnet restore Apperture.slnx
 
@@ -25,4 +54,6 @@ jobs:
         run: dotnet build Apperture.slnx -c Release --no-restore
 
       - name: Test
+        env:
+          APPERTURE_TEST_SQL: ${{ format('Server=127.0.0.1,1433;User Id=sa;Password={0};TrustServerCertificate=True;Initial Catalog=Apperture_ManagementGovernanceTests;', env.APPERTURE_CI_MSSQL_SA_PASSWORD) }}
         run: dotnet test Apperture.slnx -c Release --no-build --verbosity normal

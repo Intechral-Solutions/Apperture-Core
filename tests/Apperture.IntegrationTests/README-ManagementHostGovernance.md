@@ -1,17 +1,41 @@
-# Management Host — HTTP governance integration harness (Epic 55)
+# Management Host — HTTP governance integration harness (Epic 55 / 55A)
 
 This folder exercises the **real** [Apperture.Management.Host](../../src/Apperture.ControlPlane/Apperture.Management.Host/Program.cs) pipeline: bootstrap, SQL persistence, migrations, governance, authentication, and authorization at the HTTP boundary.
 
-## Running tests
+## How SQL is discovered
 
-- **SQL required:** LocalDB or SQL Server must accept the connection string. Default database name: `Apperture_ManagementGovernanceTests` on `(localdb)\mssqllocaldb`.
-- **Override connection string:** set environment variable `APPERTURE_TEST_SQL` to a full SQL Server connection string (include `TrustServerCertificate=True` for local dev if needed).
+| Variable | Purpose |
+|----------|---------|
+| `APPERTURE_TEST_SQL` | Full connection string for **Management Host governance** tests (`ManagementHostGovernanceHttpTests`). Must include `Initial Catalog` (fixture creates the database on `master` if missing, then migrates). |
+| `MSSQL_SA_PASSWORD` | Required for other **SqlServer** integration tests (`SqlServerTestConfiguration`) using database `Apperture_IntegrationTests` by default. |
+| `MSSQL_TEST_SERVER` | Optional; default `localhost,1433`. |
+| `MSSQL_TEST_DATABASE` | Optional; default `Apperture_IntegrationTests`. |
+
+**CI:** [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml) starts a SQL Server 2022 service container, waits for port 1433, sets `APPERTURE_TEST_SQL` (catalog `Apperture_ManagementGovernanceTests`) and `MSSQL_SA_PASSWORD` / `MSSQL_TEST_SERVER` so the full integration project runs against the same ephemeral instance. The pipeline fails if any test fails.
+
+## Running tests locally
+
+**Governance suite only:**
 
 ```powershell
+$env:APPERTURE_TEST_SQL = "Server=127.0.0.1,1433;User Id=sa;Password=YourStrong!Pass;TrustServerCertificate=True;Initial Catalog=Apperture_ManagementGovernanceTests;"
 dotnet test tests/Apperture.IntegrationTests/Apperture.IntegrationTests.csproj --filter "FullyQualifiedName~ManagementHostGovernanceHttpTests"
 ```
 
-If SQL is unreachable, `ManagementHostGovernanceFixture` sets `SqlAvailable = false` and each test fails fast with a message explaining the requirement (no silent pass).
+**Full `Apperture.IntegrationTests` project** (governance + other SqlServer tests): set both `APPERTURE_TEST_SQL` and `MSSQL_SA_PASSWORD` (same server/password is fine). Example with Docker:
+
+```powershell
+docker run -e "ACCEPT_EULA=Y" -e "MSSQL_SA_PASSWORD=YourStrong!Pass" -p 1433:1433 -d mcr.microsoft.com/mssql/server:2022-latest
+# wait ~20s for SQL to accept connections
+$env:MSSQL_SA_PASSWORD = "YourStrong!Pass"
+$env:MSSQL_TEST_SERVER = "127.0.0.1,1433"
+$env:APPERTURE_TEST_SQL = "Server=127.0.0.1,1433;User Id=sa;Password=YourStrong!Pass;TrustServerCertificate=True;Initial Catalog=Apperture_ManagementGovernanceTests;"
+dotnet test tests/Apperture.IntegrationTests/Apperture.IntegrationTests.csproj
+```
+
+**Prerequisites:** SQL Server reachable with SA (or equivalent) credentials; `TrustServerCertificate=True` is typical for dev containers. LocalDB works if you point `APPERTURE_TEST_SQL` at `(localdb)\mssqllocaldb` and ensure the instance is running.
+
+If SQL is unreachable, `ManagementHostGovernanceFixture` sets `SqlAvailable = false` and each governance test fails fast with a message explaining the requirement (no silent pass).
 
 ## How it works
 

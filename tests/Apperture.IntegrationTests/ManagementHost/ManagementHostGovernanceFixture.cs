@@ -34,8 +34,14 @@ public sealed class ManagementHostGovernanceFixture : IAsyncLifetime
 
         try
         {
-            await using var probe = new SqlConnection(ConnectionString);
-            await probe.OpenAsync().ConfigureAwait(false);
+            // Probe against master: Initial Catalog may not exist yet.
+            var probeCs = new SqlConnectionStringBuilder(ConnectionString) { InitialCatalog = "master" }.ConnectionString;
+            await using (var probe = new SqlConnection(probeCs))
+            {
+                await probe.OpenAsync().ConfigureAwait(false);
+                // BootstrapValidationHostedService opens the full connection string before migrations; ensure the catalog exists.
+                await EnsureTargetDatabaseExistsAsync(ConnectionString, probe).ConfigureAwait(false);
+            }
         }
         catch
         {
@@ -64,6 +70,26 @@ public sealed class ManagementHostGovernanceFixture : IAsyncLifetime
         var client = Factory!.CreateClient();
         client.DefaultRequestHeaders.Add(ManagementTestAuthHandler.HeaderName, externalId);
         return client;
+    }
+
+    private static async Task EnsureTargetDatabaseExistsAsync(string fullConnectionString, SqlConnection masterConnection)
+    {
+        var catalog = new SqlConnectionStringBuilder(fullConnectionString).InitialCatalog;
+        if (string.IsNullOrWhiteSpace(catalog))
+            return;
+
+        foreach (var c in catalog)
+        {
+            if (!char.IsAsciiLetterOrDigit(c) && c != '_')
+                throw new InvalidOperationException($"Refusing to auto-create database with unexpected name: {catalog}");
+        }
+
+        await using var cmd = masterConnection.CreateCommand();
+        cmd.CommandText = $"""
+IF NOT EXISTS (SELECT 1 FROM sys.databases WHERE name = N'{catalog}')
+    CREATE DATABASE [{catalog}]
+""";
+        await cmd.ExecuteNonQueryAsync().ConfigureAwait(false);
     }
 
     private async Task SeedAsync()

@@ -45,7 +45,7 @@ public sealed class AuditTimelineSqlServerTests
             await db.Database.MigrateAsync();
         }
 
-        var prefix = "ep37.ordered.";
+        var prefix = $"ep37.ordered.{Guid.NewGuid():N}.";
         var baseTime = DateTimeOffset.UtcNow.AddMinutes(-10);
         await using (var scope = provider.CreateAsyncScope())
         {
@@ -94,7 +94,7 @@ public sealed class AuditTimelineSqlServerTests
             await db.Database.MigrateAsync();
         }
 
-        var prefix = "ep37.actionprefix.";
+        var prefix = $"ep37.actionprefix.{Guid.NewGuid():N}.";
         var baseTime = DateTimeOffset.UtcNow.AddMinutes(-5);
         await using (var scope = provider.CreateAsyncScope())
         {
@@ -236,7 +236,7 @@ public sealed class AuditTimelineSqlServerTests
             await db.Database.MigrateAsync();
         }
 
-        var prefix = "ep37.outcome.";
+        var prefix = $"ep37.outcome.{Guid.NewGuid():N}.";
         var baseTime = DateTimeOffset.UtcNow.AddMinutes(-3);
         await using (var scope = provider.CreateAsyncScope())
         {
@@ -279,18 +279,19 @@ public sealed class AuditTimelineSqlServerTests
             await db.Database.MigrateAsync();
         }
 
+        var testPrefix = $"test.{Guid.NewGuid():N}.";
         var baseTime = DateTimeOffset.UtcNow.AddMinutes(-2);
         await using (var scope = provider.CreateAsyncScope())
         {
             var audit = scope.ServiceProvider.GetRequiredService<IAuditService>();
-            await audit.AppendAsync(CreateRecord(baseTime, "test.action", "system", "some details", outcome: null));
-            await audit.AppendAsync(CreateRecord(baseTime.AddSeconds(1), "test.other", "system", "success", outcome: "success"));
+            await audit.AppendAsync(CreateRecord(baseTime, testPrefix + "action", "system", "some details", outcome: null));
+            await audit.AppendAsync(CreateRecord(baseTime.AddSeconds(1), testPrefix + "other", "system", "success", outcome: "success"));
         }
 
         await using (var scope = provider.CreateAsyncScope())
         {
             var svc = scope.ServiceProvider.GetRequiredService<IAuditTimelineQueryService>();
-            var page = await svc.QueryAsync(new AuditFilterCriteria(FromUtc: baseTime, ActionPrefix: "test.", Outcome: "success", PageSize: 10));
+            var page = await svc.QueryAsync(new AuditFilterCriteria(FromUtc: baseTime, ActionPrefix: testPrefix, Outcome: "success", PageSize: 10));
             page.Items.Should().HaveCount(1);
             page.Items[0].Outcome.Should().Be("success");
         }
@@ -405,7 +406,7 @@ public sealed class AuditTimelineSqlServerTests
             await db.Database.MigrateAsync();
         }
 
-        var prefix = "ep37.backfill.";
+        var prefix = $"ep37.backfill.{Guid.NewGuid():N}.";
         var baseTime = DateTimeOffset.UtcNow.AddMinutes(-1);
         var at1 = baseTime;
         var at2 = baseTime.AddSeconds(1);
