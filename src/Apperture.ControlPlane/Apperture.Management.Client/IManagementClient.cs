@@ -94,6 +94,11 @@ public interface IManagementClient
     Task<ConnectionDto> CreateConnectionAsync(CreateConnectionRequest request, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Executes connector-specific test-connect and returns updated connection projection.
+    /// </summary>
+    Task<ConnectionDto> TestConnectionAsync(string id, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Lists connector definitions (catalog metadata; not executable client operations). Epic 52.
     /// </summary>
     Task<IReadOnlyList<ConnectorDefinitionCatalogDto>> GetConnectorDefinitionsAsync(CancellationToken cancellationToken = default);
@@ -475,6 +480,10 @@ public sealed record ConnectionDto(
     string? ScopeKey,
     string? OwnerId,
     string State,
+    bool SupportsVerification,
+    string LastVerificationStatus,
+    DateTimeOffset? LastVerificationAtUtc,
+    string? LastVerificationSummary,
     IReadOnlyList<ConnectionUsedInEntry> UsedIn);
 
 /// <summary>Request to create a connection resource.</summary>

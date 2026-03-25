@@ -16,6 +16,7 @@ public sealed class IntegrationReadinessService : IIntegrationReadinessService
     private readonly IConnectionRepository _connectionRepository;
     private readonly IBindingEligibilityService _eligibilityService;
     private readonly IScheduleRepository _scheduleRepository;
+    private readonly IConnectionVerificationReadinessPolicy _verificationReadinessPolicy;
 
     public IntegrationReadinessService(
         IIntegrationManagementService integrationManagement,
@@ -23,7 +24,8 @@ public sealed class IntegrationReadinessService : IIntegrationReadinessService
         IBindingRepository bindingRepository,
         IConnectionRepository connectionRepository,
         IBindingEligibilityService eligibilityService,
-        IScheduleRepository scheduleRepository)
+        IScheduleRepository scheduleRepository,
+        IConnectionVerificationReadinessPolicy verificationReadinessPolicy)
     {
         _integrationManagement = integrationManagement;
         _moduleSlotRegistry = moduleSlotRegistry;
@@ -31,6 +33,7 @@ public sealed class IntegrationReadinessService : IIntegrationReadinessService
         _connectionRepository = connectionRepository;
         _eligibilityService = eligibilityService;
         _scheduleRepository = scheduleRepository;
+        _verificationReadinessPolicy = verificationReadinessPolicy;
     }
 
     /// <inheritdoc />
@@ -61,14 +64,33 @@ public sealed class IntegrationReadinessService : IIntegrationReadinessService
             .Select(s => new IntegrationModuleSlotInfo(s.SlotName, s.ContractType))
             .ToList();
 
+        var activeConnectionIds = bindings
+            .Where(b => b.State == BindingState.Active && b.ConnectionId is not null)
+            .Select(b => b.ConnectionId!.Value)
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+        var connectionById = new Dictionary<string, Connection>(StringComparer.Ordinal);
+        foreach (var connId in activeConnectionIds)
+        {
+            var conn = await _connectionRepository.GetByIdAsync(new ConnectionId(connId), cancellationToken);
+            if (conn is not null)
+                connectionById[connId] = conn;
+        }
+
         var bindingSummaries = bindings
-            .Select(b => new IntegrationBindingSummary(
-                b.Id.Value,
-                b.SlotName,
-                b.ContractType,
-                b.ConnectionId?.Value,
-                b.CapabilityId,
-                b.State.ToString()))
+            .Select(b =>
+            {
+                connectionById.TryGetValue(b.ConnectionId?.Value ?? string.Empty, out var conn);
+                return new IntegrationBindingSummary(
+                    b.Id.Value,
+                    b.SlotName,
+                    b.ContractType,
+                    b.ConnectionId?.Value,
+                    b.CapabilityId,
+                    b.State.ToString(),
+                    conn?.LastVerificationStatus.ToString(),
+                    conn?.LastVerificationAtUtc);
+            })
             .ToList();
 
         var scheduleSummaries = schedules
@@ -193,6 +215,8 @@ public sealed class IntegrationReadinessService : IIntegrationReadinessService
                 }
                 else
                 {
+                    AddConnectionVerificationIssueIfNeeded(issues, integration.ModuleId, slot.SlotName, binding, connection);
+
                     var eligible = await _eligibilityService.GetEligibleConnectionsAsync(
                         integration.ModuleId,
                         slot.SlotName,
@@ -233,11 +257,49 @@ public sealed class IntegrationReadinessService : IIntegrationReadinessService
             }
         }
 
-        var runnable = integration.State == IntegrationState.Active && issues.Count == 0;
+        var runnable = integration.State == IntegrationState.Active
+            && !issues.Any(i => string.Equals(i.Severity, IntegrationReadinessIssueSeverity.Blocking.ToString(), StringComparison.Ordinal));
         return new IntegrationReadinessProjection(
             integration.Id.Value,
             integration.ModuleId,
             runnable,
             issues);
+    }
+
+    private void AddConnectionVerificationIssueIfNeeded(
+        List<IntegrationReadinessIssue> issues,
+        string moduleId,
+        string slotName,
+        Binding binding,
+        Connection connection)
+    {
+        IntegrationReadinessIssue? issue = connection.LastVerificationStatus switch
+        {
+            ConnectionVerificationStatus.Failed => new IntegrationReadinessIssue(
+                IntegrationReadinessIssueCodes.ConnectionVerificationFailed,
+                $"Connection '{connection.Name}' last verification failed: {connection.LastVerificationSummary ?? "No summary provided."}",
+                slotName,
+                binding.Id.Value,
+                connection.Id.Value,
+                _verificationReadinessPolicy.ResolveSeverity(moduleId, slotName, connection.LastVerificationStatus).ToString()),
+            ConnectionVerificationStatus.NeverTested => new IntegrationReadinessIssue(
+                IntegrationReadinessIssueCodes.ConnectionVerificationUnverified,
+                $"Connection '{connection.Name}' has not been verified yet.",
+                slotName,
+                binding.Id.Value,
+                connection.Id.Value,
+                _verificationReadinessPolicy.ResolveSeverity(moduleId, slotName, connection.LastVerificationStatus).ToString()),
+            ConnectionVerificationStatus.Unavailable => new IntegrationReadinessIssue(
+                IntegrationReadinessIssueCodes.ConnectionVerificationUnavailable,
+                $"Connection '{connection.Name}' cannot be verified by this connector.",
+                slotName,
+                binding.Id.Value,
+                connection.Id.Value,
+                _verificationReadinessPolicy.ResolveSeverity(moduleId, slotName, connection.LastVerificationStatus).ToString()),
+            _ => null
+        };
+
+        if (issue is not null)
+            issues.Add(issue);
     }
 }

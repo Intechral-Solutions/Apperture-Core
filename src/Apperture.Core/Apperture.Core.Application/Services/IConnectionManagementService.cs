@@ -32,4 +32,9 @@ public interface IConnectionManagementService
     /// Retires a connection. Excluded from binding eligibility.
     /// </summary>
     ValueTask RetireConnectionAsync(ConnectionId id, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Executes connector-specific test-connect and persists the latest verification result on the connection.
+    /// </summary>
+    ValueTask<Connection> VerifyConnectionAsync(ConnectionId id, CancellationToken cancellationToken = default);
 }

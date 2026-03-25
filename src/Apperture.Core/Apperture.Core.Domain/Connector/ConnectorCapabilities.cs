@@ -12,4 +12,9 @@ public enum ConnectorCapabilities
     /// Reserved for a future brokered/gateway access pattern; ordinary connectors use direct module consumption.
     /// </summary>
     BrokeredAccessCandidate = 1,
+
+    /// <summary>
+    /// Connector supports an explicit operator-triggered connection verification (test-connect).
+    /// </summary>
+    SupportsConnectionVerification = 1 << 1,
 }

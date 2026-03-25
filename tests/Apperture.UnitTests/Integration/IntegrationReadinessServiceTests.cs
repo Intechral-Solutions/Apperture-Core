@@ -80,12 +80,13 @@ public sealed class IntegrationReadinessServiceTests
             bindRepo.Object,
             connRepo.Object,
             elig.Object,
-            schedRepo.Object);
+            schedRepo.Object,
+            new AdvisoryConnectionVerificationReadinessPolicy());
 
         var r = await sut.GetReadinessAsync(IntId);
         r.Should().NotBeNull();
         r!.IsRunnable.Should().BeTrue();
-        r.Issues.Should().BeEmpty();
+        r.Issues.Should().ContainSingle(i => i.Code == IntegrationReadinessIssueCodes.ConnectionVerificationUnverified);
     }
 
     [Fact]
@@ -116,7 +117,8 @@ public sealed class IntegrationReadinessServiceTests
             bindRepo.Object,
             connRepo.Object,
             elig.Object,
-            schedRepo.Object);
+            schedRepo.Object,
+            new AdvisoryConnectionVerificationReadinessPolicy());
 
         var r = await sut.GetReadinessAsync(IntId);
         r!.IsRunnable.Should().BeFalse();
@@ -156,7 +158,8 @@ public sealed class IntegrationReadinessServiceTests
             bindRepo.Object,
             connRepo.Object,
             elig.Object,
-            schedRepo.Object);
+            schedRepo.Object,
+            new AdvisoryConnectionVerificationReadinessPolicy());
 
         var r = await sut.GetReadinessAsync(IntId);
         r!.IsRunnable.Should().BeFalse();
@@ -216,10 +219,50 @@ public sealed class IntegrationReadinessServiceTests
             bindRepo.Object,
             connRepo.Object,
             elig.Object,
-            schedRepo.Object);
+            schedRepo.Object,
+            new AdvisoryConnectionVerificationReadinessPolicy());
 
         var r = await sut.GetReadinessAsync(IntId);
         r!.IsRunnable.Should().BeFalse();
         r.Issues.Should().ContainSingle(i => i.Code == IntegrationReadinessIssueCodes.BindingNotEligible);
+    }
+
+    [Fact]
+    public async Task GetReadiness_failed_verification_is_advisory_not_blocking()
+    {
+        var connId = new ConnectionId("connv1");
+        var binding = new Binding(new BindingId("bindv1"), IntId, "Sample.Mod", "Db", "System.Data.IDbConnection", connId, null, BindingState.Active);
+        var connection = new Connection(
+            connId,
+            new ConnectorDefinitionId("sql"),
+            "SQL",
+            new Dictionary<string, string>(),
+            new Dictionary<string, string>(),
+            null,
+            null,
+            ConnectionState.Active,
+            ConnectionVerificationStatus.Failed,
+            Now,
+            "Auth failed");
+
+        var mgmt = new Mock<IIntegrationManagementService>();
+        mgmt.Setup(x => x.GetIntegrationAsync(IntId, It.IsAny<CancellationToken>())).ReturnsAsync(ActiveIntegration());
+        var slots = new Mock<IModuleSlotRegistry>();
+        slots.Setup(x => x.GetSlotsForModule("Sample.Mod")).Returns(new List<ICapabilitySlot> { new TestSlot { ModuleId = "Sample.Mod", SlotName = "Db", ContractType = "System.Data.IDbConnection" } });
+        var bindRepo = new Mock<IBindingRepository>();
+        bindRepo.Setup(x => x.GetByIntegrationIdAsync(IntId, It.IsAny<CancellationToken>())).ReturnsAsync(new List<Binding> { binding });
+        var connRepo = new Mock<IConnectionRepository>();
+        connRepo.Setup(x => x.GetByIdAsync(connId, It.IsAny<CancellationToken>())).ReturnsAsync(connection);
+        var elig = new Mock<IBindingEligibilityService>();
+        elig.Setup(x => x.GetEligibleConnectionsAsync("Sample.Mod", "Db", "System.Data.IDbConnection", It.IsAny<CancellationToken>())).ReturnsAsync(new List<Connection> { connection });
+        var schedRepo = new Mock<IScheduleRepository>();
+        schedRepo.Setup(x => x.GetByIntegrationIdAsync(IntId, It.IsAny<CancellationToken>())).ReturnsAsync(Array.Empty<ScheduleDefinition>());
+
+        var sut = new IntegrationReadinessService(mgmt.Object, slots.Object, bindRepo.Object, connRepo.Object, elig.Object, schedRepo.Object, new AdvisoryConnectionVerificationReadinessPolicy());
+        var r = await sut.GetReadinessAsync(IntId);
+        r!.IsRunnable.Should().BeTrue();
+        r.Issues.Should().ContainSingle(i =>
+            i.Code == IntegrationReadinessIssueCodes.ConnectionVerificationFailed
+            && i.Severity == IntegrationReadinessIssueSeverity.Advisory.ToString());
     }
 }

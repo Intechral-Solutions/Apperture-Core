@@ -33,6 +33,7 @@ public static class WellKnownConnectorDefinitions
         new(WellKnownConnectorDefinitionIds.PlatformSftp, "SFTP", null, EmptySchema)
         {
             Description = "SFTP file access (SSH.NET).",
+            Capabilities = ConnectorCapabilities.SupportsConnectionVerification,
             ConnectionFields =
             [
                 new ConnectionFieldDescriptor("Host", "Host", false),

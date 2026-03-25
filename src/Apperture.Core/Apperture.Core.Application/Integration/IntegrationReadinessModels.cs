@@ -13,6 +13,9 @@ public static class IntegrationReadinessIssueCodes
     public const string ConnectionInactive = "connection_inactive";
     public const string BindingNotEligible = "binding_not_eligible";
     public const string ScheduleOwnershipMismatch = "schedule_ownership_mismatch";
+    public const string ConnectionVerificationFailed = "connection_verification_failed";
+    public const string ConnectionVerificationUnverified = "connection_unverified";
+    public const string ConnectionVerificationUnavailable = "connection_verification_unavailable";
 }
 
 /// <summary>Evidence-based readiness projection for an integration.</summary>
@@ -27,7 +30,14 @@ public sealed record IntegrationReadinessIssue(
     string Message,
     string? SlotName,
     string? BindingId,
-    string? ConnectionId);
+    string? ConnectionId,
+    string Severity = "Blocking");
+
+public enum IntegrationReadinessIssueSeverity
+{
+    Blocking = 0,
+    Advisory = 1
+}
 
 public sealed record IntegrationModuleSlotInfo(string SlotName, string ContractType);
 
@@ -37,7 +47,9 @@ public sealed record IntegrationBindingSummary(
     string ContractType,
     string? ConnectionId,
     string? CapabilityId,
-    string State);
+    string State,
+    string? ConnectionVerificationStatus = null,
+    DateTimeOffset? ConnectionVerifiedAtUtc = null);
 
 public sealed record IntegrationScheduleSummary(
     string Id,

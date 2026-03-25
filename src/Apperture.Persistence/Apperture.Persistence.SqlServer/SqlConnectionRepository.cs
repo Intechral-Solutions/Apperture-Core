@@ -64,6 +64,9 @@ public sealed class SqlConnectionRepository : IConnectionRepository
         entity.ScopeKey = connection.ScopeKey;
         entity.OwnerId = connection.OwnerId;
         entity.State = (int)connection.State;
+        entity.LastVerificationStatus = (int)connection.LastVerificationStatus;
+        entity.LastVerificationAtUtc = connection.LastVerificationAtUtc;
+        entity.LastVerificationSummary = connection.LastVerificationSummary;
 
         await _db.SaveChangesAsync(cancellationToken);
     }
@@ -76,7 +79,10 @@ public sealed class SqlConnectionRepository : IConnectionRepository
         DeserializeDict(e.SecretRefsJson),
         e.ScopeKey,
         e.OwnerId,
-        (ConnectionState)e.State);
+        (ConnectionState)e.State,
+        (ConnectionVerificationStatus)e.LastVerificationStatus,
+        e.LastVerificationAtUtc,
+        e.LastVerificationSummary);
 
     private static ConnectionEntity ToEntity(Connection c) => new()
     {
@@ -87,7 +93,10 @@ public sealed class SqlConnectionRepository : IConnectionRepository
         SecretRefsJson = JsonSerializer.Serialize(c.SecretRefs),
         ScopeKey = c.ScopeKey,
         OwnerId = c.OwnerId,
-        State = (int)c.State
+        State = (int)c.State,
+        LastVerificationStatus = (int)c.LastVerificationStatus,
+        LastVerificationAtUtc = c.LastVerificationAtUtc,
+        LastVerificationSummary = c.LastVerificationSummary
     };
 
     private static IReadOnlyDictionary<string, string> DeserializeDict(string json)

@@ -1,4 +1,6 @@
 using Apperture.Core.Application.Services;
+using Apperture.Core.Application.Integration;
+using Apperture.Connectors.Sftp;
 using Apperture.Persistence.SqlServer;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -20,6 +22,10 @@ public static class ConnectorWorkflowServiceCollectionExtensions
         services.AddSingleton<IModuleSlotRegistry, StubModuleSlotRegistry>();
         services.AddScoped<IBindingEligibilityService, BindingEligibilityService>();
         services.AddScoped<IConnectionManagementService, ConnectionManagementService>();
+        services.AddScoped<IConnectionVerificationService, ConnectionVerificationService>();
+        services.AddScoped<SftpConnectorClientFactory>();
+        services.AddScoped<IConnectionVerifier, SftpConnectionVerifier>();
+        services.AddScoped<IConnectionVerificationReadinessPolicy, AdvisoryConnectionVerificationReadinessPolicy>();
         services.AddScoped<IBindingService, BindingService>();
         services.AddScoped<IConnectorDefinitionCatalogReadService, ConnectorDefinitionCatalogReadService>();
         return services;

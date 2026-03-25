@@ -14,15 +14,18 @@ public sealed class ConnectionsController : ControllerBase
     private readonly IConnectionManagementService _connectionService;
     private readonly IBindingRepository _bindingRepository;
     private readonly IIntegrationRepository _integrationRepository;
+    private readonly IConnectorDefinitionRegistry _connectorDefinitions;
 
     public ConnectionsController(
         IConnectionManagementService connectionService,
         IBindingRepository bindingRepository,
-        IIntegrationRepository integrationRepository)
+        IIntegrationRepository integrationRepository,
+        IConnectorDefinitionRegistry connectorDefinitions)
     {
         _connectionService = connectionService;
         _bindingRepository = bindingRepository;
         _integrationRepository = integrationRepository;
+        _connectorDefinitions = connectorDefinitions;
     }
 
     /// <summary>
@@ -141,6 +144,28 @@ public sealed class ConnectionsController : ControllerBase
         }
     }
 
+    /// <summary>
+    /// Runs connector-specific test-connect and returns the persisted verification result.
+    /// </summary>
+    [HttpPost("{id}/test-connect")]
+    public async Task<ActionResult<ConnectionDto>> TestConnect(string id, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var connection = await _connectionService.VerifyConnectionAsync(new ConnectionId(id), cancellationToken);
+            var bindings = await _bindingRepository.GetByConnectionIdAsync(connection.Id, cancellationToken);
+            return Ok(await ToDtoAsync(connection, bindings, cancellationToken));
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return Forbid();
+        }
+        catch (InvalidOperationException ex)
+        {
+            return NotFound(new { error = ex.Message });
+        }
+    }
+
     private async Task<ConnectionDto> ToDtoAsync(
         Core.Domain.Connector.Connection c,
         IReadOnlyList<Binding> bindings,
@@ -166,7 +191,17 @@ public sealed class ConnectionsController : ControllerBase
             c.ScopeKey,
             c.OwnerId,
             c.State.ToString(),
+            IsVerificationSupported(c.ConnectorDefinitionId),
+            c.LastVerificationStatus.ToString(),
+            c.LastVerificationAtUtc,
+            c.LastVerificationSummary,
             usedIn);
+    }
+
+    private bool IsVerificationSupported(ConnectorDefinitionId connectorDefinitionId)
+    {
+        var def = _connectorDefinitions.Get(connectorDefinitionId);
+        return def?.Capabilities.HasFlag(ConnectorCapabilities.SupportsConnectionVerification) == true;
     }
 }
 
@@ -189,6 +224,10 @@ public sealed record ConnectionDto(
     string? ScopeKey,
     string? OwnerId,
     string State,
+    bool SupportsVerification,
+    string LastVerificationStatus,
+    DateTimeOffset? LastVerificationAtUtc,
+    string? LastVerificationSummary,
     IReadOnlyList<ConnectionUsedInEntry> UsedIn);
 
 public sealed record CreateConnectionRequestBody(

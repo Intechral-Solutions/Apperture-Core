@@ -12,5 +12,8 @@ public sealed class ConnectionEntity
     public string? ScopeKey { get; set; }
     public string? OwnerId { get; set; }
     public int State { get; set; }
+    public int LastVerificationStatus { get; set; }
+    public DateTimeOffset? LastVerificationAtUtc { get; set; }
+    public string? LastVerificationSummary { get; set; }
     public byte[]? RowVersion { get; set; }
 }

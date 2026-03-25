@@ -6,7 +6,8 @@ public sealed record IntegrationReadinessIssueDto(
     string Message,
     string? SlotName,
     string? BindingId,
-    string? ConnectionId);
+    string? ConnectionId,
+    string Severity = "Blocking");
 
 public sealed record IntegrationReadinessDto(
     string IntegrationId,
@@ -22,7 +23,9 @@ public sealed record IntegrationBindingSummaryDto(
     string ContractType,
     string? ConnectionId,
     string? CapabilityId,
-    string State);
+    string State,
+    string? ConnectionVerificationStatus,
+    DateTimeOffset? ConnectionVerifiedAtUtc);
 
 public sealed record IntegrationScheduleSummaryDto(
     string Id,

@@ -72,6 +72,63 @@ public sealed class ManagementHostGovernanceHttpTests
     }
 
     [Fact]
+    public async Task Post_connection_test_connect_without_auth_returns_401()
+    {
+        AssertSqlAvailable();
+        var client = _fixture.CreateClient();
+        var response = await client.PostAsync("/api/connections/doesnotexist/test-connect", null);
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [Fact]
+    public async Task Post_connection_test_connect_without_permission_returns_403()
+    {
+        AssertSqlAvailable();
+        using var creator = _fixture.CreateAuthenticatedClient(ManagementGovernanceTestConstants.ExternalIntegrationAuthoringOperator);
+        var create = await creator.PostAsJsonAsync("/api/connections", new
+        {
+            connectorDefinitionId = "Apperture.Platform.Sql",
+            name = $"Epic59 verify perm {Guid.NewGuid():N}"[..24],
+            config = new Dictionary<string, string> { ["Server"] = "localhost", ["Database"] = "db", ["UserId"] = "sa" },
+            secretRefs = new Dictionary<string, string> { ["Password"] = "local:test/password" },
+            scopeKey = "instance"
+        });
+        create.StatusCode.Should().Be(HttpStatusCode.Created);
+        var created = JsonDocument.Parse(await create.Content.ReadAsStringAsync());
+        var connectionId = created.RootElement.GetProperty("id").GetString();
+        connectionId.Should().NotBeNullOrWhiteSpace();
+
+        using var noPerms = _fixture.CreateAuthenticatedClient(ManagementGovernanceTestConstants.ExternalAuthNoPerms);
+        var response = await noPerms.PostAsync($"/api/connections/{connectionId}/test-connect", null);
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [Fact]
+    public async Task Post_connection_test_connect_sql_reports_unavailable()
+    {
+        AssertSqlAvailable();
+        using var client = _fixture.CreateAuthenticatedClient(ManagementGovernanceTestConstants.ExternalIntegrationAuthoringOperator);
+        var create = await client.PostAsJsonAsync("/api/connections", new
+        {
+            connectorDefinitionId = "Apperture.Platform.Sql",
+            name = $"Epic59 verify sql {Guid.NewGuid():N}"[..24],
+            config = new Dictionary<string, string> { ["Server"] = "localhost", ["Database"] = "db", ["UserId"] = "sa" },
+            secretRefs = new Dictionary<string, string> { ["Password"] = "local:test/password" },
+            scopeKey = "instance"
+        });
+        create.StatusCode.Should().Be(HttpStatusCode.Created);
+        var created = JsonDocument.Parse(await create.Content.ReadAsStringAsync());
+        var connectionId = created.RootElement.GetProperty("id").GetString();
+        connectionId.Should().NotBeNullOrWhiteSpace();
+
+        var verify = await client.PostAsync($"/api/connections/{connectionId}/test-connect", null);
+        verify.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var verifyDoc = JsonDocument.Parse(await verify.Content.ReadAsStringAsync());
+        verifyDoc.RootElement.GetProperty("supportsVerification").GetBoolean().Should().BeFalse();
+        verifyDoc.RootElement.GetProperty("lastVerificationStatus").GetString().Should().Be("Unavailable");
+    }
+
+    [Fact]
     public async Task Get_integration_detail_without_auth_returns_401()
     {
         AssertSqlAvailable();
@@ -237,6 +294,10 @@ public sealed class ManagementHostGovernanceHttpTests
             .EnumerateArray()
             .Count(issue => string.Equals(issue.GetProperty("code").GetString(), "missing_slot_binding", StringComparison.Ordinal));
         afterMissingSlotIssueCount.Should().BeLessThan(beforeMissingSlotIssueCount);
+        afterDoc.RootElement.GetProperty("readiness").GetProperty("issues")
+            .EnumerateArray()
+            .Any(issue => string.Equals(issue.GetProperty("code").GetString(), "connection_unverified", StringComparison.Ordinal))
+            .Should().BeTrue();
     }
 
     [Fact]

@@ -137,6 +137,7 @@
                                 <li class="rounded border border-default bg-surface-muted/30 p-2">
                                     <div>
                                         <span class="font-mono text-xs text-muted">@issue.Code</span>
+                                        <span class="ml-1 text-xs text-muted">[@issue.Severity]</span>
                                         <span class="ml-1">@issue.Message</span>
                                     </div>
                                     <div class="mt-1 text-xs text-muted">@ReadinessRemediationCue(issue)</div>
@@ -315,6 +316,10 @@
                                     @if (!string.IsNullOrEmpty(b.ConnectionId))
                                     {
                                         <span class="text-muted text-xs">→ @b.ConnectionId</span>
+                                        @if (_bindingVerificationByConnectionId.TryGetValue(b.ConnectionId, out var verificationState))
+                                        {
+                                            <span class="text-muted text-xs">· Verify: @verificationState</span>
+                                        }
                                     }
                                 </div>
                                 @if (_capabilities?.CanManageIntegrations == true)
@@ -555,6 +560,7 @@
         ]);
     private readonly Dictionary<string, WizardStepState> _wizardStepMap = new(StringComparer.Ordinal);
     private bool _wizardMode;
+    private readonly Dictionary<string, string> _bindingVerificationByConnectionId = new(StringComparer.Ordinal);
 
     private IntegrationDto? _integration;
     private IReadOnlyList<IntegrationBindingDto>? _bindings;
@@ -654,6 +660,7 @@
                 _selectedProcedureId = null;
                 _selectedProcedureDetail = null;
                 _procedureParamValues.Clear();
+                _bindingVerificationByConnectionId.Clear();
             }
             else
             {
@@ -677,6 +684,12 @@
                     b.ConnectionId,
                     b.CapabilityId,
                     b.State)).ToList();
+                _bindingVerificationByConnectionId.Clear();
+                foreach (var b in detail.Bindings)
+                {
+                    if (!string.IsNullOrWhiteSpace(b.ConnectionId) && !string.IsNullOrWhiteSpace(b.ConnectionVerificationStatus))
+                        _bindingVerificationByConnectionId[b.ConnectionId] = b.ConnectionVerificationStatus;
+                }
                 _schedules = detail.Schedules.Select(s => new ScheduleDto(
                     s.Id,
                     s.Name,
@@ -1242,6 +1255,9 @@
         "connection_missing" => "Update the binding to use an existing compatible connection.",
         "connection_inactive" => "Activate the referenced connection or bind a different active connection.",
         "binding_not_eligible" => "Bind to a connection eligible for this module slot and contract.",
+        "connection_unverified" => "Run test-connect for the bound connection to verify remote access.",
+        "connection_verification_failed" => "Fix credentials/endpoint/access, then run test-connect again.",
+        "connection_verification_unavailable" => "This connector does not support verification; validate externally before go-live.",
         "integration_not_active" => "Set this integration state to Active.",
         "schedule_ownership_mismatch" => "Recreate or fix schedule association under this integration.",
         _ => "Review and apply the relevant configuration change."
@@ -1259,6 +1275,15 @@
         }
 
         if (string.Equals(issue.Code, "connection_inactive", StringComparison.Ordinal) && !string.IsNullOrWhiteSpace(issue.ConnectionId))
+        {
+            Nav.NavigateTo("/connections/" + Uri.EscapeDataString(issue.ConnectionId));
+            return;
+        }
+
+        if ((string.Equals(issue.Code, "connection_unverified", StringComparison.Ordinal)
+                || string.Equals(issue.Code, "connection_verification_failed", StringComparison.Ordinal)
+                || string.Equals(issue.Code, "connection_verification_unavailable", StringComparison.Ordinal))
+            && !string.IsNullOrWhiteSpace(issue.ConnectionId))
         {
             Nav.NavigateTo("/connections/" + Uri.EscapeDataString(issue.ConnectionId));
             return;

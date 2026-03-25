@@ -249,6 +249,17 @@ public sealed class ManagementClient : IManagementClient
         return created ?? throw new InvalidOperationException("Server returned no connection body.");
     }
 
+    public async Task<ConnectionDto> TestConnectionAsync(string id, CancellationToken cancellationToken = default)
+    {
+        var response = await _http.PostAsync(
+            $"connections/{Uri.EscapeDataString(id)}/test-connect",
+            content: null,
+            cancellationToken).ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+        var result = await response.Content.ReadFromJsonAsync<ConnectionDto>(ApiJsonReadOptions, cancellationToken).ConfigureAwait(false);
+        return result ?? throw new InvalidOperationException("Server returned no connection body.");
+    }
+
     public async Task<IReadOnlyList<ConnectorDefinitionCatalogDto>> GetConnectorDefinitionsAsync(CancellationToken cancellationToken = default)
     {
         var list = await _http.GetFromJsonAsync<ConnectorDefinitionCatalogDto[]>(

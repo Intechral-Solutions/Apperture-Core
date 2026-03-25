@@ -343,6 +343,9 @@ public class AppertureDbContext : DbContext
             e.Property(x => x.ScopeKey).HasMaxLength(256);
             e.Property(x => x.OwnerId).HasMaxLength(256);
             e.Property(x => x.State);
+            e.Property(x => x.LastVerificationStatus);
+            e.Property(x => x.LastVerificationAtUtc);
+            e.Property(x => x.LastVerificationSummary).HasMaxLength(512);
             e.Property(x => x.RowVersion).IsRowVersion();
         });
 

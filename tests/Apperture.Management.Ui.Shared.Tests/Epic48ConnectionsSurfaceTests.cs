@@ -43,6 +43,10 @@ public sealed class Epic48ConnectionsSurfaceTests
             null,
             null,
             "Active",
+            false,
+            "NeverTested",
+            null,
+            null,
             usedIn);
         dto.Id.Should().Be("conn-1");
         dto.UsedIn.Should().HaveCount(1);

@@ -15,17 +15,20 @@ public sealed class ConnectionManagementService : IConnectionManagementService
     private readonly IAuthorizationEvaluationService _authorizationEvaluation;
     private readonly IConnectionRepository _connectionRepository;
     private readonly IConnectorDefinitionRegistry _connectorRegistry;
+    private readonly IConnectionVerificationService _connectionVerification;
 
     public ConnectionManagementService(
         IPrincipalContext principalContext,
         IAuthorizationEvaluationService authorizationEvaluation,
         IConnectionRepository connectionRepository,
-        IConnectorDefinitionRegistry connectorRegistry)
+        IConnectorDefinitionRegistry connectorRegistry,
+        IConnectionVerificationService connectionVerification)
     {
         _principalContext = principalContext;
         _authorizationEvaluation = authorizationEvaluation;
         _connectionRepository = connectionRepository;
         _connectorRegistry = connectorRegistry;
+        _connectionVerification = connectionVerification;
     }
 
     /// <inheritdoc />
@@ -163,5 +166,37 @@ public sealed class ConnectionManagementService : IConnectionManagementService
 
         var retired = existing with { State = ConnectionState.Retired };
         await _connectionRepository.UpdateAsync(retired, cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public async ValueTask<Connection> VerifyConnectionAsync(ConnectionId id, CancellationToken cancellationToken = default)
+    {
+        var actor = await _principalContext.GetCurrentActorAsync(cancellationToken);
+        if (actor is null)
+            throw new UnauthorizedAccessException("No authenticated actor.");
+
+        var existing = await _connectionRepository.GetByIdAsync(id, cancellationToken)
+            ?? throw new InvalidOperationException($"Connection {id.Value} not found.");
+
+        var identity = existing.GetIdentity();
+        var allowed = await _authorizationEvaluation.EvaluateAsync(
+            new AuthorizationEvaluationContext(
+                actor,
+                new PermissionDescriptor(ActionConstants.ConnectionUpdate, GovernedResourceDescriptor.FromIdentity(identity)),
+                GovernedResourceDescriptor.FromIdentity(identity),
+                identity),
+            cancellationToken);
+        if (!allowed)
+            throw new UnauthorizedAccessException("Not authorized to verify this connection.");
+
+        var verification = await _connectionVerification.VerifyAsync(existing, cancellationToken);
+        var updated = existing with
+        {
+            LastVerificationStatus = verification.Status,
+            LastVerificationAtUtc = verification.VerifiedAtUtc,
+            LastVerificationSummary = verification.Summary
+        };
+        await _connectionRepository.UpdateAsync(updated, cancellationToken);
+        return updated;
     }
 }
