@@ -1070,6 +1070,23 @@ public sealed class ManagementHostGovernanceHttpTests
             .Should().BeOneOf(JsonValueKind.True, JsonValueKind.False);
         seeded.GetProperty("attentionTokens").ValueKind.Should().Be(JsonValueKind.Array);
         seeded.GetProperty("topIssueCodes").ValueKind.Should().Be(JsonValueKind.Array);
+        var ops = seeded.GetProperty("operationalRuns");
+        ops.GetProperty("recentFailedRunCount").TryGetInt32(out _).Should().BeTrue();
+        ops.GetProperty("hasRecentOperationalFailure").ValueKind.Should().BeOneOf(JsonValueKind.True, JsonValueKind.False);
+        ops.GetProperty("hasRepeatedRecentFailures").ValueKind.Should().BeOneOf(JsonValueKind.True, JsonValueKind.False);
+        ops.GetProperty("mostRecentAuthorizedRunFailed").ValueKind.Should().BeOneOf(JsonValueKind.True, JsonValueKind.False);
+    }
+
+    [Fact]
+    public async Task Get_runs_with_integrationId_query_returns_ok_array()
+    {
+        AssertSqlAvailable();
+        using var client = _fixture.CreateAuthenticatedClient(ManagementGovernanceTestConstants.ExternalProcedureLauncher);
+        var response = await client.GetAsync(
+            $"/api/runs?integrationId={Uri.EscapeDataString(ManagementGovernanceTestConstants.SeededIntegrationId)}");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        doc.RootElement.ValueKind.Should().Be(JsonValueKind.Array);
     }
 
     [Fact]

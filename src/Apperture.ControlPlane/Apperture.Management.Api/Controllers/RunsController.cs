@@ -43,6 +43,8 @@ public sealed class RunsController : ControllerBase
         [FromQuery] DateTimeOffset? createdTo,
         [FromQuery] string? moduleId,
         [FromQuery] string? correlationKey,
+        [FromQuery] string? integrationId,
+        [FromQuery] int? take,
         CancellationToken cancellationToken)
     {
         try
@@ -54,7 +56,9 @@ public sealed class RunsController : ControllerBase
                 CreatedFrom: createdFrom,
                 CreatedTo: createdTo,
                 ModuleId: moduleId,
-                CorrelationKey: correlationKey);
+                CorrelationKey: correlationKey,
+                IntegrationId: integrationId,
+                Take: take);
             var list = await _runs.ListRunsAsync(filter, cancellationToken);
             return Ok(list);
         }

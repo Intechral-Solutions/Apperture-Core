@@ -48,14 +48,18 @@ public sealed class RunQueryService : IRunQueryService
             query = query.Where(r => r.DefinitionId == filter.OperationDefinitionId);
         if (!string.IsNullOrWhiteSpace(filter?.CorrelationKey))
             query = query.Where(r => r.CorrelationKey == filter.CorrelationKey);
+        if (!string.IsNullOrWhiteSpace(filter?.IntegrationId))
+            query = query.Where(r => r.IntegrationId == filter.IntegrationId);
         if (filter?.CreatedFrom is not null)
             query = query.Where(r => r.CreatedAt >= filter.CreatedFrom.Value);
         if (filter?.CreatedTo is not null)
             query = query.Where(r => r.CreatedAt <= filter.CreatedTo.Value);
 
-        var runs = await query
-            .OrderByDescending(r => r.CreatedAt)
-            .ToListAsync(cancellationToken);
+        IQueryable<OperationRunEntity> ordered = query.OrderByDescending(r => r.CreatedAt);
+        if (filter?.Take is int take && take > 0)
+            ordered = ordered.Take(take);
+
+        var runs = await ordered.ToListAsync(cancellationToken);
         var runIds = runs.Select(r => r.Id).ToArray();
         var runKinds = await _runKinds.ResolveRunKindsAsync(runIds, cancellationToken);
 
@@ -64,42 +68,116 @@ public sealed class RunQueryService : IRunQueryService
         var result = new List<RunSummaryDto>();
         foreach (var r in runs)
         {
-            try
+            if (!runKinds.TryGetValue(r.Id, out var runKind))
+                continue;
+            var dto = await TryProjectAuthorizedRunAsync(r, runKind, filter, cancellationToken).ConfigureAwait(false);
+            if (dto is not null)
+                result.Add(dto);
+        }
+
+        return result;
+    }
+
+    public async ValueTask<IReadOnlyDictionary<string, FleetOperationalRunSignals>> GetFleetOperationalRunSignalsAsync(
+        IReadOnlyList<string> integrationIds,
+        DateTimeOffset sinceUtc,
+        int maxRows,
+        CancellationToken cancellationToken = default)
+    {
+        var result = integrationIds.Distinct(StringComparer.Ordinal).ToDictionary(
+            id => id,
+            _ => new FleetOperationalRunSignals(0, null, null, null, null, null),
+            StringComparer.Ordinal);
+
+        if (result.Count == 0 || maxRows <= 0)
+            return result;
+
+        var idSet = integrationIds.ToHashSet(StringComparer.Ordinal);
+        var aggs = integrationIds.Distinct(StringComparer.Ordinal).ToDictionary(
+            id => id,
+            _ => new FleetRunAgg(),
+            StringComparer.Ordinal);
+
+        var runs = await _db.OperationRuns.AsNoTracking()
+            .Where(r => r.IntegrationId != null && idSet.Contains(r.IntegrationId!) && r.CreatedAt >= sinceUtc)
+            .OrderByDescending(r => r.CreatedAt)
+            .Take(maxRows)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        if (runs.Count == 0)
+            return result;
+
+        var runKinds = await _runKinds.ResolveRunKindsAsync(runs.Select(r => r.Id).ToArray(), cancellationToken)
+            .ConfigureAwait(false);
+
+        foreach (var r in runs)
+        {
+            if (!runKinds.TryGetValue(r.Id, out var runKind))
+                continue;
+            var dto = await TryProjectAuthorizedRunAsync(r, runKind, filter: null, cancellationToken).ConfigureAwait(false);
+            if (dto is null || string.IsNullOrEmpty(dto.IntegrationId) || !aggs.TryGetValue(dto.IntegrationId, out var agg))
+                continue;
+
+            if (agg.LatestRunId is null)
             {
-                if (!runKinds.TryGetValue(r.Id, out var runKind))
-                    continue;
-                if (string.Equals(runKind, RunKindNames.Workflow, StringComparison.Ordinal))
+                agg.LatestRunId = dto.RunId;
+                agg.LatestRunStatus = dto.Status;
+                agg.LatestRunAt = dto.CreatedAt;
+            }
+
+            if (IsFailedRunStatus(dto.Status))
+            {
+                agg.FailedCount++;
+                if (agg.MostRecentFailedRunId is null)
                 {
-                    if (string.Equals(filter?.ExecutionKind, RunKindNames.Operation, StringComparison.OrdinalIgnoreCase))
-                        continue;
-                    await _workflowAuthz.EnsureCanReadRunsAsync(new WorkflowDefinitionId(r.DefinitionId), cancellationToken);
-                    result.Add(new RunSummaryDto(
-                        r.Id,
-                        r.WorkflowInstanceId,
-                        r.DefinitionId,
-                        r.Status,
-                        r.CreatedAt,
-                        r.CompletedAt,
-                        r.CorrelationKey,
-                        r.RetryOfRunId,
-                        RunKindNames.Workflow,
-                        r.IntegrationId,
-                        r.ProcedureId));
-                    continue;
+                    agg.MostRecentFailedRunId = dto.RunId;
+                    agg.MostRecentFailedRunAt = dto.CreatedAt;
                 }
+            }
+        }
 
-                if (string.Equals(filter?.ExecutionKind, RunKindNames.Workflow, StringComparison.OrdinalIgnoreCase))
-                    continue;
+        foreach (var (id, a) in aggs)
+        {
+            result[id] = new FleetOperationalRunSignals(
+                a.FailedCount,
+                a.MostRecentFailedRunId,
+                a.MostRecentFailedRunAt,
+                a.LatestRunId,
+                a.LatestRunStatus,
+                a.LatestRunAt);
+        }
 
-                if (!string.IsNullOrWhiteSpace(filter?.ModuleId))
-                {
-                    var definition = await _operations.GetOperationAsync(new OperationId(r.DefinitionId), cancellationToken);
-                    if (!string.Equals(definition?.ModuleId, filter.ModuleId, StringComparison.Ordinal))
-                        continue;
-                }
+        return result;
+    }
 
-                await _operationAuthz.EnsureCanReadRunsAsync(new OperationId(r.DefinitionId), cancellationToken);
-                result.Add(new RunSummaryDto(
+    private sealed class FleetRunAgg
+    {
+        public int FailedCount;
+        public string? LatestRunId;
+        public string? LatestRunStatus;
+        public DateTimeOffset? LatestRunAt;
+        public string? MostRecentFailedRunId;
+        public DateTimeOffset? MostRecentFailedRunAt;
+    }
+
+    private static bool IsFailedRunStatus(string status) =>
+        string.Equals(status, WorkflowLifecycleStatusNames.Failed, StringComparison.OrdinalIgnoreCase);
+
+    private async ValueTask<RunSummaryDto?> TryProjectAuthorizedRunAsync(
+        OperationRunEntity r,
+        string runKind,
+        RunQueryFilter? filter,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            if (string.Equals(runKind, RunKindNames.Workflow, StringComparison.Ordinal))
+            {
+                if (string.Equals(filter?.ExecutionKind, RunKindNames.Operation, StringComparison.OrdinalIgnoreCase))
+                    return null;
+                await _workflowAuthz.EnsureCanReadRunsAsync(new WorkflowDefinitionId(r.DefinitionId), cancellationToken).ConfigureAwait(false);
+                return new RunSummaryDto(
                     r.Id,
                     r.WorkflowInstanceId,
                     r.DefinitionId,
@@ -108,17 +186,39 @@ public sealed class RunQueryService : IRunQueryService
                     r.CompletedAt,
                     r.CorrelationKey,
                     r.RetryOfRunId,
-                    RunKindNames.Operation,
+                    RunKindNames.Workflow,
                     r.IntegrationId,
-                    r.ProcedureId));
+                    r.ProcedureId);
             }
-            catch (UnauthorizedAccessException)
-            {
-                continue;
-            }
-        }
 
-        return result;
+            if (string.Equals(filter?.ExecutionKind, RunKindNames.Workflow, StringComparison.OrdinalIgnoreCase))
+                return null;
+
+            if (!string.IsNullOrWhiteSpace(filter?.ModuleId))
+            {
+                var definition = await _operations.GetOperationAsync(new OperationId(r.DefinitionId), cancellationToken).ConfigureAwait(false);
+                if (!string.Equals(definition?.ModuleId, filter.ModuleId, StringComparison.Ordinal))
+                    return null;
+            }
+
+            await _operationAuthz.EnsureCanReadRunsAsync(new OperationId(r.DefinitionId), cancellationToken).ConfigureAwait(false);
+            return new RunSummaryDto(
+                r.Id,
+                r.WorkflowInstanceId,
+                r.DefinitionId,
+                r.Status,
+                r.CreatedAt,
+                r.CompletedAt,
+                r.CorrelationKey,
+                r.RetryOfRunId,
+                RunKindNames.Operation,
+                r.IntegrationId,
+                r.ProcedureId);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return null;
+        }
     }
 
     public async ValueTask<RunDetailDto?> GetRunAsync(OperationRunId id, CancellationToken cancellationToken = default)

@@ -221,6 +221,20 @@ public sealed class OperationsControllerTests
         public StubRunQueryService(RunDetailDto? detail = null) => _detail = detail;
         public ValueTask<IReadOnlyList<RunSummaryDto>> ListRunsAsync(RunQueryFilter? filter = null, CancellationToken cancellationToken = default) =>
             ValueTask.FromResult<IReadOnlyList<RunSummaryDto>>(Array.Empty<RunSummaryDto>());
+
+        public ValueTask<IReadOnlyDictionary<string, FleetOperationalRunSignals>> GetFleetOperationalRunSignalsAsync(
+            IReadOnlyList<string> integrationIds,
+            DateTimeOffset sinceUtc,
+            int maxRows,
+            CancellationToken cancellationToken = default)
+        {
+            var d = integrationIds.Distinct(StringComparer.Ordinal).ToDictionary(
+                id => id,
+                _ => new FleetOperationalRunSignals(0, null, null, null, null, null),
+                StringComparer.Ordinal);
+            return ValueTask.FromResult<IReadOnlyDictionary<string, FleetOperationalRunSignals>>(d);
+        }
+
         public ValueTask<RunDetailDto?> GetRunAsync(OperationRunId id, CancellationToken cancellationToken = default) =>
             ValueTask.FromResult(_detail);
     }

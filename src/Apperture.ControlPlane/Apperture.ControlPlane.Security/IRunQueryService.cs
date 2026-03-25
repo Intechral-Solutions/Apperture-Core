@@ -5,9 +5,35 @@ namespace Apperture.ControlPlane.Security;
 public interface IRunQueryService
 {
     ValueTask<IReadOnlyList<RunSummaryDto>> ListRunsAsync(RunQueryFilter? filter = null, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Epic 62: aggregates authorized run evidence for fleet operational attention.
+    /// Only runs the caller may read are counted. Iterates newest-first within <paramref name="maxRows"/> cap.
+    /// </summary>
+    ValueTask<IReadOnlyDictionary<string, FleetOperationalRunSignals>> GetFleetOperationalRunSignalsAsync(
+        IReadOnlyList<string> integrationIds,
+        DateTimeOffset sinceUtc,
+        int maxRows,
+        CancellationToken cancellationToken = default);
+
     ValueTask<RunDetailDto?> GetRunAsync(OperationRunId id, CancellationToken cancellationToken = default);
 }
 
+/// <summary>
+/// Epic 62: per-integration signals from persisted runs (authorized subset only).
+/// </summary>
+public sealed record FleetOperationalRunSignals(
+    int RecentAuthorizedFailedRunCount,
+    string? MostRecentFailedRunId,
+    DateTimeOffset? MostRecentFailedRunAt,
+    string? LatestAuthorizedRunId,
+    string? LatestAuthorizedRunStatus,
+    DateTimeOffset? LatestAuthorizedRunAt);
+
+/// <param name="Take">
+/// When set, caps rows after SQL filters and ordering and <b>before</b> per-run authorization.
+/// The returned list may be shorter if many rows are unauthorized.
+/// </param>
 public sealed record RunQueryFilter(
     string? ExecutionKind = null,
     string? OperationDefinitionId = null,
@@ -15,7 +41,9 @@ public sealed record RunQueryFilter(
     DateTimeOffset? CreatedFrom = null,
     DateTimeOffset? CreatedTo = null,
     string? ModuleId = null,
-    string? CorrelationKey = null);
+    string? CorrelationKey = null,
+    string? IntegrationId = null,
+    int? Take = null);
 
 public sealed record RunSummaryDto(
     string RunId,

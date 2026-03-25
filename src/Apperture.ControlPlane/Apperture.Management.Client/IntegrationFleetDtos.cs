@@ -1,6 +1,6 @@
 namespace Apperture.Management.Client;
 
-/// <summary>Optional query for <see cref="IManagementClient.GetIntegrationFleetAsync"/>. Epic 61.</summary>
+/// <summary>Optional query for <see cref="IManagementClient.GetIntegrationFleetAsync"/>. Epic 61; Epic 62 operational filter.</summary>
 public sealed record IntegrationFleetQueryParams(
     string? State = null,
     bool? Runnable = null,
@@ -8,6 +8,7 @@ public sealed record IntegrationFleetQueryParams(
     bool? HasAdvisory = null,
     bool? VerificationConcern = null,
     string? Verification = null,
+    bool? HasOperationalFailure = null,
     string? Attention = null,
     string? Sort = null);
 
@@ -21,7 +22,20 @@ public sealed record IntegrationFleetAttentionFlagsDto(
     bool HasVerificationUnverified,
     bool HasVerificationUnavailable);
 
-/// <summary>Epic 61: one row of GET integrations/fleet.</summary>
+/// <summary>Epic 62: recent run evidence for fleet triage (same window as server batch).</summary>
+public sealed record IntegrationFleetOperationalRunAttentionDto(
+    int RecentFailedRunCount,
+    string? MostRecentFailedRunId,
+    DateTimeOffset? MostRecentFailedRunAt,
+    string? LastAuthorizedRunId,
+    string? LastAuthorizedRunStatus,
+    DateTimeOffset? LastAuthorizedRunAt,
+    bool HasRecentOperationalFailure,
+    bool HasRepeatedRecentFailures,
+    bool MostRecentAuthorizedRunFailed,
+    DateTimeOffset? EvidenceWindowStartUtc);
+
+/// <summary>Epic 61: one row of GET integrations/fleet. Epic 62: operational run slice.</summary>
 public sealed record IntegrationFleetRowDto(
     string Id,
     string DisplayName,
@@ -32,5 +46,6 @@ public sealed record IntegrationFleetRowDto(
     DateTimeOffset UpdatedAt,
     IntegrationReadinessDto Readiness,
     IntegrationFleetAttentionFlagsDto Attention,
+    IntegrationFleetOperationalRunAttentionDto OperationalRuns,
     string[] AttentionTokens,
     string[] TopIssueCodes);

@@ -561,7 +561,9 @@ public sealed record RunQueryFilter(
     DateTimeOffset? CreatedFrom = null,
     DateTimeOffset? CreatedTo = null,
     string? ModuleId = null,
-    string? CorrelationKey = null);
+    string? CorrelationKey = null,
+    string? IntegrationId = null,
+    int? Take = null);
 
 /// <summary>Epic 35: investigation navigation hint. Kind is stable; TargetId optional. UI must not link when TargetId is null.</summary>
 public sealed record RunInvestigationHintDto(string Kind, string? TargetId);

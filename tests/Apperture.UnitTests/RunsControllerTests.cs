@@ -24,7 +24,7 @@ public sealed class RunsControllerTests
     {
         var controller = NewController(new StubRunQueryService(
             list: new[] { new RunSummaryDto("run-1", "inst-1", "wf-1", "requested", DateTimeOffset.UtcNow, null, null, null) }));
-        var result = await controller.GetRuns(null, null, null, null, null, null, null, CancellationToken.None);
+        var result = await controller.GetRuns(null, null, null, null, null, null, null, null, null, CancellationToken.None);
         result.Result.Should().BeOfType<OkObjectResult>();
     }
 
@@ -246,6 +246,19 @@ public sealed class RunsControllerTests
 
         public ValueTask<IReadOnlyList<RunSummaryDto>> ListRunsAsync(RunQueryFilter? filter = null, CancellationToken cancellationToken = default) =>
             ValueTask.FromResult(_list);
+
+        public ValueTask<IReadOnlyDictionary<string, FleetOperationalRunSignals>> GetFleetOperationalRunSignalsAsync(
+            IReadOnlyList<string> integrationIds,
+            DateTimeOffset sinceUtc,
+            int maxRows,
+            CancellationToken cancellationToken = default)
+        {
+            var d = integrationIds.Distinct(StringComparer.Ordinal).ToDictionary(
+                id => id,
+                _ => new FleetOperationalRunSignals(0, null, null, null, null, null),
+                StringComparer.Ordinal);
+            return ValueTask.FromResult<IReadOnlyDictionary<string, FleetOperationalRunSignals>>(d);
+        }
 
         public ValueTask<RunDetailDto?> GetRunAsync(Apperture.RuntimePlane.Abstractions.OperationRunId id, CancellationToken cancellationToken = default) =>
             ValueTask.FromResult(_get(id.Value));

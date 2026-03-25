@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
@@ -309,6 +310,8 @@ public sealed class ManagementClient : IManagementClient
             parts.Add($"verificationConcern={(q.VerificationConcern.Value ? "true" : "false")}");
         if (!string.IsNullOrWhiteSpace(q.Verification))
             parts.Add($"verification={Uri.EscapeDataString(q.Verification)}");
+        if (q.HasOperationalFailure is not null)
+            parts.Add($"hasOperationalFailure={(q.HasOperationalFailure.Value ? "true" : "false")}");
         if (!string.IsNullOrWhiteSpace(q.Attention))
             parts.Add($"attention={Uri.EscapeDataString(q.Attention)}");
         if (!string.IsNullOrWhiteSpace(q.Sort))
@@ -777,10 +780,13 @@ public sealed class ManagementClient : IManagementClient
         Add(pairs, "status", filter.Status);
         Add(pairs, "moduleId", filter.ModuleId);
         Add(pairs, "correlationKey", filter.CorrelationKey);
+        Add(pairs, "integrationId", filter.IntegrationId);
         if (filter.CreatedFrom is not null)
             Add(pairs, "createdFrom", filter.CreatedFrom.Value.ToString("o"));
         if (filter.CreatedTo is not null)
             Add(pairs, "createdTo", filter.CreatedTo.Value.ToString("o"));
+        if (filter.Take is int take && take > 0)
+            pairs.Add($"take={take.ToString(CultureInfo.InvariantCulture)}");
 
         if (pairs.Count == 0)
             return string.Empty;

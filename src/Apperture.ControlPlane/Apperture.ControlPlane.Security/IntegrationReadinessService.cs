@@ -17,6 +17,7 @@ public sealed class IntegrationReadinessService : IIntegrationReadinessService
     private readonly IBindingEligibilityService _eligibilityService;
     private readonly IScheduleRepository _scheduleRepository;
     private readonly IConnectionVerificationReadinessPolicy _verificationReadinessPolicy;
+    private readonly IRunQueryService _runQuery;
 
     public IntegrationReadinessService(
         IIntegrationManagementService integrationManagement,
@@ -25,7 +26,8 @@ public sealed class IntegrationReadinessService : IIntegrationReadinessService
         IConnectionRepository connectionRepository,
         IBindingEligibilityService eligibilityService,
         IScheduleRepository scheduleRepository,
-        IConnectionVerificationReadinessPolicy verificationReadinessPolicy)
+        IConnectionVerificationReadinessPolicy verificationReadinessPolicy,
+        IRunQueryService runQuery)
     {
         _integrationManagement = integrationManagement;
         _moduleSlotRegistry = moduleSlotRegistry;
@@ -34,6 +36,7 @@ public sealed class IntegrationReadinessService : IIntegrationReadinessService
         _eligibilityService = eligibilityService;
         _scheduleRepository = scheduleRepository;
         _verificationReadinessPolicy = verificationReadinessPolicy;
+        _runQuery = runQuery;
     }
 
     /// <inheritdoc />
@@ -123,6 +126,20 @@ public sealed class IntegrationReadinessService : IIntegrationReadinessService
         CancellationToken cancellationToken = default)
     {
         var integrations = await _integrationManagement.ListIntegrationsAsync(cancellationToken);
+        var sinceUtc = DateTimeOffset.UtcNow - IntegrationFleetRunEvidence.Lookback;
+        var activeIds = integrations
+            .Where(i => i.State == IntegrationState.Active)
+            .Select(i => i.Id.Value)
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+
+        var runSignals = await _runQuery.GetFleetOperationalRunSignalsAsync(
+                activeIds,
+                sinceUtc,
+                IntegrationFleetRunEvidence.BatchMaxRows,
+                cancellationToken)
+            .ConfigureAwait(false);
+
         var rows = new List<IntegrationFleetRowProjection>(integrations.Count);
         foreach (var integration in integrations)
         {
@@ -131,8 +148,23 @@ public sealed class IntegrationReadinessService : IIntegrationReadinessService
             var readiness = await EvaluateReadinessAsync(integration, bindings, schedules, cancellationToken);
             var state = integration.State.ToString();
             var attention = IntegrationFleetAttention.Compute(state, readiness);
-            var tokens = IntegrationFleetAttention.ToAttentionTokens(attention);
             var topCodes = IntegrationFleetAttention.TopIssueCodes(readiness);
+
+            runSignals.TryGetValue(integration.Id.Value, out var sig);
+            var s = sig ?? new FleetOperationalRunSignals(0, null, null, null, null, null);
+            var operationalRuns = IntegrationFleetAttention.BuildOperationalRunAttention(
+                state,
+                sinceUtc,
+                s.RecentAuthorizedFailedRunCount,
+                s.MostRecentFailedRunId,
+                s.MostRecentFailedRunAt,
+                s.LatestAuthorizedRunId,
+                s.LatestAuthorizedRunStatus,
+                s.LatestAuthorizedRunAt);
+
+            var tokens = IntegrationFleetAttention.ToAttentionTokens(attention).ToList();
+            IntegrationFleetAttention.AppendOperationalAttentionTokens(tokens, state, operationalRuns);
+
             rows.Add(new IntegrationFleetRowProjection(
                 integration.Id.Value,
                 integration.DisplayName,
@@ -143,6 +175,7 @@ public sealed class IntegrationReadinessService : IIntegrationReadinessService
                 integration.UpdatedAt,
                 readiness,
                 attention,
+                operationalRuns,
                 tokens,
                 topCodes));
         }
@@ -199,6 +232,13 @@ public sealed class IntegrationReadinessService : IIntegrationReadinessService
             };
         }
 
+        if (query.HasOperationalFailure is { } hasOpFail)
+        {
+            q = hasOpFail
+                ? q.Where(r => r.OperationalRuns.HasRecentOperationalFailure)
+                : q.Where(r => !r.OperationalRuns.HasRecentOperationalFailure);
+        }
+
         if (query.AttentionTokens is { Count: > 0 } wanted)
         {
             var normalized = wanted
@@ -236,6 +276,16 @@ public sealed class IntegrationReadinessService : IIntegrationReadinessService
             "updatedat" => desc
                 ? rows.OrderByDescending(r => r.UpdatedAt)
                 : rows.OrderBy(r => r.UpdatedAt),
+            "recentfailedcount" => desc
+                ? rows.OrderByDescending(r => r.OperationalRuns.RecentFailedRunCount)
+                    .ThenBy(r => r.DisplayName, StringComparer.OrdinalIgnoreCase)
+                : rows.OrderBy(r => r.OperationalRuns.RecentFailedRunCount)
+                    .ThenBy(r => r.DisplayName, StringComparer.OrdinalIgnoreCase),
+            "lastfailedat" => desc
+                ? rows.OrderByDescending(r => r.OperationalRuns.MostRecentFailedRunAt ?? DateTimeOffset.MinValue)
+                    .ThenBy(r => r.DisplayName, StringComparer.OrdinalIgnoreCase)
+                : rows.OrderBy(r => r.OperationalRuns.MostRecentFailedRunAt ?? DateTimeOffset.MaxValue)
+                    .ThenBy(r => r.DisplayName, StringComparer.OrdinalIgnoreCase),
             _ => desc
                 ? rows.OrderByDescending(r => r.DisplayName, StringComparer.OrdinalIgnoreCase)
                 : rows.OrderBy(r => r.DisplayName, StringComparer.OrdinalIgnoreCase)

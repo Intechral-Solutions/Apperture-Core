@@ -9,7 +9,7 @@
 @inject NavigationManager Nav
 
 <div class="p-4">
-    <PageHeader Title="Integrations" Subtitle="Fleet overview: operational state, readiness (blocking vs advisory), verification signals, and quick actions. Open a row for full remediation.">
+    <PageHeader Title="Integrations" Subtitle="Fleet overview: configuration/readiness and verification (left columns) vs recent run failures in the evidence window (Ops). Open a row for remediation; use links to jump to failed runs or the filtered run list.">
         <Toolbar>
             @if (_capabilities?.CanManageIntegrations == true)
             {
@@ -90,12 +90,22 @@
                 </select>
             </label>
             <label class="flex flex-col gap-1">
+                <span class="text-xs text-muted">Run failures (window)</span>
+                <select class="rounded border border-default bg-surface px-2 py-1.5 text-body" @bind="_filterHasOperationalFailure" @bind:after="LoadAsync">
+                    <option value="">All</option>
+                    <option value="true">Has recent failures</option>
+                    <option value="false">No recent failures</option>
+                </select>
+            </label>
+            <label class="flex flex-col gap-1">
                 <span class="text-xs text-muted">Sort</span>
                 <select class="rounded border border-default bg-surface px-2 py-1.5 text-body" @bind="_sort" @bind:after="LoadAsync">
                     <option value="">Name (A–Z)</option>
                     <option value="-updatedAt">Updated (newest)</option>
                     <option value="updatedAt">Updated (oldest)</option>
                     <option value="moduleId">Module id</option>
+                    <option value="-recentFailedCount">Recent failures (most)</option>
+                    <option value="-lastFailedAt">Last failed (newest)</option>
                 </select>
             </label>
         </div>
@@ -111,6 +121,7 @@
                         <th class="px-3 py-2">Block</th>
                         <th class="px-3 py-2">Advisory</th>
                         <th class="px-3 py-2">Verify</th>
+                        <th class="px-3 py-2">Ops (7d)</th>
                         <th class="px-3 py-2">Attention</th>
                         <th class="px-3 py-2"></th>
                     </tr>
@@ -127,6 +138,37 @@
                             <td class="px-3 py-2">@row.Readiness.BlockingIssueCount</td>
                             <td class="px-3 py-2">@row.Readiness.AdvisoryIssueCount</td>
                             <td class="px-3 py-2 text-muted">@VerificationLabel(row.Attention)</td>
+                            <td class="px-3 py-2 text-sm" @onclick:stopPropagation="true">
+                                @if (string.Equals(row.OperationalState, "Active", StringComparison.OrdinalIgnoreCase))
+                                {
+                                    <div class="space-y-1">
+                                        <div>
+                                            <span class="text-muted">Failed:</span>
+                                            <span class="ml-1 font-mono">@row.OperationalRuns.RecentFailedRunCount</span>
+                                            @if (row.OperationalRuns.MostRecentAuthorizedRunFailed)
+                                            {
+                                                <span class="ml-1 text-xs text-muted">(latest run failed)</span>
+                                            }
+                                        </div>
+                                        @if (!string.IsNullOrWhiteSpace(row.OperationalRuns.MostRecentFailedRunId))
+                                        {
+                                            <a class="text-xs underline"
+                                               href="@("/runs/" + Uri.EscapeDataString(row.OperationalRuns.MostRecentFailedRunId!))">Last failed run</a>
+                                        }
+                                        @if (row.OperationalRuns.EvidenceWindowStartUtc is { } since)
+                                        {
+                                            <div>
+                                                <a class="text-xs underline"
+                                                   href="@RunsListHref(row.Id, since)">Recent runs</a>
+                                            </div>
+                                        }
+                                    </div>
+                                }
+                                else
+                                {
+                                    <span class="text-muted">—</span>
+                                }
+                            </td>
                             <td class="px-3 py-2">
                                 <div class="flex flex-wrap gap-1">
                                     @foreach (var t in row.AttentionTokens)
@@ -181,6 +223,7 @@
     private string _filterHasBlocking = "";
     private string _filterHasAdvisory = "";
     private string _filterVerificationConcern = "";
+    private string _filterHasOperationalFailure = "";
     private string _sort = "";
 
     protected override async Task OnInitializedAsync()
@@ -212,6 +255,7 @@
                 HasBlocking: ParseNullableBool(_filterHasBlocking),
                 HasAdvisory: ParseNullableBool(_filterHasAdvisory),
                 VerificationConcern: ParseNullableBool(_filterVerificationConcern),
+                HasOperationalFailure: ParseNullableBool(_filterHasOperationalFailure),
                 Sort: string.IsNullOrWhiteSpace(_sort) ? null : _sort);
             _fleet = await Client.GetIntegrationFleetAsync(q);
         }
@@ -232,6 +276,10 @@
         if (string.Equals(s, "false", StringComparison.OrdinalIgnoreCase)) return false;
         return null;
     }
+
+    private static string RunsListHref(string integrationId, DateTimeOffset evidenceSinceUtc) =>
+        "/runs?integrationId=" + Uri.EscapeDataString(integrationId)
+        + "&createdFrom=" + Uri.EscapeDataString(evidenceSinceUtc.ToString("o"));
 
     private static string VerificationLabel(IntegrationFleetAttentionFlagsDto f)
     {
