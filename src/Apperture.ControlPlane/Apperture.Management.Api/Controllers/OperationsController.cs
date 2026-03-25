@@ -170,7 +170,15 @@ public sealed class OperationsController : ControllerBase
             body?.IntegrationId,
             body?.ProcedureId);
 
-        var dispatchResult = await _dispatch.StartAsync(request, cancellationToken);
+        OperationStartDispatchResult? dispatchResult;
+        try
+        {
+            dispatchResult = await _dispatch.StartAsync(request, cancellationToken);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { error = ex.Message });
+        }
         if (dispatchResult is null)
         {
             await TryAppendStartBlockedAuditAsync(

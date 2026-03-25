@@ -1,6 +1,7 @@
 using Apperture.Core.Application.RuntimeComposition;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Environment;
+using Apperture.Core.Domain.Integration;
 using Apperture.Core.Domain.Scheduling;
 using Apperture.ControlPlane.Security;
 using Apperture.ModuleSdk.Abstractions;
@@ -80,6 +81,53 @@ public sealed class ScheduleDispatchTests
         runOutcome.Should().Be("Failed");
     }
 
+    [Fact]
+    public async Task RunCycleAsync_WhenIntegrationInactive_BlocksDispatchWithOperationalReason()
+    {
+        var db = NewDb();
+        SeedIntegration(db, "int1", "Sample.HelloWorld", IntegrationState.Inactive);
+        SeedScheduleWithWorkflowTarget(
+            db,
+            "s1",
+            "a1",
+            "Sample.HelloWorld.HelloWorld",
+            "* * * * *",
+            "UTC",
+            lastAttemptedUtc: DeterministicLastAttemptedUtc,
+            integrationId: "int1");
+        await db.SaveChangesAsync();
+
+        var services = new ServiceCollection();
+        services.AddSingleton(db);
+        services.AddScoped<IScheduleRepository, SqlScheduleRepository>();
+        services.AddScoped<IIntegrationRepository, SqlIntegrationRepository>();
+        services.AddScoped<IScheduleEvaluator, CronScheduleEvaluator>();
+        services.AddScoped<IAuditService, SqlAuditService>();
+        var modules = new IModule[] { new HelloWorldModule() };
+        services.AddSingleton<IEnumerable<IModule>>(modules);
+        services.AddSingleton<IWorkflowDefinitionResolver>(sp =>
+            new WorkflowDefinitionResolver(sp.GetRequiredService<IEnumerable<IModule>>(), null));
+        services.AddSingleton<IOperationRegistryService>(sp =>
+            new OperationRegistryService(sp.GetRequiredService<IEnumerable<IModule>>(), null));
+        services.AddScoped<ISchedulerLifecycleGuard, SchedulerLifecycleGuard>();
+        services.AddScoped<IWorkflowPersistence, SqlWorkflowPersistence>();
+        services.AddScoped<IWorkflowStartDispatchService, WorkflowStartDispatchService>();
+        services.AddScoped<IOperationStartDispatchService, OperationStartDispatchService>();
+        services.AddSingleton<ISchedulerHostIdentity>(new DefaultSchedulerHostIdentity("test"));
+        services.AddSingleton<ISchedulerClaimOptions>(new DefaultSchedulerClaimOptions(5));
+        services.AddScoped<IScheduleDispatchRunner, ScheduleDispatchRunner>();
+
+        await using var scope = services.BuildServiceProvider().CreateAsyncScope();
+        var runner = scope.ServiceProvider.GetRequiredService<IScheduleDispatchRunner>();
+        await runner.RunCycleAsync(new RuntimePlaneId("local"), DeterministicAsOfUtc);
+        var ctx = scope.ServiceProvider.GetRequiredService<AppertureDbContext>();
+        var startRequestCount = await ctx.WorkflowStartRequests.AsNoTracking().CountAsync();
+        var run = await ctx.ScheduleRuns.AsNoTracking().FirstOrDefaultAsync();
+        startRequestCount.Should().Be(0);
+        run?.Outcome.Should().Be("BlockedByLifecycle");
+        run?.OutcomeReason.Should().Contain("requires Active state");
+    }
+
     /// <summary>
     /// First-run with no prior state uses bounded 5-minute lookback (not 24h).
     /// Hourly cron yields 0 or 1 firing in that window, preventing burst dispatch.
@@ -98,6 +146,7 @@ public sealed class ScheduleDispatchTests
         var services = new ServiceCollection();
         services.AddSingleton(db);
         services.AddScoped<IScheduleRepository, SqlScheduleRepository>();
+        services.AddScoped<IIntegrationRepository, SqlIntegrationRepository>();
         services.AddScoped<IScheduleEvaluator, CronScheduleEvaluator>();
         services.AddScoped<IAuditService, SqlAuditService>();
         var modules = new IModule[] { new HelloWorldModule() };
@@ -136,7 +185,8 @@ public sealed class ScheduleDispatchTests
         string? workflowDefinitionId,
         string cron,
         string timeZone,
-        DateTimeOffset? lastAttemptedUtc = null)
+        DateTimeOffset? lastAttemptedUtc = null,
+        string? integrationId = null)
     {
         var configJson = workflowDefinitionId is not null
             ? $"{{\"workflowDefinitionId\":\"{workflowDefinitionId}\"}}"
@@ -145,6 +195,7 @@ public sealed class ScheduleDispatchTests
         db.ScheduleDefinitions.Add(new ScheduleDefinitionEntity
         {
             Id = scheduleId,
+            IntegrationId = integrationId,
             Name = "Test",
             RecurrenceExpression = cron,
             TimeZone = timeZone,
@@ -180,7 +231,8 @@ public sealed class ScheduleDispatchTests
         string? operationDefinitionId,
         string cron,
         string timeZone,
-        DateTimeOffset? lastAttemptedUtc = null)
+        DateTimeOffset? lastAttemptedUtc = null,
+        string? integrationId = null)
     {
         var configJson = operationDefinitionId is not null
             ? $"{{\"operationDefinitionId\":\"{operationDefinitionId}\"}}"
@@ -189,6 +241,7 @@ public sealed class ScheduleDispatchTests
         db.ScheduleDefinitions.Add(new ScheduleDefinitionEntity
         {
             Id = scheduleId,
+            IntegrationId = integrationId,
             Name = "Test",
             RecurrenceExpression = cron,
             TimeZone = timeZone,
@@ -228,6 +281,7 @@ public sealed class ScheduleDispatchTests
         services.AddSingleton(db);
 
         services.AddScoped<IScheduleRepository, SqlScheduleRepository>();
+        services.AddScoped<IIntegrationRepository, SqlIntegrationRepository>();
         services.AddScoped<IScheduleEvaluator, CronScheduleEvaluator>();
         services.AddScoped<IAuditService, SqlAuditService>();
 
@@ -270,6 +324,7 @@ public sealed class ScheduleDispatchTests
         var services = new ServiceCollection();
         services.AddSingleton(db);
         services.AddScoped<IScheduleRepository, SqlScheduleRepository>();
+        services.AddScoped<IIntegrationRepository, SqlIntegrationRepository>();
         services.AddScoped<IScheduleEvaluator, CronScheduleEvaluator>();
         services.AddScoped<IAuditService, SqlAuditService>();
 
@@ -305,5 +360,18 @@ public sealed class ScheduleDispatchTests
     {
         public ValueTask<bool> IsEnabledAsync(string moduleId, CancellationToken cancellationToken = default) =>
             ValueTask.FromResult(false);
+    }
+
+    private static void SeedIntegration(AppertureDbContext db, string integrationId, string moduleId, IntegrationState state)
+    {
+        db.Integrations.Add(new IntegrationEntity
+        {
+            Id = integrationId,
+            DisplayName = "Test integration",
+            ModuleId = moduleId,
+            State = (int)state,
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow
+        });
     }
 }

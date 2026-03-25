@@ -160,6 +160,16 @@ public interface IManagementClient
     Task DeleteIntegrationAsync(string id, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Activates an integration for operational execution.
+    /// </summary>
+    Task<IntegrationDto> ActivateIntegrationAsync(string id, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Deactivates an integration while preserving configuration.
+    /// </summary>
+    Task<IntegrationDto> DeactivateIntegrationAsync(string id, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Lists bindings for an integration. Epic 50.
     /// </summary>
     Task<IReadOnlyList<IntegrationBindingDto>> GetIntegrationBindingsAsync(string integrationId, CancellationToken cancellationToken = default);

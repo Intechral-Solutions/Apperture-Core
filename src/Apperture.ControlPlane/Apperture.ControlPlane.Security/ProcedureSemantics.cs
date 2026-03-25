@@ -5,7 +5,8 @@ namespace Apperture.ControlPlane.Security;
 /// </summary>
 public static class ProcedureBlockedReasonCodes
 {
-    public const string IntegrationNotReady = "integration_not_ready";
+    public const string IntegrationInactive = "integration_inactive";
+    public const string IntegrationHardBlocked = "integration_hard_blocked";
 
     public const string TargetNotExecutable = "target_not_executable";
 
@@ -25,7 +26,8 @@ public enum IntegrationProcedureLaunchErrorCode
 {
     IntegrationNotFound,
     IntegrationReadinessUnavailable,
-    IntegrationNotReady,
+    IntegrationInactive,
+    IntegrationHardBlocked,
     ProcedureNotFound,
     ProcedureWrongModule,
     TargetNotExecutable,
@@ -61,7 +63,8 @@ public static class IntegrationProcedureLaunchErrorCodeExtensions
         {
             IntegrationProcedureLaunchErrorCode.IntegrationNotFound => "integration_not_found",
             IntegrationProcedureLaunchErrorCode.IntegrationReadinessUnavailable => "integration_readiness_unavailable",
-            IntegrationProcedureLaunchErrorCode.IntegrationNotReady => "integration_not_ready",
+            IntegrationProcedureLaunchErrorCode.IntegrationInactive => "integration_inactive",
+            IntegrationProcedureLaunchErrorCode.IntegrationHardBlocked => "integration_hard_blocked",
             IntegrationProcedureLaunchErrorCode.ProcedureNotFound => "procedure_not_found",
             IntegrationProcedureLaunchErrorCode.ProcedureWrongModule => "procedure_wrong_module",
             IntegrationProcedureLaunchErrorCode.TargetNotExecutable => "target_not_executable",
@@ -82,7 +85,8 @@ public static class IntegrationProcedureLaunchErrorCodeExtensions
                 IntegrationProcedureLaunchErrorCode.ProcedureWrongModule or
                 IntegrationProcedureLaunchErrorCode.TargetNotExecutable or
                 IntegrationProcedureLaunchErrorCode.IntegrationReadinessUnavailable => 404,
-            IntegrationProcedureLaunchErrorCode.IntegrationNotReady => 409,
+            IntegrationProcedureLaunchErrorCode.IntegrationInactive or
+                IntegrationProcedureLaunchErrorCode.IntegrationHardBlocked => 409,
             IntegrationProcedureLaunchErrorCode.InvalidParameters or
                 IntegrationProcedureLaunchErrorCode.UnsafeOrchestrationParameters => 400,
             IntegrationProcedureLaunchErrorCode.ProcedurePermissionDenied or

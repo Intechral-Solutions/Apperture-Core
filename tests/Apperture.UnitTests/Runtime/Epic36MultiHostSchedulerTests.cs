@@ -305,6 +305,7 @@ public sealed class Epic36MultiHostSchedulerTests
         var services = new ServiceCollection();
         services.AddSingleton(db);
         services.AddScoped<IScheduleRepository, SqlScheduleRepository>();
+        services.AddScoped<IIntegrationRepository, SqlIntegrationRepository>();
         services.AddScoped<IScheduleEvaluator, CronScheduleEvaluator>();
         services.AddScoped<IAuditService, SqlAuditService>();
         var modules = new IModule[] { new HelloWorldModule() };

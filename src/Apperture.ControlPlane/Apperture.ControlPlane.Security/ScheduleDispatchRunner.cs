@@ -3,6 +3,7 @@ using Apperture.Core.Application.RuntimeComposition;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Audit;
 using Apperture.Core.Domain.Environment;
+using Apperture.Core.Domain.Integration;
 using Apperture.Core.Domain.Operations;
 using Apperture.Core.Domain.Scheduling;
 using Apperture.RuntimePlane.Abstractions;
@@ -19,6 +20,7 @@ public sealed class ScheduleDispatchRunner : IScheduleDispatchRunner
     private readonly IScheduleEvaluator _evaluator;
     private readonly IScheduleRepository _repo;
     private readonly ISchedulerLifecycleGuard _guard;
+    private readonly IIntegrationRepository _integrations;
     private readonly IWorkflowStartDispatchService _workflowDispatch;
     private readonly IOperationStartDispatchService _operationDispatch;
     private readonly IAuditService _audit;
@@ -29,6 +31,7 @@ public sealed class ScheduleDispatchRunner : IScheduleDispatchRunner
         IScheduleEvaluator evaluator,
         IScheduleRepository repo,
         ISchedulerLifecycleGuard guard,
+        IIntegrationRepository integrations,
         IWorkflowStartDispatchService workflowDispatch,
         IOperationStartDispatchService operationDispatch,
         IAuditService audit,
@@ -38,6 +41,7 @@ public sealed class ScheduleDispatchRunner : IScheduleDispatchRunner
         _evaluator = evaluator;
         _repo = repo;
         _guard = guard;
+        _integrations = integrations;
         _workflowDispatch = workflowDispatch;
         _operationDispatch = operationDispatch;
         _audit = audit;
@@ -119,6 +123,9 @@ public sealed class ScheduleDispatchRunner : IScheduleDispatchRunner
 
     private async Task ProcessWorkflowTargetAsync(ScheduleDefinition definition, ScheduleFireCandidate candidate, CancellationToken ct)
     {
+        if (!await EnsureIntegrationOperationalAsync(definition.IntegrationId, candidate, ct))
+            return;
+
         var workflowId = ParseWorkflowDefinitionId(definition.Target.JobConfiguration);
         if (workflowId is null)
         {
@@ -208,6 +215,9 @@ public sealed class ScheduleDispatchRunner : IScheduleDispatchRunner
 
     private async Task ProcessOperationTargetAsync(ScheduleDefinition definition, ScheduleFireCandidate candidate, CancellationToken ct)
     {
+        if (!await EnsureIntegrationOperationalAsync(definition.IntegrationId, candidate, ct))
+            return;
+
         var operationId = ParseOperationDefinitionId(definition.Target.JobConfiguration);
         if (operationId is null)
         {
@@ -292,6 +302,41 @@ public sealed class ScheduleDispatchRunner : IScheduleDispatchRunner
             LastOutcomeReason: null,
             LastSuccessfulDispatchUtc: now
         ), ct);
+    }
+
+    private async Task<bool> EnsureIntegrationOperationalAsync(IntegrationId? integrationId, ScheduleFireCandidate candidate, CancellationToken ct)
+    {
+        if (integrationId is null)
+            return true;
+
+        var integration = await _integrations.GetByIdAsync(integrationId, ct);
+        if (integration is not null && integration.State == IntegrationState.Active)
+            return true;
+
+        var reason = integration is null
+            ? $"Integration '{integrationId.Value}' was not found."
+            : $"Integration '{integration.Id.Value}' is {integration.State}; schedule dispatch requires Active state.";
+        await CompleteWithOutcomeAsync(candidate, "BlockedByLifecycle", reason, null, ct);
+        try
+        {
+            await _audit.AppendAsync(new AuditRecord(
+                new AuditRecordId(Guid.NewGuid().ToString("N")),
+                new ActorId("system:scheduler"),
+                SchedulerAuditActionNames.BlockedByLifecycle,
+                Resource: null,
+                Outcome: "blocked",
+                Timestamp: DateTimeOffset.UtcNow,
+                new CorrelationId($"schedule:{candidate.ScheduleId}:{candidate.FireTimeUtc:O}"),
+                Details: $"schedule:{candidate.ScheduleId};{reason}",
+                ScheduleId: candidate.ScheduleId
+            ), ct);
+        }
+        catch
+        {
+            // best-effort audit
+        }
+
+        return false;
     }
 
     private async Task CompleteWithOutcomeAsync(ScheduleFireCandidate candidate, string outcome, string? reason, string? runId, CancellationToken ct)

@@ -342,6 +342,131 @@ public sealed class ManagementHostGovernanceHttpTests
     }
 
     [Fact]
+    public async Task Post_integration_activate_deactivate_updates_operational_state()
+    {
+        AssertSqlAvailable();
+        using var client = _fixture.CreateAuthenticatedClient(ManagementGovernanceTestConstants.ExternalIntegrationAuthoringOperator);
+        var createResponse = await client.PostAsJsonAsync(
+            "/api/integrations",
+            new
+            {
+                displayName = "Epic60 activation test",
+                moduleId = ManagementGovernanceTestConstants.HelloWorldModuleId,
+                scopeKey = "instance"
+            });
+        createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        using var createdDoc = JsonDocument.Parse(await createResponse.Content.ReadAsStringAsync());
+        var integrationId = createdDoc.RootElement.GetProperty("id").GetString();
+        integrationId.Should().NotBeNullOrWhiteSpace();
+
+        var deactivate = await client.PostAsync($"/api/integrations/{integrationId}/deactivate", null);
+        deactivate.StatusCode.Should().Be(HttpStatusCode.OK);
+        using (var deactivatedDoc = JsonDocument.Parse(await deactivate.Content.ReadAsStringAsync()))
+        {
+            deactivatedDoc.RootElement.GetProperty("state").GetString().Should().Be("Inactive");
+        }
+
+        var activate = await client.PostAsync($"/api/integrations/{integrationId}/activate", null);
+        activate.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var activatedDoc = JsonDocument.Parse(await activate.Content.ReadAsStringAsync());
+        activatedDoc.RootElement.GetProperty("state").GetString().Should().Be("Active");
+    }
+
+    [Fact]
+    public async Task Procedure_launch_returns_integration_inactive_when_inactive()
+    {
+        AssertSqlAvailable();
+        using var authoring = _fixture.CreateAuthenticatedClient(ManagementGovernanceTestConstants.ExternalIntegrationAuthoringOperator);
+        var createResponse = await authoring.PostAsJsonAsync(
+            "/api/integrations",
+            new
+            {
+                displayName = "Epic60 inactive launch gate",
+                moduleId = ManagementGovernanceTestConstants.HelloWorldModuleId,
+                scopeKey = "instance"
+            });
+        createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        using var createdDoc = JsonDocument.Parse(await createResponse.Content.ReadAsStringAsync());
+        var integrationId = createdDoc.RootElement.GetProperty("id").GetString();
+        integrationId.Should().NotBeNullOrWhiteSpace();
+        var deactivate = await authoring.PostAsync($"/api/integrations/{integrationId}/deactivate", null);
+        deactivate.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var launcher = _fixture.CreateAuthenticatedClient(ManagementGovernanceTestConstants.ExternalProcedureLauncher);
+        var response = await launcher.PostAsJsonAsync(
+            $"/api/integrations/{integrationId}/procedures/Sample.HelloWorld.procedures.greet/launch",
+            new { parameters = new Dictionary<string, object?> { ["name"] = "epic60" } });
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        doc.RootElement.GetProperty("code").GetString().Should().Be("integration_inactive");
+    }
+
+    [Fact]
+    public async Task Workflow_start_with_integration_id_returns_bad_request_when_integration_inactive()
+    {
+        AssertSqlAvailable();
+        using var authoring = _fixture.CreateAuthenticatedClient(ManagementGovernanceTestConstants.ExternalIntegrationAuthoringOperator);
+        var createResponse = await authoring.PostAsJsonAsync(
+            "/api/integrations",
+            new
+            {
+                displayName = "Epic60 manual start gate",
+                moduleId = ManagementGovernanceTestConstants.HelloWorldModuleId,
+                scopeKey = "instance"
+            });
+        createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        using var createdDoc = JsonDocument.Parse(await createResponse.Content.ReadAsStringAsync());
+        var integrationId = createdDoc.RootElement.GetProperty("id").GetString();
+        integrationId.Should().NotBeNullOrWhiteSpace();
+        var deactivate = await authoring.PostAsync($"/api/integrations/{integrationId}/deactivate", null);
+        deactivate.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var launcher = _fixture.CreateAuthenticatedClient(ManagementGovernanceTestConstants.ExternalProcedureLauncher);
+        var response = await launcher.PostAsJsonAsync(
+            "/api/workflows/Sample.HelloWorld.HelloWorld/start",
+            new
+            {
+                integrationId,
+                parameters = new Dictionary<string, object?> { ["name"] = "epic60-manual" }
+            });
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var payload = await response.Content.ReadAsStringAsync();
+        payload.Should().Contain("not active");
+    }
+
+    [Fact]
+    public async Task Operation_start_with_integration_id_returns_bad_request_when_integration_inactive()
+    {
+        AssertSqlAvailable();
+        using var authoring = _fixture.CreateAuthenticatedClient(ManagementGovernanceTestConstants.ExternalIntegrationAuthoringOperator);
+        var createResponse = await authoring.PostAsJsonAsync(
+            "/api/integrations",
+            new
+            {
+                displayName = "Epic60 operation start gate",
+                moduleId = ManagementGovernanceTestConstants.HelloWorldModuleId,
+                scopeKey = "instance"
+            });
+        createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        using var createdDoc = JsonDocument.Parse(await createResponse.Content.ReadAsStringAsync());
+        var integrationId = createdDoc.RootElement.GetProperty("id").GetString();
+        integrationId.Should().NotBeNullOrWhiteSpace();
+        var deactivate = await authoring.PostAsync($"/api/integrations/{integrationId}/deactivate", null);
+        deactivate.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var launcher = _fixture.CreateAuthenticatedClient(ManagementGovernanceTestConstants.ExternalProcedureLauncher);
+        var response = await launcher.PostAsJsonAsync(
+            "/api/operations/Sample.HelloWorld.DoWork/start",
+            new
+            {
+                integrationId
+            });
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var payload = await response.Content.ReadAsStringAsync();
+        payload.Should().Contain("not active");
+    }
+
+    [Fact]
     public async Task Post_sftp_test_connect_persists_and_updates_readiness_across_unverified_success_failed()
     {
         AssertSqlAvailable();
@@ -521,7 +646,7 @@ public sealed class ManagementHostGovernanceHttpTests
             if (!isRunnable)
             {
                 launchable.GetBoolean().Should().BeFalse();
-                blocked.EnumerateArray().Select(x => x.GetString()).Should().Contain("integration_not_ready");
+                blocked.EnumerateArray().Select(x => x.GetString()).Should().Contain("integration_hard_blocked");
             }
             else
             {
@@ -580,7 +705,7 @@ public sealed class ManagementHostGovernanceHttpTests
         if (!isRunnable)
         {
             response.StatusCode.Should().Be(HttpStatusCode.Conflict);
-            doc.RootElement.GetProperty("code").GetString().Should().Be("integration_not_ready");
+            doc.RootElement.GetProperty("code").GetString().Should().Be("integration_hard_blocked");
         }
         else
         {
@@ -686,7 +811,7 @@ public sealed class ManagementHostGovernanceHttpTests
         response.StatusCode.Should().Be(HttpStatusCode.Conflict);
         var json = await response.Content.ReadAsStringAsync();
         using var doc = JsonDocument.Parse(json);
-        doc.RootElement.GetProperty("code").GetString().Should().Be("integration_not_ready");
+        doc.RootElement.GetProperty("code").GetString().Should().Be("integration_hard_blocked");
     }
 
     [Fact]

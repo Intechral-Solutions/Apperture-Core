@@ -1,4 +1,5 @@
 using Apperture.Core.Application;
+using Apperture.Core.Application.Integration;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Application.Validation;
 using Apperture.Core.Domain.Integration;
@@ -63,7 +64,7 @@ public sealed class IntegrationProcedureService : IIntegrationProcedureService
         if (readiness is null)
             return null;
 
-        var integrationReady = readiness.IsRunnable;
+        var integrationBlockedReason = ResolveIntegrationBlockedReason(readiness);
         var moduleProcedures = await _procedures.GetByModuleAsync(integration.ModuleId, cancellationToken);
         var list = new List<IntegrationProcedureSummaryDto>();
         foreach (var p in moduleProcedures.OrderBy(x => x.Id, StringComparer.Ordinal))
@@ -71,11 +72,11 @@ public sealed class IntegrationProcedureService : IIntegrationProcedureService
             var targetOk = await IsTargetExecutableAsync(p, cancellationToken).ConfigureAwait(false);
             var permOk = await HasProcedurePermissionsAsync(p, cancellationToken).ConfigureAwait(false);
             var executionStartOk = !targetOk || await HasExecutionStartPermissionAsync(p, cancellationToken).ConfigureAwait(false);
-            var blocked = BuildBlockedCodes(integrationReady, targetOk, permOk, executionStartOk, p.LaunchKind);
+            var blocked = BuildBlockedCodes(integrationBlockedReason, targetOk, permOk, executionStartOk, p.LaunchKind);
             list.Add(ToSummary(p, blocked.Count == 0, blocked));
         }
 
-        return new IntegrationProcedureListResponse(integrationReady, list);
+        return new IntegrationProcedureListResponse(readiness.IsRunnable, list);
     }
 
     /// <inheritdoc />
@@ -94,11 +95,11 @@ public sealed class IntegrationProcedureService : IIntegrationProcedureService
         if (procedure is null || !string.Equals(procedure.ModuleId, integration.ModuleId, StringComparison.Ordinal))
             return null;
 
-        var integrationReady = readiness.IsRunnable;
+        var integrationBlockedReason = ResolveIntegrationBlockedReason(readiness);
         var targetOk = await IsTargetExecutableAsync(procedure, cancellationToken).ConfigureAwait(false);
         var permOk = await HasProcedurePermissionsAsync(procedure, cancellationToken).ConfigureAwait(false);
         var executionStartOk = !targetOk || await HasExecutionStartPermissionAsync(procedure, cancellationToken).ConfigureAwait(false);
-        var blocked = BuildBlockedCodes(integrationReady, targetOk, permOk, executionStartOk, procedure.LaunchKind);
+        var blocked = BuildBlockedCodes(integrationBlockedReason, targetOk, permOk, executionStartOk, procedure.LaunchKind);
         var fields = ParseParameterFields(procedure.ParameterSchema);
         return new IntegrationProcedureDetailDto(
             procedure.Id,
@@ -132,10 +133,15 @@ public sealed class IntegrationProcedureService : IIntegrationProcedureService
                 IntegrationProcedureLaunchErrorCode.IntegrationReadinessUnavailable,
                 "Integration readiness could not be resolved.");
 
-        if (!readiness.IsRunnable)
+        var integrationBlockedReason = ResolveIntegrationBlockedReason(readiness);
+        if (string.Equals(integrationBlockedReason, ProcedureBlockedReasonCodes.IntegrationInactive, StringComparison.Ordinal))
             return new IntegrationProcedureLaunchOutcome.Failed(
-                IntegrationProcedureLaunchErrorCode.IntegrationNotReady,
-                "Integration is not runnable; resolve readiness issues before launching a procedure.");
+                IntegrationProcedureLaunchErrorCode.IntegrationInactive,
+                "Integration is inactive; activate it before launching a procedure.");
+        if (string.Equals(integrationBlockedReason, ProcedureBlockedReasonCodes.IntegrationHardBlocked, StringComparison.Ordinal))
+            return new IntegrationProcedureLaunchOutcome.Failed(
+                IntegrationProcedureLaunchErrorCode.IntegrationHardBlocked,
+                "Integration has blocking readiness issues; resolve blockers before launching a procedure.");
 
         var procedure = await _procedures.GetProcedureAsync(procedureId, cancellationToken);
         if (procedure is null)
@@ -279,15 +285,15 @@ public sealed class IntegrationProcedureService : IIntegrationProcedureService
     }
 
     private static IReadOnlyList<string> BuildBlockedCodes(
-        bool integrationReady,
+        string? integrationBlockedReason,
         bool targetOk,
         bool procedurePermissionsOk,
         bool executionStartOk,
         ProcedureLaunchKind launchKind)
     {
         var codes = new List<string>(5);
-        if (!integrationReady)
-            codes.Add(ProcedureBlockedReasonCodes.IntegrationNotReady);
+        if (!string.IsNullOrWhiteSpace(integrationBlockedReason))
+            codes.Add(integrationBlockedReason);
         if (!targetOk)
             codes.Add(ProcedureBlockedReasonCodes.TargetNotExecutable);
         if (!procedurePermissionsOk)
@@ -300,6 +306,24 @@ public sealed class IntegrationProcedureService : IIntegrationProcedureService
         }
 
         return codes;
+    }
+
+    private static string? ResolveIntegrationBlockedReason(IntegrationReadinessProjection readiness)
+    {
+        if (readiness.IsRunnable)
+            return null;
+
+        if (readiness.Issues.Any(i =>
+                string.Equals(i.Code, IntegrationReadinessIssueCodes.IntegrationNotActive, StringComparison.Ordinal) &&
+                string.Equals(i.Severity, IntegrationReadinessIssueSeverity.Blocking.ToString(), StringComparison.Ordinal)))
+        {
+            return ProcedureBlockedReasonCodes.IntegrationInactive;
+        }
+
+        if (readiness.Issues.Any(i => string.Equals(i.Severity, IntegrationReadinessIssueSeverity.Blocking.ToString(), StringComparison.Ordinal)))
+            return ProcedureBlockedReasonCodes.IntegrationHardBlocked;
+
+        return null;
     }
 
     /// <summary>

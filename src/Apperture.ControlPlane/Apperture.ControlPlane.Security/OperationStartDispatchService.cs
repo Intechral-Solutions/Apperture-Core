@@ -48,6 +48,8 @@ public sealed class OperationStartDispatchService : IOperationStartDispatchServi
                 throw new InvalidOperationException($"Integration '{request.IntegrationId}' was not found.");
             if (!string.Equals(integ.ModuleId, definition.ModuleId, StringComparison.Ordinal))
                 throw new InvalidOperationException("The integration's module does not match this operation's module.");
+            if (integ.State != (int)Core.Domain.Integration.IntegrationState.Active)
+                throw new InvalidOperationException($"Integration '{request.IntegrationId}' is not active.");
         }
 
         if (!string.IsNullOrWhiteSpace(request.IdempotencyKey))

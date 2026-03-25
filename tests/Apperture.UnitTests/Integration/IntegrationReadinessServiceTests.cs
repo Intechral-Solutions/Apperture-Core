@@ -265,4 +265,42 @@ public sealed class IntegrationReadinessServiceTests
             i.Code == IntegrationReadinessIssueCodes.ConnectionVerificationFailed
             && i.Severity == IntegrationReadinessIssueSeverity.Advisory.ToString());
     }
+
+    [Fact]
+    public async Task GetReadiness_reports_explicit_blocking_and_advisory_counts()
+    {
+        var mgmt = new Mock<IIntegrationManagementService>();
+        mgmt.Setup(x => x.GetIntegrationAsync(IntId, It.IsAny<CancellationToken>())).ReturnsAsync(ActiveIntegration());
+
+        var slots = new Mock<IModuleSlotRegistry>();
+        slots.Setup(x => x.GetSlotsForModule("Sample.Mod"))
+            .Returns(new List<ICapabilitySlot>
+            {
+                new TestSlot { ModuleId = "Sample.Mod", SlotName = "Db", ContractType = "System.Data.IDbConnection" }
+            });
+
+        var bindRepo = new Mock<IBindingRepository>();
+        bindRepo.Setup(x => x.GetByIntegrationIdAsync(IntId, It.IsAny<CancellationToken>())).ReturnsAsync(new List<Binding>());
+
+        var connRepo = new Mock<IConnectionRepository>();
+        var elig = new Mock<IBindingEligibilityService>();
+        var schedRepo = new Mock<IScheduleRepository>();
+        schedRepo.Setup(x => x.GetByIntegrationIdAsync(IntId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Array.Empty<ScheduleDefinition>());
+
+        var sut = new IntegrationReadinessService(
+            mgmt.Object,
+            slots.Object,
+            bindRepo.Object,
+            connRepo.Object,
+            elig.Object,
+            schedRepo.Object,
+            new AdvisoryConnectionVerificationReadinessPolicy());
+
+        var r = await sut.GetReadinessAsync(IntId);
+        r.Should().NotBeNull();
+        r!.BlockingIssueCount.Should().BeGreaterThan(0);
+        r.AdvisoryIssueCount.Should().Be(0);
+        r.Issues.Should().Contain(i => i.Code == IntegrationReadinessIssueCodes.MissingSlotBinding && i.Severity == IntegrationReadinessIssueSeverity.Blocking.ToString());
+    }
 }

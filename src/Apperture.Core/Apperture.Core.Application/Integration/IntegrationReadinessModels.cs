@@ -23,6 +23,8 @@ public sealed record IntegrationReadinessProjection(
     string IntegrationId,
     string ModuleId,
     bool IsRunnable,
+    int BlockingIssueCount,
+    int AdvisoryIssueCount,
     IReadOnlyList<IntegrationReadinessIssue> Issues);
 
 public sealed record IntegrationReadinessIssue(

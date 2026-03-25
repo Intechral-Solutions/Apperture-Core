@@ -22,6 +22,27 @@
             </button>
             @if (_capabilities?.CanManageIntegrations == true && _integration is not null)
             {
+                @if (string.Equals(_integration.State, "Active", StringComparison.OrdinalIgnoreCase))
+                {
+                    <button type="button"
+                            class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface disabled:opacity-50"
+                            disabled="@_loading"
+                            @onclick="DeactivateIntegrationAsync">
+                        Deactivate
+                    </button>
+                }
+                else
+                {
+                    <button type="button"
+                            class="rounded bg-body px-3 py-2 text-sm text-surface hover:bg-body/90 disabled:opacity-50"
+                            disabled="@_loading"
+                            @onclick="ActivateIntegrationAsync">
+                        Activate
+                    </button>
+                }
+            }
+            @if (_capabilities?.CanManageIntegrations == true && _integration is not null)
+            {
                 <button type="button"
                         class="rounded bg-destructive px-3 py-2 text-sm text-destructive-fg hover:bg-destructive/90 disabled:opacity-50"
                         disabled="@_deleting"
@@ -93,6 +114,13 @@
                 </div>
             </div>
 
+            @if (string.Equals(_integration.State, "Inactive", StringComparison.OrdinalIgnoreCase))
+            {
+                <div class="rounded border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-900 dark:text-amber-100">
+                    Integration is inactive. Configuration is preserved, but schedules and launches are operationally paused until re-activated.
+                </div>
+            }
+
             @if (_wizardMode && _capabilities?.CanManageIntegrations == true)
             {
                 <div class="rounded border border-default bg-surface p-3">
@@ -128,6 +156,9 @@
                         {
                             <span class="rounded bg-amber-500/15 px-2 py-0.5 text-xs font-medium text-amber-800 dark:text-amber-200">Not runnable</span>
                         }
+                    </div>
+                    <div class="mb-2 text-xs text-muted">
+                        Blocking: @_readiness.BlockingIssueCount · Advisory: @_readiness.AdvisoryIssueCount
                     </div>
                     @if (_readiness.Issues.Length > 0)
                     {
@@ -790,6 +821,8 @@
         code switch
         {
             "integration_not_ready" => "Resolve readiness issues for this integration.",
+            "integration_inactive" => "Activate the integration to allow launches.",
+            "integration_hard_blocked" => "Resolve blocking readiness issues before launch.",
             "target_not_executable" => "Workflow or operation target is missing or not registered for this module.",
             "insufficient_procedure_permission" => "Your role does not satisfy this procedure's required permissions.",
             "insufficient_workflow_permission" => "You cannot start this workflow (e.g. missing workflow.execute for the module).",
@@ -872,6 +905,38 @@
                 IntegrationId,
                 new UpdateIntegrationRequest(State: state));
             Toasts.Show(ToastSeverity.Success, $"Integration state set to {state}.");
+            await LoadAsync();
+        }
+        catch (HttpRequestException ex)
+        {
+            Toasts.Show(ToastSeverity.Error, ex.Message);
+        }
+    }
+
+    private async Task ActivateIntegrationAsync()
+    {
+        if (_integration is null || _capabilities?.CanManageIntegrations != true)
+            return;
+        try
+        {
+            _integration = await Client.ActivateIntegrationAsync(IntegrationId);
+            Toasts.Show(ToastSeverity.Success, "Integration activated.");
+            await LoadAsync();
+        }
+        catch (HttpRequestException ex)
+        {
+            Toasts.Show(ToastSeverity.Error, ex.Message);
+        }
+    }
+
+    private async Task DeactivateIntegrationAsync()
+    {
+        if (_integration is null || _capabilities?.CanManageIntegrations != true)
+            return;
+        try
+        {
+            _integration = await Client.DeactivateIntegrationAsync(IntegrationId);
+            Toasts.Show(ToastSeverity.Success, "Integration deactivated.");
             await LoadAsync();
         }
         catch (HttpRequestException ex)

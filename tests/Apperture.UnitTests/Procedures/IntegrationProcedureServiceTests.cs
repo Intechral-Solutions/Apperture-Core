@@ -60,7 +60,7 @@ public sealed class IntegrationProcedureServiceTests
         readiness
             .Setup(s => s.GetReadinessAsync(It.IsAny<IntegrationId>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(
-                new IntegrationReadinessProjection(IntegrationKey, ModuleId, true, Array.Empty<IntegrationReadinessIssue>()));
+                new IntegrationReadinessProjection(IntegrationKey, ModuleId, true, 0, 0, Array.Empty<IntegrationReadinessIssue>()));
 
         var procedure = new ProcedureDefinition(
             ProcedureId,
@@ -118,6 +118,127 @@ public sealed class IntegrationProcedureServiceTests
 
         var failed = outcome.Should().BeOfType<IntegrationProcedureLaunchOutcome.Failed>().Subject;
         failed.Code.Should().Be(IntegrationProcedureLaunchErrorCode.InvalidParameters);
+    }
+
+    [Fact]
+    public async Task LaunchAsync_WhenIntegrationInactive_ReturnsIntegrationInactive()
+    {
+        var integration = new DomainIntegration(
+            new IntegrationId(IntegrationKey),
+            "Test",
+            ModuleId,
+            null,
+            IntegrationState.Inactive,
+            null,
+            DateTimeOffset.UtcNow,
+            DateTimeOffset.UtcNow);
+
+        var integrations = new Mock<IIntegrationManagementService>();
+        integrations.Setup(s => s.GetIntegrationAsync(It.IsAny<IntegrationId>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(integration);
+
+        var readiness = new Mock<IIntegrationReadinessService>();
+        readiness.Setup(s => s.GetReadinessAsync(It.IsAny<IntegrationId>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new IntegrationReadinessProjection(
+                IntegrationKey,
+                ModuleId,
+                false,
+                1,
+                0,
+                [new IntegrationReadinessIssue(
+                    IntegrationReadinessIssueCodes.IntegrationNotActive,
+                    "inactive",
+                    null,
+                    null,
+                    null,
+                    IntegrationReadinessIssueSeverity.Blocking.ToString())]));
+
+        var sut = CreateSut(integrations.Object, readiness.Object);
+        var outcome = await sut.LaunchAsync(IntegrationKey, ProcedureId, new IntegrationProcedureLaunchRequest(null, null, null));
+        var failed = outcome.Should().BeOfType<IntegrationProcedureLaunchOutcome.Failed>().Subject;
+        failed.Code.Should().Be(IntegrationProcedureLaunchErrorCode.IntegrationInactive);
+    }
+
+    [Fact]
+    public async Task LaunchAsync_WhenBlockingReadinessIssuesExist_ReturnsIntegrationHardBlocked()
+    {
+        var integration = new DomainIntegration(
+            new IntegrationId(IntegrationKey),
+            "Test",
+            ModuleId,
+            null,
+            IntegrationState.Active,
+            null,
+            DateTimeOffset.UtcNow,
+            DateTimeOffset.UtcNow);
+
+        var integrations = new Mock<IIntegrationManagementService>();
+        integrations.Setup(s => s.GetIntegrationAsync(It.IsAny<IntegrationId>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(integration);
+
+        var readiness = new Mock<IIntegrationReadinessService>();
+        readiness.Setup(s => s.GetReadinessAsync(It.IsAny<IntegrationId>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new IntegrationReadinessProjection(
+                IntegrationKey,
+                ModuleId,
+                false,
+                1,
+                1,
+                [new IntegrationReadinessIssue(
+                    IntegrationReadinessIssueCodes.MissingSlotBinding,
+                    "missing binding",
+                    "Db",
+                    null,
+                    null,
+                    IntegrationReadinessIssueSeverity.Blocking.ToString())]));
+
+        var sut = CreateSut(integrations.Object, readiness.Object);
+        var outcome = await sut.LaunchAsync(IntegrationKey, ProcedureId, new IntegrationProcedureLaunchRequest(null, null, null));
+        var failed = outcome.Should().BeOfType<IntegrationProcedureLaunchOutcome.Failed>().Subject;
+        failed.Code.Should().Be(IntegrationProcedureLaunchErrorCode.IntegrationHardBlocked);
+    }
+
+    [Fact]
+    public async Task LaunchAsync_WhenOnlyAdvisoryIssuesExist_DoesNotBlockOnReadiness()
+    {
+        var integration = new DomainIntegration(
+            new IntegrationId(IntegrationKey),
+            "Test",
+            ModuleId,
+            null,
+            IntegrationState.Active,
+            null,
+            DateTimeOffset.UtcNow,
+            DateTimeOffset.UtcNow);
+
+        var integrations = new Mock<IIntegrationManagementService>();
+        integrations.Setup(s => s.GetIntegrationAsync(It.IsAny<IntegrationId>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(integration);
+
+        var readiness = new Mock<IIntegrationReadinessService>();
+        readiness.Setup(s => s.GetReadinessAsync(It.IsAny<IntegrationId>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new IntegrationReadinessProjection(
+                IntegrationKey,
+                ModuleId,
+                true,
+                0,
+                1,
+                [new IntegrationReadinessIssue(
+                    IntegrationReadinessIssueCodes.ConnectionVerificationFailed,
+                    "advisory",
+                    null,
+                    null,
+                    null,
+                    IntegrationReadinessIssueSeverity.Advisory.ToString())]));
+
+        var procedures = new Mock<IProcedureRegistryService>();
+        procedures.Setup(s => s.GetProcedureAsync(ProcedureId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((ProcedureDefinition?)null);
+
+        var sut = CreateSut(integrations.Object, readiness.Object, procedures.Object);
+        var outcome = await sut.LaunchAsync(IntegrationKey, ProcedureId, new IntegrationProcedureLaunchRequest(null, null, null));
+        var failed = outcome.Should().BeOfType<IntegrationProcedureLaunchOutcome.Failed>().Subject;
+        failed.Code.Should().Be(IntegrationProcedureLaunchErrorCode.ProcedureNotFound);
     }
 
     private static IntegrationProcedureService CreateSut(

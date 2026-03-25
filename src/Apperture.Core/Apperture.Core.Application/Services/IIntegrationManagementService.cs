@@ -30,6 +30,16 @@ public interface IIntegrationManagementService
     ValueTask<DomainIntegration> UpdateIntegrationAsync(IntegrationId id, UpdateIntegrationRequest request, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Sets an integration to Active operational state.
+    /// </summary>
+    ValueTask<DomainIntegration> ActivateIntegrationAsync(IntegrationId id, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Sets an integration to Inactive operational state while preserving configuration.
+    /// </summary>
+    ValueTask<DomainIntegration> DeactivateIntegrationAsync(IntegrationId id, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Deletes an integration. Fails if bindings or schedules reference it.
     /// </summary>
     ValueTask DeleteIntegrationAsync(IntegrationId id, CancellationToken cancellationToken = default);

@@ -144,6 +144,14 @@ public sealed class IntegrationManagementService : IIntegrationManagementService
     }
 
     /// <inheritdoc />
+    public ValueTask<DomainIntegration> ActivateIntegrationAsync(IntegrationId id, CancellationToken cancellationToken = default) =>
+        UpdateIntegrationAsync(id, new UpdateIntegrationRequest(State: IntegrationState.Active), cancellationToken);
+
+    /// <inheritdoc />
+    public ValueTask<DomainIntegration> DeactivateIntegrationAsync(IntegrationId id, CancellationToken cancellationToken = default) =>
+        UpdateIntegrationAsync(id, new UpdateIntegrationRequest(State: IntegrationState.Inactive), cancellationToken);
+
+    /// <inheritdoc />
     public async ValueTask DeleteIntegrationAsync(IntegrationId id, CancellationToken cancellationToken = default)
     {
         var actor = await _principalContext.GetCurrentActorAsync(cancellationToken);

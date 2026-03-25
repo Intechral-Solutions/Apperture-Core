@@ -127,12 +127,12 @@ public sealed class IntegrationReadinessService : IIntegrationReadinessService
 
         if (integration.State != IntegrationState.Active)
         {
-            issues.Add(new IntegrationReadinessIssue(
+            issues.Add(NewBlockingIssue(
                 IntegrationReadinessIssueCodes.IntegrationNotActive,
                 $"Integration is {integration.State}; set the integration to Active before running workflows.",
-                SlotName: null,
-                BindingId: null,
-                ConnectionId: null));
+                null,
+                null,
+                null));
         }
 
         var slots = _moduleSlotRegistry.GetSlotsForModule(integration.ModuleId);
@@ -150,7 +150,7 @@ public sealed class IntegrationReadinessService : IIntegrationReadinessService
                     b.State != BindingState.Active);
                 if (nonActive is not null)
                 {
-                    issues.Add(new IntegrationReadinessIssue(
+                    issues.Add(NewBlockingIssue(
                         IntegrationReadinessIssueCodes.InactiveBinding,
                         $"Slot '{slot.SlotName}' has no active binding; the existing binding is {nonActive.State}. Create or restore an active binding for this integration.",
                         slot.SlotName,
@@ -159,12 +159,12 @@ public sealed class IntegrationReadinessService : IIntegrationReadinessService
                 }
                 else
                 {
-                    issues.Add(new IntegrationReadinessIssue(
+                    issues.Add(NewBlockingIssue(
                         IntegrationReadinessIssueCodes.MissingSlotBinding,
                         $"Required slot '{slot.SlotName}' has no active binding for this integration. Bind it under this integration (contract: {slot.ContractType}).",
                         slot.SlotName,
-                        BindingId: null,
-                        ConnectionId: null));
+                        null,
+                        null));
                 }
 
                 continue;
@@ -172,19 +172,19 @@ public sealed class IntegrationReadinessService : IIntegrationReadinessService
 
             if (list.Count > 1)
             {
-                issues.Add(new IntegrationReadinessIssue(
+                issues.Add(NewBlockingIssue(
                     IntegrationReadinessIssueCodes.DuplicateActiveBindingForSlot,
                     $"Slot '{slot.SlotName}' has multiple active bindings for this integration; revoke duplicates so only one active binding remains.",
                     slot.SlotName,
-                    BindingId: null,
-                    ConnectionId: null));
+                    null,
+                    null));
                 continue;
             }
 
             var binding = list[0];
             if (!string.Equals(binding.ContractType, slot.ContractType, StringComparison.Ordinal))
             {
-                issues.Add(new IntegrationReadinessIssue(
+                issues.Add(NewBlockingIssue(
                     IntegrationReadinessIssueCodes.BindingContractMismatch,
                     $"Binding for slot '{slot.SlotName}' uses contract '{binding.ContractType}' but the module requires '{slot.ContractType}'.",
                     slot.SlotName,
@@ -197,7 +197,7 @@ public sealed class IntegrationReadinessService : IIntegrationReadinessService
                 var connection = await _connectionRepository.GetByIdAsync(connId, cancellationToken);
                 if (connection is null)
                 {
-                    issues.Add(new IntegrationReadinessIssue(
+                    issues.Add(NewBlockingIssue(
                         IntegrationReadinessIssueCodes.ConnectionMissing,
                         $"Binding for slot '{slot.SlotName}' references connection '{connId.Value}', which was not found.",
                         slot.SlotName,
@@ -206,7 +206,7 @@ public sealed class IntegrationReadinessService : IIntegrationReadinessService
                 }
                 else if (connection.State != ConnectionState.Active)
                 {
-                    issues.Add(new IntegrationReadinessIssue(
+                    issues.Add(NewBlockingIssue(
                         IntegrationReadinessIssueCodes.ConnectionInactive,
                         $"Connection '{connection.Name}' ({connId.Value}) for slot '{slot.SlotName}' is not Active.",
                         slot.SlotName,
@@ -224,7 +224,7 @@ public sealed class IntegrationReadinessService : IIntegrationReadinessService
                         cancellationToken);
                     if (!eligible.Any(c => c.Id.Value == connId.Value))
                     {
-                        issues.Add(new IntegrationReadinessIssue(
+                        issues.Add(NewBlockingIssue(
                             IntegrationReadinessIssueCodes.BindingNotEligible,
                             $"Connection '{connection.Name}' is not eligible for slot '{slot.SlotName}' with contract '{slot.ContractType}' (connector or scope mismatch). Choose an eligible connection or fix the connection configuration.",
                             slot.SlotName,
@@ -235,12 +235,12 @@ public sealed class IntegrationReadinessService : IIntegrationReadinessService
             }
             else if (string.IsNullOrWhiteSpace(binding.CapabilityId))
             {
-                issues.Add(new IntegrationReadinessIssue(
+                issues.Add(NewBlockingIssue(
                     IntegrationReadinessIssueCodes.BindingMissingConnectionOrCapability,
                     $"Binding for slot '{slot.SlotName}' has neither a connection nor a capability reference.",
                     slot.SlotName,
                     binding.Id.Value,
-                    ConnectionId: null));
+                    null));
             }
         }
 
@@ -248,21 +248,24 @@ public sealed class IntegrationReadinessService : IIntegrationReadinessService
         {
             if (s.IntegrationId != integration.Id)
             {
-                issues.Add(new IntegrationReadinessIssue(
+                issues.Add(NewBlockingIssue(
                     IntegrationReadinessIssueCodes.ScheduleOwnershipMismatch,
                     $"Schedule '{s.Name}' ({s.Id.Value}) is not correctly associated with this integration in persisted data.",
-                    SlotName: null,
-                    BindingId: null,
-                    ConnectionId: null));
+                    null,
+                    null,
+                    null));
             }
         }
 
-        var runnable = integration.State == IntegrationState.Active
-            && !issues.Any(i => string.Equals(i.Severity, IntegrationReadinessIssueSeverity.Blocking.ToString(), StringComparison.Ordinal));
+        var blockingIssueCount = issues.Count(i => string.Equals(i.Severity, IntegrationReadinessIssueSeverity.Blocking.ToString(), StringComparison.Ordinal));
+        var advisoryIssueCount = issues.Count(i => string.Equals(i.Severity, IntegrationReadinessIssueSeverity.Advisory.ToString(), StringComparison.Ordinal));
+        var runnable = integration.State == IntegrationState.Active && blockingIssueCount == 0;
         return new IntegrationReadinessProjection(
             integration.Id.Value,
             integration.ModuleId,
             runnable,
+            blockingIssueCount,
+            advisoryIssueCount,
             issues);
     }
 
@@ -302,4 +305,12 @@ public sealed class IntegrationReadinessService : IIntegrationReadinessService
         if (issue is not null)
             issues.Add(issue);
     }
+
+    private static IntegrationReadinessIssue NewBlockingIssue(
+        string code,
+        string message,
+        string? slotName,
+        string? bindingId,
+        string? connectionId) =>
+        new(code, message, slotName, bindingId, connectionId, IntegrationReadinessIssueSeverity.Blocking.ToString());
 }

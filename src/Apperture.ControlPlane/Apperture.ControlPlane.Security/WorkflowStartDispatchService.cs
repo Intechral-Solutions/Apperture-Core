@@ -47,6 +47,8 @@ public sealed class WorkflowStartDispatchService : IWorkflowStartDispatchService
                 throw new InvalidOperationException($"Integration '{request.IntegrationId}' was not found.");
             if (!string.Equals(integ.ModuleId, definition.ModuleId, StringComparison.Ordinal))
                 throw new InvalidOperationException("The integration's module does not match this workflow's module.");
+            if (integ.State != (int)Core.Domain.Integration.IntegrationState.Active)
+                throw new InvalidOperationException($"Integration '{request.IntegrationId}' is not active.");
         }
 
         if (!string.IsNullOrWhiteSpace(request.IdempotencyKey))

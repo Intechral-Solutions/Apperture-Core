@@ -152,6 +152,48 @@ public sealed class IntegrationsController : ControllerBase
     }
 
     /// <summary>
+    /// Activates an integration for operational execution.
+    /// </summary>
+    [HttpPost("{id}/activate")]
+    public async Task<ActionResult<IntegrationDto>> Activate(string id, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var integration = await _integrationService.ActivateIntegrationAsync(new IntegrationId(id), cancellationToken);
+            return Ok(ToDto(integration));
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return Forbid();
+        }
+        catch (InvalidOperationException ex)
+        {
+            return NotFound(new { error = ex.Message });
+        }
+    }
+
+    /// <summary>
+    /// Deactivates an integration while preserving configuration.
+    /// </summary>
+    [HttpPost("{id}/deactivate")]
+    public async Task<ActionResult<IntegrationDto>> Deactivate(string id, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var integration = await _integrationService.DeactivateIntegrationAsync(new IntegrationId(id), cancellationToken);
+            return Ok(ToDto(integration));
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return Forbid();
+        }
+        catch (InvalidOperationException ex)
+        {
+            return NotFound(new { error = ex.Message });
+        }
+    }
+
+    /// <summary>
     /// Deletes an integration.
     /// </summary>
     [HttpDelete("{id}")]

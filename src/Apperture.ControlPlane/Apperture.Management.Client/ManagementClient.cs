@@ -388,6 +388,22 @@ public sealed class ManagementClient : IManagementClient
         response.EnsureSuccessStatusCode();
     }
 
+    public async Task<IntegrationDto> ActivateIntegrationAsync(string id, CancellationToken cancellationToken = default)
+    {
+        var response = await _http.PostAsync($"integrations/{Uri.EscapeDataString(id)}/activate", content: null, cancellationToken).ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+        var result = await response.Content.ReadFromJsonAsync<IntegrationDto>(ApiJsonReadOptions, cancellationToken).ConfigureAwait(false);
+        return result ?? throw new InvalidOperationException("Unexpected null response from ActivateIntegration.");
+    }
+
+    public async Task<IntegrationDto> DeactivateIntegrationAsync(string id, CancellationToken cancellationToken = default)
+    {
+        var response = await _http.PostAsync($"integrations/{Uri.EscapeDataString(id)}/deactivate", content: null, cancellationToken).ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+        var result = await response.Content.ReadFromJsonAsync<IntegrationDto>(ApiJsonReadOptions, cancellationToken).ConfigureAwait(false);
+        return result ?? throw new InvalidOperationException("Unexpected null response from DeactivateIntegration.");
+    }
+
     public async Task<IReadOnlyList<IntegrationBindingDto>> GetIntegrationBindingsAsync(string integrationId, CancellationToken cancellationToken = default)
     {
         var list = await _http.GetFromJsonAsync<IntegrationBindingDto[]>(

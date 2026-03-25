@@ -13,6 +13,8 @@ public sealed record IntegrationReadinessDto(
     string IntegrationId,
     string ModuleId,
     bool IsRunnable,
+    int BlockingIssueCount,
+    int AdvisoryIssueCount,
     IntegrationReadinessIssueDto[] Issues);
 
 public sealed record IntegrationModuleSlotSummaryDto(string SlotName, string ContractType);
