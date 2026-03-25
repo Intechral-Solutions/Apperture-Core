@@ -106,6 +106,40 @@ public sealed class ManagementHostGovernanceHttpTests
     }
 
     [Fact]
+    public async Task Get_integration_procedures_without_auth_returns_401()
+    {
+        AssertSqlAvailable();
+        var client = _fixture.CreateClient();
+        var response = await client.GetAsync($"/api/integrations/{ManagementGovernanceTestConstants.SeededIntegrationId}/procedures");
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [Fact]
+    public async Task Get_integration_procedures_with_integration_read_returns_200_with_shape()
+    {
+        AssertSqlAvailable();
+        using var client = _fixture.CreateAuthenticatedClient(ManagementGovernanceTestConstants.ExternalIntegrationReader);
+        var readinessResponse = await client.GetAsync(
+            $"/api/integrations/{ManagementGovernanceTestConstants.SeededIntegrationId}/readiness");
+        readinessResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var readinessJson = await readinessResponse.Content.ReadAsStringAsync();
+        using var readinessDoc = JsonDocument.Parse(readinessJson);
+        var isRunnable = readinessDoc.RootElement.GetProperty("isRunnable").GetBoolean();
+
+        var response = await client.GetAsync($"/api/integrations/{ManagementGovernanceTestConstants.SeededIntegrationId}/procedures");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var json = await response.Content.ReadAsStringAsync();
+        using var doc = JsonDocument.Parse(json);
+        var root = doc.RootElement;
+        root.TryGetProperty("integrationReady", out var ready).Should().BeTrue();
+        ready.GetBoolean().Should().Be(isRunnable);
+        var procedures = root.GetProperty("procedures");
+        procedures.ValueKind.Should().Be(JsonValueKind.Array);
+        if (!isRunnable)
+            procedures.GetArrayLength().Should().Be(0);
+    }
+
+    [Fact]
     public async Task Get_integration_readiness_with_integration_read_returns_200_with_shape()
     {
         AssertSqlAvailable();

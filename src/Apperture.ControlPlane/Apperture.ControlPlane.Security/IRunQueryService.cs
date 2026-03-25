@@ -26,7 +26,9 @@ public sealed record RunSummaryDto(
     DateTimeOffset? CompletedAt,
     string? CorrelationKey,
     string? RetryOfRunId,
-    string ExecutionKind = "workflow");
+    string ExecutionKind = "workflow",
+    string? IntegrationId = null,
+    string? ProcedureId = null);
 
 /// <summary>
 /// Operator hint for cross-navigation from run forensics. Epic 35.
@@ -84,7 +86,9 @@ public sealed record RunDetailDto(
     string? StartClaimedBy,
     DateTimeOffset? StartClaimedAt,
     string ExecutionKind = "workflow",
-    RunForensicContextDto? ForensicContext = null);
+    RunForensicContextDto? ForensicContext = null,
+    string? IntegrationId = null,
+    string? ProcedureId = null);
 
 /// <summary>
 /// Terminal run result projection for <c>GET /runs/{id}</c>. <see cref="Outcome"/> is derived from lifecycle status.

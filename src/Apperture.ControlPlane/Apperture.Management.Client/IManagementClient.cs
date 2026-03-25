@@ -114,6 +114,27 @@ public interface IManagementClient
     Task<IntegrationOperatorDetailDto?> GetIntegrationOperatorDetailAsync(string id, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Lists module procedures available for an integration when readiness allows (ADR-0029).
+    /// </summary>
+    Task<IntegrationProcedureListDto?> GetIntegrationProceduresAsync(string integrationId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Procedure definition for form rendering (ADR-0029).
+    /// </summary>
+    Task<IntegrationProcedureDetailDto?> GetIntegrationProcedureAsync(string integrationId, string procedureId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Launches a procedure; returns null when the integration or procedure is not found (404).
+    /// </summary>
+    Task<IntegrationProcedureLaunchResultDto?> LaunchIntegrationProcedureAsync(
+        string integrationId,
+        string procedureId,
+        IReadOnlyDictionary<string, object?>? parameters,
+        string? idempotencyKey,
+        string? correlationId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Creates an integration. Epic 49.
     /// </summary>
     Task<IntegrationDto> CreateIntegrationAsync(CreateIntegrationRequest request, CancellationToken cancellationToken = default);
@@ -488,7 +509,9 @@ public sealed record RunSummaryDto(
     DateTimeOffset? CompletedAt,
     string? CorrelationKey,
     string? RetryOfRunId,
-    string ExecutionKind = "workflow");
+    string ExecutionKind = "workflow",
+    string? IntegrationId = null,
+    string? ProcedureId = null);
 
 public sealed record RunQueryFilter(
     string? ExecutionKind = null,
@@ -536,7 +559,9 @@ public sealed record RunDetailDto(
     string? StartClaimedBy,
     DateTimeOffset? StartClaimedAt,
     string ExecutionKind = "workflow",
-    RunForensicContextDto? ForensicContext = null);
+    RunForensicContextDto? ForensicContext = null,
+    string? IntegrationId = null,
+    string? ProcedureId = null);
 
 public sealed record RunResultDto(
     string Outcome,

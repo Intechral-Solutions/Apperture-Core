@@ -2,6 +2,7 @@ using Apperture.ModuleSdk.Abstractions;
 using Apperture.RuntimePlane.Abstractions;
 using Apperture.Core.Domain.Governance;
 using Apperture.Core.Domain.Operations;
+using Apperture.Core.Domain.Procedures;
 using Apperture.Shared.Kernel;
 using Apperture.Core.Application.Execution;
 
@@ -21,6 +22,17 @@ public sealed class HelloWorldModule : IModule, IModuleStepHandlerRegistrar, IOp
             ,
             // Allow operation execution for this module's operations.
             new ModulePermissionDeclaration(ActionConstants.OperationExecute, ResourceTypeConstants.OperationDefinition)
+        ],
+        Procedures =
+        [
+            new ModuleProcedureDeclaration(
+                "Sample.HelloWorld.procedures.greet",
+                "Greet",
+                "Runs HelloWorld with a name shown in operator output.",
+                Category: "Demo",
+                ProcedureLaunchKind.Workflow,
+                DefinitionId.Value,
+                """{"fields":[{"key":"name","type":"string","required":true,"label":"Name","help":"Shown in the DoWork step output."}]}""")
         ]
     };
 

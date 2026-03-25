@@ -166,7 +166,9 @@ public sealed class OperationsController : ControllerBase
             operationDefinitionId,
             parameters,
             body?.IdempotencyKey,
-            body?.CorrelationId);
+            body?.CorrelationId,
+            body?.IntegrationId,
+            body?.ProcedureId);
 
         var dispatchResult = await _dispatch.StartAsync(request, cancellationToken);
         if (dispatchResult is null)

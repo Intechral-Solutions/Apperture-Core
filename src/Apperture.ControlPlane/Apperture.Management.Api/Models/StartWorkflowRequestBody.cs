@@ -16,4 +16,7 @@ public sealed class StartWorkflowRequestBody
 
     /// <summary>Optional integration id when starting in the context of a deployment (Epic 54); must match the workflow's module.</summary>
     public string? IntegrationId { get; init; }
+
+    /// <summary>Optional module procedure id when launched via the procedures API (ADR-0029).</summary>
+    public string? ProcedureId { get; init; }
 }

@@ -60,6 +60,7 @@ public class AppertureDbContext : DbContext
             e.Property(x => x.Status).HasMaxLength(32);
             e.Property(x => x.CorrelationKey).HasMaxLength(256);
             e.Property(x => x.IntegrationId).HasMaxLength(64);
+            e.Property(x => x.ProcedureId).HasMaxLength(128);
             e.Property(x => x.CurrentStepName).HasMaxLength(128);
             e.Property<byte[]>("RowVersion").IsRowVersion();
         });
@@ -84,6 +85,7 @@ public class AppertureDbContext : DbContext
             e.Property(x => x.CorrelationKey).HasMaxLength(256);
             e.Property(x => x.RetryOfRunId).HasMaxLength(64);
             e.Property(x => x.IntegrationId).HasMaxLength(64);
+            e.Property(x => x.ProcedureId).HasMaxLength(128);
             e.Property(x => x.CapturedOutputJson).HasColumnType("nvarchar(max)");
             e.Property(x => x.CapturedOutputSummary).HasMaxLength(512);
             e.Property(x => x.CapturedOutputStatus).HasMaxLength(32);
@@ -123,6 +125,7 @@ public class AppertureDbContext : DbContext
             e.Property(x => x.IdempotencyKey).HasMaxLength(128);
             e.Property(x => x.CorrelationId).HasMaxLength(128);
             e.Property(x => x.IntegrationId).HasMaxLength(64);
+            e.Property(x => x.ProcedureId).HasMaxLength(128);
             e.Property(x => x.ParametersJson).HasColumnType("nvarchar(max)");
             e.Property(x => x.Status).HasMaxLength(32);
             e.Property(x => x.ClaimedBy).HasMaxLength(128);
@@ -181,6 +184,8 @@ public class AppertureDbContext : DbContext
             e.Property(x => x.OperationDefinitionId).HasMaxLength(128);
             e.Property(x => x.IdempotencyKey).HasMaxLength(128);
             e.Property(x => x.CorrelationId).HasMaxLength(128);
+            e.Property(x => x.IntegrationId).HasMaxLength(64);
+            e.Property(x => x.ProcedureId).HasMaxLength(128);
             e.Property(x => x.ParametersJson).HasColumnType("nvarchar(max)");
             e.Property(x => x.Status).HasMaxLength(32);
             e.Property(x => x.ClaimedBy).HasMaxLength(128);

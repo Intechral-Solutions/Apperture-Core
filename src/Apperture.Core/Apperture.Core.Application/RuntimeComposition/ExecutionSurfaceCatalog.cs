@@ -9,6 +9,7 @@ public static class ExecutionSurfaceCatalog
     [
         "WorkflowDefinitionResolver",
         "OperationRegistryService",
+        "ProcedureRegistryService",
         "WorkflowStartDispatchService",
         "OperationStartDispatchService",
         "WorkflowStartRequestProcessor.definition_resolution",

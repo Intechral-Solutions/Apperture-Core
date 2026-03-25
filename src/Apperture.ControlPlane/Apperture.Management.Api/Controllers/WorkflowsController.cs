@@ -53,7 +53,8 @@ public sealed class WorkflowsController : ControllerBase
             body?.IdempotencyKey,
             body?.CorrelationId,
             RetryOfRunId: null,
-            IntegrationId: body?.IntegrationId);
+            IntegrationId: body?.IntegrationId,
+            ProcedureId: body?.ProcedureId);
 
         WorkflowStartDispatchResult? dispatchResult;
         try

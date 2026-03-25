@@ -30,7 +30,18 @@ public sealed class HelloWorldDoWorkStepHandler : IStepHandler
                     return OperatorExecutionResult.SuccessWithheld();
                 }
 
-                return OperatorExecutionResult.SuccessInline(new { message = "HelloWorld operation completed.", step = "DoWork" });
+                parameters.TryGetValue("name", out var nameObj);
+                var name = nameObj as string;
+                if (string.IsNullOrWhiteSpace(name))
+                    name = null;
+
+                return OperatorExecutionResult.SuccessInline(new
+                {
+                    message = string.IsNullOrWhiteSpace(name)
+                        ? "HelloWorld operation completed."
+                        : $"Hello, {name}!",
+                    step = "DoWork"
+                });
             }
             finally
             {

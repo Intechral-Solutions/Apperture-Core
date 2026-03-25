@@ -83,6 +83,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IWorkflowDefinitionResolver, Apperture.ModuleSdk.Abstractions.WorkflowDefinitionResolver>();
         services.AddScoped<IExecutablePermissionEvaluator, ExecutablePermissionEvaluator>();
         services.AddSingleton<IOperationRegistryService, OperationRegistryService>();
+        services.AddSingleton<IProcedureRegistryService, ProcedureRegistryService>();
         services.AddScoped<IWorkflowPersistence, SqlWorkflowPersistence>();
         services.AddScoped<IWorkflowStartDispatchService, WorkflowStartDispatchService>();
         services.AddScoped<IWorkflowRunReadAuthorizationService, WorkflowRunReadAuthorizationService>();

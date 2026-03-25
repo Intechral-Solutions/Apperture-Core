@@ -87,6 +87,7 @@ builder.Services.AddSingleton<IEnumerable<IModule>>(sp => new IModule[]
 
 builder.Services.AddSingleton<IWorkflowDefinitionResolver, WorkflowDefinitionResolver>();
 builder.Services.AddSingleton<IOperationRegistryService, OperationRegistryService>();
+builder.Services.AddSingleton<IProcedureRegistryService, ProcedureRegistryService>();
 
 // Step execution: registry populated by modules (no demo-only hard-coding).
 // Restart-bound: handlers for all DI modules are registered here; new work for disabled modules is still blocked at definition resolution (Epic 27 — Epic27-Execution-Surface-Inventory.md).

@@ -1,0 +1,144 @@
+@using System.Text.Json
+@using Apperture.Management.Client
+
+@if (Fields is { Count: > 0 })
+{
+    <div class="mt-2 space-y-3">
+        @foreach (var f in Fields)
+        {
+            <div>
+                <label class="text-xs text-muted">@(string.IsNullOrEmpty(f.Label) ? f.Key : f.Label)@(f.Required ? " *" : "")</label>
+                @if (!string.IsNullOrEmpty(f.Help))
+                {
+                    <div class="text-xs text-muted mb-1">@f.Help</div>
+                }
+                @if (f.AllowedValues is { Count: > 0 })
+                {
+                    <select class="mt-1 w-full rounded border border-default bg-surface px-2 py-2 text-sm"
+                            value="@GetStringValue(f.Key)"
+                            @onchange="e => SetValue(f.Key, string.IsNullOrEmpty(e.Value?.ToString()) ? null : e.Value?.ToString())">
+                        <option value="">@(f.Required ? "(select)" : "(optional)")</option>
+                        @foreach (var opt in f.AllowedValues)
+                        {
+                            <option value="@opt">@opt</option>
+                        }
+                    </select>
+                }
+                else if (string.Equals(f.Type, "bool", StringComparison.OrdinalIgnoreCase))
+                {
+                    <input type="checkbox" class="mt-1 h-4 w-4 rounded border border-default"
+                           checked="@GetBool(f.Key)"
+                           @onchange="e => SetBool(f.Key, e.Value is bool bb ? bb : string.Equals(e.Value?.ToString(), "true", StringComparison.OrdinalIgnoreCase))" />
+                }
+                else if (string.Equals(f.Type, "int", StringComparison.OrdinalIgnoreCase) || string.Equals(f.Type, "decimal", StringComparison.OrdinalIgnoreCase))
+                {
+                    <input type="number" step="@(string.Equals(f.Type, "int", StringComparison.OrdinalIgnoreCase) ? "1" : "any")"
+                           class="mt-1 w-full rounded border border-default bg-surface px-2 py-2 text-sm font-mono"
+                           value="@GetNumericString(f)"
+                           @onchange="e => OnNumericChange(f, e.Value?.ToString())" />
+                }
+                else
+                {
+                    <input type="text" class="mt-1 w-full rounded border border-default bg-surface px-2 py-2 text-sm font-mono"
+                           value="@GetStringValue(f.Key)"
+                           @oninput="e => SetValue(f.Key, e.Value?.ToString())" />
+                }
+            </div>
+        }
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired]
+    public IReadOnlyList<IntegrationProcedureParameterFieldDto> Fields { get; set; } = Array.Empty<IntegrationProcedureParameterFieldDto>();
+
+    [Parameter, EditorRequired]
+    public Dictionary<string, object?> Values { get; set; } = new(StringComparer.Ordinal);
+
+    private string? GetStringValue(string key) =>
+        Values.TryGetValue(key, out var v) ? v?.ToString() : null;
+
+    private string? GetNumericString(IntegrationProcedureParameterFieldDto f) => GetNumericStringForKey(f.Key, f.Type);
+
+    private string? GetNumericStringForKey(string key, string type)
+    {
+        if (!Values.TryGetValue(key, out var v) || v is null)
+            return null;
+        return v switch
+        {
+            int i => i.ToString(),
+            long l => l.ToString(),
+            decimal d => d.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            double db => db.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            float fl => fl.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            _ => v.ToString()
+        };
+    }
+
+    private void OnNumericChange(IntegrationProcedureParameterFieldDto f, string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            Values.Remove(f.Key);
+            return;
+        }
+
+        if (string.Equals(f.Type, "int", StringComparison.OrdinalIgnoreCase) && int.TryParse(text, out var i))
+            Values[f.Key] = i;
+        else if (decimal.TryParse(text, System.Globalization.CultureInfo.InvariantCulture, out var d))
+            Values[f.Key] = d;
+        else
+            Values[f.Key] = text;
+    }
+
+    private void SetValue(string key, object? value)
+    {
+        if (value is null)
+            Values.Remove(key);
+        else
+            Values[key] = value;
+    }
+
+    private bool GetBool(string key) =>
+        Values.TryGetValue(key, out var v) && v is true;
+
+    private void SetBool(string key, bool value) => Values[key] = value;
+
+    /// <summary>Populate <paramref name="target"/> from field defaults.</summary>
+    public static void SeedValues(IReadOnlyList<IntegrationProcedureParameterFieldDto> fields, Dictionary<string, object?> target)
+    {
+        target.Clear();
+        foreach (var f in fields)
+        {
+            if (string.IsNullOrEmpty(f.DefaultJson))
+                continue;
+            try
+            {
+                using var doc = JsonDocument.Parse(f.DefaultJson);
+                var el = doc.RootElement;
+                switch (f.Type.ToLowerInvariant())
+                {
+                    case "bool" when el.ValueKind is JsonValueKind.True or JsonValueKind.False:
+                        target[f.Key] = el.GetBoolean();
+                        break;
+                    case "int" when el.TryGetInt32(out var i):
+                        target[f.Key] = i;
+                        break;
+                    case "decimal" when el.TryGetDecimal(out var d):
+                        target[f.Key] = d;
+                        break;
+                    case "string":
+                    case "enum":
+                    case "json":
+                    case "datetime" when el.ValueKind == JsonValueKind.String:
+                        target[f.Key] = el.GetString();
+                        break;
+                }
+            }
+            catch (JsonException)
+            {
+                // ignore bad defaults
+            }
+        }
+    }
+}

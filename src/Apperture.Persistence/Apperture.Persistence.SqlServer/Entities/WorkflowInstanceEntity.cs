@@ -12,6 +12,9 @@ public sealed class WorkflowInstanceEntity
     /// <summary>Integration that launched this workflow, when known (Epic 54).</summary>
     public string? IntegrationId { get; set; }
 
+    /// <summary>Module procedure that launched this instance, when known (ADR-0029).</summary>
+    public string? ProcedureId { get; set; }
+
     /// <summary>
     /// When status is <c>running</c>: the workflow step currently executing (or about to execute after the last boundary).
     /// When status is <c>parked</c>: the next step to run after resume (resume pointer); that step has not executed yet in this parked segment.

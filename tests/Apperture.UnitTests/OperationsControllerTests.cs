@@ -172,6 +172,8 @@ public sealed class OperationsControllerTests
                 Array.Empty<RunControlRequestDto>(),
                 null, null, null, null, null, null,
                 "workflow",
+                null,
+                null,
                 null)),
             StubPrincipal());
 
@@ -196,6 +198,8 @@ public sealed class OperationsControllerTests
                 Array.Empty<RunControlRequestDto>(),
                 null, null, null, null, null, null,
                 "operation",
+                null,
+                null,
                 null)),
             StubPrincipal());
 

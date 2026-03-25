@@ -15,4 +15,6 @@ public sealed record StartWorkflowRequest(
     string? CorrelationId,
     string? RetryOfRunId = null,
     /// <summary>Optional integration this run belongs to (Epic 54); used for slot resolution and operator lineage.</summary>
-    string? IntegrationId = null);
+    string? IntegrationId = null,
+    /// <summary>Optional module procedure that launched this run (ADR-0029).</summary>
+    string? ProcedureId = null);

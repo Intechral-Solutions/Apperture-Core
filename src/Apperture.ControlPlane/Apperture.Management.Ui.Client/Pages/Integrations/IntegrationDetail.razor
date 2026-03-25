@@ -116,6 +116,62 @@
                 </div>
             }
 
+            <div class="rounded border border-default bg-surface p-3">
+                <h2 class="text-sm font-semibold text-heading mb-2">Procedures</h2>
+                <div class="text-xs text-muted mb-2">Module-declared actions for this integration when it is runnable (ADR-0029).</div>
+                @if (_procedureLoading)
+                {
+                    <div class="text-sm text-muted">Loading procedures…</div>
+                }
+                else if (!string.IsNullOrEmpty(_procedureError))
+                {
+                    <div class="text-sm text-body">@_procedureError</div>
+                }
+                else if (_procedureList is null)
+                {
+                    <div class="text-sm text-muted">No procedure data.</div>
+                }
+                else if (!_procedureList.IntegrationReady)
+                {
+                    <div class="text-sm text-body">Procedures are hidden until the integration is runnable. Fix readiness issues above.</div>
+                }
+                else if (_procedureList.Procedures.Count == 0)
+                {
+                    <div class="text-sm text-muted">This module has no procedures for this integration.</div>
+                }
+                else
+                {
+                    <div class="flex flex-wrap gap-2 mb-3">
+                        @foreach (var p in _procedureList.Procedures)
+                        {
+                            <button type="button"
+                                    class="rounded px-2 py-1 text-xs font-mono @(string.Equals(_selectedProcedureId, p.Id, StringComparison.Ordinal) ? "bg-body text-surface" : "bg-surface-muted text-body hover:bg-surface")"
+                                    @onclick="() => SelectProcedureAsync(p.Id)">
+                                @p.DisplayName
+                            </button>
+                        }
+                    </div>
+                    @if (_selectedProcedureDetail is not null)
+                    {
+                        <div class="rounded border border-default bg-surface-muted/30 p-3">
+                            <div class="text-sm font-semibold text-heading">@_selectedProcedureDetail.DisplayName</div>
+                            @if (!string.IsNullOrEmpty(_selectedProcedureDetail.Description))
+                            {
+                                <div class="text-xs text-muted mt-1">@_selectedProcedureDetail.Description</div>
+                            }
+                            <div class="text-xs text-muted mt-1 font-mono">@_selectedProcedureDetail.Id · @_selectedProcedureDetail.LaunchKind → @_selectedProcedureDetail.TargetDefinitionId</div>
+                            <ProcedureParameterForm Fields="@_selectedProcedureDetail.ParameterFields" Values="@_procedureParamValues" />
+                            <button type="button"
+                                    class="mt-3 rounded bg-body px-3 py-2 text-sm text-surface hover:bg-body/90 disabled:opacity-50"
+                                    disabled="@_procedureLaunching"
+                                    @onclick="LaunchSelectedProcedureAsync">
+                                Launch
+                            </button>
+                        </div>
+                    }
+                }
+            </div>
+
             @if (_requiredSlots is { Length: > 0 })
             {
                 <div class="rounded border border-default bg-surface p-3">
@@ -363,6 +419,14 @@
     private string _scheduleWorkflowId = "";
     private bool _scheduleSaving;
 
+    private bool _procedureLoading;
+    private string? _procedureError;
+    private IntegrationProcedureListDto? _procedureList;
+    private string? _selectedProcedureId;
+    private IntegrationProcedureDetailDto? _selectedProcedureDetail;
+    private readonly Dictionary<string, object?> _procedureParamValues = new(StringComparer.Ordinal);
+    private bool _procedureLaunching;
+
     protected override async Task OnInitializedAsync()
     {
         try
@@ -394,6 +458,11 @@
                 _schedules = null;
                 _readiness = null;
                 _requiredSlots = null;
+                _procedureList = null;
+                _procedureError = null;
+                _selectedProcedureId = null;
+                _selectedProcedureDetail = null;
+                _procedureParamValues.Clear();
             }
             else
             {
@@ -427,6 +496,25 @@
                     null,
                     1,
                     s.IntegrationId)).ToList();
+
+                _procedureError = null;
+                _procedureList = null;
+                _selectedProcedureId = null;
+                _selectedProcedureDetail = null;
+                _procedureParamValues.Clear();
+                _procedureLoading = true;
+                try
+                {
+                    _procedureList = await Client.GetIntegrationProceduresAsync(IntegrationId);
+                }
+                catch (HttpRequestException ex)
+                {
+                    _procedureError = ex.Message;
+                }
+                finally
+                {
+                    _procedureLoading = false;
+                }
             }
         }
         catch (HttpRequestException ex)
@@ -436,6 +524,57 @@
         finally
         {
             _loading = false;
+        }
+    }
+
+    private async Task SelectProcedureAsync(string procedureId)
+    {
+        _selectedProcedureId = procedureId;
+        _selectedProcedureDetail = null;
+        _procedureParamValues.Clear();
+        _procedureError = null;
+        try
+        {
+            _selectedProcedureDetail = await Client.GetIntegrationProcedureAsync(IntegrationId, procedureId);
+            if (_selectedProcedureDetail is not null)
+                ProcedureParameterForm.SeedValues(_selectedProcedureDetail.ParameterFields, _procedureParamValues);
+        }
+        catch (HttpRequestException ex)
+        {
+            _procedureError = ex.Message;
+        }
+    }
+
+    private async Task LaunchSelectedProcedureAsync()
+    {
+        if (string.IsNullOrEmpty(_selectedProcedureId) || _selectedProcedureDetail is null)
+            return;
+        _procedureLaunching = true;
+        _procedureError = null;
+        try
+        {
+            var result = await Client.LaunchIntegrationProcedureAsync(
+                IntegrationId,
+                _selectedProcedureId,
+                _procedureParamValues,
+                null,
+                null);
+            if (result is null)
+            {
+                Toasts.Show(ToastSeverity.Error, "Launch failed: not found.");
+                return;
+            }
+
+            Toasts.Show(ToastSeverity.Success, "Run requested.");
+            Nav.NavigateTo($"/runs/{result.RunId}");
+        }
+        catch (HttpRequestException ex)
+        {
+            Toasts.Show(ToastSeverity.Error, ex.Message);
+        }
+        finally
+        {
+            _procedureLaunching = false;
         }
     }
 

@@ -63,7 +63,8 @@ public sealed class WorkflowRetryService : IWorkflowRetryService
                 null,
                 sourceRequest.CorrelationId,
                 runId.Value,
-                sourceRequest.IntegrationId),
+                sourceRequest.IntegrationId,
+                sourceRequest.ProcedureId),
             cancellationToken);
 
         if (dispatchResult is null)

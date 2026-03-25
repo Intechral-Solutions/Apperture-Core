@@ -40,6 +40,16 @@ public sealed class OperationStartDispatchService : IOperationStartDispatchServi
         if (definition is null)
             return null;
 
+        if (!string.IsNullOrWhiteSpace(request.IntegrationId))
+        {
+            var integ = await _db.Integrations.AsNoTracking()
+                .FirstOrDefaultAsync(x => x.Id == request.IntegrationId, cancellationToken);
+            if (integ is null)
+                throw new InvalidOperationException($"Integration '{request.IntegrationId}' was not found.");
+            if (!string.Equals(integ.ModuleId, definition.ModuleId, StringComparison.Ordinal))
+                throw new InvalidOperationException("The integration's module does not match this operation's module.");
+        }
+
         if (!string.IsNullOrWhiteSpace(request.IdempotencyKey))
         {
             var existing = await _db.OperationStartRequests.AsNoTracking()
@@ -90,7 +100,9 @@ public sealed class OperationStartDispatchService : IOperationStartDispatchServi
                     CreatedAt = now,
                     CompletedAt = null,
                     CorrelationKey = request.CorrelationId,
-                    RetryOfRunId = null
+                    RetryOfRunId = null,
+                    IntegrationId = request.IntegrationId,
+                    ProcedureId = request.ProcedureId
                 });
 
                 _db.OperationStartRequests.Add(new OperationStartRequestEntity
@@ -101,6 +113,8 @@ public sealed class OperationStartDispatchService : IOperationStartDispatchServi
                     ParametersJson = SerializeParameters(request.Parameters),
                     IdempotencyKey = request.IdempotencyKey,
                     CorrelationId = request.CorrelationId,
+                    IntegrationId = request.IntegrationId,
+                    ProcedureId = request.ProcedureId,
                     CreatedAt = now,
                     Status = WorkflowLifecycleStatusNames.Requested,
                     ClaimedAt = null,

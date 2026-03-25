@@ -13,5 +13,9 @@ public sealed record StartOperationRequest(
     string OperationDefinitionId,
     IReadOnlyDictionary<string, object?>? Parameters,
     string? IdempotencyKey,
-    string? CorrelationId);
+    string? CorrelationId,
+    /// <summary>Optional integration this run belongs to (parity with workflows; ADR-0029).</summary>
+    string? IntegrationId = null,
+    /// <summary>Optional module procedure that launched this run (ADR-0029).</summary>
+    string? ProcedureId = null);
 

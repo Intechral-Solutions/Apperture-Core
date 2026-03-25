@@ -82,7 +82,9 @@ public sealed class RunQueryService : IRunQueryService
                         r.CompletedAt,
                         r.CorrelationKey,
                         r.RetryOfRunId,
-                        RunKindNames.Workflow));
+                        RunKindNames.Workflow,
+                        r.IntegrationId,
+                        r.ProcedureId));
                     continue;
                 }
 
@@ -220,7 +222,9 @@ public sealed class RunQueryService : IRunQueryService
                 request?.ClaimedBy,
                 request?.ClaimedAt,
                 RunKindNames.Workflow,
-                forensic);
+                forensic,
+                r.IntegrationId,
+                r.ProcedureId);
         }
 
         var operationInstance = await _db.OperationInstances.AsNoTracking()
@@ -299,7 +303,9 @@ public sealed class RunQueryService : IRunQueryService
             opStartRequest?.ClaimedBy,
             opStartRequest?.ClaimedAt,
             RunKindNames.Operation,
-            opForensic);
+            opForensic,
+            r.IntegrationId,
+            r.ProcedureId);
     }
 
     private async ValueTask<RunForensicContextDto> BuildForensicContextAsync(

@@ -88,6 +88,7 @@ public sealed class WorkflowStartDispatchService : IWorkflowStartDispatchService
                     UpdatedAt = now,
                     CorrelationKey = request.CorrelationId,
                     IntegrationId = request.IntegrationId,
+                    ProcedureId = request.ProcedureId,
                     CurrentStepName = null,
                     Version = 0
                 });
@@ -102,7 +103,8 @@ public sealed class WorkflowStartDispatchService : IWorkflowStartDispatchService
                     CompletedAt = null,
                     CorrelationKey = request.CorrelationId,
                     RetryOfRunId = request.RetryOfRunId,
-                    IntegrationId = request.IntegrationId
+                    IntegrationId = request.IntegrationId,
+                    ProcedureId = request.ProcedureId
                 });
 
                 _db.WorkflowStartRequests.Add(new WorkflowStartRequestEntity
@@ -114,6 +116,7 @@ public sealed class WorkflowStartDispatchService : IWorkflowStartDispatchService
                     IdempotencyKey = request.IdempotencyKey,
                     CorrelationId = request.CorrelationId,
                     IntegrationId = request.IntegrationId,
+                    ProcedureId = request.ProcedureId,
                     CreatedAt = now,
                     Status = WorkflowLifecycleStatusNames.Requested,
                     ClaimedAt = null,

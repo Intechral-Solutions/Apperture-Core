@@ -280,6 +280,50 @@ public sealed class ManagementClient : IManagementClient
             cancellationToken).ConfigureAwait(false);
     }
 
+    public async Task<IntegrationProcedureListDto?> GetIntegrationProceduresAsync(string integrationId, CancellationToken cancellationToken = default)
+    {
+        var response = await _http.GetAsync(
+            $"integrations/{Uri.EscapeDataString(integrationId)}/procedures",
+            cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode == HttpStatusCode.NotFound)
+            return null;
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<IntegrationProcedureListDto>(ApiJsonReadOptions, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<IntegrationProcedureDetailDto?> GetIntegrationProcedureAsync(
+        string integrationId,
+        string procedureId,
+        CancellationToken cancellationToken = default)
+    {
+        var response = await _http.GetAsync(
+            $"integrations/{Uri.EscapeDataString(integrationId)}/procedures/{Uri.EscapeDataString(procedureId)}",
+            cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode is HttpStatusCode.NotFound)
+            return null;
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<IntegrationProcedureDetailDto>(ApiJsonReadOptions, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<IntegrationProcedureLaunchResultDto?> LaunchIntegrationProcedureAsync(
+        string integrationId,
+        string procedureId,
+        IReadOnlyDictionary<string, object?>? parameters,
+        string? idempotencyKey,
+        string? correlationId,
+        CancellationToken cancellationToken = default)
+    {
+        var response = await _http.PostAsJsonAsync(
+            $"integrations/{Uri.EscapeDataString(integrationId)}/procedures/{Uri.EscapeDataString(procedureId)}/launch",
+            new { parameters, idempotencyKey, correlationId },
+            ApiJsonReadOptions,
+            cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode == HttpStatusCode.NotFound)
+            return null;
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<IntegrationProcedureLaunchResultDto>(ApiJsonReadOptions, cancellationToken).ConfigureAwait(false);
+    }
+
     public async Task<IntegrationDto> CreateIntegrationAsync(CreateIntegrationRequest request, CancellationToken cancellationToken = default)
     {
         var response = await _http.PostAsJsonAsync("integrations", request, cancellationToken).ConfigureAwait(false);

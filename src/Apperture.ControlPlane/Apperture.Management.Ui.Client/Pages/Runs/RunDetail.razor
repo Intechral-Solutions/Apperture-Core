@@ -243,6 +243,22 @@
                             }
                         </div>
                     </div>
+                    @if (!string.IsNullOrEmpty(_detail.IntegrationId))
+                    {
+                        <div>
+                            <div class="text-xs text-muted">Integration</div>
+                            <div class="text-sm font-mono break-all">
+                                <a class="underline" href="@($"/integrations/{_detail.IntegrationId}")">@_detail.IntegrationId</a>
+                            </div>
+                        </div>
+                    }
+                    @if (!string.IsNullOrEmpty(_detail.ProcedureId))
+                    {
+                        <div>
+                            <div class="text-xs text-muted">Procedure</div>
+                            <div class="text-sm font-mono break-all">@_detail.ProcedureId</div>
+                        </div>
+                    }
                     <div>
                         <div class="text-xs text-muted">@CurrentStepLabel</div>
                         <div class="text-sm font-mono">@_detail.CurrentStepName</div>

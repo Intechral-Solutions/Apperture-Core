@@ -13,5 +13,11 @@ public sealed class StartOperationRequestBody
 
     /// <summary>Optional correlation id.</summary>
     public string? CorrelationId { get; init; }
+
+    /// <summary>Optional integration id; must match the operation's module.</summary>
+    public string? IntegrationId { get; init; }
+
+    /// <summary>Optional module procedure id when launched via the procedures API (ADR-0029).</summary>
+    public string? ProcedureId { get; init; }
 }
 

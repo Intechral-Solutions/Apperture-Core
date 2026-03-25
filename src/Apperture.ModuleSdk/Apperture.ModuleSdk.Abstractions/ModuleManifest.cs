@@ -29,4 +29,9 @@ public sealed record ModuleManifest(string Id, string Name, string Version, stri
     /// Optional documentation of connector definitions associated with this module (not a runtime registry).
     /// </summary>
     public IReadOnlyList<ConnectorDefinitionDeclaration>? ConnectorDefinitions { get; init; }
+
+    /// <summary>
+    /// Optional module-declared operator procedures (integration-scoped launch surface). See ADR-0029.
+    /// </summary>
+    public IReadOnlyList<ModuleProcedureDeclaration>? Procedures { get; init; }
 }

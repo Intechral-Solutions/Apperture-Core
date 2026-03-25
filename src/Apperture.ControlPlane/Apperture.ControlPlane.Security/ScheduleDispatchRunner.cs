@@ -241,7 +241,8 @@ public sealed class ScheduleDispatchRunner : IScheduleDispatchRunner
             operationId.Value,
             Parameters: null,
             IdempotencyKey: $"schedule:{candidate.ScheduleId}:{candidate.FireTimeUtc:O}",
-            CorrelationId: $"schedule:{candidate.ScheduleId}");
+            CorrelationId: $"schedule:{candidate.ScheduleId}",
+            IntegrationId: definition.IntegrationId?.Value);
 
         var result = await _operationDispatch.StartAsync(request, ct);
         if (result is null)
