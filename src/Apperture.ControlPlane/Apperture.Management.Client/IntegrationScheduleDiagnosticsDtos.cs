@@ -26,7 +26,8 @@ public sealed record IntegrationScheduleDiagnosticsDto(
     DateTimeOffset? LastAuthorizedRunAt,
     IReadOnlyList<ExpectedFireDiagnosticDto> RecentExpectedFires,
     IReadOnlyList<AttentionIncidentDto> RecentAttentionIncidents,
-    IReadOnlyList<AttentionIncidentNotificationDto> RecentAttentionIncidentNotifications);
+    IReadOnlyList<AttentionIncidentNotificationDto> RecentAttentionIncidentNotifications,
+    AttentionRoutingEffectiveDto AttentionRouting);
 
 /// <summary>Epic 68: bounded incident history for schedule attention conditions.</summary>
 public sealed record AttentionIncidentDto(
@@ -63,7 +64,11 @@ public sealed record AttentionIncidentNotificationDto(
     DateTimeOffset? FailedAtUtc,
     string? FailureSummary,
     string? ProviderMessageId,
-    string? SubjectSnapshot);
+    string? SubjectSnapshot,
+    string? RecipientResolvedFrom,
+    bool WasEscalation,
+    bool EscalationThresholdApplied,
+    bool SuppressedDueToAcknowledgment);
 
 
 /// <summary>

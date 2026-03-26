@@ -11,4 +11,10 @@ public static class AttentionNotificationSuppressionReasons
     public const string RemindersSuppressedAcknowledged = "reminders_suppressed_acknowledged";
     public const string ResolvedNotificationDisabled = "resolved_notification_disabled";
     public const string NoPriorActivationForResolved = "no_prior_activation_for_resolved";
+    public const string NoRouteConfigured = "no_route_configured";
+    public const string EscalationSuppressedAcknowledged = "escalation_suppressed_acknowledged";
+    public const string EscalationSuppressedNoThreshold = "escalation_suppressed_no_threshold";
+    public const string EscalationAlreadySent = "escalation_already_sent";
+    public const string EscalationNotDue = "escalation_not_due";
 }
+

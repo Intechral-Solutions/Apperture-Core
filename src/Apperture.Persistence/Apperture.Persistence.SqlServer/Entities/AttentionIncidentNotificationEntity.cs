@@ -1,6 +1,5 @@
 namespace Apperture.Persistence.SqlServer;
 
-/// <summary>Epic 69: durable attention incident notification attempt or suppression record.</summary>
 public sealed class AttentionIncidentNotificationEntity
 {
     public string Id { get; set; } = "";
@@ -19,4 +18,8 @@ public sealed class AttentionIncidentNotificationEntity
     public string? FailureSummary { get; set; }
     public string? ProviderMessageId { get; set; }
     public string? SubjectSnapshot { get; set; }
+    public string? RecipientResolvedFrom { get; set; }
+    public bool WasEscalation { get; set; }
+    public bool EscalationThresholdApplied { get; set; }
+    public bool SuppressedDueToAcknowledgment { get; set; }
 }

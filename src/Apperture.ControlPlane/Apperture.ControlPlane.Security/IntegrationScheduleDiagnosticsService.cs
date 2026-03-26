@@ -23,6 +23,7 @@ public sealed class IntegrationScheduleDiagnosticsService : IIntegrationSchedule
     private readonly IRunQueryService _runQuery;
     private readonly IAttentionIncidentTracker _attentionIncidentTracker;
     private readonly IAttentionIncidentNotificationLedger _attentionIncidentNotificationLedger;
+    private readonly IAttentionRecipientResolver _attentionRecipientResolver;
     private readonly TimeProvider _timeProvider;
 
     public IntegrationScheduleDiagnosticsService(
@@ -32,6 +33,7 @@ public sealed class IntegrationScheduleDiagnosticsService : IIntegrationSchedule
         IRunQueryService runQuery,
         IAttentionIncidentTracker attentionIncidentTracker,
         IAttentionIncidentNotificationLedger attentionIncidentNotificationLedger,
+        IAttentionRecipientResolver attentionRecipientResolver,
         TimeProvider timeProvider)
     {
         _integrationManagement = integrationManagement;
@@ -40,6 +42,7 @@ public sealed class IntegrationScheduleDiagnosticsService : IIntegrationSchedule
         _runQuery = runQuery;
         _attentionIncidentTracker = attentionIncidentTracker;
         _attentionIncidentNotificationLedger = attentionIncidentNotificationLedger;
+        _attentionRecipientResolver = attentionRecipientResolver;
         _timeProvider = timeProvider;
     }
 
@@ -196,6 +199,22 @@ public sealed class IntegrationScheduleDiagnosticsService : IIntegrationSchedule
             .ListRecentForIncidentsAsync(incidentIds, RecentAttentionIncidentNotificationsCap, cancellationToken)
             .ConfigureAwait(false);
 
+        var route = await _attentionRecipientResolver
+            .ResolveAsync(integrationId, AttentionConditionKeys.ExpectedRunMissing, cancellationToken)
+            .ConfigureAwait(false);
+        var routingSummary = new AttentionRoutingDiagnosticsSummary(
+            route.HasRoute,
+            route.Enabled,
+            route.PrimaryRecipients,
+            route.PrimarySource,
+            route.EscalationRecipients,
+            route.EscalationSource,
+            route.EscalationAfter,
+            route.ReminderInterval,
+            route.SendResolvedNotification,
+            route.SuppressRemindersWhenAcknowledged,
+            route.SuppressEscalationWhenAcknowledged);
+
         return new IntegrationScheduleDiagnosticsProjection(
             integrationId,
             evaluation.ExpectsRecurringRuns,
@@ -216,7 +235,8 @@ public sealed class IntegrationScheduleDiagnosticsService : IIntegrationSchedule
             lastAuthorizedRunAt,
             recentTimeline,
             incidents,
-            notifications);
+            notifications,
+            routingSummary);
     }
 
     private static ScheduleDefinition? FindReferenceSchedule(

@@ -135,6 +135,23 @@ public interface IManagementClient
     /// <summary>
     /// Epic 68: records operator acknowledgement for an attention incident on the integration.
     /// </summary>
+    /// <summary>
+    /// Epic 70: effective attention routing for an integration condition (default expected_run_missing).
+    /// </summary>
+    Task<AttentionRoutingEffectiveDto?> GetIntegrationAttentionRoutingAsync(
+        string integrationId,
+        string? conditionKey = null,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Epic 70: upsert integration-level attention routing override.
+    /// </summary>
+    Task PutIntegrationAttentionRoutingAsync(
+        string integrationId,
+        UpsertAttentionRoutingRequest body,
+        string? conditionKey = null,
+        CancellationToken cancellationToken = default);
+
     Task<bool> AcknowledgeIntegrationAttentionIncidentAsync(
         string integrationId,
         string incidentId,

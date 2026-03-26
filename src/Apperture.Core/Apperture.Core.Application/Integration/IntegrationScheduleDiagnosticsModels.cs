@@ -4,9 +4,6 @@ using Apperture.Core.Domain.Integration;
 
 namespace Apperture.Core.Application.Integration;
 
-/// <summary>
-/// Epic 67: one expected-fire instance outcome for schedule diagnostics timeline.
-/// </summary>
 public enum ExpectedFireDiagnosticOutcome
 {
     Satisfied,
@@ -14,9 +11,6 @@ public enum ExpectedFireDiagnosticOutcome
     GraceSuppressed
 }
 
-/// <summary>
-/// Epic 67: diagnostics timeline entry (bounded).
-/// </summary>
 public sealed record ExpectedFireDiagnosticEntry(
     DateTimeOffset ExpectedFireUtc,
     ExpectedFireDiagnosticOutcome Outcome,
@@ -24,10 +18,19 @@ public sealed record ExpectedFireDiagnosticEntry(
     DateTimeOffset? SatisfyingScheduleOriginAuthorizedRunAt,
     ScheduleExpectationGraceReason? SuppressedByGraceReason);
 
-/// <summary>
-/// Epic 67: operator-facing schedule diagnostics for an integration.
-/// Epic 69: includes bounded notification evidence for recent incidents.
-/// </summary>
+public sealed record AttentionRoutingDiagnosticsSummary(
+    bool HasRoute,
+    bool Enabled,
+    IReadOnlyList<string> PrimaryRecipients,
+    string PrimarySource,
+    IReadOnlyList<string> EscalationRecipients,
+    string EscalationSource,
+    TimeSpan? EscalationAfter,
+    TimeSpan? ReminderInterval,
+    bool SendResolvedNotification,
+    bool SuppressRemindersWhenAcknowledged,
+    bool SuppressEscalationWhenAcknowledged);
+
 public sealed record IntegrationScheduleDiagnosticsProjection(
     IntegrationId IntegrationId,
     bool HasRecurringScheduleExpectation,
@@ -48,5 +51,5 @@ public sealed record IntegrationScheduleDiagnosticsProjection(
     DateTimeOffset? LastAuthorizedRunAt,
     IReadOnlyList<ExpectedFireDiagnosticEntry> RecentExpectedFires,
     IReadOnlyList<AttentionIncidentProjection> RecentAttentionIncidents,
-    IReadOnlyList<AttentionIncidentNotificationProjection> RecentAttentionIncidentNotifications);
-
+    IReadOnlyList<AttentionIncidentNotificationProjection> RecentAttentionIncidentNotifications,
+    AttentionRoutingDiagnosticsSummary AttentionRouting);

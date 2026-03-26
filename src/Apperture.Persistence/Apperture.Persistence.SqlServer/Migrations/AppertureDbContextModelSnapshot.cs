@@ -113,6 +113,9 @@ namespace Apperture.Persistence.SqlServer.Migrations
                     b.Property<DateTimeOffset>("CreatedAtUtc")
                         .HasColumnType("datetimeoffset");
 
+                    b.Property<bool>("EscalationThresholdApplied")
+                        .HasColumnType("bit");
+
                     b.Property<DateTimeOffset?>("FailedAtUtc")
                         .HasColumnType("datetimeoffset");
 
@@ -139,6 +142,10 @@ namespace Apperture.Persistence.SqlServer.Migrations
                         .HasMaxLength(512)
                         .HasColumnType("nvarchar(512)");
 
+                    b.Property<string>("RecipientResolvedFrom")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
                     b.Property<DateTimeOffset?>("SentAtUtc")
                         .HasColumnType("datetimeoffset");
 
@@ -151,9 +158,15 @@ namespace Apperture.Persistence.SqlServer.Migrations
                         .HasMaxLength(512)
                         .HasColumnType("nvarchar(512)");
 
+                    b.Property<bool>("SuppressedDueToAcknowledgment")
+                        .HasColumnType("bit");
+
                     b.Property<string>("SuppressionReason")
                         .HasMaxLength(256)
                         .HasColumnType("nvarchar(256)");
+
+                    b.Property<bool>("WasEscalation")
+                        .HasColumnType("bit");
 
                     b.HasKey("Id");
 
@@ -162,6 +175,39 @@ namespace Apperture.Persistence.SqlServer.Migrations
                     b.HasIndex("AttentionIncidentId", "NotificationKind");
 
                     b.ToTable("AttentionIncidentNotifications", (string)null);
+                });
+
+            modelBuilder.Entity("Apperture.Persistence.SqlServer.AttentionRoutingRecipientEntity", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("Address")
+                        .IsRequired()
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)");
+
+                    b.Property<string>("InstanceAttentionRoutingId")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("IntegrationAttentionRoutingId")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("Role")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("InstanceAttentionRoutingId");
+
+                    b.HasIndex("IntegrationAttentionRoutingId");
+
+                    b.ToTable("AttentionRoutingRecipients", (string)null);
                 });
 
             modelBuilder.Entity("Apperture.Persistence.SqlServer.AuditLogEntity", b =>
@@ -458,6 +504,42 @@ namespace Apperture.Persistence.SqlServer.Migrations
                     b.ToTable("IdentityLinks", (string)null);
                 });
 
+            modelBuilder.Entity("Apperture.Persistence.SqlServer.InstanceAttentionRoutingEntity", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("ConditionKey")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<long?>("EscalationAfterTicks")
+                        .HasColumnType("bigint");
+
+                    b.Property<bool>("IsEnabled")
+                        .HasColumnType("bit");
+
+                    b.Property<long?>("ReminderIntervalTicks")
+                        .HasColumnType("bigint");
+
+                    b.Property<bool>("SendResolvedNotification")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("SuppressEscalationWhenAcknowledged")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("SuppressRemindersWhenAcknowledged")
+                        .HasColumnType("bit");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ConditionKey");
+
+                    b.ToTable("InstanceAttentionRoutings", (string)null);
+                });
+
             modelBuilder.Entity("Apperture.Persistence.SqlServer.InstanceAuthUiPolicyEntity", b =>
                 {
                     b.Property<string>("Id")
@@ -482,6 +564,48 @@ namespace Apperture.Persistence.SqlServer.Migrations
                     b.HasKey("Id");
 
                     b.ToTable("InstanceAuthUiPolicies", (string)null);
+                });
+
+            modelBuilder.Entity("Apperture.Persistence.SqlServer.IntegrationAttentionRoutingEntity", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("ConditionKey")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<long?>("EscalationAfterTicks")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("IntegrationId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<bool>("IsEnabled")
+                        .HasColumnType("bit");
+
+                    b.Property<long?>("ReminderIntervalTicks")
+                        .HasColumnType("bigint");
+
+                    b.Property<bool>("SendResolvedNotification")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("SuppressEscalationWhenAcknowledged")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("SuppressRemindersWhenAcknowledged")
+                        .HasColumnType("bit");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("IntegrationId", "ConditionKey")
+                        .IsUnique();
+
+                    b.ToTable("IntegrationAttentionRoutings", (string)null);
                 });
 
             modelBuilder.Entity("Apperture.Persistence.SqlServer.IntegrationEntity", b =>

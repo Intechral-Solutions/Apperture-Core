@@ -339,6 +339,39 @@ public sealed class ManagementClient : IManagementClient
             cancellationToken).ConfigureAwait(false);
     }
 
+
+    public async Task<AttentionRoutingEffectiveDto?> GetIntegrationAttentionRoutingAsync(
+        string integrationId,
+        string? conditionKey = null,
+        CancellationToken cancellationToken = default)
+    {
+        var q = string.IsNullOrWhiteSpace(conditionKey)
+            ? ""
+            : $"?conditionKey={Uri.EscapeDataString(conditionKey)}";
+        return await _http.GetFromJsonAsync<AttentionRoutingEffectiveDto>(
+            $"integrations/{Uri.EscapeDataString(integrationId)}/attention-routing{q}",
+            ApiJsonReadOptions,
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task PutIntegrationAttentionRoutingAsync(
+        string integrationId,
+        UpsertAttentionRoutingRequest body,
+        string? conditionKey = null,
+        CancellationToken cancellationToken = default)
+    {
+        var q = string.IsNullOrWhiteSpace(conditionKey)
+            ? ""
+            : $"?conditionKey={Uri.EscapeDataString(conditionKey)}";
+        var response = await _http
+            .PutAsJsonAsync(
+                $"integrations/{Uri.EscapeDataString(integrationId)}/attention-routing{q}",
+                body,
+                cancellationToken)
+            .ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+    }
+
     /// <inheritdoc />
     public async Task<bool> AcknowledgeIntegrationAttentionIncidentAsync(
         string integrationId,

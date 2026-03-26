@@ -16,4 +16,8 @@ public sealed record AttentionIncidentNotificationProjection(
     DateTimeOffset? FailedAtUtc,
     string? FailureSummary,
     string? ProviderMessageId,
-    string? SubjectSnapshot);
+    string? SubjectSnapshot,
+    string? RecipientResolvedFrom,
+    bool WasEscalation,
+    bool EscalationThresholdApplied,
+    bool SuppressedDueToAcknowledgment);

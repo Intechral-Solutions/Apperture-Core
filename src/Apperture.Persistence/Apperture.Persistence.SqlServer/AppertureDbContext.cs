@@ -50,6 +50,9 @@ public class AppertureDbContext : DbContext
     public DbSet<UnisaFileImportWatermarkEntity> UnisaFileImportWatermarks => Set<UnisaFileImportWatermarkEntity>();
     public DbSet<AttentionIncidentEntity> AttentionIncidents => Set<AttentionIncidentEntity>();
     public DbSet<AttentionIncidentNotificationEntity> AttentionIncidentNotifications => Set<AttentionIncidentNotificationEntity>();
+    public DbSet<InstanceAttentionRoutingEntity> InstanceAttentionRoutings => Set<InstanceAttentionRoutingEntity>();
+    public DbSet<IntegrationAttentionRoutingEntity> IntegrationAttentionRoutings => Set<IntegrationAttentionRoutingEntity>();
+    public DbSet<AttentionRoutingRecipientEntity> AttentionRoutingRecipients => Set<AttentionRoutingRecipientEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -574,8 +577,44 @@ public class AppertureDbContext : DbContext
             e.Property(x => x.FailureSummary).HasMaxLength(2048);
             e.Property(x => x.ProviderMessageId).HasMaxLength(256);
             e.Property(x => x.SubjectSnapshot).HasMaxLength(512);
+            e.Property(x => x.RecipientResolvedFrom).HasMaxLength(64);
+            e.Property(x => x.WasEscalation);
+            e.Property(x => x.EscalationThresholdApplied);
+            e.Property(x => x.SuppressedDueToAcknowledgment);
             e.HasIndex(x => new { x.AttentionIncidentId, x.NotificationKind });
             e.HasIndex(x => new { x.AttentionIncidentId, x.CreatedAtUtc });
+        });
+
+        modelBuilder.Entity<InstanceAttentionRoutingEntity>(e =>
+        {
+            e.ToTable("InstanceAttentionRoutings");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasMaxLength(64);
+            e.Property(x => x.ConditionKey).HasMaxLength(128);
+            e.HasIndex(x => x.ConditionKey);
+        });
+
+        modelBuilder.Entity<IntegrationAttentionRoutingEntity>(e =>
+        {
+            e.ToTable("IntegrationAttentionRoutings");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasMaxLength(64);
+            e.Property(x => x.IntegrationId).HasMaxLength(64);
+            e.Property(x => x.ConditionKey).HasMaxLength(128);
+            e.HasIndex(x => new { x.IntegrationId, x.ConditionKey }).IsUnique();
+        });
+
+        modelBuilder.Entity<AttentionRoutingRecipientEntity>(e =>
+        {
+            e.ToTable("AttentionRoutingRecipients");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasMaxLength(64);
+            e.Property(x => x.InstanceAttentionRoutingId).HasMaxLength(64);
+            e.Property(x => x.IntegrationAttentionRoutingId).HasMaxLength(64);
+            e.Property(x => x.Role).HasMaxLength(32);
+            e.Property(x => x.Address).HasMaxLength(512);
+            e.HasIndex(x => x.InstanceAttentionRoutingId);
+            e.HasIndex(x => x.IntegrationAttentionRoutingId);
         });
     }
 }

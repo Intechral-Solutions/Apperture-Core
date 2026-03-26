@@ -1,6 +1,7 @@
 using Apperture.Core.Application.Integration;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Integration;
+using Apperture.Management.Client;
 using DomainIntegration = Apperture.Core.Domain.Integration.Integration;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -19,6 +20,7 @@ public sealed class IntegrationsController : ControllerBase
     private readonly IIntegrationReadinessService _readinessService;
     private readonly IIntegrationScheduleDiagnosticsService _scheduleDiagnostics;
     private readonly IAttentionIncidentTracker _attentionIncidentTracker;
+    private readonly IAttentionRoutingManagementService _attentionRoutingManagement;
     private readonly IPrincipalContext _principalContext;
     private readonly TimeProvider _timeProvider;
 
@@ -27,6 +29,7 @@ public sealed class IntegrationsController : ControllerBase
         IIntegrationReadinessService readinessService,
         IIntegrationScheduleDiagnosticsService scheduleDiagnostics,
         IAttentionIncidentTracker attentionIncidentTracker,
+        IAttentionRoutingManagementService attentionRoutingManagement,
         IPrincipalContext principalContext,
         TimeProvider timeProvider)
     {
@@ -34,6 +37,7 @@ public sealed class IntegrationsController : ControllerBase
         _readinessService = readinessService;
         _scheduleDiagnostics = scheduleDiagnostics;
         _attentionIncidentTracker = attentionIncidentTracker;
+        _attentionRoutingManagement = attentionRoutingManagement;
         _principalContext = principalContext;
         _timeProvider = timeProvider;
     }
@@ -143,7 +147,7 @@ public sealed class IntegrationsController : ControllerBase
     /// Epic 67: schedule diagnostics and expected-fire evidence timeline.
     /// </summary>
     [HttpGet("{id}/schedule-diagnostics")]
-    public async Task<ActionResult<Apperture.Management.Client.IntegrationScheduleDiagnosticsDto?>> GetScheduleDiagnostics(
+    public async Task<ActionResult<IntegrationScheduleDiagnosticsDto?>> GetScheduleDiagnostics(
         string id,
         CancellationToken cancellationToken)
     {
@@ -153,6 +157,87 @@ public sealed class IntegrationsController : ControllerBase
             if (projection is null)
                 return NotFound();
             return Ok(ToDiagnosticsDto(projection));
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return Forbid();
+        }
+    }
+
+    /// <summary>
+    /// Epic 70: effective attention routing (recipient resolution + policy) for an integration condition.
+    /// </summary>
+    [HttpGet("{id}/attention-routing")]
+    public async Task<ActionResult<AttentionRoutingEffectiveDto>> GetAttentionRouting(
+        string id,
+        [FromQuery] string? conditionKey,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var intId = new IntegrationId(id);
+            if (await _integrationService.GetIntegrationAsync(intId, cancellationToken).ConfigureAwait(false) is null)
+                return NotFound();
+
+            var key = string.IsNullOrWhiteSpace(conditionKey)
+                ? AttentionConditionKeys.ExpectedRunMissing
+                : conditionKey.Trim();
+            var r = await _attentionRoutingManagement
+                .GetEffectiveRoutingAsync(intId, key, cancellationToken)
+                .ConfigureAwait(false);
+            return Ok(ToAttentionRoutingDto(r));
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return Forbid();
+        }
+    }
+
+    /// <summary>
+    /// Epic 70: upsert integration-level attention routing override for a condition.
+    /// </summary>
+    [HttpPut("{id}/attention-routing")]
+    public async Task<ActionResult<AttentionRoutingEffectiveDto>> PutAttentionRouting(
+        string id,
+        [FromBody] UpsertAttentionRoutingRequest body,
+        [FromQuery] string? conditionKey,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var intId = new IntegrationId(id);
+            if (await _integrationService.GetIntegrationAsync(intId, cancellationToken).ConfigureAwait(false) is null)
+                return NotFound();
+
+            var key = string.IsNullOrWhiteSpace(conditionKey)
+                ? AttentionConditionKeys.ExpectedRunMissing
+                : conditionKey.Trim();
+            try
+            {
+                await _attentionRoutingManagement.UpsertIntegrationRoutingAsync(
+                        intId,
+                        key,
+                        new AttentionRoutingUpsertCommand(
+                            body.IsEnabled,
+                            body.SendResolvedNotification,
+                            body.SuppressRemindersWhenAcknowledged,
+                            body.SuppressEscalationWhenAcknowledged,
+                            body.EscalationAfterTicks is { } et ? TimeSpan.FromTicks(et) : null,
+                            body.ReminderIntervalTicks is { } rt ? TimeSpan.FromTicks(rt) : null,
+                            body.PrimaryRecipients,
+                            body.EscalationRecipients),
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return NotFound(new { error = ex.Message });
+            }
+
+            var r = await _attentionRoutingManagement
+                .GetEffectiveRoutingAsync(intId, key, cancellationToken)
+                .ConfigureAwait(false);
+            return Ok(ToAttentionRoutingDto(r));
         }
         catch (UnauthorizedAccessException)
         {
@@ -405,7 +490,7 @@ public sealed class IntegrationsController : ControllerBase
                 i.ConnectionId,
                 i.Severity)).ToArray());
 
-    private static Apperture.Management.Client.IntegrationScheduleDiagnosticsDto ToDiagnosticsDto(
+    private static IntegrationScheduleDiagnosticsDto ToDiagnosticsDto(
         IntegrationScheduleDiagnosticsProjection p) =>
         new(
             p.IntegrationId.Value,
@@ -425,13 +510,13 @@ public sealed class IntegrationsController : ControllerBase
             p.LastAuthorizedRunId,
             p.LastAuthorizedRunStatus,
             p.LastAuthorizedRunAt,
-            p.RecentExpectedFires.Select(e => new Apperture.Management.Client.ExpectedFireDiagnosticDto(
+            p.RecentExpectedFires.Select(e => new ExpectedFireDiagnosticDto(
                 e.ExpectedFireUtc,
                 e.Outcome.ToString(),
                 e.SatisfyingScheduleOriginAuthorizedRunId,
                 e.SatisfyingScheduleOriginAuthorizedRunAt,
                 e.SuppressedByGraceReason?.ToString())).ToList(),
-            p.RecentAttentionIncidents.Select(i => new Apperture.Management.Client.AttentionIncidentDto(
+            p.RecentAttentionIncidents.Select(i => new AttentionIncidentDto(
                 i.Id,
                 i.IntegrationId,
                 i.ConditionKey,
@@ -445,7 +530,7 @@ public sealed class IntegrationsController : ControllerBase
                 i.AcknowledgedAtUtc,
                 i.AcknowledgedBy,
                 i.AcknowledgementNote)).ToList(),
-            p.RecentAttentionIncidentNotifications.Select(n => new Apperture.Management.Client.AttentionIncidentNotificationDto(
+            p.RecentAttentionIncidentNotifications.Select(n => new AttentionIncidentNotificationDto(
                 n.Id,
                 n.AttentionIncidentId,
                 n.IntegrationId,
@@ -461,7 +546,40 @@ public sealed class IntegrationsController : ControllerBase
                 n.FailedAtUtc,
                 n.FailureSummary,
                 n.ProviderMessageId,
-                n.SubjectSnapshot)).ToList());
+                n.SubjectSnapshot,
+                n.RecipientResolvedFrom,
+                n.WasEscalation,
+                n.EscalationThresholdApplied,
+                n.SuppressedDueToAcknowledgment)).ToList(),
+            ToAttentionRoutingDto(p.AttentionRouting));
+
+    private static AttentionRoutingEffectiveDto ToAttentionRoutingDto(AttentionRecipientResolution r) =>
+        new(
+            r.HasRoute,
+            r.Enabled,
+            r.PrimaryRecipients.ToList(),
+            r.PrimarySource,
+            r.EscalationRecipients.ToList(),
+            r.EscalationSource,
+            r.EscalationAfter?.Ticks,
+            r.ReminderInterval?.Ticks,
+            r.SendResolvedNotification,
+            r.SuppressRemindersWhenAcknowledged,
+            r.SuppressEscalationWhenAcknowledged);
+
+    private static AttentionRoutingEffectiveDto ToAttentionRoutingDto(AttentionRoutingDiagnosticsSummary s) =>
+        new(
+            s.HasRoute,
+            s.Enabled,
+            s.PrimaryRecipients.ToList(),
+            s.PrimarySource,
+            s.EscalationRecipients.ToList(),
+            s.EscalationSource,
+            s.EscalationAfter?.Ticks,
+            s.ReminderInterval?.Ticks,
+            s.SendResolvedNotification,
+            s.SuppressRemindersWhenAcknowledged,
+            s.SuppressEscalationWhenAcknowledged);
 }
 
 public sealed record IntegrationDto(

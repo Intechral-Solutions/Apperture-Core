@@ -38,7 +38,11 @@ public sealed class SqlAttentionIncidentNotificationLedgerTests
             null,
             null,
             null,
-            "subj");
+            "subj",
+            AttentionRecipientSources.GlobalDefault,
+            false,
+            false,
+            false);
         await sut.AppendAsync(row, CancellationToken.None);
 
         var list = await sut.ListRecentForIncidentsAsync(new[] { "inc1" }, 10, CancellationToken.None);

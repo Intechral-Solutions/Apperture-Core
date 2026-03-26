@@ -36,15 +36,51 @@ public sealed class AttentionIncidentNotificationOrchestratorTests
             LatestScheduleOriginAuthorizedRun: null,
             EvidenceWindowStartUtc: DateTimeOffset.Parse("2025-01-01T00:00:00Z"));
 
-    private static AttentionNotificationOptions EnabledWithRecipients(params string[] emails) =>
+    private static AttentionNotificationOptions SmtpOptionsStub() =>
         new()
         {
             Enabled = true,
-            Recipients = emails.ToList(),
-            SendResolvedNotification = true,
             SmtpHost = "smtp.example",
             FromAddress = "from@example.com",
         };
+
+    private static Mock<IAttentionRecipientResolver> Resolver(
+        IReadOnlyList<string> primary,
+        string primarySource = AttentionRecipientSources.GlobalDefault,
+        bool enabled = true,
+        TimeSpan? reminderInterval = null,
+        TimeSpan? escalationAfter = null,
+        IReadOnlyList<string>? escalation = null,
+        string escalationSource = AttentionRecipientSources.GlobalDefault,
+        bool sendResolved = true,
+        bool suppressRemAck = true,
+        bool suppressEscAck = true)
+    {
+        escalation ??= Array.Empty<string>();
+        var hasRoute = primary.Count > 0 || escalation.Count > 0;
+        var m = new Mock<IAttentionRecipientResolver>();
+        m.Setup(x => x.ResolveAsync(It.IsAny<IntegrationId>(), AttentionConditionKeys.ExpectedRunMissing, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(
+                new AttentionRecipientResolution(
+                    hasRoute,
+                    enabled,
+                    primary,
+                    primarySource,
+                    escalation,
+                    escalationSource,
+                    escalationAfter,
+                    reminderInterval,
+                    sendResolved,
+                    suppressRemAck,
+                    suppressEscAck));
+        return m;
+    }
+
+    private static void DefaultLedgerEscalation(Mock<IAttentionIncidentNotificationLedger> ledger)
+    {
+        ledger.Setup(x => x.HasNonSuppressedEscalationAttemptAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+    }
 
     [Fact]
     public async Task Opened_sends_activation_per_recipient_on_success()
@@ -52,18 +88,21 @@ public sealed class AttentionIncidentNotificationOrchestratorTests
         var t0 = DateTimeOffset.Parse("2025-03-01T10:00:00Z");
         var clock = new MutableUtcTimeProvider { UtcNowValue = t0 };
         var ledger = new Mock<IAttentionIncidentNotificationLedger>();
+        DefaultLedgerEscalation(ledger);
         ledger.Setup(x => x.HasNonSuppressedActivationAttemptAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(false);
         var sender = new Mock<IAttentionNotificationSender>();
         sender.Setup(x => x.SendEmailAsync(It.IsAny<AttentionNotificationSendRequest>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new AttentionNotificationSendResult(true, null, null));
         var tracker = new Mock<IAttentionIncidentTracker>();
+        var resolver = Resolver(new[] { "a@test.com", "b@test.com" });
 
         var sut = new AttentionIncidentNotificationOrchestrator(
             ledger.Object,
             sender.Object,
             tracker.Object,
-            Options.Create(EnabledWithRecipients("a@test.com", "b@test.com")),
+            resolver.Object,
+            Options.Create(SmtpOptionsStub()),
             clock);
 
         await sut.HandleObserveResultAsync(
@@ -85,6 +124,7 @@ public sealed class AttentionIncidentNotificationOrchestratorTests
         var t0 = DateTimeOffset.Parse("2025-03-01T10:00:00Z");
         var clock = new MutableUtcTimeProvider { UtcNowValue = t0 };
         var ledger = new Mock<IAttentionIncidentNotificationLedger>();
+        DefaultLedgerEscalation(ledger);
         ledger.Setup(x => x.HasNonSuppressedActivationAttemptAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(false);
         var sender = new Mock<IAttentionNotificationSender>();
@@ -92,12 +132,13 @@ public sealed class AttentionIncidentNotificationOrchestratorTests
             .ReturnsAsync(new AttentionNotificationSendResult(true, null, null));
         var tracker = new Mock<IAttentionIncidentTracker>();
 
-        var opts = EnabledWithRecipients("a@test.com");
+        var resolver = Resolver(new[] { "a@test.com" });
         var sut = new AttentionIncidentNotificationOrchestrator(
             ledger.Object,
             sender.Object,
             tracker.Object,
-            Options.Create(opts),
+            resolver.Object,
+            Options.Create(SmtpOptionsStub()),
             clock);
 
         var snap = Snapshot(ScheduleExpectationEvaluationStatus.MissingExpectedRun);
@@ -127,19 +168,20 @@ public sealed class AttentionIncidentNotificationOrchestratorTests
         var t0 = DateTimeOffset.Parse("2025-03-01T10:00:00Z");
         var clock = new MutableUtcTimeProvider { UtcNowValue = t0 };
         var ledger = new Mock<IAttentionIncidentNotificationLedger>();
+        DefaultLedgerEscalation(ledger);
         ledger.Setup(x => x.HasNonSuppressedActivationAttemptAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(false);
         var sender = new Mock<IAttentionNotificationSender>();
         var tracker = new Mock<IAttentionIncidentTracker>();
 
-        var opts = EnabledWithRecipients();
-        opts.Recipients.Clear();
+        var resolver = Resolver(Array.Empty<string>(), AttentionRecipientSources.None);
 
         var sut = new AttentionIncidentNotificationOrchestrator(
             ledger.Object,
             sender.Object,
             tracker.Object,
-            Options.Create(opts),
+            resolver.Object,
+            Options.Create(SmtpOptionsStub()),
             clock);
 
         await sut.HandleObserveResultAsync(
@@ -155,7 +197,7 @@ public sealed class AttentionIncidentNotificationOrchestratorTests
             x => x.AppendAsync(
                 It.Is<AttentionIncidentNotificationWrite>(w =>
                     w.Status == AttentionNotificationStatuses.Suppressed
-                    && w.SuppressionReason == AttentionNotificationSuppressionReasons.NoRecipientsConfigured),
+                    && w.SuppressionReason == AttentionNotificationSuppressionReasons.NoRouteConfigured),
                 It.IsAny<CancellationToken>()),
             Times.Once);
     }
@@ -166,6 +208,7 @@ public sealed class AttentionIncidentNotificationOrchestratorTests
         var t0 = DateTimeOffset.Parse("2025-03-01T10:00:00Z");
         var clock = new MutableUtcTimeProvider { UtcNowValue = t0 };
         var ledger = new Mock<IAttentionIncidentNotificationLedger>();
+        DefaultLedgerEscalation(ledger);
         ledger.Setup(x => x.HasNonSuppressedActivationAttemptAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(false);
         ledger.Setup(x => x.HasSucceededActivationAsync("inc1", It.IsAny<CancellationToken>()))
@@ -174,12 +217,14 @@ public sealed class AttentionIncidentNotificationOrchestratorTests
         sender.Setup(x => x.SendEmailAsync(It.IsAny<AttentionNotificationSendRequest>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new AttentionNotificationSendResult(true, null, null));
         var tracker = new Mock<IAttentionIncidentTracker>();
+        var resolver = Resolver(new[] { "a@test.com" });
 
         var sut = new AttentionIncidentNotificationOrchestrator(
             ledger.Object,
             sender.Object,
             tracker.Object,
-            Options.Create(EnabledWithRecipients("a@test.com")),
+            resolver.Object,
+            Options.Create(SmtpOptionsStub()),
             clock);
 
         await sut.HandleObserveResultAsync(
@@ -201,6 +246,7 @@ public sealed class AttentionIncidentNotificationOrchestratorTests
         var t0 = DateTimeOffset.Parse("2025-03-01T10:00:00Z");
         var clock = new MutableUtcTimeProvider { UtcNowValue = t0 };
         var ledger = new Mock<IAttentionIncidentNotificationLedger>();
+        DefaultLedgerEscalation(ledger);
         ledger.Setup(x => x.HasNonSuppressedActivationAttemptAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(false);
         ledger.Setup(x => x.GetLatestSuccessfulActivationOrReminderSentUtcAsync("inc1", It.IsAny<CancellationToken>()))
@@ -226,13 +272,13 @@ public sealed class AttentionIncidentNotificationOrchestratorTests
                     null,
                     null));
 
-        var opts = EnabledWithRecipients("a@test.com");
-        opts.ReminderInterval = TimeSpan.FromHours(1);
+        var resolver = Resolver(new[] { "a@test.com" }, reminderInterval: TimeSpan.FromHours(1));
         var sut = new AttentionIncidentNotificationOrchestrator(
             ledger.Object,
             sender.Object,
             tracker.Object,
-            Options.Create(opts),
+            resolver.Object,
+            Options.Create(SmtpOptionsStub()),
             clock);
 
         clock.UtcNowValue = t0.AddHours(2);
@@ -253,6 +299,7 @@ public sealed class AttentionIncidentNotificationOrchestratorTests
         var t0 = DateTimeOffset.Parse("2025-03-01T10:00:00Z");
         var clock = new MutableUtcTimeProvider { UtcNowValue = t0.AddHours(2) };
         var ledger = new Mock<IAttentionIncidentNotificationLedger>();
+        DefaultLedgerEscalation(ledger);
         ledger.Setup(x => x.GetLatestSuccessfulActivationOrReminderSentUtcAsync("inc1", It.IsAny<CancellationToken>()))
             .ReturnsAsync(t0);
         var sender = new Mock<IAttentionNotificationSender>();
@@ -274,13 +321,13 @@ public sealed class AttentionIncidentNotificationOrchestratorTests
                     "actor",
                     "note"));
 
-        var opts = EnabledWithRecipients("a@test.com");
-        opts.ReminderInterval = TimeSpan.FromHours(1);
+        var resolver = Resolver(new[] { "a@test.com" }, reminderInterval: TimeSpan.FromHours(1));
         var sut = new AttentionIncidentNotificationOrchestrator(
             ledger.Object,
             sender.Object,
             tracker.Object,
-            Options.Create(opts),
+            resolver.Object,
+            Options.Create(SmtpOptionsStub()),
             clock);
 
         await sut.HandleObserveResultAsync(
@@ -300,18 +347,21 @@ public sealed class AttentionIncidentNotificationOrchestratorTests
         var t0 = DateTimeOffset.Parse("2025-03-01T10:00:00Z");
         var clock = new MutableUtcTimeProvider { UtcNowValue = t0 };
         var ledger = new Mock<IAttentionIncidentNotificationLedger>();
+        DefaultLedgerEscalation(ledger);
         ledger.Setup(x => x.HasNonSuppressedActivationAttemptAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(false);
         var sender = new Mock<IAttentionNotificationSender>();
         sender.Setup(x => x.SendEmailAsync(It.IsAny<AttentionNotificationSendRequest>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new AttentionNotificationSendResult(false, null, "boom"));
         var tracker = new Mock<IAttentionIncidentTracker>();
+        var resolver = Resolver(new[] { "a@test.com" });
 
         var sut = new AttentionIncidentNotificationOrchestrator(
             ledger.Object,
             sender.Object,
             tracker.Object,
-            Options.Create(EnabledWithRecipients("a@test.com")),
+            resolver.Object,
+            Options.Create(SmtpOptionsStub()),
             clock);
 
         await sut.HandleObserveResultAsync(
@@ -327,5 +377,116 @@ public sealed class AttentionIncidentNotificationOrchestratorTests
                 It.IsAny<CancellationToken>()),
             Times.Once);
     }
-}
+    [Fact]
+    public async Task Escalation_sends_to_escalation_recipients_after_threshold_from_started_at()
+    {
+        var started = DateTimeOffset.Parse("2025-03-01T08:00:00Z");
+        var now = DateTimeOffset.Parse("2025-03-01T10:30:00Z");
+        var clock = new MutableUtcTimeProvider { UtcNowValue = now };
+        var ledger = new Mock<IAttentionIncidentNotificationLedger>();
+        DefaultLedgerEscalation(ledger);
+        var sender = new Mock<IAttentionNotificationSender>();
+        sender.Setup(x => x.SendEmailAsync(It.IsAny<AttentionNotificationSendRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AttentionNotificationSendResult(true, null, null));
+        var tracker = new Mock<IAttentionIncidentTracker>();
+        tracker.Setup(x => x.GetIncidentAsync(IntId, "inc1", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(
+                new AttentionIncidentProjection(
+                    "inc1",
+                    IntId.Value,
+                    AttentionConditionKeys.ExpectedRunMissing,
+                    AttentionIncidentStatuses.Active,
+                    started,
+                    now,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null));
 
+        var resolver = Resolver(
+            new[] { "primary@test.com" },
+            escalationAfter: TimeSpan.FromHours(2),
+            escalation: new[] { "esc@test.com" });
+
+        var sut = new AttentionIncidentNotificationOrchestrator(
+            ledger.Object,
+            sender.Object,
+            tracker.Object,
+            resolver.Object,
+            Options.Create(SmtpOptionsStub()),
+            clock);
+
+        await sut.HandleObserveResultAsync(
+            IntId,
+            new AttentionIncidentObserveResult(AttentionIncidentObserveTransition.ObservedStillActive, "inc1"),
+            Snapshot(ScheduleExpectationEvaluationStatus.MissingExpectedRun),
+            CancellationToken.None);
+
+        sender.Verify(
+            x => x.SendEmailAsync(
+                It.Is<AttentionNotificationSendRequest>(r => r.Recipient == "esc@test.com"),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+        ledger.Verify(
+            x => x.AppendAsync(
+                It.Is<AttentionIncidentNotificationWrite>(w =>
+                    w.WasEscalation && w.EscalationThresholdApplied && w.RecipientResolvedFrom == AttentionRecipientSources.GlobalDefault),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task Escalation_skipped_when_acknowledged_and_policy_suppresses()
+    {
+        var started = DateTimeOffset.Parse("2025-03-01T08:00:00Z");
+        var now = DateTimeOffset.Parse("2025-03-01T10:30:00Z");
+        var clock = new MutableUtcTimeProvider { UtcNowValue = now };
+        var ledger = new Mock<IAttentionIncidentNotificationLedger>();
+        DefaultLedgerEscalation(ledger);
+        var sender = new Mock<IAttentionNotificationSender>();
+        var tracker = new Mock<IAttentionIncidentTracker>();
+        tracker.Setup(x => x.GetIncidentAsync(IntId, "inc1", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(
+                new AttentionIncidentProjection(
+                    "inc1",
+                    IntId.Value,
+                    AttentionConditionKeys.ExpectedRunMissing,
+                    AttentionIncidentStatuses.Active,
+                    started,
+                    now,
+                    null,
+                    null,
+                    null,
+                    null,
+                    started.AddMinutes(1),
+                    "actor",
+                    "note"));
+
+        var resolver = Resolver(
+            new[] { "primary@test.com" },
+            escalationAfter: TimeSpan.FromHours(2),
+            escalation: new[] { "esc@test.com" },
+            suppressEscAck: true);
+
+        var sut = new AttentionIncidentNotificationOrchestrator(
+            ledger.Object,
+            sender.Object,
+            tracker.Object,
+            resolver.Object,
+            Options.Create(SmtpOptionsStub()),
+            clock);
+
+        await sut.HandleObserveResultAsync(
+            IntId,
+            new AttentionIncidentObserveResult(AttentionIncidentObserveTransition.ObservedStillActive, "inc1"),
+            Snapshot(ScheduleExpectationEvaluationStatus.MissingExpectedRun),
+            CancellationToken.None);
+
+        sender.Verify(
+            x => x.SendEmailAsync(It.IsAny<AttentionNotificationSendRequest>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+}

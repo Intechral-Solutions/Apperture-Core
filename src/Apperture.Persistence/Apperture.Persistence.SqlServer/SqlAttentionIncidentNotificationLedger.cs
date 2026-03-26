@@ -32,6 +32,10 @@ public sealed class SqlAttentionIncidentNotificationLedger : IAttentionIncidentN
             FailureSummary = row.FailureSummary,
             ProviderMessageId = row.ProviderMessageId,
             SubjectSnapshot = row.SubjectSnapshot,
+            RecipientResolvedFrom = row.RecipientResolvedFrom,
+            WasEscalation = row.WasEscalation,
+            EscalationThresholdApplied = row.EscalationThresholdApplied,
+            SuppressedDueToAcknowledgment = row.SuppressedDueToAcknowledgment,
         });
         await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
     }
@@ -76,6 +80,17 @@ public sealed class SqlAttentionIncidentNotificationLedger : IAttentionIncidentN
                 cancellationToken)
             .ConfigureAwait(false);
 
+    public async ValueTask<bool> HasNonSuppressedEscalationAttemptAsync(
+        string attentionIncidentId,
+        CancellationToken cancellationToken = default) =>
+        await _db.AttentionIncidentNotifications.AsNoTracking()
+            .AnyAsync(
+                e => e.AttentionIncidentId == attentionIncidentId
+                     && e.NotificationKind == AttentionNotificationKinds.Escalation
+                     && e.Status != AttentionNotificationStatuses.Suppressed,
+                cancellationToken)
+            .ConfigureAwait(false);
+
     public async ValueTask<IReadOnlyList<AttentionIncidentNotificationProjection>> ListRecentForIncidentsAsync(
         IReadOnlyList<string> attentionIncidentIds,
         int maxTotal,
@@ -108,6 +123,10 @@ public sealed class SqlAttentionIncidentNotificationLedger : IAttentionIncidentN
             e.FailedAtUtc,
             e.FailureSummary,
             e.ProviderMessageId,
-            e.SubjectSnapshot)).ToList();
+            e.SubjectSnapshot,
+            e.RecipientResolvedFrom,
+            e.WasEscalation,
+            e.EscalationThresholdApplied,
+            e.SuppressedDueToAcknowledgment)).ToList();
     }
 }

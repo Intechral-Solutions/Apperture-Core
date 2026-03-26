@@ -1,8 +1,8 @@
-using Microsoft.Extensions.Options;
 using Apperture.Core.Application.Integration;
 using Apperture.Core.Application.Scheduling;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Integration;
+using Microsoft.Extensions.Options;
 
 namespace Apperture.ControlPlane.Security;
 
@@ -11,20 +11,23 @@ public sealed class AttentionIncidentNotificationOrchestrator
     private readonly IAttentionIncidentNotificationLedger _ledger;
     private readonly IAttentionNotificationSender _sender;
     private readonly IAttentionIncidentTracker _tracker;
-    private readonly IOptions<AttentionNotificationOptions> _options;
+    private readonly IAttentionRecipientResolver _recipientResolver;
+    private readonly IOptions<AttentionNotificationOptions> _smtpOptions;
     private readonly TimeProvider _time;
 
     public AttentionIncidentNotificationOrchestrator(
         IAttentionIncidentNotificationLedger ledger,
         IAttentionNotificationSender sender,
         IAttentionIncidentTracker tracker,
-        IOptions<AttentionNotificationOptions> options,
+        IAttentionRecipientResolver recipientResolver,
+        IOptions<AttentionNotificationOptions> smtpOptions,
         TimeProvider time)
     {
         _ledger = ledger;
         _sender = sender;
         _tracker = tracker;
-        _options = options;
+        _recipientResolver = recipientResolver;
+        _smtpOptions = smtpOptions;
         _time = time;
     }
 
@@ -35,43 +38,22 @@ public sealed class AttentionIncidentNotificationOrchestrator
         CancellationToken cancellationToken = default)
     {
         var conditionKey = AttentionConditionKeys.ExpectedRunMissing;
-        var opts = _options.Value;
         var now = _time.GetUtcNow();
 
         switch (observe.Transition)
         {
             case AttentionIncidentObserveTransition.Opened when observe.IncidentId is { } openedId:
-                await HandleOpenedAsync(
-                    integrationId,
-                    openedId,
-                    conditionKey,
-                    snapshot,
-                    opts,
-                    now,
-                    cancellationToken).ConfigureAwait(false);
+                await HandleOpenedAsync(integrationId, openedId, conditionKey, snapshot, now, cancellationToken)
+                    .ConfigureAwait(false);
                 break;
-
             case AttentionIncidentObserveTransition.ObservedStillActive when observe.IncidentId is { } activeId:
-                await HandleStillActiveAsync(
-                    integrationId,
-                    activeId,
-                    conditionKey,
-                    snapshot,
-                    opts,
-                    now,
-                    cancellationToken).ConfigureAwait(false);
+                await HandleStillActiveAsync(integrationId, activeId, conditionKey, snapshot, now, cancellationToken)
+                    .ConfigureAwait(false);
                 break;
-
             case AttentionIncidentObserveTransition.Resolved when observe.IncidentId is { } resolvedId:
-                await HandleResolvedAsync(
-                    integrationId,
-                    resolvedId,
-                    conditionKey,
-                    opts,
-                    now,
-                    cancellationToken).ConfigureAwait(false);
+                await HandleResolvedAsync(integrationId, resolvedId, conditionKey, now, cancellationToken)
+                    .ConfigureAwait(false);
                 break;
-
             case AttentionIncidentObserveTransition.NoChange:
             default:
                 break;
@@ -83,90 +65,48 @@ public sealed class AttentionIncidentNotificationOrchestrator
         string incidentId,
         string conditionKey,
         ScheduleExpectationSnapshot snapshot,
-        AttentionNotificationOptions opts,
         DateTimeOffset now,
         CancellationToken cancellationToken)
     {
+        var route = await _recipientResolver.ResolveAsync(integrationId, conditionKey, cancellationToken)
+            .ConfigureAwait(false);
+
         if (await _ledger.HasNonSuppressedActivationAttemptAsync(incidentId, cancellationToken).ConfigureAwait(false))
         {
-            await AppendLedgerRowAsync(
-                incidentId,
-                integrationId.Value,
-                conditionKey,
-                AttentionNotificationKinds.Activated,
-                AttentionNotificationChannels.Email,
-                "",
-                AttentionNotificationStatuses.Suppressed,
-                AttentionNotificationSuppressionReasons.DuplicateActivationSuppressed,
-                now,
-                attemptedAtUtc: null,
-                sentAtUtc: null,
-                failedAtUtc: null,
-                failureSummary: null,
-                providerMessageId: null,
-                subjectSnapshot: null,
+            await AppendSuppressedAsync(
+                incidentId, integrationId.Value, conditionKey, AttentionNotificationKinds.Activated,
+                AttentionNotificationSuppressionReasons.DuplicateActivationSuppressed, now, null,
                 cancellationToken).ConfigureAwait(false);
             return;
         }
 
-        if (!opts.Enabled)
+        if (!route.Enabled)
         {
-            await AppendLedgerRowAsync(
-                incidentId,
-                integrationId.Value,
-                conditionKey,
-                AttentionNotificationKinds.Activated,
-                AttentionNotificationChannels.Email,
-                "",
-                AttentionNotificationStatuses.Suppressed,
-                AttentionNotificationSuppressionReasons.PolicyDisabled,
-                now,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
+            await AppendSuppressedAsync(
+                incidentId, integrationId.Value, conditionKey, AttentionNotificationKinds.Activated,
+                AttentionNotificationSuppressionReasons.PolicyDisabled, now, route.PrimarySource,
                 cancellationToken).ConfigureAwait(false);
             return;
         }
 
-        var recipients = NormalizeRecipients(opts.Recipients);
-        if (recipients.Count == 0)
+        if (route.PrimaryRecipients.Count == 0)
         {
-            await AppendLedgerRowAsync(
-                incidentId,
-                integrationId.Value,
-                conditionKey,
-                AttentionNotificationKinds.Activated,
-                AttentionNotificationChannels.Email,
-                "",
-                AttentionNotificationStatuses.Suppressed,
-                AttentionNotificationSuppressionReasons.NoRecipientsConfigured,
-                now,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
+            await AppendSuppressedAsync(
+                incidentId, integrationId.Value, conditionKey, AttentionNotificationKinds.Activated,
+                AttentionNotificationSuppressionReasons.NoRouteConfigured, now, route.PrimarySource,
                 cancellationToken).ConfigureAwait(false);
             return;
         }
 
         var subject = ActivationSubject(integrationId);
         var body = ActivationBody(integrationId, snapshot);
-        foreach (var recipient in recipients)
+        foreach (var recipient in route.PrimaryRecipients)
+        {
             await SendAndRecordAsync(
-                incidentId,
-                integrationId.Value,
-                conditionKey,
-                AttentionNotificationKinds.Activated,
-                recipient,
-                subject,
-                body,
-                now,
-                cancellationToken).ConfigureAwait(false);
+                incidentId, integrationId.Value, conditionKey, AttentionNotificationKinds.Activated,
+                recipient, subject, body, now, route.PrimarySource, false, false, false, cancellationToken)
+                .ConfigureAwait(false);
+        }
     }
 
     private async ValueTask HandleStillActiveAsync(
@@ -174,161 +114,159 @@ public sealed class AttentionIncidentNotificationOrchestrator
         string incidentId,
         string conditionKey,
         ScheduleExpectationSnapshot snapshot,
-        AttentionNotificationOptions opts,
         DateTimeOffset now,
         CancellationToken cancellationToken)
     {
-        if (opts.ReminderInterval is not { } interval || interval <= TimeSpan.Zero)
+        var route = await _recipientResolver.ResolveAsync(integrationId, conditionKey, cancellationToken)
+            .ConfigureAwait(false);
+        if (!route.Enabled)
             return;
 
-        if (!opts.Enabled)
-            return;
-
-        if (opts.SuppressRemindersWhenAcknowledged)
+        if (route.ReminderInterval is { } interval && interval > TimeSpan.Zero)
         {
-            var incident = await _tracker.GetIncidentAsync(integrationId, incidentId, cancellationToken).ConfigureAwait(false);
-            if (incident?.AcknowledgedAtUtc is not null)
-                return;
+            var allowReminder = !route.SuppressRemindersWhenAcknowledged
+                || await NotAcknowledgedAsync(integrationId, incidentId, cancellationToken).ConfigureAwait(false);
+            if (allowReminder)
+            {
+                var latest = await _ledger
+                    .GetLatestSuccessfulActivationOrReminderSentUtcAsync(incidentId, cancellationToken)
+                    .ConfigureAwait(false);
+                if (latest is not null && now - latest.Value >= interval && route.PrimaryRecipients.Count > 0)
+                {
+                    var subject = ReminderSubject(integrationId);
+                    var body = ReminderBody(integrationId, snapshot);
+                    foreach (var recipient in route.PrimaryRecipients)
+                    {
+                        await SendAndRecordAsync(
+                            incidentId, integrationId.Value, conditionKey, AttentionNotificationKinds.Reminder,
+                            recipient, subject, body, now, route.PrimarySource, false, false, false,
+                            cancellationToken).ConfigureAwait(false);
+                    }
+                }
+            }
         }
 
-        var latestSuccess = await _ledger
-            .GetLatestSuccessfulActivationOrReminderSentUtcAsync(incidentId, cancellationToken)
+        await TryEscalationAsync(integrationId, incidentId, conditionKey, route, now, cancellationToken)
             .ConfigureAwait(false);
-        if (latestSuccess is null)
+    }
+
+    private async ValueTask TryEscalationAsync(
+        IntegrationId integrationId,
+        string incidentId,
+        string conditionKey,
+        AttentionRecipientResolution route,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        if (route.EscalationAfter is not { } escAfter || escAfter <= TimeSpan.Zero)
+            return;
+        if (route.EscalationRecipients.Count == 0)
+            return;
+        if (await _ledger.HasNonSuppressedEscalationAttemptAsync(incidentId, cancellationToken).ConfigureAwait(false))
             return;
 
-        if (now - latestSuccess.Value < interval)
+        var incident = await _tracker.GetIncidentAsync(integrationId, incidentId, cancellationToken)
+            .ConfigureAwait(false);
+        if (incident is null)
+            return;
+        if (route.SuppressEscalationWhenAcknowledged && incident.AcknowledgedAtUtc is not null)
+            return;
+        if (now - incident.StartedAtUtc < escAfter)
             return;
 
-        var recipients = NormalizeRecipients(opts.Recipients);
-        if (recipients.Count == 0)
-            return;
-
-        var subject = ReminderSubject(integrationId);
-        var body = ReminderBody(integrationId, snapshot);
-        foreach (var recipient in recipients)
+        var subject = EscalationSubject(integrationId);
+        var body = EscalationBody(integrationId, incident);
+        foreach (var recipient in route.EscalationRecipients)
+        {
             await SendAndRecordAsync(
-                incidentId,
-                integrationId.Value,
-                conditionKey,
-                AttentionNotificationKinds.Reminder,
-                recipient,
-                subject,
-                body,
-                now,
-                cancellationToken).ConfigureAwait(false);
+                incidentId, integrationId.Value, conditionKey, AttentionNotificationKinds.Escalation,
+                recipient, subject, body, now, route.EscalationSource, true, true, false, cancellationToken)
+                .ConfigureAwait(false);
+        }
+    }
+
+    private async ValueTask<bool> NotAcknowledgedAsync(
+        IntegrationId integrationId,
+        string incidentId,
+        CancellationToken cancellationToken)
+    {
+        var incident = await _tracker.GetIncidentAsync(integrationId, incidentId, cancellationToken)
+            .ConfigureAwait(false);
+        return incident?.AcknowledgedAtUtc is null;
     }
 
     private async ValueTask HandleResolvedAsync(
         IntegrationId integrationId,
         string incidentId,
         string conditionKey,
-        AttentionNotificationOptions opts,
         DateTimeOffset now,
         CancellationToken cancellationToken)
     {
-        if (!opts.Enabled)
+        var route = await _recipientResolver.ResolveAsync(integrationId, conditionKey, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (!route.Enabled)
         {
-            await AppendLedgerRowAsync(
-                incidentId,
-                integrationId.Value,
-                conditionKey,
-                AttentionNotificationKinds.Resolved,
-                AttentionNotificationChannels.Email,
-                "",
-                AttentionNotificationStatuses.Suppressed,
-                AttentionNotificationSuppressionReasons.PolicyDisabled,
-                now,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                cancellationToken).ConfigureAwait(false);
+            await AppendSuppressedAsync(
+                incidentId, integrationId.Value, conditionKey, AttentionNotificationKinds.Resolved,
+                AttentionNotificationSuppressionReasons.PolicyDisabled, now, route.PrimarySource, cancellationToken)
+                .ConfigureAwait(false);
             return;
         }
 
-        if (!opts.SendResolvedNotification)
+        if (!route.SendResolvedNotification)
         {
-            await AppendLedgerRowAsync(
-                incidentId,
-                integrationId.Value,
-                conditionKey,
-                AttentionNotificationKinds.Resolved,
-                AttentionNotificationChannels.Email,
-                "",
-                AttentionNotificationStatuses.Suppressed,
-                AttentionNotificationSuppressionReasons.ResolvedNotificationDisabled,
-                now,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
+            await AppendSuppressedAsync(
+                incidentId, integrationId.Value, conditionKey, AttentionNotificationKinds.Resolved,
+                AttentionNotificationSuppressionReasons.ResolvedNotificationDisabled, now, route.PrimarySource,
                 cancellationToken).ConfigureAwait(false);
             return;
         }
 
         if (!await _ledger.HasSucceededActivationAsync(incidentId, cancellationToken).ConfigureAwait(false))
         {
-            await AppendLedgerRowAsync(
-                incidentId,
-                integrationId.Value,
-                conditionKey,
-                AttentionNotificationKinds.Resolved,
-                AttentionNotificationChannels.Email,
-                "",
-                AttentionNotificationStatuses.Suppressed,
-                AttentionNotificationSuppressionReasons.NoPriorActivationForResolved,
-                now,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
+            await AppendSuppressedAsync(
+                incidentId, integrationId.Value, conditionKey, AttentionNotificationKinds.Resolved,
+                AttentionNotificationSuppressionReasons.NoPriorActivationForResolved, now, route.PrimarySource,
                 cancellationToken).ConfigureAwait(false);
             return;
         }
 
-        var recipients = NormalizeRecipients(opts.Recipients);
-        if (recipients.Count == 0)
+        if (route.PrimaryRecipients.Count == 0)
         {
-            await AppendLedgerRowAsync(
-                incidentId,
-                integrationId.Value,
-                conditionKey,
-                AttentionNotificationKinds.Resolved,
-                AttentionNotificationChannels.Email,
-                "",
-                AttentionNotificationStatuses.Suppressed,
-                AttentionNotificationSuppressionReasons.NoRecipientsConfigured,
-                now,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
+            await AppendSuppressedAsync(
+                incidentId, integrationId.Value, conditionKey, AttentionNotificationKinds.Resolved,
+                AttentionNotificationSuppressionReasons.NoRouteConfigured, now, route.PrimarySource,
                 cancellationToken).ConfigureAwait(false);
             return;
         }
 
         var subject = ResolvedSubject(integrationId);
         var body = ResolvedBody(integrationId);
-        foreach (var recipient in recipients)
+        foreach (var recipient in route.PrimaryRecipients)
+        {
             await SendAndRecordAsync(
-                incidentId,
-                integrationId.Value,
-                conditionKey,
-                AttentionNotificationKinds.Resolved,
-                recipient,
-                subject,
-                body,
-                now,
-                cancellationToken).ConfigureAwait(false);
+                incidentId, integrationId.Value, conditionKey, AttentionNotificationKinds.Resolved,
+                recipient, subject, body, now, route.PrimarySource, false, false, false, cancellationToken)
+                .ConfigureAwait(false);
+        }
+    }
+
+    private async ValueTask AppendSuppressedAsync(
+        string incidentId,
+        string integrationIdValue,
+        string conditionKey,
+        string notificationKind,
+        string suppressionReason,
+        DateTimeOffset now,
+        string? recipientResolvedFrom,
+        CancellationToken cancellationToken)
+    {
+        await AppendLedgerRowAsync(
+            incidentId, integrationIdValue, conditionKey, notificationKind,
+            AttentionNotificationChannels.Email, "", AttentionNotificationStatuses.Suppressed, suppressionReason,
+            now, null, null, null, null, null, null,
+            recipientResolvedFrom, false, false, false, cancellationToken).ConfigureAwait(false);
     }
 
     private async ValueTask SendAndRecordAsync(
@@ -340,53 +278,35 @@ public sealed class AttentionIncidentNotificationOrchestrator
         string subject,
         string body,
         DateTimeOffset now,
+        string? recipientResolvedFrom,
+        bool wasEscalation,
+        bool escalationThresholdApplied,
+        bool suppressedDueToAcknowledgment,
         CancellationToken cancellationToken)
     {
+        _ = _smtpOptions;
         var attemptedAt = now;
         var result = await _sender
             .SendEmailAsync(new AttentionNotificationSendRequest(recipient, subject, body), cancellationToken)
             .ConfigureAwait(false);
 
-        if (result.Succeeded)
-        {
-            await AppendLedgerRowAsync(
-                incidentId,
-                integrationIdValue,
-                conditionKey,
-                notificationKind,
-                AttentionNotificationChannels.Email,
-                recipient,
-                AttentionNotificationStatuses.Succeeded,
-                suppressionReason: null,
-                createdAtUtc: now,
-                attemptedAtUtc: attemptedAt,
-                sentAtUtc: now,
-                failedAtUtc: null,
-                failureSummary: null,
-                providerMessageId: result.ProviderMessageId,
-                subjectSnapshot: subject,
-                cancellationToken).ConfigureAwait(false);
-        }
-        else
-        {
-            await AppendLedgerRowAsync(
-                incidentId,
-                integrationIdValue,
-                conditionKey,
-                notificationKind,
-                AttentionNotificationChannels.Email,
-                recipient,
-                AttentionNotificationStatuses.Failed,
-                suppressionReason: null,
-                createdAtUtc: now,
-                attemptedAtUtc: attemptedAt,
-                sentAtUtc: null,
-                failedAtUtc: now,
-                failureSummary: result.FailureSummary,
-                providerMessageId: null,
-                subjectSnapshot: subject,
-                cancellationToken).ConfigureAwait(false);
-        }
+        var status = result.Succeeded ? AttentionNotificationStatuses.Succeeded : AttentionNotificationStatuses.Failed;
+        await AppendLedgerRowAsync(
+            incidentId, integrationIdValue, conditionKey, notificationKind,
+            AttentionNotificationChannels.Email, recipient, status,
+            suppressionReason: null,
+            createdAtUtc: now,
+            attemptedAtUtc: attemptedAt,
+            sentAtUtc: result.Succeeded ? now : null,
+            failedAtUtc: result.Succeeded ? null : now,
+            failureSummary: result.FailureSummary,
+            providerMessageId: result.ProviderMessageId,
+            subjectSnapshot: subject,
+            recipientResolvedFrom,
+            wasEscalation,
+            escalationThresholdApplied,
+            suppressedDueToAcknowledgment,
+            cancellationToken).ConfigureAwait(false);
     }
 
     private async ValueTask AppendLedgerRowAsync(
@@ -405,35 +325,20 @@ public sealed class AttentionIncidentNotificationOrchestrator
         string? failureSummary,
         string? providerMessageId,
         string? subjectSnapshot,
+        string? recipientResolvedFrom,
+        bool wasEscalation,
+        bool escalationThresholdApplied,
+        bool suppressedDueToAcknowledgment,
         CancellationToken cancellationToken)
     {
-        var id = NewNotificationId();
         await _ledger.AppendAsync(
             new AttentionIncidentNotificationWrite(
-                id,
-                incidentId,
-                integrationIdValue,
-                conditionKey,
-                notificationKind,
-                channel,
-                recipient,
-                status,
-                suppressionReason,
-                createdAtUtc,
-                attemptedAtUtc,
-                sentAtUtc,
-                failedAtUtc,
-                failureSummary,
-                providerMessageId,
-                subjectSnapshot),
+                NewNotificationId(), incidentId, integrationIdValue, conditionKey, notificationKind, channel,
+                recipient, status, suppressionReason, createdAtUtc, attemptedAtUtc, sentAtUtc, failedAtUtc,
+                failureSummary, providerMessageId, subjectSnapshot,
+                recipientResolvedFrom, wasEscalation, escalationThresholdApplied, suppressedDueToAcknowledgment),
             cancellationToken).ConfigureAwait(false);
     }
-
-    private static List<string> NormalizeRecipients(IEnumerable<string> raw) =>
-        raw.Select(r => r.Trim())
-            .Where(r => !string.IsNullOrEmpty(r))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToList();
 
     private static string ActivationSubject(IntegrationId integrationId) =>
         $"[Apperture] Attention: expected_run_missing ({integrationId.Value})";
@@ -443,6 +348,9 @@ public sealed class AttentionIncidentNotificationOrchestrator
 
     private static string ResolvedSubject(IntegrationId integrationId) =>
         $"[Apperture] Resolved: expected_run_missing ({integrationId.Value})";
+
+    private static string EscalationSubject(IntegrationId integrationId) =>
+        $"[Apperture] Escalation: expected_run_missing ({integrationId.Value})";
 
     private static string ActivationBody(IntegrationId integrationId, ScheduleExpectationSnapshot snapshot)
     {
@@ -461,9 +369,11 @@ public sealed class AttentionIncidentNotificationOrchestrator
     private static string ResolvedBody(IntegrationId integrationId) =>
         $"The expected_run_missing attention incident for integration {integrationId.Value} has resolved (expectation cleared).";
 
+    private static string EscalationBody(IntegrationId integrationId, AttentionIncidentProjection incident) =>
+        $"Escalation: expected_run_missing remains active for integration {integrationId.Value} since {incident.StartedAtUtc.UtcDateTime:u} (UTC).\n";
+
     private static string Fmt(DateTimeOffset? v) =>
         v is { } x ? x.UtcDateTime.ToString("u") : "(null)";
 
     private static string NewNotificationId() => $"attnnot_{Guid.NewGuid():N}";
 }
-

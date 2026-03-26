@@ -130,6 +130,21 @@ public sealed class IntegrationScheduleDiagnosticsTests
                 It.IsAny<int>(),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(Array.Empty<AttentionIncidentNotificationProjection>());
+        var resolver = new Mock<IAttentionRecipientResolver>();
+        resolver.Setup(x => x.ResolveAsync(It.IsAny<IntegrationId>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(
+                new AttentionRecipientResolution(
+                    false,
+                    true,
+                    Array.Empty<string>(),
+                    AttentionRecipientSources.None,
+                    Array.Empty<string>(),
+                    AttentionRecipientSources.None,
+                    null,
+                    null,
+                    true,
+                    true,
+                    true));
         var service = new IntegrationScheduleDiagnosticsService(
             integrationManagement.Object,
             readiness.Object,
@@ -137,6 +152,7 @@ public sealed class IntegrationScheduleDiagnosticsTests
             runQuery.Object,
             attention.Object,
             ledger.Object,
+            resolver.Object,
             new FixedUtcTimeProvider(utcNow));
         return service;
     }
@@ -229,6 +245,8 @@ public sealed class IntegrationScheduleDiagnosticsTests
         var diag = await sut.GetDiagnosticsAsync(IntId);
         diag.Should().NotBeNull();
         diag!.EvaluationStatus.Should().Be(ScheduleExpectationEvaluationStatus.Satisfied);
+        diag.AttentionRouting.Should().NotBeNull();
+        diag.AttentionRouting.PrimarySource.Should().Be(AttentionRecipientSources.None);
         diag.LastSatisfyingScheduleOriginAuthorizedRunId.Should().Be(runId);
         diag.LastSatisfyingScheduleOriginAuthorizedRunAt.Should().Be(latestRunAt);
         diag.RecentExpectedFires.Should().NotBeEmpty();
