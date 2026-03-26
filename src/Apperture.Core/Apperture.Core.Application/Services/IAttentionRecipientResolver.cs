@@ -9,6 +9,11 @@ public interface IAttentionRecipientResolver
         IntegrationId integrationId,
         string conditionKey,
         CancellationToken cancellationToken = default);
+
+    /// <summary>Resolves routing using only the instance default row (no integration override).</summary>
+    ValueTask<AttentionRecipientResolution> ResolveInstanceDefaultsAsync(
+        string conditionKey,
+        CancellationToken cancellationToken = default);
 }
 
 public interface IAttentionRoutingManagementService
@@ -20,6 +25,11 @@ public interface IAttentionRoutingManagementService
 
     ValueTask UpsertIntegrationRoutingAsync(
         IntegrationId integrationId,
+        string conditionKey,
+        AttentionRoutingUpsertCommand command,
+        CancellationToken cancellationToken = default);
+
+    ValueTask UpsertInstanceDefaultRoutingAsync(
         string conditionKey,
         AttentionRoutingUpsertCommand command,
         CancellationToken cancellationToken = default);

@@ -18,10 +18,48 @@ public sealed class SqlAttentionRecipientResolverTests
         return new AppertureDbContext(opts);
     }
 
+    private static DateTimeOffset UtcNow() => DateTimeOffset.UtcNow;
+
     [Fact]
     public async Task Integration_primary_overrides_instance()
     {
         await using var db = CreateDb();
+        var gInst = "grp_inst";
+        var gInt = "grp_int";
+        db.AttentionContactGroups.Add(new AttentionContactGroupEntity
+        {
+            Id = gInst,
+            Name = "Instance primary",
+            IsEnabled = true,
+            CreatedAtUtc = UtcNow(),
+            UpdatedAtUtc = UtcNow(),
+        });
+        db.AttentionContactGroups.Add(new AttentionContactGroupEntity
+        {
+            Id = gInt,
+            Name = "Integration primary",
+            IsEnabled = true,
+            CreatedAtUtc = UtcNow(),
+            UpdatedAtUtc = UtcNow(),
+        });
+        db.AttentionContactGroupMembers.Add(new AttentionContactGroupMemberEntity
+        {
+            Id = "m1",
+            AttentionContactGroupId = gInst,
+            EmailAddress = "global@test.com",
+            IsEnabled = true,
+            CreatedAtUtc = UtcNow(),
+            UpdatedAtUtc = UtcNow(),
+        });
+        db.AttentionContactGroupMembers.Add(new AttentionContactGroupMemberEntity
+        {
+            Id = "m2",
+            AttentionContactGroupId = gInt,
+            EmailAddress = "override@test.com",
+            IsEnabled = true,
+            CreatedAtUtc = UtcNow(),
+            UpdatedAtUtc = UtcNow(),
+        });
         db.InstanceAttentionRoutings.Add(new InstanceAttentionRoutingEntity
         {
             Id = InstanceAttentionRoutingDefaults.RowId,
@@ -30,13 +68,7 @@ public sealed class SqlAttentionRecipientResolverTests
             SendResolvedNotification = true,
             SuppressRemindersWhenAcknowledged = true,
             SuppressEscalationWhenAcknowledged = true,
-        });
-        db.AttentionRoutingRecipients.Add(new AttentionRoutingRecipientEntity
-        {
-            Id = "r_inst",
-            InstanceAttentionRoutingId = InstanceAttentionRoutingDefaults.RowId,
-            Role = AttentionRoutingRecipientRoles.Primary,
-            Address = "global@test.com",
+            PrimaryContactGroupId = gInst,
         });
         var intRow = new IntegrationAttentionRoutingEntity
         {
@@ -44,15 +76,9 @@ public sealed class SqlAttentionRecipientResolverTests
             IntegrationId = "int1",
             ConditionKey = AttentionConditionKeys.ExpectedRunMissing,
             IsEnabled = true,
+            PrimaryContactGroupId = gInt,
         };
         db.IntegrationAttentionRoutings.Add(intRow);
-        db.AttentionRoutingRecipients.Add(new AttentionRoutingRecipientEntity
-        {
-            Id = "r_int",
-            IntegrationAttentionRoutingId = "ir1",
-            Role = AttentionRoutingRecipientRoles.Primary,
-            Address = "override@test.com",
-        });
         await db.SaveChangesAsync();
 
         var sut = new SqlAttentionRecipientResolver(db);
@@ -62,6 +88,8 @@ public sealed class SqlAttentionRecipientResolverTests
         r.PrimarySource.Should().Be(AttentionRecipientSources.IntegrationOverride);
         r.EscalationRecipients.Should().BeEmpty();
         r.EscalationSource.Should().Be(AttentionRecipientSources.None);
+        r.IntegrationRowPrimaryContactGroupId.Should().Be(gInt);
+        r.IntegrationRowEscalationContactGroupId.Should().BeNull();
     }
 
     [Fact]

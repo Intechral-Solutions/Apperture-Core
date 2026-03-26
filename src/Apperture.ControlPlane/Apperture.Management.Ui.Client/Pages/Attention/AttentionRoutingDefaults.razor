@@ -1,0 +1,180 @@
+@page "/attention/routing-defaults"
+@using Apperture.Management.Client
+@using Apperture.Management.Ui.Client.Services
+@inject IManagementClient Client
+@inject IOperatorCapabilitiesService Capabilities
+
+<div class="p-4">
+    <h1 class="text-xl font-semibold text-heading">Attention routing defaults</h1>
+    <div class="text-xs text-muted">Instance-wide routing for expected_run_missing</div>
+
+    @if (!string.IsNullOrEmpty(_error))
+    {
+        <div class="mt-4 rounded border border-default bg-surface px-3 py-2 text-sm text-body">
+            <div class="font-semibold">Error</div>
+            <div class="text-muted">@_error</div>
+        </div>
+    }
+    else if (_routing is null || _groups is null)
+    {
+        <div class="mt-4 text-sm text-muted">Loading...</div>
+    }
+    else
+    {
+        <div class="mt-4 grid grid-cols-1 gap-2 md:grid-cols-2 text-sm text-body rounded border border-default bg-surface p-3">
+            <div>
+                <div class="text-xs text-muted">Primary recipients (resolved)</div>
+                <div>@( _routing.PrimaryRecipients.Count > 0 ? string.Join(", ", _routing.PrimaryRecipients) : "—")</div>
+                <div class="mt-1 text-xs text-muted">@NoRouteHint(_routing.PrimaryNoRouteReason)</div>
+            </div>
+            <div>
+                <div class="text-xs text-muted">Escalation recipients (resolved)</div>
+                <div>@(_routing.EscalationRecipients.Count > 0 ? string.Join(", ", _routing.EscalationRecipients) : "—")</div>
+                <div class="mt-1 text-xs text-muted">@NoRouteHint(_routing.EscalationNoRouteReason)</div>
+            </div>
+            <div>
+                <div class="text-xs text-muted">Has route / enabled</div>
+                <div>@_routing.HasRoute / @_routing.Enabled</div>
+            </div>
+            <div>
+                <div class="text-xs text-muted">Escalation after / reminder</div>
+                <div>@FmtTicks(_routing.EscalationAfterTicks) / @FmtTicks(_routing.ReminderIntervalTicks)</div>
+            </div>
+        </div>
+
+        @if (_capabilities?.CanManageSchedules == true)
+        {
+            <div class="mt-6 space-y-3 rounded border border-default bg-surface p-3">
+                <div class="text-xs font-semibold text-heading">Edit defaults</div>
+                <label class="flex items-center gap-2 text-sm">
+                    <input type="checkbox" @bind="_editEnabled" />
+                    Enabled
+                </label>
+                <label class="flex items-center gap-2 text-sm">
+                    <input type="checkbox" @bind="_editSendResolved" />
+                    Send resolved notification
+                </label>
+                <label class="flex items-center gap-2 text-sm">
+                    <input type="checkbox" @bind="_editSuppressRem" />
+                    Suppress reminders when acknowledged
+                </label>
+                <label class="flex items-center gap-2 text-sm">
+                    <input type="checkbox" @bind="_editSuppressEsc" />
+                    Suppress escalation when acknowledged
+                </label>
+                <label class="block text-xs text-muted">Primary contact group</label>
+                <select class="w-full max-w-xl rounded border border-default bg-surface px-2 py-1 text-sm" @bind="_primaryGroupId">
+                    <option value="">— None —</option>
+                    @foreach (var g in _groups.Where(x => x.IsEnabled))
+                    {
+                        <option value="@g.Id">@g.Name (@g.Id)</option>
+                    }
+                </select>
+                <label class="block text-xs text-muted">Escalation contact group</label>
+                <select class="w-full max-w-xl rounded border border-default bg-surface px-2 py-1 text-sm" @bind="_escalationGroupId">
+                    <option value="">— None —</option>
+                    @foreach (var g in _groups.Where(x => x.IsEnabled))
+                    {
+                        <option value="@g.Id">@g.Name (@g.Id)</option>
+                    }
+                </select>
+                <button type="button" class="rounded bg-surface-muted px-3 py-2 text-sm disabled:opacity-50" disabled="@_saving" @onclick="SaveAsync">Save</button>
+            </div>
+        }
+        else
+        {
+            <div class="mt-4 text-sm text-muted">Read-only (schedule.manage required to edit).</div>
+        }
+    }
+</div>
+
+@code {
+    private AttentionRoutingEffectiveDto? _routing;
+    private IReadOnlyList<AttentionContactGroupSummaryDto>? _groups;
+    private OperatorCapabilitiesDto? _capabilities;
+    private bool _editEnabled;
+    private bool _editSendResolved;
+    private bool _editSuppressRem;
+    private bool _editSuppressEsc;
+    private string? _primaryGroupId;
+    private string? _escalationGroupId;
+    private bool _saving;
+    private string? _error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _capabilities = await Capabilities.GetCapabilitiesAsync();
+        }
+        catch
+        {
+            _capabilities = null;
+        }
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _error = null;
+        try
+        {
+            _routing = await Client.GetAttentionRoutingDefaultsAsync();
+            _groups = await Client.ListAttentionContactGroupsAsync(includeDisabled: false);
+            if (_routing is not null)
+            {
+                _editEnabled = _routing.Enabled;
+                _editSendResolved = _routing.SendResolvedNotification;
+                _editSuppressRem = _routing.SuppressRemindersWhenAcknowledged;
+                _editSuppressEsc = _routing.SuppressEscalationWhenAcknowledged;
+                _primaryGroupId = _routing.PrimaryContactGroupId ?? "";
+                _escalationGroupId = _routing.EscalationContactGroupId ?? "";
+            }
+        }
+        catch (HttpRequestException ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_routing is null || _capabilities?.CanManageSchedules != true)
+            return;
+        _saving = true;
+        _error = null;
+        try
+        {
+            await Client.PutAttentionRoutingDefaultsAsync(
+                new UpsertAttentionRoutingRequest(
+                    _editEnabled,
+                    _editSendResolved,
+                    _editSuppressRem,
+                    _editSuppressEsc,
+                    _routing.EscalationAfterTicks,
+                    _routing.ReminderIntervalTicks,
+                    string.IsNullOrWhiteSpace(_primaryGroupId) ? null : _primaryGroupId,
+                    string.IsNullOrWhiteSpace(_escalationGroupId) ? null : _escalationGroupId));
+            await LoadAsync();
+        }
+        catch (HttpRequestException ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private static string FmtTicks(long? ticks) =>
+        ticks is { } t ? TimeSpan.FromTicks(t).ToString() : "—";
+
+    private static string NoRouteHint(string? reason) => reason switch
+    {
+        "no_group_configured" => "No group configured for this role.",
+        "group_disabled" => "Group is disabled.",
+        "group_empty" => "Group has no enabled members.",
+        _ => ""
+    };
+}

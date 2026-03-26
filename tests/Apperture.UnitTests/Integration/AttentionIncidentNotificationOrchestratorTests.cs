@@ -57,22 +57,34 @@ public sealed class AttentionIncidentNotificationOrchestratorTests
         bool suppressEscAck = true)
     {
         escalation ??= Array.Empty<string>();
-        var hasRoute = primary.Count > 0 || escalation.Count > 0;
+        var hasPrimary = primary.Count > 0;
+        var hasEsc = escalation.Count > 0;
+        var hasRoute = hasPrimary || hasEsc;
         var m = new Mock<IAttentionRecipientResolver>();
         m.Setup(x => x.ResolveAsync(It.IsAny<IntegrationId>(), AttentionConditionKeys.ExpectedRunMissing, It.IsAny<CancellationToken>()))
             .ReturnsAsync(
                 new AttentionRecipientResolution(
-                    hasRoute,
-                    enabled,
-                    primary,
-                    primarySource,
-                    escalation,
-                    escalationSource,
-                    escalationAfter,
-                    reminderInterval,
-                    sendResolved,
-                    suppressRemAck,
-                    suppressEscAck));
+                    HasRoute: hasRoute,
+                    Enabled: enabled,
+                    PrimaryRecipients: primary,
+                    PrimarySource: primarySource,
+                    EscalationRecipients: escalation,
+                    EscalationSource: escalationSource,
+                    PrimaryContactGroupId: hasPrimary ? "grp_primary" : null,
+                    PrimaryContactGroupName: hasPrimary ? "Primary group" : null,
+                    EscalationContactGroupId: hasEsc ? "grp_esc" : null,
+                    EscalationContactGroupName: hasEsc ? "Escalation group" : null,
+                    HasPrimaryRoute: hasPrimary,
+                    HasEscalationRoute: hasEsc,
+                    PrimaryNoRouteReason: hasPrimary ? null : AttentionNoRouteReasons.NoGroupConfigured,
+                    EscalationNoRouteReason: hasEsc ? null : AttentionNoRouteReasons.NoGroupConfigured,
+                    EscalationAfter: escalationAfter,
+                    ReminderInterval: reminderInterval,
+                    SendResolvedNotification: sendResolved,
+                    SuppressRemindersWhenAcknowledged: suppressRemAck,
+                    SuppressEscalationWhenAcknowledged: suppressEscAck,
+                    IntegrationRowPrimaryContactGroupId: null,
+                    IntegrationRowEscalationContactGroupId: null));
         return m;
     }
 
@@ -373,7 +385,8 @@ public sealed class AttentionIncidentNotificationOrchestratorTests
         ledger.Verify(
             x => x.AppendAsync(
                 It.Is<AttentionIncidentNotificationWrite>(w =>
-                    w.Status == AttentionNotificationStatuses.Failed && w.FailureSummary == "boom"),
+                    w.Status == AttentionNotificationStatuses.Failed && w.FailureSummary == "boom"
+                    && w.ContactGroupId == "grp_primary"),
                 It.IsAny<CancellationToken>()),
             Times.Once);
     }

@@ -1,0 +1,137 @@
+@page "/attention/contact-groups"
+@using Apperture.Management.Client
+@using Apperture.Management.Ui.Client.Services
+@inject IManagementClient Client
+@inject IOperatorCapabilitiesService Capabilities
+@inject NavigationManager Nav
+
+<div class="p-4">
+    <div class="flex items-center justify-between gap-3">
+        <div class="min-w-0">
+            <h1 class="text-xl font-semibold text-heading">Attention contact groups</h1>
+            <div class="text-xs text-muted">Recipients for schedule attention routing (expected_run_missing).</div>
+        </div>
+        <div class="flex items-center gap-2">
+            @if (_capabilities?.CanManageSchedules == true)
+            {
+                <button type="button" class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface disabled:opacity-50"
+                        disabled="@_busy"
+                        @onclick="CreateGroupAsync">
+                    New group
+                </button>
+            }
+            <button type="button" class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface"
+                    disabled="@_loading"
+                    @onclick="LoadAsync">
+                Refresh
+            </button>
+        </div>
+    </div>
+
+    @if (!string.IsNullOrEmpty(_error))
+    {
+        <div class="mt-4 rounded border border-default bg-surface px-3 py-2 text-sm text-body">
+            <div class="font-semibold">Error</div>
+            <div class="text-muted">@_error</div>
+        </div>
+    }
+    else if (_groups is null)
+    {
+        <div class="mt-4 text-sm text-muted">Loading...</div>
+    }
+    else if (_groups.Count == 0)
+    {
+        <div class="mt-4 text-sm text-muted">No contact groups yet.</div>
+    }
+    else
+    {
+        <div class="mt-4 overflow-x-auto rounded border border-default bg-surface">
+            <table class="min-w-full text-left text-sm text-body">
+                <thead class="border-b border-default text-xs text-muted">
+                    <tr>
+                        <th class="px-3 py-2">Id</th>
+                        <th class="px-3 py-2">Name</th>
+                        <th class="px-3 py-2">Enabled</th>
+                        <th class="px-3 py-2"></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var g in _groups)
+                    {
+                        <tr class="border-b border-default hover:bg-surface-muted cursor-pointer"
+                            @onclick="@(() => Nav.NavigateTo("/attention/contact-groups/" + Uri.EscapeDataString(g.Id)))">
+                            <td class="px-3 py-2 font-mono text-xs">@g.Id</td>
+                            <td class="px-3 py-2">@g.Name</td>
+                            <td class="px-3 py-2">@(g.IsEnabled ? "Yes" : "No")</td>
+                            <td class="px-3 py-2">
+                                <a href="@("/attention/contact-groups/" + Uri.EscapeDataString(g.Id))" class="underline text-sm" @onclick:stopPropagation>Open</a>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
+
+@code {
+    private IReadOnlyList<AttentionContactGroupSummaryDto>? _groups;
+    private OperatorCapabilitiesDto? _capabilities;
+    private bool _loading = true;
+    private bool _busy;
+    private string? _error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _capabilities = await Capabilities.GetCapabilitiesAsync();
+        }
+        catch
+        {
+            _capabilities = null;
+        }
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _error = null;
+        try
+        {
+            _groups = await Client.ListAttentionContactGroupsAsync(includeDisabled: true);
+        }
+        catch (HttpRequestException ex)
+        {
+            _error = ex.Message;
+            _groups = Array.Empty<AttentionContactGroupSummaryDto>();
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task CreateGroupAsync()
+    {
+        if (_capabilities?.CanManageSchedules != true)
+            return;
+        _busy = true;
+        _error = null;
+        try
+        {
+            var created = await Client.CreateAttentionContactGroupAsync(
+                new CreateAttentionContactGroupRequest("New attention group", null, IsEnabled: true));
+            Nav.NavigateTo("/attention/contact-groups/" + Uri.EscapeDataString(created.Id));
+        }
+        catch (HttpRequestException ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

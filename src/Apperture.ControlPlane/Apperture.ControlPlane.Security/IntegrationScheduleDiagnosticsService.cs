@@ -209,11 +209,21 @@ public sealed class IntegrationScheduleDiagnosticsService : IIntegrationSchedule
             route.PrimarySource,
             route.EscalationRecipients,
             route.EscalationSource,
+            route.PrimaryContactGroupId,
+            route.PrimaryContactGroupName,
+            route.EscalationContactGroupId,
+            route.EscalationContactGroupName,
+            route.HasPrimaryRoute,
+            route.HasEscalationRoute,
+            route.PrimaryNoRouteReason,
+            route.EscalationNoRouteReason,
             route.EscalationAfter,
             route.ReminderInterval,
             route.SendResolvedNotification,
             route.SuppressRemindersWhenAcknowledged,
-            route.SuppressEscalationWhenAcknowledged);
+            route.SuppressEscalationWhenAcknowledged,
+            route.IntegrationRowPrimaryContactGroupId,
+            route.IntegrationRowEscalationContactGroupId);
 
         return new IntegrationScheduleDiagnosticsProjection(
             integrationId,

@@ -11,6 +11,35 @@ public sealed class SqlAttentionRecipientResolver : IAttentionRecipientResolver
 
     public SqlAttentionRecipientResolver(AppertureDbContext db) => _db = db;
 
+    public async ValueTask<AttentionRecipientResolution> ResolveInstanceDefaultsAsync(
+        string conditionKey,
+        CancellationToken cancellationToken = default)
+    {
+        var inst = await _db.InstanceAttentionRoutings.AsNoTracking()
+            .FirstOrDefaultAsync(
+                x => x.Id == InstanceAttentionRoutingDefaults.RowId && x.ConditionKey == conditionKey,
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        if (inst is null)
+            return UnconfiguredInstance();
+
+        var primaryEx = await ExpandGroupAsync(inst.PrimaryContactGroupId, cancellationToken).ConfigureAwait(false);
+        var escEx = await ExpandGroupAsync(inst.EscalationContactGroupId, cancellationToken).ConfigureAwait(false);
+
+        return Build(
+            inst,
+            integrationOverride: null,
+            primaryEx,
+            escEx,
+            primarySource: string.IsNullOrWhiteSpace(inst.PrimaryContactGroupId)
+                ? AttentionRecipientSources.None
+                : AttentionRecipientSources.GlobalDefault,
+            escSource: string.IsNullOrWhiteSpace(inst.EscalationContactGroupId)
+                ? AttentionRecipientSources.None
+                : AttentionRecipientSources.GlobalDefault);
+    }
+
     public async ValueTask<AttentionRecipientResolution> ResolveAsync(
         IntegrationId integrationId,
         string conditionKey,
@@ -23,25 +52,7 @@ public sealed class SqlAttentionRecipientResolver : IAttentionRecipientResolver
             .ConfigureAwait(false);
 
         if (inst is null)
-        {
-            return new AttentionRecipientResolution(
-                false,
-                false,
-                Array.Empty<string>(),
-                AttentionRecipientSources.None,
-                Array.Empty<string>(),
-                AttentionRecipientSources.None,
-                null,
-                null,
-                false,
-                false,
-                false);
-        }
-
-        var instPrimary = await LoadAddressesAsync(inst.Id, null, AttentionRoutingRecipientRoles.Primary, cancellationToken)
-            .ConfigureAwait(false);
-        var instEsc = await LoadAddressesAsync(inst.Id, null, AttentionRoutingRecipientRoles.Escalation, cancellationToken)
-            .ConfigureAwait(false);
+            return UnconfiguredInstance();
 
         var integ = await _db.IntegrationAttentionRoutings.AsNoTracking()
             .FirstOrDefaultAsync(
@@ -49,8 +60,50 @@ public sealed class SqlAttentionRecipientResolver : IAttentionRecipientResolver
                 cancellationToken)
             .ConfigureAwait(false);
 
-        string[] integPrimary = Array.Empty<string>();
-        string[] integEsc = Array.Empty<string>();
+        string? primaryGroupId;
+        string primarySource;
+        if (integ is not null && !string.IsNullOrWhiteSpace(integ.PrimaryContactGroupId))
+        {
+            primaryGroupId = integ.PrimaryContactGroupId;
+            primarySource = AttentionRecipientSources.IntegrationOverride;
+        }
+        else
+        {
+            primaryGroupId = inst.PrimaryContactGroupId;
+            primarySource = string.IsNullOrWhiteSpace(primaryGroupId)
+                ? AttentionRecipientSources.None
+                : AttentionRecipientSources.GlobalDefault;
+        }
+
+        string? escGroupId;
+        string escSource;
+        if (integ is not null && !string.IsNullOrWhiteSpace(integ.EscalationContactGroupId))
+        {
+            escGroupId = integ.EscalationContactGroupId;
+            escSource = AttentionRecipientSources.IntegrationOverride;
+        }
+        else
+        {
+            escGroupId = inst.EscalationContactGroupId;
+            escSource = string.IsNullOrWhiteSpace(escGroupId)
+                ? AttentionRecipientSources.None
+                : AttentionRecipientSources.GlobalDefault;
+        }
+
+        var primaryEx = await ExpandGroupAsync(primaryGroupId, cancellationToken).ConfigureAwait(false);
+        var escEx = await ExpandGroupAsync(escGroupId, cancellationToken).ConfigureAwait(false);
+
+        return Build(inst, integ, primaryEx, escEx, primarySource, escSource);
+    }
+
+    private AttentionRecipientResolution Build(
+        InstanceAttentionRoutingEntity inst,
+        IntegrationAttentionRoutingEntity? integrationOverride,
+        GroupExpansion primaryEx,
+        GroupExpansion escEx,
+        string primarySource,
+        string escSource)
+    {
         bool policyEnabled;
         bool sendResolved;
         bool suppressRem;
@@ -58,18 +111,14 @@ public sealed class SqlAttentionRecipientResolver : IAttentionRecipientResolver
         long? escTicks;
         long? remTicks;
 
-        if (integ is not null)
+        if (integrationOverride is not null)
         {
-            integPrimary = await LoadAddressesAsync(null, integ.Id, AttentionRoutingRecipientRoles.Primary, cancellationToken)
-                .ConfigureAwait(false);
-            integEsc = await LoadAddressesAsync(null, integ.Id, AttentionRoutingRecipientRoles.Escalation, cancellationToken)
-                .ConfigureAwait(false);
-            policyEnabled = integ.IsEnabled;
-            sendResolved = integ.SendResolvedNotification;
-            suppressRem = integ.SuppressRemindersWhenAcknowledged;
-            suppressEsc = integ.SuppressEscalationWhenAcknowledged;
-            escTicks = integ.EscalationAfterTicks;
-            remTicks = integ.ReminderIntervalTicks;
+            policyEnabled = integrationOverride.IsEnabled;
+            sendResolved = integrationOverride.SendResolvedNotification;
+            suppressRem = integrationOverride.SuppressRemindersWhenAcknowledged;
+            suppressEsc = integrationOverride.SuppressEscalationWhenAcknowledged;
+            escTicks = integrationOverride.EscalationAfterTicks;
+            remTicks = integrationOverride.ReminderIntervalTicks;
         }
         else
         {
@@ -81,52 +130,92 @@ public sealed class SqlAttentionRecipientResolver : IAttentionRecipientResolver
             remTicks = inst.ReminderIntervalTicks;
         }
 
-        var primary = integPrimary.Length > 0 ? integPrimary : instPrimary;
-        var primarySource = integPrimary.Length > 0
-            ? AttentionRecipientSources.IntegrationOverride
-            : instPrimary.Length > 0
-                ? AttentionRecipientSources.GlobalDefault
-                : AttentionRecipientSources.None;
-
-        var esc = integEsc.Length > 0 ? integEsc : instEsc;
-        var escSource = integEsc.Length > 0
-            ? AttentionRecipientSources.IntegrationOverride
-            : instEsc.Length > 0
-                ? AttentionRecipientSources.GlobalDefault
-                : AttentionRecipientSources.None;
-
-        var hasRoute = primary.Length > 0 || esc.Length > 0;
+        var hasPrimary = primaryEx.Emails.Length > 0;
+        var hasEsc = escEx.Emails.Length > 0;
+        var hasRoute = hasPrimary || hasEsc;
 
         return new AttentionRecipientResolution(
             hasRoute,
             policyEnabled,
-            primary,
+            primaryEx.Emails,
             primarySource,
-            esc,
+            escEx.Emails,
             escSource,
+            primaryEx.GroupId,
+            primaryEx.GroupName,
+            escEx.GroupId,
+            escEx.GroupName,
+            hasPrimary,
+            hasEsc,
+            primaryEx.NoRouteReason,
+            escEx.NoRouteReason,
             escTicks is { } et ? TimeSpan.FromTicks(et) : null,
             remTicks is { } rt ? TimeSpan.FromTicks(rt) : null,
             sendResolved,
             suppressRem,
-            suppressEsc);
+            suppressEsc,
+            integrationOverride?.PrimaryContactGroupId,
+            integrationOverride?.EscalationContactGroupId);
     }
 
-    private async Task<string[]> LoadAddressesAsync(
-        string? instanceRoutingId,
-        string? integrationRoutingId,
-        string role,
-        CancellationToken cancellationToken)
+    private static AttentionRecipientResolution UnconfiguredInstance() =>
+        new(
+            false,
+            false,
+            Array.Empty<string>(),
+            AttentionRecipientSources.None,
+            Array.Empty<string>(),
+            AttentionRecipientSources.None,
+            null,
+            null,
+            null,
+            null,
+            false,
+            false,
+            AttentionNoRouteReasons.NoGroupConfigured,
+            AttentionNoRouteReasons.NoGroupConfigured,
+            null,
+            null,
+            false,
+            false,
+            false,
+            null,
+            null);
+
+    private async ValueTask<GroupExpansion> ExpandGroupAsync(string? groupId, CancellationToken cancellationToken)
     {
-        var q = _db.AttentionRoutingRecipients.AsNoTracking().Where(r => r.Role == role);
-        if (instanceRoutingId is not null)
-            q = q.Where(r => r.InstanceAttentionRoutingId == instanceRoutingId);
-        else
-            q = q.Where(r => r.IntegrationAttentionRoutingId == integrationRoutingId);
-        var list = await q.Select(r => r.Address).ToListAsync(cancellationToken).ConfigureAwait(false);
-        return list
+        if (string.IsNullOrWhiteSpace(groupId))
+            return new GroupExpansion(Array.Empty<string>(), null, null, AttentionNoRouteReasons.NoGroupConfigured);
+
+        var g = await _db.AttentionContactGroups.AsNoTracking()
+            .FirstOrDefaultAsync(x => x.Id == groupId, cancellationToken)
+            .ConfigureAwait(false);
+        if (g is null)
+            return new GroupExpansion(Array.Empty<string>(), groupId, null, AttentionNoRouteReasons.NoGroupConfigured);
+        if (!g.IsEnabled)
+            return new GroupExpansion(Array.Empty<string>(), g.Id, g.Name, AttentionNoRouteReasons.GroupDisabled);
+
+        var raw = await _db.AttentionContactGroupMembers.AsNoTracking()
+            .Where(m => m.AttentionContactGroupId == g.Id && m.IsEnabled)
+            .Select(m => m.EmailAddress)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        var emails = raw
             .Select(s => s.Trim())
             .Where(s => s.Length > 0)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
+
+        if (emails.Length == 0)
+            return new GroupExpansion(Array.Empty<string>(), g.Id, g.Name, AttentionNoRouteReasons.GroupEmpty);
+
+        return new GroupExpansion(emails, g.Id, g.Name, null);
     }
+
+    private readonly record struct GroupExpansion(
+        string[] Emails,
+        string? GroupId,
+        string? GroupName,
+        string? NoRouteReason);
 }

@@ -1,0 +1,210 @@
+@page "/attention/contact-groups/{Id}"
+@using Apperture.Management.Client
+@using Apperture.Management.Ui.Client.Services
+@inject IManagementClient Client
+@inject IOperatorCapabilitiesService Capabilities
+@inject NavigationManager Nav
+
+<div class="p-4">
+    <div class="mb-3 text-sm">
+        <a href="/attention/contact-groups" class="underline text-muted">← All groups</a>
+    </div>
+
+    @if (!string.IsNullOrEmpty(_error))
+    {
+        <div class="rounded border border-default bg-surface px-3 py-2 text-sm text-body">
+            <div class="font-semibold">Error</div>
+            <div class="text-muted">@_error</div>
+        </div>
+    }
+    else if (_detail is null)
+    {
+        <div class="text-sm text-muted">Loading...</div>
+    }
+    else
+    {
+        <h1 class="text-xl font-semibold text-heading">@_detail.Name</h1>
+        <div class="mt-1 font-mono text-xs text-muted">@_detail.Id</div>
+
+        @if (_capabilities?.CanManageSchedules == true)
+        {
+            <div class="mt-4 space-y-2 rounded border border-default bg-surface p-3">
+                <div class="text-xs font-semibold text-heading">Group</div>
+                <label class="block text-xs text-muted">Name</label>
+                <input class="w-full max-w-md rounded border border-default bg-surface px-2 py-1 text-sm" @bind="_editName" />
+                <label class="block text-xs text-muted">Description</label>
+                <input class="w-full max-w-xl rounded border border-default bg-surface px-2 py-1 text-sm" @bind="_editDescription" />
+                <label class="flex items-center gap-2 text-sm">
+                    <input type="checkbox" @bind="_editEnabled" />
+                    Enabled
+                </label>
+                <button type="button" class="rounded bg-surface-muted px-3 py-1 text-sm disabled:opacity-50" disabled="@_savingMeta" @onclick="SaveMetaAsync">Save group</button>
+            </div>
+
+            <div class="mt-6 space-y-2 rounded border border-default bg-surface p-3">
+                <div class="text-xs font-semibold text-heading">Members (one row per line: email[, display name])</div>
+                <textarea class="w-full min-h-[160px] rounded border border-default bg-surface px-2 py-1 text-sm font-mono" @bind="_membersRaw"></textarea>
+                <div class="text-xs text-muted">Example: ops@contoso.com, On-call</div>
+                <button type="button" class="rounded bg-surface-muted px-3 py-1 text-sm disabled:opacity-50" disabled="@_savingMembers" @onclick="SaveMembersAsync">Replace members</button>
+            </div>
+        }
+        else
+        {
+            <div class="mt-4 text-sm text-muted">Read-only (schedule.manage required to edit).</div>
+            <div class="mt-2 text-sm">Enabled: @(_detail.IsEnabled ? "Yes" : "No")</div>
+            @if (!string.IsNullOrEmpty(_detail.Description))
+            {
+                <div class="mt-2 text-sm">@_detail.Description</div>
+            }
+        }
+
+        <div class="mt-6">
+            <div class="text-xs font-semibold text-heading mb-2">Members</div>
+            @if (_detail.Members.Count == 0)
+            {
+                <div class="text-sm text-muted">No members.</div>
+            }
+            else
+            {
+                <div class="overflow-x-auto rounded border border-default bg-surface">
+                    <table class="min-w-full text-left text-sm text-body">
+                        <thead class="border-b border-default text-xs text-muted">
+                            <tr>
+                                <th class="px-3 py-2">Email</th>
+                                <th class="px-3 py-2">Display</th>
+                                <th class="px-3 py-2">Enabled</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var m in _detail.Members)
+                            {
+                                <tr class="border-b border-default">
+                                    <td class="px-3 py-2 font-mono text-xs">@m.EmailAddress</td>
+                                    <td class="px-3 py-2">@(m.DisplayName ?? "—")</td>
+                                    <td class="px-3 py-2">@(m.IsEnabled ? "Yes" : "No")</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public string Id { get; set; } = "";
+
+    private AttentionContactGroupDetailDto? _detail;
+    private OperatorCapabilitiesDto? _capabilities;
+    private string _editName = "";
+    private string _editDescription = "";
+    private bool _editEnabled = true;
+    private string _membersRaw = "";
+    private bool _savingMeta;
+    private bool _savingMembers;
+    private string? _error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _capabilities = await Capabilities.GetCapabilitiesAsync();
+        }
+        catch
+        {
+            _capabilities = null;
+        }
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _error = null;
+        try
+        {
+            _detail = await Client.GetAttentionContactGroupAsync(Id);
+            if (_detail is null)
+            {
+                _error = "Group not found.";
+                return;
+            }
+            _editName = _detail.Name;
+            _editDescription = _detail.Description ?? "";
+            _editEnabled = _detail.IsEnabled;
+            _membersRaw = string.Join(
+                Environment.NewLine,
+                _detail.Members.Select(m =>
+                    string.IsNullOrEmpty(m.DisplayName)
+                        ? m.EmailAddress
+                        : $"{m.EmailAddress}, {m.DisplayName}"));
+        }
+        catch (HttpRequestException ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private async Task SaveMetaAsync()
+    {
+        if (_detail is null || _capabilities?.CanManageSchedules != true)
+            return;
+        _savingMeta = true;
+        _error = null;
+        try
+        {
+            var updated = await Client.UpdateAttentionContactGroupAsync(
+                Id,
+                new UpdateAttentionContactGroupRequest(_editName, string.IsNullOrWhiteSpace(_editDescription) ? null : _editDescription, _editEnabled));
+            if (updated is null)
+                _error = "Update failed.";
+            else
+                _detail = updated;
+        }
+        catch (HttpRequestException ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _savingMeta = false;
+        }
+    }
+
+    private async Task SaveMembersAsync()
+    {
+        if (_detail is null || _capabilities?.CanManageSchedules != true)
+            return;
+        _savingMembers = true;
+        _error = null;
+        try
+        {
+            var lines = _membersRaw.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+            var inputs = new List<AttentionContactGroupMemberInputDto>();
+            foreach (var line in lines)
+            {
+                var parts = line.Split(',', 2, StringSplitOptions.TrimEntries);
+                var email = parts[0].Trim();
+                if (email.Length == 0)
+                    continue;
+                var display = parts.Length > 1 ? parts[1].Trim() : null;
+                inputs.Add(new AttentionContactGroupMemberInputDto(null, email, string.IsNullOrEmpty(display) ? null : display, IsEnabled: true));
+            }
+            var updated = await Client.ReplaceAttentionContactGroupMembersAsync(
+                Id,
+                new ReplaceAttentionContactGroupMembersRequest(inputs));
+            if (updated is null)
+                _error = "Save members failed.";
+            else
+                _detail = updated;
+        }
+        catch (HttpRequestException ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _savingMembers = false;
+        }
+    }
+}

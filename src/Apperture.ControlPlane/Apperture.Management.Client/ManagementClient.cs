@@ -373,6 +373,110 @@ public sealed class ManagementClient : IManagementClient
     }
 
     /// <inheritdoc />
+    public async Task<AttentionRoutingEffectiveDto?> GetAttentionRoutingDefaultsAsync(
+        string? conditionKey = null,
+        CancellationToken cancellationToken = default)
+    {
+        var q = string.IsNullOrWhiteSpace(conditionKey)
+            ? ""
+            : $"?conditionKey={Uri.EscapeDataString(conditionKey)}";
+        return await _http.GetFromJsonAsync<AttentionRoutingEffectiveDto>(
+            $"attention-routing/defaults{q}",
+            ApiJsonReadOptions,
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
+    public async Task PutAttentionRoutingDefaultsAsync(
+        UpsertAttentionRoutingRequest body,
+        string? conditionKey = null,
+        CancellationToken cancellationToken = default)
+    {
+        var q = string.IsNullOrWhiteSpace(conditionKey)
+            ? ""
+            : $"?conditionKey={Uri.EscapeDataString(conditionKey)}";
+        var response = await _http
+            .PutAsJsonAsync($"attention-routing/defaults{q}", body, cancellationToken)
+            .ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+    }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<AttentionContactGroupSummaryDto>> ListAttentionContactGroupsAsync(
+        bool includeDisabled = false,
+        CancellationToken cancellationToken = default)
+    {
+        var q = includeDisabled ? "?includeDisabled=true" : "";
+        var rows = await _http.GetFromJsonAsync<List<AttentionContactGroupSummaryDto>>(
+            $"attention-contact-groups{q}",
+            ApiJsonReadOptions,
+            cancellationToken).ConfigureAwait(false);
+        return rows ?? new List<AttentionContactGroupSummaryDto>();
+    }
+
+    /// <inheritdoc />
+    public async Task<AttentionContactGroupDetailDto?> GetAttentionContactGroupAsync(
+        string id,
+        CancellationToken cancellationToken = default)
+    {
+        return await _http.GetFromJsonAsync<AttentionContactGroupDetailDto>(
+            $"attention-contact-groups/{Uri.EscapeDataString(id)}",
+            ApiJsonReadOptions,
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
+    public async Task<AttentionContactGroupDetailDto> CreateAttentionContactGroupAsync(
+        CreateAttentionContactGroupRequest body,
+        CancellationToken cancellationToken = default)
+    {
+        var response = await _http
+            .PostAsJsonAsync("attention-contact-groups", body, cancellationToken)
+            .ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+        return (await response.Content.ReadFromJsonAsync<AttentionContactGroupDetailDto>(
+                ApiJsonReadOptions,
+                cancellationToken).ConfigureAwait(false))!;
+    }
+
+    /// <inheritdoc />
+    public async Task<AttentionContactGroupDetailDto?> UpdateAttentionContactGroupAsync(
+        string id,
+        UpdateAttentionContactGroupRequest body,
+        CancellationToken cancellationToken = default)
+    {
+        var response = await _http
+            .PutAsJsonAsync($"attention-contact-groups/{Uri.EscapeDataString(id)}", body, cancellationToken)
+            .ConfigureAwait(false);
+        if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+            return null;
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<AttentionContactGroupDetailDto>(
+            ApiJsonReadOptions,
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
+    public async Task<AttentionContactGroupDetailDto?> ReplaceAttentionContactGroupMembersAsync(
+        string id,
+        ReplaceAttentionContactGroupMembersRequest body,
+        CancellationToken cancellationToken = default)
+    {
+        var response = await _http
+            .PutAsJsonAsync(
+                $"attention-contact-groups/{Uri.EscapeDataString(id)}/members",
+                body,
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+            return null;
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<AttentionContactGroupDetailDto>(
+            ApiJsonReadOptions,
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
     public async Task<bool> AcknowledgeIntegrationAttentionIncidentAsync(
         string integrationId,
         string incidentId,

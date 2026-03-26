@@ -11,4 +11,6 @@ public sealed class IntegrationAttentionRoutingEntity
     public bool SuppressEscalationWhenAcknowledged { get; set; } = true;
     public long? EscalationAfterTicks { get; set; }
     public long? ReminderIntervalTicks { get; set; }
+    public string? PrimaryContactGroupId { get; set; }
+    public string? EscalationContactGroupId { get; set; }
 }

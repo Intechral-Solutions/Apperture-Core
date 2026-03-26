@@ -28,6 +28,27 @@ public sealed class AttentionRoutingManagementService : IAttentionRoutingManagem
         CancellationToken cancellationToken = default) =>
         _resolver.ResolveAsync(integrationId, conditionKey, cancellationToken);
 
+    public async ValueTask UpsertInstanceDefaultRoutingAsync(
+        string conditionKey,
+        AttentionRoutingUpsertCommand command,
+        CancellationToken cancellationToken = default)
+    {
+        await ValidateGroupIdsAsync(command.PrimaryContactGroupId, command.EscalationContactGroupId, cancellationToken)
+            .ConfigureAwait(false);
+
+        var row = await _db.InstanceAttentionRoutings
+            .FirstOrDefaultAsync(
+                x => x.Id == InstanceAttentionRoutingDefaults.RowId && x.ConditionKey == conditionKey,
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        if (row is null)
+            throw new InvalidOperationException($"Instance attention routing for condition '{conditionKey}' was not found.");
+
+        ApplyCommand(row, command);
+        await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+    }
+
     public async ValueTask UpsertIntegrationRoutingAsync(
         IntegrationId integrationId,
         string conditionKey,
@@ -36,6 +57,9 @@ public sealed class AttentionRoutingManagementService : IAttentionRoutingManagem
     {
         if (await _integrations.GetByIdAsync(integrationId, cancellationToken).ConfigureAwait(false) is null)
             throw new InvalidOperationException($"Integration {integrationId.Value} was not found.");
+
+        await ValidateGroupIdsAsync(command.PrimaryContactGroupId, command.EscalationContactGroupId, cancellationToken)
+            .ConfigureAwait(false);
 
         var row = await _db.IntegrationAttentionRoutings
             .FirstOrDefaultAsync(
@@ -52,52 +76,60 @@ public sealed class AttentionRoutingManagementService : IAttentionRoutingManagem
                 ConditionKey = conditionKey,
             };
             _db.IntegrationAttentionRoutings.Add(row);
-            await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-        }
-        else
-        {
-            var existing = await _db.AttentionRoutingRecipients
-                .Where(r => r.IntegrationAttentionRoutingId == row.Id)
-                .ToListAsync(cancellationToken)
-                .ConfigureAwait(false);
-            _db.AttentionRoutingRecipients.RemoveRange(existing);
         }
 
+        ApplyCommand(row, command);
+        await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private static void ApplyCommand(IntegrationAttentionRoutingEntity row, AttentionRoutingUpsertCommand command)
+    {
         row.IsEnabled = command.IsEnabled;
         row.SendResolvedNotification = command.SendResolvedNotification;
         row.SuppressRemindersWhenAcknowledged = command.SuppressRemindersWhenAcknowledged;
         row.SuppressEscalationWhenAcknowledged = command.SuppressEscalationWhenAcknowledged;
         row.EscalationAfterTicks = command.EscalationAfter?.Ticks;
         row.ReminderIntervalTicks = command.ReminderInterval?.Ticks;
-
-        foreach (var a in Normalize(command.PrimaryRecipients))
-        {
-            _db.AttentionRoutingRecipients.Add(new AttentionRoutingRecipientEntity
-            {
-                Id = NewRecipientId(),
-                IntegrationAttentionRoutingId = row.Id,
-                Role = AttentionRoutingRecipientRoles.Primary,
-                Address = a,
-            });
-        }
-
-        foreach (var a in Normalize(command.EscalationRecipients))
-        {
-            _db.AttentionRoutingRecipients.Add(new AttentionRoutingRecipientEntity
-            {
-                Id = NewRecipientId(),
-                IntegrationAttentionRoutingId = row.Id,
-                Role = AttentionRoutingRecipientRoles.Escalation,
-                Address = a,
-            });
-        }
-
-        await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        row.PrimaryContactGroupId = string.IsNullOrWhiteSpace(command.PrimaryContactGroupId)
+            ? null
+            : command.PrimaryContactGroupId.Trim();
+        row.EscalationContactGroupId = string.IsNullOrWhiteSpace(command.EscalationContactGroupId)
+            ? null
+            : command.EscalationContactGroupId.Trim();
     }
 
-    private static IEnumerable<string> Normalize(IReadOnlyList<string> raw) =>
-        raw.Select(r => r.Trim()).Where(r => r.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase);
+    private static void ApplyCommand(InstanceAttentionRoutingEntity row, AttentionRoutingUpsertCommand command)
+    {
+        row.IsEnabled = command.IsEnabled;
+        row.SendResolvedNotification = command.SendResolvedNotification;
+        row.SuppressRemindersWhenAcknowledged = command.SuppressRemindersWhenAcknowledged;
+        row.SuppressEscalationWhenAcknowledged = command.SuppressEscalationWhenAcknowledged;
+        row.EscalationAfterTicks = command.EscalationAfter?.Ticks;
+        row.ReminderIntervalTicks = command.ReminderInterval?.Ticks;
+        row.PrimaryContactGroupId = string.IsNullOrWhiteSpace(command.PrimaryContactGroupId)
+            ? null
+            : command.PrimaryContactGroupId.Trim();
+        row.EscalationContactGroupId = string.IsNullOrWhiteSpace(command.EscalationContactGroupId)
+            ? null
+            : command.EscalationContactGroupId.Trim();
+    }
+
+    private async Task ValidateGroupIdsAsync(
+        string? primaryId,
+        string? escalationId,
+        CancellationToken cancellationToken)
+    {
+        foreach (var id in new[] { primaryId, escalationId })
+        {
+            if (string.IsNullOrWhiteSpace(id))
+                continue;
+            var exists = await _db.AttentionContactGroups.AsNoTracking()
+                .AnyAsync(x => x.Id == id.Trim(), cancellationToken)
+                .ConfigureAwait(false);
+            if (!exists)
+                throw new InvalidOperationException($"Attention contact group '{id}' was not found.");
+        }
+    }
 
     private static string NewRoutingId() => $"attnrt_{Guid.NewGuid():N}";
-    private static string NewRecipientId() => $"attnrr_{Guid.NewGuid():N}";
 }

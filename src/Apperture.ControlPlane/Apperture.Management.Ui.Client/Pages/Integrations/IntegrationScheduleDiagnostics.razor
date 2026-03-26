@@ -269,14 +269,22 @@
                 {
                     <div class="grid grid-cols-1 gap-2 md:grid-cols-2 text-sm text-body">
                         <div>
-                            <div class="text-xs text-muted">Primary recipients</div>
+                            <div class="text-xs text-muted">Primary recipients (effective)</div>
                             <div>@(rt.PrimaryRecipients.Count > 0 ? string.Join(", ", rt.PrimaryRecipients) : "—")</div>
                             <div class="mt-1 text-xs text-muted">Source: @RoutingSourceLabel(rt.PrimarySource)</div>
+                            @if (!string.IsNullOrEmpty(rt.PrimaryNoRouteReason))
+                            {
+                                <div class="mt-1 text-xs text-muted">@NoRouteHint(rt.PrimaryNoRouteReason)</div>
+                            }
                         </div>
                         <div>
-                            <div class="text-xs text-muted">Escalation recipients</div>
+                            <div class="text-xs text-muted">Escalation recipients (effective)</div>
                             <div>@(rt.EscalationRecipients.Count > 0 ? string.Join(", ", rt.EscalationRecipients) : "—")</div>
                             <div class="mt-1 text-xs text-muted">Source: @RoutingSourceLabel(rt.EscalationSource)</div>
+                            @if (!string.IsNullOrEmpty(rt.EscalationNoRouteReason))
+                            {
+                                <div class="mt-1 text-xs text-muted">@NoRouteHint(rt.EscalationNoRouteReason)</div>
+                            }
                         </div>
                         <div>
                             <div class="text-xs text-muted">Has route / enabled</div>
@@ -291,20 +299,36 @@
                             <div>@rt.SendResolvedNotification / @rt.SuppressRemindersWhenAcknowledged / @rt.SuppressEscalationWhenAcknowledged</div>
                         </div>
                     </div>
-                    <div class="mt-3 space-y-2">
-                        <div class="text-xs font-semibold text-heading">Integration override</div>
-                        <label class="block text-xs text-muted">Primary (comma-separated)</label>
-                        <input class="w-full rounded border border-default bg-surface px-2 py-1 text-sm font-mono" @bind="_routingPrimary" />
-                        <label class="block text-xs text-muted">Escalation (comma-separated)</label>
-                        <input class="w-full rounded border border-default bg-surface px-2 py-1 text-sm font-mono" @bind="_routingEscalation" />
-                        <div class="flex flex-wrap gap-2 items-center">
-                            <button type="button" class="rounded bg-surface-muted px-3 py-1 text-sm disabled:opacity-50" disabled="@_routingSaveBusy" @onclick="SaveRoutingAsync">Save integration override</button>
-                            @if (!string.IsNullOrEmpty(_routingSaveError))
-                            {
-                                <span class="text-xs text-muted">@_routingSaveError</span>
-                            }
+                    @if (_capabilities?.CanManageSchedules == true)
+                    {
+                        <div class="mt-3 space-y-2">
+                            <div class="text-xs font-semibold text-heading">Integration override (contact groups)</div>
+                            <div class="text-xs text-muted">Leave as “Instance default” to clear the override for that role.</div>
+                            <label class="block text-xs text-muted">Primary group</label>
+                            <select class="w-full rounded border border-default bg-surface px-2 py-1 text-sm" @bind="_routingPrimaryGroupId">
+                                <option value="">Instance default</option>
+                                @foreach (var g in _contactGroups.Where(x => x.IsEnabled))
+                                {
+                                    <option value="@g.Id">@g.Name (@g.Id)</option>
+                                }
+                            </select>
+                            <label class="block text-xs text-muted">Escalation group</label>
+                            <select class="w-full rounded border border-default bg-surface px-2 py-1 text-sm" @bind="_routingEscalationGroupId">
+                                <option value="">Instance default</option>
+                                @foreach (var g in _contactGroups.Where(x => x.IsEnabled))
+                                {
+                                    <option value="@g.Id">@g.Name (@g.Id)</option>
+                                }
+                            </select>
+                            <div class="flex flex-wrap gap-2 items-center">
+                                <button type="button" class="rounded bg-surface-muted px-3 py-1 text-sm disabled:opacity-50" disabled="@_routingSaveBusy" @onclick="SaveRoutingAsync">Save integration override</button>
+                                @if (!string.IsNullOrEmpty(_routingSaveError))
+                                {
+                                    <span class="text-xs text-muted">@_routingSaveError</span>
+                                }
+                            </div>
                         </div>
-                    </div>
+                    }
                 }
             </div>
 
@@ -319,6 +343,7 @@
                                     <th class="px-3 py-2">Created</th>
                                     <th class="px-3 py-2">Kind</th>
                                     <th class="px-3 py-2">Recipient</th>
+                                    <th class="px-3 py-2">Contact group</th>
                                     <th class="px-3 py-2">Status</th>
                                     <th class="px-3 py-2">Resolved from</th>
                                     <th class="px-3 py-2">Flags</th>
@@ -331,6 +356,7 @@
                                         <td class="px-3 py-2 font-mono text-xs">@n.CreatedAtUtc.UtcDateTime.ToString("u")</td>
                                         <td class="px-3 py-2">@n.NotificationKind</td>
                                         <td class="px-3 py-2 font-mono text-xs">@(string.IsNullOrEmpty(n.Recipient) ? "—" : n.Recipient)</td>
+                                        <td class="px-3 py-2 text-xs font-mono">@(string.IsNullOrEmpty(n.ContactGroupId) ? "—" : n.ContactGroupId)@if (!string.IsNullOrEmpty(n.ContactGroupNameSnapshot)) { <div class="text-muted">@n.ContactGroupNameSnapshot</div> }</td>
                                         <td class="px-3 py-2 text-xs">@n.Status@if (n.SuppressionReason is { } sr) { <span class="text-muted">(@sr)</span> }</td>
                                         <td class="px-3 py-2 text-xs">@RoutingSourceLabel(n.RecipientResolvedFrom)</td>
                                         <td class="px-3 py-2 text-xs">@if (n.WasEscalation) { <span>esc </span> }@if (n.EscalationThresholdApplied) { <span>thr </span> }@if (n.SuppressedDueToAcknowledgment) { <span>ack </span> }</td>
@@ -371,8 +397,9 @@
     private bool _loading = true;
     private bool _ackBusy;
     private string? _error;
-    private string _routingPrimary = "";
-    private string _routingEscalation = "";
+    private IReadOnlyList<AttentionContactGroupSummaryDto> _contactGroups = Array.Empty<AttentionContactGroupSummaryDto>();
+    private string _routingPrimaryGroupId = "";
+    private string _routingEscalationGroupId = "";
     private bool _routingSaveBusy;
     private string? _routingSaveError;
 
@@ -419,13 +446,13 @@
     {
         if (_diagnostics?.AttentionRouting is not { } rt)
         {
-            _routingPrimary = "";
-            _routingEscalation = "";
+            _routingPrimaryGroupId = "";
+            _routingEscalationGroupId = "";
             return;
         }
 
-        _routingPrimary = string.Join(", ", rt.PrimaryRecipients);
-        _routingEscalation = string.Join(", ", rt.EscalationRecipients);
+        _routingPrimaryGroupId = rt.IntegrationRowPrimaryContactGroupId ?? "";
+        _routingEscalationGroupId = rt.IntegrationRowEscalationContactGroupId ?? "";
     }
 
     private static string FmtTicks(long? ticks) =>
@@ -440,12 +467,13 @@
         _ => source,
     };
 
-    private static List<string> ParseEmails(string raw) =>
-        raw.Split(new[] { ',', ';', '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries)
-            .Select(s => s.Trim())
-            .Where(s => s.Length > 0)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToList();
+    private static string NoRouteHint(string? reason) => reason switch
+    {
+        "no_group_configured" => "No group configured for this role.",
+        "group_disabled" => "Group is disabled.",
+        "group_empty" => "Group has no enabled members.",
+        _ => reason ?? ""
+    };
 
     private async Task SaveRoutingAsync()
     {
@@ -462,8 +490,8 @@
                 rt.SuppressEscalationWhenAcknowledged,
                 rt.EscalationAfterTicks,
                 rt.ReminderIntervalTicks,
-                ParseEmails(_routingPrimary),
-                ParseEmails(_routingEscalation));
+                string.IsNullOrWhiteSpace(_routingPrimaryGroupId) ? null : _routingPrimaryGroupId,
+                string.IsNullOrWhiteSpace(_routingEscalationGroupId) ? null : _routingEscalationGroupId);
             await Client.PutIntegrationAttentionRoutingAsync(IntegrationId, body);
             await LoadAsync();
         }

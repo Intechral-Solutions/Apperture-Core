@@ -134,17 +134,27 @@ public sealed class IntegrationScheduleDiagnosticsTests
         resolver.Setup(x => x.ResolveAsync(It.IsAny<IntegrationId>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(
                 new AttentionRecipientResolution(
-                    false,
-                    true,
-                    Array.Empty<string>(),
-                    AttentionRecipientSources.None,
-                    Array.Empty<string>(),
-                    AttentionRecipientSources.None,
-                    null,
-                    null,
-                    true,
-                    true,
-                    true));
+                    HasRoute: false,
+                    Enabled: true,
+                    PrimaryRecipients: Array.Empty<string>(),
+                    PrimarySource: AttentionRecipientSources.None,
+                    EscalationRecipients: Array.Empty<string>(),
+                    EscalationSource: AttentionRecipientSources.None,
+                    PrimaryContactGroupId: null,
+                    PrimaryContactGroupName: null,
+                    EscalationContactGroupId: null,
+                    EscalationContactGroupName: null,
+                    HasPrimaryRoute: false,
+                    HasEscalationRoute: false,
+                    PrimaryNoRouteReason: AttentionNoRouteReasons.NoGroupConfigured,
+                    EscalationNoRouteReason: AttentionNoRouteReasons.NoGroupConfigured,
+                    EscalationAfter: null,
+                    ReminderInterval: null,
+                    SendResolvedNotification: true,
+                    SuppressRemindersWhenAcknowledged: true,
+                    SuppressEscalationWhenAcknowledged: true,
+                    IntegrationRowPrimaryContactGroupId: null,
+                    IntegrationRowEscalationContactGroupId: null));
         var service = new IntegrationScheduleDiagnosticsService(
             integrationManagement.Object,
             readiness.Object,

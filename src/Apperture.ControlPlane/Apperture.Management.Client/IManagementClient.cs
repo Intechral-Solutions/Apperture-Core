@@ -152,6 +152,37 @@ public interface IManagementClient
         string? conditionKey = null,
         CancellationToken cancellationToken = default);
 
+    Task<AttentionRoutingEffectiveDto?> GetAttentionRoutingDefaultsAsync(
+        string? conditionKey = null,
+        CancellationToken cancellationToken = default);
+
+    Task PutAttentionRoutingDefaultsAsync(
+        UpsertAttentionRoutingRequest body,
+        string? conditionKey = null,
+        CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<AttentionContactGroupSummaryDto>> ListAttentionContactGroupsAsync(
+        bool includeDisabled = false,
+        CancellationToken cancellationToken = default);
+
+    Task<AttentionContactGroupDetailDto?> GetAttentionContactGroupAsync(
+        string id,
+        CancellationToken cancellationToken = default);
+
+    Task<AttentionContactGroupDetailDto> CreateAttentionContactGroupAsync(
+        CreateAttentionContactGroupRequest body,
+        CancellationToken cancellationToken = default);
+
+    Task<AttentionContactGroupDetailDto?> UpdateAttentionContactGroupAsync(
+        string id,
+        UpdateAttentionContactGroupRequest body,
+        CancellationToken cancellationToken = default);
+
+    Task<AttentionContactGroupDetailDto?> ReplaceAttentionContactGroupMembersAsync(
+        string id,
+        ReplaceAttentionContactGroupMembersRequest body,
+        CancellationToken cancellationToken = default);
+
     Task<bool> AcknowledgeIntegrationAttentionIncidentAsync(
         string integrationId,
         string incidentId,

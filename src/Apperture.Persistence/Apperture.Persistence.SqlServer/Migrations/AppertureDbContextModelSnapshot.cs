@@ -22,6 +22,73 @@ namespace Apperture.Persistence.SqlServer.Migrations
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
 
+            modelBuilder.Entity("Apperture.Persistence.SqlServer.AttentionContactGroupEntity", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(2048)
+                        .HasColumnType("nvarchar(2048)");
+
+                    b.Property<bool>("IsEnabled")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Name");
+
+                    b.ToTable("AttentionContactGroups", (string)null);
+                });
+
+            modelBuilder.Entity("Apperture.Persistence.SqlServer.AttentionContactGroupMemberEntity", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("AttentionContactGroupId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("DisplayName")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("EmailAddress")
+                        .IsRequired()
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)");
+
+                    b.Property<bool>("IsEnabled")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AttentionContactGroupId");
+
+                    b.ToTable("AttentionContactGroupMembers", (string)null);
+                });
+
             modelBuilder.Entity("Apperture.Persistence.SqlServer.AttentionIncidentEntity", b =>
                 {
                     b.Property<string>("Id")
@@ -110,6 +177,14 @@ namespace Apperture.Persistence.SqlServer.Migrations
                         .HasMaxLength(128)
                         .HasColumnType("nvarchar(128)");
 
+                    b.Property<string>("ContactGroupId")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("ContactGroupNameSnapshot")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
                     b.Property<DateTimeOffset>("CreatedAtUtc")
                         .HasColumnType("datetimeoffset");
 
@@ -175,39 +250,6 @@ namespace Apperture.Persistence.SqlServer.Migrations
                     b.HasIndex("AttentionIncidentId", "NotificationKind");
 
                     b.ToTable("AttentionIncidentNotifications", (string)null);
-                });
-
-            modelBuilder.Entity("Apperture.Persistence.SqlServer.AttentionRoutingRecipientEntity", b =>
-                {
-                    b.Property<string>("Id")
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
-
-                    b.Property<string>("Address")
-                        .IsRequired()
-                        .HasMaxLength(512)
-                        .HasColumnType("nvarchar(512)");
-
-                    b.Property<string>("InstanceAttentionRoutingId")
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
-
-                    b.Property<string>("IntegrationAttentionRoutingId")
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
-
-                    b.Property<string>("Role")
-                        .IsRequired()
-                        .HasMaxLength(32)
-                        .HasColumnType("nvarchar(32)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("InstanceAttentionRoutingId");
-
-                    b.HasIndex("IntegrationAttentionRoutingId");
-
-                    b.ToTable("AttentionRoutingRecipients", (string)null);
                 });
 
             modelBuilder.Entity("Apperture.Persistence.SqlServer.AuditLogEntity", b =>
@@ -518,8 +560,16 @@ namespace Apperture.Persistence.SqlServer.Migrations
                     b.Property<long?>("EscalationAfterTicks")
                         .HasColumnType("bigint");
 
+                    b.Property<string>("EscalationContactGroupId")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
                     b.Property<bool>("IsEnabled")
                         .HasColumnType("bit");
+
+                    b.Property<string>("PrimaryContactGroupId")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
 
                     b.Property<long?>("ReminderIntervalTicks")
                         .HasColumnType("bigint");
@@ -536,6 +586,10 @@ namespace Apperture.Persistence.SqlServer.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("ConditionKey");
+
+                    b.HasIndex("EscalationContactGroupId");
+
+                    b.HasIndex("PrimaryContactGroupId");
 
                     b.ToTable("InstanceAttentionRoutings", (string)null);
                 });
@@ -580,6 +634,10 @@ namespace Apperture.Persistence.SqlServer.Migrations
                     b.Property<long?>("EscalationAfterTicks")
                         .HasColumnType("bigint");
 
+                    b.Property<string>("EscalationContactGroupId")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
                     b.Property<string>("IntegrationId")
                         .IsRequired()
                         .HasMaxLength(64)
@@ -587,6 +645,10 @@ namespace Apperture.Persistence.SqlServer.Migrations
 
                     b.Property<bool>("IsEnabled")
                         .HasColumnType("bit");
+
+                    b.Property<string>("PrimaryContactGroupId")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
 
                     b.Property<long?>("ReminderIntervalTicks")
                         .HasColumnType("bigint");
@@ -601,6 +663,10 @@ namespace Apperture.Persistence.SqlServer.Migrations
                         .HasColumnType("bit");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("EscalationContactGroupId");
+
+                    b.HasIndex("PrimaryContactGroupId");
 
                     b.HasIndex("IntegrationId", "ConditionKey")
                         .IsUnique();

@@ -107,7 +107,12 @@ public static class ControlPanelMenuDefinitions
             ["Tools"] = new DomainMenu
             {
                 Title = null,
-                Items = { new DomainMenuItem { Text = "API Explorer", Href = "/tools/explorer" } }
+                Items =
+                {
+                    new DomainMenuItem { Text = "API Explorer", Href = "/tools/explorer" },
+                    new DomainMenuItem { Text = "Attention contact groups", Href = "/attention/contact-groups" },
+                    new DomainMenuItem { Text = "Attention routing defaults", Href = "/attention/routing-defaults" }
+                }
             },
             [SectionOwnerConstants.Config] = new DomainMenu
             {

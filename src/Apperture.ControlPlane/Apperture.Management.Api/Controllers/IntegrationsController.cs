@@ -224,8 +224,8 @@ public sealed class IntegrationsController : ControllerBase
                             body.SuppressEscalationWhenAcknowledged,
                             body.EscalationAfterTicks is { } et ? TimeSpan.FromTicks(et) : null,
                             body.ReminderIntervalTicks is { } rt ? TimeSpan.FromTicks(rt) : null,
-                            body.PrimaryRecipients,
-                            body.EscalationRecipients),
+                            body.PrimaryContactGroupId,
+                            body.EscalationContactGroupId),
                         cancellationToken)
                     .ConfigureAwait(false);
             }
@@ -550,7 +550,9 @@ public sealed class IntegrationsController : ControllerBase
                 n.RecipientResolvedFrom,
                 n.WasEscalation,
                 n.EscalationThresholdApplied,
-                n.SuppressedDueToAcknowledgment)).ToList(),
+                n.SuppressedDueToAcknowledgment,
+                n.ContactGroupId,
+                n.ContactGroupNameSnapshot)).ToList(),
             ToAttentionRoutingDto(p.AttentionRouting));
 
     private static AttentionRoutingEffectiveDto ToAttentionRoutingDto(AttentionRecipientResolution r) =>
@@ -561,11 +563,21 @@ public sealed class IntegrationsController : ControllerBase
             r.PrimarySource,
             r.EscalationRecipients.ToList(),
             r.EscalationSource,
+            r.PrimaryContactGroupId,
+            r.PrimaryContactGroupName,
+            r.EscalationContactGroupId,
+            r.EscalationContactGroupName,
+            r.HasPrimaryRoute,
+            r.HasEscalationRoute,
+            r.PrimaryNoRouteReason,
+            r.EscalationNoRouteReason,
             r.EscalationAfter?.Ticks,
             r.ReminderInterval?.Ticks,
             r.SendResolvedNotification,
             r.SuppressRemindersWhenAcknowledged,
-            r.SuppressEscalationWhenAcknowledged);
+            r.SuppressEscalationWhenAcknowledged,
+            r.IntegrationRowPrimaryContactGroupId,
+            r.IntegrationRowEscalationContactGroupId);
 
     private static AttentionRoutingEffectiveDto ToAttentionRoutingDto(AttentionRoutingDiagnosticsSummary s) =>
         new(
@@ -575,11 +587,21 @@ public sealed class IntegrationsController : ControllerBase
             s.PrimarySource,
             s.EscalationRecipients.ToList(),
             s.EscalationSource,
+            s.PrimaryContactGroupId,
+            s.PrimaryContactGroupName,
+            s.EscalationContactGroupId,
+            s.EscalationContactGroupName,
+            s.HasPrimaryRoute,
+            s.HasEscalationRoute,
+            s.PrimaryNoRouteReason,
+            s.EscalationNoRouteReason,
             s.EscalationAfter?.Ticks,
             s.ReminderInterval?.Ticks,
             s.SendResolvedNotification,
             s.SuppressRemindersWhenAcknowledged,
-            s.SuppressEscalationWhenAcknowledged);
+            s.SuppressEscalationWhenAcknowledged,
+            s.IntegrationRowPrimaryContactGroupId,
+            s.IntegrationRowEscalationContactGroupId);
 }
 
 public sealed record IntegrationDto(

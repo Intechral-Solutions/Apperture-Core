@@ -9,11 +9,21 @@ public sealed record AttentionRecipientResolution(
     string PrimarySource,
     IReadOnlyList<string> EscalationRecipients,
     string EscalationSource,
+    string? PrimaryContactGroupId,
+    string? PrimaryContactGroupName,
+    string? EscalationContactGroupId,
+    string? EscalationContactGroupName,
+    bool HasPrimaryRoute,
+    bool HasEscalationRoute,
+    string? PrimaryNoRouteReason,
+    string? EscalationNoRouteReason,
     TimeSpan? EscalationAfter,
     TimeSpan? ReminderInterval,
     bool SendResolvedNotification,
     bool SuppressRemindersWhenAcknowledged,
-    bool SuppressEscalationWhenAcknowledged);
+    bool SuppressEscalationWhenAcknowledged,
+    string? IntegrationRowPrimaryContactGroupId,
+    string? IntegrationRowEscalationContactGroupId);
 
 public sealed record AttentionRoutingUpsertCommand(
     bool IsEnabled,
@@ -22,5 +32,5 @@ public sealed record AttentionRoutingUpsertCommand(
     bool SuppressEscalationWhenAcknowledged,
     TimeSpan? EscalationAfter,
     TimeSpan? ReminderInterval,
-    IReadOnlyList<string> PrimaryRecipients,
-    IReadOnlyList<string> EscalationRecipients);
+    string? PrimaryContactGroupId,
+    string? EscalationContactGroupId);

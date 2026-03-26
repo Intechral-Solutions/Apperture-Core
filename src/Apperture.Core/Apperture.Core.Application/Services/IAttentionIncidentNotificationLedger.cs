@@ -22,7 +22,9 @@ public sealed record AttentionIncidentNotificationWrite(
     string? RecipientResolvedFrom,
     bool WasEscalation,
     bool EscalationThresholdApplied,
-    bool SuppressedDueToAcknowledgment);
+    bool SuppressedDueToAcknowledgment,
+    string? ContactGroupId,
+    string? ContactGroupNameSnapshot);
 
 public interface IAttentionIncidentNotificationLedger
 {

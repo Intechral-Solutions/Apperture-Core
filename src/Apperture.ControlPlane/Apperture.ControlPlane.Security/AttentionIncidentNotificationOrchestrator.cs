@@ -76,7 +76,7 @@ public sealed class AttentionIncidentNotificationOrchestrator
             await AppendSuppressedAsync(
                 incidentId, integrationId.Value, conditionKey, AttentionNotificationKinds.Activated,
                 AttentionNotificationSuppressionReasons.DuplicateActivationSuppressed, now, null,
-                cancellationToken).ConfigureAwait(false);
+                null, null, cancellationToken).ConfigureAwait(false);
             return;
         }
 
@@ -85,7 +85,7 @@ public sealed class AttentionIncidentNotificationOrchestrator
             await AppendSuppressedAsync(
                 incidentId, integrationId.Value, conditionKey, AttentionNotificationKinds.Activated,
                 AttentionNotificationSuppressionReasons.PolicyDisabled, now, route.PrimarySource,
-                cancellationToken).ConfigureAwait(false);
+                null, null, cancellationToken).ConfigureAwait(false);
             return;
         }
 
@@ -94,7 +94,8 @@ public sealed class AttentionIncidentNotificationOrchestrator
             await AppendSuppressedAsync(
                 incidentId, integrationId.Value, conditionKey, AttentionNotificationKinds.Activated,
                 AttentionNotificationSuppressionReasons.NoRouteConfigured, now, route.PrimarySource,
-                cancellationToken).ConfigureAwait(false);
+                route.PrimaryContactGroupId, route.PrimaryContactGroupName, cancellationToken)
+                .ConfigureAwait(false);
             return;
         }
 
@@ -104,7 +105,8 @@ public sealed class AttentionIncidentNotificationOrchestrator
         {
             await SendAndRecordAsync(
                 incidentId, integrationId.Value, conditionKey, AttentionNotificationKinds.Activated,
-                recipient, subject, body, now, route.PrimarySource, false, false, false, cancellationToken)
+                recipient, subject, body, now, route.PrimarySource, false, false, false,
+                route.PrimaryContactGroupId, route.PrimaryContactGroupName, cancellationToken)
                 .ConfigureAwait(false);
         }
     }
@@ -140,7 +142,8 @@ public sealed class AttentionIncidentNotificationOrchestrator
                         await SendAndRecordAsync(
                             incidentId, integrationId.Value, conditionKey, AttentionNotificationKinds.Reminder,
                             recipient, subject, body, now, route.PrimarySource, false, false, false,
-                            cancellationToken).ConfigureAwait(false);
+                            route.PrimaryContactGroupId, route.PrimaryContactGroupName, cancellationToken)
+                            .ConfigureAwait(false);
                     }
                 }
             }
@@ -180,7 +183,8 @@ public sealed class AttentionIncidentNotificationOrchestrator
         {
             await SendAndRecordAsync(
                 incidentId, integrationId.Value, conditionKey, AttentionNotificationKinds.Escalation,
-                recipient, subject, body, now, route.EscalationSource, true, true, false, cancellationToken)
+                recipient, subject, body, now, route.EscalationSource, true, true, false,
+                route.EscalationContactGroupId, route.EscalationContactGroupName, cancellationToken)
                 .ConfigureAwait(false);
         }
     }
@@ -209,7 +213,8 @@ public sealed class AttentionIncidentNotificationOrchestrator
         {
             await AppendSuppressedAsync(
                 incidentId, integrationId.Value, conditionKey, AttentionNotificationKinds.Resolved,
-                AttentionNotificationSuppressionReasons.PolicyDisabled, now, route.PrimarySource, cancellationToken)
+                AttentionNotificationSuppressionReasons.PolicyDisabled, now, route.PrimarySource,
+                null, null, cancellationToken)
                 .ConfigureAwait(false);
             return;
         }
@@ -219,7 +224,7 @@ public sealed class AttentionIncidentNotificationOrchestrator
             await AppendSuppressedAsync(
                 incidentId, integrationId.Value, conditionKey, AttentionNotificationKinds.Resolved,
                 AttentionNotificationSuppressionReasons.ResolvedNotificationDisabled, now, route.PrimarySource,
-                cancellationToken).ConfigureAwait(false);
+                null, null, cancellationToken).ConfigureAwait(false);
             return;
         }
 
@@ -228,7 +233,7 @@ public sealed class AttentionIncidentNotificationOrchestrator
             await AppendSuppressedAsync(
                 incidentId, integrationId.Value, conditionKey, AttentionNotificationKinds.Resolved,
                 AttentionNotificationSuppressionReasons.NoPriorActivationForResolved, now, route.PrimarySource,
-                cancellationToken).ConfigureAwait(false);
+                null, null, cancellationToken).ConfigureAwait(false);
             return;
         }
 
@@ -237,7 +242,8 @@ public sealed class AttentionIncidentNotificationOrchestrator
             await AppendSuppressedAsync(
                 incidentId, integrationId.Value, conditionKey, AttentionNotificationKinds.Resolved,
                 AttentionNotificationSuppressionReasons.NoRouteConfigured, now, route.PrimarySource,
-                cancellationToken).ConfigureAwait(false);
+                route.PrimaryContactGroupId, route.PrimaryContactGroupName, cancellationToken)
+                .ConfigureAwait(false);
             return;
         }
 
@@ -247,7 +253,8 @@ public sealed class AttentionIncidentNotificationOrchestrator
         {
             await SendAndRecordAsync(
                 incidentId, integrationId.Value, conditionKey, AttentionNotificationKinds.Resolved,
-                recipient, subject, body, now, route.PrimarySource, false, false, false, cancellationToken)
+                recipient, subject, body, now, route.PrimarySource, false, false, false,
+                route.PrimaryContactGroupId, route.PrimaryContactGroupName, cancellationToken)
                 .ConfigureAwait(false);
         }
     }
@@ -260,13 +267,16 @@ public sealed class AttentionIncidentNotificationOrchestrator
         string suppressionReason,
         DateTimeOffset now,
         string? recipientResolvedFrom,
+        string? contactGroupId,
+        string? contactGroupNameSnapshot,
         CancellationToken cancellationToken)
     {
         await AppendLedgerRowAsync(
             incidentId, integrationIdValue, conditionKey, notificationKind,
             AttentionNotificationChannels.Email, "", AttentionNotificationStatuses.Suppressed, suppressionReason,
             now, null, null, null, null, null, null,
-            recipientResolvedFrom, false, false, false, cancellationToken).ConfigureAwait(false);
+            recipientResolvedFrom, false, false, false,
+            contactGroupId, contactGroupNameSnapshot, cancellationToken).ConfigureAwait(false);
     }
 
     private async ValueTask SendAndRecordAsync(
@@ -282,6 +292,8 @@ public sealed class AttentionIncidentNotificationOrchestrator
         bool wasEscalation,
         bool escalationThresholdApplied,
         bool suppressedDueToAcknowledgment,
+        string? contactGroupId,
+        string? contactGroupNameSnapshot,
         CancellationToken cancellationToken)
     {
         _ = _smtpOptions;
@@ -306,6 +318,8 @@ public sealed class AttentionIncidentNotificationOrchestrator
             wasEscalation,
             escalationThresholdApplied,
             suppressedDueToAcknowledgment,
+            contactGroupId,
+            contactGroupNameSnapshot,
             cancellationToken).ConfigureAwait(false);
     }
 
@@ -329,6 +343,8 @@ public sealed class AttentionIncidentNotificationOrchestrator
         bool wasEscalation,
         bool escalationThresholdApplied,
         bool suppressedDueToAcknowledgment,
+        string? contactGroupId,
+        string? contactGroupNameSnapshot,
         CancellationToken cancellationToken)
     {
         await _ledger.AppendAsync(
@@ -336,7 +352,8 @@ public sealed class AttentionIncidentNotificationOrchestrator
                 NewNotificationId(), incidentId, integrationIdValue, conditionKey, notificationKind, channel,
                 recipient, status, suppressionReason, createdAtUtc, attemptedAtUtc, sentAtUtc, failedAtUtc,
                 failureSummary, providerMessageId, subjectSnapshot,
-                recipientResolvedFrom, wasEscalation, escalationThresholdApplied, suppressedDueToAcknowledgment),
+                recipientResolvedFrom, wasEscalation, escalationThresholdApplied, suppressedDueToAcknowledgment,
+                contactGroupId, contactGroupNameSnapshot),
             cancellationToken).ConfigureAwait(false);
     }
 

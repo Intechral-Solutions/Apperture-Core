@@ -42,12 +42,16 @@ public sealed class SqlAttentionIncidentNotificationLedgerTests
             AttentionRecipientSources.GlobalDefault,
             false,
             false,
-            false);
+            false,
+            "grp1",
+            "Ops primary");
         await sut.AppendAsync(row, CancellationToken.None);
 
         var list = await sut.ListRecentForIncidentsAsync(new[] { "inc1" }, 10, CancellationToken.None);
         list.Should().ContainSingle();
         list[0].Recipient.Should().Be("a@test.com");
+        list[0].ContactGroupId.Should().Be("grp1");
+        list[0].ContactGroupNameSnapshot.Should().Be("Ops primary");
 
         (await sut.HasSucceededActivationAsync("inc1", CancellationToken.None)).Should().BeTrue();
         (await sut.HasNonSuppressedActivationAttemptAsync("inc1", CancellationToken.None)).Should().BeTrue();

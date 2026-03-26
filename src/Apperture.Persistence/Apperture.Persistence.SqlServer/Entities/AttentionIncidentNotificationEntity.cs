@@ -22,4 +22,6 @@ public sealed class AttentionIncidentNotificationEntity
     public bool WasEscalation { get; set; }
     public bool EscalationThresholdApplied { get; set; }
     public bool SuppressedDueToAcknowledgment { get; set; }
+    public string? ContactGroupId { get; set; }
+    public string? ContactGroupNameSnapshot { get; set; }
 }

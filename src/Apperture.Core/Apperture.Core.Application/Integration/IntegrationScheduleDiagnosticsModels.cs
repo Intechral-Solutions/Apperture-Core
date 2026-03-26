@@ -25,11 +25,21 @@ public sealed record AttentionRoutingDiagnosticsSummary(
     string PrimarySource,
     IReadOnlyList<string> EscalationRecipients,
     string EscalationSource,
+    string? PrimaryContactGroupId,
+    string? PrimaryContactGroupName,
+    string? EscalationContactGroupId,
+    string? EscalationContactGroupName,
+    bool HasPrimaryRoute,
+    bool HasEscalationRoute,
+    string? PrimaryNoRouteReason,
+    string? EscalationNoRouteReason,
     TimeSpan? EscalationAfter,
     TimeSpan? ReminderInterval,
     bool SendResolvedNotification,
     bool SuppressRemindersWhenAcknowledged,
-    bool SuppressEscalationWhenAcknowledged);
+    bool SuppressEscalationWhenAcknowledged,
+    string? IntegrationRowPrimaryContactGroupId,
+    string? IntegrationRowEscalationContactGroupId);
 
 public sealed record IntegrationScheduleDiagnosticsProjection(
     IntegrationId IntegrationId,
