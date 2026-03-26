@@ -19,6 +19,9 @@ public static class IntegrationServiceCollectionExtensions
     {
         services.AddScoped<IIntegrationRepository, SqlIntegrationRepository>();
         services.AddScoped<IAttentionIncidentTracker, SqlAttentionIncidentTracker>();
+        services.AddScoped<IAttentionIncidentNotificationLedger, SqlAttentionIncidentNotificationLedger>();
+        services.AddScoped<IAttentionNotificationSender, SmtpAttentionNotificationSender>();
+        services.AddScoped<AttentionIncidentNotificationOrchestrator>();
         services.AddScoped<IIntegrationManagementService, IntegrationManagementService>();
         services.AddSingleton<IScheduleExpectationEvaluator, ScheduleExpectationEvaluator>();
         services.AddScoped<IIntegrationScheduleDiagnosticsService, IntegrationScheduleDiagnosticsService>();
@@ -34,9 +37,12 @@ public static class IntegrationServiceCollectionExtensions
         this IServiceCollection services,
         IConfiguration configuration)
     {
+        services.Configure<AttentionNotificationOptions>(
+            configuration.GetSection(AttentionNotificationOptions.SectionName));
         services.Configure<AttentionIncidentObservationOptions>(
             configuration.GetSection(AttentionIncidentObservationOptions.SectionName));
         services.AddHostedService<AttentionIncidentObservationHostedService>();
         return services;
     }
 }
+

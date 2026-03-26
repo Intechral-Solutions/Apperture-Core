@@ -25,7 +25,8 @@ public sealed record IntegrationScheduleDiagnosticsDto(
     string? LastAuthorizedRunStatus,
     DateTimeOffset? LastAuthorizedRunAt,
     IReadOnlyList<ExpectedFireDiagnosticDto> RecentExpectedFires,
-    IReadOnlyList<AttentionIncidentDto> RecentAttentionIncidents);
+    IReadOnlyList<AttentionIncidentDto> RecentAttentionIncidents,
+    IReadOnlyList<AttentionIncidentNotificationDto> RecentAttentionIncidentNotifications);
 
 /// <summary>Epic 68: bounded incident history for schedule attention conditions.</summary>
 public sealed record AttentionIncidentDto(
@@ -44,6 +45,26 @@ public sealed record AttentionIncidentDto(
     string? AcknowledgementNote);
 
 public sealed record AcknowledgeAttentionIncidentRequest(string? Note);
+
+/// <summary>Epic 69: durable notification attempt or suppression for schedule attention incidents.</summary>
+public sealed record AttentionIncidentNotificationDto(
+    string Id,
+    string AttentionIncidentId,
+    string IntegrationId,
+    string ConditionKey,
+    string NotificationKind,
+    string Channel,
+    string Recipient,
+    string Status,
+    string? SuppressionReason,
+    DateTimeOffset CreatedAtUtc,
+    DateTimeOffset? AttemptedAtUtc,
+    DateTimeOffset? SentAtUtc,
+    DateTimeOffset? FailedAtUtc,
+    string? FailureSummary,
+    string? ProviderMessageId,
+    string? SubjectSnapshot);
+
 
 /// <summary>
 /// Epic 67: one expected fire instance with evaluation outcome.

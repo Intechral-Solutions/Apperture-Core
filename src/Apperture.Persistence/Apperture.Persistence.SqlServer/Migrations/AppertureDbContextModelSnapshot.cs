@@ -86,6 +86,84 @@ namespace Apperture.Persistence.SqlServer.Migrations
                     b.ToTable("AttentionIncidents", (string)null);
                 });
 
+            modelBuilder.Entity("Apperture.Persistence.SqlServer.AttentionIncidentNotificationEntity", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<DateTimeOffset?>("AttemptedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("AttentionIncidentId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("Channel")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<string>("ConditionKey")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset?>("FailedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("FailureSummary")
+                        .HasMaxLength(2048)
+                        .HasColumnType("nvarchar(2048)");
+
+                    b.Property<string>("IntegrationId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("NotificationKind")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<string>("ProviderMessageId")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("Recipient")
+                        .IsRequired()
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)");
+
+                    b.Property<DateTimeOffset?>("SentAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<string>("SubjectSnapshot")
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)");
+
+                    b.Property<string>("SuppressionReason")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AttentionIncidentId", "CreatedAtUtc");
+
+                    b.HasIndex("AttentionIncidentId", "NotificationKind");
+
+                    b.ToTable("AttentionIncidentNotifications", (string)null);
+                });
+
             modelBuilder.Entity("Apperture.Persistence.SqlServer.AuditLogEntity", b =>
                 {
                     b.Property<long>("Id")

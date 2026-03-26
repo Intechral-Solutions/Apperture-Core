@@ -26,6 +26,7 @@ public sealed record ExpectedFireDiagnosticEntry(
 
 /// <summary>
 /// Epic 67: operator-facing schedule diagnostics for an integration.
+/// Epic 69: includes bounded notification evidence for recent incidents.
 /// </summary>
 public sealed record IntegrationScheduleDiagnosticsProjection(
     IntegrationId IntegrationId,
@@ -46,5 +47,6 @@ public sealed record IntegrationScheduleDiagnosticsProjection(
     string? LastAuthorizedRunStatus,
     DateTimeOffset? LastAuthorizedRunAt,
     IReadOnlyList<ExpectedFireDiagnosticEntry> RecentExpectedFires,
-    IReadOnlyList<AttentionIncidentProjection> RecentAttentionIncidents);
+    IReadOnlyList<AttentionIncidentProjection> RecentAttentionIncidents,
+    IReadOnlyList<AttentionIncidentNotificationProjection> RecentAttentionIncidentNotifications);
 

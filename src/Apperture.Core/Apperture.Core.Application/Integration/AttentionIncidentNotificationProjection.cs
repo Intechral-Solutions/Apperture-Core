@@ -1,0 +1,19 @@
+namespace Apperture.Core.Application.Integration;
+
+public sealed record AttentionIncidentNotificationProjection(
+    string Id,
+    string AttentionIncidentId,
+    string IntegrationId,
+    string ConditionKey,
+    string NotificationKind,
+    string Channel,
+    string Recipient,
+    string Status,
+    string? SuppressionReason,
+    DateTimeOffset CreatedAtUtc,
+    DateTimeOffset? AttemptedAtUtc,
+    DateTimeOffset? SentAtUtc,
+    DateTimeOffset? FailedAtUtc,
+    string? FailureSummary,
+    string? ProviderMessageId,
+    string? SubjectSnapshot);

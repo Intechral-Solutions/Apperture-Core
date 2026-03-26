@@ -9,6 +9,7 @@ namespace Apperture.ControlPlane.Security;
 
 /// <summary>
 /// Epic 68: observes schedule expectation truth on an interval (not UI-driven) and persists <c>expected_run_missing</c> incidents.
+/// Epic 69: drives notification policy from incident transitions after each observation.
 /// </summary>
 public sealed class AttentionIncidentObservationHostedService : BackgroundService
 {
@@ -68,6 +69,7 @@ public sealed class AttentionIncidentObservationHostedService : BackgroundServic
         var integrations = scope.ServiceProvider.GetRequiredService<IIntegrationRepository>();
         var readiness = scope.ServiceProvider.GetRequiredService<IIntegrationReadinessService>();
         var tracker = scope.ServiceProvider.GetRequiredService<IAttentionIncidentTracker>();
+        var notifier = scope.ServiceProvider.GetRequiredService<AttentionIncidentNotificationOrchestrator>();
         var clock = scope.ServiceProvider.GetRequiredService<TimeProvider>();
         var observedAt = clock.GetUtcNow();
 
@@ -79,8 +81,25 @@ public sealed class AttentionIncidentObservationHostedService : BackgroundServic
                 .ConfigureAwait(false);
             if (snapshot is null)
                 continue;
-            await tracker.ObserveScheduleExpectationAsync(integration.Id, snapshot, observedAt, cancellationToken)
+
+            var observe = await tracker
+                .ObserveScheduleExpectationAsync(integration.Id, snapshot, observedAt, cancellationToken)
                 .ConfigureAwait(false);
+
+            try
+            {
+                await notifier
+                    .HandleObserveResultAsync(integration.Id, observe, snapshot, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(
+                    ex,
+                    "Attention incident notification handling failed for integration {IntegrationId} after transition {Transition}.",
+                    integration.Id.Value,
+                    observe.Transition);
+            }
         }
     }
 }

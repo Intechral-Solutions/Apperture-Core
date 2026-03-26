@@ -28,7 +28,7 @@ public sealed class SqlAttentionIncidentTracker : IAttentionIncidentTracker
     }
 
     /// <inheritdoc />
-    public async ValueTask ObserveScheduleExpectationAsync(
+    public async ValueTask<AttentionIncidentObserveResult> ObserveScheduleExpectationAsync(
         IntegrationId integrationId,
         ScheduleExpectationSnapshot snapshot,
         DateTimeOffset observedAtUtc,
@@ -46,9 +46,10 @@ public sealed class SqlAttentionIncidentTracker : IAttentionIncidentTracker
                 .ConfigureAwait(false);
             if (active is null)
             {
+                var id = NewIncidentId();
                 _db.AttentionIncidents.Add(new AttentionIncidentEntity
                 {
-                    Id = NewIncidentId(),
+                    Id = id,
                     IntegrationId = integrationId.Value,
                     ConditionKey = conditionKey,
                     Status = AttentionIncidentStatuses.Active,
@@ -57,54 +58,23 @@ public sealed class SqlAttentionIncidentTracker : IAttentionIncidentTracker
                     FirstExpectedFireAtUtc = snapshot.Evaluation.MostRecentExpectedFireUtc,
                     LastExpectedFireAtUtc = snapshot.Evaluation.MostRecentExpectedFireUtc,
                 });
-            }
-            else
-            {
-                active.LastObservedAtUtc = observedAtUtc;
-                if (snapshot.Evaluation.MostRecentExpectedFireUtc is { } fire)
+                try
                 {
-                    active.LastExpectedFireAtUtc = fire;
-                    active.FirstExpectedFireAtUtc ??= fire;
+                    await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+                    return new AttentionIncidentObserveResult(AttentionIncidentObserveTransition.Opened, id);
+                }
+                catch (DbUpdateException)
+                {
+                    _db.ChangeTracker.Clear();
+                    return await ObserveStillActiveAfterConcurrentOpenAsync(
+                        integrationId,
+                        conditionKey,
+                        snapshot,
+                        observedAtUtc,
+                        cancellationToken).ConfigureAwait(false);
                 }
             }
-        }
-        else
-        {
-            var active = await _db.AttentionIncidents
-                .FirstOrDefaultAsync(
-                    e => e.IntegrationId == integrationId.Value
-                         && e.ConditionKey == conditionKey
-                         && e.Status == AttentionIncidentStatuses.Active,
-                    cancellationToken)
-                .ConfigureAwait(false);
-            if (active is not null)
-            {
-                active.Status = AttentionIncidentStatuses.Resolved;
-                active.ResolvedAtUtc = observedAtUtc;
-                active.ResolutionReason = AttentionIncidentResolutionReasons.ExpectationCleared;
-                active.LastObservedAtUtc = observedAtUtc;
-            }
-        }
 
-        try
-        {
-            await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-        }
-        catch (DbUpdateException)
-        {
-            // Concurrent open: unique filtered index on active row — retry as update.
-            _db.ChangeTracker.Clear();
-            if (snapshot.Evaluation.Status != ScheduleExpectationEvaluationStatus.MissingExpectedRun)
-                return;
-            var active = await _db.AttentionIncidents
-                .FirstOrDefaultAsync(
-                    e => e.IntegrationId == integrationId.Value
-                         && e.ConditionKey == conditionKey
-                         && e.Status == AttentionIncidentStatuses.Active,
-                    cancellationToken)
-                .ConfigureAwait(false);
-            if (active is null)
-                return;
             active.LastObservedAtUtc = observedAtUtc;
             if (snapshot.Evaluation.MostRecentExpectedFireUtc is { } fire)
             {
@@ -113,7 +83,53 @@ public sealed class SqlAttentionIncidentTracker : IAttentionIncidentTracker
             }
 
             await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            return new AttentionIncidentObserveResult(AttentionIncidentObserveTransition.ObservedStillActive, active.Id);
         }
+
+        var toResolve = await _db.AttentionIncidents
+            .FirstOrDefaultAsync(
+                e => e.IntegrationId == integrationId.Value
+                     && e.ConditionKey == conditionKey
+                     && e.Status == AttentionIncidentStatuses.Active,
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (toResolve is null)
+            return new AttentionIncidentObserveResult(AttentionIncidentObserveTransition.NoChange, null);
+
+        var resolvedId = toResolve.Id;
+        toResolve.Status = AttentionIncidentStatuses.Resolved;
+        toResolve.ResolvedAtUtc = observedAtUtc;
+        toResolve.ResolutionReason = AttentionIncidentResolutionReasons.ExpectationCleared;
+        toResolve.LastObservedAtUtc = observedAtUtc;
+        await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        return new AttentionIncidentObserveResult(AttentionIncidentObserveTransition.Resolved, resolvedId);
+    }
+
+    private async ValueTask<AttentionIncidentObserveResult> ObserveStillActiveAfterConcurrentOpenAsync(
+        IntegrationId integrationId,
+        string conditionKey,
+        ScheduleExpectationSnapshot snapshot,
+        DateTimeOffset observedAtUtc,
+        CancellationToken cancellationToken)
+    {
+        var active = await _db.AttentionIncidents
+            .FirstOrDefaultAsync(
+                e => e.IntegrationId == integrationId.Value
+                     && e.ConditionKey == conditionKey
+                     && e.Status == AttentionIncidentStatuses.Active,
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (active is null)
+            return new AttentionIncidentObserveResult(AttentionIncidentObserveTransition.NoChange, null);
+        active.LastObservedAtUtc = observedAtUtc;
+        if (snapshot.Evaluation.MostRecentExpectedFireUtc is { } fire)
+        {
+            active.LastExpectedFireAtUtc = fire;
+            active.FirstExpectedFireAtUtc ??= fire;
+        }
+
+        await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        return new AttentionIncidentObserveResult(AttentionIncidentObserveTransition.ObservedStillActive, active.Id);
     }
 
     /// <inheritdoc />
@@ -130,6 +146,20 @@ public sealed class SqlAttentionIncidentTracker : IAttentionIncidentTracker
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
         return rows.Select(ToProjection).ToList();
+    }
+
+    /// <inheritdoc />
+    public async ValueTask<AttentionIncidentProjection?> GetIncidentAsync(
+        IntegrationId integrationId,
+        string incidentId,
+        CancellationToken cancellationToken = default)
+    {
+        var e = await _db.AttentionIncidents.AsNoTracking()
+            .FirstOrDefaultAsync(
+                x => x.Id == incidentId && x.IntegrationId == integrationId.Value,
+                cancellationToken)
+            .ConfigureAwait(false);
+        return e is null ? null : ToProjection(e);
     }
 
     /// <inheritdoc />

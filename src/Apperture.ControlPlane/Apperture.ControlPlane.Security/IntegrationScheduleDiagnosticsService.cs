@@ -14,6 +14,7 @@ public sealed class IntegrationScheduleDiagnosticsService : IIntegrationSchedule
 {
     private const int RecentExpectedFiresCap = 10;
     private const int RecentAttentionIncidentsCap = 20;
+    private const int RecentAttentionIncidentNotificationsCap = 40;
     private static readonly TimeSpan TimelineSearchMaxLookback = TimeSpan.FromDays(30);
 
     private readonly IIntegrationManagementService _integrationManagement;
@@ -21,6 +22,7 @@ public sealed class IntegrationScheduleDiagnosticsService : IIntegrationSchedule
     private readonly IScheduleRepository _scheduleRepo;
     private readonly IRunQueryService _runQuery;
     private readonly IAttentionIncidentTracker _attentionIncidentTracker;
+    private readonly IAttentionIncidentNotificationLedger _attentionIncidentNotificationLedger;
     private readonly TimeProvider _timeProvider;
 
     public IntegrationScheduleDiagnosticsService(
@@ -29,6 +31,7 @@ public sealed class IntegrationScheduleDiagnosticsService : IIntegrationSchedule
         IScheduleRepository scheduleRepo,
         IRunQueryService runQuery,
         IAttentionIncidentTracker attentionIncidentTracker,
+        IAttentionIncidentNotificationLedger attentionIncidentNotificationLedger,
         TimeProvider timeProvider)
     {
         _integrationManagement = integrationManagement;
@@ -36,6 +39,7 @@ public sealed class IntegrationScheduleDiagnosticsService : IIntegrationSchedule
         _scheduleRepo = scheduleRepo;
         _runQuery = runQuery;
         _attentionIncidentTracker = attentionIncidentTracker;
+        _attentionIncidentNotificationLedger = attentionIncidentNotificationLedger;
         _timeProvider = timeProvider;
     }
 
@@ -187,6 +191,11 @@ public sealed class IntegrationScheduleDiagnosticsService : IIntegrationSchedule
                 cancellationToken)
             .ConfigureAwait(false);
 
+        var incidentIds = incidents.Select(i => i.Id).Distinct(StringComparer.Ordinal).ToList();
+        var notifications = await _attentionIncidentNotificationLedger
+            .ListRecentForIncidentsAsync(incidentIds, RecentAttentionIncidentNotificationsCap, cancellationToken)
+            .ConfigureAwait(false);
+
         return new IntegrationScheduleDiagnosticsProjection(
             integrationId,
             evaluation.ExpectsRecurringRuns,
@@ -206,7 +215,8 @@ public sealed class IntegrationScheduleDiagnosticsService : IIntegrationSchedule
             lastAuthorizedRunStatus,
             lastAuthorizedRunAt,
             recentTimeline,
-            incidents);
+            incidents,
+            notifications);
     }
 
     private static ScheduleDefinition? FindReferenceSchedule(

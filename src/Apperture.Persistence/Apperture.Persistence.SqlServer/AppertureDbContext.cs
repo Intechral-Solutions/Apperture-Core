@@ -49,6 +49,7 @@ public class AppertureDbContext : DbContext
     public DbSet<UnisaPaymentPlanArrangementEntity> UnisaPaymentPlanArrangements => Set<UnisaPaymentPlanArrangementEntity>();
     public DbSet<UnisaFileImportWatermarkEntity> UnisaFileImportWatermarks => Set<UnisaFileImportWatermarkEntity>();
     public DbSet<AttentionIncidentEntity> AttentionIncidents => Set<AttentionIncidentEntity>();
+    public DbSet<AttentionIncidentNotificationEntity> AttentionIncidentNotifications => Set<AttentionIncidentNotificationEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -556,6 +557,25 @@ public class AppertureDbContext : DbContext
             e.HasIndex(x => new { x.IntegrationId, x.ConditionKey })
                 .IsUnique()
                 .HasFilter("[Status] = N'Active'");
+        });
+        modelBuilder.Entity<AttentionIncidentNotificationEntity>(e =>
+        {
+            e.ToTable("AttentionIncidentNotifications");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasMaxLength(64);
+            e.Property(x => x.AttentionIncidentId).HasMaxLength(64);
+            e.Property(x => x.IntegrationId).HasMaxLength(64);
+            e.Property(x => x.ConditionKey).HasMaxLength(128);
+            e.Property(x => x.NotificationKind).HasMaxLength(32);
+            e.Property(x => x.Channel).HasMaxLength(32);
+            e.Property(x => x.Recipient).HasMaxLength(512);
+            e.Property(x => x.Status).HasMaxLength(32);
+            e.Property(x => x.SuppressionReason).HasMaxLength(256);
+            e.Property(x => x.FailureSummary).HasMaxLength(2048);
+            e.Property(x => x.ProviderMessageId).HasMaxLength(256);
+            e.Property(x => x.SubjectSnapshot).HasMaxLength(512);
+            e.HasIndex(x => new { x.AttentionIncidentId, x.NotificationKind });
+            e.HasIndex(x => new { x.AttentionIncidentId, x.CreatedAtUtc });
         });
     }
 }

@@ -124,12 +124,19 @@ public sealed class IntegrationScheduleDiagnosticsTests
                 It.IsAny<int>(),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(Array.Empty<AttentionIncidentProjection>());
+        var ledger = new Mock<IAttentionIncidentNotificationLedger>();
+        ledger.Setup(x => x.ListRecentForIncidentsAsync(
+                It.IsAny<IReadOnlyList<string>>(),
+                It.IsAny<int>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Array.Empty<AttentionIncidentNotificationProjection>());
         var service = new IntegrationScheduleDiagnosticsService(
             integrationManagement.Object,
             readiness.Object,
             scheduleRepo.Object,
             runQuery.Object,
             attention.Object,
+            ledger.Object,
             new FixedUtcTimeProvider(utcNow));
         return service;
     }

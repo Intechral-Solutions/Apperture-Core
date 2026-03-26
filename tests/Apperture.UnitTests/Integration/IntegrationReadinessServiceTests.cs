@@ -68,6 +68,12 @@ public sealed class IntegrationReadinessServiceTests
         var m = new Mock<IAttentionIncidentTracker>();
         m.Setup(x => x.GetIntegrationIdsWithActiveConditionAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new HashSet<string>(StringComparer.Ordinal));
+        m.Setup(x => x.ObserveScheduleExpectationAsync(
+                It.IsAny<IntegrationId>(),
+                It.IsAny<ScheduleExpectationSnapshot>(),
+                It.IsAny<DateTimeOffset>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AttentionIncidentObserveResult(AttentionIncidentObserveTransition.NoChange, null));
         return m.Object;
     }
 

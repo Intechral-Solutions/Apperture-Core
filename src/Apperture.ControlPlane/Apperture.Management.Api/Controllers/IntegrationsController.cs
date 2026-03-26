@@ -444,7 +444,24 @@ public sealed class IntegrationsController : ControllerBase
                 i.LastExpectedFireAtUtc,
                 i.AcknowledgedAtUtc,
                 i.AcknowledgedBy,
-                i.AcknowledgementNote)).ToList());
+                i.AcknowledgementNote)).ToList(),
+            p.RecentAttentionIncidentNotifications.Select(n => new Apperture.Management.Client.AttentionIncidentNotificationDto(
+                n.Id,
+                n.AttentionIncidentId,
+                n.IntegrationId,
+                n.ConditionKey,
+                n.NotificationKind,
+                n.Channel,
+                n.Recipient,
+                n.Status,
+                n.SuppressionReason,
+                n.CreatedAtUtc,
+                n.AttemptedAtUtc,
+                n.SentAtUtc,
+                n.FailedAtUtc,
+                n.FailureSummary,
+                n.ProviderMessageId,
+                n.SubjectSnapshot)).ToList());
 }
 
 public sealed record IntegrationDto(
