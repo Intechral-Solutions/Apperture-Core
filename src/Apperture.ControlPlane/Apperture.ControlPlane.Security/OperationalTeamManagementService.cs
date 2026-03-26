@@ -116,6 +116,12 @@ public sealed class OperationalTeamManagementService : IOperationalTeamManagemen
             {
                 if (string.IsNullOrWhiteSpace(m.PrincipalUserId))
                     throw new InvalidOperationException("Principal member requires PrincipalUserId.");
+                var principalId = m.PrincipalUserId.Trim();
+                var exists = await _db.Users.AsNoTracking()
+                    .AnyAsync(x => x.Id == principalId, cancellationToken)
+                    .ConfigureAwait(false);
+                if (!exists)
+                    throw new InvalidOperationException($"Principal user '{principalId}' was not found.");
             }
             else if (m.MemberKind == OperationalTeamMemberKinds.ExternalEmail)
             {

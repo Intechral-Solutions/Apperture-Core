@@ -19,6 +19,7 @@ $RepoRoot = if ($env:APPERTURE_REPO_ROOT) { $env:APPERTURE_REPO_ROOT } else { (G
 $HostProject = Join-Path $RepoRoot "src\Apperture.ControlPlane\Apperture.Management.Host\Apperture.Management.Host.csproj"
 $UiServerProject = Join-Path $RepoRoot "src\Apperture.ControlPlane\Apperture.Management.Ui.Server\Apperture.Management.Ui.Server.csproj"
 $WorkerHostProject = Join-Path $RepoRoot "src\Apperture.RuntimeHost\Apperture.RuntimeHost.Windows\Apperture.RuntimeHost.Windows.WorkerHost\Apperture.RuntimeHost.Windows.WorkerHost.csproj"
+$StartWorkerScript = Join-Path $PSScriptRoot "start-worker.ps1"
 $SyncScript = Join-Path $PSScriptRoot "Sync-EnvFromUserSecrets.ps1"
 
 if (-not (Test-Path $HostProject)) {
@@ -29,6 +30,9 @@ if (-not (Test-Path $UiServerProject)) {
 }
 if (-not (Test-Path $WorkerHostProject)) {
     Write-Error "Runtime WorkerHost project not found: $WorkerHostProject"
+}
+if (-not (Test-Path $StartWorkerScript)) {
+    Write-Error "Runtime worker start script not found: $StartWorkerScript"
 }
 
 # global.json pins .NET 10; PATH often only has older SDKs. Prefer user-local install (%USERPROFILE%\dotnet).
@@ -100,10 +104,9 @@ Start-Process -FilePath $dotnetExe -ArgumentList $uiArgs -WorkingDirectory $Repo
 Start-Sleep -Seconds 2
 
 # Start instance-plane worker so workflow runs actually execute steps and persist step instances.
-$workerArgs = @("run", "--project", $WorkerHostProject)
-$env:DOTNET_ENVIRONMENT = "Development"
-$env:ASPNETCORE_ENVIRONMENT = "Development"
-$env:SqlServer__Password = $saPassword
-Start-Process -FilePath $dotnetExe -ArgumentList $workerArgs -WorkingDirectory $RepoRoot -WindowStyle Normal
+# Use dedicated script that records startup status and failure detail.
+Write-Host "Starting testing worker runtime..." -ForegroundColor Cyan
+& $StartWorkerScript
+if (-not $?) { throw "Failed to start testing worker runtime." }
 
 Write-Host "Dev servers started. Close their windows or run scripts\dev\down.ps1 to stop." -ForegroundColor Green

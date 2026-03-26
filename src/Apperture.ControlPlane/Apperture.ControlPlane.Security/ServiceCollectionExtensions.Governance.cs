@@ -94,6 +94,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IWorkflowRetryService, WorkflowRetryService>();
         services.AddScoped<IWorkflowExternalControlService, WorkflowExternalControlService>();
         services.AddScoped<IRuntimeControlService, RuntimeControlService>();
+        services.AddSingleton<IDevWorkerRuntimeRecoveryService, DevWorkerRuntimeRecoveryService>();
         services.AddScoped<IOperationRunReadAuthorizationService, OperationRunReadAuthorizationService>();
         services.AddScoped<IOperationRunCancelAuthorizationService, OperationRunCancelAuthorizationService>();
         services.AddScoped<IOperationDefinitionReadAuthorizationService, OperationDefinitionReadAuthorizationService>();

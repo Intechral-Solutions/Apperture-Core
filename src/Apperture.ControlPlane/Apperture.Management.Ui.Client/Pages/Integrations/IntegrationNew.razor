@@ -200,7 +200,12 @@
     private Task MoveNextAsync()
     {
         if (CanMoveNext())
-            _wizard.TryMoveNext();
+        {
+            if (string.Equals(_wizard.CurrentStepId, StepChooseModule, StringComparison.Ordinal))
+                _wizard.NavigateTo(StepMetadata);
+            else
+                _wizard.TryMoveNext();
+        }
         RecomputeWizardStates();
         return Task.CompletedTask;
     }
@@ -227,19 +232,20 @@
 
     private void RecomputeWizardStates()
     {
+        var hasModuleSelection = !string.IsNullOrWhiteSpace(_moduleId);
         var states = new[]
         {
             new WizardStepState(
                 StepChooseModule,
                 string.Equals(_wizard.CurrentStepId, StepChooseModule, StringComparison.Ordinal)
                     ? WizardStepStatus.Current
-                    : (string.IsNullOrWhiteSpace(_moduleId) ? WizardStepStatus.Pending : WizardStepStatus.Complete)),
+                    : (hasModuleSelection ? WizardStepStatus.Complete : WizardStepStatus.Pending)),
             new WizardStepState(
                 StepMetadata,
                 string.Equals(_wizard.CurrentStepId, StepMetadata, StringComparison.Ordinal)
                     ? WizardStepStatus.Current
-                    : (CanCreate() ? WizardStepStatus.Pending : WizardStepStatus.Blocked),
-                string.IsNullOrWhiteSpace(_moduleId) ? "Select a module first." : null)
+                    : (hasModuleSelection ? WizardStepStatus.Pending : WizardStepStatus.Blocked),
+                hasModuleSelection ? null : "Select a module first.")
         };
 
         _wizard.SetStates(states);

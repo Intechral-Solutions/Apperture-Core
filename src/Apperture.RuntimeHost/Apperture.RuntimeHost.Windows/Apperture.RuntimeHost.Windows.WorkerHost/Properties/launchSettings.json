@@ -1,0 +1,12 @@
+{
+  "profiles": {
+    "WorkerHost (Development)": {
+      "commandName": "Project",
+      "environmentVariables": {
+        "DOTNET_ENVIRONMENT": "Development",
+        "ASPNETCORE_ENVIRONMENT": "Development",
+        "APERTURE_RUNTIME_ID": "worker-local"
+      }
+    }
+  }
+}

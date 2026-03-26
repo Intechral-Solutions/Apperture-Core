@@ -21,6 +21,7 @@ public sealed class RecoveryController : ControllerBase
     private readonly IRecoveryQueryService _recovery;
     private readonly IWorkflowRetryService _retry;
     private readonly IScheduleDispatchRunner _scheduleRunner;
+    private readonly IDevWorkerRuntimeRecoveryService _devWorkerRecovery;
     private readonly IRecoveryGovernanceService _recoveryGovernance;
     private readonly IAuditService? _audit;
     private readonly IPrincipalContext _principal;
@@ -29,6 +30,7 @@ public sealed class RecoveryController : ControllerBase
         IRecoveryQueryService recovery,
         IWorkflowRetryService retry,
         IScheduleDispatchRunner scheduleRunner,
+        IDevWorkerRuntimeRecoveryService devWorkerRecovery,
         IRecoveryGovernanceService recoveryGovernance,
         IPrincipalContext principal,
         IAuditService? audit = null)
@@ -36,6 +38,7 @@ public sealed class RecoveryController : ControllerBase
         _recovery = recovery;
         _retry = retry;
         _scheduleRunner = scheduleRunner;
+        _devWorkerRecovery = devWorkerRecovery;
         _recoveryGovernance = recoveryGovernance;
         _principal = principal;
         _audit = audit;
@@ -192,6 +195,52 @@ public sealed class RecoveryController : ControllerBase
             runtimePlaneId = planeId.Value,
             action = "global_scheduler_run_cycle",
             message = "Global scheduler cycle completed. Processes schedules due at cycle time; not schedule-specific."
+        });
+    }
+
+    /// <summary>
+    /// Development-only worker runtime status projection used for launch recovery diagnostics.
+    /// </summary>
+    [HttpGet("runtime-worker/status")]
+    [ProducesResponseType(typeof(DevWorkerRuntimeStatus), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    public async Task<ActionResult<DevWorkerRuntimeStatus>> GetRuntimeWorkerStatus(CancellationToken cancellationToken = default)
+    {
+        if (!await _recoveryGovernance.CanReadAsync(cancellationToken).ConfigureAwait(false))
+            return Forbid();
+        var status = await _devWorkerRecovery.GetStatusAsync(cancellationToken).ConfigureAwait(false);
+        return Ok(status);
+    }
+
+    /// <summary>
+    /// Development-only worker runtime start/retry action. Allows start without full env teardown.
+    /// </summary>
+    [HttpPost("runtime-worker/start")]
+    [ProducesResponseType(StatusCodes.Status202Accepted)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    public async Task<ActionResult> StartRuntimeWorker([FromQuery] bool restart = false, CancellationToken cancellationToken = default)
+    {
+        if (!await _recoveryGovernance.CanManageAsync(cancellationToken).ConfigureAwait(false))
+            return Forbid();
+        var result = await _devWorkerRecovery.StartAsync(restart, cancellationToken).ConfigureAwait(false);
+        if (!result.Succeeded)
+        {
+            return Conflict(new
+            {
+                error = "runtime_worker_start_failed",
+                result.Message,
+                result.ExitCode,
+                result.Output,
+                result.Error
+            });
+        }
+
+        return Accepted(new
+        {
+            action = restart ? "runtime_worker_restart" : "runtime_worker_start",
+            result.Message,
+            result.Output
         });
     }
 

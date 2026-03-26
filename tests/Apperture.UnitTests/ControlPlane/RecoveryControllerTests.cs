@@ -272,6 +272,7 @@ public sealed class RecoveryControllerTests
         IRecoveryQueryService? recovery = null,
         IWorkflowRetryService? retry = null,
         IScheduleDispatchRunner? scheduleRunner = null,
+        IDevWorkerRuntimeRecoveryService? devWorkerRecovery = null,
         IRecoveryGovernanceService? recoveryGovernance = null,
         IPrincipalContext? principal = null,
         IAuditService? audit = null)
@@ -280,9 +281,19 @@ public sealed class RecoveryControllerTests
             recovery ?? new StubRecoveryQueryService(blocked: []),
             retry ?? new StubRetryService(),
             scheduleRunner ?? new StubScheduleDispatchRunner(),
+            devWorkerRecovery ?? new StubDevWorkerRuntimeRecoveryService(),
             recoveryGovernance ?? new StubRecoveryGovernanceService(canRead: true, canManage: true),
             principal ?? new StubPrincipalContext(),
             audit);
+    }
+
+    private sealed class StubDevWorkerRuntimeRecoveryService : IDevWorkerRuntimeRecoveryService
+    {
+        public ValueTask<DevWorkerRuntimeRecoveryResult> StartAsync(bool restart, CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(new DevWorkerRuntimeRecoveryResult(true, "ok", 0, null, null));
+
+        public ValueTask<DevWorkerRuntimeStatus> GetStatusAsync(CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(new DevWorkerRuntimeStatus("Running", "ok", 123, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow, null));
     }
 
     private sealed class StubRecoveryGovernanceService : IRecoveryGovernanceService
