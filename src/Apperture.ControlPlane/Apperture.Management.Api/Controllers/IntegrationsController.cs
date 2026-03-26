@@ -18,15 +18,24 @@ public sealed class IntegrationsController : ControllerBase
     private readonly IIntegrationManagementService _integrationService;
     private readonly IIntegrationReadinessService _readinessService;
     private readonly IIntegrationScheduleDiagnosticsService _scheduleDiagnostics;
+    private readonly IAttentionIncidentTracker _attentionIncidentTracker;
+    private readonly IPrincipalContext _principalContext;
+    private readonly TimeProvider _timeProvider;
 
     public IntegrationsController(
         IIntegrationManagementService integrationService,
         IIntegrationReadinessService readinessService,
-        IIntegrationScheduleDiagnosticsService scheduleDiagnostics)
+        IIntegrationScheduleDiagnosticsService scheduleDiagnostics,
+        IAttentionIncidentTracker attentionIncidentTracker,
+        IPrincipalContext principalContext,
+        TimeProvider timeProvider)
     {
         _integrationService = integrationService;
         _readinessService = readinessService;
         _scheduleDiagnostics = scheduleDiagnostics;
+        _attentionIncidentTracker = attentionIncidentTracker;
+        _principalContext = principalContext;
+        _timeProvider = timeProvider;
     }
 
     /// <summary>
@@ -144,6 +153,45 @@ public sealed class IntegrationsController : ControllerBase
             if (projection is null)
                 return NotFound();
             return Ok(ToDiagnosticsDto(projection));
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return Forbid();
+        }
+    }
+
+    /// <summary>
+    /// Epic 68: operator acknowledgement of a persisted attention incident (e.g. expected run missing).
+    /// </summary>
+    [HttpPost("{id}/attention-incidents/{incidentId}/acknowledge")]
+    public async Task<IActionResult> AcknowledgeAttentionIncident(
+        string id,
+        string incidentId,
+        [FromBody] AcknowledgeAttentionIncidentRequestBody? body,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var actor = await _principalContext.GetCurrentActorAsync(cancellationToken).ConfigureAwait(false);
+            if (actor is null)
+                return Unauthorized();
+
+            var intId = new IntegrationId(id);
+            var integration = await _integrationService.GetIntegrationAsync(intId, cancellationToken).ConfigureAwait(false);
+            if (integration is null)
+                return NotFound();
+
+            var ok = await _attentionIncidentTracker.AcknowledgeAsync(
+                    intId,
+                    incidentId,
+                    actor.Id.Value,
+                    body?.Note,
+                    _timeProvider.GetUtcNow(),
+                    cancellationToken)
+                .ConfigureAwait(false);
+            if (!ok)
+                return NotFound();
+            return NoContent();
         }
         catch (UnauthorizedAccessException)
         {
@@ -339,7 +387,8 @@ public sealed class IntegrationsController : ControllerBase
                 r.ExpectedRuns.ExpectedRunGraceReason,
                 r.ExpectedRuns.ExpectedRunGraceAnchorUtc),
             r.AttentionTokens.ToArray(),
-            r.TopIssueCodes.ToArray());
+            r.TopIssueCodes.ToArray(),
+            r.HasActiveExpectedRunMissingIncident);
 
     private static Apperture.Management.Client.IntegrationReadinessDto ToReadinessDto(IntegrationReadinessProjection p) =>
         new(
@@ -381,7 +430,21 @@ public sealed class IntegrationsController : ControllerBase
                 e.Outcome.ToString(),
                 e.SatisfyingScheduleOriginAuthorizedRunId,
                 e.SatisfyingScheduleOriginAuthorizedRunAt,
-                e.SuppressedByGraceReason?.ToString())).ToList());
+                e.SuppressedByGraceReason?.ToString())).ToList(),
+            p.RecentAttentionIncidents.Select(i => new Apperture.Management.Client.AttentionIncidentDto(
+                i.Id,
+                i.IntegrationId,
+                i.ConditionKey,
+                i.Status,
+                i.StartedAtUtc,
+                i.LastObservedAtUtc,
+                i.ResolvedAtUtc,
+                i.ResolutionReason,
+                i.FirstExpectedFireAtUtc,
+                i.LastExpectedFireAtUtc,
+                i.AcknowledgedAtUtc,
+                i.AcknowledgedBy,
+                i.AcknowledgementNote)).ToList());
 }
 
 public sealed record IntegrationDto(
@@ -404,3 +467,5 @@ public sealed record UpdateIntegrationRequestBody(
     string? DisplayName,
     string? State,
     IReadOnlyDictionary<string, string>? Settings = null);
+
+public sealed record AcknowledgeAttentionIncidentRequestBody(string? Note);

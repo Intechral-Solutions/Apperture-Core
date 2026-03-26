@@ -41,6 +41,7 @@ builder.Services.AddAppertureRecovery();
 builder.Services.AddRuntimeSchedulerDispatch();
 builder.Services.AddAppertureConnectorWorkflows();
 builder.Services.AddAppertureIntegrationWorkflows();
+builder.Services.AddAttentionIncidentObservation(builder.Configuration);
 builder.Services.AddUnisaCampusNexusPaymentPlansIntegration();
 builder.Services.AddAppertureAuthentication(builder.Configuration);
 builder.Services.AddAuthorization();

@@ -24,7 +24,26 @@ public sealed record IntegrationScheduleDiagnosticsDto(
     string? LastAuthorizedRunId,
     string? LastAuthorizedRunStatus,
     DateTimeOffset? LastAuthorizedRunAt,
-    IReadOnlyList<ExpectedFireDiagnosticDto> RecentExpectedFires);
+    IReadOnlyList<ExpectedFireDiagnosticDto> RecentExpectedFires,
+    IReadOnlyList<AttentionIncidentDto> RecentAttentionIncidents);
+
+/// <summary>Epic 68: bounded incident history for schedule attention conditions.</summary>
+public sealed record AttentionIncidentDto(
+    string Id,
+    string IntegrationId,
+    string ConditionKey,
+    string Status,
+    DateTimeOffset StartedAtUtc,
+    DateTimeOffset LastObservedAtUtc,
+    DateTimeOffset? ResolvedAtUtc,
+    string? ResolutionReason,
+    DateTimeOffset? FirstExpectedFireAtUtc,
+    DateTimeOffset? LastExpectedFireAtUtc,
+    DateTimeOffset? AcknowledgedAtUtc,
+    string? AcknowledgedBy,
+    string? AcknowledgementNote);
+
+public sealed record AcknowledgeAttentionIncidentRequest(string? Note);
 
 /// <summary>
 /// Epic 67: one expected fire instance with evaluation outcome.

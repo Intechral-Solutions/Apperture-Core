@@ -1,4 +1,5 @@
 using Apperture.Core.Application.Integration;
+using Apperture.Core.Application.Scheduling;
 using Apperture.Core.Domain.Integration;
 
 namespace Apperture.Core.Application.Services;
@@ -25,5 +26,19 @@ public interface IIntegrationReadinessService
     /// </summary>
     ValueTask<IReadOnlyList<IntegrationFleetRowProjection>> ListFleetAsync(
         IntegrationFleetQuery query,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Epic 68: same schedule expectation evaluation as fleet (integration read auth enforced).
+    /// </summary>
+    ValueTask<ScheduleExpectationSnapshot?> EvaluateScheduleExpectationAsync(
+        IntegrationId id,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Epic 68: background incident observer — loads integration from persistence without per-row read auth.
+    /// </summary>
+    ValueTask<ScheduleExpectationSnapshot?> EvaluateScheduleExpectationForBackgroundAsync(
+        IntegrationId id,
         CancellationToken cancellationToken = default);
 }

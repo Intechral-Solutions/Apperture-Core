@@ -133,6 +133,15 @@ public interface IManagementClient
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Epic 68: records operator acknowledgement for an attention incident on the integration.
+    /// </summary>
+    Task<bool> AcknowledgeIntegrationAttentionIncidentAsync(
+        string integrationId,
+        string incidentId,
+        string? note,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Operator detail: integration, readiness, required slots, bindings, schedules (Epic 54).
     /// </summary>
     Task<IntegrationOperatorDetailDto?> GetIntegrationOperatorDetailAsync(string id, CancellationToken cancellationToken = default);

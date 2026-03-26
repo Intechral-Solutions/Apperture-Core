@@ -55,6 +55,22 @@ public sealed class IntegrationReadinessServiceTests
         return m;
     }
 
+    private static IIntegrationRepository NullIntegrationRepository()
+    {
+        var m = new Mock<IIntegrationRepository>();
+        m.Setup(x => x.GetByIdAsync(It.IsAny<IntegrationId>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((DomainIntegration?)null);
+        return m.Object;
+    }
+
+    private static IAttentionIncidentTracker EmptyAttentionIncidentTracker()
+    {
+        var m = new Mock<IAttentionIncidentTracker>();
+        m.Setup(x => x.GetIntegrationIdsWithActiveConditionAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new HashSet<string>(StringComparer.Ordinal));
+        return m.Object;
+    }
+
     private static DomainIntegration ActiveIntegration() =>
         new(IntId, "My integration", "Sample.Mod", null, IntegrationState.Active, null, Now, Now);
 
@@ -114,6 +130,7 @@ public sealed class IntegrationReadinessServiceTests
 
         var sut = new IntegrationReadinessService(
             mgmt.Object,
+            NullIntegrationRepository(),
             slots.Object,
             bindRepo.Object,
             connRepo.Object,
@@ -121,6 +138,7 @@ public sealed class IntegrationReadinessServiceTests
             schedRepo.Object,
             new AdvisoryConnectionVerificationReadinessPolicy(),
             RunQueryAllEmpty().Object,
+            EmptyAttentionIncidentTracker(),
             new ScheduleExpectationEvaluator(),
             FleetUtcClock);
 
@@ -154,6 +172,7 @@ public sealed class IntegrationReadinessServiceTests
 
         var sut = new IntegrationReadinessService(
             mgmt.Object,
+            NullIntegrationRepository(),
             slots.Object,
             bindRepo.Object,
             connRepo.Object,
@@ -161,6 +180,7 @@ public sealed class IntegrationReadinessServiceTests
             schedRepo.Object,
             new AdvisoryConnectionVerificationReadinessPolicy(),
             RunQueryAllEmpty().Object,
+            EmptyAttentionIncidentTracker(),
             new ScheduleExpectationEvaluator(),
             FleetUtcClock);
 
@@ -198,6 +218,7 @@ public sealed class IntegrationReadinessServiceTests
 
         var sut = new IntegrationReadinessService(
             mgmt.Object,
+            NullIntegrationRepository(),
             slots.Object,
             bindRepo.Object,
             connRepo.Object,
@@ -205,6 +226,7 @@ public sealed class IntegrationReadinessServiceTests
             schedRepo.Object,
             new AdvisoryConnectionVerificationReadinessPolicy(),
             RunQueryAllEmpty().Object,
+            EmptyAttentionIncidentTracker(),
             new ScheduleExpectationEvaluator(),
             FleetUtcClock);
 
@@ -262,6 +284,7 @@ public sealed class IntegrationReadinessServiceTests
 
         var sut = new IntegrationReadinessService(
             mgmt.Object,
+            NullIntegrationRepository(),
             slots.Object,
             bindRepo.Object,
             connRepo.Object,
@@ -269,6 +292,7 @@ public sealed class IntegrationReadinessServiceTests
             schedRepo.Object,
             new AdvisoryConnectionVerificationReadinessPolicy(),
             RunQueryAllEmpty().Object,
+            EmptyAttentionIncidentTracker(),
             new ScheduleExpectationEvaluator(),
             FleetUtcClock);
 
@@ -308,7 +332,7 @@ public sealed class IntegrationReadinessServiceTests
         var schedRepo = new Mock<IScheduleRepository>();
         schedRepo.Setup(x => x.GetByIntegrationIdAsync(IntId, It.IsAny<CancellationToken>())).ReturnsAsync(Array.Empty<ScheduleDefinition>());
 
-        var sut = new IntegrationReadinessService(mgmt.Object, slots.Object, bindRepo.Object, connRepo.Object, elig.Object, schedRepo.Object, new AdvisoryConnectionVerificationReadinessPolicy(), RunQueryAllEmpty().Object, new ScheduleExpectationEvaluator(), FleetUtcClock);
+        var sut = new IntegrationReadinessService(mgmt.Object, NullIntegrationRepository(), slots.Object, bindRepo.Object, connRepo.Object, elig.Object, schedRepo.Object, new AdvisoryConnectionVerificationReadinessPolicy(), RunQueryAllEmpty().Object, EmptyAttentionIncidentTracker(), new ScheduleExpectationEvaluator(), FleetUtcClock);
         var r = await sut.GetReadinessAsync(IntId);
         r!.IsRunnable.Should().BeTrue();
         r.Issues.Should().ContainSingle(i =>
@@ -340,6 +364,7 @@ public sealed class IntegrationReadinessServiceTests
 
         var sut = new IntegrationReadinessService(
             mgmt.Object,
+            NullIntegrationRepository(),
             slots.Object,
             bindRepo.Object,
             connRepo.Object,
@@ -347,6 +372,7 @@ public sealed class IntegrationReadinessServiceTests
             schedRepo.Object,
             new AdvisoryConnectionVerificationReadinessPolicy(),
             RunQueryAllEmpty().Object,
+            EmptyAttentionIncidentTracker(),
             new ScheduleExpectationEvaluator(),
             FleetUtcClock);
 
@@ -397,6 +423,7 @@ public sealed class IntegrationReadinessServiceTests
 
         var sut = new IntegrationReadinessService(
             mgmt.Object,
+            NullIntegrationRepository(),
             slots.Object,
             bindRepo.Object,
             connRepo.Object,
@@ -404,6 +431,7 @@ public sealed class IntegrationReadinessServiceTests
             schedRepo.Object,
             new AdvisoryConnectionVerificationReadinessPolicy(),
             runQuery.Object,
+            EmptyAttentionIncidentTracker(),
             new ScheduleExpectationEvaluator(),
             FleetUtcClock);
 
@@ -468,6 +496,7 @@ public sealed class IntegrationReadinessServiceTests
 
         var sut = new IntegrationReadinessService(
             mgmt.Object,
+            NullIntegrationRepository(),
             slots.Object,
             bindRepo.Object,
             connRepo.Object,
@@ -475,6 +504,7 @@ public sealed class IntegrationReadinessServiceTests
             schedRepo.Object,
             new AdvisoryConnectionVerificationReadinessPolicy(),
             runQuery.Object,
+            EmptyAttentionIncidentTracker(),
             new ScheduleExpectationEvaluator(),
             FleetUtcClock);
 
@@ -568,6 +598,7 @@ public sealed class IntegrationReadinessServiceTests
 
         var sut = new IntegrationReadinessService(
             mgmt.Object,
+            NullIntegrationRepository(),
             slots.Object,
             bindRepo.Object,
             connRepo.Object,
@@ -575,6 +606,7 @@ public sealed class IntegrationReadinessServiceTests
             schedRepo.Object,
             new AdvisoryConnectionVerificationReadinessPolicy(),
             runQuery.Object,
+            EmptyAttentionIncidentTracker(),
             new ScheduleExpectationEvaluator(),
             FleetUtcClock);
 
@@ -688,6 +720,7 @@ public sealed class IntegrationReadinessServiceTests
 
         var sut = new IntegrationReadinessService(
             mgmt.Object,
+            NullIntegrationRepository(),
             slots.Object,
             bindRepo.Object,
             connRepo.Object,
@@ -695,6 +728,7 @@ public sealed class IntegrationReadinessServiceTests
             schedRepo.Object,
             new AdvisoryConnectionVerificationReadinessPolicy(),
             runQuery.Object,
+            EmptyAttentionIncidentTracker(),
             new ScheduleExpectationEvaluator(),
             FleetUtcClock);
 
@@ -777,6 +811,7 @@ public sealed class IntegrationReadinessServiceTests
 
         var sut = new IntegrationReadinessService(
             mgmt.Object,
+            NullIntegrationRepository(),
             slots.Object,
             bindRepo.Object,
             connRepo.Object,
@@ -784,6 +819,7 @@ public sealed class IntegrationReadinessServiceTests
             schedRepo.Object,
             new AdvisoryConnectionVerificationReadinessPolicy(),
             runQuery.Object,
+            EmptyAttentionIncidentTracker(),
             new ScheduleExpectationEvaluator(),
             MidJanuaryFleetClock);
 
@@ -889,6 +925,7 @@ public sealed class IntegrationReadinessServiceTests
 
         var sut = new IntegrationReadinessService(
             mgmt.Object,
+            NullIntegrationRepository(),
             slots.Object,
             bindRepo.Object,
             connRepo.Object,
@@ -896,6 +933,7 @@ public sealed class IntegrationReadinessServiceTests
             schedRepo.Object,
             new AdvisoryConnectionVerificationReadinessPolicy(),
             runQuery.Object,
+            EmptyAttentionIncidentTracker(),
             new ScheduleExpectationEvaluator(),
             LateJan1FleetClock);
 
@@ -981,6 +1019,7 @@ public sealed class IntegrationReadinessServiceTests
 
         var sut = new IntegrationReadinessService(
             mgmt.Object,
+            NullIntegrationRepository(),
             slots.Object,
             bindRepo.Object,
             connRepo.Object,
@@ -988,6 +1027,7 @@ public sealed class IntegrationReadinessServiceTests
             schedRepo.Object,
             new AdvisoryConnectionVerificationReadinessPolicy(),
             runQuery.Object,
+            EmptyAttentionIncidentTracker(),
             new ScheduleExpectationEvaluator(),
             FleetUtcClock);
 

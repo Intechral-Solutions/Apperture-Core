@@ -190,6 +190,80 @@
             </div>
 
             <div class="rounded border border-default bg-surface p-3">
+                <div class="text-sm font-semibold text-heading mb-2">Expected-run-missing incident history</div>
+                @if (_diagnostics.RecentAttentionIncidents is { Count: > 0 })
+                {
+                    <div class="overflow-x-auto rounded border border-default">
+                        <table class="min-w-full text-left text-sm text-body">
+                            <thead class="border-b border-default text-xs text-muted">
+                                <tr>
+                                    <th class="px-3 py-2">Started</th>
+                                    <th class="px-3 py-2">Status</th>
+                                    <th class="px-3 py-2">Last observed</th>
+                                    <th class="px-3 py-2">Resolved</th>
+                                    <th class="px-3 py-2">Acknowledged</th>
+                                    <th class="px-3 py-2"></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var i in _diagnostics.RecentAttentionIncidents)
+                                {
+                                    <tr class="border-b border-default">
+                                        <td class="px-3 py-2 font-mono text-xs">@i.StartedAtUtc.UtcDateTime.ToString("u")</td>
+                                        <td class="px-3 py-2">@i.Status</td>
+                                        <td class="px-3 py-2 font-mono text-xs">@i.LastObservedAtUtc.UtcDateTime.ToString("u")</td>
+                                        <td class="px-3 py-2 text-xs">
+                                            @if (i.ResolvedAtUtc is { } ra)
+                                            {
+                                                <span>@ra.UtcDateTime.ToString("u")</span>
+                                                @if (!string.IsNullOrWhiteSpace(i.ResolutionReason))
+                                                {
+                                                    <div class="text-muted">@i.ResolutionReason</div>
+                                                }
+                                            }
+                                            else
+                                            {
+                                                <span class="text-muted">—</span>
+                                            }
+                                        </td>
+                                        <td class="px-3 py-2 text-xs">
+                                            @if (i.AcknowledgedAtUtc is { } aa)
+                                            {
+                                                <div>@aa.UtcDateTime.ToString("u")</div>
+                                                @if (!string.IsNullOrWhiteSpace(i.AcknowledgedBy))
+                                                {
+                                                    <div class="text-muted">by @i.AcknowledgedBy</div>
+                                                }
+                                            }
+                                            else
+                                            {
+                                                <span class="text-muted">—</span>
+                                            }
+                                        </td>
+                                        <td class="px-3 py-2">
+                                            @if (string.Equals(i.Status, "Active", StringComparison.OrdinalIgnoreCase))
+                                            {
+                                                <button type="button"
+                                                        class="rounded bg-surface-muted px-2 py-1 text-xs text-body hover:bg-surface disabled:opacity-50"
+                                                        disabled="@_ackBusy"
+                                                        @onclick="async () => await AcknowledgeIncidentAsync(i.Id)">
+                                                    Acknowledge
+                                                </button>
+                                            }
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+                else
+                {
+                    <div class="text-sm text-muted">No persisted incidents for this condition yet.</div>
+                }
+            </div>
+
+            <div class="rounded border border-default bg-surface p-3">
                 <div class="text-sm font-semibold text-heading mb-2">Navigation</div>
                 <div class="flex flex-wrap gap-2">
                     @if (!string.IsNullOrWhiteSpace(_diagnostics.ReferenceScheduleId))
@@ -212,6 +286,7 @@
     private IntegrationScheduleDiagnosticsDto? _diagnostics;
     private OperatorCapabilitiesDto? _capabilities;
     private bool _loading = true;
+    private bool _ackBusy;
     private string? _error;
 
     protected override async Task OnInitializedAsync()
@@ -250,5 +325,29 @@
 
     private static string Fmt(DateTimeOffset? v) =>
         v is { } x ? x.UtcDateTime.ToString("u") : "—";
+
+    private async Task AcknowledgeIncidentAsync(string incidentId)
+    {
+        if (_ackBusy || string.IsNullOrWhiteSpace(IntegrationId))
+            return;
+        _ackBusy = true;
+        _error = null;
+        try
+        {
+            var ok = await Client.AcknowledgeIntegrationAttentionIncidentAsync(IntegrationId, incidentId, note: null);
+            if (!ok)
+                _error = "Incident not found or could not be acknowledged.";
+            else
+                await LoadAsync();
+        }
+        catch (HttpRequestException ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _ackBusy = false;
+        }
+    }
 }
 

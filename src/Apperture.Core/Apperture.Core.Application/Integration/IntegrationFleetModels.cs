@@ -107,7 +107,8 @@ public sealed record IntegrationFleetRowProjection(
     IntegrationFleetOperationalRunAttention OperationalRuns,
     IntegrationFleetExpectedRunAttention ExpectedRuns,
     IReadOnlyList<string> AttentionTokens,
-    IReadOnlyList<string> TopIssueCodes);
+    IReadOnlyList<string> TopIssueCodes,
+    bool HasActiveExpectedRunMissingIncident);
 
 /// <summary>
 /// Computes fleet attention from persisted-projection semantics (readiness issues + operational state).

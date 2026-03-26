@@ -67,4 +67,5 @@ public sealed record IntegrationFleetRowDto(
     IntegrationFleetOperationalRunAttentionDto OperationalRuns,
     IntegrationFleetExpectedRunAttentionDto ExpectedRuns,
     string[] AttentionTokens,
-    string[] TopIssueCodes);
+    string[] TopIssueCodes,
+    bool HasActiveExpectedRunMissingIncident);

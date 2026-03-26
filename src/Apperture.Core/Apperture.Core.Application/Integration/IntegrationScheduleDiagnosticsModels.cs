@@ -45,5 +45,6 @@ public sealed record IntegrationScheduleDiagnosticsProjection(
     string? LastAuthorizedRunId,
     string? LastAuthorizedRunStatus,
     DateTimeOffset? LastAuthorizedRunAt,
-    IReadOnlyList<ExpectedFireDiagnosticEntry> RecentExpectedFires);
+    IReadOnlyList<ExpectedFireDiagnosticEntry> RecentExpectedFires,
+    IReadOnlyList<AttentionIncidentProjection> RecentAttentionIncidents);
 

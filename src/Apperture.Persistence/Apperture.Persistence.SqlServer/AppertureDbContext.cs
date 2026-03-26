@@ -48,6 +48,7 @@ public class AppertureDbContext : DbContext
     public DbSet<UnisaFundSourceCampusMapEntity> UnisaFundSourceCampusMaps => Set<UnisaFundSourceCampusMapEntity>();
     public DbSet<UnisaPaymentPlanArrangementEntity> UnisaPaymentPlanArrangements => Set<UnisaPaymentPlanArrangementEntity>();
     public DbSet<UnisaFileImportWatermarkEntity> UnisaFileImportWatermarks => Set<UnisaFileImportWatermarkEntity>();
+    public DbSet<AttentionIncidentEntity> AttentionIncidents => Set<AttentionIncidentEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -537,6 +538,24 @@ public class AppertureDbContext : DbContext
             e.ToTable("UnisaFileImportWatermarks");
             e.HasKey(x => x.SourceKey);
             e.Property(x => x.SourceKey).HasMaxLength(128);
+        });
+
+        modelBuilder.Entity<AttentionIncidentEntity>(e =>
+        {
+            e.ToTable("AttentionIncidents");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasMaxLength(64);
+            e.Property(x => x.IntegrationId).HasMaxLength(64);
+            e.Property(x => x.ConditionKey).HasMaxLength(128);
+            e.Property(x => x.Status).HasMaxLength(32);
+            e.Property(x => x.ResolutionReason).HasMaxLength(256);
+            e.Property(x => x.AcknowledgedBy).HasMaxLength(64);
+            e.Property(x => x.AcknowledgementNote).HasMaxLength(1024);
+            e.HasIndex(x => new { x.IntegrationId, x.ConditionKey, x.Status });
+            e.HasIndex(x => new { x.IntegrationId, x.ConditionKey, x.StartedAtUtc });
+            e.HasIndex(x => new { x.IntegrationId, x.ConditionKey })
+                .IsUnique()
+                .HasFilter("[Status] = N'Active'");
         });
     }
 }

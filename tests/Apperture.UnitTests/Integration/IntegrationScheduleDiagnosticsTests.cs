@@ -50,6 +50,48 @@ public sealed class IntegrationScheduleDiagnosticsTests
             Lifecycle: lifecycle);
     }
 
+    private static string? ReferenceScheduleIdForDiagnostics(
+        IReadOnlyList<ScheduleDefinition> schedules,
+        IntegrationId integrationId) =>
+        schedules
+            .Where(s =>
+                s.IntegrationId == integrationId
+                && !string.IsNullOrWhiteSpace(s.RecurrenceExpression)
+                && (s.Target.JobType == ScheduledJobType.WorkflowExecution
+                    || s.Target.JobType == ScheduledJobType.ModuleOperationExecution))
+            .OrderBy(s => s.Id.Value, StringComparer.Ordinal)
+            .FirstOrDefault()?.Id.Value;
+
+    /// <summary>
+    /// Mirrors pre–Epic 68 diagnostics window semantics (observation lookback as window start) so tests stay aligned with fleet when Active.
+    /// </summary>
+    private static ScheduleExpectationSnapshot BuildScheduleExpectationSnapshotForTest(
+        DomainIntegration integration,
+        IntegrationReadinessProjection readiness,
+        IReadOnlyList<ScheduleDefinition> schedules,
+        DateTimeOffset utcNow,
+        FleetScheduleOriginRunEvidence? latestScheduleOrigin)
+    {
+        var observationWindowStartUtc = utcNow - IntegrationFleetRunEvidence.Lookback;
+        var attention = IntegrationFleetAttention.Compute(integration.State.ToString(), readiness);
+        var latestEvidence = latestScheduleOrigin is null
+            ? null
+            : new ScheduleOriginRunEvidenceInput(latestScheduleOrigin.AuthorizedRunId, latestScheduleOrigin.AuthorizedRunAt);
+        var evalCtx = new ScheduleExpectationEvaluationContext(
+            integration.State.ToString(),
+            utcNow,
+            observationWindowStartUtc,
+            integration.CreatedAt,
+            attention,
+            readiness,
+            integration.Id,
+            schedules,
+            latestEvidence);
+        var evaluation = new ScheduleExpectationEvaluator().Evaluate(evalCtx);
+        var refSched = ReferenceScheduleIdForDiagnostics(schedules, integration.Id);
+        return new ScheduleExpectationSnapshot(evaluation, refSched, latestEvidence, observationWindowStartUtc);
+    }
+
     private static IReadOnlyList<DateTimeOffset> RecentExpectedFires(DateTimeOffset utcNow)
     {
         var timelineFromUtc = utcNow - TimeSpan.FromDays(30);
@@ -75,12 +117,19 @@ public sealed class IntegrationScheduleDiagnosticsTests
         Mock<IIntegrationReadinessService> readiness,
         Mock<IScheduleRepository> scheduleRepo)
     {
+        var attention = new Mock<IAttentionIncidentTracker>();
+        attention.Setup(x => x.ListRecentForIntegrationAsync(
+                It.IsAny<IntegrationId>(),
+                It.IsAny<string>(),
+                It.IsAny<int>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Array.Empty<AttentionIncidentProjection>());
         var service = new IntegrationScheduleDiagnosticsService(
             integrationManagement.Object,
             readiness.Object,
             scheduleRepo.Object,
             runQuery.Object,
-            new ScheduleExpectationEvaluator(),
+            attention.Object,
             new FixedUtcTimeProvider(utcNow));
         return service;
     }
@@ -141,25 +190,33 @@ public sealed class IntegrationScheduleDiagnosticsTests
                     [ids[0]] = new List<FleetScheduleOriginRunEvidence> { new(runId, latestRunAt) }
                 });
 
+        var integration = new DomainIntegration(
+            IntId,
+            "My integration",
+            "Sample.Mod",
+            null,
+            IntegrationState.Active,
+            null,
+            integrationCreatedAt,
+            utcNow);
+        var schedules = new List<ScheduleDefinition> { HourlyEnabledSchedule() };
+
         var integrationManagement = new Mock<IIntegrationManagementService>();
         integrationManagement.Setup(x => x.GetIntegrationAsync(IntId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new DomainIntegration(
-                IntId,
-                "My integration",
-                "Sample.Mod",
-                null,
-                IntegrationState.Active,
-                null,
-                integrationCreatedAt,
-                utcNow));
+            .ReturnsAsync(integration);
 
         var readinessSvc = new Mock<IIntegrationReadinessService>();
-        readinessSvc.Setup(x => x.GetReadinessAsync(IntId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(RunnableReadiness());
+        readinessSvc.Setup(x => x.EvaluateScheduleExpectationAsync(IntId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(BuildScheduleExpectationSnapshotForTest(
+                integration,
+                RunnableReadiness(),
+                schedules,
+                utcNow,
+                new FleetScheduleOriginRunEvidence(runId, latestRunAt)));
 
         var schedRepo = new Mock<IScheduleRepository>();
         schedRepo.Setup(x => x.GetByIntegrationIdAsync(IntId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new List<ScheduleDefinition> { HourlyEnabledSchedule() });
+            .ReturnsAsync(schedules);
 
         var sut = CreateService(utcNow, runQuery, integrationManagement, readinessSvc, schedRepo);
         var diag = await sut.GetDiagnosticsAsync(IntId);
@@ -207,25 +264,33 @@ public sealed class IntegrationScheduleDiagnosticsTests
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(new Dictionary<string, IReadOnlyList<FleetScheduleOriginRunEvidence>>(StringComparer.Ordinal));
 
+        var integration = new DomainIntegration(
+            IntId,
+            "My integration",
+            "Sample.Mod",
+            null,
+            IntegrationState.Active,
+            null,
+            integrationCreatedAt,
+            utcNow);
+        var schedules = new List<ScheduleDefinition> { HourlyEnabledSchedule() };
+
         var integrationManagement = new Mock<IIntegrationManagementService>();
         integrationManagement.Setup(x => x.GetIntegrationAsync(IntId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new DomainIntegration(
-                IntId,
-                "My integration",
-                "Sample.Mod",
-                null,
-                IntegrationState.Active,
-                null,
-                integrationCreatedAt,
-                utcNow));
+            .ReturnsAsync(integration);
 
         var readinessSvc = new Mock<IIntegrationReadinessService>();
-        readinessSvc.Setup(x => x.GetReadinessAsync(IntId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(RunnableReadiness());
+        readinessSvc.Setup(x => x.EvaluateScheduleExpectationAsync(IntId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(BuildScheduleExpectationSnapshotForTest(
+                integration,
+                RunnableReadiness(),
+                schedules,
+                utcNow,
+                latestScheduleOrigin: null));
 
         var schedRepo = new Mock<IScheduleRepository>();
         schedRepo.Setup(x => x.GetByIntegrationIdAsync(IntId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new List<ScheduleDefinition> { HourlyEnabledSchedule() });
+            .ReturnsAsync(schedules);
 
         var sut = CreateService(utcNow, runQuery, integrationManagement, readinessSvc, schedRepo);
         var diag = await sut.GetDiagnosticsAsync(IntId);
@@ -274,25 +339,33 @@ public sealed class IntegrationScheduleDiagnosticsTests
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(new Dictionary<string, IReadOnlyList<FleetScheduleOriginRunEvidence>>(StringComparer.Ordinal));
 
+        var integration = new DomainIntegration(
+            IntId,
+            "My integration",
+            "Sample.Mod",
+            null,
+            IntegrationState.Active,
+            null,
+            integrationCreatedAt,
+            utcNow);
+        var schedules = new List<ScheduleDefinition> { HourlyEnabledSchedule(lifecycleEnabledAtUtc: graceAnchorStr) };
+
         var integrationManagement = new Mock<IIntegrationManagementService>();
         integrationManagement.Setup(x => x.GetIntegrationAsync(IntId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new DomainIntegration(
-                IntId,
-                "My integration",
-                "Sample.Mod",
-                null,
-                IntegrationState.Active,
-                null,
-                integrationCreatedAt,
-                utcNow));
+            .ReturnsAsync(integration);
 
         var readinessSvc = new Mock<IIntegrationReadinessService>();
-        readinessSvc.Setup(x => x.GetReadinessAsync(IntId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(RunnableReadiness());
+        readinessSvc.Setup(x => x.EvaluateScheduleExpectationAsync(IntId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(BuildScheduleExpectationSnapshotForTest(
+                integration,
+                RunnableReadiness(),
+                schedules,
+                utcNow,
+                latestScheduleOrigin: null));
 
         var schedRepo = new Mock<IScheduleRepository>();
         schedRepo.Setup(x => x.GetByIntegrationIdAsync(IntId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new List<ScheduleDefinition> { HourlyEnabledSchedule(lifecycleEnabledAtUtc: graceAnchorStr) });
+            .ReturnsAsync(schedules);
 
         var sut = CreateService(utcNow, runQuery, integrationManagement, readinessSvc, schedRepo);
         var diag = await sut.GetDiagnosticsAsync(IntId);
@@ -343,25 +416,33 @@ public sealed class IntegrationScheduleDiagnosticsTests
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(new Dictionary<string, IReadOnlyList<FleetScheduleOriginRunEvidence>>(StringComparer.Ordinal));
 
+        var integration = new DomainIntegration(
+            IntId,
+            "My integration",
+            "Sample.Mod",
+            null,
+            IntegrationState.Active,
+            null,
+            integrationCreatedAt,
+            utcNow);
+        var schedules = new List<ScheduleDefinition> { disabledSchedule };
+
         var integrationManagement = new Mock<IIntegrationManagementService>();
         integrationManagement.Setup(x => x.GetIntegrationAsync(IntId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new DomainIntegration(
-                IntId,
-                "My integration",
-                "Sample.Mod",
-                null,
-                IntegrationState.Active,
-                null,
-                integrationCreatedAt,
-                utcNow));
+            .ReturnsAsync(integration);
 
         var readinessSvc = new Mock<IIntegrationReadinessService>();
-        readinessSvc.Setup(x => x.GetReadinessAsync(IntId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(RunnableReadiness());
+        readinessSvc.Setup(x => x.EvaluateScheduleExpectationAsync(IntId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(BuildScheduleExpectationSnapshotForTest(
+                integration,
+                RunnableReadiness(),
+                schedules,
+                utcNow,
+                latestScheduleOrigin: null));
 
         var schedRepo = new Mock<IScheduleRepository>();
         schedRepo.Setup(x => x.GetByIntegrationIdAsync(IntId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new List<ScheduleDefinition> { disabledSchedule });
+            .ReturnsAsync(schedules);
 
         var sut = CreateService(utcNow, runQuery, integrationManagement, readinessSvc, schedRepo);
         var diag = await sut.GetDiagnosticsAsync(IntId);
@@ -414,25 +495,33 @@ public sealed class IntegrationScheduleDiagnosticsTests
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(new Dictionary<string, IReadOnlyList<FleetScheduleOriginRunEvidence>>(StringComparer.Ordinal));
 
+        var integration = new DomainIntegration(
+            IntId,
+            "My integration",
+            "Sample.Mod",
+            null,
+            IntegrationState.Active,
+            null,
+            integrationCreatedAt,
+            utcNow);
+        var schedules = new List<ScheduleDefinition> { HourlyEnabledSchedule() };
+
         var integrationManagement = new Mock<IIntegrationManagementService>();
         integrationManagement.Setup(x => x.GetIntegrationAsync(IntId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new DomainIntegration(
-                IntId,
-                "My integration",
-                "Sample.Mod",
-                null,
-                IntegrationState.Active,
-                null,
-                integrationCreatedAt,
-                utcNow));
+            .ReturnsAsync(integration);
 
         var readinessSvc = new Mock<IIntegrationReadinessService>();
-        readinessSvc.Setup(x => x.GetReadinessAsync(IntId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(RunnableReadiness());
+        readinessSvc.Setup(x => x.EvaluateScheduleExpectationAsync(IntId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(BuildScheduleExpectationSnapshotForTest(
+                integration,
+                RunnableReadiness(),
+                schedules,
+                utcNow,
+                latestScheduleOrigin: null));
 
         var schedRepo = new Mock<IScheduleRepository>();
         schedRepo.Setup(x => x.GetByIntegrationIdAsync(IntId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new List<ScheduleDefinition> { HourlyEnabledSchedule() });
+            .ReturnsAsync(schedules);
 
         var sut = CreateService(utcNow, runQuery, integrationManagement, readinessSvc, schedRepo);
         var diag = await sut.GetDiagnosticsAsync(IntId);
@@ -468,25 +557,33 @@ public sealed class IntegrationScheduleDiagnosticsTests
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(new Dictionary<string, IReadOnlyList<FleetScheduleOriginRunEvidence>>(StringComparer.Ordinal));
 
+        var integration = new DomainIntegration(
+            IntId,
+            "My integration",
+            "Sample.Mod",
+            null,
+            IntegrationState.Active,
+            null,
+            integrationCreatedAt,
+            utcNow);
+        var schedules = new List<ScheduleDefinition> { HourlyEnabledSchedule() };
+
         var integrationManagement = new Mock<IIntegrationManagementService>();
         integrationManagement.Setup(x => x.GetIntegrationAsync(IntId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new DomainIntegration(
-                IntId,
-                "My integration",
-                "Sample.Mod",
-                null,
-                IntegrationState.Active,
-                null,
-                integrationCreatedAt,
-                utcNow));
+            .ReturnsAsync(integration);
 
         var readinessSvc = new Mock<IIntegrationReadinessService>();
-        readinessSvc.Setup(x => x.GetReadinessAsync(IntId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(RunnableReadiness());
+        readinessSvc.Setup(x => x.EvaluateScheduleExpectationAsync(IntId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(BuildScheduleExpectationSnapshotForTest(
+                integration,
+                RunnableReadiness(),
+                schedules,
+                utcNow,
+                latestScheduleOrigin: null));
 
         var schedRepo = new Mock<IScheduleRepository>();
         schedRepo.Setup(x => x.GetByIntegrationIdAsync(IntId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new List<ScheduleDefinition> { HourlyEnabledSchedule() });
+            .ReturnsAsync(schedules);
 
         var sut = CreateService(utcNow, runQuery, integrationManagement, readinessSvc, schedRepo);
         var diag = await sut.GetDiagnosticsAsync(IntId);

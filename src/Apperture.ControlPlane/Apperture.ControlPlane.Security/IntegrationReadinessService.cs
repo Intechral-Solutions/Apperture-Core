@@ -12,6 +12,7 @@ namespace Apperture.ControlPlane.Security;
 public sealed class IntegrationReadinessService : IIntegrationReadinessService
 {
     private readonly IIntegrationManagementService _integrationManagement;
+    private readonly IIntegrationRepository _integrationRepository;
     private readonly IModuleSlotRegistry _moduleSlotRegistry;
     private readonly IBindingRepository _bindingRepository;
     private readonly IConnectionRepository _connectionRepository;
@@ -19,11 +20,13 @@ public sealed class IntegrationReadinessService : IIntegrationReadinessService
     private readonly IScheduleRepository _scheduleRepository;
     private readonly IConnectionVerificationReadinessPolicy _verificationReadinessPolicy;
     private readonly IRunQueryService _runQuery;
+    private readonly IAttentionIncidentTracker _attentionIncidentTracker;
     private readonly IScheduleExpectationEvaluator _scheduleExpectation;
     private readonly TimeProvider _timeProvider;
 
     public IntegrationReadinessService(
         IIntegrationManagementService integrationManagement,
+        IIntegrationRepository integrationRepository,
         IModuleSlotRegistry moduleSlotRegistry,
         IBindingRepository bindingRepository,
         IConnectionRepository connectionRepository,
@@ -31,10 +34,12 @@ public sealed class IntegrationReadinessService : IIntegrationReadinessService
         IScheduleRepository scheduleRepository,
         IConnectionVerificationReadinessPolicy verificationReadinessPolicy,
         IRunQueryService runQuery,
+        IAttentionIncidentTracker attentionIncidentTracker,
         IScheduleExpectationEvaluator scheduleExpectation,
         TimeProvider timeProvider)
     {
         _integrationManagement = integrationManagement;
+        _integrationRepository = integrationRepository;
         _moduleSlotRegistry = moduleSlotRegistry;
         _bindingRepository = bindingRepository;
         _connectionRepository = connectionRepository;
@@ -42,6 +47,7 @@ public sealed class IntegrationReadinessService : IIntegrationReadinessService
         _scheduleRepository = scheduleRepository;
         _verificationReadinessPolicy = verificationReadinessPolicy;
         _runQuery = runQuery;
+        _attentionIncidentTracker = attentionIncidentTracker;
         _scheduleExpectation = scheduleExpectation;
         _timeProvider = timeProvider;
     }
@@ -133,6 +139,9 @@ public sealed class IntegrationReadinessService : IIntegrationReadinessService
         CancellationToken cancellationToken = default)
     {
         var integrations = await _integrationManagement.ListIntegrationsAsync(cancellationToken);
+        var activeExpectedRunMissing = await _attentionIncidentTracker
+            .GetIntegrationIdsWithActiveConditionAsync(AttentionConditionKeys.ExpectedRunMissing, cancellationToken)
+            .ConfigureAwait(false);
         var utcNow = _timeProvider.GetUtcNow();
         var sinceUtc = utcNow - IntegrationFleetRunEvidence.Lookback;
         var activeIds = integrations
@@ -177,27 +186,21 @@ public sealed class IntegrationReadinessService : IIntegrationReadinessService
                 s.LatestAuthorizedRunAt);
 
             scheduleOriginByIntegration.TryGetValue(integration.Id.Value, out var scheduleOrigin);
-            var windowStart = operationalRuns.EvidenceWindowStartUtc ?? sinceUtc;
-            var evalCtx = new ScheduleExpectationEvaluationContext(
-                state,
-                utcNow,
-                windowStart,
-                integration.CreatedAt,
-                attention,
+            var snapshot = BuildScheduleExpectationSnapshotFromReadyState(
+                integration,
                 readiness,
-                integration.Id,
                 schedules,
-                scheduleOrigin is null
-                    ? null
-                    : new ScheduleOriginRunEvidenceInput(scheduleOrigin.AuthorizedRunId, scheduleOrigin.AuthorizedRunAt));
-            var evaluation = _scheduleExpectation.Evaluate(evalCtx);
-            var refSched = ReferenceScheduleIdForFleet(schedules, integration.Id);
+                utcNow,
+                sinceUtc,
+                attention,
+                operationalRuns,
+                scheduleOrigin);
             var expectedRuns = IntegrationFleetAttention.FromScheduleExpectationEvaluation(
-                evaluation,
-                refSched,
+                snapshot.Evaluation,
+                snapshot.ReferenceScheduleId,
                 operationalRuns.EvidenceWindowStartUtc,
-                scheduleOrigin?.AuthorizedRunId,
-                scheduleOrigin?.AuthorizedRunAt);
+                snapshot.LatestScheduleOriginAuthorizedRun?.RunId,
+                snapshot.LatestScheduleOriginAuthorizedRun?.RunAt);
 
             var tokens = IntegrationFleetAttention.ToAttentionTokens(attention).ToList();
             IntegrationFleetAttention.AppendOperationalAttentionTokens(tokens, state, operationalRuns);
@@ -216,11 +219,124 @@ public sealed class IntegrationReadinessService : IIntegrationReadinessService
                 operationalRuns,
                 expectedRuns,
                 tokens,
-                topCodes));
+                topCodes,
+                activeExpectedRunMissing.Contains(integration.Id.Value)));
         }
 
         var filtered = ApplyFleetFilters(rows, query);
         return ApplyFleetSort(filtered, query.Sort);
+    }
+
+    /// <inheritdoc />
+    public async ValueTask<ScheduleExpectationSnapshot?> EvaluateScheduleExpectationAsync(
+        IntegrationId id,
+        CancellationToken cancellationToken = default)
+    {
+        var integration = await _integrationManagement.GetIntegrationAsync(id, cancellationToken).ConfigureAwait(false);
+        if (integration is null)
+            return null;
+        return await BuildScheduleExpectationSnapshotAsync(integration, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
+    public async ValueTask<ScheduleExpectationSnapshot?> EvaluateScheduleExpectationForBackgroundAsync(
+        IntegrationId id,
+        CancellationToken cancellationToken = default)
+    {
+        var integration = await _integrationRepository.GetByIdAsync(id, cancellationToken).ConfigureAwait(false);
+        if (integration is null)
+            return null;
+        return await BuildScheduleExpectationSnapshotAsync(integration, cancellationToken).ConfigureAwait(false);
+    }
+
+    private ScheduleExpectationSnapshot BuildScheduleExpectationSnapshotFromReadyState(
+        DomainIntegration integration,
+        IntegrationReadinessProjection readiness,
+        IReadOnlyList<ScheduleDefinition> schedules,
+        DateTimeOffset utcNow,
+        DateTimeOffset sinceUtc,
+        IntegrationFleetAttentionFlags attention,
+        IntegrationFleetOperationalRunAttention operationalRuns,
+        FleetScheduleOriginRunEvidence? scheduleOrigin)
+    {
+        var state = integration.State.ToString();
+        var windowStart = operationalRuns.EvidenceWindowStartUtc ?? sinceUtc;
+        var latestScheduleOriginEvidence = scheduleOrigin is null
+            ? null
+            : new ScheduleOriginRunEvidenceInput(scheduleOrigin.AuthorizedRunId, scheduleOrigin.AuthorizedRunAt);
+        var evalCtx = new ScheduleExpectationEvaluationContext(
+            state,
+            utcNow,
+            windowStart,
+            integration.CreatedAt,
+            attention,
+            readiness,
+            integration.Id,
+            schedules,
+            latestScheduleOriginEvidence);
+        var evaluation = _scheduleExpectation.Evaluate(evalCtx);
+        var refSched = ReferenceScheduleIdForFleet(schedules, integration.Id);
+        return new ScheduleExpectationSnapshot(
+            evaluation,
+            refSched,
+            latestScheduleOriginEvidence,
+            windowStart);
+    }
+
+    private async ValueTask<ScheduleExpectationSnapshot> BuildScheduleExpectationSnapshotAsync(
+        DomainIntegration integration,
+        CancellationToken cancellationToken)
+    {
+        var bindings = await _bindingRepository.GetByIntegrationIdAsync(integration.Id, cancellationToken).ConfigureAwait(false);
+        var schedules = await _scheduleRepository.GetByIntegrationIdAsync(integration.Id, cancellationToken).ConfigureAwait(false);
+        var readiness = await EvaluateReadinessAsync(integration, bindings, schedules, cancellationToken).ConfigureAwait(false);
+        var utcNow = _timeProvider.GetUtcNow();
+        var sinceUtc = utcNow - IntegrationFleetRunEvidence.Lookback;
+        var state = integration.State.ToString();
+        var attention = IntegrationFleetAttention.Compute(state, readiness);
+        FleetOperationalRunSignals? sig = null;
+        if (string.Equals(state, "Active", StringComparison.OrdinalIgnoreCase))
+        {
+            var runSignals = await _runQuery.GetFleetOperationalRunSignalsAsync(
+                    new[] { integration.Id.Value },
+                    sinceUtc,
+                    IntegrationFleetRunEvidence.BatchMaxRows,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            runSignals.TryGetValue(integration.Id.Value, out sig);
+        }
+
+        var s = sig ?? new FleetOperationalRunSignals(0, null, null, null, null, null);
+        var operationalRuns = IntegrationFleetAttention.BuildOperationalRunAttention(
+            state,
+            sinceUtc,
+            s.RecentAuthorizedFailedRunCount,
+            s.MostRecentFailedRunId,
+            s.MostRecentFailedRunAt,
+            s.LatestAuthorizedRunId,
+            s.LatestAuthorizedRunStatus,
+            s.LatestAuthorizedRunAt);
+
+        FleetScheduleOriginRunEvidence? scheduleOrigin = null;
+        if (string.Equals(state, "Active", StringComparison.OrdinalIgnoreCase))
+        {
+            var originMap = await _runQuery.GetLatestAuthorizedScheduleOriginRunsAsync(
+                    new[] { integration.Id.Value },
+                    sinceUtc,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            originMap.TryGetValue(integration.Id.Value, out scheduleOrigin);
+        }
+
+        return BuildScheduleExpectationSnapshotFromReadyState(
+            integration,
+            readiness,
+            schedules,
+            utcNow,
+            sinceUtc,
+            attention,
+            operationalRuns,
+            scheduleOrigin);
     }
 
     private static List<IntegrationFleetRowProjection> ApplyFleetFilters(

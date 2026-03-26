@@ -339,6 +339,24 @@ public sealed class ManagementClient : IManagementClient
             cancellationToken).ConfigureAwait(false);
     }
 
+    /// <inheritdoc />
+    public async Task<bool> AcknowledgeIntegrationAttentionIncidentAsync(
+        string integrationId,
+        string incidentId,
+        string? note,
+        CancellationToken cancellationToken = default)
+    {
+        var response = await _http.PostAsJsonAsync(
+                $"integrations/{Uri.EscapeDataString(integrationId)}/attention-incidents/{Uri.EscapeDataString(incidentId)}/acknowledge",
+                new AcknowledgeAttentionIncidentRequest(note),
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (response.StatusCode == HttpStatusCode.NotFound)
+            return false;
+        response.EnsureSuccessStatusCode();
+        return true;
+    }
+
     public async Task<IntegrationOperatorDetailDto?> GetIntegrationOperatorDetailAsync(string id, CancellationToken cancellationToken = default)
     {
         return await _http.GetFromJsonAsync<IntegrationOperatorDetailDto>(

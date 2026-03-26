@@ -58,3 +58,12 @@ public sealed record ScheduleExpectationEvaluation(
     string? OperatorSummaryLine,
     ScheduleExpectationGraceReason? GraceReason = null,
     DateTimeOffset? GraceAnchorUtc = null);
+
+/// <summary>
+/// Epic 68: shared schedule expectation evaluation snapshot (same construction as fleet row / diagnostics).
+/// </summary>
+public sealed record ScheduleExpectationSnapshot(
+    ScheduleExpectationEvaluation Evaluation,
+    string? ReferenceScheduleId,
+    ScheduleOriginRunEvidenceInput? LatestScheduleOriginAuthorizedRun,
+    DateTimeOffset EvidenceWindowStartUtc);

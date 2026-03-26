@@ -201,6 +201,10 @@
                                     <div class="mt-1">
                                         <a class="text-xs underline" href="@($"/integrations/{Uri.EscapeDataString(row.Id)}/schedule-diagnostics")">Schedule diagnostics</a>
                                     </div>
+                                    @if (row.HasActiveExpectedRunMissingIncident)
+                                    {
+                                        <div class="mt-1 text-xs text-warning">Active expected-run-missing incident (see diagnostics).</div>
+                                    }
 
                                     @if (row.ExpectedRuns.HasRecurringScheduleExpectation)
                                     {

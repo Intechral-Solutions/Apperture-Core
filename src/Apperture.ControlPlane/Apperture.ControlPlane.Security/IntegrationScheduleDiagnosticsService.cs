@@ -13,13 +13,14 @@ namespace Apperture.ControlPlane.Security;
 public sealed class IntegrationScheduleDiagnosticsService : IIntegrationScheduleDiagnosticsService
 {
     private const int RecentExpectedFiresCap = 10;
+    private const int RecentAttentionIncidentsCap = 20;
     private static readonly TimeSpan TimelineSearchMaxLookback = TimeSpan.FromDays(30);
 
     private readonly IIntegrationManagementService _integrationManagement;
     private readonly IIntegrationReadinessService _readiness;
     private readonly IScheduleRepository _scheduleRepo;
     private readonly IRunQueryService _runQuery;
-    private readonly IScheduleExpectationEvaluator _scheduleExpectation;
+    private readonly IAttentionIncidentTracker _attentionIncidentTracker;
     private readonly TimeProvider _timeProvider;
 
     public IntegrationScheduleDiagnosticsService(
@@ -27,14 +28,14 @@ public sealed class IntegrationScheduleDiagnosticsService : IIntegrationSchedule
         IIntegrationReadinessService readiness,
         IScheduleRepository scheduleRepo,
         IRunQueryService runQuery,
-        IScheduleExpectationEvaluator scheduleExpectation,
+        IAttentionIncidentTracker attentionIncidentTracker,
         TimeProvider timeProvider)
     {
         _integrationManagement = integrationManagement;
         _readiness = readiness;
         _scheduleRepo = scheduleRepo;
         _runQuery = runQuery;
-        _scheduleExpectation = scheduleExpectation;
+        _attentionIncidentTracker = attentionIncidentTracker;
         _timeProvider = timeProvider;
     }
 
@@ -44,10 +45,6 @@ public sealed class IntegrationScheduleDiagnosticsService : IIntegrationSchedule
     {
         var integration = await _integrationManagement.GetIntegrationAsync(integrationId, cancellationToken);
         if (integration is null)
-            return null;
-
-        var readiness = await _readiness.GetReadinessAsync(integrationId, cancellationToken);
-        if (readiness is null)
             return null;
 
         var schedules = await _scheduleRepo.GetByIntegrationIdAsync(integrationId, cancellationToken);
@@ -67,31 +64,11 @@ public sealed class IntegrationScheduleDiagnosticsService : IIntegrationSchedule
         var lastAuthorizedRunAt = operationalSignals?.LatestAuthorizedRunAt;
         var lastAuthorizedRunStatus = operationalSignals?.LatestAuthorizedRunStatus;
 
-        // Core truth: evaluator output.
-        var attention = IntegrationFleetAttention.Compute(integration.State.ToString(), readiness);
+        var snapshot = await _readiness.EvaluateScheduleExpectationAsync(integrationId, cancellationToken).ConfigureAwait(false);
+        if (snapshot is null)
+            return null;
 
-        var latestScheduleOriginByIntegration = await _runQuery.GetLatestAuthorizedScheduleOriginRunsAsync(
-            new[] { integrationId.Value },
-            observationWindowStartUtc,
-            cancellationToken).ConfigureAwait(false);
-
-        latestScheduleOriginByIntegration.TryGetValue(integrationId.Value, out var latestScheduleOrigin);
-        var latestScheduleOriginEvidence = latestScheduleOrigin is null
-            ? null
-            : new ScheduleOriginRunEvidenceInput(latestScheduleOrigin.AuthorizedRunId, latestScheduleOrigin.AuthorizedRunAt);
-
-        var evalCtx = new ScheduleExpectationEvaluationContext(
-            integration.State.ToString(),
-            utcNow,
-            observationWindowStartUtc,
-            integration.CreatedAt,
-            attention,
-            readiness,
-            integrationId,
-            schedules,
-            latestScheduleOriginEvidence);
-
-        var evaluation = _scheduleExpectation.Evaluate(evalCtx);
+        var evaluation = snapshot.Evaluation;
 
         var referenceSchedule = FindReferenceSchedule(schedules, integrationId);
         var referenceScheduleLifecycle = referenceSchedule?.Lifecycle;
@@ -202,6 +179,14 @@ public sealed class IntegrationScheduleDiagnosticsService : IIntegrationSchedule
             }
         }
 
+        var incidents = await _attentionIncidentTracker
+            .ListRecentForIntegrationAsync(
+                integrationId,
+                AttentionConditionKeys.ExpectedRunMissing,
+                RecentAttentionIncidentsCap,
+                cancellationToken)
+            .ConfigureAwait(false);
+
         return new IntegrationScheduleDiagnosticsProjection(
             integrationId,
             evaluation.ExpectsRecurringRuns,
@@ -220,7 +205,8 @@ public sealed class IntegrationScheduleDiagnosticsService : IIntegrationSchedule
             lastAuthorizedRunId,
             lastAuthorizedRunStatus,
             lastAuthorizedRunAt,
-            recentTimeline);
+            recentTimeline,
+            incidents);
     }
 
     private static ScheduleDefinition? FindReferenceSchedule(
