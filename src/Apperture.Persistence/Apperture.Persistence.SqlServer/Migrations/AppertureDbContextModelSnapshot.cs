@@ -1107,9 +1107,14 @@ namespace Apperture.Persistence.SqlServer.Migrations
 
                     b.HasIndex("OperationalTeamId");
 
+                    b.HasIndex("PrincipalUserId");
+
                     b.HasIndex("MemberKind", "PrincipalUserId");
 
-                    b.ToTable("OperationalTeamMembers", (string)null);
+                    b.ToTable("OperationalTeamMembers", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_OperationalTeamMembers_MemberKindPayload", "([MemberKind] = N'Principal' AND [PrincipalUserId] IS NOT NULL) OR ([MemberKind] = N'ExternalEmail' AND [EmailAddress] IS NOT NULL)");
+                        });
                 });
 
             modelBuilder.Entity("Apperture.Persistence.SqlServer.RoleEntity", b =>
@@ -1999,6 +2004,20 @@ namespace Apperture.Persistence.SqlServer.Migrations
                         .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+                });
+
+            modelBuilder.Entity("Apperture.Persistence.SqlServer.OperationalTeamMemberEntity", b =>
+                {
+                    b.HasOne("Apperture.Persistence.SqlServer.OperationalTeamEntity", null)
+                        .WithMany()
+                        .HasForeignKey("OperationalTeamId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Apperture.Persistence.SqlServer.UserEntity", null)
+                        .WithMany()
+                        .HasForeignKey("PrincipalUserId")
+                        .OnDelete(DeleteBehavior.Restrict);
                 });
 
             modelBuilder.Entity("Apperture.Persistence.SqlServer.UserRoleEntity", b =>

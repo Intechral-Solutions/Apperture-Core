@@ -139,8 +139,8 @@
                 Environment.NewLine,
                 _detail.Members.Select(m =>
                     string.IsNullOrEmpty(m.DisplayName)
-                        ? $"{(m.MemberKind == \"Principal\" ? "principal" : "external")},{(m.MemberKind == \"Principal\" ? m.PrincipalUserId : m.EmailAddress)}"
-                        : $"{(m.MemberKind == \"Principal\" ? "principal" : "external")},{(m.MemberKind == \"Principal\" ? m.PrincipalUserId : m.EmailAddress)},{m.DisplayName}"));
+                        ? $"{MemberKindToken(m.MemberKind)},{MemberValue(m)}"
+                        : $"{MemberKindToken(m.MemberKind)},{MemberValue(m)},{m.DisplayName}"));
         }
         catch (HttpRequestException ex)
         {
@@ -220,4 +220,12 @@
             _savingMembers = false;
         }
     }
+
+    private static string MemberKindToken(string kind) =>
+        string.Equals(kind, "Principal", StringComparison.OrdinalIgnoreCase) ? "principal" : "external";
+
+    private static string? MemberValue(OperationalTeamMemberDto member) =>
+        string.Equals(member.MemberKind, "Principal", StringComparison.OrdinalIgnoreCase)
+            ? member.PrincipalUserId
+            : member.EmailAddress;
 }

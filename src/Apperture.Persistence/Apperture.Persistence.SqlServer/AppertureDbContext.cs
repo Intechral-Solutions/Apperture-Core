@@ -638,6 +638,17 @@ public class AppertureDbContext : DbContext
             e.Property(x => x.DisplayName).HasMaxLength(256);
             e.HasIndex(x => x.OperationalTeamId);
             e.HasIndex(x => new { x.MemberKind, x.PrincipalUserId });
+            e.HasCheckConstraint(
+                "CK_OperationalTeamMembers_MemberKindPayload",
+                "([MemberKind] = N'Principal' AND [PrincipalUserId] IS NOT NULL) OR ([MemberKind] = N'ExternalEmail' AND [EmailAddress] IS NOT NULL)");
+            e.HasOne<OperationalTeamEntity>()
+                .WithMany()
+                .HasForeignKey(x => x.OperationalTeamId)
+                .OnDelete(DeleteBehavior.Cascade);
+            e.HasOne<UserEntity>()
+                .WithMany()
+                .HasForeignKey(x => x.PrincipalUserId)
+                .OnDelete(DeleteBehavior.Restrict);
         });
     }
 }
