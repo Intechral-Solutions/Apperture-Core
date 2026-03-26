@@ -32,13 +32,13 @@ function Write-State {
     param(
         [string]$Status,
         [string]$Message,
-        [int]$Pid = 0,
+        [int]$ProcessId = 0,
         [string]$LogPath = ""
     )
     $payload = [ordered]@{
         status = $Status
         message = $Message
-        pid = if ($Pid -gt 0) { $Pid } else { $null }
+        pid = if ($ProcessId -gt 0) { $ProcessId } else { $null }
         lastStartAttemptUtc = $StartTs.ToString("o")
         lastUpdatedUtc = (Get-Date).ToUniversalTime().ToString("o")
         logPath = if ([string]::IsNullOrWhiteSpace($LogPath)) { $null } else { $LogPath }
@@ -112,10 +112,10 @@ if ($proc.HasExited) {
     if ($Headless) {
         $msg = "$msg See logs: $logOut ; $logErr"
     }
-    Write-State -Status "Failed" -Message $msg -Pid $proc.Id -LogPath $logErr
+    Write-State -Status "Failed" -Message $msg -ProcessId $proc.Id -LogPath $logErr
     throw $msg
 }
 
 $okMsg = "Worker running (pid $($proc.Id))."
-Write-State -Status "Running" -Message $okMsg -Pid $proc.Id -LogPath $logOut
+Write-State -Status "Running" -Message $okMsg -ProcessId $proc.Id -LogPath $logOut
 Write-Host $okMsg -ForegroundColor Green

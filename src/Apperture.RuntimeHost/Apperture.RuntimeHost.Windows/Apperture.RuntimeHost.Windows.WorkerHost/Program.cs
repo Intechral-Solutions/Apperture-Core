@@ -70,6 +70,7 @@ try
     builder.Services.AddSingleton<IEnvironmentContext, RuntimeEnvironmentContext>();
     builder.Services.AddScoped<IAuditService, SqlAuditService>();
     builder.Services.AddScoped<IModuleRegistryService, SqlModuleRegistryService>();
+builder.Services.AddWorkerHostIntegrationRepository();
     builder.Services.AddSingleton<IModuleActivationFilter, WorkerRegistryModuleActivationFilter>();
     builder.Services.AddConnectorRepositories();
     builder.Services.AddConnectorResolution();
