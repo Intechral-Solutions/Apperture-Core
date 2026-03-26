@@ -302,7 +302,7 @@
                     @if (_capabilities?.CanManageSchedules == true)
                     {
                         <div class="mt-3 space-y-2">
-                            <div class="text-xs font-semibold text-heading">Integration override (contact groups)</div>
+                            <div class="text-xs font-semibold text-heading">Integration override (operational teams)</div>
                             <div class="text-xs text-muted">Leave as “Instance default” to clear the override for that role.</div>
                             <label class="block text-xs text-muted">Primary group</label>
                             <select class="w-full rounded border border-default bg-surface px-2 py-1 text-sm" @bind="_routingPrimaryGroupId">
@@ -343,7 +343,7 @@
                                     <th class="px-3 py-2">Created</th>
                                     <th class="px-3 py-2">Kind</th>
                                     <th class="px-3 py-2">Recipient</th>
-                                    <th class="px-3 py-2">Contact group</th>
+                                    <th class="px-3 py-2">Operational team</th>
                                     <th class="px-3 py-2">Status</th>
                                     <th class="px-3 py-2">Resolved from</th>
                                     <th class="px-3 py-2">Flags</th>
@@ -356,7 +356,7 @@
                                         <td class="px-3 py-2 font-mono text-xs">@n.CreatedAtUtc.UtcDateTime.ToString("u")</td>
                                         <td class="px-3 py-2">@n.NotificationKind</td>
                                         <td class="px-3 py-2 font-mono text-xs">@(string.IsNullOrEmpty(n.Recipient) ? "—" : n.Recipient)</td>
-                                        <td class="px-3 py-2 text-xs font-mono">@(string.IsNullOrEmpty(n.ContactGroupId) ? "—" : n.ContactGroupId)@if (!string.IsNullOrEmpty(n.ContactGroupNameSnapshot)) { <div class="text-muted">@n.ContactGroupNameSnapshot</div> }</td>
+                                        <td class="px-3 py-2 text-xs font-mono">@(string.IsNullOrEmpty(n.OperationalTeamId) ? "—" : n.OperationalTeamId)@if (!string.IsNullOrEmpty(n.OperationalTeamNameSnapshot)) { <div class="text-muted">@n.OperationalTeamNameSnapshot</div> }</td>
                                         <td class="px-3 py-2 text-xs">@n.Status@if (n.SuppressionReason is { } sr) { <span class="text-muted">(@sr)</span> }</td>
                                         <td class="px-3 py-2 text-xs">@RoutingSourceLabel(n.RecipientResolvedFrom)</td>
                                         <td class="px-3 py-2 text-xs">@if (n.WasEscalation) { <span>esc </span> }@if (n.EscalationThresholdApplied) { <span>thr </span> }@if (n.SuppressedDueToAcknowledgment) { <span>ack </span> }</td>
@@ -397,7 +397,7 @@
     private bool _loading = true;
     private bool _ackBusy;
     private string? _error;
-    private IReadOnlyList<AttentionContactGroupSummaryDto> _contactGroups = Array.Empty<AttentionContactGroupSummaryDto>();
+    private IReadOnlyList<OperationalTeamSummaryDto> _contactGroups = Array.Empty<OperationalTeamSummaryDto>();
     private string _routingPrimaryGroupId = "";
     private string _routingEscalationGroupId = "";
     private bool _routingSaveBusy;
@@ -425,6 +425,7 @@
 
         try
         {
+            _contactGroups = await Client.ListOperationalTeamsAsync(includeDisabled: false);
             _diagnostics = await Client.GetIntegrationScheduleDiagnosticsAsync(IntegrationId);
             SyncRoutingEditor();
         }
@@ -451,8 +452,8 @@
             return;
         }
 
-        _routingPrimaryGroupId = rt.IntegrationRowPrimaryContactGroupId ?? "";
-        _routingEscalationGroupId = rt.IntegrationRowEscalationContactGroupId ?? "";
+        _routingPrimaryGroupId = rt.IntegrationRowPrimaryOperationalTeamId ?? "";
+        _routingEscalationGroupId = rt.IntegrationRowEscalationOperationalTeamId ?? "";
     }
 
     private static string FmtTicks(long? ticks) =>
@@ -469,9 +470,9 @@
 
     private static string NoRouteHint(string? reason) => reason switch
     {
-        "no_group_configured" => "No group configured for this role.",
-        "group_disabled" => "Group is disabled.",
-        "group_empty" => "Group has no enabled members.",
+        "no_team_configured" => "No team configured for this role.",
+        "team_disabled" => "Team is disabled.",
+        "team_empty" => "Team has no enabled members.",
         _ => reason ?? ""
     };
 

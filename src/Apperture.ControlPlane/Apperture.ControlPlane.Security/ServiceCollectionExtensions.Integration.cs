@@ -23,6 +23,7 @@ public static class IntegrationServiceCollectionExtensions
         services.AddScoped<IAttentionRecipientResolver, SqlAttentionRecipientResolver>();
         services.AddScoped<IAttentionRoutingManagementService, AttentionRoutingManagementService>();
         services.AddScoped<IAttentionContactGroupManagementService, AttentionContactGroupManagementService>();
+        services.AddScoped<IOperationalTeamManagementService, OperationalTeamManagementService>();
         services.AddScoped<IAttentionNotificationSender, SmtpAttentionNotificationSender>();
         services.AddScoped<AttentionIncidentNotificationOrchestrator>();
         services.AddScoped<IIntegrationManagementService, IntegrationManagementService>();

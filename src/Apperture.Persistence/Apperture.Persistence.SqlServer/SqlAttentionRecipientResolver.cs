@@ -7,6 +7,9 @@ namespace Apperture.Persistence.SqlServer;
 
 public sealed class SqlAttentionRecipientResolver : IAttentionRecipientResolver
 {
+    private const string MemberKindPrincipal = "Principal";
+    private const string MemberKindExternalEmail = "ExternalEmail";
+
     private readonly AppertureDbContext _db;
 
     public SqlAttentionRecipientResolver(AppertureDbContext db) => _db = db;
@@ -24,18 +27,18 @@ public sealed class SqlAttentionRecipientResolver : IAttentionRecipientResolver
         if (inst is null)
             return UnconfiguredInstance();
 
-        var primaryEx = await ExpandGroupAsync(inst.PrimaryContactGroupId, cancellationToken).ConfigureAwait(false);
-        var escEx = await ExpandGroupAsync(inst.EscalationContactGroupId, cancellationToken).ConfigureAwait(false);
+        var primaryEx = await ExpandTeamAsync(inst.PrimaryOperationalTeamId, cancellationToken).ConfigureAwait(false);
+        var escEx = await ExpandTeamAsync(inst.EscalationOperationalTeamId, cancellationToken).ConfigureAwait(false);
 
         return Build(
             inst,
             integrationOverride: null,
             primaryEx,
             escEx,
-            primarySource: string.IsNullOrWhiteSpace(inst.PrimaryContactGroupId)
+            primarySource: string.IsNullOrWhiteSpace(inst.PrimaryOperationalTeamId)
                 ? AttentionRecipientSources.None
                 : AttentionRecipientSources.GlobalDefault,
-            escSource: string.IsNullOrWhiteSpace(inst.EscalationContactGroupId)
+            escSource: string.IsNullOrWhiteSpace(inst.EscalationOperationalTeamId)
                 ? AttentionRecipientSources.None
                 : AttentionRecipientSources.GlobalDefault);
     }
@@ -60,38 +63,38 @@ public sealed class SqlAttentionRecipientResolver : IAttentionRecipientResolver
                 cancellationToken)
             .ConfigureAwait(false);
 
-        string? primaryGroupId;
+        string? primaryTeamId;
         string primarySource;
-        if (integ is not null && !string.IsNullOrWhiteSpace(integ.PrimaryContactGroupId))
+        if (integ is not null && !string.IsNullOrWhiteSpace(integ.PrimaryOperationalTeamId))
         {
-            primaryGroupId = integ.PrimaryContactGroupId;
+            primaryTeamId = integ.PrimaryOperationalTeamId;
             primarySource = AttentionRecipientSources.IntegrationOverride;
         }
         else
         {
-            primaryGroupId = inst.PrimaryContactGroupId;
-            primarySource = string.IsNullOrWhiteSpace(primaryGroupId)
+            primaryTeamId = inst.PrimaryOperationalTeamId;
+            primarySource = string.IsNullOrWhiteSpace(primaryTeamId)
                 ? AttentionRecipientSources.None
                 : AttentionRecipientSources.GlobalDefault;
         }
 
-        string? escGroupId;
+        string? escTeamId;
         string escSource;
-        if (integ is not null && !string.IsNullOrWhiteSpace(integ.EscalationContactGroupId))
+        if (integ is not null && !string.IsNullOrWhiteSpace(integ.EscalationOperationalTeamId))
         {
-            escGroupId = integ.EscalationContactGroupId;
+            escTeamId = integ.EscalationOperationalTeamId;
             escSource = AttentionRecipientSources.IntegrationOverride;
         }
         else
         {
-            escGroupId = inst.EscalationContactGroupId;
-            escSource = string.IsNullOrWhiteSpace(escGroupId)
+            escTeamId = inst.EscalationOperationalTeamId;
+            escSource = string.IsNullOrWhiteSpace(escTeamId)
                 ? AttentionRecipientSources.None
                 : AttentionRecipientSources.GlobalDefault;
         }
 
-        var primaryEx = await ExpandGroupAsync(primaryGroupId, cancellationToken).ConfigureAwait(false);
-        var escEx = await ExpandGroupAsync(escGroupId, cancellationToken).ConfigureAwait(false);
+        var primaryEx = await ExpandTeamAsync(primaryTeamId, cancellationToken).ConfigureAwait(false);
+        var escEx = await ExpandTeamAsync(escTeamId, cancellationToken).ConfigureAwait(false);
 
         return Build(inst, integ, primaryEx, escEx, primarySource, escSource);
     }
@@ -99,63 +102,55 @@ public sealed class SqlAttentionRecipientResolver : IAttentionRecipientResolver
     private AttentionRecipientResolution Build(
         InstanceAttentionRoutingEntity inst,
         IntegrationAttentionRoutingEntity? integrationOverride,
-        GroupExpansion primaryEx,
-        GroupExpansion escEx,
+        TeamExpansion primaryEx,
+        TeamExpansion escEx,
         string primarySource,
         string escSource)
     {
-        bool policyEnabled;
-        bool sendResolved;
-        bool suppressRem;
-        bool suppressEsc;
-        long? escTicks;
-        long? remTicks;
+        var policy = integrationOverride is not null
+            ? (integrationOverride.IsEnabled,
+                integrationOverride.SendResolvedNotification,
+                integrationOverride.SuppressRemindersWhenAcknowledged,
+                integrationOverride.SuppressEscalationWhenAcknowledged,
+                integrationOverride.EscalationAfterTicks,
+                integrationOverride.ReminderIntervalTicks)
+            : (inst.IsEnabled,
+                inst.SendResolvedNotification,
+                inst.SuppressRemindersWhenAcknowledged,
+                inst.SuppressEscalationWhenAcknowledged,
+                inst.EscalationAfterTicks,
+                inst.ReminderIntervalTicks);
 
-        if (integrationOverride is not null)
-        {
-            policyEnabled = integrationOverride.IsEnabled;
-            sendResolved = integrationOverride.SendResolvedNotification;
-            suppressRem = integrationOverride.SuppressRemindersWhenAcknowledged;
-            suppressEsc = integrationOverride.SuppressEscalationWhenAcknowledged;
-            escTicks = integrationOverride.EscalationAfterTicks;
-            remTicks = integrationOverride.ReminderIntervalTicks;
-        }
-        else
-        {
-            policyEnabled = inst.IsEnabled;
-            sendResolved = inst.SendResolvedNotification;
-            suppressRem = inst.SuppressRemindersWhenAcknowledged;
-            suppressEsc = inst.SuppressEscalationWhenAcknowledged;
-            escTicks = inst.EscalationAfterTicks;
-            remTicks = inst.ReminderIntervalTicks;
-        }
-
-        var hasPrimary = primaryEx.Emails.Length > 0;
-        var hasEsc = escEx.Emails.Length > 0;
+        var hasPrimary = primaryEx.AllRecipients.Length > 0;
+        var hasEsc = escEx.AllRecipients.Length > 0;
         var hasRoute = hasPrimary || hasEsc;
 
         return new AttentionRecipientResolution(
             hasRoute,
-            policyEnabled,
-            primaryEx.Emails,
+            policy.Item1,
+            primaryEx.AllRecipients,
             primarySource,
-            escEx.Emails,
+            escEx.AllRecipients,
             escSource,
-            primaryEx.GroupId,
-            primaryEx.GroupName,
-            escEx.GroupId,
-            escEx.GroupName,
+            primaryEx.TeamId,
+            primaryEx.TeamName,
+            escEx.TeamId,
+            escEx.TeamName,
             hasPrimary,
             hasEsc,
             primaryEx.NoRouteReason,
             escEx.NoRouteReason,
-            escTicks is { } et ? TimeSpan.FromTicks(et) : null,
-            remTicks is { } rt ? TimeSpan.FromTicks(rt) : null,
-            sendResolved,
-            suppressRem,
-            suppressEsc,
-            integrationOverride?.PrimaryContactGroupId,
-            integrationOverride?.EscalationContactGroupId);
+            primaryEx.PrincipalUserIds,
+            escEx.PrincipalUserIds,
+            primaryEx.ExternalRecipients,
+            escEx.ExternalRecipients,
+            policy.Item5 is { } et ? TimeSpan.FromTicks(et) : null,
+            policy.Item6 is { } rt ? TimeSpan.FromTicks(rt) : null,
+            policy.Item2,
+            policy.Item3,
+            policy.Item4,
+            integrationOverride?.PrimaryOperationalTeamId,
+            integrationOverride?.EscalationOperationalTeamId);
     }
 
     private static AttentionRecipientResolution UnconfiguredInstance() =>
@@ -172,8 +167,12 @@ public sealed class SqlAttentionRecipientResolver : IAttentionRecipientResolver
             null,
             false,
             false,
-            AttentionNoRouteReasons.NoGroupConfigured,
-            AttentionNoRouteReasons.NoGroupConfigured,
+            AttentionNoRouteReasons.NoTeamConfigured,
+            AttentionNoRouteReasons.NoTeamConfigured,
+            Array.Empty<string>(),
+            Array.Empty<string>(),
+            Array.Empty<string>(),
+            Array.Empty<string>(),
             null,
             null,
             false,
@@ -182,40 +181,81 @@ public sealed class SqlAttentionRecipientResolver : IAttentionRecipientResolver
             null,
             null);
 
-    private async ValueTask<GroupExpansion> ExpandGroupAsync(string? groupId, CancellationToken cancellationToken)
+    private async ValueTask<TeamExpansion> ExpandTeamAsync(string? teamId, CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(groupId))
-            return new GroupExpansion(Array.Empty<string>(), null, null, AttentionNoRouteReasons.NoGroupConfigured);
+        if (string.IsNullOrWhiteSpace(teamId))
+            return TeamExpansion.NoRoute(AttentionNoRouteReasons.NoTeamConfigured);
 
-        var g = await _db.AttentionContactGroups.AsNoTracking()
-            .FirstOrDefaultAsync(x => x.Id == groupId, cancellationToken)
+        var team = await _db.OperationalTeams.AsNoTracking()
+            .FirstOrDefaultAsync(x => x.Id == teamId, cancellationToken)
             .ConfigureAwait(false);
-        if (g is null)
-            return new GroupExpansion(Array.Empty<string>(), groupId, null, AttentionNoRouteReasons.NoGroupConfigured);
-        if (!g.IsEnabled)
-            return new GroupExpansion(Array.Empty<string>(), g.Id, g.Name, AttentionNoRouteReasons.GroupDisabled);
+        if (team is null)
+            return TeamExpansion.NoRoute(AttentionNoRouteReasons.NoTeamConfigured, teamId, null);
+        if (!team.IsEnabled)
+            return TeamExpansion.NoRoute(AttentionNoRouteReasons.TeamDisabled, team.Id, team.Name);
 
-        var raw = await _db.AttentionContactGroupMembers.AsNoTracking()
-            .Where(m => m.AttentionContactGroupId == g.Id && m.IsEnabled)
-            .Select(m => m.EmailAddress)
+        var members = await _db.OperationalTeamMembers.AsNoTracking()
+            .Where(m => m.OperationalTeamId == team.Id && m.IsEnabled)
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
+        if (members.Count == 0)
+            return TeamExpansion.NoRoute(AttentionNoRouteReasons.TeamEmpty, team.Id, team.Name);
 
-        var emails = raw
-            .Select(s => s.Trim())
-            .Where(s => s.Length > 0)
+        var principalIds = members
+            .Where(m => string.Equals(m.MemberKind, MemberKindPrincipal, StringComparison.OrdinalIgnoreCase))
+            .Select(m => m.PrincipalUserId)
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Select(x => x!)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        var externalRecipients = members
+            .Where(m => string.Equals(m.MemberKind, MemberKindExternalEmail, StringComparison.OrdinalIgnoreCase))
+            .Select(m => m.EmailAddress)
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Select(x => x!.Trim())
+            .Where(x => x.Length > 0)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
 
-        if (emails.Length == 0)
-            return new GroupExpansion(Array.Empty<string>(), g.Id, g.Name, AttentionNoRouteReasons.GroupEmpty);
+        var principalEmails = principalIds.Length == 0
+            ? Array.Empty<string>()
+            : await _db.Users.AsNoTracking()
+                .Where(u => principalIds.Contains(u.Id) && u.EmailAddress != null)
+                .Select(u => u.EmailAddress!)
+                .ToArrayAsync(cancellationToken)
+                .ConfigureAwait(false);
 
-        return new GroupExpansion(emails, g.Id, g.Name, null);
+        var recipients = principalEmails
+            .Concat(externalRecipients)
+            .Select(x => x.Trim())
+            .Where(x => x.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        var noRouteReason = recipients.Length == 0
+            ? (principalIds.Length > 0
+                ? AttentionNoRouteReasons.PrincipalMembersNoEmail
+                : AttentionNoRouteReasons.TeamEmpty)
+            : null;
+
+        return new TeamExpansion(
+            recipients,
+            principalIds,
+            externalRecipients,
+            team.Id,
+            team.Name,
+            noRouteReason);
     }
 
-    private readonly record struct GroupExpansion(
-        string[] Emails,
-        string? GroupId,
-        string? GroupName,
-        string? NoRouteReason);
+    private readonly record struct TeamExpansion(
+        string[] AllRecipients,
+        string[] PrincipalUserIds,
+        string[] ExternalRecipients,
+        string? TeamId,
+        string? TeamName,
+        string? NoRouteReason)
+    {
+        public static TeamExpansion NoRoute(string reason, string? teamId = null, string? teamName = null) =>
+            new(Array.Empty<string>(), Array.Empty<string>(), Array.Empty<string>(), teamId, teamName, reason);
+    }
 }

@@ -50,8 +50,8 @@ public sealed class SqlAttentionIncidentNotificationLedgerTests
         var list = await sut.ListRecentForIncidentsAsync(new[] { "inc1" }, 10, CancellationToken.None);
         list.Should().ContainSingle();
         list[0].Recipient.Should().Be("a@test.com");
-        list[0].ContactGroupId.Should().Be("grp1");
-        list[0].ContactGroupNameSnapshot.Should().Be("Ops primary");
+        list[0].OperationalTeamId.Should().Be("grp1");
+        list[0].OperationalTeamNameSnapshot.Should().Be("Ops primary");
 
         (await sut.HasSucceededActivationAsync("inc1", CancellationToken.None)).Should().BeTrue();
         (await sut.HasNonSuppressedActivationAttemptAsync("inc1", CancellationToken.None)).Should().BeTrue();

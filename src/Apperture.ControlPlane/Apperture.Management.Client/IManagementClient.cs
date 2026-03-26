@@ -183,6 +183,28 @@ public interface IManagementClient
         ReplaceAttentionContactGroupMembersRequest body,
         CancellationToken cancellationToken = default);
 
+    Task<IReadOnlyList<OperationalTeamSummaryDto>> ListOperationalTeamsAsync(
+        bool includeDisabled = false,
+        CancellationToken cancellationToken = default);
+
+    Task<OperationalTeamDetailDto?> GetOperationalTeamAsync(
+        string id,
+        CancellationToken cancellationToken = default);
+
+    Task<OperationalTeamDetailDto> CreateOperationalTeamAsync(
+        CreateOperationalTeamRequest body,
+        CancellationToken cancellationToken = default);
+
+    Task<OperationalTeamDetailDto?> UpdateOperationalTeamAsync(
+        string id,
+        UpdateOperationalTeamRequest body,
+        CancellationToken cancellationToken = default);
+
+    Task<OperationalTeamDetailDto?> ReplaceOperationalTeamMembersAsync(
+        string id,
+        ReplaceOperationalTeamMembersRequest body,
+        CancellationToken cancellationToken = default);
+
     Task<bool> AcknowledgeIntegrationAttentionIncidentAsync(
         string integrationId,
         string incidentId,

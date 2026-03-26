@@ -224,8 +224,8 @@ public sealed class IntegrationsController : ControllerBase
                             body.SuppressEscalationWhenAcknowledged,
                             body.EscalationAfterTicks is { } et ? TimeSpan.FromTicks(et) : null,
                             body.ReminderIntervalTicks is { } rt ? TimeSpan.FromTicks(rt) : null,
-                            body.PrimaryContactGroupId,
-                            body.EscalationContactGroupId),
+                            body.PrimaryOperationalTeamId,
+                            body.EscalationOperationalTeamId),
                         cancellationToken)
                     .ConfigureAwait(false);
             }
@@ -551,8 +551,8 @@ public sealed class IntegrationsController : ControllerBase
                 n.WasEscalation,
                 n.EscalationThresholdApplied,
                 n.SuppressedDueToAcknowledgment,
-                n.ContactGroupId,
-                n.ContactGroupNameSnapshot)).ToList(),
+                n.OperationalTeamId,
+                n.OperationalTeamNameSnapshot)).ToList(),
             ToAttentionRoutingDto(p.AttentionRouting));
 
     private static AttentionRoutingEffectiveDto ToAttentionRoutingDto(AttentionRecipientResolution r) =>
@@ -563,21 +563,25 @@ public sealed class IntegrationsController : ControllerBase
             r.PrimarySource,
             r.EscalationRecipients.ToList(),
             r.EscalationSource,
-            r.PrimaryContactGroupId,
-            r.PrimaryContactGroupName,
-            r.EscalationContactGroupId,
-            r.EscalationContactGroupName,
+            r.PrimaryOperationalTeamId,
+            r.PrimaryOperationalTeamName,
+            r.EscalationOperationalTeamId,
+            r.EscalationOperationalTeamName,
             r.HasPrimaryRoute,
             r.HasEscalationRoute,
             r.PrimaryNoRouteReason,
             r.EscalationNoRouteReason,
+            r.ResolvedPrimaryPrincipalUserIds.ToList(),
+            r.ResolvedEscalationPrincipalUserIds.ToList(),
+            r.ResolvedPrimaryExternalRecipients.ToList(),
+            r.ResolvedEscalationExternalRecipients.ToList(),
             r.EscalationAfter?.Ticks,
             r.ReminderInterval?.Ticks,
             r.SendResolvedNotification,
             r.SuppressRemindersWhenAcknowledged,
             r.SuppressEscalationWhenAcknowledged,
-            r.IntegrationRowPrimaryContactGroupId,
-            r.IntegrationRowEscalationContactGroupId);
+            r.IntegrationRowPrimaryOperationalTeamId,
+            r.IntegrationRowEscalationOperationalTeamId);
 
     private static AttentionRoutingEffectiveDto ToAttentionRoutingDto(AttentionRoutingDiagnosticsSummary s) =>
         new(
@@ -587,21 +591,25 @@ public sealed class IntegrationsController : ControllerBase
             s.PrimarySource,
             s.EscalationRecipients.ToList(),
             s.EscalationSource,
-            s.PrimaryContactGroupId,
-            s.PrimaryContactGroupName,
-            s.EscalationContactGroupId,
-            s.EscalationContactGroupName,
+            s.PrimaryOperationalTeamId,
+            s.PrimaryOperationalTeamName,
+            s.EscalationOperationalTeamId,
+            s.EscalationOperationalTeamName,
             s.HasPrimaryRoute,
             s.HasEscalationRoute,
             s.PrimaryNoRouteReason,
             s.EscalationNoRouteReason,
+            s.ResolvedPrimaryPrincipalUserIds.ToList(),
+            s.ResolvedEscalationPrincipalUserIds.ToList(),
+            s.ResolvedPrimaryExternalRecipients.ToList(),
+            s.ResolvedEscalationExternalRecipients.ToList(),
             s.EscalationAfter?.Ticks,
             s.ReminderInterval?.Ticks,
             s.SendResolvedNotification,
             s.SuppressRemindersWhenAcknowledged,
             s.SuppressEscalationWhenAcknowledged,
-            s.IntegrationRowPrimaryContactGroupId,
-            s.IntegrationRowEscalationContactGroupId);
+            s.IntegrationRowPrimaryOperationalTeamId,
+            s.IntegrationRowEscalationOperationalTeamId);
 }
 
 public sealed record IntegrationDto(

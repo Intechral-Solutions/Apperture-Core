@@ -22,73 +22,6 @@ namespace Apperture.Persistence.SqlServer.Migrations
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
 
-            modelBuilder.Entity("Apperture.Persistence.SqlServer.AttentionContactGroupEntity", b =>
-                {
-                    b.Property<string>("Id")
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
-
-                    b.Property<DateTimeOffset>("CreatedAtUtc")
-                        .HasColumnType("datetimeoffset");
-
-                    b.Property<string>("Description")
-                        .HasMaxLength(2048)
-                        .HasColumnType("nvarchar(2048)");
-
-                    b.Property<bool>("IsEnabled")
-                        .HasColumnType("bit");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasMaxLength(256)
-                        .HasColumnType("nvarchar(256)");
-
-                    b.Property<DateTimeOffset>("UpdatedAtUtc")
-                        .HasColumnType("datetimeoffset");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("Name");
-
-                    b.ToTable("AttentionContactGroups", (string)null);
-                });
-
-            modelBuilder.Entity("Apperture.Persistence.SqlServer.AttentionContactGroupMemberEntity", b =>
-                {
-                    b.Property<string>("Id")
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
-
-                    b.Property<string>("AttentionContactGroupId")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
-
-                    b.Property<DateTimeOffset>("CreatedAtUtc")
-                        .HasColumnType("datetimeoffset");
-
-                    b.Property<string>("DisplayName")
-                        .HasMaxLength(256)
-                        .HasColumnType("nvarchar(256)");
-
-                    b.Property<string>("EmailAddress")
-                        .IsRequired()
-                        .HasMaxLength(512)
-                        .HasColumnType("nvarchar(512)");
-
-                    b.Property<bool>("IsEnabled")
-                        .HasColumnType("bit");
-
-                    b.Property<DateTimeOffset>("UpdatedAtUtc")
-                        .HasColumnType("datetimeoffset");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("AttentionContactGroupId");
-
-                    b.ToTable("AttentionContactGroupMembers", (string)null);
-                });
-
             modelBuilder.Entity("Apperture.Persistence.SqlServer.AttentionIncidentEntity", b =>
                 {
                     b.Property<string>("Id")
@@ -177,14 +110,6 @@ namespace Apperture.Persistence.SqlServer.Migrations
                         .HasMaxLength(128)
                         .HasColumnType("nvarchar(128)");
 
-                    b.Property<string>("ContactGroupId")
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
-
-                    b.Property<string>("ContactGroupNameSnapshot")
-                        .HasMaxLength(256)
-                        .HasColumnType("nvarchar(256)");
-
                     b.Property<DateTimeOffset>("CreatedAtUtc")
                         .HasColumnType("datetimeoffset");
 
@@ -207,6 +132,14 @@ namespace Apperture.Persistence.SqlServer.Migrations
                         .IsRequired()
                         .HasMaxLength(32)
                         .HasColumnType("nvarchar(32)");
+
+                    b.Property<string>("OperationalTeamId")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("OperationalTeamNameSnapshot")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
 
                     b.Property<string>("ProviderMessageId")
                         .HasMaxLength(256)
@@ -560,14 +493,14 @@ namespace Apperture.Persistence.SqlServer.Migrations
                     b.Property<long?>("EscalationAfterTicks")
                         .HasColumnType("bigint");
 
-                    b.Property<string>("EscalationContactGroupId")
+                    b.Property<string>("EscalationOperationalTeamId")
                         .HasMaxLength(64)
                         .HasColumnType("nvarchar(64)");
 
                     b.Property<bool>("IsEnabled")
                         .HasColumnType("bit");
 
-                    b.Property<string>("PrimaryContactGroupId")
+                    b.Property<string>("PrimaryOperationalTeamId")
                         .HasMaxLength(64)
                         .HasColumnType("nvarchar(64)");
 
@@ -587,9 +520,9 @@ namespace Apperture.Persistence.SqlServer.Migrations
 
                     b.HasIndex("ConditionKey");
 
-                    b.HasIndex("EscalationContactGroupId");
+                    b.HasIndex("EscalationOperationalTeamId");
 
-                    b.HasIndex("PrimaryContactGroupId");
+                    b.HasIndex("PrimaryOperationalTeamId");
 
                     b.ToTable("InstanceAttentionRoutings", (string)null);
                 });
@@ -634,7 +567,7 @@ namespace Apperture.Persistence.SqlServer.Migrations
                     b.Property<long?>("EscalationAfterTicks")
                         .HasColumnType("bigint");
 
-                    b.Property<string>("EscalationContactGroupId")
+                    b.Property<string>("EscalationOperationalTeamId")
                         .HasMaxLength(64)
                         .HasColumnType("nvarchar(64)");
 
@@ -646,7 +579,7 @@ namespace Apperture.Persistence.SqlServer.Migrations
                     b.Property<bool>("IsEnabled")
                         .HasColumnType("bit");
 
-                    b.Property<string>("PrimaryContactGroupId")
+                    b.Property<string>("PrimaryOperationalTeamId")
                         .HasMaxLength(64)
                         .HasColumnType("nvarchar(64)");
 
@@ -664,9 +597,9 @@ namespace Apperture.Persistence.SqlServer.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("EscalationContactGroupId");
+                    b.HasIndex("EscalationOperationalTeamId");
 
-                    b.HasIndex("PrimaryContactGroupId");
+                    b.HasIndex("PrimaryOperationalTeamId");
 
                     b.HasIndex("IntegrationId", "ConditionKey")
                         .IsUnique();
@@ -1100,6 +1033,83 @@ namespace Apperture.Persistence.SqlServer.Migrations
                     b.HasKey("OperationInstanceId", "StepName", "Attempt");
 
                     b.ToTable("OperationStepInstances", (string)null);
+                });
+
+            modelBuilder.Entity("Apperture.Persistence.SqlServer.OperationalTeamEntity", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(2048)
+                        .HasColumnType("nvarchar(2048)");
+
+                    b.Property<bool>("IsEnabled")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Name");
+
+                    b.ToTable("OperationalTeams", (string)null);
+                });
+
+            modelBuilder.Entity("Apperture.Persistence.SqlServer.OperationalTeamMemberEntity", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("DisplayName")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("EmailAddress")
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)");
+
+                    b.Property<bool>("IsEnabled")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("MemberKind")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<string>("OperationalTeamId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("PrincipalUserId")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OperationalTeamId");
+
+                    b.HasIndex("MemberKind", "PrincipalUserId");
+
+                    b.ToTable("OperationalTeamMembers", (string)null);
                 });
 
             modelBuilder.Entity("Apperture.Persistence.SqlServer.RoleEntity", b =>
@@ -1636,6 +1646,10 @@ namespace Apperture.Persistence.SqlServer.Migrations
                         .IsRequired()
                         .HasMaxLength(256)
                         .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("EmailAddress")
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)");
 
                     b.Property<bool>("IsBreakGlassEligible")
                         .HasColumnType("bit");

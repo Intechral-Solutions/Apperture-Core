@@ -30,7 +30,7 @@ public sealed class AttentionContactGroupManagementService : IAttentionContactGr
         CancellationToken cancellationToken = default)
     {
         await RequireScheduleManageAsync(cancellationToken).ConfigureAwait(false);
-        var q = _db.AttentionContactGroups.AsNoTracking();
+        var q = _db.OperationalTeams.AsNoTracking();
         if (!includeDisabled)
             q = q.Where(x => x.IsEnabled);
         var rows = await q.OrderBy(x => x.Name).ToListAsync(cancellationToken).ConfigureAwait(false);
@@ -48,13 +48,13 @@ public sealed class AttentionContactGroupManagementService : IAttentionContactGr
         await RequireScheduleManageAsync(cancellationToken).ConfigureAwait(false);
         if (string.IsNullOrWhiteSpace(id))
             return null;
-        var g = await _db.AttentionContactGroups.AsNoTracking()
+        var g = await _db.OperationalTeams.AsNoTracking()
             .FirstOrDefaultAsync(x => x.Id == id.Trim(), cancellationToken)
             .ConfigureAwait(false);
         if (g is null)
             return null;
-        var members = await _db.AttentionContactGroupMembers.AsNoTracking()
-            .Where(m => m.AttentionContactGroupId == g.Id)
+        var members = await _db.OperationalTeamMembers.AsNoTracking()
+            .Where(m => m.OperationalTeamId == g.Id && m.MemberKind == "ExternalEmail")
             .OrderBy(m => m.EmailAddress)
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
@@ -70,7 +70,7 @@ public sealed class AttentionContactGroupManagementService : IAttentionContactGr
         if (name.Length == 0)
             throw new InvalidOperationException("Group name is required.");
         var now = _time.GetUtcNow();
-        var entity = new AttentionContactGroupEntity
+        var entity = new OperationalTeamEntity
         {
             Id = NewGroupId(),
             Name = name,
@@ -79,9 +79,9 @@ public sealed class AttentionContactGroupManagementService : IAttentionContactGr
             CreatedAtUtc = now,
             UpdatedAtUtc = now,
         };
-        _db.AttentionContactGroups.Add(entity);
+        _db.OperationalTeams.Add(entity);
         await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-        return ToDetail(entity, Array.Empty<AttentionContactGroupMemberEntity>());
+        return ToDetail(entity, Array.Empty<OperationalTeamMemberEntity>());
     }
 
     public async ValueTask<AttentionContactGroupDetail?> UpdateAsync(
@@ -92,7 +92,7 @@ public sealed class AttentionContactGroupManagementService : IAttentionContactGr
         await RequireScheduleManageAsync(cancellationToken).ConfigureAwait(false);
         if (string.IsNullOrWhiteSpace(id))
             return null;
-        var g = await _db.AttentionContactGroups
+        var g = await _db.OperationalTeams
             .FirstOrDefaultAsync(x => x.Id == id.Trim(), cancellationToken)
             .ConfigureAwait(false);
         if (g is null)
@@ -105,8 +105,8 @@ public sealed class AttentionContactGroupManagementService : IAttentionContactGr
         g.IsEnabled = command.IsEnabled;
         g.UpdatedAtUtc = _time.GetUtcNow();
         await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-        var members = await _db.AttentionContactGroupMembers.AsNoTracking()
-            .Where(m => m.AttentionContactGroupId == g.Id)
+        var members = await _db.OperationalTeamMembers.AsNoTracking()
+            .Where(m => m.OperationalTeamId == g.Id && m.MemberKind == "ExternalEmail")
             .OrderBy(m => m.EmailAddress)
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
@@ -122,7 +122,7 @@ public sealed class AttentionContactGroupManagementService : IAttentionContactGr
         if (string.IsNullOrWhiteSpace(id))
             return null;
         var gid = id.Trim();
-        var g = await _db.AttentionContactGroups
+        var g = await _db.OperationalTeams
             .FirstOrDefaultAsync(x => x.Id == gid, cancellationToken)
             .ConfigureAwait(false);
         if (g is null)
@@ -141,18 +141,19 @@ public sealed class AttentionContactGroupManagementService : IAttentionContactGr
         }
 
         var now = _time.GetUtcNow();
-        var existing = await _db.AttentionContactGroupMembers
-            .Where(x => x.AttentionContactGroupId == gid)
+        var existing = await _db.OperationalTeamMembers
+            .Where(x => x.OperationalTeamId == gid && x.MemberKind == "ExternalEmail")
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
-        _db.AttentionContactGroupMembers.RemoveRange(existing);
+        _db.OperationalTeamMembers.RemoveRange(existing);
 
         foreach (var (email, display, enabled) in normalized)
         {
-            _db.AttentionContactGroupMembers.Add(new AttentionContactGroupMemberEntity
+            _db.OperationalTeamMembers.Add(new OperationalTeamMemberEntity
             {
                 Id = NewMemberId(),
-                AttentionContactGroupId = gid,
+                OperationalTeamId = gid,
+                MemberKind = "ExternalEmail",
                 EmailAddress = email,
                 DisplayName = display,
                 IsEnabled = enabled,
@@ -164,8 +165,8 @@ public sealed class AttentionContactGroupManagementService : IAttentionContactGr
         g.UpdatedAtUtc = now;
         await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
 
-        var refreshed = await _db.AttentionContactGroupMembers.AsNoTracking()
-            .Where(m => m.AttentionContactGroupId == gid)
+        var refreshed = await _db.OperationalTeamMembers.AsNoTracking()
+            .Where(m => m.OperationalTeamId == gid && m.MemberKind == "ExternalEmail")
             .OrderBy(m => m.EmailAddress)
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
@@ -190,8 +191,8 @@ public sealed class AttentionContactGroupManagementService : IAttentionContactGr
     }
 
     private static AttentionContactGroupDetail ToDetail(
-        AttentionContactGroupEntity g,
-        IReadOnlyList<AttentionContactGroupMemberEntity> members) =>
+        OperationalTeamEntity g,
+        IReadOnlyList<OperationalTeamMemberEntity> members) =>
         new(
             g.Id,
             g.Name,

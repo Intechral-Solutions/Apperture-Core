@@ -62,7 +62,7 @@
                     <input type="checkbox" @bind="_editSuppressEsc" />
                     Suppress escalation when acknowledged
                 </label>
-                <label class="block text-xs text-muted">Primary contact group</label>
+                <label class="block text-xs text-muted">Primary operational team</label>
                 <select class="w-full max-w-xl rounded border border-default bg-surface px-2 py-1 text-sm" @bind="_primaryGroupId">
                     <option value="">— None —</option>
                     @foreach (var g in _groups.Where(x => x.IsEnabled))
@@ -70,7 +70,7 @@
                         <option value="@g.Id">@g.Name (@g.Id)</option>
                     }
                 </select>
-                <label class="block text-xs text-muted">Escalation contact group</label>
+                <label class="block text-xs text-muted">Escalation operational team</label>
                 <select class="w-full max-w-xl rounded border border-default bg-surface px-2 py-1 text-sm" @bind="_escalationGroupId">
                     <option value="">— None —</option>
                     @foreach (var g in _groups.Where(x => x.IsEnabled))
@@ -90,7 +90,7 @@
 
 @code {
     private AttentionRoutingEffectiveDto? _routing;
-    private IReadOnlyList<AttentionContactGroupSummaryDto>? _groups;
+    private IReadOnlyList<OperationalTeamSummaryDto>? _groups;
     private OperatorCapabilitiesDto? _capabilities;
     private bool _editEnabled;
     private bool _editSendResolved;
@@ -120,15 +120,15 @@
         try
         {
             _routing = await Client.GetAttentionRoutingDefaultsAsync();
-            _groups = await Client.ListAttentionContactGroupsAsync(includeDisabled: false);
+            _groups = await Client.ListOperationalTeamsAsync(includeDisabled: false);
             if (_routing is not null)
             {
                 _editEnabled = _routing.Enabled;
                 _editSendResolved = _routing.SendResolvedNotification;
                 _editSuppressRem = _routing.SuppressRemindersWhenAcknowledged;
                 _editSuppressEsc = _routing.SuppressEscalationWhenAcknowledged;
-                _primaryGroupId = _routing.PrimaryContactGroupId ?? "";
-                _escalationGroupId = _routing.EscalationContactGroupId ?? "";
+                _primaryGroupId = _routing.PrimaryOperationalTeamId ?? "";
+                _escalationGroupId = _routing.EscalationOperationalTeamId ?? "";
             }
         }
         catch (HttpRequestException ex)
@@ -172,9 +172,9 @@
 
     private static string NoRouteHint(string? reason) => reason switch
     {
-        "no_group_configured" => "No group configured for this role.",
-        "group_disabled" => "Group is disabled.",
-        "group_empty" => "Group has no enabled members.",
+        "no_team_configured" => "No team configured for this role.",
+        "team_disabled" => "Team is disabled.",
+        "team_empty" => "Team has no enabled members.",
         _ => ""
     };
 }

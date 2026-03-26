@@ -69,8 +69,8 @@ public sealed record AttentionIncidentNotificationDto(
     bool WasEscalation,
     bool EscalationThresholdApplied,
     bool SuppressedDueToAcknowledgment,
-    string? ContactGroupId,
-    string? ContactGroupNameSnapshot);
+    string? OperationalTeamId,
+    string? OperationalTeamNameSnapshot);
 
 
 /// <summary>

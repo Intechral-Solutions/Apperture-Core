@@ -26,7 +26,7 @@ public sealed class SqlAttentionRecipientResolverTests
         await using var db = CreateDb();
         var gInst = "grp_inst";
         var gInt = "grp_int";
-        db.AttentionContactGroups.Add(new AttentionContactGroupEntity
+        db.OperationalTeams.Add(new OperationalTeamEntity
         {
             Id = gInst,
             Name = "Instance primary",
@@ -34,7 +34,7 @@ public sealed class SqlAttentionRecipientResolverTests
             CreatedAtUtc = UtcNow(),
             UpdatedAtUtc = UtcNow(),
         });
-        db.AttentionContactGroups.Add(new AttentionContactGroupEntity
+        db.OperationalTeams.Add(new OperationalTeamEntity
         {
             Id = gInt,
             Name = "Integration primary",
@@ -42,19 +42,21 @@ public sealed class SqlAttentionRecipientResolverTests
             CreatedAtUtc = UtcNow(),
             UpdatedAtUtc = UtcNow(),
         });
-        db.AttentionContactGroupMembers.Add(new AttentionContactGroupMemberEntity
+        db.OperationalTeamMembers.Add(new OperationalTeamMemberEntity
         {
             Id = "m1",
-            AttentionContactGroupId = gInst,
+            OperationalTeamId = gInst,
+            MemberKind = "ExternalEmail",
             EmailAddress = "global@test.com",
             IsEnabled = true,
             CreatedAtUtc = UtcNow(),
             UpdatedAtUtc = UtcNow(),
         });
-        db.AttentionContactGroupMembers.Add(new AttentionContactGroupMemberEntity
+        db.OperationalTeamMembers.Add(new OperationalTeamMemberEntity
         {
             Id = "m2",
-            AttentionContactGroupId = gInt,
+            OperationalTeamId = gInt,
+            MemberKind = "ExternalEmail",
             EmailAddress = "override@test.com",
             IsEnabled = true,
             CreatedAtUtc = UtcNow(),
@@ -68,7 +70,7 @@ public sealed class SqlAttentionRecipientResolverTests
             SendResolvedNotification = true,
             SuppressRemindersWhenAcknowledged = true,
             SuppressEscalationWhenAcknowledged = true,
-            PrimaryContactGroupId = gInst,
+            PrimaryOperationalTeamId = gInst,
         });
         var intRow = new IntegrationAttentionRoutingEntity
         {
@@ -76,7 +78,7 @@ public sealed class SqlAttentionRecipientResolverTests
             IntegrationId = "int1",
             ConditionKey = AttentionConditionKeys.ExpectedRunMissing,
             IsEnabled = true,
-            PrimaryContactGroupId = gInt,
+            PrimaryOperationalTeamId = gInt,
         };
         db.IntegrationAttentionRoutings.Add(intRow);
         await db.SaveChangesAsync();
@@ -88,8 +90,8 @@ public sealed class SqlAttentionRecipientResolverTests
         r.PrimarySource.Should().Be(AttentionRecipientSources.IntegrationOverride);
         r.EscalationRecipients.Should().BeEmpty();
         r.EscalationSource.Should().Be(AttentionRecipientSources.None);
-        r.IntegrationRowPrimaryContactGroupId.Should().Be(gInt);
-        r.IntegrationRowEscalationContactGroupId.Should().BeNull();
+        r.IntegrationRowPrimaryOperationalTeamId.Should().Be(gInt);
+        r.IntegrationRowEscalationOperationalTeamId.Should().BeNull();
     }
 
     [Fact]
@@ -101,5 +103,51 @@ public sealed class SqlAttentionRecipientResolverTests
 
         r.Enabled.Should().BeFalse();
         r.HasRoute.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Principal_member_resolves_from_user_email()
+    {
+        await using var db = CreateDb();
+        db.Users.Add(new UserEntity
+        {
+            Id = "user_1",
+            DisplayName = "Primary Owner",
+            EmailAddress = "owner@test.com",
+        });
+        db.OperationalTeams.Add(new OperationalTeamEntity
+        {
+            Id = "team_1",
+            Name = "Primary",
+            IsEnabled = true,
+            CreatedAtUtc = UtcNow(),
+            UpdatedAtUtc = UtcNow(),
+        });
+        db.OperationalTeamMembers.Add(new OperationalTeamMemberEntity
+        {
+            Id = "tm_1",
+            OperationalTeamId = "team_1",
+            MemberKind = "Principal",
+            PrincipalUserId = "user_1",
+            IsEnabled = true,
+            CreatedAtUtc = UtcNow(),
+            UpdatedAtUtc = UtcNow(),
+        });
+        db.InstanceAttentionRoutings.Add(new InstanceAttentionRoutingEntity
+        {
+            Id = InstanceAttentionRoutingDefaults.RowId,
+            ConditionKey = AttentionConditionKeys.ExpectedRunMissing,
+            IsEnabled = true,
+            SendResolvedNotification = true,
+            SuppressRemindersWhenAcknowledged = true,
+            SuppressEscalationWhenAcknowledged = true,
+            PrimaryOperationalTeamId = "team_1",
+        });
+        await db.SaveChangesAsync();
+
+        var sut = new SqlAttentionRecipientResolver(db);
+        var r = await sut.ResolveAsync(new IntegrationId("int1"), AttentionConditionKeys.ExpectedRunMissing);
+        r.PrimaryRecipients.Should().ContainSingle().Which.Should().Be("owner@test.com");
+        r.ResolvedPrimaryPrincipalUserIds.Should().ContainSingle().Which.Should().Be("user_1");
     }
 }

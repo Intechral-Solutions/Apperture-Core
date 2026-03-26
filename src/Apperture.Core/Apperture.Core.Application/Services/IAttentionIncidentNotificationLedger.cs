@@ -23,8 +23,8 @@ public sealed record AttentionIncidentNotificationWrite(
     bool WasEscalation,
     bool EscalationThresholdApplied,
     bool SuppressedDueToAcknowledgment,
-    string? ContactGroupId,
-    string? ContactGroupNameSnapshot);
+    string? OperationalTeamId,
+    string? OperationalTeamNameSnapshot);
 
 public interface IAttentionIncidentNotificationLedger
 {

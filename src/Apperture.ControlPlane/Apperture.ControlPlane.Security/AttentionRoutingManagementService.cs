@@ -33,7 +33,7 @@ public sealed class AttentionRoutingManagementService : IAttentionRoutingManagem
         AttentionRoutingUpsertCommand command,
         CancellationToken cancellationToken = default)
     {
-        await ValidateGroupIdsAsync(command.PrimaryContactGroupId, command.EscalationContactGroupId, cancellationToken)
+        await ValidateTeamIdsAsync(command.PrimaryOperationalTeamId, command.EscalationOperationalTeamId, cancellationToken)
             .ConfigureAwait(false);
 
         var row = await _db.InstanceAttentionRoutings
@@ -58,7 +58,7 @@ public sealed class AttentionRoutingManagementService : IAttentionRoutingManagem
         if (await _integrations.GetByIdAsync(integrationId, cancellationToken).ConfigureAwait(false) is null)
             throw new InvalidOperationException($"Integration {integrationId.Value} was not found.");
 
-        await ValidateGroupIdsAsync(command.PrimaryContactGroupId, command.EscalationContactGroupId, cancellationToken)
+        await ValidateTeamIdsAsync(command.PrimaryOperationalTeamId, command.EscalationOperationalTeamId, cancellationToken)
             .ConfigureAwait(false);
 
         var row = await _db.IntegrationAttentionRoutings
@@ -90,12 +90,12 @@ public sealed class AttentionRoutingManagementService : IAttentionRoutingManagem
         row.SuppressEscalationWhenAcknowledged = command.SuppressEscalationWhenAcknowledged;
         row.EscalationAfterTicks = command.EscalationAfter?.Ticks;
         row.ReminderIntervalTicks = command.ReminderInterval?.Ticks;
-        row.PrimaryContactGroupId = string.IsNullOrWhiteSpace(command.PrimaryContactGroupId)
+        row.PrimaryOperationalTeamId = string.IsNullOrWhiteSpace(command.PrimaryOperationalTeamId)
             ? null
-            : command.PrimaryContactGroupId.Trim();
-        row.EscalationContactGroupId = string.IsNullOrWhiteSpace(command.EscalationContactGroupId)
+            : command.PrimaryOperationalTeamId.Trim();
+        row.EscalationOperationalTeamId = string.IsNullOrWhiteSpace(command.EscalationOperationalTeamId)
             ? null
-            : command.EscalationContactGroupId.Trim();
+            : command.EscalationOperationalTeamId.Trim();
     }
 
     private static void ApplyCommand(InstanceAttentionRoutingEntity row, AttentionRoutingUpsertCommand command)
@@ -106,15 +106,15 @@ public sealed class AttentionRoutingManagementService : IAttentionRoutingManagem
         row.SuppressEscalationWhenAcknowledged = command.SuppressEscalationWhenAcknowledged;
         row.EscalationAfterTicks = command.EscalationAfter?.Ticks;
         row.ReminderIntervalTicks = command.ReminderInterval?.Ticks;
-        row.PrimaryContactGroupId = string.IsNullOrWhiteSpace(command.PrimaryContactGroupId)
+        row.PrimaryOperationalTeamId = string.IsNullOrWhiteSpace(command.PrimaryOperationalTeamId)
             ? null
-            : command.PrimaryContactGroupId.Trim();
-        row.EscalationContactGroupId = string.IsNullOrWhiteSpace(command.EscalationContactGroupId)
+            : command.PrimaryOperationalTeamId.Trim();
+        row.EscalationOperationalTeamId = string.IsNullOrWhiteSpace(command.EscalationOperationalTeamId)
             ? null
-            : command.EscalationContactGroupId.Trim();
+            : command.EscalationOperationalTeamId.Trim();
     }
 
-    private async Task ValidateGroupIdsAsync(
+    private async Task ValidateTeamIdsAsync(
         string? primaryId,
         string? escalationId,
         CancellationToken cancellationToken)
@@ -123,11 +123,11 @@ public sealed class AttentionRoutingManagementService : IAttentionRoutingManagem
         {
             if (string.IsNullOrWhiteSpace(id))
                 continue;
-            var exists = await _db.AttentionContactGroups.AsNoTracking()
+            var exists = await _db.OperationalTeams.AsNoTracking()
                 .AnyAsync(x => x.Id == id.Trim(), cancellationToken)
                 .ConfigureAwait(false);
             if (!exists)
-                throw new InvalidOperationException($"Attention contact group '{id}' was not found.");
+                throw new InvalidOperationException($"Operational team '{id}' was not found.");
         }
     }
 

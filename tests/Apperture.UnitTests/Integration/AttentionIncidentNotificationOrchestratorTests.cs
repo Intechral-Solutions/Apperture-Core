@@ -70,21 +70,25 @@ public sealed class AttentionIncidentNotificationOrchestratorTests
                     PrimarySource: primarySource,
                     EscalationRecipients: escalation,
                     EscalationSource: escalationSource,
-                    PrimaryContactGroupId: hasPrimary ? "grp_primary" : null,
-                    PrimaryContactGroupName: hasPrimary ? "Primary group" : null,
-                    EscalationContactGroupId: hasEsc ? "grp_esc" : null,
-                    EscalationContactGroupName: hasEsc ? "Escalation group" : null,
+                    PrimaryOperationalTeamId: hasPrimary ? "team_primary" : null,
+                    PrimaryOperationalTeamName: hasPrimary ? "Primary team" : null,
+                    EscalationOperationalTeamId: hasEsc ? "team_esc" : null,
+                    EscalationOperationalTeamName: hasEsc ? "Escalation team" : null,
                     HasPrimaryRoute: hasPrimary,
                     HasEscalationRoute: hasEsc,
-                    PrimaryNoRouteReason: hasPrimary ? null : AttentionNoRouteReasons.NoGroupConfigured,
-                    EscalationNoRouteReason: hasEsc ? null : AttentionNoRouteReasons.NoGroupConfigured,
+                    PrimaryNoRouteReason: hasPrimary ? null : AttentionNoRouteReasons.NoTeamConfigured,
+                    EscalationNoRouteReason: hasEsc ? null : AttentionNoRouteReasons.NoTeamConfigured,
+                    ResolvedPrimaryPrincipalUserIds: Array.Empty<string>(),
+                    ResolvedEscalationPrincipalUserIds: Array.Empty<string>(),
+                    ResolvedPrimaryExternalRecipients: primary.ToArray(),
+                    ResolvedEscalationExternalRecipients: escalation.ToArray(),
                     EscalationAfter: escalationAfter,
                     ReminderInterval: reminderInterval,
                     SendResolvedNotification: sendResolved,
                     SuppressRemindersWhenAcknowledged: suppressRemAck,
                     SuppressEscalationWhenAcknowledged: suppressEscAck,
-                    IntegrationRowPrimaryContactGroupId: null,
-                    IntegrationRowEscalationContactGroupId: null));
+                    IntegrationRowPrimaryOperationalTeamId: null,
+                    IntegrationRowEscalationOperationalTeamId: null));
         return m;
     }
 
@@ -386,7 +390,7 @@ public sealed class AttentionIncidentNotificationOrchestratorTests
             x => x.AppendAsync(
                 It.Is<AttentionIncidentNotificationWrite>(w =>
                     w.Status == AttentionNotificationStatuses.Failed && w.FailureSummary == "boom"
-                    && w.ContactGroupId == "grp_primary"),
+                    && w.OperationalTeamId == "team_primary"),
                 It.IsAny<CancellationToken>()),
             Times.Once);
     }

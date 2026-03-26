@@ -1,4 +1,5 @@
 @page "/attention/contact-groups/{Id}"
+@page "/attention/operational-teams/{Id}"
 @using Apperture.Management.Client
 @using Apperture.Management.Ui.Client.Services
 @inject IManagementClient Client
@@ -7,7 +8,7 @@
 
 <div class="p-4">
     <div class="mb-3 text-sm">
-        <a href="/attention/contact-groups" class="underline text-muted">← All groups</a>
+        <a href="/attention/operational-teams" class="underline text-muted">← All teams</a>
     </div>
 
     @if (!string.IsNullOrEmpty(_error))
@@ -29,7 +30,7 @@
         @if (_capabilities?.CanManageSchedules == true)
         {
             <div class="mt-4 space-y-2 rounded border border-default bg-surface p-3">
-                <div class="text-xs font-semibold text-heading">Group</div>
+                <div class="text-xs font-semibold text-heading">Team</div>
                 <label class="block text-xs text-muted">Name</label>
                 <input class="w-full max-w-md rounded border border-default bg-surface px-2 py-1 text-sm" @bind="_editName" />
                 <label class="block text-xs text-muted">Description</label>
@@ -38,13 +39,13 @@
                     <input type="checkbox" @bind="_editEnabled" />
                     Enabled
                 </label>
-                <button type="button" class="rounded bg-surface-muted px-3 py-1 text-sm disabled:opacity-50" disabled="@_savingMeta" @onclick="SaveMetaAsync">Save group</button>
+                <button type="button" class="rounded bg-surface-muted px-3 py-1 text-sm disabled:opacity-50" disabled="@_savingMeta" @onclick="SaveMetaAsync">Save team</button>
             </div>
 
             <div class="mt-6 space-y-2 rounded border border-default bg-surface p-3">
-                <div class="text-xs font-semibold text-heading">Members (one row per line: email[, display name])</div>
+                <div class="text-xs font-semibold text-heading">Members (one row per line: kind,value[, display])</div>
                 <textarea class="w-full min-h-[160px] rounded border border-default bg-surface px-2 py-1 text-sm font-mono" @bind="_membersRaw"></textarea>
-                <div class="text-xs text-muted">Example: ops@contoso.com, On-call</div>
+                <div class="text-xs text-muted">Examples: external,ops@contoso.com,On-call or principal,user_123,Primary owner</div>
                 <button type="button" class="rounded bg-surface-muted px-3 py-1 text-sm disabled:opacity-50" disabled="@_savingMembers" @onclick="SaveMembersAsync">Replace members</button>
             </div>
         }
@@ -70,7 +71,8 @@
                     <table class="min-w-full text-left text-sm text-body">
                         <thead class="border-b border-default text-xs text-muted">
                             <tr>
-                                <th class="px-3 py-2">Email</th>
+                                <th class="px-3 py-2">Kind</th>
+                                <th class="px-3 py-2">Value</th>
                                 <th class="px-3 py-2">Display</th>
                                 <th class="px-3 py-2">Enabled</th>
                             </tr>
@@ -79,7 +81,8 @@
                             @foreach (var m in _detail.Members)
                             {
                                 <tr class="border-b border-default">
-                                    <td class="px-3 py-2 font-mono text-xs">@m.EmailAddress</td>
+                                    <td class="px-3 py-2 text-xs">@m.MemberKind</td>
+                                    <td class="px-3 py-2 font-mono text-xs">@(m.MemberKind == "Principal" ? m.PrincipalUserId : m.EmailAddress)</td>
                                     <td class="px-3 py-2">@(m.DisplayName ?? "—")</td>
                                     <td class="px-3 py-2">@(m.IsEnabled ? "Yes" : "No")</td>
                                 </tr>
@@ -95,7 +98,7 @@
 @code {
     [Parameter] public string Id { get; set; } = "";
 
-    private AttentionContactGroupDetailDto? _detail;
+    private OperationalTeamDetailDto? _detail;
     private OperatorCapabilitiesDto? _capabilities;
     private string _editName = "";
     private string _editDescription = "";
@@ -123,10 +126,10 @@
         _error = null;
         try
         {
-            _detail = await Client.GetAttentionContactGroupAsync(Id);
+            _detail = await Client.GetOperationalTeamAsync(Id);
             if (_detail is null)
             {
-                _error = "Group not found.";
+                _error = "Team not found.";
                 return;
             }
             _editName = _detail.Name;
@@ -136,8 +139,8 @@
                 Environment.NewLine,
                 _detail.Members.Select(m =>
                     string.IsNullOrEmpty(m.DisplayName)
-                        ? m.EmailAddress
-                        : $"{m.EmailAddress}, {m.DisplayName}"));
+                        ? $"{(m.MemberKind == \"Principal\" ? "principal" : "external")},{(m.MemberKind == \"Principal\" ? m.PrincipalUserId : m.EmailAddress)}"
+                        : $"{(m.MemberKind == \"Principal\" ? "principal" : "external")},{(m.MemberKind == \"Principal\" ? m.PrincipalUserId : m.EmailAddress)},{m.DisplayName}"));
         }
         catch (HttpRequestException ex)
         {
@@ -153,9 +156,9 @@
         _error = null;
         try
         {
-            var updated = await Client.UpdateAttentionContactGroupAsync(
+            var updated = await Client.UpdateOperationalTeamAsync(
                 Id,
-                new UpdateAttentionContactGroupRequest(_editName, string.IsNullOrWhiteSpace(_editDescription) ? null : _editDescription, _editEnabled));
+                new UpdateOperationalTeamRequest(_editName, string.IsNullOrWhiteSpace(_editDescription) ? null : _editDescription, _editEnabled));
             if (updated is null)
                 _error = "Update failed.";
             else
@@ -180,19 +183,29 @@
         try
         {
             var lines = _membersRaw.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
-            var inputs = new List<AttentionContactGroupMemberInputDto>();
+            var inputs = new List<OperationalTeamMemberInputDto>();
             foreach (var line in lines)
             {
-                var parts = line.Split(',', 2, StringSplitOptions.TrimEntries);
-                var email = parts[0].Trim();
-                if (email.Length == 0)
+                var parts = line.Split(',', 3, StringSplitOptions.TrimEntries);
+                if (parts.Length < 2)
                     continue;
-                var display = parts.Length > 1 ? parts[1].Trim() : null;
-                inputs.Add(new AttentionContactGroupMemberInputDto(null, email, string.IsNullOrEmpty(display) ? null : display, IsEnabled: true));
+                var kindRaw = parts[0].Trim().ToLowerInvariant();
+                var value = parts[1].Trim();
+                var display = parts.Length > 2 ? parts[2].Trim() : null;
+                if (value.Length == 0)
+                    continue;
+                if (kindRaw is "principal" or "p")
+                {
+                    inputs.Add(new OperationalTeamMemberInputDto(null, "Principal", value, null, string.IsNullOrEmpty(display) ? null : display, IsEnabled: true));
+                }
+                else
+                {
+                    inputs.Add(new OperationalTeamMemberInputDto(null, "ExternalEmail", null, value, string.IsNullOrEmpty(display) ? null : display, IsEnabled: true));
+                }
             }
-            var updated = await Client.ReplaceAttentionContactGroupMembersAsync(
+            var updated = await Client.ReplaceOperationalTeamMembersAsync(
                 Id,
-                new ReplaceAttentionContactGroupMembersRequest(inputs));
+                new ReplaceOperationalTeamMembersRequest(inputs));
             if (updated is null)
                 _error = "Save members failed.";
             else

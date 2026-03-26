@@ -1,4 +1,5 @@
 @page "/attention/contact-groups"
+@page "/attention/operational-teams"
 @using Apperture.Management.Client
 @using Apperture.Management.Ui.Client.Services
 @inject IManagementClient Client
@@ -8,8 +9,8 @@
 <div class="p-4">
     <div class="flex items-center justify-between gap-3">
         <div class="min-w-0">
-            <h1 class="text-xl font-semibold text-heading">Attention contact groups</h1>
-            <div class="text-xs text-muted">Recipients for schedule attention routing (expected_run_missing).</div>
+            <h1 class="text-xl font-semibold text-heading">Operational teams</h1>
+            <div class="text-xs text-muted">Principal-aware ownership teams for schedule attention routing (expected_run_missing).</div>
         </div>
         <div class="flex items-center gap-2">
             @if (_capabilities?.CanManageSchedules == true)
@@ -17,7 +18,7 @@
                 <button type="button" class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface disabled:opacity-50"
                         disabled="@_busy"
                         @onclick="CreateGroupAsync">
-                    New group
+                    New team
                 </button>
             }
             <button type="button" class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface"
@@ -41,7 +42,7 @@
     }
     else if (_groups.Count == 0)
     {
-        <div class="mt-4 text-sm text-muted">No contact groups yet.</div>
+        <div class="mt-4 text-sm text-muted">No operational teams yet.</div>
     }
     else
     {
@@ -59,12 +60,12 @@
                     @foreach (var g in _groups)
                     {
                         <tr class="border-b border-default hover:bg-surface-muted cursor-pointer"
-                            @onclick="@(() => Nav.NavigateTo("/attention/contact-groups/" + Uri.EscapeDataString(g.Id)))">
+                            @onclick="@(() => Nav.NavigateTo("/attention/operational-teams/" + Uri.EscapeDataString(g.Id)))">
                             <td class="px-3 py-2 font-mono text-xs">@g.Id</td>
                             <td class="px-3 py-2">@g.Name</td>
                             <td class="px-3 py-2">@(g.IsEnabled ? "Yes" : "No")</td>
                             <td class="px-3 py-2">
-                                <a href="@("/attention/contact-groups/" + Uri.EscapeDataString(g.Id))" class="underline text-sm" @onclick:stopPropagation>Open</a>
+                                <a href="@("/attention/operational-teams/" + Uri.EscapeDataString(g.Id))" class="underline text-sm" @onclick:stopPropagation>Open</a>
                             </td>
                         </tr>
                     }
@@ -75,7 +76,7 @@
 </div>
 
 @code {
-    private IReadOnlyList<AttentionContactGroupSummaryDto>? _groups;
+    private IReadOnlyList<OperationalTeamSummaryDto>? _groups;
     private OperatorCapabilitiesDto? _capabilities;
     private bool _loading = true;
     private bool _busy;
@@ -100,12 +101,12 @@
         _error = null;
         try
         {
-            _groups = await Client.ListAttentionContactGroupsAsync(includeDisabled: true);
+            _groups = await Client.ListOperationalTeamsAsync(includeDisabled: true);
         }
         catch (HttpRequestException ex)
         {
             _error = ex.Message;
-            _groups = Array.Empty<AttentionContactGroupSummaryDto>();
+            _groups = Array.Empty<OperationalTeamSummaryDto>();
         }
         finally
         {
@@ -121,9 +122,9 @@
         _error = null;
         try
         {
-            var created = await Client.CreateAttentionContactGroupAsync(
-                new CreateAttentionContactGroupRequest("New attention group", null, IsEnabled: true));
-            Nav.NavigateTo("/attention/contact-groups/" + Uri.EscapeDataString(created.Id));
+            var created = await Client.CreateOperationalTeamAsync(
+                new CreateOperationalTeamRequest("New operational team", null, IsEnabled: true));
+            Nav.NavigateTo("/attention/operational-teams/" + Uri.EscapeDataString(created.Id));
         }
         catch (HttpRequestException ex)
         {

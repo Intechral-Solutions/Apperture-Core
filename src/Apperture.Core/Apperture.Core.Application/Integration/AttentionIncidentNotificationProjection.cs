@@ -21,5 +21,5 @@ public sealed record AttentionIncidentNotificationProjection(
     bool WasEscalation,
     bool EscalationThresholdApplied,
     bool SuppressedDueToAcknowledgment,
-    string? ContactGroupId,
-    string? ContactGroupNameSnapshot);
+    string? OperationalTeamId,
+    string? OperationalTeamNameSnapshot);

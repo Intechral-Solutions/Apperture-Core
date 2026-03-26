@@ -36,8 +36,8 @@ public sealed class SqlAttentionIncidentNotificationLedger : IAttentionIncidentN
             WasEscalation = row.WasEscalation,
             EscalationThresholdApplied = row.EscalationThresholdApplied,
             SuppressedDueToAcknowledgment = row.SuppressedDueToAcknowledgment,
-            ContactGroupId = row.ContactGroupId,
-            ContactGroupNameSnapshot = row.ContactGroupNameSnapshot,
+            OperationalTeamId = row.OperationalTeamId,
+            OperationalTeamNameSnapshot = row.OperationalTeamNameSnapshot,
         });
         await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
     }
@@ -130,7 +130,7 @@ public sealed class SqlAttentionIncidentNotificationLedger : IAttentionIncidentN
             e.WasEscalation,
             e.EscalationThresholdApplied,
             e.SuppressedDueToAcknowledgment,
-            e.ContactGroupId,
-            e.ContactGroupNameSnapshot)).ToList();
+            e.OperationalTeamId,
+            e.OperationalTeamNameSnapshot)).ToList();
     }
 }

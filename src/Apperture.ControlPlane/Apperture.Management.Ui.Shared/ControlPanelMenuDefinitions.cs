@@ -110,7 +110,7 @@ public static class ControlPanelMenuDefinitions
                 Items =
                 {
                     new DomainMenuItem { Text = "API Explorer", Href = "/tools/explorer" },
-                    new DomainMenuItem { Text = "Attention contact groups", Href = "/attention/contact-groups" },
+                    new DomainMenuItem { Text = "Operational teams", Href = "/attention/operational-teams" },
                     new DomainMenuItem { Text = "Attention routing defaults", Href = "/attention/routing-defaults" }
                 }
             },

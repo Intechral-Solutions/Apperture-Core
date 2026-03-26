@@ -94,7 +94,7 @@ public sealed class AttentionIncidentNotificationOrchestrator
             await AppendSuppressedAsync(
                 incidentId, integrationId.Value, conditionKey, AttentionNotificationKinds.Activated,
                 AttentionNotificationSuppressionReasons.NoRouteConfigured, now, route.PrimarySource,
-                route.PrimaryContactGroupId, route.PrimaryContactGroupName, cancellationToken)
+                route.PrimaryOperationalTeamId, route.PrimaryOperationalTeamName, cancellationToken)
                 .ConfigureAwait(false);
             return;
         }
@@ -106,7 +106,7 @@ public sealed class AttentionIncidentNotificationOrchestrator
             await SendAndRecordAsync(
                 incidentId, integrationId.Value, conditionKey, AttentionNotificationKinds.Activated,
                 recipient, subject, body, now, route.PrimarySource, false, false, false,
-                route.PrimaryContactGroupId, route.PrimaryContactGroupName, cancellationToken)
+                route.PrimaryOperationalTeamId, route.PrimaryOperationalTeamName, cancellationToken)
                 .ConfigureAwait(false);
         }
     }
@@ -142,7 +142,7 @@ public sealed class AttentionIncidentNotificationOrchestrator
                         await SendAndRecordAsync(
                             incidentId, integrationId.Value, conditionKey, AttentionNotificationKinds.Reminder,
                             recipient, subject, body, now, route.PrimarySource, false, false, false,
-                            route.PrimaryContactGroupId, route.PrimaryContactGroupName, cancellationToken)
+                            route.PrimaryOperationalTeamId, route.PrimaryOperationalTeamName, cancellationToken)
                             .ConfigureAwait(false);
                     }
                 }
@@ -184,7 +184,7 @@ public sealed class AttentionIncidentNotificationOrchestrator
             await SendAndRecordAsync(
                 incidentId, integrationId.Value, conditionKey, AttentionNotificationKinds.Escalation,
                 recipient, subject, body, now, route.EscalationSource, true, true, false,
-                route.EscalationContactGroupId, route.EscalationContactGroupName, cancellationToken)
+                route.EscalationOperationalTeamId, route.EscalationOperationalTeamName, cancellationToken)
                 .ConfigureAwait(false);
         }
     }
@@ -242,7 +242,7 @@ public sealed class AttentionIncidentNotificationOrchestrator
             await AppendSuppressedAsync(
                 incidentId, integrationId.Value, conditionKey, AttentionNotificationKinds.Resolved,
                 AttentionNotificationSuppressionReasons.NoRouteConfigured, now, route.PrimarySource,
-                route.PrimaryContactGroupId, route.PrimaryContactGroupName, cancellationToken)
+                route.PrimaryOperationalTeamId, route.PrimaryOperationalTeamName, cancellationToken)
                 .ConfigureAwait(false);
             return;
         }
@@ -254,7 +254,7 @@ public sealed class AttentionIncidentNotificationOrchestrator
             await SendAndRecordAsync(
                 incidentId, integrationId.Value, conditionKey, AttentionNotificationKinds.Resolved,
                 recipient, subject, body, now, route.PrimarySource, false, false, false,
-                route.PrimaryContactGroupId, route.PrimaryContactGroupName, cancellationToken)
+                route.PrimaryOperationalTeamId, route.PrimaryOperationalTeamName, cancellationToken)
                 .ConfigureAwait(false);
         }
     }

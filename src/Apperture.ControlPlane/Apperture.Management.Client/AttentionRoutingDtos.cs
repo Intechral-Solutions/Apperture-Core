@@ -9,21 +9,25 @@ public sealed record AttentionRoutingEffectiveDto(
     string PrimarySource,
     IReadOnlyList<string> EscalationRecipients,
     string EscalationSource,
-    string? PrimaryContactGroupId,
-    string? PrimaryContactGroupName,
-    string? EscalationContactGroupId,
-    string? EscalationContactGroupName,
+    string? PrimaryOperationalTeamId,
+    string? PrimaryOperationalTeamName,
+    string? EscalationOperationalTeamId,
+    string? EscalationOperationalTeamName,
     bool HasPrimaryRoute,
     bool HasEscalationRoute,
     string? PrimaryNoRouteReason,
     string? EscalationNoRouteReason,
+    IReadOnlyList<string> ResolvedPrimaryPrincipalUserIds,
+    IReadOnlyList<string> ResolvedEscalationPrincipalUserIds,
+    IReadOnlyList<string> ResolvedPrimaryExternalRecipients,
+    IReadOnlyList<string> ResolvedEscalationExternalRecipients,
     long? EscalationAfterTicks,
     long? ReminderIntervalTicks,
     bool SendResolvedNotification,
     bool SuppressRemindersWhenAcknowledged,
     bool SuppressEscalationWhenAcknowledged,
-    string? IntegrationRowPrimaryContactGroupId,
-    string? IntegrationRowEscalationContactGroupId);
+    string? IntegrationRowPrimaryOperationalTeamId,
+    string? IntegrationRowEscalationOperationalTeamId);
 
 public sealed record UpsertAttentionRoutingRequest(
     bool IsEnabled,
@@ -32,5 +36,5 @@ public sealed record UpsertAttentionRoutingRequest(
     bool SuppressEscalationWhenAcknowledged,
     long? EscalationAfterTicks,
     long? ReminderIntervalTicks,
-    string? PrimaryContactGroupId,
-    string? EscalationContactGroupId);
+    string? PrimaryOperationalTeamId,
+    string? EscalationOperationalTeamId);

@@ -62,8 +62,8 @@ public sealed class AttentionRoutingDefaultsController : ControllerBase
                         body.SuppressEscalationWhenAcknowledged,
                         body.EscalationAfterTicks is { } et ? TimeSpan.FromTicks(et) : null,
                         body.ReminderIntervalTicks is { } rt ? TimeSpan.FromTicks(rt) : null,
-                        body.PrimaryContactGroupId,
-                        body.EscalationContactGroupId),
+                        body.PrimaryOperationalTeamId,
+                        body.EscalationOperationalTeamId),
                     cancellationToken)
                 .ConfigureAwait(false);
         }
@@ -84,19 +84,23 @@ public sealed class AttentionRoutingDefaultsController : ControllerBase
             r.PrimarySource,
             r.EscalationRecipients.ToList(),
             r.EscalationSource,
-            r.PrimaryContactGroupId,
-            r.PrimaryContactGroupName,
-            r.EscalationContactGroupId,
-            r.EscalationContactGroupName,
+            r.PrimaryOperationalTeamId,
+            r.PrimaryOperationalTeamName,
+            r.EscalationOperationalTeamId,
+            r.EscalationOperationalTeamName,
             r.HasPrimaryRoute,
             r.HasEscalationRoute,
             r.PrimaryNoRouteReason,
             r.EscalationNoRouteReason,
+            r.ResolvedPrimaryPrincipalUserIds.ToList(),
+            r.ResolvedEscalationPrincipalUserIds.ToList(),
+            r.ResolvedPrimaryExternalRecipients.ToList(),
+            r.ResolvedEscalationExternalRecipients.ToList(),
             r.EscalationAfter?.Ticks,
             r.ReminderInterval?.Ticks,
             r.SendResolvedNotification,
             r.SuppressRemindersWhenAcknowledged,
             r.SuppressEscalationWhenAcknowledged,
-            r.IntegrationRowPrimaryContactGroupId,
-            r.IntegrationRowEscalationContactGroupId);
+            r.IntegrationRowPrimaryOperationalTeamId,
+            r.IntegrationRowEscalationOperationalTeamId);
 }

@@ -52,8 +52,8 @@ public class AppertureDbContext : DbContext
     public DbSet<AttentionIncidentNotificationEntity> AttentionIncidentNotifications => Set<AttentionIncidentNotificationEntity>();
     public DbSet<InstanceAttentionRoutingEntity> InstanceAttentionRoutings => Set<InstanceAttentionRoutingEntity>();
     public DbSet<IntegrationAttentionRoutingEntity> IntegrationAttentionRoutings => Set<IntegrationAttentionRoutingEntity>();
-    public DbSet<AttentionContactGroupEntity> AttentionContactGroups => Set<AttentionContactGroupEntity>();
-    public DbSet<AttentionContactGroupMemberEntity> AttentionContactGroupMembers => Set<AttentionContactGroupMemberEntity>();
+    public DbSet<OperationalTeamEntity> OperationalTeams => Set<OperationalTeamEntity>();
+    public DbSet<OperationalTeamMemberEntity> OperationalTeamMembers => Set<OperationalTeamMemberEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -389,6 +389,7 @@ public class AppertureDbContext : DbContext
             e.HasKey(x => x.Id);
             e.Property(x => x.Id).HasMaxLength(64);
             e.Property(x => x.DisplayName).HasMaxLength(256);
+            e.Property(x => x.EmailAddress).HasMaxLength(512);
             e.Property<byte[]>("RowVersion").IsRowVersion();
         });
 
@@ -582,8 +583,8 @@ public class AppertureDbContext : DbContext
             e.Property(x => x.WasEscalation);
             e.Property(x => x.EscalationThresholdApplied);
             e.Property(x => x.SuppressedDueToAcknowledgment);
-            e.Property(x => x.ContactGroupId).HasMaxLength(64);
-            e.Property(x => x.ContactGroupNameSnapshot).HasMaxLength(256);
+            e.Property(x => x.OperationalTeamId).HasMaxLength(64);
+            e.Property(x => x.OperationalTeamNameSnapshot).HasMaxLength(256);
             e.HasIndex(x => new { x.AttentionIncidentId, x.NotificationKind });
             e.HasIndex(x => new { x.AttentionIncidentId, x.CreatedAtUtc });
         });
@@ -594,11 +595,11 @@ public class AppertureDbContext : DbContext
             e.HasKey(x => x.Id);
             e.Property(x => x.Id).HasMaxLength(64);
             e.Property(x => x.ConditionKey).HasMaxLength(128);
-            e.Property(x => x.PrimaryContactGroupId).HasMaxLength(64);
-            e.Property(x => x.EscalationContactGroupId).HasMaxLength(64);
+            e.Property(x => x.PrimaryOperationalTeamId).HasMaxLength(64);
+            e.Property(x => x.EscalationOperationalTeamId).HasMaxLength(64);
             e.HasIndex(x => x.ConditionKey);
-            e.HasIndex(x => x.PrimaryContactGroupId);
-            e.HasIndex(x => x.EscalationContactGroupId);
+            e.HasIndex(x => x.PrimaryOperationalTeamId);
+            e.HasIndex(x => x.EscalationOperationalTeamId);
         });
 
         modelBuilder.Entity<IntegrationAttentionRoutingEntity>(e =>
@@ -608,16 +609,16 @@ public class AppertureDbContext : DbContext
             e.Property(x => x.Id).HasMaxLength(64);
             e.Property(x => x.IntegrationId).HasMaxLength(64);
             e.Property(x => x.ConditionKey).HasMaxLength(128);
-            e.Property(x => x.PrimaryContactGroupId).HasMaxLength(64);
-            e.Property(x => x.EscalationContactGroupId).HasMaxLength(64);
+            e.Property(x => x.PrimaryOperationalTeamId).HasMaxLength(64);
+            e.Property(x => x.EscalationOperationalTeamId).HasMaxLength(64);
             e.HasIndex(x => new { x.IntegrationId, x.ConditionKey }).IsUnique();
-            e.HasIndex(x => x.PrimaryContactGroupId);
-            e.HasIndex(x => x.EscalationContactGroupId);
+            e.HasIndex(x => x.PrimaryOperationalTeamId);
+            e.HasIndex(x => x.EscalationOperationalTeamId);
         });
 
-        modelBuilder.Entity<AttentionContactGroupEntity>(e =>
+        modelBuilder.Entity<OperationalTeamEntity>(e =>
         {
-            e.ToTable("AttentionContactGroups");
+            e.ToTable("OperationalTeams");
             e.HasKey(x => x.Id);
             e.Property(x => x.Id).HasMaxLength(64);
             e.Property(x => x.Name).HasMaxLength(256);
@@ -625,15 +626,18 @@ public class AppertureDbContext : DbContext
             e.HasIndex(x => x.Name);
         });
 
-        modelBuilder.Entity<AttentionContactGroupMemberEntity>(e =>
+        modelBuilder.Entity<OperationalTeamMemberEntity>(e =>
         {
-            e.ToTable("AttentionContactGroupMembers");
+            e.ToTable("OperationalTeamMembers");
             e.HasKey(x => x.Id);
             e.Property(x => x.Id).HasMaxLength(64);
-            e.Property(x => x.AttentionContactGroupId).HasMaxLength(64);
+            e.Property(x => x.OperationalTeamId).HasMaxLength(64);
+            e.Property(x => x.MemberKind).HasMaxLength(32);
+            e.Property(x => x.PrincipalUserId).HasMaxLength(64);
             e.Property(x => x.EmailAddress).HasMaxLength(512);
             e.Property(x => x.DisplayName).HasMaxLength(256);
-            e.HasIndex(x => x.AttentionContactGroupId);
+            e.HasIndex(x => x.OperationalTeamId);
+            e.HasIndex(x => new { x.MemberKind, x.PrincipalUserId });
         });
     }
 }

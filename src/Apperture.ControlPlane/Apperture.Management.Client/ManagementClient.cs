@@ -477,6 +477,78 @@ public sealed class ManagementClient : IManagementClient
     }
 
     /// <inheritdoc />
+    public async Task<IReadOnlyList<OperationalTeamSummaryDto>> ListOperationalTeamsAsync(
+        bool includeDisabled = false,
+        CancellationToken cancellationToken = default)
+    {
+        var q = includeDisabled ? "?includeDisabled=true" : "";
+        var rows = await _http.GetFromJsonAsync<List<OperationalTeamSummaryDto>>(
+            $"operational-teams{q}",
+            ApiJsonReadOptions,
+            cancellationToken).ConfigureAwait(false);
+        return rows ?? new List<OperationalTeamSummaryDto>();
+    }
+
+    /// <inheritdoc />
+    public async Task<OperationalTeamDetailDto?> GetOperationalTeamAsync(
+        string id,
+        CancellationToken cancellationToken = default)
+    {
+        return await _http.GetFromJsonAsync<OperationalTeamDetailDto>(
+            $"operational-teams/{Uri.EscapeDataString(id)}",
+            ApiJsonReadOptions,
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
+    public async Task<OperationalTeamDetailDto> CreateOperationalTeamAsync(
+        CreateOperationalTeamRequest body,
+        CancellationToken cancellationToken = default)
+    {
+        var response = await _http
+            .PostAsJsonAsync("operational-teams", body, cancellationToken)
+            .ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+        return (await response.Content.ReadFromJsonAsync<OperationalTeamDetailDto>(
+                ApiJsonReadOptions,
+                cancellationToken).ConfigureAwait(false))!;
+    }
+
+    /// <inheritdoc />
+    public async Task<OperationalTeamDetailDto?> UpdateOperationalTeamAsync(
+        string id,
+        UpdateOperationalTeamRequest body,
+        CancellationToken cancellationToken = default)
+    {
+        var response = await _http
+            .PutAsJsonAsync($"operational-teams/{Uri.EscapeDataString(id)}", body, cancellationToken)
+            .ConfigureAwait(false);
+        if (response.StatusCode == HttpStatusCode.NotFound)
+            return null;
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<OperationalTeamDetailDto>(
+            ApiJsonReadOptions,
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
+    public async Task<OperationalTeamDetailDto?> ReplaceOperationalTeamMembersAsync(
+        string id,
+        ReplaceOperationalTeamMembersRequest body,
+        CancellationToken cancellationToken = default)
+    {
+        var response = await _http
+            .PutAsJsonAsync($"operational-teams/{Uri.EscapeDataString(id)}/members", body, cancellationToken)
+            .ConfigureAwait(false);
+        if (response.StatusCode == HttpStatusCode.NotFound)
+            return null;
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<OperationalTeamDetailDto>(
+            ApiJsonReadOptions,
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
     public async Task<bool> AcknowledgeIntegrationAttentionIncidentAsync(
         string integrationId,
         string incidentId,
