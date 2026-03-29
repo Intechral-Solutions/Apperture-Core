@@ -1,4 +1,5 @@
 using Apperture.Core.Application.Services;
+using Apperture.Core.Domain.Governance;
 using Apperture.Core.Domain.Operations;
 using Apperture.ModuleSdk.Abstractions;
 using Apperture.Persistence.SqlServer;
@@ -108,6 +109,26 @@ public sealed class ModuleLifecycleRegistryTests
         result.Blockers.Should().Contain(x => x.Code == "navigation_route_conflict");
     }
 
+    /// <summary>
+    /// Module permissions are scoped per module at registration time; overlapping (action, resourceType)
+    /// declarations must not block install when workflow/operation/nav ids differ.
+    /// </summary>
+    [Fact]
+    public async Task InstallModule_succeeds_when_only_generic_permission_shape_overlaps_enabled_module()
+    {
+        await using var db = CreateDbContext();
+        var m1 = new TestModuleWithGenericPermissions("M1");
+        var m2 = new TestModuleWithGenericPermissions("M2");
+        var service = new SqlModuleRegistryService([m1, m2], db, new TestEnvironmentContext(), new InMemoryAuditService());
+
+        (await service.InstallModuleAsync("M1")).Succeeded.Should().BeTrue();
+        (await service.EnableModuleAsync("M1")).Succeeded.Should().BeTrue();
+
+        var install2 = await service.InstallModuleAsync("M2");
+        install2.Succeeded.Should().BeTrue();
+        install2.Blockers.Should().BeEmpty();
+    }
+
     [Fact]
     public async Task ListModules_surfaces_missing_descriptor_for_persisted_enabled_module()
     {
@@ -162,6 +183,46 @@ public sealed class ModuleLifecycleRegistryTests
     private sealed class TestEnvironmentContext : IEnvironmentContext
     {
         public string EnvironmentId => "test";
+    }
+
+    private sealed class TestModuleWithGenericPermissions : IModule, IOperationDefinitionProvider
+    {
+        private readonly string _moduleId;
+
+        public TestModuleWithGenericPermissions(string moduleId) => _moduleId = moduleId;
+
+        public ModuleManifest GetManifest() => new(_moduleId, _moduleId, "1.0.0", "test")
+        {
+            Permissions =
+            [
+                new ModulePermissionDeclaration("workflow.execute", "WorkflowInstance"),
+                new ModulePermissionDeclaration(ActionConstants.OperationExecute, ResourceTypeConstants.OperationDefinition)
+            ]
+        };
+
+        public async IAsyncEnumerable<WorkflowDefinition> GetDefinitionsAsync(
+            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
+        {
+            yield return new WorkflowDefinition(
+                new WorkflowDefinitionId($"{_moduleId}.Workflow"),
+                "Test",
+                _moduleId,
+                ["Step1"]);
+            await Task.CompletedTask;
+        }
+
+        public async IAsyncEnumerable<OperationDefinition> GetOperationsAsync(
+            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
+        {
+            yield return new OperationDefinition(
+                new OperationId($"{_moduleId}.Operation"),
+                "TestOp",
+                _moduleId,
+                OperationCategory.Command,
+                null,
+                []);
+            await Task.CompletedTask;
+        }
     }
 
     private sealed class TestModule : IModule, IOperationDefinitionProvider

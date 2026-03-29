@@ -379,10 +379,14 @@ public sealed class SqlModuleRegistryService : IModuleRegistryService
             d => d.Contributions.OfType<NavigationContributionDescriptor>().Select(c => c.Route),
             "navigation_route_conflict",
             "navigation route");
+        // Permissions are registered under module:{moduleId} scope (see ModulePermissionRegistrar).
+        // Conflict keys must include the owning module; otherwise two modules declaring the same
+        // (action, resourceType) — e.g. workflow.execute:WorkflowInstance — false-positive as duplicates.
         EnforceUnique(
             active,
             issues,
-            d => d.Contributions.OfType<PermissionContributionDescriptor>().Select(c => $"{c.Action}:{c.ResourceType}"),
+            d => d.Contributions.OfType<PermissionContributionDescriptor>()
+                .Select(c => $"{d.ModuleId}:{c.Action}:{c.ResourceType}"),
             "permission_conflict",
             "permission");
 
@@ -403,6 +407,9 @@ public sealed class SqlModuleRegistryService : IModuleRegistryService
             {
                 if (ownerByKey.TryGetValue(value, out var owner))
                 {
+                    // Duplicate contribution keys from the same module are ignored (descriptor bug / duplicate rows).
+                    if (string.Equals(owner, descriptor.ModuleId, StringComparison.Ordinal))
+                        continue;
                     AddIssue(issues, descriptor.ModuleId, issueCode, $"Conflicting {label} '{value}' already provided by enabled module '{owner}'.");
                     AddIssue(issues, owner, issueCode, $"Conflicting {label} '{value}' also provided by enabled module '{descriptor.ModuleId}'.");
                     continue;
