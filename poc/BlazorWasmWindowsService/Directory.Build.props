@@ -1,0 +1,6 @@
+<Project>
+  <!-- Inherits repo root Directory.Build.props (nullable, lang version, etc.). -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+  </PropertyGroup>
+</Project>
