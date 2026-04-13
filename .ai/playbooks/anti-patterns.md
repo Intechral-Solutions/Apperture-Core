@@ -8,8 +8,8 @@
 
 ## Do not execute steps in the scheduler
 
-- The scheduler triggers workflow starts only.
-- It MUST call `IWorkflowStarter.StartAsync(...)` and pass an idempotency key.
+- The scheduler triggers workflow starts only (durable enqueue — today `IWorkflowStartDispatchService` / schedule dispatch; not step execution).
+- It MUST pass an idempotency key for fire semantics.
 - It MUST NOT execute workflow steps, activities, or business logic directly.
 
 ## Do not leak execution backend into the workflow model

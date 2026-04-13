@@ -1,4 +1,4 @@
-namespace Apperture.Persistence.SqlServer;
+namespace Unisa.CampusNexus.PaymentPlans.Persistence;
 
 /// <summary>
 /// Maps UNISA school fund id (TRANS FUND / eProm schoolFundId) to CNS campus and fund-source filter hints.

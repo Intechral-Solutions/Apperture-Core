@@ -15,5 +15,6 @@
 | [ADR-0011](ADR-0011-delegated-capability-model-for-remote-instance-administration.md) | Delegated capability model for remote instance administration |
 | [ADR-0012](ADR-0012-authorization-evaluation-model.md) | Authorization evaluation model (ResourceDescriptor vs IGovernedResourceIdentity) |
 | [ADR-0013](ADR-0013-action-and-scope-naming-conventions.md) | Action and scope naming conventions |
+| [Epic 73](Epic73-execution-hot-path-and-host-roles.md) | Execution hot path, host roles, runtime boundary (dispatch, module persistence, connectors) |
 
 Use [adr-template.md](adr-template.md) when creating new ADRs.

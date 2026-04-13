@@ -2,7 +2,7 @@ using Apperture.Persistence.SqlServer;
 using Apperture.RuntimePlane.Abstractions;
 using Microsoft.EntityFrameworkCore;
 
-namespace Apperture.ControlPlane.Security;
+namespace Apperture.RuntimePlane.Dispatch.SqlServer;
 
 /// <summary>
 /// SQL-backed workflow persistence for the control plane start + run read surfaces.
@@ -120,4 +120,3 @@ public sealed class SqlWorkflowPersistence : IWorkflowPersistence
         RetryOfRunId = r.RetryOfRunId
     };
 }
-

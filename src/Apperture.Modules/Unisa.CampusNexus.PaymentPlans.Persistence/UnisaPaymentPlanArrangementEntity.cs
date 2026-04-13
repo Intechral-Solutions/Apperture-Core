@@ -1,4 +1,4 @@
-namespace Apperture.Persistence.SqlServer;
+namespace Unisa.CampusNexus.PaymentPlans.Persistence;
 
 /// <summary>
 /// Logical payment plan arrangement: ULDTN or TRANS REFERENCE with optional in-school / out-of-school CNS plan ids.

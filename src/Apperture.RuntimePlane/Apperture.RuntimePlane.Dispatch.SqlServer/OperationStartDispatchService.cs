@@ -2,17 +2,15 @@ using System.Text.Json;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Operations;
 using Apperture.Core.Domain.Workflow;
-using Apperture.RuntimePlane.Abstractions;
 using Apperture.Persistence.SqlServer;
-using Apperture.Persistence.SqlServer.Options;
+using Apperture.RuntimePlane.Abstractions;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Logging;
 
-namespace Apperture.ControlPlane.Security;
+namespace Apperture.RuntimePlane.Dispatch.SqlServer;
 
 /// <summary>
-/// Control-plane operation start dispatch: persists a durable handoff (operation instance + run + start request) and returns a run id.
+/// SQL operation start dispatch: persists a durable handoff (operation instance + run + start request) and returns a run id.
 /// Operation resolution is lifecycle-governed (Epic 27 — Epic27-Execution-Surface-Inventory.md).
 /// </summary>
 public sealed class OperationStartDispatchService : IOperationStartDispatchService
@@ -194,4 +192,3 @@ public sealed class OperationStartDispatchService : IOperationStartDispatchServi
         return false;
     }
 }
-

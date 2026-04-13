@@ -8,7 +8,7 @@ using Apperture.Core.Application.RuntimeComposition;
 using Apperture.Core.Application.Recovery;
 using Apperture.Core.Application.RuntimeHealth;
 using Apperture.Persistence.SqlServer;
-using Apperture.RuntimePlane.Abstractions;
+using Apperture.RuntimePlane.Dispatch.SqlServer;
 using Apperture.Shared.Kernel;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -84,8 +84,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IExecutablePermissionEvaluator, ExecutablePermissionEvaluator>();
         services.AddSingleton<IOperationRegistryService, OperationRegistryService>();
         services.AddSingleton<IProcedureRegistryService, ProcedureRegistryService>();
-        services.AddScoped<IWorkflowPersistence, SqlWorkflowPersistence>();
-        services.AddScoped<IWorkflowStartDispatchService, WorkflowStartDispatchService>();
+        services.AddSqlWorkflowDispatchServices();
         services.AddScoped<IWorkflowRunReadAuthorizationService, WorkflowRunReadAuthorizationService>();
         services.AddScoped<IWorkflowRunCancelAuthorizationService, WorkflowRunCancelAuthorizationService>();
         services.AddScoped<IWorkflowRunRetryAuthorizationService, WorkflowRunRetryAuthorizationService>();
@@ -103,7 +102,6 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IExecutionCancelService, ExecutionCancelService>();
         services.AddScoped<IOperationStartAuthorizationService, OperationStartAuthorizationService>();
         services.AddScoped<IOperationInputValidationService, OperationInputValidationService>();
-        services.AddScoped<IOperationStartDispatchService, OperationStartDispatchService>();
         services.AddScoped<IRunKindResolver, RunKindResolver>();
         services.AddScoped<IRunQueryService, RunQueryService>();
         services.AddScoped<IRunActionAvailabilityQueryService, RunActionAvailabilityQueryService>();
@@ -134,25 +132,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IRuntimeHealthQueryService, RuntimeHealthQueryService>();
         services.AddScoped<IRecoveryQueryService, RecoveryQueryService>();
         services.AddScoped<IAuditTimelineQueryService, AuditTimelineQueryService>();
-        services.AddScoped<ISchedulerLifecycleGuard, SchedulerLifecycleGuard>();
         services.AddHostedService<ModuleCompositionBootstrapHostedService>();
-        return services;
-    }
-
-    /// <summary>
-    /// Registers scheduler dispatch services for runtime hosts (WorkerHost). Epic 28 (workflow), Epic 29 (operation), Epic 36 (multi-host).
-    /// Requires: AddApperturePersistence, IWorkflowDefinitionResolver, IOperationRegistryService (with activation filter).
-    /// Optionally register ISchedulerHostIdentity and ISchedulerClaimOptions before calling to override defaults.
-    /// </summary>
-    public static IServiceCollection AddRuntimeSchedulerDispatch(this IServiceCollection services)
-    {
-        services.TryAddSingleton<ISchedulerHostIdentity>(new DefaultSchedulerHostIdentity());
-        services.TryAddSingleton<ISchedulerClaimOptions>(new DefaultSchedulerClaimOptions());
-        services.AddScoped<IWorkflowPersistence, SqlWorkflowPersistence>();
-        services.AddScoped<IWorkflowStartDispatchService, WorkflowStartDispatchService>();
-        services.AddScoped<IOperationStartDispatchService, OperationStartDispatchService>();
-        services.AddScoped<ISchedulerLifecycleGuard, SchedulerLifecycleGuard>();
-        services.AddScoped<IScheduleDispatchRunner, ScheduleDispatchRunner>();
         return services;
     }
 

@@ -26,4 +26,4 @@ The workflow model is portable. Adapters (DTFx, DurableFunctions) map the portab
 
 ## 5. Scheduling triggers workflows only
 
-Scheduling is behind an abstraction. Schedules fire by calling `IWorkflowStarter.StartAsync(...)` with an idempotency key (e.g. `ScheduleId:FireTimeUtc`). The scheduler never executes workflow steps directly.
+Scheduling is behind an abstraction. When a schedule fires, the host enqueues a durable workflow start (today: `IWorkflowStartDispatchService` and related SQL dispatch; idempotency keys such as `ScheduleId:FireTimeUtc`). The scheduling path never executes workflow steps directly.

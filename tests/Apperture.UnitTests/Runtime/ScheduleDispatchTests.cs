@@ -3,7 +3,7 @@ using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Environment;
 using Apperture.Core.Domain.Integration;
 using Apperture.Core.Domain.Scheduling;
-using Apperture.ControlPlane.Security;
+using Apperture.RuntimePlane.Dispatch.SqlServer;
 using Apperture.ModuleSdk.Abstractions;
 using Apperture.Persistence.SqlServer;
 using Apperture.RuntimePlane.Abstractions;

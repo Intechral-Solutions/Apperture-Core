@@ -34,6 +34,7 @@
     <Project Path="src/Apperture.ControlPlane/Apperture.Management.Ui.Shared/Apperture.Management.Ui.Shared.csproj" />
   </Folder>
   <Folder Name="/src/Apperture.Modules/">
+    <Project Path="src/Apperture.Modules/Unisa.CampusNexus.PaymentPlans.Persistence/Unisa.CampusNexus.PaymentPlans.Persistence.csproj" />
     <Project Path="src/Apperture.Modules/Unisa.CampusNexus.PaymentPlans/Unisa.CampusNexus.PaymentPlans.csproj" />
   </Folder>
   <Folder Name="/src/Apperture.ModuleSdk/">
@@ -47,6 +48,7 @@
   <Folder Name="/src/Apperture.Connectors/">
     <Project Path="src/Apperture.Connectors/Apperture.Connectors.CampusNexus/Apperture.Connectors.CampusNexus.csproj" />
     <Project Path="src/Apperture.Connectors/Apperture.Connectors.Sftp/Apperture.Connectors.Sftp.csproj" />
+    <Project Path="src/Apperture.ConnectorResolution/Apperture.ConnectorResolution.csproj" />
   </Folder>
   <Folder Name="/src/Apperture.Bootstrap/">
     <Project Path="src/Apperture.Bootstrap/Apperture.Bootstrap/Apperture.Bootstrap.csproj" />
@@ -55,6 +57,7 @@
     <Project Path="src/Apperture.RuntimePlane/Apperture.RuntimePlane.Abstractions/Apperture.RuntimePlane.Abstractions.csproj" />
     <Project Path="src/Apperture.RuntimePlane/Apperture.RuntimePlane.Engine/Apperture.RuntimePlane.Engine.csproj" />
     <Project Path="src/Apperture.RuntimePlane/Apperture.RuntimePlane.Persistence.SqlServer/Apperture.RuntimePlane.Persistence.SqlServer.csproj" />
+    <Project Path="src/Apperture.RuntimePlane/Apperture.RuntimePlane.Dispatch.SqlServer/Apperture.RuntimePlane.Dispatch.SqlServer.csproj" />
     <Project Path="src/Apperture.RuntimePlane/Apperture.RuntimePlane.DTFx/Apperture.RuntimePlane.DTFx.csproj" />
     <Project Path="src/Apperture.RuntimePlane/Apperture.RuntimePlane.DurableFunctions/Apperture.RuntimePlane.DurableFunctions.csproj" />
   </Folder>

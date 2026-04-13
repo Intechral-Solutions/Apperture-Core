@@ -1,6 +1,8 @@
 using Apperture.Bootstrap;
+using Apperture.Connectors.CampusNexus;
+using Apperture.Connectors.Sftp;
 using Apperture.ConnectorResolution;
-using Apperture.ControlPlane.Security;
+using Apperture.RuntimePlane.Dispatch.SqlServer;
 using Apperture.Core.Application.Execution;
 using Apperture.Core.Application.Services;
 using Apperture.ModuleSdk.Abstractions;
@@ -91,8 +93,11 @@ builder.Services.AddWorkerHostIntegrationRepository();
         var opts = sp.GetRequiredService<IOptions<ScheduleDispatchOptions>>().Value;
         return new DefaultSchedulerClaimOptions(opts.ClaimLeaseMinutes);
     });
+    builder.Services.AddSqlWorkflowDispatchServices();
     builder.Services.AddRuntimeSchedulerDispatch();
     builder.Services.AddPlatformSqlConnector();
+    builder.Services.AddAppertureCampusNexusConnector();
+    builder.Services.AddAppertureSftpConnector();
     builder.Services.AddUnisaCampusNexusPaymentPlansIntegration(registerCapabilitySlotBootstrap: false);
 
 // Known modules (explicit host-controlled DI list; may include multiple modules for dev/testing and constrained composition).

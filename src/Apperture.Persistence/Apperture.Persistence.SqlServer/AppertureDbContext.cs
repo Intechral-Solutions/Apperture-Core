@@ -8,7 +8,7 @@ namespace Apperture.Persistence.SqlServer;
 /// </summary>
 public class AppertureDbContext : DbContext
 {
-    public AppertureDbContext(DbContextOptions options) : base(options) { }
+    public AppertureDbContext(DbContextOptions<AppertureDbContext> options) : base(options) { }
 
     public DbSet<WorkflowInstanceEntity> WorkflowInstances => Set<WorkflowInstanceEntity>();
     public DbSet<WorkflowStepInstanceEntity> WorkflowStepInstances => Set<WorkflowStepInstanceEntity>();
@@ -45,9 +45,6 @@ public class AppertureDbContext : DbContext
     public DbSet<ScheduleStateEntity> ScheduleStates => Set<ScheduleStateEntity>();
     public DbSet<InstanceAuthUiPolicyEntity> InstanceAuthUiPolicies => Set<InstanceAuthUiPolicyEntity>();
     public DbSet<EntraInstanceRegistrationEntity> EntraInstanceRegistrations => Set<EntraInstanceRegistrationEntity>();
-    public DbSet<UnisaFundSourceCampusMapEntity> UnisaFundSourceCampusMaps => Set<UnisaFundSourceCampusMapEntity>();
-    public DbSet<UnisaPaymentPlanArrangementEntity> UnisaPaymentPlanArrangements => Set<UnisaPaymentPlanArrangementEntity>();
-    public DbSet<UnisaFileImportWatermarkEntity> UnisaFileImportWatermarks => Set<UnisaFileImportWatermarkEntity>();
     public DbSet<AttentionIncidentEntity> AttentionIncidents => Set<AttentionIncidentEntity>();
     public DbSet<AttentionIncidentNotificationEntity> AttentionIncidentNotifications => Set<AttentionIncidentNotificationEntity>();
     public DbSet<InstanceAttentionRoutingEntity> InstanceAttentionRoutings => Set<InstanceAttentionRoutingEntity>();
@@ -517,33 +514,6 @@ public class AppertureDbContext : DbContext
             e.Property(x => x.CallbackPath).HasMaxLength(256);
             e.Property(x => x.RowVersion).IsRowVersion();
             e.HasIndex(x => x.IsActive).IsUnique().HasFilter("[IsActive] = 1");
-        });
-
-        modelBuilder.Entity<UnisaFundSourceCampusMapEntity>(e =>
-        {
-            e.ToTable("UnisaFundSourceCampusMaps");
-            e.HasKey(x => x.Id);
-            e.Property(x => x.SchoolFundId).HasMaxLength(32);
-            e.Property(x => x.FundSourceIdsCsv).HasMaxLength(2048);
-            e.HasIndex(x => x.SchoolFundId).IsUnique();
-        });
-
-        modelBuilder.Entity<UnisaPaymentPlanArrangementEntity>(e =>
-        {
-            e.ToTable("UnisaPaymentPlanArrangements");
-            e.HasKey(x => x.ArrangementId);
-            e.Property(x => x.ExternalKey).HasMaxLength(256);
-            e.Property(x => x.SchoolFundId).HasMaxLength(32);
-            e.Property(x => x.StudentNumber).HasMaxLength(64);
-            e.Property(x => x.SourceKind).HasMaxLength(64);
-            e.HasIndex(x => new { x.ExternalKey, x.SchoolFundId, x.IsCurrent });
-        });
-
-        modelBuilder.Entity<UnisaFileImportWatermarkEntity>(e =>
-        {
-            e.ToTable("UnisaFileImportWatermarks");
-            e.HasKey(x => x.SourceKey);
-            e.Property(x => x.SourceKey).HasMaxLength(128);
         });
 
         modelBuilder.Entity<AttentionIncidentEntity>(e =>

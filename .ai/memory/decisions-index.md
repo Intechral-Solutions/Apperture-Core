@@ -14,3 +14,4 @@ Architecture decision records (ADRs) live in [docs/02-decisions/](../../docs/02-
 | [ADR-0027](../../docs/02-decisions/ADR-0027-connector-definitions-not-platform-clients.md) | Connector definitions vs platform-managed clients (Epic 52 correction; supersedes ADR-0026) |
 | [ADR-0028](../../docs/02-decisions/ADR-0028-integration-canonical-deployment-unit.md) | Integration as canonical deployment, binding, and scheduling unit (Epic 54) |
 | [Epic 35](../../docs/02-decisions/Epic35-Run-Inspection-Forensics.md) | Run inspection and execution forensics (`ForensicContext`, origin inference, schedule convention, UI cross-nav) |
+| [Epic 73](../../docs/02-decisions/Epic73-execution-hot-path-and-host-roles.md) | Execution hot path, host roles, runtime boundary (SQL dispatch, WorkerHost vs SchedulerHost stub, module DbContext) |

@@ -1,6 +1,6 @@
 using Apperture.RuntimePlane.Abstractions;
 
-namespace Apperture.ControlPlane.Security;
+namespace Apperture.Core.Application.Services;
 
 public interface IWorkflowStartDispatchService
 {
@@ -12,4 +12,3 @@ public sealed record WorkflowStartDispatchResult(
     WorkflowInstanceId WorkflowInstanceId,
     WorkflowDefinitionId WorkflowDefinitionId,
     string Status);
-

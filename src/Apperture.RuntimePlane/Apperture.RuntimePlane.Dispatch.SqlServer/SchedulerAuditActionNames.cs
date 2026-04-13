@@ -1,4 +1,4 @@
-namespace Apperture.ControlPlane.Security;
+namespace Apperture.RuntimePlane.Dispatch.SqlServer;
 
 /// <summary>
 /// Canonical audit action names for scheduled dispatch. Epic 28, Epic 36 (multi-host).

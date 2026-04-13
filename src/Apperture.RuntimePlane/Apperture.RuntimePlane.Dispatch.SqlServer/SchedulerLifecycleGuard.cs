@@ -4,7 +4,7 @@ using Apperture.Core.Domain.Operations;
 using Apperture.ModuleSdk.Abstractions;
 using Apperture.RuntimePlane.Abstractions;
 
-namespace Apperture.ControlPlane.Security;
+namespace Apperture.RuntimePlane.Dispatch.SqlServer;
 
 /// <summary>
 /// Lifecycle guard for scheduled workflow and operation dispatch (Epic 27, Epic 29).

@@ -1,4 +1,4 @@
-namespace Apperture.Persistence.SqlServer;
+namespace Unisa.CampusNexus.PaymentPlans.Persistence;
 
 /// <summary>
 /// High-water mark for SFTP/file imports (replaces per-machine INI).

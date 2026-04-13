@@ -1,15 +1,16 @@
 using System.Text.Json;
+using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Workflow;
-using Apperture.RuntimePlane.Abstractions;
 using Apperture.ModuleSdk.Abstractions;
 using Apperture.Persistence.SqlServer;
+using Apperture.RuntimePlane.Abstractions;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 
-namespace Apperture.ControlPlane.Security;
+namespace Apperture.RuntimePlane.Dispatch.SqlServer;
 
 /// <summary>
-/// Control-plane workflow start dispatch: persists a durable handoff (start request + run + instance) and returns a run id.
+/// SQL workflow start dispatch: persists a durable handoff (start request + run + instance) and returns a run id.
 /// Does not execute workflow steps (ADR-0001). Definition resolution is lifecycle-governed (Epic 27 — Epic27-Execution-Surface-Inventory.md).
 /// </summary>
 public sealed class WorkflowStartDispatchService : IWorkflowStartDispatchService
@@ -198,4 +199,3 @@ public sealed class WorkflowStartDispatchService : IWorkflowStartDispatchService
         return false;
     }
 }
-

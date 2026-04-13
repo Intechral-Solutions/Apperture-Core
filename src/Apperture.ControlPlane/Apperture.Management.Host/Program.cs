@@ -1,5 +1,8 @@
 using Apperture.Bootstrap;
+using Apperture.Connectors.CampusNexus;
+using Apperture.Connectors.Sftp;
 using Apperture.ControlPlane.Security;
+using Apperture.RuntimePlane.Dispatch.SqlServer;
 using Apperture.Management.Host;
 using Apperture.Persistence.SqlServer;
 using Sample.HelloWorld;
@@ -40,9 +43,11 @@ builder.Services.AddKnownModules([new HelloWorldModule(), new UnisaCampusNexusPa
 builder.Services.AddAppertureRecovery();
 builder.Services.AddRuntimeSchedulerDispatch();
 builder.Services.AddAppertureConnectorWorkflows();
+builder.Services.AddAppertureCampusNexusConnector();
+builder.Services.AddAppertureSftpConnector();
 builder.Services.AddAppertureIntegrationWorkflows();
 builder.Services.AddAttentionIncidentObservation(builder.Configuration);
-builder.Services.AddUnisaCampusNexusPaymentPlansIntegration();
+builder.Services.AddUnisaCampusNexusPaymentPlansIntegration(applyModulePersistenceMigrationsOnStartup: true);
 builder.Services.AddAppertureAuthentication(builder.Configuration);
 builder.Services.AddAuthorization();
 

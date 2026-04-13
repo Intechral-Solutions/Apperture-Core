@@ -1,7 +1,7 @@
 using Apperture.Core.Domain.Operations;
 using Apperture.RuntimePlane.Abstractions;
 
-namespace Apperture.ControlPlane.Security;
+namespace Apperture.Core.Application.Services;
 
 public interface IOperationStartDispatchService
 {
@@ -13,4 +13,3 @@ public sealed record OperationStartDispatchResult(
     OperationInstanceId OperationInstanceId,
     OperationId OperationDefinitionId,
     string Status);
-

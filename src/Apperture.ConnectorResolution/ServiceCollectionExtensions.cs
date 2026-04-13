@@ -1,6 +1,4 @@
 using System.Data;
-using Apperture.Connectors.CampusNexus;
-using Apperture.Connectors.Sftp;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Connector;
 using Microsoft.Extensions.DependencyInjection;
@@ -16,7 +14,8 @@ namespace Apperture.ConnectorResolution;
 public static class ConnectorResolutionServiceCollectionExtensions
 {
     /// <summary>
-    /// Adds connector resolution: slot resolver, connection resolver, and factory registry.
+    /// Adds connector resolution: slot resolver, connection resolver, factory registry,
+    /// and hosted registration of <see cref="IConnectorClientFactoryContributor"/> instances.
     /// Caller must register IConnectionRepository, IBindingRepository, IConnectorDefinitionRegistry, ISecretResolver.
     /// </summary>
     public static IServiceCollection AddConnectorResolution(this IServiceCollection services)
@@ -24,34 +23,28 @@ public static class ConnectorResolutionServiceCollectionExtensions
         services.AddSingleton<IConnectorClientFactoryRegistry, ConnectorClientFactoryRegistry>();
         services.AddScoped<IConnectionResolver, DefaultConnectionResolver>();
         services.AddScoped<IRuntimeSlotResolver, SlotBoundResolver>();
+        services.AddHostedService<ConnectorClientFactoryRegistrationHostedService>();
         return services;
     }
 
     /// <summary>
-    /// Registers platform connector definitions (SQL, Campus Nexus API, SFTP) and their client factories for runtime resolution.
-    /// If <see cref="IConnectorDefinitionRegistry"/> is not yet registered, uses <see cref="InMemoryConnectorDefinitionRegistry"/>.
+    /// Registers the platform SQL connector client factory and its runtime registration contributor.
+    /// If <see cref="IConnectorDefinitionRegistry"/> is not yet registered, uses <see cref="InMemoryConnectorDefinitionRegistry"/>
+    /// with well-known platform definitions from <see cref="WellKnownConnectorDefinitions"/> (Core.Domain only).
     /// Idempotent if called multiple times.
     /// </summary>
     public static IServiceCollection AddPlatformSqlConnector(this IServiceCollection services)
     {
-        if (services.Any(d => d.ServiceType == typeof(IHostedService) && d.ImplementationType == typeof(PlatformConnectorClientFactoriesHostedService)))
+        if (services.Any(d =>
+                d.ServiceType == typeof(IConnectorClientFactoryContributor) &&
+                d.ImplementationType == typeof(PlatformSqlConnectorClientFactoryContributor)))
             return services;
 
         services.TryRegisterConnectorDefinitionRegistry();
         services.AddSingleton<IConnectorClientFactory<IDbConnection>, PlatformSqlConnectorClientFactory>();
-        services.AddSingleton<IConnectorClientFactory<ICampusNexusApiClient>, CampusNexusApiConnectorClientFactory>();
-        services.AddSingleton<IConnectorClientFactory<ISftpFileClient>, SftpConnectorClientFactory>();
-        services.AddHostedService<PlatformConnectorClientFactoriesHostedService>();
+        services.AddSingleton<IConnectorClientFactoryContributor, PlatformSqlConnectorClientFactoryContributor>();
         return services;
     }
-
-    /// <inheritdoc cref="AddPlatformSqlConnector(IServiceCollection)"/>
-    public static IServiceCollection AddPlatformCampusNexusApiConnector(this IServiceCollection services) =>
-        AddPlatformSqlConnector(services);
-
-    /// <inheritdoc cref="AddPlatformSqlConnector(IServiceCollection)"/>
-    public static IServiceCollection AddPlatformSftpConnector(this IServiceCollection services) =>
-        AddPlatformSqlConnector(services);
 
     private static void TryRegisterConnectorDefinitionRegistry(this IServiceCollection services)
     {

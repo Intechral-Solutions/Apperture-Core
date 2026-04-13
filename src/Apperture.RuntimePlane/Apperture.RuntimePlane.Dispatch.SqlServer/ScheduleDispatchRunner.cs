@@ -10,7 +10,7 @@ using Apperture.Core.Domain.Workflow;
 using Apperture.RuntimePlane.Abstractions;
 using Apperture.Shared.Kernel;
 
-namespace Apperture.ControlPlane.Security;
+namespace Apperture.RuntimePlane.Dispatch.SqlServer;
 
 /// <summary>
 /// Runs one schedule dispatch cycle. Epic 28 (workflow), Epic 29 (operation), Epic 36 (multi-host claim/recover).
