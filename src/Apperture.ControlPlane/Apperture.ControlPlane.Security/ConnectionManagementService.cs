@@ -1,3 +1,4 @@
+using System.Linq;
 using Apperture.Core.Application.Connector;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Connector;
@@ -16,19 +17,22 @@ public sealed class ConnectionManagementService : IConnectionManagementService
     private readonly IConnectionRepository _connectionRepository;
     private readonly IConnectorDefinitionRegistry _connectorRegistry;
     private readonly IConnectionVerificationService _connectionVerification;
+    private readonly ConnectionSecretMaterialProvisioner _secretProvisioner;
 
     public ConnectionManagementService(
         IPrincipalContext principalContext,
         IAuthorizationEvaluationService authorizationEvaluation,
         IConnectionRepository connectionRepository,
         IConnectorDefinitionRegistry connectorRegistry,
-        IConnectionVerificationService connectionVerification)
+        IConnectionVerificationService connectionVerification,
+        ConnectionSecretMaterialProvisioner secretProvisioner)
     {
         _principalContext = principalContext;
         _authorizationEvaluation = authorizationEvaluation;
         _connectionRepository = connectionRepository;
         _connectorRegistry = connectorRegistry;
         _connectionVerification = connectionVerification;
+        _secretProvisioner = secretProvisioner;
     }
 
     /// <inheritdoc />
@@ -97,12 +101,31 @@ public sealed class ConnectionManagementService : IConnectionManagementService
             throw new InvalidOperationException($"Connector definition {request.ConnectorDefinitionId.Value} not found.");
 
         var id = new ConnectionId(Guid.NewGuid().ToString("N")[..24]);
+
+        var mergedSecretRefs = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var kv in request.SecretRefs)
+        {
+            ValidateIncomingSecretRef(def, kv.Key, kv.Value);
+            mergedSecretRefs[kv.Key] = kv.Value;
+        }
+
+        if (request.SecretValues is { Count: > 0 })
+        {
+            var provisioned = await _secretProvisioner
+                .ProvisionForCreateAsync(id, def, request.SecretValues, cancellationToken)
+                .ConfigureAwait(false);
+            foreach (var kv in provisioned)
+                mergedSecretRefs[kv.Key] = kv.Value;
+        }
+
+        ConnectionSecretMaterialProvisioner.ValidateConnectionMaterial(def, request.Config, mergedSecretRefs);
+
         var connection = new Connection(
             id,
             request.ConnectorDefinitionId,
             request.Name,
             request.Config,
-            request.SecretRefs,
+            mergedSecretRefs,
             request.ScopeKey,
             request.OwnerId,
             ConnectionState.Active);
@@ -132,11 +155,30 @@ public sealed class ConnectionManagementService : IConnectionManagementService
         if (!allowed)
             throw new UnauthorizedAccessException("Not authorized to update this connection.");
 
+        var def = _connectorRegistry.Get(existing.ConnectorDefinitionId)
+            ?? throw new InvalidOperationException($"Connector definition {existing.ConnectorDefinitionId.Value} not found.");
+
+        var nextConfig = request.Config ?? existing.Config;
+        var workingSecretRefs = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var kv in request.SecretRefs ?? existing.SecretRefs)
+            workingSecretRefs[kv.Key] = kv.Value;
+        foreach (var kv in workingSecretRefs)
+            ValidateIncomingSecretRef(def, kv.Key, kv.Value);
+
+        if (request.SecretValues is { Count: > 0 })
+        {
+            await _secretProvisioner
+                .ApplySecretValuesForUpdateAsync(existing.Id, def, request.SecretValues, workingSecretRefs, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        ConnectionSecretMaterialProvisioner.ValidateConnectionMaterial(def, nextConfig, workingSecretRefs);
+
         var updated = existing with
         {
             Name = request.Name ?? existing.Name,
-            Config = request.Config ?? existing.Config,
-            SecretRefs = request.SecretRefs ?? existing.SecretRefs
+            Config = nextConfig,
+            SecretRefs = workingSecretRefs
         };
 
         await _connectionRepository.UpdateAsync(updated, cancellationToken);
@@ -198,5 +240,14 @@ public sealed class ConnectionManagementService : IConnectionManagementService
         };
         await _connectionRepository.UpdateAsync(updated, cancellationToken);
         return updated;
+    }
+
+    private static void ValidateIncomingSecretRef(ConnectorDefinition def, string key, string value)
+    {
+        var field = def.ConnectionFields.FirstOrDefault(f => string.Equals(f.Key, key, StringComparison.Ordinal));
+        if (field is null || !field.IsSecret)
+            return;
+        if (!Guid.TryParse(value, out _))
+            throw new InvalidOperationException($"Secret reference for '{key}' must be a secret id (GUID). Use SecretValues to supply new secret material.");
     }
 }

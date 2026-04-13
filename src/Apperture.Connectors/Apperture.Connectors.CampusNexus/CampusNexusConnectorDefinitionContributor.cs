@@ -15,7 +15,11 @@ public sealed class CampusNexusConnectorDefinitionContributor : IConnectorDefini
             WellKnownConnectorDefinitionIds.PlatformCampusNexus,
             "Campus Nexus API",
             null,
-            new Dictionary<string, string>())
+            new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["BaseUrl"] = "",
+                ["AuthMode"] = "",
+            })
         {
             Description =
                 "HTTP API for Ellucian Campus Nexus (commands and OData). Modules consume ICampusNexusApiClient from this connector package; the platform stores connection material and bindings only.",

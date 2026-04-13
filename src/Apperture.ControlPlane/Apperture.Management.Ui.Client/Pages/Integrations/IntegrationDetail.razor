@@ -2,6 +2,7 @@
 @using Apperture.Management.Client
 @using Apperture.Management.Ui.Client.Services
 @using Apperture.Management.Ui.Client.Services.Wizard
+@using Apperture.Management.Ui.Client.Components
 @using Apperture.Management.Ui.Client.Organisms
 @using Apperture.Management.Ui.Shared
 @inject IManagementClient Client
@@ -432,31 +433,9 @@
                                     </div>
                                     @if (SelectedInFlowConnectorDefinition is not null)
                                     {
-                                        @foreach (var field in SelectedInFlowConnectorDefinition.Fields)
-                                        {
-                                            <div>
-                                                <label class="block text-xs text-muted">
-                                                    @field.DisplayName
-                                                    @if (field.IsRequired)
-                                                    {
-                                                        <span class="ml-1 text-amber-700 dark:text-amber-300">(required)</span>
-                                                    }
-                                                    @if (field.IsSecret)
-                                                    {
-                                                        <span class="ml-1 text-muted">(secret ref)</span>
-                                                    }
-                                                </label>
-                                                <input type="@(field.IsSecret ? "password" : "text")"
-                                                       class="mt-1 w-full rounded border border-default bg-surface px-2 py-1 text-sm"
-                                                       value="@GetInFlowFieldValue(field)"
-                                                       @oninput="e => OnInFlowFieldChanged(field, e.Value?.ToString())"
-                                                       placeholder="@field.Key" />
-                                                @if (!string.IsNullOrWhiteSpace(field.Description))
-                                                {
-                                                    <div class="mt-1 text-xs text-muted">@field.Description</div>
-                                                }
-                                            </div>
-                                        }
+                                        <ConnectorConnectionFieldInputs Definition="SelectedInFlowConnectorDefinition"
+                                                                        ConfigValues="_inFlowConfigValues"
+                                                                        SecretValues="_inFlowSecretValues" />
                                     }
                                     <div class="flex gap-2">
                                         <button type="button"
@@ -475,12 +454,15 @@
                             }
                             <div class="flex gap-2">
                                 <button type="button" class="rounded bg-body px-2 py-1 text-sm text-surface hover:bg-body/90" @onclick="CreateBindingAsync" disabled="@(_bindingSaving || string.IsNullOrEmpty(_bindingSlot) || string.IsNullOrEmpty(_bindingConnectionId))">Add</button>
-                                <button type="button"
-                                        class="rounded bg-surface-muted px-2 py-1 text-sm text-body hover:bg-surface"
-                                        @onclick="StartInFlowConnectionCreateAsync"
-                                        disabled="@_inFlowCreateSaving">
-                                    Create connection
-                                </button>
+                                @if (_capabilities?.CanCreateConnections == true)
+                                {
+                                    <button type="button"
+                                            class="rounded bg-surface-muted px-2 py-1 text-sm text-body hover:bg-surface"
+                                            @onclick="StartInFlowConnectionCreateAsync"
+                                            disabled="@_inFlowCreateSaving">
+                                        Create connection
+                                    </button>
+                                }
                                 <button type="button" class="rounded bg-surface-muted px-2 py-1 text-sm text-body hover:bg-surface" @onclick="CancelAddBinding">Cancel</button>
                             </div>
                         </div>
@@ -662,7 +644,7 @@
         }
         catch
         {
-            _capabilities = new OperatorCapabilitiesDto(false, false, false, false, false, false, false, false, false, false, false, false, false, false);
+            _capabilities = new OperatorCapabilitiesDto(false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false);
         }
         _capabilitiesLoaded = true;
         RecomputeWizardStates();
@@ -1075,18 +1057,10 @@
         _inFlowCreateSaving = false;
     }
 
-    private string GetInFlowFieldValue(ConnectionFieldCatalogDto field) =>
+    private string GetInFlowFieldValueForValidation(ConnectionFieldCatalogDto field) =>
         field.IsSecret
             ? (_inFlowSecretValues.TryGetValue(field.Key, out var secret) ? secret : "")
             : (_inFlowConfigValues.TryGetValue(field.Key, out var cfg) ? cfg : "");
-
-    private void OnInFlowFieldChanged(ConnectionFieldCatalogDto field, string? value)
-    {
-        if (field.IsSecret)
-            _inFlowSecretValues[field.Key] = value ?? "";
-        else
-            _inFlowConfigValues[field.Key] = value ?? "";
-    }
 
     private async Task CreateConnectionInFlowAsync()
     {
@@ -1095,7 +1069,7 @@
 
         _inFlowCreateError = null;
         var missing = SelectedInFlowConnectorDefinition.Fields
-            .Where(f => f.IsRequired && string.IsNullOrWhiteSpace(GetInFlowFieldValue(f)))
+            .Where(f => f.IsRequired && string.IsNullOrWhiteSpace(GetInFlowFieldValueForValidation(f)))
             .Select(f => f.DisplayName)
             .ToArray();
         if (missing.Length > 0)
@@ -1107,12 +1081,14 @@
         _inFlowCreateSaving = true;
         try
         {
+            var secrets = _inFlowSecretValues.Where(kv => !string.IsNullOrWhiteSpace(kv.Value)).ToDictionary(kv => kv.Key, kv => kv.Value);
             var created = await Client.CreateConnectionAsync(
                 new CreateConnectionRequest(
                     _inFlowConnectorDefinitionId,
                     _inFlowConnectionName.Trim(),
                     _inFlowConfigValues.Where(kv => !string.IsNullOrWhiteSpace(kv.Value)).ToDictionary(kv => kv.Key, kv => kv.Value),
-                    _inFlowSecretValues.Where(kv => !string.IsNullOrWhiteSpace(kv.Value)).ToDictionary(kv => kv.Key, kv => kv.Value)));
+                    SecretRefs: new Dictionary<string, string>(),
+                    SecretValues: secrets.Count > 0 ? secrets : null));
 
             var slot = _moduleSlots?.FirstOrDefault(s => string.Equals(s.SlotName, _bindingSlot, StringComparison.Ordinal));
             if (slot is not null)

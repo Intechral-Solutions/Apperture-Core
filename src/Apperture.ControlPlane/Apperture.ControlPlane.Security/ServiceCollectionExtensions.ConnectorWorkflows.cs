@@ -21,6 +21,7 @@ public static class ConnectorWorkflowServiceCollectionExtensions
         services.AddScoped<IBindingRepository, SqlBindingRepository>();
         services.AddSingleton<IModuleSlotRegistry, StubModuleSlotRegistry>();
         services.AddScoped<IBindingEligibilityService, BindingEligibilityService>();
+        services.AddScoped<ConnectionSecretMaterialProvisioner>();
         services.AddScoped<IConnectionManagementService, ConnectionManagementService>();
         services.AddScoped<IConnectionVerificationService, ConnectionVerificationService>();
         services.AddScoped<SftpConnectorClientFactory>();

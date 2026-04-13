@@ -38,8 +38,11 @@ Confirm with environment documentation or `$metadata`:
 
 1. Start **Management.Host** once so platform migrations and proof module migrations apply (or run `dotnet ef database update` with the proof design-time factory).
 2. Start **WorkerHost** against the same database.
-3. Create connection, integration, and bindings as above.
-4. `POST /api/workflows/{workflowDefinitionId}/start` with body including `integrationId` and optional OData override fields in parameters (see Management API models).
+3. **Configure through Management UI** (supported path; no manual SQL for connections or bindings):
+   - **Connections**: Create a **Campus Nexus API** connection (`Apperture.Platform.CampusNexus`) with `BaseUrl`, `AuthMode`, and credentials via **Connections → Add connection** (secret fields are stored in the platform secret store; only secret ids are persisted on the connection).
+   - **Connections**: Create a **Platform SQL** connection (`Apperture.Platform.Sql`) pointing at the same SQL database used by Management (for `IntegrationDb` and proof tables), with `Server`, `Database`, and optional SQL auth; use **SecretValues**-style entry in the UI for passwords so refs resolve at runtime.
+   - **Integrations**: Create an integration for module `Proof.CampusNexus.StudentReview` (**Integrations → New integration**), activate it, then on the integration detail page under **Connection bindings** bind slot **`CnsApi`** to the Campus Nexus connection and **`IntegrationDb`** to the SQL connection. Use **Readiness** on the same page to confirm the integration is runnable before launch.
+4. Start the proof workflow (e.g. **Launch** on the module procedure from integration detail if available, or `POST /api/workflows/{workflowDefinitionId}/start` with body including `integrationId` and optional OData override fields in parameters).
 5. Inspect `ProofStudentReviewRuns` / `ProofStudentReviewSnapshots` in SQL and workflow step output for the inline summary.
 
 ## Tests

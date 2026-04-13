@@ -12,7 +12,7 @@ namespace Apperture.ControlPlane.Security;
 public sealed class OperatorCapabilitiesQueryService : IOperatorCapabilitiesQueryService
 {
     private static readonly OperatorCapabilitiesDto DenyAll =
-        new(false, false, false, false, false, false, false, false, false, false, false, false, false, false, false);
+        new(false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false);
 
     private readonly IPrincipalContext _principalContext;
     private readonly IAuthorizationEvaluationService _authorization;
@@ -72,6 +72,21 @@ public sealed class OperatorCapabilitiesQueryService : IOperatorCapabilitiesQuer
                 ActionConstants.ConnectionRead,
                 ResourceTypeConstants.Connection,
                 cancellationToken).ConfigureAwait(false);
+            var canCreateConnections = await EvaluateAsync(
+                actor,
+                ActionConstants.ConnectionCreate,
+                ResourceTypeConstants.Connection,
+                cancellationToken).ConfigureAwait(false);
+            var canUpdateConnections = await EvaluateAsync(
+                actor,
+                ActionConstants.ConnectionUpdate,
+                ResourceTypeConstants.Connection,
+                cancellationToken).ConfigureAwait(false);
+            var canRetireConnections = await EvaluateAsync(
+                actor,
+                ActionConstants.ConnectionDelete,
+                ResourceTypeConstants.Connection,
+                cancellationToken).ConfigureAwait(false);
             var canViewIntegrations = await EvaluateAsync(
                 actor,
                 ActionConstants.IntegrationRead,
@@ -103,7 +118,10 @@ public sealed class OperatorCapabilitiesQueryService : IOperatorCapabilitiesQuer
                 canViewConnections,
                 canViewIntegrations,
                 canManageIntegrations,
-                canViewConnectorDefinitions);
+                canViewConnectorDefinitions,
+                canCreateConnections,
+                canUpdateConnections,
+                canRetireConnections);
         }
         catch (Exception ex)
         {

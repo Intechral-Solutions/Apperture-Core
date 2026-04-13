@@ -1,10 +1,14 @@
 @page "/connections/{ConnectionId}"
 @using Apperture.Management.Client
 @using Apperture.Management.Ui.Client.Services
+@using Apperture.Management.Ui.Client.Components
 @using Apperture.Management.Ui.Client.Organisms
+@using Apperture.Management.Ui.Shared
 @inject IManagementClient Client
 @inject IOperatorCapabilitiesService Capabilities
 @inject NavigationManager Nav
+@inject IToastService Toasts
+@inject IJSRuntime JSRuntime
 
 <div class="p-4">
     <PageHeader Title="Connection" Subtitle="@ConnectionId">
@@ -16,13 +20,31 @@
                     @onclick="LoadAsync">
                 Refresh
             </button>
-            @if (_connection?.SupportsVerification == true)
+            @if (_connection?.SupportsVerification == true && !_editing)
             {
                 <button type="button"
                         class="rounded bg-body px-3 py-2 text-sm text-surface hover:bg-body/90 disabled:opacity-50"
                         disabled="@(_loading || _testing)"
                         @onclick="TestConnectionAsync">
                     Test connection
+                </button>
+            }
+            @if (_capabilities?.CanUpdateConnections == true && _connection is not null && !_editing)
+            {
+                <button type="button"
+                        class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface disabled:opacity-50"
+                        disabled="@_loading"
+                        @onclick="StartEditAsync">
+                    Edit
+                </button>
+            }
+            @if (_capabilities?.CanRetireConnections == true && _connection is not null && !_editing && string.Equals(_connection.State, "Active", StringComparison.OrdinalIgnoreCase))
+            {
+                <button type="button"
+                        class="rounded bg-destructive px-3 py-2 text-sm text-destructive-fg hover:bg-destructive/90 disabled:opacity-50"
+                        disabled="@_loading"
+                        @onclick="RetireAsync">
+                    Retire
                 </button>
             }
         </Toolbar>
@@ -45,6 +67,36 @@
     else if (_connection is null)
     {
         <PageMessage Kind="PageMessageKind.Loading" Message="Loading connection…" />
+    }
+    else if (_editing && _editConnectorDefinition is not null)
+    {
+        <div class="mt-4 space-y-4">
+            <div class="rounded border border-default bg-surface p-3 space-y-3">
+                <h2 class="text-sm font-semibold text-heading">Edit connection</h2>
+                <div>
+                    <label class="block text-xs text-muted">Name</label>
+                    <input class="mt-1 w-full rounded border border-default bg-surface px-2 py-1 text-sm" @bind="_editName" />
+                </div>
+                <div class="text-xs text-muted">Leave secret fields blank to keep the current stored value.</div>
+                <ConnectorConnectionFieldInputs Definition="_editConnectorDefinition"
+                                                ConfigValues="_editConfigValues"
+                                                SecretValues="_editSecretValues" />
+                <div class="flex gap-2">
+                    <button type="button"
+                            class="rounded bg-body px-3 py-2 text-sm text-surface hover:bg-body/90 disabled:opacity-50"
+                            disabled="@_saveEditLoading"
+                            @onclick="SaveEditAsync">
+                        @(_saveEditLoading ? "Saving…" : "Save")
+                    </button>
+                    <button type="button"
+                            class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface"
+                            disabled="@_saveEditLoading"
+                            @onclick="CancelEdit">
+                        Cancel
+                    </button>
+                </div>
+            </div>
+        </div>
     }
     else
     {
@@ -107,7 +159,7 @@
                 @if (_connection.SecretRefs is { Count: > 0 })
                 {
                     <div class="mt-3">
-                        <div class="text-xs text-muted">Secret refs</div>
+                        <div class="text-xs text-muted">Secret fields (stored)</div>
                         <div class="mt-1 text-sm text-muted">
                             @string.Join(", ", _connection.SecretRefs.Keys)
                         </div>
@@ -160,6 +212,13 @@
     private bool _testing;
     private string? _error;
 
+    private bool _editing;
+    private bool _saveEditLoading;
+    private ConnectorDefinitionCatalogDto? _editConnectorDefinition;
+    private string _editName = "";
+    private readonly Dictionary<string, string> _editConfigValues = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, string> _editSecretValues = new(StringComparer.Ordinal);
+
     protected override async Task OnInitializedAsync()
     {
         try
@@ -168,7 +227,7 @@
         }
         catch
         {
-            _capabilities = new OperatorCapabilitiesDto(false, false, false, false, false, false, false, false, false, false, false, false);
+            _capabilities = new OperatorCapabilitiesDto(false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false);
         }
         _capabilitiesLoaded = true;
 
@@ -188,6 +247,93 @@
         catch (HttpRequestException ex)
         {
             _error = ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task StartEditAsync()
+    {
+        if (_connection is null) return;
+        _editConnectorDefinition = await Client.GetConnectorDefinitionAsync(_connection.ConnectorDefinitionId);
+        if (_editConnectorDefinition is null)
+        {
+            Toasts.Show(ToastSeverity.Error, "Connector definition not found.");
+            return;
+        }
+
+        _editName = _connection.Name;
+        _editConfigValues.Clear();
+        _editSecretValues.Clear();
+        foreach (var field in _editConnectorDefinition.Fields)
+        {
+            if (field.IsSecret)
+                _editSecretValues[field.Key] = "";
+            else if (_connection.Config.TryGetValue(field.Key, out var v))
+                _editConfigValues[field.Key] = v;
+            else
+                _editConfigValues[field.Key] = "";
+        }
+
+        _editing = true;
+    }
+
+    private void CancelEdit()
+    {
+        _editing = false;
+        _editConnectorDefinition = null;
+    }
+
+    private async Task SaveEditAsync()
+    {
+        if (_connection is null || _editConnectorDefinition is null) return;
+        _saveEditLoading = true;
+        _error = null;
+        try
+        {
+            var cfg = _editConfigValues.Where(kv => !string.IsNullOrWhiteSpace(kv.Value)).ToDictionary(kv => kv.Key, kv => kv.Value);
+            var secretRotations = _editSecretValues.Where(kv => !string.IsNullOrWhiteSpace(kv.Value)).ToDictionary(kv => kv.Key, kv => kv.Value);
+            _connection = await Client.UpdateConnectionAsync(
+                ConnectionId,
+                new UpdateConnectionRequest(
+                    Name: _editName.Trim(),
+                    Config: cfg,
+                    SecretValues: secretRotations.Count > 0 ? secretRotations : null));
+            Toasts.Show(ToastSeverity.Success, "Connection updated.");
+            _editing = false;
+            _editConnectorDefinition = null;
+            await LoadAsync();
+        }
+        catch (HttpRequestException ex)
+        {
+            _error = ex.Message;
+            Toasts.Show(ToastSeverity.Error, ex.Message);
+        }
+        finally
+        {
+            _saveEditLoading = false;
+        }
+    }
+
+    private async Task RetireAsync()
+    {
+        if (_connection is null || _capabilities?.CanRetireConnections != true) return;
+        if (!await JSRuntime.InvokeAsync<bool>("confirm", $"Retire connection \"{_connection.Name}\"? It will no longer be eligible for new bindings."))
+            return;
+        _loading = true;
+        _error = null;
+        try
+        {
+            await Client.RetireConnectionAsync(ConnectionId);
+            Toasts.Show(ToastSeverity.Success, "Connection retired.");
+            Nav.NavigateTo("/connections");
+        }
+        catch (HttpRequestException ex)
+        {
+            _error = ex.Message;
+            Toasts.Show(ToastSeverity.Error, ex.Message);
         }
         finally
         {

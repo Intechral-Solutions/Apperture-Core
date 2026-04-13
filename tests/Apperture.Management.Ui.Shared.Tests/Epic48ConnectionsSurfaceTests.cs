@@ -64,6 +64,21 @@ public sealed class Epic48ConnectionsSurfaceTests
     }
 
     [Fact]
+    public void OperatorCapabilitiesDto_ConnectionAuthoringFlags()
+    {
+        var dto = new OperatorCapabilitiesDto(
+            false, false, false, false, false,
+            false, false, false, false, false, false, false,
+            false, false, false,
+            CanCreateConnections: true,
+            CanUpdateConnections: true,
+            CanRetireConnections: false);
+        dto.CanCreateConnections.Should().BeTrue();
+        dto.CanUpdateConnections.Should().BeTrue();
+        dto.CanRetireConnections.Should().BeFalse();
+    }
+
+    [Fact]
     public void ConnectorDefinitionCatalogDto_Shape_Epic52()
     {
         var fields = new[]

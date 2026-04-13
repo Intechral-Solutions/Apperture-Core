@@ -94,6 +94,16 @@ public interface IManagementClient
     Task<ConnectionDto> CreateConnectionAsync(CreateConnectionRequest request, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Updates connection metadata, config, and/or secret material.
+    /// </summary>
+    Task<ConnectionDto> UpdateConnectionAsync(string id, UpdateConnectionRequest request, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Retires a connection (soft delete for eligibility).
+    /// </summary>
+    Task RetireConnectionAsync(string id, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Executes connector-specific test-connect and returns updated connection projection.
     /// </summary>
     Task<ConnectionDto> TestConnectionAsync(string id, CancellationToken cancellationToken = default);
@@ -499,7 +509,10 @@ public sealed record OperatorCapabilitiesDto(
     [property: JsonPropertyName("canViewConnections")] bool CanViewConnections = false,
     [property: JsonPropertyName("canViewIntegrations")] bool CanViewIntegrations = false,
     [property: JsonPropertyName("canManageIntegrations")] bool CanManageIntegrations = false,
-    [property: JsonPropertyName("canViewConnectorDefinitions")] bool CanViewConnectorDefinitions = false);
+    [property: JsonPropertyName("canViewConnectorDefinitions")] bool CanViewConnectorDefinitions = false,
+    [property: JsonPropertyName("canCreateConnections")] bool CanCreateConnections = false,
+    [property: JsonPropertyName("canUpdateConnections")] bool CanUpdateConnections = false,
+    [property: JsonPropertyName("canRetireConnections")] bool CanRetireConnections = false);
 
 /// <summary>Integration resource. Epic 49, Epic 50.</summary>
 public sealed record IntegrationDto(
@@ -596,7 +609,15 @@ public sealed record CreateConnectionRequest(
     IReadOnlyDictionary<string, string>? Config = null,
     IReadOnlyDictionary<string, string>? SecretRefs = null,
     string? ScopeKey = null,
-    string? OwnerId = null);
+    string? OwnerId = null,
+    IReadOnlyDictionary<string, string>? SecretValues = null);
+
+/// <summary>Request to update a connection resource.</summary>
+public sealed record UpdateConnectionRequest(
+    string? Name = null,
+    IReadOnlyDictionary<string, string>? Config = null,
+    IReadOnlyDictionary<string, string>? SecretRefs = null,
+    IReadOnlyDictionary<string, string>? SecretValues = null);
 
 public sealed record BlockedWorkRetryResult(
     bool Success,

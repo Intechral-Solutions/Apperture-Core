@@ -8,8 +8,15 @@ public static class WellKnownConnectorDefinitions
     private static readonly IReadOnlyDictionary<string, string> EmptySchema =
         new Dictionary<string, string>();
 
+    private static readonly IReadOnlyDictionary<string, string> PlatformSqlRequiredSchema =
+        new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["Server"] = "",
+            ["Database"] = "",
+        };
+
     public static ConnectorDefinition CreatePlatformSql() =>
-        new(WellKnownConnectorDefinitionIds.PlatformSql, "Platform SQL", null, EmptySchema)
+        new(WellKnownConnectorDefinitionIds.PlatformSql, "Platform SQL", null, PlatformSqlRequiredSchema)
         {
             Description = "Microsoft SQL Server via System.Data.IDbConnection.",
             ConnectionFields =

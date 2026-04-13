@@ -85,7 +85,8 @@ public sealed class ConnectionsController : ControllerBase
                 body.Config ?? new Dictionary<string, string>(),
                 body.SecretRefs ?? new Dictionary<string, string>(),
                 body.ScopeKey,
-                body.OwnerId);
+                body.OwnerId,
+                body.SecretValues);
             var connection = await _connectionService.CreateConnectionAsync(request, cancellationToken);
             var bindings = await _bindingRepository.GetByConnectionIdAsync(connection.Id, cancellationToken);
             return CreatedAtAction(nameof(Get), new { id = connection.Id.Value }, await ToDtoAsync(connection, bindings, cancellationToken));
@@ -108,7 +109,7 @@ public sealed class ConnectionsController : ControllerBase
     {
         try
         {
-            var request = new UpdateConnectionRequest(body.Name, body.Config, body.SecretRefs);
+            var request = new UpdateConnectionRequest(body.Name, body.Config, body.SecretRefs, body.SecretValues);
             var connection = await _connectionService.UpdateConnectionAsync(new ConnectionId(id), request, cancellationToken);
             var bindings = await _bindingRepository.GetByConnectionIdAsync(connection.Id, cancellationToken);
             return Ok(await ToDtoAsync(connection, bindings, cancellationToken));
@@ -236,9 +237,11 @@ public sealed record CreateConnectionRequestBody(
     IReadOnlyDictionary<string, string>? Config,
     IReadOnlyDictionary<string, string>? SecretRefs,
     string? ScopeKey,
-    string? OwnerId);
+    string? OwnerId,
+    IReadOnlyDictionary<string, string>? SecretValues = null);
 
 public sealed record UpdateConnectionRequestBody(
     string? Name,
     IReadOnlyDictionary<string, string>? Config,
-    IReadOnlyDictionary<string, string>? SecretRefs);
+    IReadOnlyDictionary<string, string>? SecretRefs,
+    IReadOnlyDictionary<string, string>? SecretValues = null);

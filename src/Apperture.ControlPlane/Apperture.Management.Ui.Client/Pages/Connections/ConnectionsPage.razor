@@ -9,7 +9,7 @@
 <div class="p-4">
     <PageHeader Title="Connections" Subtitle="Manage connection instances and browse connector definitions (connection shape only — not executable client operations).">
         <Toolbar>
-            @if (_capabilities?.CanViewConnections == true)
+            @if (_capabilities?.CanViewConnections == true && _capabilities?.CanCreateConnections == true)
             {
                 <a href="/connections/new" class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface">Add connection</a>
                 <button type="button"
@@ -151,7 +151,7 @@
         }
         catch
         {
-            _capabilities = new OperatorCapabilitiesDto(false, false, false, false, false, false, false, false, false, false, false, false, false, false, false);
+            _capabilities = new OperatorCapabilitiesDto(false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false);
         }
         _capabilitiesLoaded = true;
 

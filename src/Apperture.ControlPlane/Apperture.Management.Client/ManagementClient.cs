@@ -250,6 +250,25 @@ public sealed class ManagementClient : IManagementClient
         return created ?? throw new InvalidOperationException("Server returned no connection body.");
     }
 
+    public async Task<ConnectionDto> UpdateConnectionAsync(string id, UpdateConnectionRequest request, CancellationToken cancellationToken = default)
+    {
+        var response = await _http.PatchAsJsonAsync(
+            $"connections/{Uri.EscapeDataString(id)}",
+            request,
+            cancellationToken).ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+        var updated = await response.Content.ReadFromJsonAsync<ConnectionDto>(ApiJsonReadOptions, cancellationToken).ConfigureAwait(false);
+        return updated ?? throw new InvalidOperationException("Server returned no connection body.");
+    }
+
+    public async Task RetireConnectionAsync(string id, CancellationToken cancellationToken = default)
+    {
+        var response = await _http.DeleteAsync(
+            $"connections/{Uri.EscapeDataString(id)}",
+            cancellationToken).ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+    }
+
     public async Task<ConnectionDto> TestConnectionAsync(string id, CancellationToken cancellationToken = default)
     {
         var response = await _http.PostAsync(
@@ -989,7 +1008,7 @@ public sealed class ManagementClient : IManagementClient
         using var response = await _http.GetAsync("control/capabilities", cancellationToken).ConfigureAwait(false);
         response.EnsureSuccessStatusCode();
         var dto = await response.Content.ReadFromJsonAsync<OperatorCapabilitiesDto>(ApiJsonReadOptions, cancellationToken).ConfigureAwait(false);
-        return dto ?? new OperatorCapabilitiesDto(false, false, false, false, false, false, false, false, false, false, false, false, false, false, false);
+        return dto ?? new OperatorCapabilitiesDto(false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false);
     }
 
     public async Task<StartOperationResult> StartOperationAsync(
