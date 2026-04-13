@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Proof.CampusNexus.StudentReview</RootNamespace>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Logging" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\Apperture.Bootstrap\Apperture.Bootstrap\Apperture.Bootstrap.csproj" />
+    <ProjectReference Include="..\Proof.CampusNexus.StudentReview.Persistence\Proof.CampusNexus.StudentReview.Persistence.csproj" />
+    <ProjectReference Include="..\..\Apperture.Connectors\Apperture.Connectors.CampusNexus\Apperture.Connectors.CampusNexus.csproj" />
+    <ProjectReference Include="..\..\Apperture.Core\Apperture.Core.Application\Apperture.Core.Application.csproj" />
+    <ProjectReference Include="..\..\Apperture.ModuleSdk\Apperture.ModuleSdk.Abstractions\Apperture.ModuleSdk.Abstractions.csproj" />
+    <ProjectReference Include="..\..\Apperture.Shared\Apperture.Shared.Kernel\Apperture.Shared.Kernel.csproj" />
+  </ItemGroup>
+</Project>

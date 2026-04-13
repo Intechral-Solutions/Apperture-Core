@@ -34,6 +34,8 @@
     <Project Path="src/Apperture.ControlPlane/Apperture.Management.Ui.Shared/Apperture.Management.Ui.Shared.csproj" />
   </Folder>
   <Folder Name="/src/Apperture.Modules/">
+    <Project Path="src/Apperture.Modules/Proof.CampusNexus.StudentReview.Persistence/Proof.CampusNexus.StudentReview.Persistence.csproj" />
+    <Project Path="src/Apperture.Modules/Proof.CampusNexus.StudentReview/Proof.CampusNexus.StudentReview.csproj" />
     <Project Path="src/Apperture.Modules/Unisa.CampusNexus.PaymentPlans.Persistence/Unisa.CampusNexus.PaymentPlans.Persistence.csproj" />
     <Project Path="src/Apperture.Modules/Unisa.CampusNexus.PaymentPlans/Unisa.CampusNexus.PaymentPlans.csproj" />
   </Folder>

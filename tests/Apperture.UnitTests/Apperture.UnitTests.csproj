@@ -37,6 +37,7 @@
     <ProjectReference Include="..\..\src\Apperture.ConnectorResolution\Apperture.ConnectorResolution.csproj" />
     <ProjectReference Include="..\..\src\Apperture.Connectors\Apperture.Connectors.CampusNexus\Apperture.Connectors.CampusNexus.csproj" />
     <ProjectReference Include="..\..\src\Apperture.Connectors\Apperture.Connectors.Sftp\Apperture.Connectors.Sftp.csproj" />
+    <ProjectReference Include="..\..\src\Apperture.Modules\Proof.CampusNexus.StudentReview\Proof.CampusNexus.StudentReview.csproj" />
     <ProjectReference Include="..\..\src\Apperture.Modules\Sample.HelloWorld\Sample.HelloWorld.Module\Sample.HelloWorld.Module.csproj" />
     <ProjectReference Include="..\..\src\Apperture.RuntimeHost\Apperture.RuntimeHost.Windows\Apperture.RuntimeHost.Windows.WorkerHost\Apperture.RuntimeHost.Windows.WorkerHost.csproj" />
   </ItemGroup>

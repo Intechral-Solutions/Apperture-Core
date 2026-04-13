@@ -18,6 +18,7 @@ using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Proof.CampusNexus.StudentReview.Persistence;
 using Sample.HelloWorld;
 using Unisa.CampusNexus.PaymentPlans.Persistence;
 using Xunit;
@@ -25,7 +26,7 @@ using Xunit;
 namespace Apperture.IntegrationTests;
 
 /// <summary>
-/// Epic 73 / Epic 74 preflight: SQL-backed evidence for platform + module migrations, connector factory registration,
+/// Epic 73 / Epic 74: SQL-backed evidence for platform + module migrations (including Proof StudentReview), connector factory registration,
 /// and schedule-dispatch DI against a migrated database. Requires the same SQL setup as other integration tests.
 /// </summary>
 [Collection("SqlServerEpic73Seams")]
@@ -44,7 +45,7 @@ public sealed class Epic73SqlSeamsIntegrationTests
     }
 
     [Fact]
-    public async Task Platform_and_Unisa_module_migrations_apply_with_separate_history_tables()
+    public async Task Platform_Unisa_and_Proof_module_migrations_apply_with_separate_history_tables()
     {
         var connectionString = RequireConnectionString();
         SqlServerTestConfiguration.EnsureTestDatabaseExists(connectionString);
@@ -71,6 +72,19 @@ public sealed class Epic73SqlSeamsIntegrationTests
         {
             await unisa.Database.MigrateAsync();
             (await unisa.Database.GetPendingMigrationsAsync()).Should().BeEmpty();
+        }
+
+        var proofOptions = new DbContextOptionsBuilder<ProofStudentReviewDbContext>()
+            .ConfigureWarnings(w => w.Ignore(RelationalEventId.PendingModelChangesWarning))
+            .UseSqlServer(
+                connectionString,
+                sql => sql.MigrationsHistoryTable("__EFMigrationsHistory_ProofStudentReview"))
+            .Options;
+
+        await using (var proof = new ProofStudentReviewDbContext(proofOptions))
+        {
+            await proof.Database.MigrateAsync();
+            (await proof.Database.GetPendingMigrationsAsync()).Should().BeEmpty();
         }
     }
 

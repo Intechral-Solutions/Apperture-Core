@@ -19,6 +19,7 @@
     <ProjectReference Include="..\..\..\Apperture.ModuleSdk\Apperture.ModuleSdk\Apperture.ModuleSdk.csproj" />
     <ProjectReference Include="..\..\..\Apperture.Modules\Sample.HelloWorld\Sample.HelloWorld.Module\Sample.HelloWorld.Module.csproj" />
     <ProjectReference Include="..\..\..\Apperture.Modules\Unisa.CampusNexus.PaymentPlans\Unisa.CampusNexus.PaymentPlans.csproj" />
+    <ProjectReference Include="..\..\..\Apperture.Modules\Proof.CampusNexus.StudentReview\Proof.CampusNexus.StudentReview.csproj" />
     <ProjectReference Include="..\Apperture.RuntimeHost.Windows.ModuleHost\Apperture.RuntimeHost.Windows.ModuleHost.csproj" />
   </ItemGroup>
 </Project>

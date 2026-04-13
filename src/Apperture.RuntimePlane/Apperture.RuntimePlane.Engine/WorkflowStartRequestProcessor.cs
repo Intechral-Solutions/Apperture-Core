@@ -254,7 +254,10 @@ WHERE RunId = {runId} AND (
                 // New run, resume, and stale reclaim all re-enter here; definition must be executable.
                 // Within this invocation, steps execute without re-resolution until terminal/park/lease loss.
                 var definition = await ResolveDefinitionOrThrowAsync(request.WorkflowDefinitionId, cancellationToken);
-                var parameters = DeserializeParameters(request.ParametersJson);
+                var parameters = MergeWorkflowStepParameters(
+                    DeserializeParameters(request.ParametersJson),
+                    run.Id,
+                    instance.Id);
 
                 var startIndex = 0;
                 if (!string.IsNullOrWhiteSpace(instance.CurrentStepName))
@@ -670,6 +673,27 @@ WHERE RunId = {runId} AND (
             return null;
 
         return raw.ToDictionary(kvp => kvp.Key, kvp => (object?)kvp.Value);
+    }
+
+    /// <summary>
+    /// Merges user workflow parameters with stable execution keys for step handlers (run / instance correlation).
+    /// System keys overwrite user-supplied values with the same name to prevent spoofing.
+    /// </summary>
+    private static IReadOnlyDictionary<string, object?> MergeWorkflowStepParameters(
+        IReadOnlyDictionary<string, object?>? userParams,
+        string runId,
+        string workflowInstanceId)
+    {
+        var d = new Dictionary<string, object?>(StringComparer.Ordinal);
+        if (userParams is not null)
+        {
+            foreach (var kv in userParams)
+                d[kv.Key] = kv.Value;
+        }
+
+        d["__appertureRunId"] = runId;
+        d["__appertureWorkflowInstanceId"] = workflowInstanceId;
+        return d;
     }
 
     private static string Truncate(string? s, int maxLen)

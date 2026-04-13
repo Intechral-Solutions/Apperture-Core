@@ -15,3 +15,4 @@ Architecture decision records (ADRs) live in [docs/02-decisions/](../../docs/02-
 | [ADR-0028](../../docs/02-decisions/ADR-0028-integration-canonical-deployment-unit.md) | Integration as canonical deployment, binding, and scheduling unit (Epic 54) |
 | [Epic 35](../../docs/02-decisions/Epic35-Run-Inspection-Forensics.md) | Run inspection and execution forensics (`ForensicContext`, origin inference, schedule convention, UI cross-nav) |
 | [Epic 73](../../docs/02-decisions/Epic73-execution-hot-path-and-host-roles.md) | Execution hot path, host roles, runtime boundary (SQL dispatch, WorkerHost vs SchedulerHost stub, module DbContext) |
+| [Epic 74](../../docs/02-decisions/Epic74-CampusNexus-Student-Proof-Integration.md) | Proof module: CNS OData student sync, module-owned persistence, integration-scoped slots, manual/schedule workflow path |

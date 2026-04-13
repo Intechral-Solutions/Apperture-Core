@@ -25,5 +25,6 @@
     <ProjectReference Include="..\..\Apperture.RuntimePlane\Apperture.RuntimePlane.DTFx\Apperture.RuntimePlane.DTFx.csproj" />
     <ProjectReference Include="..\..\Apperture.Modules\Sample.HelloWorld\Sample.HelloWorld.Module\Sample.HelloWorld.Module.csproj" />
     <ProjectReference Include="..\..\Apperture.Modules\Unisa.CampusNexus.PaymentPlans\Unisa.CampusNexus.PaymentPlans.csproj" />
+    <ProjectReference Include="..\..\Apperture.Modules\Proof.CampusNexus.StudentReview\Proof.CampusNexus.StudentReview.csproj" />
   </ItemGroup>
 </Project>
