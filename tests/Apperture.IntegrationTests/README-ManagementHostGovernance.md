@@ -17,6 +17,22 @@ This folder exercises the **real** [Apperture.Management.Host](../../src/Appertu
 
 **CI:** [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml) starts SQL Server and a controlled SFTP container, waits for ports (`1433`, `2222`), sets `APPERTURE_TEST_SQL` and `APPERTURE_TEST_SFTP_*` variables, then runs the full integration project. This includes Epic 59A SFTP verification proof tests.
 
+## Epic 73 / Epic 74 preflight — `Epic73SqlSeamsIntegrationTests`
+
+These tests provide **SQL-backed evidence** for the post–Epic 73 seams: platform EF migrations, UNISA module migrations (separate history table), connector `IConnectorClientFactoryContributor` registration end-to-end, and `IScheduleDispatchRunner` resolution against a migrated database (same worker dispatch stack as `WorkerHostStartupDiTests`, but on real SQL Server).
+
+**Requirements:** Same as other `SqlServerTestConfiguration` tests: `MSSQL_SA_PASSWORD` and a reachable server (default `localhost,1433`), optional repo-root `.env`.
+
+**Run only this suite:**
+
+```powershell
+$env:MSSQL_SA_PASSWORD = "YourStrong!Pass"
+$env:MSSQL_TEST_SERVER = "127.0.0.1,1433"
+dotnet test tests/Apperture.IntegrationTests/Apperture.IntegrationTests.csproj --filter "FullyQualifiedName~Epic73SqlSeamsIntegrationTests"
+```
+
+Greenfield migration ownership for hosts is documented in [Epic73 ADR — Greenfield database](../../docs/02-decisions/Epic73-execution-hot-path-and-host-roles.md#greenfield-database-who-runs-which-migration-operational).
+
 ## Running tests locally
 
 **Governance suite only:**

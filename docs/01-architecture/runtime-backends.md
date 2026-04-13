@@ -2,6 +2,8 @@
 
 See [ADR-0003](../02-decisions/ADR-0003-runtime-portability.md) and [.ai/playbooks/runtime-portability.md](../../.ai/playbooks/runtime-portability.md).
 
+**Today vs adapters:** The on-prem worker **hot path** is SQL enqueue → worker claim → **inline** execution (`IWorkflowExecutor`), not DTFx orchestration. The sections below describe the **portability adapters** (DTFx and Durable Functions) that map the portable workflow model when those backends are used. See [Epic 73 ADR](../02-decisions/Epic73-execution-hot-path-and-host-roles.md).
+
 ## On-prem: DTFx
 
 - Durable Task Framework

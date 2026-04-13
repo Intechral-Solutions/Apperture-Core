@@ -12,7 +12,7 @@
 | [runtime-connection-resolution.md](runtime-connection-resolution.md) | Runtime slot-bound resolution; binding → connection → material → factory → client; secret boundary |
 | [runtime-step-execution.md](runtime-step-execution.md) | Step execution context; slot-bound dependency resolution in workflow steps; disposal and failure semantics |
 | [control-plane.md](control-plane.md) | Management API, UI, responsibilities |
-| [instance-plane.md](instance-plane.md) | Worker, DTFx, one module per process |
+| [instance-plane.md](instance-plane.md) | Worker, SQL enqueue/claim/inline execution today; DTFx as future adapter; one module per process |
 | [tenancy-model.md](tenancy-model.md) | Single-tenant Instance, auditability |
 | [federated-instance-relationships.md](federated-instance-relationships.md) | Federated cross-instance trust, scoped delegation, and auditable management boundary |
 | [durable-workflows.md](durable-workflows.md) | Portable workflow model, persistence |

@@ -52,3 +52,19 @@ The repository mixed **aspirational runtime contracts** (`IWorkflowStarter`, `IW
 ### Neutral
 
 - `IWorkflowRuntime` and DTFx/Durable Functions adapters remain **future** work; Management may still register DTFx-related services for non-hot-path scenarios.
+
+---
+
+## Greenfield database: who runs which migration (operational)
+
+This section is the **explicit startup contract** for an empty SQL Server database (Epic 73 module split + platform migrations).
+
+| Responsibility | Host / process | Mechanism |
+|----------------|----------------|-----------|
+| **Platform schema** (`AppertureDbContext`, default `__EFMigrationsHistory`) | **Management.Host** (or any process that opts in) | `AddApperturePersistenceMigrationsOnStartup()` runs `PersistenceMigrationHostedService` on startup. |
+| **Module-owned schema** (e.g. UNISA `UnisaPaymentPlansDbContext`, `__EFMigrationsHistory_UnisaPaymentPlans`) | **Management.Host** today | `AddUnisaCampusNexusPaymentPlansIntegration(..., applyModulePersistenceMigrationsOnStartup: true)` registers `UnisaPaymentPlansMigrationHostedService`. |
+| **WorkerHost** | Does **not** call `AddApperturePersistenceMigrationsOnStartup` and uses `applyModulePersistenceMigrationsOnStartup: false` for UNISA | Expects the database to **already** match the applied platform + module migrations. |
+
+**Required order (greenfield):** Start **Management.Host** (or another migrator) **at least once** before or before relying on WorkerHost against that database, so platform and module `MigrateAsync` complete. If WorkerHost starts first against an empty database, platform tables will be missing and startup or runtime SQL will fail; module tables needed by module code (e.g. UNISA repositories) will be missing until module migrations have run.
+
+**CI / local SQL proof:** With `MSSQL_SA_PASSWORD` set and SQL Server reachable, run `Epic73SqlSeamsIntegrationTests` (see `tests/Apperture.IntegrationTests/README-ManagementHostGovernance.md`) to exercise platform + module migrations, connector factory registration against SQL, and schedule-dispatch DI on a migrated database.

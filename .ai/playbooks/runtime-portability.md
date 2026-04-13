@@ -1,5 +1,7 @@
 # Runtime Portability (DTFx vs Durable Functions)
 
+**Current worker reality:** On-prem execution today uses **SQL-backed dispatch and inline step execution** (`IWorkflowExecutor`), not DTFx orchestration. DTFx and Durable Functions remain the **target adapters** for portable orchestration. See [Epic 73 ADR](../../docs/02-decisions/Epic73-execution-hot-path-and-host-roles.md).
+
 ## Sequencing: on-prem first, then Azure
 
 Azure hosting is built **after** the Windows/on-prem runtime is established and working. The DTFx path must be solid end-to-end before implementing the Durable Functions adapter. Implement clean interfaces and encapsulation from the start so the cloud adapter can plug in correctly without refactoring.
