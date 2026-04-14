@@ -100,6 +100,33 @@ public sealed class ConnectionSecretMaterialProvisioner
     private static string BuildSecretName(ConnectionId connectionId, string fieldKey) =>
         $"connection:{connectionId.Value}:{fieldKey}";
 
+    /// <summary>
+    /// Maps request dictionary keys to canonical <see cref="ConnectionFieldDescriptor.Key"/> values (case-insensitive).
+    /// JSON clients often emit camelCase keys; connector factories expect declared casing (e.g. ApiKey, BaseUrl).
+    /// </summary>
+    public static Dictionary<string, string> NormalizeToDeclaredFieldKeys(
+        IReadOnlyDictionary<string, string> values,
+        ConnectorDefinition definition)
+    {
+        var canonicalByInsensitive = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var f in definition.ConnectionFields)
+            canonicalByInsensitive[f.Key] = f.Key;
+
+        var result = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var kv in values)
+        {
+            if (!canonicalByInsensitive.TryGetValue(kv.Key, out var canonical))
+                throw new InvalidOperationException($"Unknown connection field key '{kv.Key}' for connector {definition.Id.Value}.");
+
+            if (result.ContainsKey(canonical))
+                throw new InvalidOperationException($"Duplicate connection field '{canonical}' (key casing conflict).");
+
+            result[canonical] = kv.Value;
+        }
+
+        return result;
+    }
+
     private static void ThrowIfInvalidSecretKeys(ConnectorDefinition definition, IReadOnlyDictionary<string, string> secretValues)
     {
         var secretFields = definition.ConnectionFields.Where(f => f.IsSecret).Select(f => f.Key).ToHashSet(StringComparer.Ordinal);

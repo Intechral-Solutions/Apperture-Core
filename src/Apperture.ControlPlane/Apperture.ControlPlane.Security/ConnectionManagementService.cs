@@ -102,29 +102,36 @@ public sealed class ConnectionManagementService : IConnectionManagementService
 
         var id = new ConnectionId(Guid.NewGuid().ToString("N")[..24]);
 
+        var normalizedConfig = ConnectionSecretMaterialProvisioner.NormalizeToDeclaredFieldKeys(request.Config, def);
+        var normalizedSecretRefs = ConnectionSecretMaterialProvisioner.NormalizeToDeclaredFieldKeys(request.SecretRefs, def);
+        IReadOnlyDictionary<string, string>? normalizedSecretValues = null;
+        if (request.SecretValues is { Count: > 0 })
+            normalizedSecretValues = ConnectionSecretMaterialProvisioner.NormalizeToDeclaredFieldKeys(request.SecretValues, def);
+
         var mergedSecretRefs = new Dictionary<string, string>(StringComparer.Ordinal);
-        foreach (var kv in request.SecretRefs)
+        foreach (var kv in normalizedSecretRefs)
         {
             ValidateIncomingSecretRef(def, kv.Key, kv.Value);
             mergedSecretRefs[kv.Key] = kv.Value;
         }
 
-        if (request.SecretValues is { Count: > 0 })
+        if (normalizedSecretValues is { Count: > 0 })
         {
             var provisioned = await _secretProvisioner
-                .ProvisionForCreateAsync(id, def, request.SecretValues, cancellationToken)
+                .ProvisionForCreateAsync(id, def, normalizedSecretValues, cancellationToken)
                 .ConfigureAwait(false);
             foreach (var kv in provisioned)
                 mergedSecretRefs[kv.Key] = kv.Value;
         }
 
-        ConnectionSecretMaterialProvisioner.ValidateConnectionMaterial(def, request.Config, mergedSecretRefs);
+        ApplyCampusNexusAuthModeDefault(def, normalizedConfig);
+        ConnectionSecretMaterialProvisioner.ValidateConnectionMaterial(def, normalizedConfig, mergedSecretRefs);
 
         var connection = new Connection(
             id,
             request.ConnectorDefinitionId,
             request.Name,
-            request.Config,
+            normalizedConfig,
             mergedSecretRefs,
             request.ScopeKey,
             request.OwnerId,
@@ -158,26 +165,32 @@ public sealed class ConnectionManagementService : IConnectionManagementService
         var def = _connectorRegistry.Get(existing.ConnectorDefinitionId)
             ?? throw new InvalidOperationException($"Connector definition {existing.ConnectorDefinitionId.Value} not found.");
 
-        var nextConfig = request.Config ?? existing.Config;
+        var nextConfigDict = request.Config is null
+            ? new Dictionary<string, string>(existing.Config, StringComparer.Ordinal)
+            : ConnectionSecretMaterialProvisioner.NormalizeToDeclaredFieldKeys(request.Config, def);
+
         var workingSecretRefs = new Dictionary<string, string>(StringComparer.Ordinal);
-        foreach (var kv in request.SecretRefs ?? existing.SecretRefs)
+        var secretRefsSource = request.SecretRefs ?? existing.SecretRefs;
+        foreach (var kv in ConnectionSecretMaterialProvisioner.NormalizeToDeclaredFieldKeys(secretRefsSource, def))
             workingSecretRefs[kv.Key] = kv.Value;
         foreach (var kv in workingSecretRefs)
             ValidateIncomingSecretRef(def, kv.Key, kv.Value);
 
         if (request.SecretValues is { Count: > 0 })
         {
+            var normalizedSecretValues = ConnectionSecretMaterialProvisioner.NormalizeToDeclaredFieldKeys(request.SecretValues, def);
             await _secretProvisioner
-                .ApplySecretValuesForUpdateAsync(existing.Id, def, request.SecretValues, workingSecretRefs, cancellationToken)
+                .ApplySecretValuesForUpdateAsync(existing.Id, def, normalizedSecretValues, workingSecretRefs, cancellationToken)
                 .ConfigureAwait(false);
         }
 
-        ConnectionSecretMaterialProvisioner.ValidateConnectionMaterial(def, nextConfig, workingSecretRefs);
+        ApplyCampusNexusAuthModeDefault(def, nextConfigDict);
+        ConnectionSecretMaterialProvisioner.ValidateConnectionMaterial(def, nextConfigDict, workingSecretRefs);
 
         var updated = existing with
         {
             Name = request.Name ?? existing.Name,
-            Config = nextConfig,
+            Config = nextConfigDict,
             SecretRefs = workingSecretRefs
         };
 
@@ -242,9 +255,20 @@ public sealed class ConnectionManagementService : IConnectionManagementService
         return updated;
     }
 
+    /// <summary>
+    /// Operators often leave <c>AuthMode</c> blank when using an API key; runtime factory defaults to ApiKey semantics when mode is ApiKey.
+    /// </summary>
+    private static void ApplyCampusNexusAuthModeDefault(ConnectorDefinition def, Dictionary<string, string> config)
+    {
+        if (!string.Equals(def.Id.Value, WellKnownConnectorDefinitionIds.PlatformCampusNexus.Value, StringComparison.Ordinal))
+            return;
+        if (!config.TryGetValue("AuthMode", out var mode) || string.IsNullOrWhiteSpace(mode))
+            config["AuthMode"] = "ApiKey";
+    }
+
     private static void ValidateIncomingSecretRef(ConnectorDefinition def, string key, string value)
     {
-        var field = def.ConnectionFields.FirstOrDefault(f => string.Equals(f.Key, key, StringComparison.Ordinal));
+        var field = def.ConnectionFields.FirstOrDefault(f => string.Equals(f.Key, key, StringComparison.OrdinalIgnoreCase));
         if (field is null || !field.IsSecret)
             return;
         if (!Guid.TryParse(value, out _))

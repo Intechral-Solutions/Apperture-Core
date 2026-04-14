@@ -86,22 +86,26 @@ public sealed class SqlEntraInstanceRegistrationRepository : IEntraInstanceRegis
 
     public async Task SetActiveAsync(string id, CancellationToken cancellationToken = default)
     {
-        await using var tx = await _db.Database.BeginTransactionAsync(cancellationToken);
-        var rows = await _db.EntraInstanceRegistrations.ToListAsync(cancellationToken);
-        var target = rows.FirstOrDefault(x => x.Id == id)
-            ?? throw new InvalidOperationException($"Entra registration '{id}' was not found.");
-        if (!target.Enabled)
-            throw new InvalidOperationException("Cannot activate a disabled registration.");
-
-        var now = DateTimeOffset.UtcNow;
-        foreach (var r in rows)
+        var strategy = _db.Database.CreateExecutionStrategy();
+        await strategy.ExecuteAsync(async () =>
         {
-            r.IsActive = r.Id == id;
-            r.UpdatedUtc = now;
-        }
+            await using var tx = await _db.Database.BeginTransactionAsync(cancellationToken);
+            var rows = await _db.EntraInstanceRegistrations.ToListAsync(cancellationToken);
+            var target = rows.FirstOrDefault(x => x.Id == id)
+                ?? throw new InvalidOperationException($"Entra registration '{id}' was not found.");
+            if (!target.Enabled)
+                throw new InvalidOperationException("Cannot activate a disabled registration.");
 
-        await _db.SaveChangesAsync(cancellationToken);
-        await tx.CommitAsync(cancellationToken);
+            var now = DateTimeOffset.UtcNow;
+            foreach (var r in rows)
+            {
+                r.IsActive = r.Id == id;
+                r.UpdatedUtc = now;
+            }
+
+            await _db.SaveChangesAsync(cancellationToken);
+            await tx.CommitAsync(cancellationToken);
+        });
     }
 
     private static EntraInstanceRegistration ToDomain(EntraInstanceRegistrationEntity e) =>

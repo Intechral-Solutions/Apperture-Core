@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Apperture.Core.Domain.Workflow;
 using Apperture.RuntimePlane.Abstractions;
 
@@ -17,6 +18,17 @@ public sealed class ManagementClient : IManagementClient
     {
         PropertyNameCaseInsensitive = true,
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+    };
+
+    /// <summary>
+    /// Serialize request DTO property names as camelCase; keep dictionary keys literal so connector field keys are not rewritten.
+    /// </summary>
+    private static readonly JsonSerializerOptions ApiJsonWriteOptions = new()
+    {
+        PropertyNameCaseInsensitive = true,
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        DictionaryKeyPolicy = null,
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
     };
 
     private readonly HttpClient _http;
@@ -244,8 +256,8 @@ public sealed class ManagementClient : IManagementClient
 
     public async Task<ConnectionDto> CreateConnectionAsync(CreateConnectionRequest request, CancellationToken cancellationToken = default)
     {
-        var response = await _http.PostAsJsonAsync("connections", request, cancellationToken).ConfigureAwait(false);
-        response.EnsureSuccessStatusCode();
+        var response = await _http.PostAsJsonAsync("connections", request, ApiJsonWriteOptions, cancellationToken).ConfigureAwait(false);
+        await EnsureSuccessOrThrowAsync(response, cancellationToken).ConfigureAwait(false);
         var created = await response.Content.ReadFromJsonAsync<ConnectionDto>(ApiJsonReadOptions, cancellationToken).ConfigureAwait(false);
         return created ?? throw new InvalidOperationException("Server returned no connection body.");
     }
@@ -255,8 +267,9 @@ public sealed class ManagementClient : IManagementClient
         var response = await _http.PatchAsJsonAsync(
             $"connections/{Uri.EscapeDataString(id)}",
             request,
+            ApiJsonWriteOptions,
             cancellationToken).ConfigureAwait(false);
-        response.EnsureSuccessStatusCode();
+        await EnsureSuccessOrThrowAsync(response, cancellationToken).ConfigureAwait(false);
         var updated = await response.Content.ReadFromJsonAsync<ConnectionDto>(ApiJsonReadOptions, cancellationToken).ConfigureAwait(false);
         return updated ?? throw new InvalidOperationException("Server returned no connection body.");
     }
@@ -266,7 +279,7 @@ public sealed class ManagementClient : IManagementClient
         var response = await _http.DeleteAsync(
             $"connections/{Uri.EscapeDataString(id)}",
             cancellationToken).ConfigureAwait(false);
-        response.EnsureSuccessStatusCode();
+        await EnsureSuccessOrThrowAsync(response, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<ConnectionDto> TestConnectionAsync(string id, CancellationToken cancellationToken = default)
@@ -275,7 +288,7 @@ public sealed class ManagementClient : IManagementClient
             $"connections/{Uri.EscapeDataString(id)}/test-connect",
             content: null,
             cancellationToken).ConfigureAwait(false);
-        response.EnsureSuccessStatusCode();
+        await EnsureSuccessOrThrowAsync(response, cancellationToken).ConfigureAwait(false);
         var result = await response.Content.ReadFromJsonAsync<ConnectionDto>(ApiJsonReadOptions, cancellationToken).ConfigureAwait(false);
         return result ?? throw new InvalidOperationException("Server returned no connection body.");
     }
@@ -1241,5 +1254,133 @@ public sealed class ManagementClient : IManagementClient
         }
 
         response.EnsureSuccessStatusCode();
+    }
+
+    private static async Task EnsureSuccessOrThrowAsync(HttpResponseMessage response, CancellationToken cancellationToken)
+    {
+        if (response.IsSuccessStatusCode)
+            return;
+
+        var detail = await TryReadManagementApiErrorAsync(response, cancellationToken).ConfigureAwait(false);
+        var message = string.IsNullOrWhiteSpace(detail)
+            ? $"{(int)response.StatusCode} {response.ReasonPhrase}"
+            : detail;
+        throw new HttpRequestException(message, null, response.StatusCode);
+    }
+
+    private static async Task<string?> TryReadManagementApiErrorAsync(HttpResponseMessage response, CancellationToken cancellationToken)
+    {
+        string? raw;
+        try
+        {
+            raw = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch
+        {
+            return null;
+        }
+
+        return ParseManagementApiErrorPayload(raw);
+    }
+
+    /// <summary>
+    /// Extracts a human-readable message from API error JSON (anonymous <c>{ error }</c>, ProblemDetails, validation <c>errors</c>).
+    /// Uses string-based parsing so Blazor WASM and case/culture variations behave consistently.
+    /// </summary>
+    private static string? ParseManagementApiErrorPayload(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+            return null;
+
+        var trimmed = raw.TrimStart();
+        if (trimmed.Length == 0)
+            return null;
+        if (trimmed[0] != '{' && trimmed[0] != '[')
+            return raw.Length > 512 ? raw[..512] + "…" : raw;
+
+        try
+        {
+            using var doc = JsonDocument.Parse(raw);
+            var root = doc.RootElement;
+            if (root.ValueKind != JsonValueKind.Object)
+                return raw.Length > 512 ? raw[..512] + "…" : raw;
+
+            if (TryGetPropertyIgnoreCase(root, "error", out var errEl) && errEl.ValueKind == JsonValueKind.String)
+            {
+                var s = errEl.GetString();
+                if (!string.IsNullOrWhiteSpace(s))
+                    return s;
+            }
+
+            string? title = null;
+            if (TryGetPropertyIgnoreCase(root, "title", out var titleEl) && titleEl.ValueKind == JsonValueKind.String)
+                title = titleEl.GetString();
+
+            var details = FormatValidationErrorsIgnoreCase(root);
+            if (!string.IsNullOrWhiteSpace(details))
+                return string.IsNullOrWhiteSpace(title) ? details : $"{title}: {details}";
+
+            if (!string.IsNullOrWhiteSpace(title))
+                return title;
+
+            if (TryGetPropertyIgnoreCase(root, "detail", out var detailEl) && detailEl.ValueKind == JsonValueKind.String)
+            {
+                var d = detailEl.GetString();
+                if (!string.IsNullOrWhiteSpace(d))
+                    return d;
+            }
+        }
+        catch (JsonException)
+        {
+            return raw.Length > 512 ? raw[..512] + "…" : raw;
+        }
+
+        return raw.Length > 512 ? raw[..512] + "…" : raw;
+    }
+
+    private static bool TryGetPropertyIgnoreCase(JsonElement obj, string name, out JsonElement value)
+    {
+        foreach (var p in obj.EnumerateObject())
+        {
+            if (string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase))
+            {
+                value = p.Value;
+                return true;
+            }
+        }
+
+        value = default;
+        return false;
+    }
+
+    private static string? FormatValidationErrorsIgnoreCase(JsonElement root)
+    {
+        if (!TryGetPropertyIgnoreCase(root, "errors", out var errors) || errors.ValueKind != JsonValueKind.Object)
+            return null;
+
+        var parts = new List<string>();
+        foreach (var field in errors.EnumerateObject())
+        {
+            if (field.Value.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var item in field.Value.EnumerateArray())
+                {
+                    if (item.ValueKind == JsonValueKind.String)
+                    {
+                        var msg = item.GetString();
+                        if (!string.IsNullOrWhiteSpace(msg))
+                            parts.Add($"{field.Name}: {msg}");
+                    }
+                }
+            }
+            else if (field.Value.ValueKind == JsonValueKind.String)
+            {
+                var msg = field.Value.GetString();
+                if (!string.IsNullOrWhiteSpace(msg))
+                    parts.Add($"{field.Name}: {msg}");
+            }
+        }
+
+        return parts.Count == 0 ? null : string.Join("; ", parts);
     }
 }
