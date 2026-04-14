@@ -19,13 +19,13 @@
 .PARAMETER NoBrowser
     Dotnet mode only: bind http://localhost:9001 without opening a browser.
 .EXAMPLE
-    .\restart-ui-container.ps1
+    .\restart-ui.ps1
 .EXAMPLE
-    .\restart-ui-container.ps1 -ComposeService ui
+    .\restart-ui.ps1 -ComposeService ui
 .EXAMPLE
-    .\restart-ui-container.ps1 -Dotnet
+    .\restart-ui.ps1 -Dotnet
 .EXAMPLE
-    .\restart-ui-container.ps1 -Dotnet -NoBrowser
+    .\restart-ui.ps1 -Dotnet -NoBrowser
 #>
 [CmdletBinding()]
 param(
