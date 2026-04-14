@@ -10,9 +10,11 @@ public static class CampusNexusConnectorServiceCollectionExtensions
     /// </summary>
     public static IServiceCollection AddAppertureCampusNexusConnector(this IServiceCollection services)
     {
-        services.AddSingleton<IConnectorClientFactory<ICampusNexusApiClient>, CampusNexusApiConnectorClientFactory>();
+        services.AddSingleton<CampusNexusApiConnectorClientFactory>();
+        services.AddSingleton<IConnectorClientFactory<ICampusNexusApiClient>>(sp => sp.GetRequiredService<CampusNexusApiConnectorClientFactory>());
         services.AddSingleton<IConnectorClientFactoryContributor, CampusNexusConnectorClientFactoryContributor>();
         services.AddSingleton<IConnectorDefinitionContributor, CampusNexusConnectorDefinitionContributor>();
+        services.AddScoped<IConnectionVerifier, CampusNexusConnectionVerifier>();
         return services;
     }
 }

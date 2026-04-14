@@ -350,10 +350,15 @@
         try
         {
             _connection = await Client.TestConnectionAsync(ConnectionId);
+            var summary = string.IsNullOrWhiteSpace(_connection?.LastVerificationSummary)
+                ? "Test completed."
+                : _connection!.LastVerificationSummary;
+            Toasts.Show(ToastSeverity.Success, summary);
         }
         catch (HttpRequestException ex)
         {
             _error = ex.Message;
+            Toasts.Show(ToastSeverity.Error, ex.Message);
         }
         finally
         {

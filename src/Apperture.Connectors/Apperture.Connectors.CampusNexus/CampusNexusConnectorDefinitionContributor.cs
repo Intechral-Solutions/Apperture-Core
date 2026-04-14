@@ -23,6 +23,7 @@ public sealed class CampusNexusConnectorDefinitionContributor : IConnectorDefini
         {
             Description =
                 "HTTP API for Ellucian Campus Nexus (commands and OData). Modules consume ICampusNexusApiClient from this connector package; the platform stores connection material and bindings only.",
+            Capabilities = ConnectorCapabilities.SupportsConnectionVerification,
             ConnectionFields =
             [
                 new ConnectionFieldDescriptor(
