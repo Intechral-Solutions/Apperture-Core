@@ -8,6 +8,7 @@
 @inject IOperatorCapabilitiesService Capabilities
 @inject NavigationManager Nav
 @inject IToastService Toasts
+@using Microsoft.AspNetCore.Components.Web
 
 <div class="p-4">
     <PageHeader Title="Add connection" Subtitle="Create a new connection">
@@ -58,12 +59,14 @@
                                                   SecretValues="_secretValues" />
             }
             <div class="flex gap-2 pt-2">
-                <button type="button"
-                        class="rounded bg-body px-3 py-2 text-sm text-surface hover:bg-body/90 disabled:opacity-50"
-                        disabled="@(_saving || string.IsNullOrWhiteSpace(_connectorDefinitionId) || string.IsNullOrWhiteSpace(_connectionName))"
-                        @onclick="CreateAsync">
-                    @(_saving ? "Creating…" : "Create connection")
-                </button>
+                <ActionButton @ref="_createButton"
+                              Variant="ActionButtonVariant.Primary"
+                              DefaultText="Create connection"
+                              ActiveText="Creating…"
+                              SuccessText="Created"
+                              ErrorText="Create failed"
+                              IsInactive="@(!CanCreate)"
+                              OnClick="HandleCreateClick" />
                 <a href="/connections" class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface">Cancel</a>
             </div>
         </div>
@@ -75,6 +78,7 @@
     private bool _capabilitiesLoaded;
     private string? _error;
     private bool _saving;
+    private ActionButton? _createButton;
 
     private IReadOnlyList<ConnectorDefinitionCatalogDto> _connectorDefinitions = Array.Empty<ConnectorDefinitionCatalogDto>();
     private string _connectorDefinitionId = "";
@@ -84,6 +88,10 @@
 
     private ConnectorDefinitionCatalogDto? SelectedDefinition =>
         _connectorDefinitions.FirstOrDefault(d => string.Equals(d.Id, _connectorDefinitionId, StringComparison.Ordinal));
+    private bool CanCreate =>
+        !_saving &&
+        !string.IsNullOrWhiteSpace(_connectorDefinitionId) &&
+        !string.IsNullOrWhiteSpace(_connectionName);
 
     protected override async Task OnInitializedAsync()
     {
@@ -143,6 +151,8 @@
         }
 
         _saving = true;
+        if (_createButton is not null)
+            await _createButton.SetStateAsync(ActionButtonState.Active);
         _error = null;
         try
         {
@@ -156,12 +166,16 @@
                     SecretRefs: new Dictionary<string, string>(),
                     SecretValues: secrets.Count > 0 ? secrets : null));
             Toasts.Show(ToastSeverity.Success, "Connection created.");
+            if (_createButton is not null)
+                await _createButton.SetStateAsync(ActionButtonState.Success);
             Nav.NavigateTo("/connections/" + Uri.EscapeDataString(created.Id));
         }
         catch (HttpRequestException ex)
         {
             _error = ex.Message;
             Toasts.Show(ToastSeverity.Error, ex.Message);
+            if (_createButton is not null)
+                await _createButton.SetStateAsync(ActionButtonState.Error);
         }
         finally
         {
@@ -173,4 +187,6 @@
         field.IsSecret
             ? (_secretValues.TryGetValue(field.Key, out var s) ? s : "")
             : (_configValues.TryGetValue(field.Key, out var c) ? c : "");
+
+    private Task HandleCreateClick(MouseEventArgs _) => CreateAsync();
 }

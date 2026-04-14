@@ -14,7 +14,7 @@ public static class CampusNexusConnectorServiceCollectionExtensions
         services.AddSingleton<IConnectorClientFactory<ICampusNexusApiClient>>(sp => sp.GetRequiredService<CampusNexusApiConnectorClientFactory>());
         services.AddSingleton<IConnectorClientFactoryContributor, CampusNexusConnectorClientFactoryContributor>();
         services.AddSingleton<IConnectorDefinitionContributor, CampusNexusConnectorDefinitionContributor>();
-        services.AddScoped<IConnectionVerifier, CampusNexusConnectionVerifier>();
+        new CampusNexusConnectionVerifierContributor().Register(services);
         return services;
     }
 }

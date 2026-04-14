@@ -42,11 +42,11 @@
 
     private static string ToastClass(ToastSeverity s) => s switch
     {
-        ToastSeverity.Success => "border-s-4 border-s-green-600",
-        ToastSeverity.Info => "border-s-4 border-s-blue-600",
-        ToastSeverity.Warning => "border-s-4 border-s-yellow-600",
-        ToastSeverity.Error => "border-s-4 border-s-red-600",
-        _ => "border-s-4 border-s-slate-500"
+        ToastSeverity.Success => "toast-strip-success",
+        ToastSeverity.Info => "toast-strip-info",
+        ToastSeverity.Warning => "toast-strip-warning",
+        ToastSeverity.Error => "toast-strip-error",
+        _ => "toast-strip-neutral"
     };
 
     public void Dispose() => Toasts.Changed -= OnToastsChanged;

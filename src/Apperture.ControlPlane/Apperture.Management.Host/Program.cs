@@ -44,9 +44,9 @@ builder.Services.AddKnownModules(
     [new HelloWorldModule(), new UnisaCampusNexusPaymentPlansModule(), new ProofCampusNexusStudentReviewModule()]);
 builder.Services.AddAppertureRecovery();
 builder.Services.AddRuntimeSchedulerDispatch();
-builder.Services.AddAppertureConnectorWorkflows();
 builder.Services.AddAppertureCampusNexusConnector();
 builder.Services.AddAppertureSftpConnector();
+builder.Services.AddAppertureConnectorWorkflows();
 builder.Services.AddAppertureIntegrationWorkflows();
 builder.Services.AddAttentionIncidentObservation(builder.Configuration);
 builder.Services.AddUnisaCampusNexusPaymentPlansIntegration(applyModulePersistenceMigrationsOnStartup: true);

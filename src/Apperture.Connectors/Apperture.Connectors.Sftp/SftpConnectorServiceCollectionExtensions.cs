@@ -13,6 +13,7 @@ public static class SftpConnectorServiceCollectionExtensions
         services.AddSingleton<IConnectorClientFactory<ISftpFileClient>, SftpConnectorClientFactory>();
         services.AddSingleton<IConnectorClientFactoryContributor, SftpConnectorClientFactoryContributor>();
         services.AddSingleton<IConnectorDefinitionContributor, SftpConnectorDefinitionContributor>();
+        new SftpConnectionVerifierContributor().Register(services);
         return services;
     }
 }

@@ -1,4 +1,5 @@
 using System.Net.Http;
+using Apperture.Connectors.CampusNexus.Models;
 using Apperture.Core.Application.Connector;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Connector;
@@ -8,7 +9,8 @@ using Apperture.Core.Security.Secrets.Models;
 namespace Apperture.Connectors.CampusNexus;
 
 /// <summary>
-/// Verifies Campus Nexus HTTP connections with a standard GET to the configured API base URL (network, TLS, and auth headers).
+/// Verifies Campus Nexus API connectivity by running a minimal OData read against the campus query API:
+/// top 1 active campus, <c>$select=Id</c>, ensuring a successful HTTP response and valid OData payload.
 /// </summary>
 public sealed class CampusNexusConnectionVerifier : IConnectionVerifier
 {
@@ -42,11 +44,28 @@ public sealed class CampusNexusConnectionVerifier : IConnectionVerifier
         try
         {
             using var api = _factory.Create(connection, material);
-            var (statusCode, summary) = await ((CampusNexusApiClient)api).ProbeRootAsync(cancellationToken).ConfigureAwait(false);
-            if (statusCode >= 500)
-                return new ConnectionVerificationResult(ConnectionVerificationStatus.Failed, at, summary);
+            var apiQuery = new ApiQuery(
+                CampusNexusConnectionVerification.CampusEntitySet,
+                CampusNexusConnectionVerification.ActiveCampusODataQuery);
+
+            IReadOnlyList<CampusIdRow> rows =
+                await api.QueryAsync<CampusIdRow>(apiQuery, cancellationToken).ConfigureAwait(false);
+
+            string summary = rows.Count switch
+            {
+                0 => "Campus query OK: valid OData response; no active campuses matched the filter.",
+                1 => $"Campus query OK: active campus Id={rows[0].Id}.",
+                _ => $"Campus query OK: received {rows.Count} row(s); expected at most one ($top=1).",
+            };
 
             return new ConnectionVerificationResult(ConnectionVerificationStatus.Success, at, summary);
+        }
+        catch (CampusNexusApiException ex)
+        {
+            return new ConnectionVerificationResult(
+                ConnectionVerificationStatus.Failed,
+                at,
+                ex.Message);
         }
         catch (HttpRequestException ex)
         {

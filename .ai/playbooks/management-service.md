@@ -29,3 +29,18 @@
 ## Auth
 
 Management API uses Entra-authenticated users (wiring can be placeholder). Audit management actions by user identity. Modules declare resources/permissions; implement minimal RBAC primitives.
+
+## Connectors and connection verification
+
+Connector packages register definitions via `IConnectorDefinitionContributor` (metadata only). Executable behavior (e.g. test-connect) is registered separately:
+
+1. Set `ConnectorCapabilities.SupportsConnectionVerification` on the `ConnectorDefinition`.
+2. Implement `IConnectionVerifier` for that `ConnectorDefinitionId`.
+3. Implement `IConnectionVerifierContributor` with `Register(IServiceCollection)` calling `AddScoped<IConnectionVerifier, TVerifier>()` and any verifier-only dependencies (e.g. `SftpConnectorClientFactory`).
+4. Invoke `new YourConnectionVerifierContributor().Register(services)` from the package’s `AddApperture…Connector` extension.
+
+Do **not** register verifiers inside `AddAppertureConnectorWorkflows` in ControlPlane.Security; that would couple the security layer to specific connector assemblies.
+
+Hosts should call `AddApperture…Connector` **before** `AddAppertureConnectorWorkflows` so registration order is obvious (DI still resolves all `IConnectionVerifier` registrations regardless of order).
+
+At startup, `ConnectionVerifierRegistrationSanityHostedService` logs a warning if a definition declares `SupportsConnectionVerification` but no `IConnectionVerifier` is registered.

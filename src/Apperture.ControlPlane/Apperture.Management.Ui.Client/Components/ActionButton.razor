@@ -1,0 +1,231 @@
+@using Blazor.Heroicons.Solid
+@using Microsoft.AspNetCore.Components.Web
+@implements IDisposable
+
+<button type="@Type"
+        class="@BuildClass()"
+        title="@Title"
+        aria-label="@AriaLabel"
+        disabled="@IsDisabled"
+        @onclick="HandleClickAsync"
+        @onmouseenter="HandleMouseEnter"
+        @onmouseleave="HandleMouseLeave">
+    @if (CurrentIcon is not null)
+    {
+        <span class="inline-flex h-4 w-4 shrink-0">
+            <DynamicComponent Type="CurrentIcon" Parameters="CurrentIconParameters" />
+        </span>
+    }
+    <span>@CurrentText</span>
+</button>
+
+@code {
+    private const int DefaultResetDelayMs = 3000;
+
+    private CancellationTokenSource? _resetCts;
+    private ActionButtonState _state = ActionButtonState.Default;
+    private bool _hovering;
+    private bool _invokingCancel;
+
+    [Parameter] public string Type { get; set; } = "button";
+    [Parameter] public string? Title { get; set; }
+    [Parameter] public string? AriaLabel { get; set; }
+
+    [Parameter] public ActionButtonVariant Variant { get; set; } = ActionButtonVariant.Primary;
+    [Parameter] public ActionButtonState InitialState { get; set; } = ActionButtonState.Default;
+    [Parameter] public bool IsInactive { get; set; }
+
+    [Parameter] public string DefaultText { get; set; } = "Run";
+    [Parameter] public string ActiveText { get; set; } = "Working…";
+    [Parameter] public string SuccessText { get; set; } = "Done";
+    [Parameter] public string ErrorText { get; set; } = "Failed";
+    [Parameter] public string CancelText { get; set; } = "Cancel";
+
+    [Parameter] public Type? DefaultIcon { get; set; }
+    [Parameter] public Type? ActiveIcon { get; set; } = typeof(ArrowPathIcon);
+    [Parameter] public Type? SuccessIcon { get; set; } = typeof(CheckIcon);
+    [Parameter] public Type? ErrorIcon { get; set; } = typeof(ExclamationTriangleIcon);
+    [Parameter] public Type? CancelIcon { get; set; } = typeof(XMarkIcon);
+
+    [Parameter] public int? SuccessResetDelay { get; set; }
+    [Parameter] public int? ErrorResetDelay { get; set; }
+
+    [Parameter] public string Class { get; set; } = "";
+    [Parameter] public string DefaultClass { get; set; } = "";
+    [Parameter] public string InactiveClass { get; set; } = "";
+    [Parameter] public string ActiveClass { get; set; } = "";
+    [Parameter] public string SuccessClass { get; set; } = "";
+    [Parameter] public string ErrorClass { get; set; } = "";
+    [Parameter] public string CancelHoverClass { get; set; } = "";
+    [Parameter] public string IconClass { get; set; } = "";
+    [Parameter] public string ActiveIconClass { get; set; } = "";
+
+    [Parameter] public EventCallback<MouseEventArgs> OnClick { get; set; }
+    [Parameter] public EventCallback<MouseEventArgs> OnCancel { get; set; }
+
+    private ActionButtonState EffectiveState =>
+        _state == ActionButtonState.Default && IsInactive
+            ? ActionButtonState.Inactive
+            : _state;
+
+    private bool ShowCancelHover => EffectiveState == ActionButtonState.Active && _hovering && OnCancel.HasDelegate;
+
+    private bool IsDisabled =>
+        EffectiveState == ActionButtonState.Inactive ||
+        EffectiveState == ActionButtonState.Active ||
+        EffectiveState == ActionButtonState.Success ||
+        EffectiveState == ActionButtonState.Error;
+
+    private string CurrentText => ShowCancelHover
+        ? CancelText
+        : EffectiveState switch
+        {
+            ActionButtonState.Active => ActiveText,
+            ActionButtonState.Success => SuccessText,
+            ActionButtonState.Error => ErrorText,
+            _ => DefaultText
+        };
+
+    private Type? CurrentIcon => ShowCancelHover
+        ? CancelIcon
+        : EffectiveState switch
+        {
+            ActionButtonState.Active => ActiveIcon,
+            ActionButtonState.Success => SuccessIcon,
+            ActionButtonState.Error => ErrorIcon,
+            _ => DefaultIcon
+        };
+
+    private IDictionary<string, object> CurrentIconParameters =>
+        new Dictionary<string, object>
+        {
+            ["class"] = BuildIconClass()
+        };
+
+    protected override void OnInitialized()
+    {
+        _state = InitialState;
+    }
+
+    public async Task SetStateAsync(ActionButtonState state)
+    {
+        CancelPendingReset();
+        _hovering = false;
+        _state = state;
+        await InvokeAsync(StateHasChanged);
+
+        if (state == ActionButtonState.Success)
+            ScheduleReset(SuccessResetDelay);
+        else if (state == ActionButtonState.Error)
+            ScheduleReset(ErrorResetDelay);
+    }
+
+    private async Task HandleClickAsync(MouseEventArgs e)
+    {
+        if (ShowCancelHover)
+        {
+            if (_invokingCancel)
+                return;
+            try
+            {
+                _invokingCancel = true;
+                if (OnCancel.HasDelegate)
+                    await OnCancel.InvokeAsync(e);
+            }
+            finally
+            {
+                _invokingCancel = false;
+            }
+            return;
+        }
+
+        // Idempotent: only default state may execute OnClick.
+        if (EffectiveState != ActionButtonState.Default)
+            return;
+
+        if (OnClick.HasDelegate)
+            await OnClick.InvokeAsync(e);
+    }
+
+    private void HandleMouseEnter() => _hovering = true;
+    private void HandleMouseLeave() => _hovering = false;
+
+    private void ScheduleReset(int? delayParam)
+    {
+        var delay = ResolveDelay(delayParam);
+        if (delay < 0)
+            return;
+
+        _resetCts = new CancellationTokenSource();
+        var token = _resetCts.Token;
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await Task.Delay(delay, token);
+                await InvokeAsync(async () => await SetStateAsync(ActionButtonState.Default));
+            }
+            catch (OperationCanceledException)
+            {
+                // Ignore cancelled resets.
+            }
+        }, token);
+    }
+
+    private static int ResolveDelay(int? delayParam)
+    {
+        if (!delayParam.HasValue || delayParam.Value == 0)
+            return DefaultResetDelayMs;
+        if (delayParam.Value < 0)
+            return -1;
+        return delayParam.Value;
+    }
+
+    private string BuildClass()
+    {
+        var variantClass = Variant switch
+        {
+            ActionButtonVariant.Secondary => "btn-secondary",
+            ActionButtonVariant.Danger => "btn-danger",
+            _ => "btn-primary"
+        };
+
+        var stateClass = ShowCancelHover
+            ? $"btn-cancel-hover {CancelHoverClass}".Trim()
+            : EffectiveState switch
+            {
+                ActionButtonState.Inactive => $"btn-inactive {InactiveClass}".Trim(),
+                ActionButtonState.Active => $"btn-active {ActiveClass}".Trim(),
+                ActionButtonState.Success => $"btn-success {SuccessClass}".Trim(),
+                ActionButtonState.Error => $"btn-error {ErrorClass}".Trim(),
+                _ => $"btn-default {DefaultClass}".Trim()
+            };
+
+        return $"btn focus-ring inline-flex items-center gap-2 rounded px-3 py-2 text-sm transition-all duration-150 {variantClass} {stateClass} {Class}".Trim();
+    }
+
+    private string BuildIconClass()
+    {
+        var activeSpin = EffectiveState == ActionButtonState.Active && !ShowCancelHover
+            ? "animate-spin"
+            : "";
+        var activeClass = EffectiveState == ActionButtonState.Active && !ShowCancelHover
+            ? ActiveIconClass
+            : IconClass;
+        return $"h-4 w-4 {activeSpin} {activeClass}".Trim();
+    }
+
+    private void CancelPendingReset()
+    {
+        if (_resetCts is null)
+            return;
+        _resetCts.Cancel();
+        _resetCts.Dispose();
+        _resetCts = null;
+    }
+
+    public void Dispose()
+    {
+        CancelPendingReset();
+    }
+}

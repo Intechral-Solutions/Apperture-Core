@@ -87,18 +87,6 @@ public sealed class CampusNexusApiClient : ICampusNexusApiClient
     public string ColumnInFilter(string columnName, string commaSeparatedValues) =>
         ColumnInFilter(columnName, commaSeparatedValues.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
 
-    /// <summary>
-    /// GET request to the API base URL. Used by connection verification to validate network, TLS, and configured auth headers without calling a specific CNS resource.
-    /// </summary>
-    public async Task<(int StatusCode, string Summary)> ProbeRootAsync(CancellationToken cancellationToken = default)
-    {
-        using var response = await _http.GetAsync("", cancellationToken).ConfigureAwait(false);
-        var code = (int)response.StatusCode;
-        var requestUri = response.RequestMessage?.RequestUri?.ToString() ?? "";
-        var summary = $"GET {requestUri}: HTTP {code} {response.ReasonPhrase ?? ""}".Trim();
-        return (code, summary);
-    }
-
     public void Dispose()
     {
         if (_disposed)

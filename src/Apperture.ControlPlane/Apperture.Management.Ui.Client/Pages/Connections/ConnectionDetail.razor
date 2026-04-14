@@ -9,6 +9,7 @@
 @inject NavigationManager Nav
 @inject IToastService Toasts
 @inject IJSRuntime JSRuntime
+@using Microsoft.AspNetCore.Components.Web
 
 <div class="p-4">
     <PageHeader Title="Connection" Subtitle="@ConnectionId">
@@ -22,12 +23,14 @@
             </button>
             @if (_connection?.SupportsVerification == true && !_editing)
             {
-                <button type="button"
-                        class="rounded bg-body px-3 py-2 text-sm text-surface hover:bg-body/90 disabled:opacity-50"
-                        disabled="@(_loading || _testing)"
-                        @onclick="TestConnectionAsync">
-                    Test connection
-                </button>
+                <ActionButton @ref="_testButton"
+                              Variant="ActionButtonVariant.Primary"
+                              DefaultText="Test connection"
+                              ActiveText="Testing…"
+                              SuccessText="Verified"
+                              ErrorText="Test failed"
+                              IsInactive="@(_loading || _testing)"
+                              OnClick="HandleTestClick" />
             }
             @if (_capabilities?.CanUpdateConnections == true && _connection is not null && !_editing)
             {
@@ -210,6 +213,7 @@
     private bool _capabilitiesLoaded;
     private bool _loading;
     private bool _testing;
+    private ActionButton? _testButton;
     private string? _error;
 
     private bool _editing;
@@ -346,7 +350,10 @@
         if (string.IsNullOrWhiteSpace(ConnectionId))
             return;
         _testing = true;
+        if (_testButton is not null)
+            await _testButton.SetStateAsync(ActionButtonState.Active);
         _error = null;
+        await InvokeAsync(StateHasChanged);
         try
         {
             _connection = await Client.TestConnectionAsync(ConnectionId);
@@ -354,15 +361,21 @@
                 ? "Test completed."
                 : _connection!.LastVerificationSummary;
             Toasts.Show(ToastSeverity.Success, summary);
+            if (_testButton is not null)
+                await _testButton.SetStateAsync(ActionButtonState.Success);
         }
-        catch (HttpRequestException ex)
+        catch (Exception ex)
         {
             _error = ex.Message;
             Toasts.Show(ToastSeverity.Error, ex.Message);
+            if (_testButton is not null)
+                await _testButton.SetStateAsync(ActionButtonState.Error);
         }
         finally
         {
             _testing = false;
         }
     }
+
+    private Task HandleTestClick(MouseEventArgs _) => TestConnectionAsync();
 }

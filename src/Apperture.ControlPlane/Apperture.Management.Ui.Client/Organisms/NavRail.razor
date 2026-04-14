@@ -16,7 +16,7 @@
             <AppertureLogo WrapperClass="" ShapeClass="w-full" />
         </div>
         <nav class="flex flex-1 flex-col">
-            <div class="flex flex-col space-y-4">
+            <div class="flex w-full flex-col space-y-4">
                 @foreach (var m in _menuItems)
                 {
                     <NavRailItem @key="m.Domain"
@@ -30,15 +30,15 @@
                                  OnItemClick="HandleNavItemClick" />
                 }
             </div>
-            <div class="mt-auto flex justify-center">
+            <div class="mt-auto flex w-full justify-center">
                 <NavRailItem Domain="@SectionOwnerConstants.Config"
                              IconType="@typeof(CogIcon)"
                              Tooltip="Configuration"
                              AriaLabel="Configuration"
                              CurrentDomain="@CurrentDomainName"
                              CurrentPageUri="@NavManager.Uri"
-                             ContainerStyle="group relative inline-block -translate-y-5"
-                             NavButtonStyle="h-12 w-12 flex items-center"
+                             ContainerStyle="group relative flex w-full shrink-0 justify-center -translate-y-5"
+                             NavButtonStyle="nav-rail-btn w-[70%] aspect-square flex items-center justify-center transition-all duration-300"
                              IconStyle="@GetConfigIconStyle()"
                              UseGlowEffect="true"
                              OnItemClick="HandleNavItemClick" />
@@ -63,7 +63,7 @@
         string.Equals(CurrentDomainName, SectionOwnerConstants.Config, StringComparison.OrdinalIgnoreCase);
 
     private string GetConfigIconStyle() =>
-        "h-10 w-10 translate-x-1 text-body transition-opacity duration-200 " +
+        "h-8 w-8 text-body transition-opacity duration-200 " +
         (_isConfigActive ? "opacity-100" : "opacity-60 group-hover:opacity-90");
 
     protected override async Task OnInitializedAsync()
@@ -83,10 +83,10 @@
             ["Clients"] = typeof(CubeIcon),
             ["Tools"] = typeof(WrenchIcon),
             ["Schedules"] = typeof(ClockIcon),
-            ["Runs"] = typeof(PlayIcon),
-            ["Control"] = typeof(PlayIcon),
-            ["Test Suite"] = typeof(PlayIcon),
-            ["Settings"] = typeof(CogIcon),
+            ["Runs"] = typeof(RocketLaunchIcon),
+            ["Control"] = typeof(CpuChipIcon),
+            ["Test Suite"] = typeof(BeakerIcon),
+            ["Settings"] = typeof(WrenchScrewdriverIcon),
             ["Users"] = typeof(UsersIcon)
         };
 

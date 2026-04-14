@@ -35,6 +35,7 @@ public interface IConnectionManagementService
 
     /// <summary>
     /// Executes connector-specific test-connect and persists the latest verification result on the connection.
+    /// Requires <c>connection.read</c> on the connection (diagnostic for operators who can view the resource).
     /// </summary>
     ValueTask<Connection> VerifyConnectionAsync(ConnectionId id, CancellationToken cancellationToken = default);
 }

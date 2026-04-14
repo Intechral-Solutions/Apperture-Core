@@ -234,10 +234,11 @@ public sealed class ConnectionManagementService : IConnectionManagementService
             ?? throw new InvalidOperationException($"Connection {id.Value} not found.");
 
         var identity = existing.GetIdentity();
+        // Diagnostic test-connect is available to anyone who can read the connection; it only updates verification metadata.
         var allowed = await _authorizationEvaluation.EvaluateAsync(
             new AuthorizationEvaluationContext(
                 actor,
-                new PermissionDescriptor(ActionConstants.ConnectionUpdate, GovernedResourceDescriptor.FromIdentity(identity)),
+                new PermissionDescriptor(ActionConstants.ConnectionRead, GovernedResourceDescriptor.FromIdentity(identity)),
                 GovernedResourceDescriptor.FromIdentity(identity),
                 identity),
             cancellationToken);

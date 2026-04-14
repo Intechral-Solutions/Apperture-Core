@@ -2167,89 +2167,221 @@
   }
 }
 @layer base {
+  /*
+   * Semantic theme tokens (Apperture Management UI)
+   * Categories: canvas/surface, text, border, accent (primary/secondary/focus), status (success/warning/error/info),
+   * callouts (message/callout-info), chrome (nav/tooltips/hamburger/logo), shell (gradient/shadow/glow), toast accents.
+   * Prefer role-based names; extend here when a new visual role needs distinct light/dark values.
+   */
   :root {
     --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji","Segoe UI Emoji", "Segoe UI Symbol","Noto Color Emoji";
     --font-serif: ui-serif, Georgia, Cambria, "Times New Roman", Times, serif;
     --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-    --color-bg: #f8fafc;
-    --color-fg: #0f172a;
-    --color-primary: #334155;
-    --color-primary-light: #e2e8f0;
-    --color-primary-dark: #0f172a;
-    --color-secondary: #0ea5e9;
-    --color-secondary-light: #bae6fd;
-    --color-secondary-dark: #0369a1;
-    --color-surface: #ffffff;
-    --color-surface-elevated: #f8fafc;
-    --color-surface-muted: #f1f5f9;
-    --color-text-heading: #0f172a;
-    --color-text-body: #334155;
-    --color-text-muted: #64748b;
-    --color-text-subtle: #94a3b8;
-    --color-border: #e2e8f0;
-    --color-border-strong: #cbd5e1;
-    --color-success: #16a34a;
-    --color-success-light: #dcfce7;
-    --color-success-dark: #15803d;
-    --color-warning: #eab308;
-    --color-warning-light: #fef9c3;
-    --color-warning-dark: #ca8a04;
-    --color-error: #dc2626;
-    --color-error-light: #fee2e2;
-    --color-error-dark: #b91c1c;
-    --color-info: #a855f7;
-    --color-info-light: #f3e8ff;
-    --color-info-dark: #9333ea;
-    --color-focus: #3b82f6;
-    --color-focus-ring: #93c5fd;
-    /* Inline alert / PageMessage callouts (semantic; no raw Tailwind yellow/red) */
+    /* Canvas + surfaces — light: softer contrast, cool-neutral */
+    --color-bg: oklch(98.2% 0.014 252);
+    --color-fg: oklch(32% 0.038 262);
+    --color-primary: oklch(44% 0.038 260);
+    --color-primary-light: oklch(91% 0.02 252);
+    --color-primary-dark: oklch(28% 0.045 262);
+    --color-secondary: #43e7df;
+    --color-secondary-light: color-mix(in oklch, #43e7df 28%, white);
+    --color-secondary-dark: color-mix(in oklch, #43e7df 72%, #0b4f5e);
+    --color-accent-warm: #f4ee7a;
+    --color-accent-earth: #c8b28b;
+    --color-surface: oklch(99.4% 0.006 252);
+    --color-surface-elevated: oklch(97.6% 0.016 250);
+    --color-surface-muted: oklch(96% 0.018 248);
+    --color-text-heading: oklch(31% 0.04 262);
+    --color-text-body: oklch(44% 0.032 260);
+    --color-text-muted: oklch(54% 0.028 258);
+    --color-text-subtle: oklch(64% 0.022 256);
+    --color-border: color-mix(in oklch, oklch(91% 0.016 252) 84%, var(--color-secondary));
+    --color-border-strong: color-mix(in oklch, oklch(84% 0.018 252) 82%, var(--color-accent-earth));
+    --color-success: oklch(52% 0.16 145);
+    --color-success-light: oklch(94% 0.05 145);
+    --color-success-dark: oklch(40% 0.14 145);
+    --color-warning: oklch(76% 0.14 85);
+    --color-warning-light: oklch(96% 0.05 95);
+    --color-warning-dark: oklch(48% 0.1 75);
+    --color-error: oklch(55% 0.2 25);
+    --color-error-light: oklch(94% 0.04 20);
+    --color-error-dark: oklch(45% 0.18 25);
+    --color-info: oklch(58% 0.2 305);
+    --color-info-light: oklch(95% 0.04 305);
+    --color-info-dark: oklch(48% 0.2 305);
+    --color-focus: oklch(58% 0.18 252);
+    --color-focus-ring: oklch(82% 0.1 252);
+    --color-glow-focus: color-mix(in oklch, var(--color-focus) 45%, transparent);
+    /* Shell atmosphere */
+    --gradient-shell: linear-gradient(
+      165deg,
+      color-mix(in oklch, var(--color-secondary) 10%, var(--color-surface-elevated)) 0%,
+      var(--color-surface-elevated) 42%,
+      color-mix(in oklch, var(--color-focus) 7%, var(--color-surface-elevated)) 100%
+    );
+    --shadow-shell: 0 1px 2px color-mix(in oklch, var(--color-text-heading) 6%, transparent),
+      0 8px 24px color-mix(in oklch, var(--color-secondary) 8%, transparent);
+    --shadow-elevated: 0 4px 6px color-mix(in oklch, var(--color-text-heading) 5%, transparent),
+      0 12px 32px color-mix(in oklch, var(--color-focus) 6%, transparent),
+      0 0 0 1px color-mix(in oklch, var(--color-secondary) 18%, transparent);
+    --color-card-border: color-mix(in oklch, var(--color-border) 78%, var(--color-secondary));
+    --color-card-border-strong: color-mix(in oklch, var(--color-border-strong) 78%, var(--color-accent-earth));
+    --color-card-sheen: linear-gradient(
+      145deg,
+      color-mix(in oklch, var(--color-secondary) 6%, transparent) 0%,
+      transparent 42%,
+      color-mix(in oklch, var(--color-accent-warm) 7%, transparent) 100%
+    );
+    /* Chrome (nav rail, controls) */
+    --color-chrome-hover: color-mix(in oklch, var(--color-text-muted) 22%, var(--color-surface));
+    --color-chrome-active: color-mix(in oklch, var(--color-text-muted) 32%, var(--color-surface));
+    --color-chrome-line: oklch(38% 0.035 262);
+    --color-tooltip-bg: oklch(92% 0.018 258);
+    --color-tooltip-fg: oklch(28% 0.04 262);
+    --color-logo-mark: oklch(27% 0.042 262);
+    --color-logo-fg: oklch(97% 0.008 252);
+    /* Inline info callouts (FYI panels — distinct from purple “info” status) */
+    --color-callout-info-bg: oklch(97.2% 0.022 245);
+    --color-callout-info-border: oklch(88% 0.05 245);
+    /* Toast left accent (maps by severity in utilities) */
+    --color-toast-info-accent: var(--color-secondary);
+    --color-toast-neutral-accent: var(--color-border-strong);
+    /* Action buttons */
+    --color-btn-primary-bg: var(--color-primary);
+    --color-btn-primary-border: color-mix(in oklch, var(--color-primary) 72%, var(--color-border));
+    --color-btn-primary-fg: var(--color-surface);
+    --color-btn-primary-hover: color-mix(in oklch, var(--color-primary) 88%, black);
+    --color-btn-secondary-bg: var(--color-surface-muted);
+    --color-btn-secondary-border: var(--color-border);
+    --color-btn-secondary-fg: var(--color-text-body);
+    --color-btn-secondary-hover: var(--color-surface);
+    --color-btn-danger-bg: color-mix(in oklch, var(--color-error) 92%, var(--color-surface));
+    --color-btn-danger-border: color-mix(in oklch, var(--color-error) 64%, var(--color-border));
+    --color-btn-danger-fg: var(--color-surface);
+    --color-btn-danger-hover: color-mix(in oklch, var(--color-error) 82%, black);
+    --color-btn-inactive-bg: color-mix(in oklch, var(--color-surface-muted) 92%, var(--color-surface));
+    --color-btn-inactive-border: color-mix(in oklch, var(--color-border) 86%, var(--color-surface));
+    --color-btn-inactive-fg: color-mix(in oklch, var(--color-text-muted) 70%, var(--color-surface));
+    --color-btn-active-bg: color-mix(in oklch, var(--color-secondary) 26%, var(--color-primary));
+    --color-btn-active-border: color-mix(in oklch, var(--color-secondary) 62%, var(--color-border));
+    --color-btn-active-fg: var(--color-surface);
+    --color-btn-success-bg: color-mix(in oklch, var(--color-success) 82%, var(--color-surface));
+    --color-btn-success-border: color-mix(in oklch, var(--color-success) 60%, var(--color-border));
+    --color-btn-success-fg: var(--color-surface);
+    --color-btn-error-bg: color-mix(in oklch, var(--color-error) 84%, var(--color-surface));
+    --color-btn-error-border: color-mix(in oklch, var(--color-error) 62%, var(--color-border));
+    --color-btn-error-fg: var(--color-surface);
+    --color-btn-cancel-hover-bg: color-mix(in oklch, var(--color-error) 78%, var(--color-surface));
+    --color-btn-cancel-hover-border: color-mix(in oklch, var(--color-error) 66%, var(--color-border));
+    --color-btn-cancel-hover-fg: var(--color-surface);
+    /* Inline alert / PageMessage callouts */
     --color-message-warning-bg: var(--color-warning-light);
     --color-message-warning-border: var(--color-warning);
     --color-message-warning-title: var(--color-warning-dark);
-    --color-message-warning-text: #422006;
+    --color-message-warning-text: oklch(35% 0.06 65);
     --color-message-error-bg: var(--color-error-light);
     --color-message-error-border: var(--color-error);
     --color-message-error-title: var(--color-error-dark);
-    --color-message-error-text: #450a0a;
+    --color-message-error-text: oklch(32% 0.08 25);
   }
   .dark {
-    --color-bg: #0f172a;
-    --color-fg: #f8fafc;
-    --color-primary: #43648f;
-    --color-primary-light: #334155;
-    --color-primary-dark: #f1f5f9;
-    --color-secondary: #bae6fd;
-    --color-secondary-light: #0ea5e9;
-    --color-secondary-dark: #075985;
-    --color-surface: #1e293b;
-    --color-surface-elevated: #0f172a;
-    --color-surface-muted: #334155;
-    --color-text-heading: #f1f5f9;
-    --color-text-body: #e2e8f0;
-    --color-text-muted: #94a3b8;
-    --color-text-subtle: #64748b;
-    --color-border: #475569;
-    --color-border-strong: #64748b;
-    --color-success: #22c55e;
-    --color-success-light: #166534;
-    --color-success-dark: #86efac;
-    --color-warning: #fbbf24;
-    --color-warning-light: #713f12;
-    --color-warning-dark: #fde047;
-    --color-error: #ef4444;
-    --color-error-light: #7f1d1d;
-    --color-error-dark: #fca5a5;
-    --color-info: #c084fc;
-    --color-info-light: #581c87;
-    --color-info-dark: #e9d5ff;
-    --color-focus: #60a5fa;
-    --color-focus-ring: #1e3a8a;
-    --color-message-warning-bg: color-mix(in srgb, var(--color-warning) 14%, var(--color-surface));
-    --color-message-warning-border: color-mix(in srgb, var(--color-warning) 50%, var(--color-border));
+    /* Dark: lifted canvas, clearer surface stack, softer borders */
+    --color-bg: oklch(34% 0.045 268);
+    --color-fg: oklch(96.5% 0.012 252);
+    --color-primary: oklch(62% 0.08 255);
+    --color-primary-light: oklch(38% 0.04 268);
+    --color-primary-dark: oklch(94% 0.02 252);
+    --color-secondary: color-mix(in oklch, #43e7df 84%, white);
+    --color-secondary-light: color-mix(in oklch, #43e7df 52%, #17343f);
+    --color-secondary-dark: color-mix(in oklch, #43e7df 74%, #0f1f2b);
+    --color-accent-warm: color-mix(in oklch, #f4ee7a 64%, #ffffff);
+    --color-accent-earth: color-mix(in oklch, #c8b28b 72%, #b9c6d6);
+    --color-surface: oklch(40% 0.048 268);
+    --color-surface-elevated: oklch(37% 0.046 268);
+    --color-surface-muted: oklch(44% 0.045 268);
+    --color-text-heading: oklch(95% 0.02 252);
+    --color-text-body: oklch(88% 0.02 252);
+    --color-text-muted: oklch(72% 0.03 255);
+    --color-text-subtle: oklch(58% 0.035 260);
+    --color-border: color-mix(in oklch, oklch(48% 0.04 265) 84%, var(--color-secondary));
+    --color-border-strong: color-mix(in oklch, oklch(58% 0.04 262) 80%, var(--color-accent-earth));
+    --color-success: oklch(72% 0.17 150);
+    --color-success-light: oklch(38% 0.08 150);
+    --color-success-dark: oklch(85% 0.12 150);
+    --color-warning: oklch(80% 0.14 85);
+    --color-warning-light: oklch(42% 0.08 70);
+    --color-warning-dark: oklch(92% 0.08 95);
+    --color-error: oklch(72% 0.18 25);
+    --color-error-light: oklch(38% 0.1 25);
+    --color-error-dark: oklch(88% 0.08 20);
+    --color-info: oklch(76% 0.16 305);
+    --color-info-light: oklch(40% 0.12 305);
+    --color-info-dark: oklch(90% 0.06 305);
+    --color-focus: oklch(72% 0.14 252);
+    --color-focus-ring: oklch(45% 0.12 260);
+    --color-glow-focus: color-mix(in oklch, var(--color-focus) 55%, transparent);
+    --gradient-shell: linear-gradient(
+      195deg,
+      color-mix(in oklch, var(--color-secondary) 12%, var(--color-surface-elevated)) 0%,
+      var(--color-surface-elevated) 45%,
+      color-mix(in oklch, var(--color-focus) 9%, var(--color-bg)) 100%
+    );
+    --shadow-shell: 0 1px 0 color-mix(in oklch, white 8%, transparent),
+      0 12px 40px color-mix(in oklch, black 35%, transparent);
+    --shadow-elevated: 0 8px 30px color-mix(in oklch, black 40%, transparent),
+      0 0 0 1px color-mix(in oklch, var(--color-secondary) 24%, transparent);
+    --color-card-border: color-mix(in oklch, var(--color-border) 72%, var(--color-secondary));
+    --color-card-border-strong: color-mix(in oklch, var(--color-border-strong) 74%, var(--color-accent-earth));
+    --color-card-sheen: linear-gradient(
+      160deg,
+      color-mix(in oklch, var(--color-secondary) 10%, transparent) 0%,
+      transparent 48%,
+      color-mix(in oklch, var(--color-accent-earth) 10%, transparent) 100%
+    );
+    --color-chrome-hover: color-mix(in oklch, white 14%, var(--color-surface));
+    --color-chrome-active: color-mix(in oklch, white 22%, var(--color-surface));
+    --color-chrome-line: oklch(78% 0.02 252);
+    --color-tooltip-bg: oklch(34% 0.04 268);
+    --color-tooltip-fg: oklch(96% 0.015 252);
+    --color-logo-mark: oklch(92% 0.015 252);
+    --color-logo-fg: oklch(30% 0.04 262);
+    --color-callout-info-bg: color-mix(in oklch, var(--color-secondary) 14%, var(--color-surface));
+    --color-callout-info-border: color-mix(in oklch, var(--color-secondary) 42%, var(--color-border));
+    --color-toast-info-accent: var(--color-secondary);
+    --color-toast-neutral-accent: var(--color-text-muted);
+    --color-btn-primary-bg: color-mix(in oklch, var(--color-primary) 72%, var(--color-surface));
+    --color-btn-primary-border: color-mix(in oklch, var(--color-primary) 48%, var(--color-border));
+    --color-btn-primary-fg: var(--color-text-heading);
+    --color-btn-primary-hover: color-mix(in oklch, var(--color-primary) 58%, var(--color-surface));
+    --color-btn-secondary-bg: color-mix(in oklch, white 8%, var(--color-surface-muted));
+    --color-btn-secondary-border: var(--color-border);
+    --color-btn-secondary-fg: var(--color-text-heading);
+    --color-btn-secondary-hover: color-mix(in oklch, white 14%, var(--color-surface));
+    --color-btn-danger-bg: color-mix(in oklch, var(--color-error) 58%, var(--color-surface));
+    --color-btn-danger-border: color-mix(in oklch, var(--color-error) 48%, var(--color-border));
+    --color-btn-danger-fg: var(--color-text-heading);
+    --color-btn-danger-hover: color-mix(in oklch, var(--color-error) 68%, var(--color-surface));
+    --color-btn-inactive-bg: color-mix(in oklch, var(--color-surface-muted) 84%, var(--color-surface));
+    --color-btn-inactive-border: color-mix(in oklch, var(--color-border) 78%, var(--color-surface));
+    --color-btn-inactive-fg: color-mix(in oklch, var(--color-text-muted) 76%, var(--color-surface));
+    --color-btn-active-bg: color-mix(in oklch, var(--color-secondary) 34%, var(--color-surface));
+    --color-btn-active-border: color-mix(in oklch, var(--color-secondary) 54%, var(--color-border));
+    --color-btn-active-fg: var(--color-text-heading);
+    --color-btn-success-bg: color-mix(in oklch, var(--color-success) 34%, var(--color-surface));
+    --color-btn-success-border: color-mix(in oklch, var(--color-success) 48%, var(--color-border));
+    --color-btn-success-fg: var(--color-text-heading);
+    --color-btn-error-bg: color-mix(in oklch, var(--color-error) 36%, var(--color-surface));
+    --color-btn-error-border: color-mix(in oklch, var(--color-error) 52%, var(--color-border));
+    --color-btn-error-fg: var(--color-text-heading);
+    --color-btn-cancel-hover-bg: color-mix(in oklch, var(--color-error) 52%, var(--color-surface));
+    --color-btn-cancel-hover-border: color-mix(in oklch, var(--color-error) 60%, var(--color-border));
+    --color-btn-cancel-hover-fg: var(--color-text-heading);
+    --color-message-warning-bg: color-mix(in oklch, var(--color-warning) 14%, var(--color-surface));
+    --color-message-warning-border: color-mix(in oklch, var(--color-warning) 48%, var(--color-border));
     --color-message-warning-title: var(--color-warning-dark);
     --color-message-warning-text: var(--color-text-body);
-    --color-message-error-bg: color-mix(in srgb, var(--color-error) 14%, var(--color-surface));
-    --color-message-error-border: color-mix(in srgb, var(--color-error) 50%, var(--color-border));
+    --color-message-error-bg: color-mix(in oklch, var(--color-error) 14%, var(--color-surface));
+    --color-message-error-border: color-mix(in oklch, var(--color-error) 48%, var(--color-border));
     --color-message-error-title: var(--color-error-dark);
     --color-message-error-text: var(--color-text-body);
   }
@@ -2269,6 +2401,7 @@
   }
   .bg-surface {
     background-color: var(--color-surface);
+    background-image: var(--color-card-sheen);
   }
   .bg-surface-elevated {
     background-color: var(--color-surface-elevated);
@@ -2283,14 +2416,131 @@
       }
     }
   }
-  /* Blue glow conforming to SVG shape (gear icon); uses theme focus color */
+  .bg-shell {
+    background-color: var(--color-surface-elevated);
+    background-image: var(--gradient-shell);
+  }
+  .shadow-shell {
+    box-shadow: var(--shadow-shell);
+  }
+  .shadow-theme-elevated {
+    box-shadow: var(--shadow-elevated);
+  }
+  .bg-callout-info {
+    background-color: var(--color-callout-info-bg);
+  }
+  .border-callout-info {
+    border-color: var(--color-callout-info-border);
+  }
+  .bg-chrome-line {
+    background-color: var(--color-chrome-line);
+  }
+  .bg-logo-mark {
+    background-color: var(--color-logo-mark);
+  }
+  .text-logo-fg {
+    color: var(--color-logo-fg);
+  }
+  .bg-tooltip {
+    background-color: var(--color-tooltip-bg);
+  }
+  .text-tooltip {
+    color: var(--color-tooltip-fg);
+  }
+  .btn {
+    border: 1px solid transparent;
+    font-weight: var(--font-weight-medium);
+    letter-spacing: 0.01em;
+    user-select: none;
+  }
+  .btn:disabled {
+    cursor: not-allowed;
+  }
+  .btn-primary {
+    background-color: var(--color-btn-primary-bg);
+    border-color: var(--color-btn-primary-border);
+    color: var(--color-btn-primary-fg);
+  }
+  .btn-secondary {
+    background-color: var(--color-btn-secondary-bg);
+    border-color: var(--color-btn-secondary-border);
+    color: var(--color-btn-secondary-fg);
+  }
+  .btn-danger {
+    background-color: var(--color-btn-danger-bg);
+    border-color: var(--color-btn-danger-border);
+    color: var(--color-btn-danger-fg);
+  }
+  .btn-default {
+    &:hover {
+      @media (hover: hover) {
+        background-color: var(--color-btn-primary-hover);
+      }
+    }
+  }
+  .btn-secondary.btn-default {
+    &:hover {
+      @media (hover: hover) {
+        background-color: var(--color-btn-secondary-hover);
+      }
+    }
+  }
+  .btn-danger.btn-default {
+    &:hover {
+      @media (hover: hover) {
+        background-color: var(--color-btn-danger-hover);
+      }
+    }
+  }
+  .btn-inactive {
+    background-color: var(--color-btn-inactive-bg);
+    border-color: var(--color-btn-inactive-border);
+    color: var(--color-btn-inactive-fg);
+    opacity: 0.8;
+  }
+  .btn-active {
+    background-color: var(--color-btn-active-bg);
+    border-color: var(--color-btn-active-border);
+    color: var(--color-btn-active-fg);
+  }
+  .btn-success {
+    background-color: var(--color-btn-success-bg);
+    border-color: var(--color-btn-success-border);
+    color: var(--color-btn-success-fg);
+  }
+  .btn-error {
+    background-color: var(--color-btn-error-bg);
+    border-color: var(--color-btn-error-border);
+    color: var(--color-btn-error-fg);
+  }
+  .btn-cancel-hover {
+    background-color: var(--color-btn-cancel-hover-bg);
+    border-color: var(--color-btn-cancel-hover-border);
+    color: var(--color-btn-cancel-hover-fg);
+  }
+  .toast-strip-success {
+    border-inline-start: 4px solid var(--color-success);
+  }
+  .toast-strip-info {
+    border-inline-start: 4px solid var(--color-toast-info-accent);
+  }
+  .toast-strip-warning {
+    border-inline-start: 4px solid var(--color-warning);
+  }
+  .toast-strip-error {
+    border-inline-start: 4px solid var(--color-error);
+  }
+  .toast-strip-neutral {
+    border-inline-start: 4px solid var(--color-toast-neutral-accent);
+  }
+  /* Blue glow conforming to SVG shape (gear icon); uses theme glow token */
   .nav-rail-icon-glow {
     filter: none;
     transition: filter 200ms ease;
   }
   .group:hover .nav-rail-icon-glow,
   .nav-rail-item-glowing .nav-rail-icon-glow {
-    filter: drop-shadow(0 0 6px var(--color-focus));
+    filter: drop-shadow(0 0 10px var(--color-glow-focus));
   }
   .text-heading {
     color: var(--color-text-heading);
@@ -2305,10 +2555,10 @@
     color: var(--color-text-subtle);
   }
   .border-default {
-    border-color: var(--color-border);
+    border-color: var(--color-card-border);
   }
   .border-strong {
-    border-color: var(--color-border-strong);
+    border-color: var(--color-card-border-strong);
   }
   .bg-primary {
     background-color: var(--color-primary);
@@ -2430,6 +2680,30 @@
   }
   .font-mono {
     font-family: var(--font-mono) !important;
+  }
+}
+@layer components {
+  .nav-rail-btn {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 3rem;
+    width: 3rem;
+    border-radius: 0.375rem;
+    padding: 0.75rem;
+    transition-property: color, background-color, border-color, text-decoration-color, fill, stroke, opacity, box-shadow, transform,
+      filter, backdrop-filter;
+    transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+    transition-duration: 200ms;
+    cursor: pointer;
+    position: relative;
+  }
+  .group:hover .nav-rail-btn--hover {
+    background-color: var(--color-chrome-hover);
+  }
+  .nav-rail-btn--active {
+    background-color: var(--color-chrome-active);
   }
 }
 @property --tw-translate-x {

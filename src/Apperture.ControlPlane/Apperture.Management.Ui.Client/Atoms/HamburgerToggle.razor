@@ -19,7 +19,7 @@
     [Parameter] public bool IsLocked { get; set; }
     [Parameter] public EventCallback<bool> OnToggle { get; set; }
 
-    private string hamburgerLineBase => "bg-slate-800 dark:bg-slate-400 h-[2px] transform transition-all duration-300 delay-150 w-7 pointer-events-none";
+    private string hamburgerLineBase => "bg-chrome-line h-[2px] transform transition-all duration-300 delay-150 w-7 pointer-events-none";
 
     private async Task Toggle()
     {
