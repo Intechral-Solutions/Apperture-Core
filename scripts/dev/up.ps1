@@ -16,6 +16,62 @@ param(
 
 $ErrorActionPreference = "Stop"
 $RepoRoot = if ($env:APPERTURE_REPO_ROOT) { $env:APPERTURE_REPO_ROOT } else { (Get-Item $PSScriptRoot).Parent.Parent.FullName }
+
+function Wait-DevTcpConnectable {
+    <#
+    .SYNOPSIS
+        Blocks until something accepts TCP connections (Docker SQL Server readiness from the host).
+    #>
+    param(
+        [string]$ComputerName = "127.0.0.1",
+        [int]$Port = 1433,
+        [int]$TimeoutSeconds = 120
+    )
+    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+    while ((Get-Date) -lt $deadline) {
+        try {
+            $client = New-Object System.Net.Sockets.TcpClient
+            try {
+                $client.Connect($ComputerName, $Port)
+            }
+            finally {
+                $client.Close()
+            }
+            return
+        }
+        catch {
+            Start-Sleep -Milliseconds 400
+        }
+    }
+    throw "Timeout (${TimeoutSeconds}s) waiting for TCP ${ComputerName}:$Port (is SQL Server container running?)."
+}
+
+function Wait-DevListenPortsFree {
+    <#
+    .SYNOPSIS
+        Blocks until no process is listening on the given local ports (avoids Kestrel bind races after Stop-Process).
+    #>
+    param(
+        [int[]]$Ports = @(9000, 9001),
+        [int]$TimeoutSeconds = 45
+    )
+    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+    while ((Get-Date) -lt $deadline) {
+        $busy = $false
+        foreach ($p in $Ports) {
+            $listeners = @(Get-NetTCPConnection -LocalPort $p -ErrorAction SilentlyContinue | Where-Object { $_.State -eq "Listen" })
+            if ($listeners.Count -gt 0) {
+                $busy = $true
+                break
+            }
+        }
+        if (-not $busy) {
+            return
+        }
+        Start-Sleep -Milliseconds 350
+    }
+    throw "Timeout (${TimeoutSeconds}s) waiting for ports to be free: $($Ports -join ', ')."
+}
 $HostProject = Join-Path $RepoRoot "src\Apperture.ControlPlane\Apperture.Management.Host\Apperture.Management.Host.csproj"
 $UiServerProject = Join-Path $RepoRoot "src\Apperture.ControlPlane\Apperture.Management.Ui.Server\Apperture.Management.Ui.Server.csproj"
 $WorkerHostProject = Join-Path $RepoRoot "src\Apperture.RuntimeHost\Apperture.RuntimeHost.Windows\Apperture.RuntimeHost.Windows.WorkerHost\Apperture.RuntimeHost.Windows.WorkerHost.csproj"
@@ -64,6 +120,9 @@ try {
 } finally {
     Pop-Location
 }
+
+Write-Host "Waiting for SQL Server to accept TCP connections (localhost:1433)..." -ForegroundColor Cyan
+Wait-DevTcpConnectable -Port 1433
 Write-Host "  SQL Server: localhost:1433" -ForegroundColor Gray
 Write-Host "  API:        http://localhost:9000" -ForegroundColor Gray
 Write-Host "  UI:         http://localhost:9001" -ForegroundColor Gray
@@ -74,6 +133,8 @@ Write-Host ""
 $DownScript = Join-Path $PSScriptRoot "down.ps1"
 Write-Host "Stopping any prior dev API / UI / worker (ports 9000, 9001)..." -ForegroundColor Cyan
 & $DownScript
+Write-Host "Waiting for ports 9000/9001 to be released..." -ForegroundColor Cyan
+Wait-DevListenPortsFree -Ports @(9000, 9001)
 Write-Host ""
 
 # Ensure the Apperture database exists before bootstrapping the host.
@@ -88,11 +149,11 @@ Write-Host "Ensuring database 'Apperture' exists..." -ForegroundColor Cyan
 docker exec apperture-sqlserver /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "$saPassword" -C -Q "IF DB_ID(N'Apperture') IS NULL CREATE DATABASE [Apperture];" | Out-Null
 if ($LASTEXITCODE -ne 0) { throw "Failed to create Apperture database via sqlcmd." }
 
+# Launch dotnet directly (argument array). Do not wrap in cmd /k — Start-Process + cmd mangles quotes on Windows
+# ("The filename, directory name, or volume label is incorrect"). SQL/port waits and bootstrap retries reduce flakiness.
 $hostArgs = @("run", "--project", $HostProject, "--launch-profile", "http")
 $uiArgs = @("run", "--project", $UiServerProject, "--launch-profile", "Ui.Server")
 if ($NoBrowser) {
-    # Keep the Ui.Server launch profile so static web assets are wired correctly.
-    # Still run headless (no browser auto-open) by overriding only the URL.
     $uiArgs = @("run", "--project", $UiServerProject, "--launch-profile", "Ui.Server", "--urls", "http://localhost:9001")
 }
 

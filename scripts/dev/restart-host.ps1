@@ -22,15 +22,27 @@ if (-not (Test-Path $HostProject)) {
 
 function Stop-ProcessByPort {
     param([int]$Port)
-    $conn = Get-NetTCPConnection -LocalPort $Port -ErrorAction SilentlyContinue | Where-Object { $_.State -eq "Listen" }
-    if ($conn) {
-        $owningProcessId = $conn.OwningProcess
+    $conns = @(Get-NetTCPConnection -LocalPort $Port -ErrorAction SilentlyContinue | Where-Object { $_.State -eq "Listen" })
+    if ($conns.Count -eq 0) { return }
+    $pids = $conns | Select-Object -ExpandProperty OwningProcess -Unique
+    foreach ($owningProcessId in $pids) {
         $proc = Get-Process -Id $owningProcessId -ErrorAction SilentlyContinue
         if ($proc) {
             Write-Host "Stopping process on port $Port (PID $owningProcessId): $($proc.ProcessName)" -ForegroundColor Yellow
             Stop-Process -Id $owningProcessId -Force -ErrorAction SilentlyContinue
         }
     }
+}
+
+function Wait-DevListenPortFree {
+    param([int]$Port = 9000, [int]$TimeoutSeconds = 45)
+    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+    while ((Get-Date) -lt $deadline) {
+        $listeners = @(Get-NetTCPConnection -LocalPort $Port -ErrorAction SilentlyContinue | Where-Object { $_.State -eq "Listen" })
+        if ($listeners.Count -eq 0) { return }
+        Start-Sleep -Milliseconds 350
+    }
+    throw "Timeout (${TimeoutSeconds}s) waiting for port $Port to be free."
 }
 
 $sdk = & $ResolveScript -RepoRoot $RepoRoot
@@ -46,7 +58,9 @@ if ($LASTEXITCODE -ne 0) { throw "dotnet build failed" }
 
 Write-Host "Restarting API on port $ApiPort..." -ForegroundColor Cyan
 Stop-ProcessByPort -Port $ApiPort
+Write-Host "Waiting for port $ApiPort to be released..." -ForegroundColor Cyan
+Wait-DevListenPortFree -Port $ApiPort
 
 $hostArgs = @("run", "--project", $HostProject, "--launch-profile", "http")
 Start-Process -FilePath $dotnetExe -ArgumentList $hostArgs -WorkingDirectory $RepoRoot -WindowStyle Normal
-Write-Host "Management API restarted at http://localhost:$ApiPort" -ForegroundColor Green
+Write-Host "Management API started at http://localhost:$ApiPort" -ForegroundColor Green

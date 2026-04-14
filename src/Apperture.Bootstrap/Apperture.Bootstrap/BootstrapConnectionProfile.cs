@@ -1,3 +1,4 @@
+using System.Net.Sockets;
 using Apperture.Bootstrap.Models;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Configuration;
@@ -39,8 +40,92 @@ public sealed class BootstrapConnectionProfile : IBootstrapConnectionProfile
 
     public async Task ValidateAsync(CancellationToken cancellationToken = default)
     {
-        await using var conn = new SqlConnection(ConnectionString);
-        await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
+        // Development: SQL (e.g. Docker) is often not ready the instant compose reports "started".
+        // A single OpenAsync fails intermittently; brief retries remove flaky dev startup without masking auth errors.
+        const int maxAttempts = 30;
+        var delay = TimeSpan.FromSeconds(1);
+        for (var attempt = 1; attempt <= maxAttempts; attempt++)
+        {
+            try
+            {
+                await using var conn = new SqlConnection(ConnectionString);
+                await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
+                if (attempt > 1)
+                {
+                    _logger.LogInformation("Bootstrap SQL connection opened on attempt {Attempt}.", attempt);
+                }
+
+                return;
+            }
+            catch (Exception ex) when (ShouldRetryBootstrapOpen(ex, attempt, maxAttempts))
+            {
+                _logger.LogWarning(
+                    ex,
+                    "Bootstrap SQL connection attempt {Attempt}/{Max} failed; retrying after {Delay}.",
+                    attempt,
+                    maxAttempts,
+                    delay);
+                await Task.Delay(delay, cancellationToken).ConfigureAwait(false);
+            }
+        }
+    }
+
+    private bool ShouldRetryBootstrapOpen(Exception ex, int attempt, int maxAttempts)
+    {
+        if (attempt >= maxAttempts)
+        {
+            return false;
+        }
+
+        if (!_hostEnvironment.IsDevelopment())
+        {
+            return false;
+        }
+
+        return IsLikelyTransientSqlConnectivityFailure(ex);
+    }
+
+    /// <summary>
+    /// True for transport / instance / "not ready" failures. False for typical login misconfiguration (fail fast).
+    /// </summary>
+    private static bool IsLikelyTransientSqlConnectivityFailure(Exception ex)
+    {
+        switch (ex)
+        {
+            case TimeoutException:
+                return true;
+            case IOException:
+                return true;
+            case SocketException:
+                return true;
+            case SqlException sqlEx:
+                // Login failures — do not spin.
+                if (sqlEx.Number is 18456 or 18487)
+                {
+                    return false;
+                }
+
+                // Common transient / connectivity codes (overlap with SqlClient retry guidance).
+                return sqlEx.Number is -2
+                    or 20
+                    or 53
+                    or 64
+                    or 233
+                    or 258
+                    or 10053
+                    or 10054
+                    or 10060
+                    or 10061
+                    or 40197
+                    or 40501
+                    or 4060
+                    or 40613
+                    or 49918
+                    or 49919
+                    or 49920;
+            default:
+                return false;
+        }
     }
 
     private string BuildConnectionString()
