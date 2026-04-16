@@ -2,6 +2,10 @@
 .SYNOPSIS
     Restarts the development SQL Server container (compose service sqlserver).
 .DESCRIPTION
+    This script is only for the database engine in Docker. Management.Host, Management UI, and the WorkerHost
+    runtime are local dotnet processes in dev (see up.ps1 and restart-host / restart-ui / restart-worker)—
+    they are not started or restarted here.
+
     Syncs User Secrets to .env (same as other dev scripts that use Docker), then runs
     `docker compose restart sqlserver` from the repo root. Data in the sqlserver volume is preserved.
 .EXAMPLE

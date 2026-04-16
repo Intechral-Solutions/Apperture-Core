@@ -7,17 +7,19 @@
 
     With one or more of -Workers, -Host, -Ui, -Db: runs only the matching scripts\dev\restart-*.ps1
     scripts so you can start or restart any combination of dev processes/containers without a full up.ps1.
+    For -Host, -Ui, and -Workers, those processes are local dotnet (pinned SDK), matching up.ps1. Only -Db
+    targets Docker (the sqlserver database container).
 
     This script does not use [CmdletBinding()] so that -Db can be used: advanced functions reserve -db for -Debug.
 .PARAMETER NoBrowser
     Passed to up.ps1 (default path) or restart-ui.ps1 when -Ui is used: do not auto-open the UI in the browser.
 .PARAMETER Workers
-    Run scripts\dev\restart-worker.ps1.
+    Run scripts\dev\restart-worker.ps1 (local dotnet WorkerHost).
 .PARAMETER RestartHost
-    Run scripts\dev\restart-host.ps1. Use -Host (alias) on the command line; a parameter named Host is not used
-    because it conflicts with PowerShell's automatic $Host variable.
+    Run scripts\dev\restart-host.ps1 (local dotnet Management.Host). Use -Host (alias) on the command line; a
+    parameter named Host is not used because it conflicts with PowerShell's automatic $Host variable.
 .PARAMETER Ui
-    Run scripts\dev\restart-ui.ps1.
+    Run scripts\dev\restart-ui.ps1 (local dotnet UI server by default).
 .PARAMETER Db
     Run scripts\dev\restart-db.ps1 (SQL Server container).
 .EXAMPLE

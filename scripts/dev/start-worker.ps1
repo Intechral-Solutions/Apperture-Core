@@ -2,7 +2,8 @@
 .SYNOPSIS
     Starts (or restarts) the Apperture testing worker runtime.
 .DESCRIPTION
-    Launches WorkerHost using the pinned SDK resolver and writes launch state to:
+    Local dotnet process (not Docker): launches Apperture.RuntimeHost.Windows.WorkerHost with the pinned SDK
+    (Get-DevDotNetSdk.ps1) and writes launch state to:
       artifacts/devlogs/worker-runtime-state.json
     This script is safe to run repeatedly for dev retry/start workflows.
 #>
@@ -47,15 +48,19 @@ function Write-State {
 }
 
 function Stop-ExistingWorker {
-    $workers = Get-CimInstance Win32_Process | Where-Object {
-        $_.Name -ieq "dotnet.exe" -and $_.CommandLine -and $_.CommandLine.Contains("Apperture.RuntimeHost.Windows.WorkerHost.csproj")
-    }
+    $projectFileName = [System.IO.Path]::GetFileName($WorkerHostProject)
+    $workers = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
+        Where-Object {
+            $_.Name -ieq "dotnet.exe" -and $_.CommandLine -and $_.CommandLine -like "*$projectFileName*"
+        }
     foreach ($w in $workers) {
+        Write-Host "Stopping worker host: $projectFileName (PID $($w.ProcessId))" -ForegroundColor Yellow
         try { Stop-Process -Id $w.ProcessId -Force -ErrorAction Stop } catch { }
     }
 }
 
 if ($Restart) {
+    Write-Host "Stopping existing worker runtime..." -ForegroundColor Cyan
     Stop-ExistingWorker
     Start-Sleep -Seconds 1
 }
@@ -63,7 +68,9 @@ if ($Restart) {
 $sdk = & $ResolveScript -RepoRoot $RepoRoot
 $dotnetExe = $sdk.DotNetExe
 $env:DOTNET_ROOT = $sdk.DotNetRoot
-$env:PATH = "$($sdk.DotNetRoot);$env:PATH"
+if ($env:PATH -notlike "*$($sdk.DotNetRoot)*") {
+    $env:PATH = "$($sdk.DotNetRoot);$env:PATH"
+}
 
 $saPassword = $env:SqlServer__Password
 if ([string]::IsNullOrWhiteSpace($saPassword)) {
@@ -76,27 +83,12 @@ if ([string]::IsNullOrWhiteSpace($saPassword)) {
     }
 }
 
-$args = @("run", "--project", $WorkerHostProject)
+$runArgs = @("run", "--project", $WorkerHostProject)
 $stamp = (Get-Date).ToUniversalTime().ToString("yyyyMMdd-HHmmss")
 $logOut = Join-Path $LogDir "worker-host-$stamp.out.log"
 $logErr = Join-Path $LogDir "worker-host-$stamp.err.log"
 
 Write-State -Status "Starting" -Message "Worker launch requested."
-
-$startInfo = @{
-    FilePath = $dotnetExe
-    ArgumentList = $args
-    WorkingDirectory = $RepoRoot
-    PassThru = $true
-}
-
-if ($Headless) {
-    $startInfo["WindowStyle"] = "Hidden"
-    $startInfo["RedirectStandardOutput"] = $logOut
-    $startInfo["RedirectStandardError"] = $logErr
-} else {
-    $startInfo["WindowStyle"] = "Normal"
-}
 
 $env:DOTNET_ENVIRONMENT = "Development"
 $env:ASPNETCORE_ENVIRONMENT = "Development"
@@ -104,7 +96,14 @@ if (-not [string]::IsNullOrWhiteSpace($saPassword)) {
     $env:SqlServer__Password = $saPassword
 }
 
-$proc = Start-Process @startInfo
+# Match scripts\dev\up.ps1: interactive runs use Start-Process so dotnet runs in a new console (not the caller's shell).
+if ($Headless) {
+    $proc = Start-Process -FilePath $dotnetExe -ArgumentList $runArgs -WorkingDirectory $RepoRoot -WindowStyle Hidden `
+        -RedirectStandardOutput $logOut -RedirectStandardError $logErr -PassThru
+} else {
+    Write-Host "Starting worker in a new window..." -ForegroundColor DarkGray
+    $proc = Start-Process -FilePath $dotnetExe -ArgumentList $runArgs -WorkingDirectory $RepoRoot -WindowStyle Normal -PassThru
+}
 Start-Sleep -Seconds 5
 
 if ($proc.HasExited) {
@@ -116,6 +115,10 @@ if ($proc.HasExited) {
     throw $msg
 }
 
-$okMsg = "Worker running (pid $($proc.Id))."
-Write-State -Status "Running" -Message $okMsg -ProcessId $proc.Id -LogPath $logOut
+$okMsg = if ($Headless) {
+    "Worker running (pid $($proc.Id))."
+} else {
+    "Worker running in a new window (pid $($proc.Id))."
+}
+Write-State -Status "Running" -Message $okMsg -ProcessId $proc.Id -LogPath $(if ($Headless) { $logOut } else { $null })
 Write-Host $okMsg -ForegroundColor Green

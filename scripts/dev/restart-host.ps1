@@ -1,9 +1,11 @@
 <#
 .SYNOPSIS
-    Rebuilds and restarts only the Management API (Management.Host), without restarting the UI, worker, or SQL container.
+    Rebuilds and restarts only the Management API (Management.Host) via local dotnet run.
 .DESCRIPTION
-    Stops whatever is listening on port 9000, builds Apperture.Management.Host, then starts it with the same
-    launch profile as scripts\dev\up.ps1 (http, port 9000).
+    Development uses local .NET (pinned SDK via Get-DevDotNetSdk.ps1), not Docker, for the control-plane API.
+    Stops listeners on port 9000 and any dotnet process running this Host project, waits for the port to be free,
+    builds Apperture.Management.Host, then starts it in a new console (same launch profile as scripts\dev\up.ps1,
+    http port 9000). Does not restart the UI, worker, or SQL container.
 .EXAMPLE
     .\restart-host.ps1
 #>
@@ -20,9 +22,14 @@ if (-not (Test-Path $HostProject)) {
     Write-Error "Management.Host project not found: $HostProject"
 }
 
+function Get-NetTCPConnectionListen {
+    param([int]$Port)
+    @(Get-NetTCPConnection -LocalPort $Port -ErrorAction SilentlyContinue | Where-Object { $_.State -eq "Listen" })
+}
+
 function Stop-ProcessByPort {
     param([int]$Port)
-    $conns = @(Get-NetTCPConnection -LocalPort $Port -ErrorAction SilentlyContinue | Where-Object { $_.State -eq "Listen" })
+    $conns = @(Get-NetTCPConnectionListen -Port $Port)
     if ($conns.Count -eq 0) { return }
     $pids = $conns | Select-Object -ExpandProperty OwningProcess -Unique
     foreach ($owningProcessId in $pids) {
@@ -34,11 +41,25 @@ function Stop-ProcessByPort {
     }
 }
 
+function Stop-DotNetHostByProject {
+    param([string]$ProjectPath)
+    if (-not (Test-Path $ProjectPath)) { return }
+    $projectFileName = [System.IO.Path]::GetFileName($ProjectPath)
+    $hostProcs = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
+        Where-Object {
+            $_.Name -eq "dotnet.exe" -and $_.CommandLine -and $_.CommandLine -like "*$projectFileName*"
+        }
+    foreach ($p in $hostProcs) {
+        Write-Host "Stopping API dotnet host: $projectFileName (PID $($p.ProcessId))" -ForegroundColor Yellow
+        Stop-Process -Id $p.ProcessId -Force -ErrorAction SilentlyContinue
+    }
+}
+
 function Wait-DevListenPortFree {
     param([int]$Port = 9000, [int]$TimeoutSeconds = 45)
     $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
     while ((Get-Date) -lt $deadline) {
-        $listeners = @(Get-NetTCPConnection -LocalPort $Port -ErrorAction SilentlyContinue | Where-Object { $_.State -eq "Listen" })
+        $listeners = @(Get-NetTCPConnectionListen -Port $Port)
         if ($listeners.Count -eq 0) { return }
         Start-Sleep -Milliseconds 350
     }
@@ -52,15 +73,17 @@ if ($env:PATH -notlike "*$($sdk.DotNetRoot)*") {
     $env:PATH = "$($sdk.DotNetRoot);$env:PATH"
 }
 
+Write-Host "Stopping existing Management.Host (port $ApiPort + dotnet processes for this project)..." -ForegroundColor Cyan
+Stop-ProcessByPort -Port $ApiPort
+Stop-DotNetHostByProject -ProjectPath $HostProject
+Write-Host "Waiting for port $ApiPort to be released..." -ForegroundColor Cyan
+Wait-DevListenPortFree -Port $ApiPort
+
 Write-Host "Building Management.Host..." -ForegroundColor Cyan
 & $dotnetExe build $HostProject --no-incremental
 if ($LASTEXITCODE -ne 0) { throw "dotnet build failed" }
 
-Write-Host "Restarting API on port $ApiPort..." -ForegroundColor Cyan
-Stop-ProcessByPort -Port $ApiPort
-Write-Host "Waiting for port $ApiPort to be released..." -ForegroundColor Cyan
-Wait-DevListenPortFree -Port $ApiPort
-
 $hostArgs = @("run", "--project", $HostProject, "--launch-profile", "http")
+# Match scripts\dev\up.ps1: new console window for dotnet (not inline in the calling shell).
 Start-Process -FilePath $dotnetExe -ArgumentList $hostArgs -WorkingDirectory $RepoRoot -WindowStyle Normal
-Write-Host "Management API started at http://localhost:$ApiPort" -ForegroundColor Green
+Write-Host "Management API started in a new window at http://localhost:$ApiPort" -ForegroundColor Green
