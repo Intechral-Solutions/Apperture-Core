@@ -40,13 +40,8 @@ public static class RouteToSectionResolver
             var menu = getDomain(domainName);
             if (menu?.Items is null) continue;
 
-            foreach (var item in menu.Items)
-            {
-                var href = item.Href;
-                if (string.IsNullOrWhiteSpace(href)) continue;
-                if (NavPathMatching.PathMatchesMenuHref(p, href))
-                    return domainName;
-            }
+            if (DomainMenuTree.MenuContainsActiveHref(menu, p))
+                return domainName;
         }
 
         return "";

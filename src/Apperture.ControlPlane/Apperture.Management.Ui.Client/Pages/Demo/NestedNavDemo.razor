@@ -1,0 +1,41 @@
+@page "/demo/nested-nav"
+@page "/demo/nested-nav/{*Slugs}"
+
+<PageTitle>Nested nav demo</PageTitle>
+
+<div class="p-4 max-w-2xl">
+    <h1 class="text-xl font-semibold text-heading">Nested navigation demo</h1>
+    <p class="mt-2 text-sm text-muted">
+        One page for every depth. Use Tools in the control panel to open the tree; each level links here with a longer path.
+    </p>
+
+    <dl class="mt-6 space-y-3 text-sm">
+        <div>
+            <dt class="font-medium text-heading">Depth</dt>
+            <dd class="text-body">@_depth</dd>
+        </div>
+        <div>
+            <dt class="font-medium text-heading">Segments</dt>
+            <dd class="text-body">@(_segments.Length == 0 ? "(none — root)" : string.Join(" → ", _segments))</dd>
+        </div>
+        <div>
+            <dt class="font-medium text-heading">Slugs parameter</dt>
+            <dd class="break-all font-mono text-xs text-body">@(string.IsNullOrEmpty(Slugs) ? "(empty)" : Slugs)</dd>
+        </div>
+    </dl>
+</div>
+
+@code {
+    [Parameter] public string? Slugs { get; set; }
+
+    private string[] _segments = Array.Empty<string>();
+    private int _depth;
+
+    protected override void OnParametersSet()
+    {
+        _segments = string.IsNullOrWhiteSpace(Slugs)
+            ? Array.Empty<string>()
+            : Slugs.Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        _depth = _segments.Length;
+    }
+}

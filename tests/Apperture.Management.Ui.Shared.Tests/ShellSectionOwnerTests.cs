@@ -176,4 +176,14 @@ public sealed class ShellSectionOwnerTests
         RouteToSectionResolver.Resolve(ShellSectionRoutes.DashboardHome, menus.GetValueOrDefault, menus.Keys)
             .Should().Be(SectionOwnerConstants.Dashboard);
     }
+
+    [Fact]
+    public void RouteResolver_ToolsNestedDemo_RootAndDeepPaths_ReturnTools()
+    {
+        var menus = ControlPanelMenuDefinitions.GetDefaultMenus();
+        RouteToSectionResolver.Resolve("/demo/nested-nav", menus.GetValueOrDefault, menus.Keys)
+            .Should().Be("Tools");
+        RouteToSectionResolver.Resolve("/demo/nested-nav/level-1/level-2/level-3", menus.GetValueOrDefault, menus.Keys)
+            .Should().Be("Tools");
+    }
 }

@@ -110,6 +110,39 @@ public static class ControlPanelMenuDefinitions
                 Items =
                 {
                     new DomainMenuItem { Text = "API Explorer", Href = "/tools/explorer" },
+                    new DomainMenuItem
+                    {
+                        Id = "tools-nested-nav-demo",
+                        Text = "Nested nav demo",
+                        Href = "/demo/nested-nav",
+                        Children = new List<DomainMenuItem>
+                        {
+                            new DomainMenuItem
+                            {
+                                Id = "tools-nested-nav-l1",
+                                Text = "Level 1",
+                                Href = "/demo/nested-nav/level-1",
+                                Children = new List<DomainMenuItem>
+                                {
+                                    new DomainMenuItem
+                                    {
+                                        Id = "tools-nested-nav-l2",
+                                        Text = "Level 2",
+                                        Href = "/demo/nested-nav/level-1/level-2",
+                                        Children = new List<DomainMenuItem>
+                                        {
+                                            new DomainMenuItem
+                                            {
+                                                Id = "tools-nested-nav-l3",
+                                                Text = "Level 3",
+                                                Href = "/demo/nested-nav/level-1/level-2/level-3"
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
                     new DomainMenuItem { Text = "Operational teams", Href = "/attention/operational-teams" },
                     new DomainMenuItem { Text = "Attention routing defaults", Href = "/attention/routing-defaults" }
                 }

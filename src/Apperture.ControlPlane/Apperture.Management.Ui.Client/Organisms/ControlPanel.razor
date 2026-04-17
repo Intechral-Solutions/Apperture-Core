@@ -36,42 +36,16 @@
         }
 
         <ul class="flex flex-col">
-            @foreach (var item in Definition.Items)
+            @for (var i = 0; i < Definition.Items.Count; i++)
             {
-                <li>
-                    @if (item.Children != null && item.Children.Count > 0)
-                    {
-                        <div class="flex cursor-pointer items-center justify-between px-3 py-2 text-sm text-body hover:bg-surface-muted"
-                             @onclick="() => Toggle(item.Text)">
-                            <span>@item.Text</span>
-                            <svg class="h-4 w-4 transform transition-transform duration-200 @(_expanded.Contains(item.Text) ? "rotate-90" : "")"
-                                 xmlns="http://www.w3.org/2000/svg"
-                                 fill="none" viewBox="0 0 24 24"
-                                 stroke="currentColor" stroke-width="2">
-                                <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
-                            </svg>
-                        </div>
-
-                        <ul class="@(_expanded.Contains(item.Text) || HasActiveChild(item) ? "block" : "hidden") ml-4 border-l border-default">
-                            @foreach (var child in item.Children)
-                            {
-                                <li>
-                                    <a href="@child.Href"
-                                       class="block rounded px-3 py-2 text-sm @(IsActiveHref(child.Href) ? "font-medium text-heading bg-surface-muted" : "text-body hover:bg-surface-muted")">
-                                        @child.Text
-                                    </a>
-                                </li>
-                            }
-                        </ul>
-                    }
-                    else
-                    {
-                        <a href="@item.Href"
-                           class="block rounded px-3 py-2 text-sm @(IsActiveHref(item.Href) ? "font-medium text-heading bg-surface-muted" : "text-body hover:bg-surface-muted")">
-                            @item.Text
-                        </a>
-                    }
-                </li>
+                var item = Definition.Items[i];
+                <ControlPanelNavNode @key="@i"
+                                     Item="@item"
+                                     DomainName="@DomainName"
+                                     IndexPath="@i.ToString()"
+                                     CurrentPath="@NormalizedCurrentPath"
+                                     Expanded="@_expanded"
+                                     OnToggleKey="HandleToggleKey" />
             }
         </ul>
     }
@@ -126,35 +100,58 @@
     }
 
     private readonly HashSet<string> _expanded = new();
+    /// <summary>Last (domain, path) we applied auto-expand for. Avoids re-expanding on every render after a manual collapse.</summary>
+    private string? _lastAutoExpandDomain;
+    private string? _lastAutoExpandPath;
 
-    protected override void OnParametersSet()
+    private string NormalizedCurrentPath
     {
-        if (Definition?.Items is null) return;
-        foreach (var item in Definition.Items.Where(i => i.Children?.Count > 0))
+        get
         {
-            if (HasActiveChild(item))
-                _expanded.Add(item.Text);
+            var path = _currentPath;
+            if (path.Length == 0) path = "/";
+            return path;
         }
     }
 
-    private void Toggle(string key)
+    protected override void OnParametersSet()
+    {
+        if (Definition?.Items is null || string.IsNullOrWhiteSpace(DomainName)) return;
+        var path = NormalizedCurrentPath;
+        var domainChanged = _lastAutoExpandDomain is null ||
+                            !string.Equals(DomainName, _lastAutoExpandDomain, StringComparison.OrdinalIgnoreCase);
+        var pathChanged = _lastAutoExpandPath is null ||
+                          !string.Equals(path, _lastAutoExpandPath, StringComparison.OrdinalIgnoreCase);
+        if (!domainChanged && !pathChanged)
+            return;
+
+        _lastAutoExpandDomain = DomainName;
+        _lastAutoExpandPath = path;
+        for (var i = 0; i < Definition.Items.Count; i++)
+            EnsureExpandedForActiveSubtree(Definition.Items[i], i.ToString(), path);
+    }
+
+    private void EnsureExpandedForActiveSubtree(DomainMenuItem item, string indexPath, string path)
+    {
+        if (item.Children is null || item.Children.Count == 0) return;
+        var key = DomainMenuTree.GetExpandStateKey(DomainName, indexPath, item);
+        for (var i = 0; i < item.Children.Count; i++)
+        {
+            var child = item.Children[i];
+            if (!DomainMenuTree.SubtreeContainsActiveHref(child, path)) continue;
+            _expanded.Add(key);
+            var childPath = string.IsNullOrEmpty(indexPath) ? i.ToString() : $"{indexPath}/{i}";
+            EnsureExpandedForActiveSubtree(child, childPath, path);
+        }
+    }
+
+    private Task HandleToggleKey(string key)
     {
         if (_expanded.Contains(key))
             _expanded.Remove(key);
         else
             _expanded.Add(key);
-    }
-
-    private bool IsActiveHref(string? href)
-    {
-        var path = _currentPath;
-        if (path.Length == 0) path = "/";
-        return NavPathMatching.PathMatchesMenuHref(path, href);
-    }
-
-    private bool HasActiveChild(DomainMenuItem parent)
-    {
-        if (parent.Children is null) return false;
-        return parent.Children.Any(c => IsActiveHref(c.Href));
+        StateHasChanged();
+        return Task.CompletedTask;
     }
 }
