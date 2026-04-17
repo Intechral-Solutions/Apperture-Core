@@ -2,9 +2,10 @@
 .SYNOPSIS
     Rebuilds and restarts only the Management UI (local dotnet by default).
 .DESCRIPTION
-    Default (matches scripts\dev\up.ps1): builds Apperture.Management.Ui.Server with the pinned SDK and dotnet,
-    stops whatever is listening on port 9001, then starts the UI again. Does not stop port 9000 (API) or the
-    worker host process. The API and worker are also local dotnet in dev, not Docker.
+    Default (matches scripts\dev\up.ps1 intent): stops listeners on 9001 and dotnet processes for this UI project,
+    waits for the port, builds Apperture.Management.Ui.Server with the pinned SDK, then starts the UI in a new
+    terminal window. Does not stop port 9000 (API) or the worker host process. The API and worker are local dotnet
+    in dev, not Docker.
 
     Use -Docker when the UI is a compose service (e.g. full stack deploy). The repo root compose file used for
     local dev typically only includes sqlserver; in that case Docker UI mode is not available unless you add a
@@ -35,6 +36,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot "Dev-DotNetLaunch.ps1")
 $RepoRoot = if ($env:APPERTURE_REPO_ROOT) { $env:APPERTURE_REPO_ROOT } else { (Get-Item $PSScriptRoot).Parent.Parent.FullName }
 $UiServerProject = Join-Path $RepoRoot "src\Apperture.ControlPlane\Apperture.Management.Ui.Server\Apperture.Management.Ui.Server.csproj"
 $ResolveScript = Join-Path $PSScriptRoot "Get-DevDotNetSdk.ps1"
@@ -96,24 +98,24 @@ if (-not $Docker) {
         $env:PATH = "$($sdk.DotNetRoot);$env:PATH"
     }
 
-    Write-Host "Building Management UI (dotnet)..." -ForegroundColor Cyan
-    & $dotnetExe build $UiServerProject --no-incremental
-    if ($LASTEXITCODE -ne 0) { throw "dotnet build failed" }
-
+    # Stop before build: avoids file locks from a running UI and matches restart-host.ps1 (build failure must not skip stop).
     Write-Host "Stopping existing UI (port $UiPort + dotnet processes for this project)..." -ForegroundColor Cyan
     Stop-ProcessByPort -Port $UiPort
     Stop-DotNetUiByProject -ProjectPath $UiServerProject
     Write-Host "Waiting for port $UiPort to be released..." -ForegroundColor Cyan
     Wait-DevListenPortFree -Port $UiPort
 
+    Write-Host "Building Management UI (dotnet)..." -ForegroundColor Cyan
+    & $dotnetExe build $UiServerProject --no-incremental
+    if ($LASTEXITCODE -ne 0) { throw "dotnet build failed" }
+
     $uiArgs = @("run", "--project", $UiServerProject, "--launch-profile", "Ui.Server")
     if ($NoBrowser) {
         $uiArgs = @("run", "--project", $UiServerProject, "--launch-profile", "Ui.Server", "--urls", "http://localhost:$UiPort")
     }
 
-    # Match scripts\dev\up.ps1: new console window for dotnet (not inline in the calling shell).
-    Start-Process -FilePath $dotnetExe -ArgumentList $uiArgs -WorkingDirectory $RepoRoot -WindowStyle Normal
-    Write-Host "UI started in a new window at http://localhost:$UiPort" -ForegroundColor Green
+    Start-DevDotNetInNewTerminal -WindowTitle "Apperture Management UI" -DotnetExe $dotnetExe -WorkingDirectory $RepoRoot -DotnetArgumentList $uiArgs
+    Write-Host "UI launched in a new terminal at http://localhost:$UiPort" -ForegroundColor Green
     return
 }
 

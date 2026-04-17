@@ -13,6 +13,7 @@
 param()
 
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot "Dev-DotNetLaunch.ps1")
 $RepoRoot = if ($env:APPERTURE_REPO_ROOT) { $env:APPERTURE_REPO_ROOT } else { (Get-Item $PSScriptRoot).Parent.Parent.FullName }
 $HostProject = Join-Path $RepoRoot "src\Apperture.ControlPlane\Apperture.Management.Host\Apperture.Management.Host.csproj"
 $ResolveScript = Join-Path $PSScriptRoot "Get-DevDotNetSdk.ps1"
@@ -84,6 +85,5 @@ Write-Host "Building Management.Host..." -ForegroundColor Cyan
 if ($LASTEXITCODE -ne 0) { throw "dotnet build failed" }
 
 $hostArgs = @("run", "--project", $HostProject, "--launch-profile", "http")
-# Match scripts\dev\up.ps1: new console window for dotnet (not inline in the calling shell).
-Start-Process -FilePath $dotnetExe -ArgumentList $hostArgs -WorkingDirectory $RepoRoot -WindowStyle Normal
-Write-Host "Management API started in a new window at http://localhost:$ApiPort" -ForegroundColor Green
+Start-DevDotNetInNewTerminal -WindowTitle "Apperture Management API" -DotnetExe $dotnetExe -WorkingDirectory $RepoRoot -DotnetArgumentList $hostArgs
+Write-Host "Management API launched in a new terminal at http://localhost:$ApiPort" -ForegroundColor Green
