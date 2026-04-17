@@ -2224,6 +2224,9 @@
     --shadow-elevated: 0 4px 6px color-mix(in oklch, var(--color-text-heading) 5%, transparent),
       0 12px 32px color-mix(in oklch, var(--color-focus) 6%, transparent),
       0 0 0 1px color-mix(in oklch, var(--color-secondary) 18%, transparent);
+    /* Shell layout: icon rail + slide-out control panel (panel width may be overridden in px by JS) */
+    --shell-rail-width: calc(var(--spacing) * 17);
+    --shell-panel-width: calc(var(--spacing) * 54);
     --color-card-border: color-mix(in oklch, var(--color-border) 78%, var(--color-secondary));
     --color-card-border-strong: color-mix(in oklch, var(--color-border-strong) 78%, var(--color-accent-earth));
     --color-card-sheen: linear-gradient(
@@ -2330,6 +2333,8 @@
       0 12px 40px color-mix(in oklch, black 35%, transparent);
     --shadow-elevated: 0 8px 30px color-mix(in oklch, black 40%, transparent),
       0 0 0 1px color-mix(in oklch, var(--color-secondary) 24%, transparent);
+    --shell-rail-width: calc(var(--spacing) * 17);
+    --shell-panel-width: calc(var(--spacing) * 54);
     --color-card-border: color-mix(in oklch, var(--color-border) 72%, var(--color-secondary));
     --color-card-border-strong: color-mix(in oklch, var(--color-border-strong) 74%, var(--color-accent-earth));
     --color-card-sheen: linear-gradient(
@@ -2425,6 +2430,21 @@
   }
   .shadow-theme-elevated {
     box-shadow: var(--shadow-elevated);
+  }
+  .shell-panel-width {
+    width: var(--shell-panel-width);
+  }
+  .shell-main-offset-open {
+    margin-left: calc(var(--shell-rail-width) + var(--shell-panel-width));
+  }
+  .shell-main-offset-closed {
+    margin-left: var(--shell-rail-width);
+  }
+  .cursor-ew-resize {
+    cursor: ew-resize;
+  }
+  .touch-none {
+    touch-action: none;
   }
   .bg-callout-info {
     background-color: var(--color-callout-info-bg);
@@ -2698,6 +2718,20 @@
     transition-duration: 200ms;
     cursor: pointer;
     position: relative;
+  }
+  /* Config gear: base rail tile is 3rem + thick padding, so h-12 icons read tiny/clipped. Use ~full-rail square + icon fill (~2× drawable vs cramped slot). */
+  .nav-rail-btn.nav-rail-btn--config-gear {
+    height: auto;
+    width: calc(100% - calc(var(--spacing) * 2));
+    max-width: calc(var(--spacing) * 17);
+    aspect-ratio: 1 / 1;
+    padding: calc(var(--spacing) * 0.5);
+    overflow: visible;
+  }
+  .nav-rail-btn.nav-rail-btn--config-gear svg {
+    display: block;
+    width: 100%;
+    height: 100%;
   }
   .group:hover .nav-rail-btn--hover {
     background-color: var(--color-chrome-hover);

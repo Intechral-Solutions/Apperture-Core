@@ -14,7 +14,7 @@
              OnControlPanelOpen="HandleControlPanelOpen"
              OnControlPanelClose="HandleControlPanelClose" />
 
-    <div class="flex min-h-0 flex-1 flex-col @(isControlPanelOpen ? "ml-70" : "ml-17")">
+    <div class="flex min-h-0 flex-1 flex-col @(isControlPanelOpen ? "shell-main-offset-open" : "shell-main-offset-closed")">
         @if (SessionState.State == SessionLoadState.ForbiddenUnlinked)
         {
             <div class="border-b border-message-warning bg-message-warning px-4 py-2 text-sm text-body" role="status">

@@ -30,15 +30,15 @@
                                  OnItemClick="HandleNavItemClick" />
                 }
             </div>
-            <div class="mt-auto flex w-full justify-center">
+            <div class="mt-auto flex w-full justify-center overflow-visible pb-1">
                 <NavRailItem Domain="@SectionOwnerConstants.Config"
                              IconType="@typeof(CogIcon)"
                              Tooltip="Configuration"
                              AriaLabel="Configuration"
                              CurrentDomain="@CurrentDomainName"
                              CurrentPageUri="@NavManager.Uri"
-                             ContainerStyle="group relative flex w-full shrink-0 justify-center -translate-y-5"
-                             NavButtonStyle="nav-rail-btn w-[70%] aspect-square flex items-center justify-center transition-all duration-300"
+                             ContainerStyle="group relative flex w-full shrink-0 justify-center -translate-y-5 overflow-visible"
+                             NavButtonStyle="nav-rail-btn nav-rail-btn--config-gear flex items-center justify-center transition-all duration-300"
                              IconStyle="@GetConfigIconStyle()"
                              UseGlowEffect="true"
                              OnItemClick="HandleNavItemClick" />
@@ -63,7 +63,7 @@
         string.Equals(CurrentDomainName, SectionOwnerConstants.Config, StringComparison.OrdinalIgnoreCase);
 
     private string GetConfigIconStyle() =>
-        "h-8 w-8 text-body transition-opacity duration-200 " +
+        "block h-full w-full min-h-0 min-w-0 text-body transition-opacity duration-200 " +
         (_isConfigActive ? "opacity-100" : "opacity-60 group-hover:opacity-90");
 
     protected override async Task OnInitializedAsync()

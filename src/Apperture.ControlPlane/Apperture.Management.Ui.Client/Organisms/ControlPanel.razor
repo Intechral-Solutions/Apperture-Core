@@ -5,7 +5,8 @@
 @inject NavigationManager NavManager
 @implements IDisposable
 
-<div id="control-panel" class="h-full w-54 bg-surface transition-transform duration-300 z-20 flex flex-col relative overflow-auto border-r border-default text-body @(IsOpen ? "translate-x-0" : "-translate-x-full")">
+<div id="control-panel"
+     class="shell-panel-width h-full bg-surface transition-transform duration-300 z-20 flex shrink-0 flex-col overflow-auto border-r border-default text-body @(IsOpen ? "translate-x-0" : "-translate-x-full") relative">
     @if (Definition is null)
     {
         <div class="p-4 text-sm text-muted">
@@ -73,6 +74,13 @@
                 </li>
             }
         </ul>
+    }
+    @if (IsOpen)
+    {
+        <button type="button"
+                id="control-panel-resize-handle"
+                class="focus-ring absolute right-0 top-0 z-30 h-full w-2 cursor-ew-resize touch-none border-0 bg-transparent p-0 hover:bg-surface-muted/35"
+                aria-label="Resize control panel"></button>
     }
 </div>
 
