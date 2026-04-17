@@ -1,6 +1,7 @@
 using Apperture.Bootstrap;
 using Apperture.Connectors.CampusNexus;
 using Apperture.Connectors.Sftp;
+using Apperture.ConnectorResolution;
 using Apperture.ControlPlane.Security;
 using Apperture.RuntimePlane.Dispatch.SqlServer;
 using Apperture.Management.Host;
@@ -46,6 +47,7 @@ builder.Services.AddAppertureRecovery();
 builder.Services.AddRuntimeSchedulerDispatch();
 builder.Services.AddAppertureCampusNexusConnector();
 builder.Services.AddAppertureSftpConnector();
+builder.Services.AddPlatformSqlConnector();
 builder.Services.AddAppertureConnectorWorkflows();
 builder.Services.AddAppertureIntegrationWorkflows();
 builder.Services.AddAttentionIncidentObservation(builder.Configuration);

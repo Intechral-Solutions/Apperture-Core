@@ -43,6 +43,7 @@ public static class ConnectorResolutionServiceCollectionExtensions
         services.TryRegisterConnectorDefinitionRegistry();
         services.AddSingleton<IConnectorClientFactory<IDbConnection>, PlatformSqlConnectorClientFactory>();
         services.AddSingleton<IConnectorClientFactoryContributor, PlatformSqlConnectorClientFactoryContributor>();
+        services.AddScoped<IConnectionVerifier, PlatformSqlConnectionVerifier>();
         return services;
     }
 

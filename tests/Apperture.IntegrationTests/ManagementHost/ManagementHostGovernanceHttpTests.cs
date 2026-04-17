@@ -6,6 +6,7 @@ using System.Text;
 using System.Text.Json;
 using Apperture.ControlPlane.Security.Models;
 using FluentAssertions;
+using Microsoft.Data.SqlClient;
 using Xunit;
 
 namespace Apperture.IntegrationTests.ManagementHost;
@@ -145,16 +146,28 @@ public sealed class ManagementHostGovernanceHttpTests
     }
 
     [Fact]
-    public async Task Post_connection_test_connect_sql_reports_unavailable()
+    public async Task Post_connection_test_connect_sql_runs_probe_against_configured_database()
     {
         AssertSqlAvailable();
         using var client = _fixture.CreateAuthenticatedClient(ManagementGovernanceTestConstants.ExternalIntegrationAuthoringOperator);
+
+        var csb = new SqlConnectionStringBuilder(_fixture.ConnectionString);
+        Assert.True(
+            csb.IntegratedSecurity,
+            "This test expects APPERTURE_TEST_SQL with Integrated Security (Trusted_Connection). SQL authentication requires a governed Password secret ref.");
+
+        var config = new Dictionary<string, string>
+        {
+            ["Server"] = csb.DataSource,
+            ["Database"] = csb.InitialCatalog,
+        };
+
         var create = await client.PostAsJsonAsync("/api/connections", new
         {
             connectorDefinitionId = "Apperture.Platform.Sql",
             name = $"Epic59 verify sql {Guid.NewGuid():N}"[..24],
-            config = new Dictionary<string, string> { ["Server"] = "localhost", ["Database"] = "db", ["UserId"] = "sa" },
-            secretRefs = new Dictionary<string, string> { ["Password"] = "local:test/password" },
+            config,
+            secretRefs = new Dictionary<string, string>(),
             scopeKey = "instance"
         });
         create.StatusCode.Should().Be(HttpStatusCode.Created);
@@ -165,8 +178,9 @@ public sealed class ManagementHostGovernanceHttpTests
         var verify = await client.PostAsync($"/api/connections/{connectionId}/test-connect", null);
         verify.StatusCode.Should().Be(HttpStatusCode.OK);
         using var verifyDoc = JsonDocument.Parse(await verify.Content.ReadAsStringAsync());
-        verifyDoc.RootElement.GetProperty("supportsVerification").GetBoolean().Should().BeFalse();
-        verifyDoc.RootElement.GetProperty("lastVerificationStatus").GetString().Should().Be("Unavailable");
+        verifyDoc.RootElement.GetProperty("supportsVerification").GetBoolean().Should().BeTrue();
+        verifyDoc.RootElement.GetProperty("lastVerificationStatus").GetString().Should().Be("Success");
+        verifyDoc.RootElement.GetProperty("lastVerificationSummary").GetString().Should().Contain("SELECT 1");
     }
 
     [Fact]
