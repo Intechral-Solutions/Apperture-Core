@@ -47,7 +47,7 @@ namespace Proof.CampusNexus.StudentReview.Persistence.Migrations
                         .HasMaxLength(64)
                         .HasColumnType("nvarchar(64)");
 
-                    b.Property<DateTimeOffset?>("MaxDateLstModSeen")
+                    b.Property<DateTimeOffset?>("MaxLastModifiedDateTimeSeen")
                         .HasColumnType("datetimeoffset");
 
                     b.Property<string>("ODataQueryUsed")
@@ -91,10 +91,7 @@ namespace Proof.CampusNexus.StudentReview.Persistence.Migrations
                     b.Property<int>("CnsStudentId")
                         .HasColumnType("int");
 
-                    b.Property<DateTimeOffset?>("DateAdded")
-                        .HasColumnType("datetimeoffset");
-
-                    b.Property<DateTimeOffset?>("DateLstMod")
+                    b.Property<DateTimeOffset?>("CreatedDateTime")
                         .HasColumnType("datetimeoffset");
 
                     b.Property<string>("FirstName")
@@ -111,6 +108,9 @@ namespace Proof.CampusNexus.StudentReview.Persistence.Migrations
                         .HasColumnType("nvarchar(256)");
 
                     b.Property<DateTimeOffset>("LastFetchedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset?>("LastModifiedDateTime")
                         .HasColumnType("datetimeoffset");
 
                     b.Property<string>("LastName")

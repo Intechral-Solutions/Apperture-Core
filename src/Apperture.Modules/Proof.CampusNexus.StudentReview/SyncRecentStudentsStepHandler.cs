@@ -119,7 +119,7 @@ public sealed class SyncRecentStudentsStepHandler : IStepHandler
 
             foreach (var row in rows)
             {
-                if (row.DateLstMod is { } dlm && (maxMod is null || dlm > maxMod))
+                if (row.LastModifiedDateTime is { } dlm && (maxMod is null || dlm > maxMod))
                     maxMod = dlm;
 
                 var existing = await db.StudentReviewSnapshots
@@ -138,8 +138,8 @@ public sealed class SyncRecentStudentsStepHandler : IStepHandler
                         StudentNumber = row.StudentNumber,
                         FirstName = row.FirstName,
                         LastName = row.LastName,
-                        DateAdded = row.DateAdded,
-                        DateLstMod = row.DateLstMod,
+                        CreatedDateTime = row.CreatedDateTime,
+                        LastModifiedDateTime = row.LastModifiedDateTime,
                         LastFetchedAtUtc = now,
                         LastUpdatedAtUtc = now,
                         SourceRunId = runId,
@@ -152,8 +152,8 @@ public sealed class SyncRecentStudentsStepHandler : IStepHandler
                     existing.StudentNumber = row.StudentNumber;
                     existing.FirstName = row.FirstName;
                     existing.LastName = row.LastName;
-                    existing.DateAdded = row.DateAdded;
-                    existing.DateLstMod = row.DateLstMod;
+                    existing.CreatedDateTime = row.CreatedDateTime;
+                    existing.LastModifiedDateTime = row.LastModifiedDateTime;
                     existing.LastFetchedAtUtc = now;
                     existing.LastUpdatedAtUtc = now;
                     existing.SourceRunId = runId;
@@ -166,7 +166,7 @@ public sealed class SyncRecentStudentsStepHandler : IStepHandler
             runEntity.RetrievedCount = rows.Count;
             runEntity.InsertedCount = inserted;
             runEntity.UpdatedCount = updated;
-            runEntity.MaxDateLstModSeen = maxMod;
+            runEntity.MaxLastModifiedDateTimeSeen = maxMod;
             runEntity.Status = "succeeded";
             await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
 
@@ -178,7 +178,7 @@ public sealed class SyncRecentStudentsStepHandler : IStepHandler
                 retrieved = rows.Count,
                 inserted,
                 updated,
-                maxDateLstMod = maxMod,
+                maxLastModifiedDateTime = maxMod,
                 integrationId,
                 runId
             });

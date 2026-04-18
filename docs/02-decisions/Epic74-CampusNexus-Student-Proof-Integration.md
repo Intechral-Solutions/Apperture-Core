@@ -30,7 +30,7 @@ No new scheduler work. `ScheduleDispatchRunner` already dispatches workflow star
 Confirm with environment documentation or `$metadata`:
 
 - OData entity set name for students (default in code: `Students`).
-- Property names for order-by, select, and timestamps (defaults: `DateLstMod`, `DateAdded`, etc.).
+- Property names for order-by, select, and timestamps (defaults: `LastModifiedDateTime`, `CreatedDateTime`, etc.).
 - `BaseUrl`, auth mode (`ApiKey` or `Basic`), and service account rights to read the entity set.
 - Apperture: Campus Nexus **connection**; **integration** for module id `Proof.CampusNexus.StudentReview` (active); bindings for **`CnsApi`** → CNS connection and **`IntegrationDb`** → platform SQL connection; module enabled per registry/guards if applicable.
 

@@ -31,8 +31,8 @@ public sealed class SyncRecentStudentsStepHandlerTests
                 StudentNumber = "N7",
                 FirstName = "Pat",
                 LastName = "Lee",
-                DateAdded = new DateTimeOffset(2023, 1, 1, 0, 0, 0, TimeSpan.Zero),
-                DateLstMod = new DateTimeOffset(2024, 2, 2, 0, 0, 0, TimeSpan.Zero)
+                CreatedDateTime = new DateTimeOffset(2023, 1, 1, 0, 0, 0, TimeSpan.Zero),
+                LastModifiedDateTime = new DateTimeOffset(2024, 2, 2, 0, 0, 0, TimeSpan.Zero)
             }
         };
 

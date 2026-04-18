@@ -7,12 +7,12 @@ public static class ProofStudentReviewODataQuery
 {
     public const string DefaultEntitySet = "Students";
 
-    public const string DefaultOrderBy = "DateLstMod desc";
+    public const string DefaultOrderBy = "LastModifiedDateTime desc";
 
     public const int DefaultTop = 10;
 
     public const string DefaultSelect =
-        "Id,StudentNumber,FirstName,LastName,DateAdded,DateLstMod";
+        "Id,StudentNumber,FirstName,LastName,CreatedDateTime,LastModifiedDateTime";
 
     /// <summary>
     /// Returns the query string after the leading <c>?</c> (e.g. <c>$orderby=...&amp;$top=10&amp;$select=...</c>).

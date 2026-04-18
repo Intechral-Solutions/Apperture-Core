@@ -11,7 +11,7 @@ public sealed class CnsStudentReviewODataRowJsonTests
     public void Deserializes_camelCase_odata_shape()
     {
         const string json = """
-            {"Id":42,"studentNumber":"S1","firstName":"A","lastName":"B","dateAdded":"2024-01-02T00:00:00Z","dateLstMod":"2024-06-01T12:30:00Z"}
+            {"Id":42,"studentNumber":"S1","firstName":"A","lastName":"B","createdDateTime":"2024-01-02T00:00:00Z","lastModifiedDateTime":"2024-06-01T12:30:00Z"}
             """;
         var row = JsonSerializer.Deserialize<CnsStudentReviewODataRow>(json);
         row.Should().NotBeNull();
@@ -19,7 +19,7 @@ public sealed class CnsStudentReviewODataRowJsonTests
         row.StudentNumber.Should().Be("S1");
         row.FirstName.Should().Be("A");
         row.LastName.Should().Be("B");
-        row.DateAdded.Should().NotBeNull();
-        row.DateLstMod.Should().NotBeNull();
+        row.CreatedDateTime.Should().NotBeNull();
+        row.LastModifiedDateTime.Should().NotBeNull();
     }
 }

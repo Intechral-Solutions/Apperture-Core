@@ -44,7 +44,7 @@ public sealed class ProofCampusNexusStudentReviewModule : IModule, IModuleStepHa
                 Category: "Proof",
                 ProcedureLaunchKind.Workflow,
                 DefinitionId.Value,
-                """{"fields":[{"key":"entitySet","type":"string","required":false,"label":"OData entity set","help":"Default Students. Confirm against tenant $metadata."},{"key":"odataOrderBy","type":"string","required":false,"label":"$orderby","help":"Default DateLstMod desc"},{"key":"odataTop","type":"string","required":false,"label":"$top","help":"Default 10 (max 100)"},{"key":"odataSelect","type":"string","required":false,"label":"$select","help":"Comma-separated fields; defaults to Id,StudentNumber,FirstName,LastName,DateAdded,DateLstMod"}]}""")
+                """{"fields":[{"key":"entitySet","type":"string","required":false,"label":"OData entity set","help":"Default Students. Confirm against tenant $metadata."},{"key":"odataOrderBy","type":"string","required":false,"label":"$orderby","help":"Default LastModifiedDateTime desc"},{"key":"odataTop","type":"string","required":false,"label":"$top","help":"Default 10 (max 100)"},{"key":"odataSelect","type":"string","required":false,"label":"$select","help":"Comma-separated fields; defaults to Id,StudentNumber,FirstName,LastName,CreatedDateTime,LastModifiedDateTime"}]}""")
         ]
     };
 

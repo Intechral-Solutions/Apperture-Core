@@ -3,7 +3,7 @@ using System.Text.Json.Serialization;
 namespace Proof.CampusNexus.StudentReview;
 
 /// <summary>
-/// OData projection for student review. Property names follow typical CNS JSON; use <see cref="JsonPropertyName"/> if tenant differs.
+/// OData projection for student review. Timestamps align with CNS <c>CreatedDateTime</c> / <c>LastModifiedDateTime</c> (camelCase JSON); adjust <see cref="JsonPropertyName"/> if the tenant differs.
 /// </summary>
 public sealed class CnsStudentReviewODataRow
 {
@@ -18,9 +18,9 @@ public sealed class CnsStudentReviewODataRow
     [JsonPropertyName("lastName")]
     public string? LastName { get; set; }
 
-    [JsonPropertyName("dateAdded")]
-    public DateTimeOffset? DateAdded { get; set; }
+    [JsonPropertyName("createdDateTime")]
+    public DateTimeOffset? CreatedDateTime { get; set; }
 
-    [JsonPropertyName("dateLstMod")]
-    public DateTimeOffset? DateLstMod { get; set; }
+    [JsonPropertyName("lastModifiedDateTime")]
+    public DateTimeOffset? LastModifiedDateTime { get; set; }
 }

@@ -21,7 +21,7 @@ public sealed class ProofStudentReviewRunEntity
 
     public int UpdatedCount { get; set; }
 
-    public DateTimeOffset? MaxDateLstModSeen { get; set; }
+    public DateTimeOffset? MaxLastModifiedDateTimeSeen { get; set; }
 
     /// <summary>Values: running, succeeded, failed.</summary>
     public string Status { get; set; } = "";

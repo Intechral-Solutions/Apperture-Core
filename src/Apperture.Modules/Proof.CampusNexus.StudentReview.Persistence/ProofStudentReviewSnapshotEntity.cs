@@ -17,9 +17,9 @@ public sealed class ProofStudentReviewSnapshotEntity
 
     public string? LastName { get; set; }
 
-    public DateTimeOffset? DateAdded { get; set; }
+    public DateTimeOffset? CreatedDateTime { get; set; }
 
-    public DateTimeOffset? DateLstMod { get; set; }
+    public DateTimeOffset? LastModifiedDateTime { get; set; }
 
     public DateTimeOffset LastFetchedAtUtc { get; set; }
 
