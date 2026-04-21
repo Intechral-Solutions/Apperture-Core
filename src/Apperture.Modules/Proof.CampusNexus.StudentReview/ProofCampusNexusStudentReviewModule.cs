@@ -4,7 +4,6 @@ using Apperture.Core.Domain.Procedures;
 using Apperture.ModuleSdk.Abstractions;
 using Apperture.RuntimePlane.Abstractions;
 using Apperture.Shared.Kernel;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -13,22 +12,16 @@ namespace Proof.CampusNexus.StudentReview;
 public sealed class ProofCampusNexusStudentReviewModule : IModule, IModuleStepHandlerRegistrar
 {
     private static readonly WorkflowDefinitionId DefinitionId = new(ProofCampusNexusStudentReviewConstants.WorkflowDefinitionIdValue);
-    private readonly IServiceScopeFactory? _scopeFactory;
     private readonly ILoggerFactory? _loggerFactory;
 
-    public ProofCampusNexusStudentReviewModule(
-        IServiceScopeFactory? scopeFactory = null,
-        ILoggerFactory? loggerFactory = null)
-    {
-        _scopeFactory = scopeFactory;
+    public ProofCampusNexusStudentReviewModule(ILoggerFactory? loggerFactory = null) =>
         _loggerFactory = loggerFactory;
-    }
 
     public ModuleManifest GetManifest() => new(
         ProofCampusNexusStudentReviewConstants.ModuleId,
         "Proof: CampusNexus Student Review",
         "1.0.0",
-        "Epic 74 — fetches recently modified students via Campus Nexus OData and persists review rows (module-owned SQL).")
+        "Epic 74 — fetches recently modified students via Campus Nexus OData and persists review rows to the integration-bound SQL database (IntegrationDb slot).")
     {
         Permissions =
         [
@@ -68,17 +61,11 @@ public sealed class ProofCampusNexusStudentReviewModule : IModule, IModuleStepHa
 
     public void RegisterStepHandlers(IStepHandlerRegistry registry)
     {
-        if (_scopeFactory is null)
-        {
-            throw new InvalidOperationException(
-                "ProofCampusNexusStudentReviewModule requires IServiceScopeFactory when registering step handlers (worker host).");
-        }
-
         var mid = ProofCampusNexusStudentReviewConstants.ModuleId;
         var syncLogger = _loggerFactory?.CreateLogger<SyncRecentStudentsStepHandler>()
             ?? NullLogger<SyncRecentStudentsStepHandler>.Instance;
         registry.Register(mid, "Validate", new ValidateProofStudentReviewStepHandler());
-        registry.Register(mid, "SyncRecentStudents", new SyncRecentStudentsStepHandler(_scopeFactory, syncLogger));
+        registry.Register(mid, "SyncRecentStudents", new SyncRecentStudentsStepHandler(syncLogger));
         registry.Register(mid, "Complete", new CompleteProofStudentReviewStepHandler());
     }
 }

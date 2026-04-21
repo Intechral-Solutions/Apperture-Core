@@ -74,12 +74,7 @@ public sealed class Epic73SqlSeamsIntegrationTests
             (await unisa.Database.GetPendingMigrationsAsync()).Should().BeEmpty();
         }
 
-        var proofOptions = new DbContextOptionsBuilder<ProofStudentReviewDbContext>()
-            .ConfigureWarnings(w => w.Ignore(RelationalEventId.PendingModelChangesWarning))
-            .UseSqlServer(
-                connectionString,
-                sql => sql.MigrationsHistoryTable("__EFMigrationsHistory_ProofStudentReview"))
-            .Options;
+        var proofOptions = ProofStudentReviewDbContextFactory.CreateOptions(connectionString);
 
         await using (var proof = new ProofStudentReviewDbContext(proofOptions))
         {

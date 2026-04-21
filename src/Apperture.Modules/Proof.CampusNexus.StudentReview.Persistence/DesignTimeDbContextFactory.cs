@@ -1,6 +1,4 @@
-using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Design;
-using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Configuration;
 
 namespace Proof.CampusNexus.StudentReview.Persistence;
@@ -19,13 +17,6 @@ internal sealed class DesignTimeDbContextFactory : IDesignTimeDbContextFactory<P
             ?? Environment.GetEnvironmentVariable("Apperture__ConnectionString")
             ?? "Server=(localdb)\\mssqllocaldb;Database=Apperture;Trusted_Connection=True;";
 
-        var options = new DbContextOptionsBuilder<ProofStudentReviewDbContext>()
-            .ConfigureWarnings(w => w.Ignore(RelationalEventId.PendingModelChangesWarning))
-            .UseSqlServer(
-                connectionString,
-                sql => sql.MigrationsHistoryTable("__EFMigrationsHistory_ProofStudentReview"))
-            .Options;
-
-        return new ProofStudentReviewDbContext(options);
+        return ProofStudentReviewDbContextFactory.Create(connectionString);
     }
 }

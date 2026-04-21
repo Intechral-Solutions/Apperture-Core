@@ -1,26 +1,22 @@
+using System.Data;
 using Apperture.Connectors.CampusNexus;
 using Apperture.Connectors.CampusNexus.Models;
 using Apperture.Core.Application.Execution;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Proof.CampusNexus.StudentReview.Persistence;
 
 namespace Proof.CampusNexus.StudentReview;
 
 /// <summary>
-/// Queries CNS OData for recently modified students and upserts module-owned review rows.
+/// Queries CNS OData for recently modified students and upserts module-owned review rows into the integration-bound SQL database.
 /// </summary>
 public sealed class SyncRecentStudentsStepHandler : IStepHandler
 {
-    private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<SyncRecentStudentsStepHandler> _logger;
 
-    public SyncRecentStudentsStepHandler(
-        IServiceScopeFactory scopeFactory,
-        ILogger<SyncRecentStudentsStepHandler> logger)
+    public SyncRecentStudentsStepHandler(ILogger<SyncRecentStudentsStepHandler> logger)
     {
-        _scopeFactory = scopeFactory;
         _logger = logger;
     }
 
@@ -66,8 +62,34 @@ public sealed class SyncRecentStudentsStepHandler : IStepHandler
         var odataQuery = ProofStudentReviewODataQuery.Build(orderBy, top, select);
         var apiQuery = new ApiQuery(entitySet, odataQuery);
 
-        await using var scope = _scopeFactory.CreateAsyncScope();
-        var db = scope.ServiceProvider.GetRequiredService<ProofStudentReviewDbContext>();
+        var sqlConn = await context.ResolveSlotAsync<IDbConnection>(
+                ProofCampusNexusStudentReviewConstants.SlotIntegrationDb,
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (sqlConn is null)
+        {
+            throw OperatorExecutionResult.FailInline(
+                $"Slot '{ProofCampusNexusStudentReviewConstants.SlotIntegrationDb}' is not bound to an active SQL connection for this integration.",
+                new { code = "proof.studentReview.missingDbSlot" });
+        }
+
+        string connectionString;
+        using (sqlConn)
+        {
+            // Read the raw connection string before any Open() call.
+            // SqlConnection may redact sensitive fields (for example password) once opened unless Persist Security Info is enabled.
+            connectionString = sqlConn.ConnectionString;
+            if (string.IsNullOrWhiteSpace(connectionString))
+            {
+                throw OperatorExecutionResult.FailInline(
+                    "Integration SQL connection has no connection string.",
+                    new { code = "proof.studentReview.missingConnectionString" });
+            }
+        }
+
+        await using var db = ProofStudentReviewDbContextFactory.Create(connectionString);
+        await ProofStudentReviewDbContextFactory.EnsureMigratedAsync(db, _logger, cancellationToken)
+            .ConfigureAwait(false);
 
         var runEntity = new ProofStudentReviewRunEntity
         {

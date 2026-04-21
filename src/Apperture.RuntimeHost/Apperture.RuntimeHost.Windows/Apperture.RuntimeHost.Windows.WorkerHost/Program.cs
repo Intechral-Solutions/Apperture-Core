@@ -106,9 +106,7 @@ builder.Services.AddWorkerHostIntegrationRepository();
 // Intended deployment model remains one primary module per process (ADR-0001).
     builder.Services.AddSingleton<HelloWorldModule>();
     builder.Services.AddSingleton(sp => new UnisaCampusNexusPaymentPlansModule(sp.GetRequiredService<IServiceScopeFactory>()));
-    builder.Services.AddSingleton(sp => new ProofCampusNexusStudentReviewModule(
-        sp.GetRequiredService<IServiceScopeFactory>(),
-        sp.GetRequiredService<ILoggerFactory>()));
+    builder.Services.AddSingleton(sp => new ProofCampusNexusStudentReviewModule(sp.GetRequiredService<ILoggerFactory>()));
     builder.Services.AddSingleton<IEnumerable<IModule>>(sp => new IModule[]
     {
         sp.GetRequiredService<HelloWorldModule>(),

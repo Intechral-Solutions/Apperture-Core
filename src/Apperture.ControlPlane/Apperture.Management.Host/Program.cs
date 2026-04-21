@@ -52,7 +52,7 @@ builder.Services.AddAppertureConnectorWorkflows();
 builder.Services.AddAppertureIntegrationWorkflows();
 builder.Services.AddAttentionIncidentObservation(builder.Configuration);
 builder.Services.AddUnisaCampusNexusPaymentPlansIntegration(applyModulePersistenceMigrationsOnStartup: true);
-builder.Services.AddProofCampusNexusStudentReviewIntegration(applyModulePersistenceMigrationsOnStartup: true);
+builder.Services.AddProofCampusNexusStudentReviewIntegration();
 builder.Services.AddAppertureAuthentication(builder.Configuration);
 builder.Services.AddAuthorization();
 

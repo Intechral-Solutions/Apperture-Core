@@ -12,7 +12,6 @@
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\..\Apperture.Bootstrap\Apperture.Bootstrap\Apperture.Bootstrap.csproj" />
     <ProjectReference Include="..\Proof.CampusNexus.StudentReview.Persistence\Proof.CampusNexus.StudentReview.Persistence.csproj" />
     <ProjectReference Include="..\..\Apperture.Connectors\Apperture.Connectors.CampusNexus\Apperture.Connectors.CampusNexus.csproj" />
     <ProjectReference Include="..\..\Apperture.Core\Apperture.Core.Application\Apperture.Core.Application.csproj" />
