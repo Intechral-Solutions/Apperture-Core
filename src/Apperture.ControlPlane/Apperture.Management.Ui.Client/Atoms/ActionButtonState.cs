@@ -1,4 +1,4 @@
-namespace Apperture.Management.Ui.Client.Components;
+namespace Apperture.Management.Ui.Client.Atoms;
 
 public enum ActionButtonState
 {
