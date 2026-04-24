@@ -73,7 +73,7 @@
     {
         <div class="mt-4 rounded border border-default bg-surface p-3">
             <h2 class="text-sm font-semibold text-heading mb-2">Edit permissions</h2>
-            <div class="rounded border border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/30 px-3 py-2 text-xs text-body mb-3">
+            <div class="rounded border border-message-warning bg-message-warning px-3 py-2 text-xs text-body mb-3">
                 <strong>Saving replaces the role's entire permission set</strong> with the selections below. Permissions not selected will be revoked. Changes apply to the role as currently loaded.
             </div>
             @if (_catalog is null || !string.IsNullOrEmpty(_error))
@@ -135,7 +135,7 @@
                 </div>
                 @if (_detail.IsSystemRole)
                 {
-                    <div class="mt-3 rounded border border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/30 px-3 py-2 text-xs text-body">
+                    <div class="mt-3 rounded border border-message-warning bg-message-warning px-3 py-2 text-xs text-body">
                         System roles are not editable from this UI. Their permissions are managed by the platform.
                     </div>
                 }

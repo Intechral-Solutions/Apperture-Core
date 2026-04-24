@@ -32,7 +32,7 @@
                     }
                     @if (state.Status == WizardStepStatus.Blocked && !string.IsNullOrWhiteSpace(state.BlockedReason))
                     {
-                        <div class="mt-1 text-xs text-amber-800 dark:text-amber-200">@state.BlockedReason</div>
+                        <div class="mt-1 text-xs text-warning">@state.BlockedReason</div>
                     }
                 </div>
             </li>
@@ -67,9 +67,9 @@
 
     private static string StatusBadgeClass(WizardStepStatus status) => status switch
     {
-        WizardStepStatus.Complete => "rounded bg-emerald-500/15 px-2 py-0.5 text-emerald-700 dark:text-emerald-300",
+        WizardStepStatus.Complete => "rounded bg-success-light px-2 py-0.5 text-success",
         WizardStepStatus.Current => "rounded bg-body/10 px-2 py-0.5 text-body",
-        WizardStepStatus.Blocked => "rounded bg-amber-500/15 px-2 py-0.5 text-amber-800 dark:text-amber-200",
+        WizardStepStatus.Blocked => "rounded bg-warning-light px-2 py-0.5 text-warning",
         _ => "rounded bg-surface-muted px-2 py-0.5 text-muted"
     };
 

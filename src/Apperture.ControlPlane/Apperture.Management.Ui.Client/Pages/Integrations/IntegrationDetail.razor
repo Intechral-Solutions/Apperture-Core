@@ -117,7 +117,7 @@
 
             @if (string.Equals(_integration.State, "Inactive", StringComparison.OrdinalIgnoreCase))
             {
-                <div class="rounded border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-900 dark:text-amber-100">
+                <div class="rounded border border-message-warning bg-message-warning px-3 py-2 text-sm text-body">
                     Integration is inactive. Configuration is preserved, but schedules and launches are operationally paused until re-activated.
                 </div>
             }
@@ -151,11 +151,11 @@
                     <div class="mb-2">
                         @if (_readiness.IsRunnable)
                         {
-                            <span class="rounded bg-emerald-500/15 px-2 py-0.5 text-xs font-medium text-emerald-700 dark:text-emerald-300">Runnable</span>
+                            <span class="rounded bg-success-light px-2 py-0.5 text-xs font-medium text-success">Runnable</span>
                         }
                         else
                         {
-                            <span class="rounded bg-amber-500/15 px-2 py-0.5 text-xs font-medium text-amber-800 dark:text-amber-200">Not runnable</span>
+                            <span class="rounded bg-warning-light px-2 py-0.5 text-xs font-medium text-warning">Not runnable</span>
                         }
                     </div>
                     <div class="mb-2 text-xs text-muted">
@@ -217,7 +217,7 @@
                 {
                     @if (!_procedureList.IntegrationReady)
                     {
-                        <div class="mb-2 rounded border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-xs text-amber-900 dark:text-amber-100">
+                        <div class="mb-2 rounded border border-message-warning bg-message-warning px-2 py-1 text-xs text-body">
                             Integration is not runnable; procedures are listed but launch is blocked until readiness passes.
                         </div>
                     }
@@ -230,7 +230,7 @@
                                 @p.DisplayName
                                 @if (!p.Launchable)
                                 {
-                                    <span class="ml-1 text-amber-600 dark:text-amber-300" title="Blocked">●</span>
+                                    <span class="ml-1 text-warning" title="Blocked">●</span>
                                 }
                             </button>
                         }
@@ -246,7 +246,7 @@
                             <div class="text-xs text-muted mt-1 font-mono">@_selectedProcedureDetail.Id · @_selectedProcedureDetail.LaunchKind → @_selectedProcedureDetail.TargetDefinitionId</div>
                             @if (!_selectedProcedureDetail.Launchable && _selectedProcedureDetail.BlockedReasonCodes.Count > 0)
                             {
-                                <ul class="mt-2 list-disc pl-5 text-xs text-amber-800 dark:text-amber-200">
+                                <ul class="mt-2 list-disc pl-5 text-xs text-warning">
                                     @foreach (var blockedCode in _selectedProcedureDetail.BlockedReasonCodes)
                                     {
                                         <li><span class="font-mono">@blockedCode</span> — @DescribeBlockedReason(blockedCode)</li>
@@ -277,7 +277,7 @@
                             <li class="flex justify-between gap-2">
                                 <span class="font-mono">@slot.SlotName</span>
                                 <span class="text-muted text-xs">@slot.ContractType</span>
-                                <span class="text-xs @(bound ? "text-emerald-600 dark:text-emerald-400" : "text-amber-700 dark:text-amber-300")">@(bound ? "Bound" : "Unbound")</span>
+                                <span class="text-xs @(bound ? "text-success" : "text-warning")">@(bound ? "Bound" : "Unbound")</span>
                             </li>
                         }
                     </ul>
@@ -373,7 +373,7 @@
                         <div class="mt-3 rounded border border-default bg-surface-muted p-3 space-y-3">
                             @if (!string.IsNullOrEmpty(_bindingError))
                             {
-                                <div class="rounded border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-xs text-amber-900 dark:text-amber-100">@_bindingError</div>
+                                <div class="rounded border border-message-warning bg-message-warning px-2 py-1 text-xs text-body">@_bindingError</div>
                             }
                             <div>
                                 <label class="block text-xs text-muted">Slot</label>
@@ -402,7 +402,7 @@
                                 </select>
                                 @if (!string.IsNullOrEmpty(_bindingSlot) && (_eligibleConnections?.Count ?? 0) == 0)
                                 {
-                                    <div class="mt-1 text-xs text-amber-700 dark:text-amber-300">
+                                    <div class="mt-1 text-xs text-warning">
                                         No compatible connection currently exists for this slot. Create one in flow, then bind it immediately.
                                     </div>
                                 }
@@ -413,7 +413,7 @@
                                     <div class="text-xs font-semibold text-heading">Create connection in flow</div>
                                     @if (!string.IsNullOrEmpty(_inFlowCreateError))
                                     {
-                                        <div class="rounded border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-xs text-amber-900 dark:text-amber-100">@_inFlowCreateError</div>
+                                        <div class="rounded border border-message-warning bg-message-warning px-2 py-1 text-xs text-body">@_inFlowCreateError</div>
                                     }
                                     <div>
                                         <label class="block text-xs text-muted">Connector definition</label>

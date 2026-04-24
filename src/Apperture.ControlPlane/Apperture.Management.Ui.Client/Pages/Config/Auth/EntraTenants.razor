@@ -66,7 +66,7 @@
                                         {
                                             <button type="button" class="underline disabled:opacity-50" disabled="@_busy" @onclick="() => ActivateAsync(r.Id)">Activate</button>
                                         }
-                                        <button type="button" class="underline text-red-600 disabled:opacity-50" disabled="@_busy" @onclick="() => DeleteAsync(r.Id)">Delete</button>
+                                        <button type="button" class="underline text-error disabled:opacity-50" disabled="@_busy" @onclick="() => DeleteAsync(r.Id)">Delete</button>
                                     }
                                 </td>
                             </tr>
