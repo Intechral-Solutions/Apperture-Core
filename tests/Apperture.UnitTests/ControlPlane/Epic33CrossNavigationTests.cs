@@ -11,43 +11,45 @@ namespace Apperture.UnitTests.ControlPlane;
 public sealed class Epic33CrossNavigationTests
 {
     [Fact]
-    public void Menu_ControlCenter_BlockedWork_Audit_Exist()
+    public void Menu_Operations_HasControlCenter_BlockedWork_Audit()
     {
         var menus = ControlPanelMenuDefinitions.GetDefaultMenus();
-        menus.Should().ContainKey("Control");
+        menus.Should().ContainKey("Operations");
 
-        var control = menus["Control"];
-        var hrefs = control.Items.Select(i => i.Href).ToList();
+        var operations = menus["Operations"];
+        var hrefs = operations.Items.Select(i => i.Href).ToList();
         hrefs.Should().Contain("/control/center");
         hrefs.Should().Contain("/control/blocked-work");
         hrefs.Should().Contain("/control/audit");
     }
 
     [Fact]
-    public void Menu_Modules_Schedules_Exist()
+    public void Menu_ConfigContainsModules_AndOperationsContainsSchedules()
     {
         var menus = ControlPanelMenuDefinitions.GetDefaultMenus();
-        menus.Should().ContainKey("Modules");
-        menus.Should().ContainKey("Schedules");
+        menus.Should().ContainKey("Operations");
+        menus.Should().ContainKey(SectionOwnerConstants.Config);
 
-        menus["Modules"].Items.Select(i => i.Href).Should().Contain("/modules");
-        menus["Schedules"].Items.Select(i => i.Href).Should().Contain("/schedules");
-        menus["Schedules"].Items.Select(i => i.Href).Should().Contain("/schedules/new");
+        menus["Operations"].Items.Select(i => i.Href).Should().Contain("/schedules");
+        var config = menus[SectionOwnerConstants.Config];
+        var modules = config.Items.FirstOrDefault(i => i.Text == "Modules");
+        modules.Should().NotBeNull();
+        modules!.Href.Should().Be("/modules");
     }
 
     [Fact]
-    public void Menu_ControlCenterToModules_Schedules_BlockedWork_Audit()
+    public void Menu_OperationsAndConfigContainExpectedCrossLinks()
     {
         var menus = ControlPanelMenuDefinitions.GetDefaultMenus();
-        var controlHrefs = menus["Control"].Items.Select(i => i.Href).ToHashSet();
+        var operationsHrefs = menus["Operations"].Items.Select(i => i.Href).ToHashSet();
 
-        controlHrefs.Should().Contain("/control/center");
-        controlHrefs.Should().Contain("/control/blocked-work");
-        controlHrefs.Should().Contain("/control/audit");
+        operationsHrefs.Should().Contain("/control/center");
+        operationsHrefs.Should().Contain("/control/blocked-work");
+        operationsHrefs.Should().Contain("/control/audit");
+        operationsHrefs.Should().Contain("/schedules");
 
-        menus["Modules"].Items.Select(i => i.Href).Should().Contain("/modules");
-        menus["Schedules"].Items.Select(i => i.Href).Should().Contain("/schedules");
-        menus["Schedules"].Items.Select(i => i.Href).Should().Contain("/schedules/new");
+        var config = menus[SectionOwnerConstants.Config];
+        config.Items.Should().Contain(i => i.Href == "/modules");
     }
 
     [Fact]

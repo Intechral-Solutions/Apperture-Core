@@ -11,13 +11,12 @@ namespace Apperture.UnitTests.Connections;
 public sealed class Epic48ConnectionsSurfaceTests
 {
     [Fact]
-    public void ConnectionsMenu_HasConnectionsAndAddConnection()
+    public void ConnectionsMenu_HasConnectionsEntry()
     {
         var menus = ControlPanelMenuDefinitions.GetDefaultMenus();
         menus.Should().ContainKey("Connections");
         var connections = menus["Connections"];
         connections.Items.Should().Contain(i => i.Text == "Connections" && i.Href == "/connections");
-        connections.Items.Should().Contain(i => i.Text == "Add Connection" && i.Href == "/connections/new");
     }
 
     [Fact]

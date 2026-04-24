@@ -22,11 +22,11 @@ public sealed class ShellSectionOwnerTests
     [Fact]
     public void GetMiddleDomains_ExcludesDashboardAndConfig()
     {
-        var allDomains = new[] { SectionOwnerConstants.Dashboard, "Runs", SectionOwnerConstants.Config, "Catalog" };
+        var allDomains = new[] { SectionOwnerConstants.Dashboard, "Operations", SectionOwnerConstants.Config, "Catalog" };
         var middle = SectionOwnerConstants.GetMiddleDomains(allDomains).ToList();
         middle.Should().NotContain(SectionOwnerConstants.Dashboard);
         middle.Should().NotContain(SectionOwnerConstants.Config);
-        middle.Should().Contain("Runs");
+        middle.Should().Contain("Operations");
         middle.Should().Contain("Catalog");
     }
 
@@ -37,10 +37,9 @@ public sealed class ShellSectionOwnerTests
         var middle = SectionOwnerConstants.GetMiddleDomains(menus.Keys).ToList();
         middle.Should().NotContain(SectionOwnerConstants.Dashboard);
         middle.Should().NotContain(SectionOwnerConstants.Config);
-        middle.Should().Contain("Runs");
-        middle.Should().Contain("Control");
+        middle.Should().Contain("Operations");
         middle.Should().Contain("Catalog");
-        middle.Should().Contain("Modules");
+        middle.Should().Contain("Integrations");
     }
 
     [Fact]
@@ -125,23 +124,33 @@ public sealed class ShellSectionOwnerTests
     }
 
     [Fact]
-    public void RouteResolver_RunsPath_ReturnsRuns()
+    public void RouteResolver_RunsPath_ReturnsOperations()
     {
         var menus = ControlPanelMenuDefinitions.GetDefaultMenus();
         RouteToSectionResolver.Resolve("/runs", menus.GetValueOrDefault, menus.Keys)
-            .Should().Be("Runs");
+            .Should().Be("Operations");
     }
 
     [Fact]
-    public void RouteResolver_ControlPaths_ResolveExplicitlyToControl()
+    public void RouteResolver_ControlPaths_ResolveToOperations()
     {
         var menus = ControlPanelMenuDefinitions.GetDefaultMenus();
         RouteToSectionResolver.Resolve("/control/center", menus.GetValueOrDefault, menus.Keys)
-            .Should().Be("Control");
+            .Should().Be("Operations");
         RouteToSectionResolver.Resolve("/control/blocked-work", menus.GetValueOrDefault, menus.Keys)
-            .Should().Be("Control");
+            .Should().Be("Operations");
         RouteToSectionResolver.Resolve("/control/audit", menus.GetValueOrDefault, menus.Keys)
-            .Should().Be("Control");
+            .Should().Be("Operations");
+    }
+
+    [Fact]
+    public void RouteResolver_ModulesPath_ReturnsConfig()
+    {
+        var menus = ControlPanelMenuDefinitions.GetDefaultMenus();
+        RouteToSectionResolver.Resolve("/modules", menus.GetValueOrDefault, menus.Keys)
+            .Should().Be(SectionOwnerConstants.Config);
+        RouteToSectionResolver.Resolve("/modules/example", menus.GetValueOrDefault, menus.Keys)
+            .Should().Be(SectionOwnerConstants.Config);
     }
 
     [Fact]
@@ -166,7 +175,7 @@ public sealed class ShellSectionOwnerTests
         var menus = ControlPanelMenuDefinitions.GetDefaultMenus();
         var reversedKeys = menus.Keys.OrderByDescending(k => k, StringComparer.OrdinalIgnoreCase);
         RouteToSectionResolver.Resolve("/runs", menus.GetValueOrDefault, reversedKeys)
-            .Should().Be("Runs");
+            .Should().Be("Operations");
     }
 
     [Fact]
@@ -178,12 +187,12 @@ public sealed class ShellSectionOwnerTests
     }
 
     [Fact]
-    public void RouteResolver_ToolsNestedDemo_RootAndDeepPaths_ReturnTools()
+    public void RouteResolver_ToolsNestedDemo_RootAndDeepPaths_ReturnOperations()
     {
         var menus = ControlPanelMenuDefinitions.GetDefaultMenus();
         RouteToSectionResolver.Resolve("/demo/nested-nav", menus.GetValueOrDefault, menus.Keys)
-            .Should().Be("Tools");
+            .Should().Be("Operations");
         RouteToSectionResolver.Resolve("/demo/nested-nav/level-1/level-2/level-3", menus.GetValueOrDefault, menus.Keys)
-            .Should().Be("Tools");
+            .Should().Be("Operations");
     }
 }

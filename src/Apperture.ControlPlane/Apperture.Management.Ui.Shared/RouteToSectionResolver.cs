@@ -26,8 +26,8 @@ public static class RouteToSectionResolver
         // Explicit section ownership (segment-safe; order matters)
         if (NavPathMatching.IsPathUnder(p, "/config"))
             return SectionOwnerConstants.Config;
-        if (NavPathMatching.IsPathUnder(p, "/control"))
-            return "Control";
+        if (NavPathMatching.IsPathUnder(p, "/modules"))
+            return SectionOwnerConstants.Config;
         if (p == "/" || NavPathMatching.IsPathUnder(p, ShellSectionRoutes.DashboardHome))
             return SectionOwnerConstants.Dashboard;
 

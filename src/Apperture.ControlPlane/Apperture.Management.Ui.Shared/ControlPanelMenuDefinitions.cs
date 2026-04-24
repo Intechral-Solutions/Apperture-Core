@@ -26,89 +26,18 @@ public static class ControlPanelMenuDefinitions
                     new DomainMenuItem { Text = "Edit dashboard layout (deferred)", Href = "/dashboard/layout" }
                 }
             },
-            ["Runs"] = new DomainMenu
+            ["Operations"] = new DomainMenu
             {
                 Title = null,
                 Items =
                 {
-                    new DomainMenuItem { Text = "Runs Console", Href = "/runs" },
-                    new DomainMenuItem { Text = "Start Operation", Href = "/operations/start" },
-                    new DomainMenuItem { Text = "Start Workflow", Href = "/workflows/start" },
-                }
-            },
-            ["Control"] = new DomainMenu
-            {
-                Title = null,
-                Items =
-                {
+                    new DomainMenuItem { Text = "Runs", Href = "/runs" },
                     new DomainMenuItem { Text = "Control Center", Href = "/control/center" },
                     new DomainMenuItem { Text = "Blocked Work", Href = "/control/blocked-work" },
-                    new DomainMenuItem { Text = "Audit Timeline", Href = "/control/audit" }
-                }
-            },
-            ["Modules"] = new DomainMenu
-            {
-                Title = null,
-                Items = { new DomainMenuItem { Text = "View All", Href = "/modules" } }
-            },
-            ["Test Suite"] = new DomainMenu
-            {
-                Title = null,
-                Items =
-                {
-                    // Reuse existing workflow execution pages for now.
-                    // When new test-related pages are added, extend this in one place.
-                    new DomainMenuItem { Text = "Runs", Href = "/runs" },
+                    new DomainMenuItem { Text = "Audit Timeline", Href = "/control/audit" },
+                    new DomainMenuItem { Text = "Schedules", Href = "/schedules" },
                     new DomainMenuItem { Text = "Start Operation", Href = "/operations/start" },
                     new DomainMenuItem { Text = "Start Workflow", Href = "/workflows/start" },
-                }
-            },
-            ["Catalog"] = new DomainMenu
-            {
-                Title = null,
-                Items = { new DomainMenuItem { Text = "Browse Capabilities", Href = "/catalog" } }
-            },
-            ["Integrations"] = new DomainMenu
-            {
-                Title = null,
-                Items =
-                {
-                    new DomainMenuItem { Text = "View All", Href = "/integrations" },
-                    new DomainMenuItem { Text = "Create Integration", Href = "/integrations/new" }
-                }
-            },
-            ["Environments"] = new DomainMenu
-            {
-                Title = null,
-                Items =
-                {
-                    new DomainMenuItem { Text = "View All", Href = "/environments" },
-                    new DomainMenuItem { Text = "Settings", Href = "/environments/settings" }
-                }
-            },
-            ["Connections"] = new DomainMenu
-            {
-                Title = null,
-                Items =
-                {
-                    new DomainMenuItem { Text = "Connections", Href = "/connections" },
-                    new DomainMenuItem { Text = "Add Connection", Href = "/connections/new" }
-                }
-            },
-            ["Schedules"] = new DomainMenu
-            {
-                Title = null,
-                Items =
-                {
-                    new DomainMenuItem { Text = "View All", Href = "/schedules" },
-                    new DomainMenuItem { Text = "Create Schedule", Href = "/schedules/new" }
-                }
-            },
-            ["Tools"] = new DomainMenu
-            {
-                Title = null,
-                Items =
-                {
                     new DomainMenuItem { Text = "API Explorer", Href = "/tools/explorer" },
                     new DomainMenuItem
                     {
@@ -147,6 +76,27 @@ public static class ControlPanelMenuDefinitions
                     new DomainMenuItem { Text = "Attention routing defaults", Href = "/attention/routing-defaults" }
                 }
             },
+            ["Catalog"] = new DomainMenu
+            {
+                Title = null,
+                Items = { new DomainMenuItem { Text = "Browse Capabilities", Href = "/catalog" } }
+            },
+            ["Integrations"] = new DomainMenu
+            {
+                Title = null,
+                Items =
+                {
+                    new DomainMenuItem { Text = "Integrations", Href = "/integrations" }
+                }
+            },
+            ["Connections"] = new DomainMenu
+            {
+                Title = null,
+                Items =
+                {
+                    new DomainMenuItem { Text = "Connections", Href = "/connections" }
+                }
+            },
             [SectionOwnerConstants.Config] = new DomainMenu
             {
                 Title = null,
@@ -162,6 +112,15 @@ public static class ControlPanelMenuDefinitions
                             new DomainMenuItem { Text = "Overview", Href = "/config/auth" },
                             new DomainMenuItem { Text = "Sign-in chooser", Href = "/config/auth/sign-in" },
                             new DomainMenuItem { Text = "Entra registrations", Href = "/config/auth/tenants" }
+                        }
+                    },
+                    new DomainMenuItem
+                    {
+                        Text = "Modules",
+                        Href = "/modules",
+                        Children = new List<DomainMenuItem>
+                        {
+                            new DomainMenuItem { Text = "Installed Modules", Href = "/modules" }
                         }
                     },
                     new DomainMenuItem
