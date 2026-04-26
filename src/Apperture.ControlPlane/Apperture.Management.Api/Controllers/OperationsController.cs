@@ -16,6 +16,8 @@ namespace Apperture.Management.Api.Controllers;
 [Microsoft.AspNetCore.Authorization.Authorize]
 public sealed class OperationsController : ControllerBase
 {
+    private const string DirectStartDeprecationHeader =
+        "299 - \"Direct operation starts are deprecated; use integration procedure launch APIs.\"";
     private readonly IOperationDefinitionQueryService _definitions;
     private readonly IOperationStartAuthorizationService _startAuth;
     private readonly IOperationInputValidationService _inputValidation;
@@ -143,6 +145,17 @@ public sealed class OperationsController : ControllerBase
     [HttpPost("{operationDefinitionId}/start")]
     public async Task<ActionResult> Start([FromRoute] string operationDefinitionId, [FromBody] StartOperationRequestBody? body, CancellationToken cancellationToken)
     {
+        TryAppendWarningHeader(DirectStartDeprecationHeader);
+
+        if (string.IsNullOrWhiteSpace(body?.IntegrationId))
+        {
+            return BadRequest(new
+            {
+                error = "IntegrationId is required. Manual execution must target an integration and should use POST /api/integrations/{integrationId}/procedures/{procedureId}/launch."
+            });
+        }
+        var integrationId = body.IntegrationId;
+
         try
         {
             await _startAuth.EnsureCanStartOperationAsync(new OperationId(operationDefinitionId), cancellationToken);
@@ -168,7 +181,7 @@ public sealed class OperationsController : ControllerBase
             parameters,
             body?.IdempotencyKey,
             body?.CorrelationId,
-            body?.IntegrationId,
+            integrationId,
             body?.ProcedureId,
             ExecutionOrigin: RunExecutionOriginNames.Manual);
 
@@ -231,6 +244,14 @@ public sealed class OperationsController : ControllerBase
         {
             // best-effort audit
         }
+    }
+
+    private void TryAppendWarningHeader(string value)
+    {
+        if (HttpContext?.Response?.Headers is null)
+            return;
+
+        HttpContext.Response.Headers.Append("Warning", value);
     }
 }
 

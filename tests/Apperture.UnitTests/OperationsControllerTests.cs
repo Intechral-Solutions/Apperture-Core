@@ -72,7 +72,8 @@ public sealed class OperationsControllerTests
         var body = new StartOperationRequestBody
         {
             Parameters = new Dictionary<string, object?> { ["id"] = "safe-value" },
-            IdempotencyKey = "key-1"
+            IdempotencyKey = "key-1",
+            IntegrationId = "integration-1"
         };
 
         var result = await controller.Start("operation-1", body, CancellationToken.None);
@@ -81,7 +82,7 @@ public sealed class OperationsControllerTests
     }
 
     [Fact]
-    public async Task Start_WhenBodyIsNull_DoesNotThrow()
+    public async Task Start_WhenBodyIsNull_Returns400BadRequest()
     {
         var controller = new OperationsController(
             new StubOperationDefinitionQueryService(),
@@ -97,8 +98,27 @@ public sealed class OperationsControllerTests
             StubPrincipal());
 
         var result = await controller.Start("operation-1", null, CancellationToken.None);
+        result.Should().BeOfType<BadRequestObjectResult>();
+    }
 
-        result.Should().BeOfType<AcceptedResult>();
+    [Fact]
+    public async Task Start_WhenIntegrationIdMissing_Returns400BadRequest()
+    {
+        var controller = new OperationsController(
+            new StubOperationDefinitionQueryService(),
+            CreateAllowAllAuthService(),
+            new StubOperationInputValidationService(),
+            CreateDispatchService(_ => throw new InvalidOperationException("dispatch should not be called")),
+            new StubRunQueryService(),
+            StubPrincipal());
+
+        var body = new StartOperationRequestBody
+        {
+            Parameters = new Dictionary<string, object?> { ["id"] = "safe-value" }
+        };
+
+        var result = await controller.Start("operation-1", body, CancellationToken.None);
+        result.Should().BeOfType<BadRequestObjectResult>();
     }
 
     private sealed class StubPrincipalContext : IPrincipalContext

@@ -312,7 +312,27 @@ public sealed class ScheduleDispatchRunner : IScheduleDispatchRunner
     private async Task<bool> EnsureIntegrationOperationalAsync(IntegrationId? integrationId, ScheduleFireCandidate candidate, CancellationToken ct)
     {
         if (integrationId is null)
+        {
+            try
+            {
+                await _audit.AppendAsync(new AuditRecord(
+                    new AuditRecordId(Guid.NewGuid().ToString("N")),
+                    new ActorId("system:scheduler"),
+                    SchedulerAuditActionNames.LegacyScheduleWithoutIntegration,
+                    Resource: null,
+                    Outcome: "warning",
+                    Timestamp: DateTimeOffset.UtcNow,
+                    new CorrelationId($"schedule:{candidate.ScheduleId}:{candidate.FireTimeUtc:O}"),
+                    Details: $"schedule:{candidate.ScheduleId};legacy schedule has no IntegrationId; dispatch is temporarily allowed for backward compatibility.",
+                    ScheduleId: candidate.ScheduleId
+                ), ct);
+            }
+            catch
+            {
+                // best-effort audit
+            }
             return true;
+        }
 
         var integration = await _integrations.GetByIdAsync(integrationId, ct);
         if (integration is not null && integration.State == IntegrationState.Active)

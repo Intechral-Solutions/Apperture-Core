@@ -58,6 +58,52 @@ public sealed class ScheduleDispatchTests
     }
 
     [Fact]
+    public async Task RunCycleAsync_WhenLegacyScheduleHasNoIntegration_AuditsCompatibilityWarning()
+    {
+        var db = NewDb();
+        SeedScheduleWithWorkflowTarget(
+            db,
+            "s-legacy",
+            "a-legacy",
+            "Sample.HelloWorld.HelloWorld",
+            "* * * * *",
+            "UTC",
+            lastAttemptedUtc: DeterministicLastAttemptedUtc,
+            integrationId: null);
+        await db.SaveChangesAsync();
+
+        var services = new ServiceCollection();
+        services.AddSingleton(db);
+        services.AddScoped<IScheduleRepository, SqlScheduleRepository>();
+        services.AddScoped<IIntegrationRepository, SqlIntegrationRepository>();
+        services.AddScoped<IScheduleEvaluator, CronScheduleEvaluator>();
+        services.AddScoped<IAuditService, SqlAuditService>();
+        var modules = new IModule[] { new HelloWorldModule() };
+        services.AddSingleton<IEnumerable<IModule>>(modules);
+        services.AddSingleton<IWorkflowDefinitionResolver>(sp =>
+            new WorkflowDefinitionResolver(sp.GetRequiredService<IEnumerable<IModule>>(), null));
+        services.AddSingleton<IOperationRegistryService>(sp =>
+            new OperationRegistryService(sp.GetRequiredService<IEnumerable<IModule>>(), null));
+        services.AddScoped<ISchedulerLifecycleGuard, SchedulerLifecycleGuard>();
+        services.AddScoped<IWorkflowPersistence, SqlWorkflowPersistence>();
+        services.AddScoped<IWorkflowStartDispatchService, WorkflowStartDispatchService>();
+        services.AddScoped<IOperationStartDispatchService, OperationStartDispatchService>();
+        services.AddSingleton<ISchedulerHostIdentity>(new DefaultSchedulerHostIdentity("test"));
+        services.AddSingleton<ISchedulerClaimOptions>(new DefaultSchedulerClaimOptions(5));
+        services.AddScoped<IScheduleDispatchRunner, ScheduleDispatchRunner>();
+
+        await using var scope = services.BuildServiceProvider().CreateAsyncScope();
+        var runner = scope.ServiceProvider.GetRequiredService<IScheduleDispatchRunner>();
+        await runner.RunCycleAsync(new RuntimePlaneId("local"), DeterministicAsOfUtc);
+
+        var ctx = scope.ServiceProvider.GetRequiredService<AppertureDbContext>();
+        var warningAuditCount = await ctx.AuditLogs
+            .AsNoTracking()
+            .CountAsync(x => x.Action == SchedulerAuditActionNames.LegacyScheduleWithoutIntegration);
+        warningAuditCount.Should().Be(1);
+    }
+
+    [Fact]
     public async Task RunCycleAsync_WhenDueOperationScheduleAndModuleEnabled_DispatchesOperation()
     {
         var (opRequestCount, runOutcome) = await RunSchedulerCycleForOperationAsync(moduleEnabled: true, operationDefinitionId: "Sample.HelloWorld.DoWork");

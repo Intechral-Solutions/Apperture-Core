@@ -29,6 +29,7 @@ public interface IManagementClient
     Task<OperationDefinitionDto?> GetOperationAsync(string operationDefinitionId, CancellationToken cancellationToken = default);
     Task<StartOperationResult> StartOperationAsync(
         string operationDefinitionId,
+        string integrationId,
         IReadOnlyDictionary<string, object?>? parameters,
         string? idempotencyKey,
         string? correlationId,

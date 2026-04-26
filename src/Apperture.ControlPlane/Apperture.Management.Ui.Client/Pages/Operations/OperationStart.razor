@@ -25,7 +25,29 @@
     <div class="mt-4 grid gap-4 md:grid-cols-2">
         <div class="rounded border border-default bg-surface p-3">
             <div class="text-sm font-semibold text-heading">Operations</div>
-            <div class="text-xs text-muted">Only operation definitions visible to you are listed.</div>
+            <div class="text-xs text-muted">Manual starts are integration-scoped. Select an integration first.</div>
+
+            @if (_integrations is null)
+            {
+                <div class="mt-2 text-sm text-muted">Loading integrations…</div>
+            }
+            else if (_integrations.Count == 0)
+            {
+                <div class="mt-2 text-sm text-muted">No integrations found.</div>
+            }
+            else
+            {
+                <label class="mt-2 block text-xs text-muted">Integration</label>
+                <select class="mt-1 w-full rounded border border-default bg-surface px-2 py-2 text-sm"
+                        @onchange="OnIntegrationChanged"
+                        value="@(_selectedIntegrationId ?? "")">
+                    <option value="">Select…</option>
+                    @foreach (var integration in _integrations)
+                    {
+                        <option value="@integration.Id">@integration.DisplayName (@integration.Id)</option>
+                    }
+                </select>
+            }
 
             @if (_operations is null)
             {
@@ -34,6 +56,10 @@
             else if (_operations.Count == 0)
             {
                 <div class="mt-2 text-sm text-muted">No operations found.</div>
+            }
+            else if (string.IsNullOrWhiteSpace(_selectedIntegrationId))
+            {
+                <div class="mt-2 text-sm text-muted">Select an integration to view executable operations.</div>
             }
             else
             {
@@ -115,7 +141,7 @@
                     }
 
                     <button class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface"
-                            disabled="@(_loading || !_selected.CanStart)"
+                            disabled="@(_loading || !_selected.CanStart || string.IsNullOrWhiteSpace(_selectedIntegrationId))"
                             @onclick="StartAsync">
                         Start operation
                     </button>
@@ -144,8 +170,10 @@
     private string? _operationDefinitionIdFromQuery { get; set; }
 
     private IReadOnlyList<OperationDefinitionDto>? _operations;
+    private IReadOnlyList<IntegrationDto>? _integrations;
     private OperationDefinitionDto? _selected;
     private string? _selectedOperationId;
+    private string? _selectedIntegrationId;
     private readonly Dictionary<string, string?> _fieldValues = new(StringComparer.Ordinal);
     private string? _idempotencyKey;
     private string? _correlationId;
@@ -170,18 +198,31 @@
         try
         {
             _operations = await Client.GetOperationsAsync();
+            _integrations = await Client.GetIntegrationsAsync();
             if (!string.IsNullOrWhiteSpace(_selectedOperationId))
                 _selected = _operations.FirstOrDefault(x => x.OperationDefinitionId == _selectedOperationId);
         }
         catch (Exception ex)
         {
             _operations = Array.Empty<OperationDefinitionDto>();
+            _integrations = Array.Empty<IntegrationDto>();
             _error = ex.Message;
         }
         finally
         {
             _loading = false;
         }
+    }
+
+    private Task OnIntegrationChanged(ChangeEventArgs e)
+    {
+        _selectedIntegrationId = e.Value?.ToString();
+        _selected = null;
+        _selectedOperationId = null;
+        _fieldValues.Clear();
+        _startMessage = null;
+        _startedRunId = null;
+        return Task.CompletedTask;
     }
 
     private async Task OnOperationChanged(ChangeEventArgs e)
@@ -199,6 +240,15 @@
         try
         {
             _selected = await Client.GetOperationAsync(_selectedOperationId);
+            var selectedIntegration = _integrations?.FirstOrDefault(i => string.Equals(i.Id, _selectedIntegrationId, StringComparison.Ordinal));
+            if (_selected is not null && selectedIntegration is not null &&
+                !string.Equals(_selected.ModuleId, selectedIntegration.ModuleId, StringComparison.Ordinal))
+            {
+                _selected = null;
+                _selectedOperationId = null;
+                _error = $"Operation does not belong to integration '{selectedIntegration.DisplayName}'.";
+                return;
+            }
             if (_selected?.InputSchema?.Fields is { Count: > 0 } fields)
             {
                 foreach (var field in fields)
@@ -245,6 +295,7 @@
             var parameters = BuildParameters(_selected);
             var result = await Client.StartOperationAsync(
                 _selected.OperationDefinitionId,
+                _selectedIntegrationId!,
                 parameters,
                 string.IsNullOrWhiteSpace(_idempotencyKey) ? null : _idempotencyKey,
                 string.IsNullOrWhiteSpace(_correlationId) ? null : _correlationId);

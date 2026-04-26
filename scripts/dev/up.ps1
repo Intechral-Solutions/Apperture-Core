@@ -77,6 +77,7 @@ $UiServerProject = Join-Path $RepoRoot "src\Apperture.ControlPlane\Apperture.Man
 $WorkerHostProject = Join-Path $RepoRoot "src\Apperture.RuntimeHost\Apperture.RuntimeHost.Windows\Apperture.RuntimeHost.Windows.WorkerHost\Apperture.RuntimeHost.Windows.WorkerHost.csproj"
 $StartWorkerScript = Join-Path $PSScriptRoot "start-worker.ps1"
 $SyncScript = Join-Path $PSScriptRoot "Sync-EnvFromUserSecrets.ps1"
+$LogDir = Join-Path $RepoRoot "artifacts\devlogs"
 
 if (-not (Test-Path $HostProject)) {
     Write-Error "Management.Host project not found: $HostProject"
@@ -149,20 +150,83 @@ Write-Host "Ensuring database 'Apperture' exists..." -ForegroundColor Cyan
 docker exec apperture-sqlserver /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "$saPassword" -C -Q "IF DB_ID(N'Apperture') IS NULL CREATE DATABASE [Apperture];" | Out-Null
 if ($LASTEXITCODE -ne 0) { throw "Failed to create Apperture database via sqlcmd." }
 
-# Launch dotnet directly (argument array). Do not wrap in cmd /k — Start-Process + cmd mangles quotes on Windows
-# ("The filename, directory name, or volume label is incorrect"). SQL/port waits and bootstrap retries reduce flakiness.
-$hostArgs = @("run", "--project", $HostProject, "--launch-profile", "http")
-$uiArgs = @("run", "--project", $UiServerProject, "--launch-profile", "Ui.Server")
+if (-not (Test-Path $LogDir)) {
+    New-Item -ItemType Directory -Path $LogDir -Force | Out-Null
+}
+
+function Start-DevServiceLogged {
+    param(
+        [Parameter(Mandatory)][string]$Name,
+        [Parameter(Mandatory)][string[]]$Arguments
+    )
+
+    $stamp = (Get-Date).ToUniversalTime().ToString("yyyyMMdd-HHmmss")
+    $safeName = $Name.ToLowerInvariant() -replace "[^a-z0-9]+", "-"
+    $stdout = Join-Path $LogDir "$safeName-$stamp.out.log"
+    $stderr = Join-Path $LogDir "$safeName-$stamp.err.log"
+
+    Write-Host "Starting $Name..." -ForegroundColor Cyan
+    Write-Host "  stdout: $stdout" -ForegroundColor DarkGray
+    Write-Host "  stderr: $stderr" -ForegroundColor DarkGray
+
+    $process = Start-Process -FilePath $dotnetExe -ArgumentList $Arguments -WorkingDirectory $RepoRoot -WindowStyle Hidden `
+        -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru
+
+    [pscustomobject]@{
+        Name = $Name
+        Process = $process
+        StdOut = $stdout
+        StdErr = $stderr
+    }
+}
+
+function Wait-DevServiceStarted {
+    param(
+        [Parameter(Mandatory)]$Launch,
+        [Parameter(Mandatory)][int]$Port,
+        [int]$TimeoutSeconds = 60
+    )
+
+    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+    while ((Get-Date) -lt $deadline) {
+        if ($Launch.Process.HasExited) {
+            throw "$($Launch.Name) exited during startup (exit code: $($Launch.Process.ExitCode)). See logs: $($Launch.StdOut) ; $($Launch.StdErr)"
+        }
+
+        $listeners = @(Get-NetTCPConnection -LocalPort $Port -ErrorAction SilentlyContinue | Where-Object { $_.State -eq "Listen" })
+        if ($listeners.Count -gt 0) {
+            Write-Host "  $($Launch.Name): listening on http://localhost:$Port" -ForegroundColor Gray
+            return
+        }
+
+        Start-Sleep -Milliseconds 500
+    }
+
+    throw "$($Launch.Name) did not listen on port $Port within ${TimeoutSeconds}s. See logs: $($Launch.StdOut) ; $($Launch.StdErr)"
+}
+
+# Build serially, then run with --no-build. Concurrent dotnet run builds can race on shared project outputs
+# and make the first full dev startup flaky.
+Write-Host "Building Management.Host..." -ForegroundColor Cyan
+& $dotnetExe build $HostProject --no-incremental
+if ($LASTEXITCODE -ne 0) { throw "Management.Host build failed" }
+
+Write-Host "Building Management UI..." -ForegroundColor Cyan
+& $dotnetExe build $UiServerProject --no-incremental
+if ($LASTEXITCODE -ne 0) { throw "Management UI build failed" }
+
+$hostArgs = @("run", "--no-build", "--project", $HostProject, "--launch-profile", "http")
+$uiArgs = @("run", "--no-build", "--project", $UiServerProject, "--launch-profile", "Ui.Server")
 if ($NoBrowser) {
-    $uiArgs = @("run", "--project", $UiServerProject, "--launch-profile", "Ui.Server", "--urls", "http://localhost:9001")
+    $uiArgs = @("run", "--no-build", "--project", $UiServerProject, "--launch-profile", "Ui.Server", "--urls", "http://localhost:9001")
 }
 
 # Use the resolved dotnet.exe (full path). Start-Process "dotnet" can pick Program Files\dotnet and fail on net10.0
 # even when this session's PATH was prepended with the correct SDK root.
-Start-Process -FilePath $dotnetExe -ArgumentList $hostArgs -WorkingDirectory $RepoRoot -WindowStyle Normal
-Start-Sleep -Seconds 2
-Start-Process -FilePath $dotnetExe -ArgumentList $uiArgs -WorkingDirectory $RepoRoot -WindowStyle Normal
-Start-Sleep -Seconds 2
+$hostLaunch = Start-DevServiceLogged -Name "Management Host" -Arguments $hostArgs
+Wait-DevServiceStarted -Launch $hostLaunch -Port 9000
+$uiLaunch = Start-DevServiceLogged -Name "Management UI" -Arguments $uiArgs
+Wait-DevServiceStarted -Launch $uiLaunch -Port 9001
 
 # Start instance-plane worker so workflow runs actually execute steps and persist step instances.
 # Use dedicated script that records startup status and failure detail.
@@ -170,4 +234,4 @@ Write-Host "Starting testing worker runtime..." -ForegroundColor Cyan
 & $StartWorkerScript
 if (-not $?) { throw "Failed to start testing worker runtime." }
 
-Write-Host "Dev servers started. Close their windows or run scripts\dev\down.ps1 to stop." -ForegroundColor Green
+Write-Host "Dev servers started. Run scripts\dev\down.ps1 to stop them." -ForegroundColor Green

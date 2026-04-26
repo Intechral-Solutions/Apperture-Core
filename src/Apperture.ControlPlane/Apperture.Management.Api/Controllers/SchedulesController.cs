@@ -13,6 +13,8 @@ namespace Apperture.Management.Api.Controllers;
 [Authorize]
 public sealed class SchedulesController : ControllerBase
 {
+    private const string LegacyScheduleWarningHeader =
+        "299 - \"Legacy schedules without IntegrationId detected; migrate schedules to integration-owned records.\"";
     private readonly IScheduleGovernanceService _scheduleGovernance;
     private readonly IScheduleManagementService _scheduleManagement;
     private readonly IScheduleValidationService _scheduleValidation;
@@ -43,6 +45,8 @@ public sealed class SchedulesController : ControllerBase
         if (!await _scheduleGovernance.CanManageAsync(cancellationToken))
             return Forbid();
         var definitions = await _scheduleManagement.ListDefinitionsAsync(cancellationToken);
+        if (definitions.Any(d => d.IntegrationId is null))
+            TryAppendWarningHeader(LegacyScheduleWarningHeader);
         return Ok(definitions.Select(ToDto).ToList());
     }
 
@@ -57,6 +61,8 @@ public sealed class SchedulesController : ControllerBase
         var detail = await _scheduleManagement.GetScheduleWithExecutionStateAsync(new ScheduleId(id), planeId, cancellationToken);
         if (detail is null)
             return NotFound();
+        if (detail.Definition.IntegrationId is null)
+            TryAppendWarningHeader(LegacyScheduleWarningHeader);
         return Ok(ToDetailDto(detail));
     }
 
@@ -202,6 +208,14 @@ public sealed class SchedulesController : ControllerBase
             claim?.ClaimedByHostId,
             claim?.ClaimedAtUtc,
             claim?.IsStale);
+    }
+
+    private void TryAppendWarningHeader(string value)
+    {
+        if (HttpContext?.Response?.Headers is null)
+            return;
+
+        HttpContext.Response.Headers.Append("Warning", value);
     }
 }
 

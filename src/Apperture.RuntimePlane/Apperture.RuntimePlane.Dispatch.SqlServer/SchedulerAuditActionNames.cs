@@ -14,6 +14,7 @@ public static class SchedulerAuditActionNames
     public const string Dispatched = "scheduler.schedule.dispatched";
     public const string BlockedByLifecycle = "scheduler.schedule.blocked_by_lifecycle";
     public const string Failed = "scheduler.schedule.failed";
+    public const string LegacyScheduleWithoutIntegration = "scheduler.schedule.legacy_without_integration";
 
     /// <summary>Epic 36: Stale in-progress claim recovered by another host (<c>TryRecoverStaleClaimAsync</c>).</summary>
     public const string ClaimRecovered = "scheduler.claim.recovered";

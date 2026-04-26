@@ -111,6 +111,29 @@ public sealed class SchedulesControllerTests
     }
 
     [Fact]
+    public async Task Create_WithoutIntegrationId_Returns400()
+    {
+        var scheduleGovernance = new StubScheduleGovernanceService(canManage: true);
+        var scheduleManagement = new StubScheduleManagementService();
+        var validation = new ScheduleValidationService();
+        var controller = new SchedulesController(scheduleGovernance, scheduleManagement, validation);
+        var body = new CreateScheduleRequestBody(
+            "No integration",
+            "0 * * * *",
+            "UTC",
+            true,
+            0,
+            "{\"workflowDefinitionId\":\"wf1\"}",
+            null,
+            "local",
+            IntegrationId: null);
+
+        var result = await controller.Create(body, CancellationToken.None);
+
+        result.Result.Should().BeOfType<BadRequestObjectResult>();
+    }
+
+    [Fact]
     public async Task Update_WithInvalidCron_Returns400()
     {
         var scheduleGovernance = new StubScheduleGovernanceService(canManage: true);
