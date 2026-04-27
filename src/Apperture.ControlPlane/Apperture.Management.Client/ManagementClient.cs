@@ -66,14 +66,18 @@ public sealed class ManagementClient : IManagementClient
 
     public async Task<StartWorkflowResult> StartWorkflowAsync(
         string workflowId,
+        string integrationId,
         IReadOnlyDictionary<string, object?>? parameters,
         string? idempotencyKey,
         string? correlationId,
         CancellationToken cancellationToken = default)
     {
+        if (string.IsNullOrWhiteSpace(integrationId))
+            throw new ArgumentException("IntegrationId is required for manual workflow starts.", nameof(integrationId));
+
         var response = await _http.PostAsJsonAsync(
             $"workflows/{workflowId}/start",
-            new { parameters, idempotencyKey, correlationId },
+            new { parameters, idempotencyKey, correlationId, integrationId },
             cancellationToken).ConfigureAwait(false);
         response.EnsureSuccessStatusCode();
         var result = await response.Content.ReadFromJsonAsync<StartWorkflowResult>(cancellationToken).ConfigureAwait(false);

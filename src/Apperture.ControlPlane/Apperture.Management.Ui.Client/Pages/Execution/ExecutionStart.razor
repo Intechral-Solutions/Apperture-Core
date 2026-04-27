@@ -1,0 +1,466 @@
+@page "/execute"
+@using System.Globalization
+@using System.Text.Json
+@using Apperture.Management.Client
+@using Apperture.Management.Ui.Client.Execution
+@inject IManagementClient Client
+
+<div class="p-4">
+    <h1 class="text-xl font-semibold text-heading">Execute</h1>
+    <div class="mt-1 text-xs text-muted">Integration-first launch for workflows, operations, and procedures.</div>
+
+    @if (!string.IsNullOrWhiteSpace(_error))
+    {
+        <div class="mt-4 rounded border border-default bg-surface px-3 py-2 text-sm text-body">
+            <div class="font-semibold">Error</div>
+            <div class="text-muted">@_error</div>
+        </div>
+    }
+
+    <div class="mt-4 grid gap-4 md:grid-cols-2">
+        <div class="rounded border border-default bg-surface p-3">
+            <div class="text-sm font-semibold text-heading">Target</div>
+            <div class="mt-3">
+                <label class="text-xs text-muted">Integration</label>
+                <select class="mt-1 w-full rounded border border-default bg-surface px-2 py-2 text-sm"
+                        value="@(_selectedIntegrationId ?? "")"
+                        @onchange="OnIntegrationChanged">
+                    <option value="">Select…</option>
+                    @foreach (var integration in _integrations)
+                    {
+                        <option value="@integration.Id">@integration.DisplayName (@integration.Id)</option>
+                    }
+                </select>
+            </div>
+            <div class="mt-3">
+                <label class="text-xs text-muted">Launch type</label>
+                <select class="mt-1 w-full rounded border border-default bg-surface px-2 py-2 text-sm"
+                        disabled="@string.IsNullOrWhiteSpace(_selectedIntegrationId)"
+                        value="@_selectedKind"
+                        @onchange="OnKindChanged">
+                    <option value="@ExecutionTargetKinds.Workflow">Workflow</option>
+                    <option value="@ExecutionTargetKinds.Operation">Operation</option>
+                    <option value="@ExecutionTargetKinds.Procedure">Procedure</option>
+                </select>
+            </div>
+            <div class="mt-3">
+                <label class="text-xs text-muted">Target executable</label>
+                <select class="mt-1 w-full rounded border border-default bg-surface px-2 py-2 text-sm"
+                        disabled="@(!_targetIds.Any())"
+                        value="@(_selectedTargetId ?? "")"
+                        @onchange="OnTargetChanged">
+                    <option value="">Select…</option>
+                    @foreach (var target in _targetIds)
+                    {
+                        <option value="@target.Id">@target.Name (@target.Id)</option>
+                    }
+                </select>
+            </div>
+            @if (_descriptor is not null && !_descriptor.Launchable && _descriptor.BlockedReasonCodes.Count > 0)
+            {
+                <ul class="mt-3 list-disc pl-5 text-xs text-warning">
+                    @foreach (var blocked in _descriptor.BlockedReasonCodes)
+                    {
+                        <li><span class="font-mono">@blocked</span></li>
+                    }
+                </ul>
+            }
+        </div>
+
+        <div class="rounded border border-default bg-surface p-3">
+            <div class="text-sm font-semibold text-heading">Launch</div>
+            <div class="text-xs text-muted">Renderer: <span class="font-mono">@(_descriptor?.RendererKey ?? "none")</span></div>
+
+            @if (_descriptor is null)
+            {
+                <div class="mt-3 text-sm text-muted">Choose integration, launch type, and target.</div>
+            }
+            else
+            {
+                <div class="mt-3 grid gap-3">
+                    <div>
+                        <label class="text-xs text-muted">Idempotency key (optional)</label>
+                        <input class="mt-1 w-full rounded border border-default bg-surface px-2 py-2 text-sm font-mono" @bind="_idempotencyKey" />
+                    </div>
+                    <div>
+                        <label class="text-xs text-muted">Correlation ID (optional)</label>
+                        <input class="mt-1 w-full rounded border border-default bg-surface px-2 py-2 text-sm font-mono" @bind="_correlationId" />
+                    </div>
+
+                    @if (_descriptor.RendererKey == ExecutionRendererKeys.MetadataForm && _descriptor.ProcedureDetail is not null)
+                    {
+                        <ProcedureParameterForm Fields="@_descriptor.ProcedureDetail.ParameterFields" Values="@_procedureValues" />
+                    }
+                    else if (_descriptor.RendererKey == ExecutionRendererKeys.MetadataForm && _descriptor.Fields is { Count: > 0 } fields)
+                    {
+                        @foreach (var field in fields)
+                        {
+                            <div>
+                                <label class="text-xs text-muted">@field.Label (@field.Type)</label>
+                                @if (field.AllowedValues is { Count: > 0 } options)
+                                {
+                                    <select class="mt-1 w-full rounded border border-default bg-surface px-2 py-2 text-sm"
+                                            value="@GetStringValue(field.Key)"
+                                            @onchange="e => SetStringValue(field.Key, e.Value?.ToString())">
+                                        <option value="">@(field.Required ? "(select)" : "(optional)")</option>
+                                        @foreach (var option in options)
+                                        {
+                                            <option value="@option">@option</option>
+                                        }
+                                    </select>
+                                }
+                                else
+                                {
+                                    <input class="mt-1 w-full rounded border border-default bg-surface px-2 py-2 text-sm"
+                                           value="@GetStringValue(field.Key, field.DefaultValue)"
+                                           @onchange="e => SetStringValue(field.Key, e.Value?.ToString())" />
+                                }
+                            </div>
+                        }
+                    }
+                    else
+                    {
+                        <div>
+                            <label class="text-xs text-muted">Parameters (JSON object)</label>
+                            <textarea class="mt-1 w-full rounded border border-default bg-surface px-2 py-2 text-sm font-mono"
+                                      rows="8"
+                                      @bind="_jsonParameters"></textarea>
+                        </div>
+                    }
+
+                    <button class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface"
+                            disabled="@(_loading || !_descriptor.Launchable)"
+                            @onclick="LaunchAsync">
+                        Start
+                    </button>
+
+                    @if (!string.IsNullOrWhiteSpace(_resultMessage))
+                    {
+                        <div class="rounded border border-default bg-surface px-3 py-2 text-sm text-body">
+                            <div class="font-semibold">Result</div>
+                            <div class="text-muted">@_resultMessage</div>
+                            @if (!string.IsNullOrWhiteSpace(_runId))
+                            {
+                                <a class="underline font-mono text-xs" href="@($"/runs/{_runId}")">Open run: @_runId</a>
+                            }
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "kind")]
+    public string? KindFromQuery { get; set; }
+    [SupplyParameterFromQuery(Name = "integrationId")]
+    public string? IntegrationIdFromQuery { get; set; }
+
+    private readonly List<IExecutionLaunchAdapter> _adapters =
+    [
+        new WorkflowExecutionLaunchAdapter(),
+        new OperationExecutionLaunchAdapter(),
+        new ProcedureExecutionLaunchAdapter()
+    ];
+
+    private IReadOnlyList<IntegrationDto> _integrations = Array.Empty<IntegrationDto>();
+    private IReadOnlyList<OperationDefinitionDto> _operations = Array.Empty<OperationDefinitionDto>();
+    private IReadOnlyList<WorkflowDto> _workflows = Array.Empty<WorkflowDto>();
+    private IReadOnlyList<IntegrationProcedureItemDto> _procedures = Array.Empty<IntegrationProcedureItemDto>();
+    private List<(string Id, string Name)> _targetIds = [];
+
+    private string? _selectedIntegrationId;
+    private string _selectedKind = ExecutionTargetKinds.Workflow;
+    private string? _selectedTargetId;
+
+    private ExecutionDescriptor? _descriptor;
+    private readonly Dictionary<string, object?> _fieldValues = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, object?> _procedureValues = new(StringComparer.Ordinal);
+    private string _jsonParameters = "{}";
+    private string? _idempotencyKey;
+    private string? _correlationId;
+    private string? _error;
+    private string? _resultMessage;
+    private string? _runId;
+    private bool _loading;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _selectedKind = NormalizeKind(KindFromQuery);
+        _selectedIntegrationId = string.IsNullOrWhiteSpace(IntegrationIdFromQuery) ? null : IntegrationIdFromQuery;
+        await LoadBaseAsync();
+        await ReloadTargetsAsync();
+    }
+
+    private async Task LoadBaseAsync()
+    {
+        _loading = true;
+        _error = null;
+        try
+        {
+            _integrations = await Client.GetIntegrationsAsync();
+            _operations = await Client.GetOperationsAsync();
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task OnIntegrationChanged(ChangeEventArgs e)
+    {
+        _selectedIntegrationId = e.Value?.ToString();
+        _selectedTargetId = null;
+        _descriptor = null;
+        _resultMessage = null;
+        _runId = null;
+        await ReloadTargetsAsync();
+    }
+
+    private async Task OnKindChanged(ChangeEventArgs e)
+    {
+        _selectedKind = NormalizeKind(e.Value?.ToString());
+        _selectedTargetId = null;
+        _descriptor = null;
+        _resultMessage = null;
+        _runId = null;
+        await ReloadTargetsAsync();
+    }
+
+    private async Task ReloadTargetsAsync()
+    {
+        _targetIds.Clear();
+        _workflows = Array.Empty<WorkflowDto>();
+        _procedures = Array.Empty<IntegrationProcedureItemDto>();
+        if (string.IsNullOrWhiteSpace(_selectedIntegrationId))
+            return;
+
+        var integration = _integrations.FirstOrDefault(i => string.Equals(i.Id, _selectedIntegrationId, StringComparison.Ordinal));
+        if (integration is null)
+            return;
+
+        if (string.Equals(_selectedKind, ExecutionTargetKinds.Workflow, StringComparison.Ordinal))
+        {
+            _workflows = await Client.GetWorkflowsAsync(integration.ModuleId);
+            _targetIds = _workflows.Select(w => (w.Id, w.Name)).ToList();
+        }
+        else if (string.Equals(_selectedKind, ExecutionTargetKinds.Operation, StringComparison.Ordinal))
+        {
+            _targetIds = _operations
+                .Where(o => string.Equals(o.ModuleId, integration.ModuleId, StringComparison.Ordinal))
+                .Select(o => (o.OperationDefinitionId, o.DisplayName))
+                .ToList();
+        }
+        else
+        {
+            var procedureList = await Client.GetIntegrationProceduresAsync(_selectedIntegrationId);
+            _procedures = procedureList?.Procedures ?? Array.Empty<IntegrationProcedureItemDto>();
+            _targetIds = _procedures.Select(p => (p.Id, p.DisplayName)).ToList();
+        }
+    }
+
+    private async Task OnTargetChanged(ChangeEventArgs e)
+    {
+        _selectedTargetId = e.Value?.ToString();
+        _descriptor = null;
+        _fieldValues.Clear();
+        _procedureValues.Clear();
+        _resultMessage = null;
+        _runId = null;
+        if (string.IsNullOrWhiteSpace(_selectedTargetId) || string.IsNullOrWhiteSpace(_selectedIntegrationId))
+            return;
+
+        _descriptor = await BuildDescriptorAsync(_selectedKind, _selectedIntegrationId, _selectedTargetId);
+    }
+
+    private async Task<ExecutionDescriptor?> BuildDescriptorAsync(string kind, string integrationId, string targetId)
+    {
+        if (string.Equals(kind, ExecutionTargetKinds.Workflow, StringComparison.Ordinal))
+        {
+            var workflow = _workflows.FirstOrDefault(w => string.Equals(w.Id, targetId, StringComparison.Ordinal));
+            return workflow is null
+                ? null
+                : new ExecutionDescriptor(
+                    kind,
+                    integrationId,
+                    workflow.Id,
+                    workflow.Name,
+                    true,
+                    Array.Empty<string>(),
+                    ExecutionRendererKeys.RawJson,
+                    WizardDefinitionRef: null);
+        }
+
+        if (string.Equals(kind, ExecutionTargetKinds.Operation, StringComparison.Ordinal))
+        {
+            var operation = _operations.FirstOrDefault(o => string.Equals(o.OperationDefinitionId, targetId, StringComparison.Ordinal));
+            if (operation is null)
+                return null;
+
+            var fields = operation.InputSchema?.Fields
+                .Select(f => new ExecutionInputField(
+                    f.Key,
+                    f.Type,
+                    f.Label,
+                    f.HelpText,
+                    f.Required,
+                    f.DefaultValue,
+                    f.AllowedValues))
+                .ToArray();
+            if (fields is not null)
+            {
+                foreach (var field in fields)
+                    _fieldValues[field.Key] = field.DefaultValue;
+            }
+
+            return new ExecutionDescriptor(
+                kind,
+                integrationId,
+                operation.OperationDefinitionId,
+                operation.DisplayName,
+                operation.CanStart,
+                Array.Empty<string>(),
+                fields is { Length: > 0 } ? ExecutionRendererKeys.MetadataForm : ExecutionRendererKeys.RawJson,
+                WizardDefinitionRef: null,
+                Fields: fields);
+        }
+
+        var detail = await Client.GetIntegrationProcedureAsync(integrationId, targetId);
+        if (detail is null)
+            return null;
+
+        ProcedureParameterForm.SeedValues(detail.ParameterFields, _procedureValues);
+        return new ExecutionDescriptor(
+            kind,
+            integrationId,
+            detail.Id,
+            detail.DisplayName,
+            detail.Launchable,
+            detail.BlockedReasonCodes,
+            ExecutionRendererKeys.MetadataForm,
+            WizardDefinitionRef: null,
+            ProcedureDetail: detail);
+    }
+
+    private string? GetStringValue(string key, string? fallback = null) =>
+        _fieldValues.TryGetValue(key, out var value) ? value?.ToString() ?? fallback : fallback;
+
+    private void SetStringValue(string key, string? value) => _fieldValues[key] = value;
+
+    private async Task LaunchAsync()
+    {
+        if (_descriptor is null)
+            return;
+
+        _loading = true;
+        _error = null;
+        _resultMessage = null;
+        _runId = null;
+        try
+        {
+            var adapter = _adapters.First(a => string.Equals(a.Kind, _descriptor.Kind, StringComparison.Ordinal));
+            var parameters = ResolveParameters(_descriptor);
+            var outcome = await adapter.LaunchAsync(
+                Client,
+                _descriptor,
+                parameters,
+                string.IsNullOrWhiteSpace(_idempotencyKey) ? null : _idempotencyKey,
+                string.IsNullOrWhiteSpace(_correlationId) ? null : _correlationId);
+
+            if (!outcome.Succeeded)
+            {
+                _error = string.IsNullOrWhiteSpace(outcome.ErrorCode)
+                    ? (outcome.ErrorMessage ?? "Launch failed.")
+                    : $"{outcome.ErrorCode}: {outcome.ErrorMessage}";
+                return;
+            }
+
+            _runId = outcome.RunId;
+            _resultMessage = $"Accepted. Run {_runId} is {outcome.Status}.";
+        }
+        catch (JsonException ex)
+        {
+            _error = $"Invalid parameters JSON: {ex.Message}";
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private IReadOnlyDictionary<string, object?>? ResolveParameters(ExecutionDescriptor descriptor)
+    {
+        if (descriptor.ProcedureDetail is not null)
+            return _procedureValues.Count == 0 ? null : _procedureValues;
+
+        if (descriptor.Fields is { Count: > 0 })
+        {
+            var dict = new Dictionary<string, object?>(StringComparer.Ordinal);
+            foreach (var field in descriptor.Fields)
+            {
+                _fieldValues.TryGetValue(field.Key, out var rawValue);
+                var raw = rawValue?.ToString();
+                if (string.IsNullOrWhiteSpace(raw))
+                {
+                    if (field.Required)
+                        throw new InvalidOperationException($"Field '{field.Label}' is required.");
+                    continue;
+                }
+
+                dict[field.Key] = field.Type.ToLowerInvariant() switch
+                {
+                    "int" => int.Parse(raw, CultureInfo.InvariantCulture),
+                    "decimal" => decimal.Parse(raw, CultureInfo.InvariantCulture),
+                    "bool" => bool.Parse(raw),
+                    _ => raw
+                };
+            }
+
+            return dict.Count == 0 ? null : dict;
+        }
+
+        return ParseJsonObject(_jsonParameters);
+    }
+
+    private static IReadOnlyDictionary<string, object?>? ParseJsonObject(string json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+            return null;
+        var trimmed = json.Trim();
+        if (trimmed == "{}")
+            return null;
+
+        var doc = JsonDocument.Parse(trimmed);
+        if (doc.RootElement.ValueKind != JsonValueKind.Object)
+            throw new JsonException("Parameters must be a JSON object.");
+
+        var dict = new Dictionary<string, object?>(StringComparer.Ordinal);
+        foreach (var property in doc.RootElement.EnumerateObject())
+        {
+            dict[property.Name] = property.Value.ValueKind switch
+            {
+                JsonValueKind.String => property.Value.GetString(),
+                JsonValueKind.True => true,
+                JsonValueKind.False => false,
+                JsonValueKind.Number => property.Value.TryGetInt64(out var l) ? l : property.Value.GetDouble(),
+                JsonValueKind.Null => null,
+                _ => property.Value.GetRawText()
+            };
+        }
+        return dict;
+    }
+
+    private static string NormalizeKind(string? kind) =>
+        string.Equals(kind, ExecutionTargetKinds.Operation, StringComparison.OrdinalIgnoreCase) ? ExecutionTargetKinds.Operation :
+        string.Equals(kind, ExecutionTargetKinds.Procedure, StringComparison.OrdinalIgnoreCase) ? ExecutionTargetKinds.Procedure :
+        ExecutionTargetKinds.Workflow;
+}

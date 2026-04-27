@@ -497,6 +497,22 @@ public sealed class ManagementHostGovernanceHttpTests
     }
 
     [Fact]
+    public async Task Workflow_start_without_integration_id_returns_bad_request()
+    {
+        AssertSqlAvailable();
+        using var launcher = _fixture.CreateAuthenticatedClient(ManagementGovernanceTestConstants.ExternalProcedureLauncher);
+        var response = await launcher.PostAsJsonAsync(
+            "/api/workflows/Sample.HelloWorld.HelloWorld/start",
+            new
+            {
+                parameters = new Dictionary<string, object?> { ["name"] = "missing-integration" }
+            });
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var payload = await response.Content.ReadAsStringAsync();
+        payload.Should().Contain("IntegrationId is required");
+    }
+
+    [Fact]
     public async Task Post_sftp_test_connect_persists_and_updates_readiness_across_unverified_success_failed()
     {
         AssertSqlAvailable();

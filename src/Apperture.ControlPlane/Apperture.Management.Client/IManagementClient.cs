@@ -14,6 +14,7 @@ public interface IManagementClient
     Task<IReadOnlyList<WorkflowDto>> GetWorkflowsAsync(string moduleId, CancellationToken cancellationToken = default);
     Task<StartWorkflowResult> StartWorkflowAsync(
         string workflowId,
+        string integrationId,
         IReadOnlyDictionary<string, object?>? parameters,
         string? idempotencyKey,
         string? correlationId,

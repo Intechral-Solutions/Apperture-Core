@@ -14,6 +14,10 @@
     <PageHeader Title="Integration" Subtitle="@(_integration?.DisplayName ?? IntegrationId)">
         <Toolbar>
             <a href="/integrations" class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface">Back to list</a>
+            <a href="@($"/execute?integrationId={Uri.EscapeDataString(IntegrationId)}")"
+               class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface">
+                Execute
+            </a>
             <button type="button"
                     class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface disabled:opacity-50"
                     disabled="@_loading"

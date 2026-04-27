@@ -36,8 +36,9 @@ public static class ControlPanelMenuDefinitions
                     new DomainMenuItem { Text = "Blocked Work", Href = "/control/blocked-work" },
                     new DomainMenuItem { Text = "Audit Timeline", Href = "/control/audit" },
                     new DomainMenuItem { Text = "Schedules", Href = "/schedules" },
-                    new DomainMenuItem { Text = "Start Operation", Href = "/operations/start" },
-                    new DomainMenuItem { Text = "Start Workflow", Href = "/workflows/start" },
+                    new DomainMenuItem { Text = "Execute", Href = "/execute" },
+                    new DomainMenuItem { Text = "Start Operation (Legacy)", Href = "/operations/start" },
+                    new DomainMenuItem { Text = "Start Workflow (Legacy)", Href = "/workflows/start" },
                     new DomainMenuItem { Text = "API Explorer", Href = "/tools/explorer" },
                     new DomainMenuItem
                     {

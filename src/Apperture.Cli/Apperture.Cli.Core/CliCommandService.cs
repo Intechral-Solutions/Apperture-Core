@@ -14,8 +14,8 @@ public sealed class CliCommandService
     public Task<IReadOnlyList<WorkflowDto>> GetWorkflowsAsync(string moduleId, CancellationToken cancellationToken = default) =>
         _client.GetWorkflowsAsync(moduleId, cancellationToken);
 
-    public Task<StartWorkflowResult> StartWorkflowAsync(string workflowId, IReadOnlyDictionary<string, object?>? parameters, string? idempotencyKey, CancellationToken cancellationToken = default) =>
-        _client.StartWorkflowAsync(workflowId, parameters, idempotencyKey, correlationId: null, cancellationToken);
+    public Task<StartWorkflowResult> StartWorkflowAsync(string workflowId, string integrationId, IReadOnlyDictionary<string, object?>? parameters, string? idempotencyKey, CancellationToken cancellationToken = default) =>
+        _client.StartWorkflowAsync(workflowId, integrationId, parameters, idempotencyKey, correlationId: null, cancellationToken);
 
     public async Task<IReadOnlyList<RunDto>> GetRunsAsync(CancellationToken cancellationToken = default)
     {
