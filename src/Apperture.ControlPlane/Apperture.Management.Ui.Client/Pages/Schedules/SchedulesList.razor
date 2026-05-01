@@ -48,6 +48,7 @@
                         <th class="px-3 py-2">Id</th>
                         <th class="px-3 py-2">Name</th>
                         <th class="px-3 py-2">Enabled</th>
+                        <th class="px-3 py-2">Integration</th>
                         <th class="px-3 py-2">Target</th>
                         <th class="px-3 py-2"></th>
                     </tr>
@@ -60,6 +61,7 @@
                             <td class="px-3 py-2 font-mono text-xs">@s.Id</td>
                             <td class="px-3 py-2">@s.Name</td>
                             <td class="px-3 py-2">@(s.Enabled ? "Yes" : "No")</td>
+                            <td class="px-3 py-2 font-mono text-xs">@(!string.IsNullOrWhiteSpace(s.IntegrationId) ? s.IntegrationId : "-")</td>
                             <td class="px-3 py-2">
                                 <span class="font-mono text-xs">@GetTargetKind(s.TargetJobType)</span>
                                 @if (!string.IsNullOrEmpty(s.TargetJobConfiguration))

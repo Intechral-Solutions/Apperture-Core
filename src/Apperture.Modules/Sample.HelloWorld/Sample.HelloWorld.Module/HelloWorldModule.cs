@@ -79,7 +79,7 @@ public sealed class HelloWorldModule : IModule, IModuleStepHandlerRegistrar, IOp
     }
 
     public IReadOnlyList<NavigationContributionDescriptor> GetNavigationContributions()
-        => [new NavigationContributionDescriptor("Runs", "Start HelloWorld Workflow", "/workflows/start", $"{ModuleId}.start-workflow")];
+        => [new NavigationContributionDescriptor("Automation", "Start HelloWorld Workflow", "/workflows/start", $"{ModuleId}.start-workflow")];
 
     public void RegisterStepHandlers(IStepHandlerRegistry registry)
     {

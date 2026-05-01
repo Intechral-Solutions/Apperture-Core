@@ -24,13 +24,13 @@ public sealed class Epic33CrossNavigationTests
     }
 
     [Fact]
-    public void Menu_ConfigContainsModules_AndOperationsContainsSchedules()
+    public void Menu_ConfigContainsModules_AndAutomationContainsSchedules()
     {
         var menus = ControlPanelMenuDefinitions.GetDefaultMenus();
-        menus.Should().ContainKey("Operations");
+        menus.Should().ContainKey("Automation");
         menus.Should().ContainKey(SectionOwnerConstants.Config);
 
-        menus["Operations"].Items.Select(i => i.Href).Should().Contain("/schedules");
+        menus["Automation"].Items.Select(i => i.Href).Should().Contain("/schedules");
         var config = menus[SectionOwnerConstants.Config];
         var modules = config.Items.FirstOrDefault(i => i.Text == "Modules");
         modules.Should().NotBeNull();
@@ -46,10 +46,12 @@ public sealed class Epic33CrossNavigationTests
         operationsHrefs.Should().Contain("/control/center");
         operationsHrefs.Should().Contain("/control/blocked-work");
         operationsHrefs.Should().Contain("/control/audit");
-        operationsHrefs.Should().Contain("/schedules");
-
         var config = menus[SectionOwnerConstants.Config];
         config.Items.Should().Contain(i => i.Href == "/modules");
+
+        var automationHrefs = menus["Automation"].Items.Select(i => i.Href).ToHashSet();
+        automationHrefs.Should().Contain("/runs");
+        automationHrefs.Should().Contain("/schedules");
     }
 
     [Fact]

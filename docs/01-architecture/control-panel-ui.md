@@ -14,19 +14,20 @@ The Control Panel UI provides the navigation shell for the Apperture Management 
 
 ## Terminology
 
-- **Domain** — A grouping of related menu items (e.g. Operations, Catalog, Integrations). Replaces "Module" from IntegrationCenter.
+- **Domain** — A grouping of related menu items (e.g. Operations, Automation, Integrations). Replaces "Module" from IntegrationCenter.
 - **Control Panel** — The sliding side panel showing domain submenu items. Replaces "Module menu" from IntegrationCenter.
 
 ## Current top-level domains
 
 - **Dashboard** (top logo owner)
 - **Operations**
+- **Automation**
 - **Integrations**
 - **Connections**
-- **Catalog**
 - **Config** (bottom gear owner)
 
 `Config` is the primary home for module lifecycle management (`/modules`), while `Integrations` and `Connections` remain operational domains.
+The `Automation` domain contains run history (`/runs`) surfaced in the menu as **Automation History**.
 
 ## State Flow
 

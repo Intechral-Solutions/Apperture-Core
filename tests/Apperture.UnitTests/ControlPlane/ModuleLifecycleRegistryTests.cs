@@ -253,7 +253,7 @@ public sealed class ModuleLifecycleRegistryTests
                 [
                     new WorkflowContributionDescriptor(_workflowId, "TestWorkflow"),
                     new OperationContributionDescriptor(_operationId, "TestOp"),
-                    new NavigationContributionDescriptor("Runs", "Test", _navRoute),
+                    new NavigationContributionDescriptor("Automation", "Test", _navRoute),
                 ]));
 
         public async IAsyncEnumerable<WorkflowDefinition> GetDefinitionsAsync([System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)

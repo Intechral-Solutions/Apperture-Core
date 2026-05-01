@@ -74,4 +74,5 @@ public sealed record ScheduleDetailDto(
     DateTimeOffset? LastSuccessfulDispatchUtc,
     string? ClaimedByHostId = null,
     DateTimeOffset? ClaimedAtUtc = null,
-    bool? IsClaimStale = null);
+    bool? IsClaimStale = null,
+    string? IntegrationId = null);

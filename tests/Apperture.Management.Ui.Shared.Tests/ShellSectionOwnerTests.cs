@@ -22,12 +22,12 @@ public sealed class ShellSectionOwnerTests
     [Fact]
     public void GetMiddleDomains_ExcludesDashboardAndConfig()
     {
-        var allDomains = new[] { SectionOwnerConstants.Dashboard, "Operations", SectionOwnerConstants.Config, "Catalog" };
+        var allDomains = new[] { SectionOwnerConstants.Dashboard, "Operations", SectionOwnerConstants.Config, "Automation" };
         var middle = SectionOwnerConstants.GetMiddleDomains(allDomains).ToList();
         middle.Should().NotContain(SectionOwnerConstants.Dashboard);
         middle.Should().NotContain(SectionOwnerConstants.Config);
         middle.Should().Contain("Operations");
-        middle.Should().Contain("Catalog");
+        middle.Should().Contain("Automation");
     }
 
     [Fact]
@@ -38,7 +38,7 @@ public sealed class ShellSectionOwnerTests
         middle.Should().NotContain(SectionOwnerConstants.Dashboard);
         middle.Should().NotContain(SectionOwnerConstants.Config);
         middle.Should().Contain("Operations");
-        middle.Should().Contain("Catalog");
+        middle.Should().Contain("Automation");
         middle.Should().Contain("Integrations");
     }
 
@@ -124,11 +124,11 @@ public sealed class ShellSectionOwnerTests
     }
 
     [Fact]
-    public void RouteResolver_RunsPath_ReturnsOperations()
+    public void RouteResolver_RunsPath_ReturnsAutomation()
     {
         var menus = ControlPanelMenuDefinitions.GetDefaultMenus();
         RouteToSectionResolver.Resolve("/runs", menus.GetValueOrDefault, menus.Keys)
-            .Should().Be("Operations");
+            .Should().Be("Automation");
     }
 
     [Fact]
@@ -175,7 +175,7 @@ public sealed class ShellSectionOwnerTests
         var menus = ControlPanelMenuDefinitions.GetDefaultMenus();
         var reversedKeys = menus.Keys.OrderByDescending(k => k, StringComparer.OrdinalIgnoreCase);
         RouteToSectionResolver.Resolve("/runs", menus.GetValueOrDefault, reversedKeys)
-            .Should().Be("Operations");
+            .Should().Be("Automation");
     }
 
     [Fact]

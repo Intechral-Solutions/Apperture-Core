@@ -2730,8 +2730,9 @@
   }
   .nav-rail-btn.nav-rail-btn--config-gear svg {
     display: block;
-    width: 100%;
-    height: 100%;
+    width: 80%;
+    height: 80%;
+    margin: auto;
   }
   .group:hover .nav-rail-btn--hover {
     background-color: var(--color-chrome-hover);

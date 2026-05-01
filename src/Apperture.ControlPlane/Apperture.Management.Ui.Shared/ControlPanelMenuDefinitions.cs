@@ -31,11 +31,9 @@ public static class ControlPanelMenuDefinitions
                 Title = null,
                 Items =
                 {
-                    new DomainMenuItem { Text = "Runs", Href = "/runs" },
                     new DomainMenuItem { Text = "Control Center", Href = "/control/center" },
                     new DomainMenuItem { Text = "Blocked Work", Href = "/control/blocked-work" },
                     new DomainMenuItem { Text = "Audit Timeline", Href = "/control/audit" },
-                    new DomainMenuItem { Text = "Schedules", Href = "/schedules" },
                     new DomainMenuItem { Text = "Execute", Href = "/execute" },
                     new DomainMenuItem { Text = "Start Operation (Legacy)", Href = "/operations/start" },
                     new DomainMenuItem { Text = "Start Workflow (Legacy)", Href = "/workflows/start" },
@@ -77,10 +75,14 @@ public static class ControlPanelMenuDefinitions
                     new DomainMenuItem { Text = "Attention routing defaults", Href = "/attention/routing-defaults" }
                 }
             },
-            ["Catalog"] = new DomainMenu
+            ["Automation"] = new DomainMenu
             {
                 Title = null,
-                Items = { new DomainMenuItem { Text = "Browse Capabilities", Href = "/catalog" } }
+                Items =
+                {
+                    new DomainMenuItem { Text = "History", Href = "/runs" },
+                    new DomainMenuItem { Text = "Scheduling", Href = "/schedules" }
+                }
             },
             ["Integrations"] = new DomainMenu
             {

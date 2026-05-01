@@ -207,7 +207,8 @@ public sealed class SchedulesController : ControllerBase
             state?.LastSuccessfulDispatchUtc,
             claim?.ClaimedByHostId,
             claim?.ClaimedAtUtc,
-            claim?.IsStale);
+            claim?.IsStale,
+            d.IntegrationId?.Value);
     }
 
     private void TryAppendWarningHeader(string value)
@@ -251,7 +252,8 @@ public sealed record ScheduleDetailDto(
     DateTimeOffset? LastSuccessfulDispatchUtc,
     string? ClaimedByHostId = null,
     DateTimeOffset? ClaimedAtUtc = null,
-    bool? IsClaimStale = null);
+    bool? IsClaimStale = null,
+    string? IntegrationId = null);
 
 public sealed record CreateScheduleRequestBody(
     string Name,
