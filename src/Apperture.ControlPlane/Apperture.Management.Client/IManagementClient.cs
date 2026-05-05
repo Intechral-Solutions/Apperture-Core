@@ -417,6 +417,26 @@ public interface IManagementClient
     /// <summary>Browses Entra directory groups via Graph (discovery only).</summary>
     Task<EntraDirectoryGroupsApiDto?> GetEntraDirectoryGroupsAsync(string id, string? search = null, int top = 25, CancellationToken cancellationToken = default);
 
+    // --- Managed contacts (Epic 76) ---
+
+    Task<IReadOnlyList<ManagedContactSummaryDto>?> ListManagedContactsAsync(string? query, int take = 50, CancellationToken cancellationToken = default);
+
+    Task<ManagedContactDetailDto?> GetManagedContactAsync(string id, CancellationToken cancellationToken = default);
+
+    Task<ManagedContactDetailDto?> CreateManagedContactAsync(CreateManagedContactRequest request, CancellationToken cancellationToken = default);
+
+    Task<ManagedContactDetailDto?> UpdateManagedContactAsync(string id, UpdateManagedContactRequest request, CancellationToken cancellationToken = default);
+
+    Task<ManagedContactDetailDto?> SetManagedContactEnabledAsync(string id, bool isEnabled, CancellationToken cancellationToken = default);
+
+    Task<ImportEntraUsersResponseDto?> ImportEntraUsersToManagedContactsAsync(ImportEntraUsersRequest request, CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<ManagedContactGroupSummaryDto>?> ImportEntraGroupsMetadataAsync(ImportEntraGroupsRequest request, CancellationToken cancellationToken = default);
+
+    Task<ManagedContactDetailDto?> LinkManagedContactToUserAsync(string id, LinkManagedContactUserRequest request, CancellationToken cancellationToken = default);
+
+    Task<ManagedContactDetailDto?> UnlinkManagedContactUserAsync(string id, CancellationToken cancellationToken = default);
+
     // --- Governance admin (Epic 39/40) ---
 
     /// <summary>Gets the governance descriptor catalog (resources and permissions). Requires user.read.</summary>
@@ -523,7 +543,60 @@ public sealed record OperatorCapabilitiesDto(
     [property: JsonPropertyName("canViewConnectorDefinitions")] bool CanViewConnectorDefinitions = false,
     [property: JsonPropertyName("canCreateConnections")] bool CanCreateConnections = false,
     [property: JsonPropertyName("canUpdateConnections")] bool CanUpdateConnections = false,
-    [property: JsonPropertyName("canRetireConnections")] bool CanRetireConnections = false);
+    [property: JsonPropertyName("canRetireConnections")] bool CanRetireConnections = false,
+    [property: JsonPropertyName("canViewManagedContacts")] bool CanViewManagedContacts = false,
+    [property: JsonPropertyName("canManageManagedContacts")] bool CanManageManagedContacts = false,
+    [property: JsonPropertyName("canImportManagedContacts")] bool CanImportManagedContacts = false);
+
+public sealed record ManagedContactSummaryDto(
+    string Id,
+    string DisplayName,
+    string? EmailAddress,
+    string Source,
+    bool IsEnabled,
+    string UserLinkStatus,
+    string NotificationUsabilityStatus,
+    DateTimeOffset UpdatedAtUtc);
+
+public sealed record ManagedContactIdentityLinkDto(
+    string Id,
+    string Provider,
+    string ExternalObjectId,
+    string? ExternalPrincipalName,
+    DateTimeOffset? LastSyncedAtUtc,
+    string LinkStatus,
+    DateTimeOffset UpdatedAtUtc);
+
+public sealed record ManagedContactDetailDto(
+    string Id,
+    string DisplayName,
+    string? EmailAddress,
+    string Source,
+    bool IsEnabled,
+    string? LinkedUserId,
+    string UserLinkStatus,
+    string NotificationUsabilityStatus,
+    IReadOnlyList<ManagedContactIdentityLinkDto> IdentityLinks,
+    DateTimeOffset CreatedAtUtc,
+    DateTimeOffset UpdatedAtUtc);
+
+public sealed record CreateManagedContactRequest(string DisplayName, string? EmailAddress, bool IsEnabled);
+
+public sealed record UpdateManagedContactRequest(string DisplayName, string? EmailAddress, bool IsEnabled);
+
+public sealed record ImportEntraUsersRequest(string EntraRegistrationId, IReadOnlyList<string> EntraUserObjectIds);
+
+public sealed record ImportEntraUserItemResultDto(string EntraObjectId, bool Success, string? ManagedContactId, string? ErrorMessage);
+
+public sealed record ImportEntraUsersResponseDto(IReadOnlyList<ImportEntraUserItemResultDto> Items);
+
+public sealed record ImportEntraGroupsRequest(string EntraRegistrationId, IReadOnlyList<string> EntraGroupObjectIds);
+
+public sealed record ManagedContactGroupSummaryDto(string Id, string DisplayName, string EntraGroupObjectId, DateTimeOffset UpdatedAtUtc);
+
+public sealed record LinkManagedContactUserRequest(string UserId);
+
+public sealed record SetManagedContactEnabledRequest(bool IsEnabled);
 
 /// <summary>Integration resource. Epic 49, Epic 50.</summary>
 public sealed record IntegrationDto(

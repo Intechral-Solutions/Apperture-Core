@@ -128,6 +128,17 @@ public sealed class OperationalTeamManagementService : IOperationalTeamManagemen
                 if (string.IsNullOrWhiteSpace(m.EmailAddress))
                     throw new InvalidOperationException("ExternalEmail member requires EmailAddress.");
             }
+            else if (m.MemberKind == OperationalTeamMemberKinds.ManagedContact)
+            {
+                if (string.IsNullOrWhiteSpace(m.ManagedContactId))
+                    throw new InvalidOperationException("ManagedContact member requires ManagedContactId.");
+                var mcId = m.ManagedContactId.Trim();
+                var mcExists = await _db.ManagedContacts.AsNoTracking()
+                    .AnyAsync(x => x.Id == mcId, cancellationToken)
+                    .ConfigureAwait(false);
+                if (!mcExists)
+                    throw new InvalidOperationException($"Managed contact '{mcId}' was not found.");
+            }
             else
             {
                 throw new InvalidOperationException($"Unsupported member kind '{m.MemberKind}'.");
@@ -140,6 +151,7 @@ public sealed class OperationalTeamManagementService : IOperationalTeamManagemen
                 MemberKind = m.MemberKind,
                 PrincipalUserId = string.IsNullOrWhiteSpace(m.PrincipalUserId) ? null : m.PrincipalUserId.Trim(),
                 EmailAddress = string.IsNullOrWhiteSpace(m.EmailAddress) ? null : m.EmailAddress.Trim(),
+                ManagedContactId = string.IsNullOrWhiteSpace(m.ManagedContactId) ? null : m.ManagedContactId.Trim(),
                 DisplayName = string.IsNullOrWhiteSpace(m.DisplayName) ? null : m.DisplayName.Trim(),
                 IsEnabled = m.IsEnabled,
                 CreatedAtUtc = now,
@@ -186,6 +198,7 @@ public sealed class OperationalTeamManagementService : IOperationalTeamManagemen
                 x.MemberKind,
                 x.PrincipalUserId,
                 x.EmailAddress,
+                x.ManagedContactId,
                 x.DisplayName,
                 x.IsEnabled,
                 x.CreatedAtUtc,

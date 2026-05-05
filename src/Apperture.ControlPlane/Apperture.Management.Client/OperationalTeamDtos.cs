@@ -13,6 +13,7 @@ public sealed record OperationalTeamMemberDto(
     string MemberKind,
     string? PrincipalUserId,
     string? EmailAddress,
+    string? ManagedContactId,
     string? DisplayName,
     bool IsEnabled,
     DateTimeOffset CreatedAtUtc,
@@ -29,5 +30,12 @@ public sealed record OperationalTeamDetailDto(
 
 public sealed record CreateOperationalTeamRequest(string Name, string? Description, bool IsEnabled);
 public sealed record UpdateOperationalTeamRequest(string Name, string? Description, bool IsEnabled);
-public sealed record OperationalTeamMemberInputDto(string? Id, string MemberKind, string? PrincipalUserId, string? EmailAddress, string? DisplayName, bool IsEnabled);
+public sealed record OperationalTeamMemberInputDto(
+    string? Id,
+    string MemberKind,
+    string? PrincipalUserId,
+    string? EmailAddress,
+    string? ManagedContactId,
+    string? DisplayName,
+    bool IsEnabled);
 public sealed record ReplaceOperationalTeamMembersRequest(IReadOnlyList<OperationalTeamMemberInputDto> Members);

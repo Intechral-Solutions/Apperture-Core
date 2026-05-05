@@ -89,4 +89,13 @@ public static class ActionConstants
 
     /// <summary>Create, update, delete, and activate Entra instance registrations.</summary>
     public const string AuthEntraManage = "auth.entra.manage";
+
+    /// <summary>List and search managed contacts (canonical contact layer). Epic 76.</summary>
+    public const string ManagedContactRead = "managed_contact.read";
+
+    /// <summary>Create, update, enable/disable, link to users. Epic 76.</summary>
+    public const string ManagedContactManage = "managed_contact.manage";
+
+    /// <summary>Import from Entra directory into managed contacts. Epic 76.</summary>
+    public const string ManagedContactImport = "managed_contact.import";
 }

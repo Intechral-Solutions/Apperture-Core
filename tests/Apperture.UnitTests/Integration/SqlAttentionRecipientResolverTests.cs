@@ -248,4 +248,56 @@ public sealed class SqlAttentionRecipientResolverTests
         r.PrimaryRecipients.Should().BeEquivalentTo(new[] { "ok@test.com", "fallback@test.com" });
         r.PrimaryNoRouteReason.Should().BeNull();
     }
+
+    [Fact]
+    public async Task Managed_contact_member_resolves_email_from_managed_contacts_table()
+    {
+        await using var db = CreateDb();
+        db.ManagedContacts.Add(new ManagedContactEntity
+        {
+            Id = "mcontact_mc1",
+            DisplayName = "Importer",
+            EmailAddress = "mc@test.com",
+            Source = "Custom",
+            IsEnabled = true,
+            LinkedUserId = null,
+            CreatedAtUtc = UtcNow(),
+            UpdatedAtUtc = UtcNow(),
+        });
+        db.OperationalTeams.Add(new OperationalTeamEntity
+        {
+            Id = "team_mc",
+            Name = "MC",
+            IsEnabled = true,
+            CreatedAtUtc = UtcNow(),
+            UpdatedAtUtc = UtcNow(),
+        });
+        db.OperationalTeamMembers.Add(new OperationalTeamMemberEntity
+        {
+            Id = "mcmem1",
+            OperationalTeamId = "team_mc",
+            MemberKind = "ManagedContact",
+            ManagedContactId = "mcontact_mc1",
+            IsEnabled = true,
+            CreatedAtUtc = UtcNow(),
+            UpdatedAtUtc = UtcNow(),
+        });
+        db.InstanceAttentionRoutings.Add(new InstanceAttentionRoutingEntity
+        {
+            Id = InstanceAttentionRoutingDefaults.RowId,
+            ConditionKey = AttentionConditionKeys.ExpectedRunMissing,
+            IsEnabled = true,
+            SendResolvedNotification = true,
+            SuppressRemindersWhenAcknowledged = true,
+            SuppressEscalationWhenAcknowledged = true,
+            PrimaryOperationalTeamId = "team_mc",
+        });
+        await db.SaveChangesAsync();
+
+        var sut = new SqlAttentionRecipientResolver(db);
+        var r = await sut.ResolveAsync(new IntegrationId("int1"), AttentionConditionKeys.ExpectedRunMissing);
+
+        r.PrimaryRecipients.Should().Equal("mc@test.com");
+        r.PrimaryNoRouteReason.Should().BeNull();
+    }
 }

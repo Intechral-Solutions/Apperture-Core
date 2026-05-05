@@ -109,6 +109,11 @@ public static class PlatformPermissionSeeder
         Register(registry, ActionConstants.UserManage, ResourceTypeConstants.User, ScopeKeyConstants.Instance, ResourceFamily.Core);
         Register(registry, ActionConstants.RoleAssign, ResourceTypeConstants.Role, ScopeKeyConstants.Instance, ResourceFamily.Core);
         Register(registry, ActionConstants.CredentialManage, ResourceTypeConstants.User, ScopeKeyConstants.Instance, ResourceFamily.Core);
+
+        // Managed contacts (Epic 76)
+        Register(registry, ActionConstants.ManagedContactRead, ResourceTypeConstants.ManagedContact, ScopeKeyConstants.Instance, ResourceFamily.Core);
+        Register(registry, ActionConstants.ManagedContactManage, ResourceTypeConstants.ManagedContact, ScopeKeyConstants.Instance, ResourceFamily.Core);
+        Register(registry, ActionConstants.ManagedContactImport, ResourceTypeConstants.ManagedContact, ScopeKeyConstants.Instance, ResourceFamily.Core);
     }
 
     private static void Register(

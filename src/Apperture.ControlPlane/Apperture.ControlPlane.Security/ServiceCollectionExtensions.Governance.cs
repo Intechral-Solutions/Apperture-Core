@@ -60,6 +60,8 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IPostConfigureOptions<EntraAuthOptions>, EntraAuthOptionsDatabasePostConfigure>();
         services.AddScoped<IAuthenticationAdminOverviewService, AuthenticationAdminOverviewService>();
         services.AddScoped<IUserRepository, SqlUserRepository>();
+        services.AddScoped<IManagedContactRepository, SqlManagedContactRepository>();
+        services.AddScoped<IManagedContactGroupRepository, SqlManagedContactGroupRepository>();
         services.AddScoped<IRoleRepository, SqlRoleRepository>();
         services.AddScoped<IPrincipalToUserResolver, SqlPrincipalToUserResolver>();
         services.AddScoped<IRoleProvider, SqlRoleProvider>();
@@ -73,6 +75,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<ILocalPasswordHasher, LocalPasswordHasher>();
         services.AddScoped<IFirstAdminBootstrapService, FirstAdminBootstrapService>();
         services.AddScoped<IUserManagementService, UserManagementService>();
+        services.AddScoped<IManagedContactManagementService, ManagedContactManagementService>();
         // Module permission registration must run before role repair so platform-admin gets module-scoped workflow.execute etc.
         services.AddHostedService<ModulePermissionRegistrationHostedService>();
         services.AddHostedService<PlatformAdminRoleRepairService>();

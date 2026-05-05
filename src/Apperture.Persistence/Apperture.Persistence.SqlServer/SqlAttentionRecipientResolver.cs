@@ -9,6 +9,7 @@ public sealed class SqlAttentionRecipientResolver : IAttentionRecipientResolver
 {
     private const string MemberKindPrincipal = "Principal";
     private const string MemberKindExternalEmail = "ExternalEmail";
+    private const string MemberKindManagedContact = "ManagedContact";
 
     private readonly AppertureDbContext _db;
 
@@ -217,6 +218,14 @@ public sealed class SqlAttentionRecipientResolver : IAttentionRecipientResolver
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
 
+        var managedContactIds = members
+            .Where(m => string.Equals(m.MemberKind, MemberKindManagedContact, StringComparison.OrdinalIgnoreCase))
+            .Select(m => m.ManagedContactId)
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Select(x => x!)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+
         var principalEmails = principalIds.Length == 0
             ? Array.Empty<string>()
             : await _db.Users.AsNoTracking()
@@ -225,15 +234,24 @@ public sealed class SqlAttentionRecipientResolver : IAttentionRecipientResolver
                 .ToArrayAsync(cancellationToken)
                 .ConfigureAwait(false);
 
+        var managedContactEmails = managedContactIds.Length == 0
+            ? Array.Empty<string>()
+            : await _db.ManagedContacts.AsNoTracking()
+                .Where(c => managedContactIds.Contains(c.Id) && c.IsEnabled && c.EmailAddress != null)
+                .Select(c => c.EmailAddress!)
+                .ToArrayAsync(cancellationToken)
+                .ConfigureAwait(false);
+
         var recipients = principalEmails
             .Concat(externalRecipients)
+            .Concat(managedContactEmails)
             .Select(x => x.Trim())
             .Where(x => x.Length > 0)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
 
         var noRouteReason = recipients.Length == 0
-            ? (principalIds.Length > 0
+            ? (principalIds.Length > 0 || managedContactIds.Length > 0
                 ? AttentionNoRouteReasons.PrincipalMembersNoEmail
                 : AttentionNoRouteReasons.TeamEmpty)
             : null;

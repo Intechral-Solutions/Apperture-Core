@@ -1025,7 +1025,7 @@ public sealed class ManagementClient : IManagementClient
         using var response = await _http.GetAsync("control/capabilities", cancellationToken).ConfigureAwait(false);
         response.EnsureSuccessStatusCode();
         var dto = await response.Content.ReadFromJsonAsync<OperatorCapabilitiesDto>(ApiJsonReadOptions, cancellationToken).ConfigureAwait(false);
-        return dto ?? new OperatorCapabilitiesDto(false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false);
+        return dto ?? new OperatorCapabilitiesDto(false, false, false, false, false);
     }
 
     public async Task<StartOperationResult> StartOperationAsync(
@@ -1312,6 +1312,145 @@ public sealed class ManagementClient : IManagementClient
             return null;
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadFromJsonAsync<EntraDirectoryGroupsApiDto>(cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<IReadOnlyList<ManagedContactSummaryDto>?> ListManagedContactsAsync(
+        string? query,
+        int take = 50,
+        CancellationToken cancellationToken = default)
+    {
+        var url = $"managed-contacts?take={take}";
+        if (!string.IsNullOrWhiteSpace(query))
+            url += $"&query={Uri.EscapeDataString(query.Trim())}";
+        using var response = await _http.GetAsync(url, cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
+            return null;
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<IReadOnlyList<ManagedContactSummaryDto>>(ApiJsonReadOptions, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<ManagedContactDetailDto?> GetManagedContactAsync(string id, CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.GetAsync($"managed-contacts/{Uri.EscapeDataString(id)}", cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden or HttpStatusCode.NotFound)
+            return null;
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<ManagedContactDetailDto>(ApiJsonReadOptions, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<ManagedContactDetailDto?> CreateManagedContactAsync(
+        CreateManagedContactRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.PostAsJsonAsync(
+            "managed-contacts",
+            request,
+            ApiJsonWriteOptions,
+            cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
+            return null;
+        if (response.StatusCode == HttpStatusCode.BadRequest)
+            await EnsureSuccessOrThrowAsync(response, cancellationToken).ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<ManagedContactDetailDto>(ApiJsonReadOptions, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<ManagedContactDetailDto?> UpdateManagedContactAsync(
+        string id,
+        UpdateManagedContactRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.PutAsJsonAsync(
+            $"managed-contacts/{Uri.EscapeDataString(id)}",
+            request,
+            ApiJsonWriteOptions,
+            cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden or HttpStatusCode.NotFound)
+            return null;
+        if (response.StatusCode == HttpStatusCode.BadRequest)
+            await EnsureSuccessOrThrowAsync(response, cancellationToken).ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<ManagedContactDetailDto>(ApiJsonReadOptions, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<ManagedContactDetailDto?> SetManagedContactEnabledAsync(
+        string id,
+        bool isEnabled,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.PutAsJsonAsync(
+            $"managed-contacts/{Uri.EscapeDataString(id)}/enabled",
+            new SetManagedContactEnabledRequest(isEnabled),
+            ApiJsonWriteOptions,
+            cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden or HttpStatusCode.NotFound)
+            return null;
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<ManagedContactDetailDto>(ApiJsonReadOptions, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<ImportEntraUsersResponseDto?> ImportEntraUsersToManagedContactsAsync(
+        ImportEntraUsersRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.PostAsJsonAsync(
+            "managed-contacts/import/entra-users",
+            request,
+            ApiJsonWriteOptions,
+            cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
+            return null;
+        if (response.StatusCode == HttpStatusCode.BadRequest)
+            await EnsureSuccessOrThrowAsync(response, cancellationToken).ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<ImportEntraUsersResponseDto>(ApiJsonReadOptions, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<IReadOnlyList<ManagedContactGroupSummaryDto>?> ImportEntraGroupsMetadataAsync(
+        ImportEntraGroupsRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.PostAsJsonAsync(
+            "managed-contacts/import/entra-groups",
+            request,
+            ApiJsonWriteOptions,
+            cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
+            return null;
+        if (response.StatusCode == HttpStatusCode.BadRequest)
+            await EnsureSuccessOrThrowAsync(response, cancellationToken).ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<IReadOnlyList<ManagedContactGroupSummaryDto>>(ApiJsonReadOptions, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<ManagedContactDetailDto?> LinkManagedContactToUserAsync(
+        string id,
+        LinkManagedContactUserRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.PutAsJsonAsync(
+            $"managed-contacts/{Uri.EscapeDataString(id)}/link-user",
+            request,
+            ApiJsonWriteOptions,
+            cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden or HttpStatusCode.NotFound)
+            return null;
+        if (response.StatusCode == HttpStatusCode.BadRequest)
+            await EnsureSuccessOrThrowAsync(response, cancellationToken).ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<ManagedContactDetailDto>(ApiJsonReadOptions, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<ManagedContactDetailDto?> UnlinkManagedContactUserAsync(string id, CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.PutAsync(
+            $"managed-contacts/{Uri.EscapeDataString(id)}/unlink-user",
+            content: null,
+            cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden or HttpStatusCode.NotFound)
+            return null;
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<ManagedContactDetailDto>(ApiJsonReadOptions, cancellationToken).ConfigureAwait(false);
     }
 
     private static async Task EnsureSuccessOrThrowAsync(HttpResponseMessage response, CancellationToken cancellationToken)

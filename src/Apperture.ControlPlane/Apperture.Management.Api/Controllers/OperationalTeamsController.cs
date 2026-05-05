@@ -105,7 +105,8 @@ public sealed class OperationalTeamsController : ControllerBase
                     m.PrincipalUserId,
                     m.EmailAddress,
                     m.DisplayName,
-                    m.IsEnabled))
+                    m.IsEnabled,
+                    m.ManagedContactId))
                 .ToList();
             var updated = await _teams.ReplaceMembersAsync(id, items, cancellationToken).ConfigureAwait(false);
             return updated is null ? NotFound() : Ok(ToDto(updated));
@@ -133,6 +134,7 @@ public sealed class OperationalTeamsController : ControllerBase
                 m.MemberKind,
                 m.PrincipalUserId,
                 m.EmailAddress,
+                m.ManagedContactId,
                 m.DisplayName,
                 m.IsEnabled,
                 m.CreatedAtUtc,

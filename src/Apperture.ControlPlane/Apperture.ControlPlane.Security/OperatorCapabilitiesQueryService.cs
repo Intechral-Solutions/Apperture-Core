@@ -12,7 +12,7 @@ namespace Apperture.ControlPlane.Security;
 public sealed class OperatorCapabilitiesQueryService : IOperatorCapabilitiesQueryService
 {
     private static readonly OperatorCapabilitiesDto DenyAll =
-        new(false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false);
+        new(false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false);
 
     private readonly IPrincipalContext _principalContext;
     private readonly IAuthorizationEvaluationService _authorization;
@@ -102,6 +102,21 @@ public sealed class OperatorCapabilitiesQueryService : IOperatorCapabilitiesQuer
                 ActionConstants.ConnectorDefinitionRead,
                 ResourceTypeConstants.ConnectorDefinition,
                 cancellationToken).ConfigureAwait(false);
+            var canViewManagedContacts = await EvaluateAsync(
+                actor,
+                ActionConstants.ManagedContactRead,
+                ResourceTypeConstants.ManagedContact,
+                cancellationToken).ConfigureAwait(false);
+            var canManageManagedContacts = await EvaluateAsync(
+                actor,
+                ActionConstants.ManagedContactManage,
+                ResourceTypeConstants.ManagedContact,
+                cancellationToken).ConfigureAwait(false);
+            var canImportManagedContacts = await EvaluateAsync(
+                actor,
+                ActionConstants.ManagedContactImport,
+                ResourceTypeConstants.ManagedContact,
+                cancellationToken).ConfigureAwait(false);
 
             return new OperatorCapabilitiesDto(
                 canManageSchedules,
@@ -121,7 +136,10 @@ public sealed class OperatorCapabilitiesQueryService : IOperatorCapabilitiesQuer
                 canViewConnectorDefinitions,
                 canCreateConnections,
                 canUpdateConnections,
-                canRetireConnections);
+                canRetireConnections,
+                canViewManagedContacts,
+                canManageManagedContacts,
+                canImportManagedContacts);
         }
         catch (Exception ex)
         {

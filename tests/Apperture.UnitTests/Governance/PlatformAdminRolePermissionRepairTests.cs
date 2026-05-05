@@ -107,4 +107,19 @@ public sealed class PlatformAdminRolePermissionRepairTests
         PlatformAdminRolePermissionRepair.RequiredConnectorOperatorPermissions.Should().NotContain(p =>
             p.Action == ActionConstants.ConnectorManage);
     }
+
+    [Fact]
+    public void ApplyAllRepairs_AddsManagedContactGrants_WhenMissing()
+    {
+        var registry = new InMemoryResourceDescriptorRegistry();
+        new PlatformPermissionSeederService(new StubEnvironmentContext()).Seed(registry);
+
+        var repaired = PlatformAdminRolePermissionRepair.ApplyAllRepairs(Array.Empty<PermissionDescriptor>(), registry);
+
+        repaired.Should().Contain(p =>
+            p.Action == ActionConstants.ManagedContactRead &&
+            p.Resource!.ResourceType == ResourceTypeConstants.ManagedContact);
+        repaired.Should().Contain(p => p.Action == ActionConstants.ManagedContactManage);
+        repaired.Should().Contain(p => p.Action == ActionConstants.ManagedContactImport);
+    }
 }

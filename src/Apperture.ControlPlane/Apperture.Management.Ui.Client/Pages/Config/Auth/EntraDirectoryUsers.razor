@@ -9,7 +9,7 @@
 <div class="p-4">
     <div class="text-xs text-muted mb-1">Config — Authentication — Entra directory</div>
     <PageHeader Title="Entra directory users"
-                Subtitle="Browse-only view from Microsoft Graph. These directory objects are not imported as contacts or login identities until a future import flow runs." />
+                Subtitle="Browse users from Microsoft Graph. Import selected rows as managed contacts (no automatic login users)." />
 
     @if (!_canView)
     {
@@ -27,9 +27,9 @@
     {
         <div class="mt-4 space-y-4 text-sm">
             <PageMessage Kind="PageMessageKind.Info"
-                         Message="Epic 76 will use these object ids for managed-contact import. Nothing here creates platform users." />
+                         Message="Import creates or updates managed contacts by Entra object id using server-side Graph refresh. Missing mail remains visible as MissingEmail on the contact." />
 
-            <p class="text-xs"><a class="underline" href="/config/auth/tenants">← Entra tenant setup</a></p>
+            <p class="text-xs"><a class="underline" href="/config/auth/tenants">← Entra tenant setup</a> · <a class="underline" href="/config/contacts">Managed contacts</a></p>
 
             <div class="flex flex-wrap items-end gap-2 max-w-2xl">
                 <label class="flex-1 min-w-[12rem] text-xs">
@@ -37,6 +37,10 @@
                     <input class="mt-1 w-full rounded border border-default px-2 py-1" @bind="_search" @bind:event="oninput" />
                 </label>
                 <button type="button" class="rounded bg-surface-muted px-3 py-2 text-xs font-medium disabled:opacity-50" disabled="@_busy" @onclick="SearchAsync">Search</button>
+                @if (_canImport)
+                {
+                    <button type="button" class="rounded bg-surface-muted px-3 py-2 text-xs font-medium disabled:opacity-50" disabled="@(_busy || _selected.Count == 0)" @onclick="ImportSelectedAsync">Import selected as managed contacts</button>
+                }
             </div>
 
             @if (!_result.Success)
@@ -48,10 +52,19 @@
                 }
             }
 
+            @if (!string.IsNullOrEmpty(_importMessage))
+            {
+                <PageMessage Kind="PageMessageKind.Info" Message="@_importMessage" />
+            }
+
             <div class="overflow-x-auto rounded border border-default">
                 <table class="min-w-full text-left text-xs">
                     <thead class="bg-surface-muted text-heading">
                         <tr>
+                            @if (_canImport)
+                            {
+                                <th class="p-2 w-10"></th>
+                            }
                             <th class="p-2">Display name</th>
                             <th class="p-2">UPN</th>
                             <th class="p-2">Mail</th>
@@ -62,6 +75,12 @@
                         @foreach (var u in _result.Items)
                         {
                             <tr class="border-t border-default">
+                                @if (_canImport)
+                                {
+                                    <td class="p-2">
+                                        <input type="checkbox" checked="@_selected.Contains(u.ObjectId)" @onclick="() => Toggle(u.ObjectId)" />
+                                    </td>
+                                }
                                 <td class="p-2 font-medium text-heading">@u.DisplayName</td>
                                 <td class="p-2 text-muted break-all">@(u.UserPrincipalName ?? "—")</td>
                                 <td class="p-2 text-muted break-all">@(u.Mail ?? "—")</td>
@@ -79,15 +98,19 @@
     [Parameter] public string RegistrationId { get; set; } = "";
 
     private bool _canView;
+    private bool _canImport;
     private bool _loading = true;
     private bool _busy;
     private EntraDirectoryUsersApiDto? _result;
     private string _search = "";
+    private readonly HashSet<string> _selected = new(StringComparer.OrdinalIgnoreCase);
+    private string? _importMessage;
 
     protected override async Task OnInitializedAsync()
     {
         var caps = await Capabilities.GetCapabilitiesAsync();
         _canView = caps.CanViewAuthConfiguration || caps.CanManageEntraTenants;
+        _canImport = caps.CanImportManagedContacts;
         if (!_canView)
         {
             _loading = false;
@@ -96,6 +119,12 @@
 
         await SearchAsync();
         _loading = false;
+    }
+
+    private void Toggle(string objectId)
+    {
+        if (!_selected.Add(objectId))
+            _selected.Remove(objectId);
     }
 
     private async Task SearchAsync()
@@ -107,6 +136,37 @@
                 RegistrationId,
                 string.IsNullOrWhiteSpace(_search) ? null : _search.Trim(),
                 50);
+            _selected.Clear();
+            _importMessage = null;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task ImportSelectedAsync()
+    {
+        if (!_canImport || _selected.Count == 0)
+            return;
+        _busy = true;
+        _importMessage = null;
+        try
+        {
+            var resp = await Client.ImportEntraUsersToManagedContactsAsync(
+                new ImportEntraUsersRequest(RegistrationId, _selected.ToList()));
+            if (resp is null)
+            {
+                _importMessage = "Import failed (permission or network).";
+                return;
+            }
+            var ok = resp.Items.Count(x => x.Success);
+            var fail = resp.Items.Count - ok;
+            _importMessage = $"Imported {ok} contact(s); {fail} row(s) skipped or failed. See managed contacts for status.";
+            foreach (var line in resp.Items.Where(x => !x.Success && !string.IsNullOrEmpty(x.ErrorMessage)).Take(5))
+            {
+                _importMessage += $" {line.EntraObjectId}: {line.ErrorMessage}";
+            }
         }
         finally
         {

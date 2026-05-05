@@ -716,6 +716,136 @@ namespace Apperture.Persistence.SqlServer.Migrations
                     b.ToTable("LocalCredentials", (string)null);
                 });
 
+            modelBuilder.Entity("Apperture.Persistence.SqlServer.ManagedContactEntity", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("DisplayName")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("EmailAddress")
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)");
+
+                    b.Property<bool>("IsEnabled")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("LinkedUserId")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("LinkedUserId");
+
+                    b.HasIndex("Source");
+
+                    b.ToTable("ManagedContacts", (string)null);
+                });
+
+            modelBuilder.Entity("Apperture.Persistence.SqlServer.ManagedContactGroupEntity", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("DisplayName")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("EntraGroupObjectId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("EntraGroupObjectId")
+                        .IsUnique();
+
+                    b.ToTable("ManagedContactGroups", (string)null);
+                });
+
+            modelBuilder.Entity("Apperture.Persistence.SqlServer.ManagedContactIdentityLinkEntity", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("ExternalGroupObjectId")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("ExternalObjectId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("ExternalPrincipalName")
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)");
+
+                    b.Property<DateTimeOffset?>("LastSyncedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("LinkStatus")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<string>("ManagedContactId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("Provider")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ManagedContactId");
+
+                    b.HasIndex("Provider", "ExternalObjectId")
+                        .IsUnique();
+
+                    b.ToTable("ManagedContactIdentityLinks", (string)null);
+                });
+
             modelBuilder.Entity("Apperture.Persistence.SqlServer.ModuleInstallationStateEntity", b =>
                 {
                     b.Property<string>("EnvironmentId")
@@ -1118,6 +1248,10 @@ namespace Apperture.Persistence.SqlServer.Migrations
                     b.Property<bool>("IsEnabled")
                         .HasColumnType("bit");
 
+                    b.Property<string>("ManagedContactId")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
                     b.Property<string>("MemberKind")
                         .IsRequired()
                         .HasMaxLength(32)
@@ -1137,15 +1271,19 @@ namespace Apperture.Persistence.SqlServer.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("ManagedContactId");
+
                     b.HasIndex("OperationalTeamId");
 
                     b.HasIndex("PrincipalUserId");
+
+                    b.HasIndex("MemberKind", "ManagedContactId");
 
                     b.HasIndex("MemberKind", "PrincipalUserId");
 
                     b.ToTable("OperationalTeamMembers", null, t =>
                         {
-                            t.HasCheckConstraint("CK_OperationalTeamMembers_MemberKindPayload", "([MemberKind] = N'Principal' AND [PrincipalUserId] IS NOT NULL) OR ([MemberKind] = N'ExternalEmail' AND [EmailAddress] IS NOT NULL)");
+                            t.HasCheckConstraint("CK_OperationalTeamMembers_MemberKindPayload", "([MemberKind] = N'Principal' AND [PrincipalUserId] IS NOT NULL AND [EmailAddress] IS NULL AND [ManagedContactId] IS NULL) OR ([MemberKind] = N'ExternalEmail' AND [EmailAddress] IS NOT NULL AND [PrincipalUserId] IS NULL AND [ManagedContactId] IS NULL) OR ([MemberKind] = N'ManagedContact' AND [ManagedContactId] IS NOT NULL AND [PrincipalUserId] IS NULL AND [EmailAddress] IS NULL)");
                         });
                 });
 
@@ -1946,8 +2084,30 @@ namespace Apperture.Persistence.SqlServer.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("Apperture.Persistence.SqlServer.ManagedContactEntity", b =>
+                {
+                    b.HasOne("Apperture.Persistence.SqlServer.UserEntity", null)
+                        .WithMany()
+                        .HasForeignKey("LinkedUserId")
+                        .OnDelete(DeleteBehavior.Restrict);
+                });
+
+            modelBuilder.Entity("Apperture.Persistence.SqlServer.ManagedContactIdentityLinkEntity", b =>
+                {
+                    b.HasOne("Apperture.Persistence.SqlServer.ManagedContactEntity", null)
+                        .WithMany()
+                        .HasForeignKey("ManagedContactId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("Apperture.Persistence.SqlServer.OperationalTeamMemberEntity", b =>
                 {
+                    b.HasOne("Apperture.Persistence.SqlServer.ManagedContactEntity", null)
+                        .WithMany()
+                        .HasForeignKey("ManagedContactId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("Apperture.Persistence.SqlServer.OperationalTeamEntity", null)
                         .WithMany()
                         .HasForeignKey("OperationalTeamId")

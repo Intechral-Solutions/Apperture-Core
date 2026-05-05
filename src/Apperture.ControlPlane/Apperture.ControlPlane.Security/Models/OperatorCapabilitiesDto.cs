@@ -29,4 +29,7 @@ public sealed record OperatorCapabilitiesDto(
     bool CanViewConnectorDefinitions = false,
     bool CanCreateConnections = false,
     bool CanUpdateConnections = false,
-    bool CanRetireConnections = false);
+    bool CanRetireConnections = false,
+    bool CanViewManagedContacts = false,
+    bool CanManageManagedContacts = false,
+    bool CanImportManagedContacts = false);

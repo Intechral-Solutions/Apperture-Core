@@ -45,7 +45,7 @@
             <div class="mt-6 space-y-2 rounded border border-default bg-surface p-3">
                 <div class="text-xs font-semibold text-heading">Members (one row per line)</div>
                 <textarea class="w-full min-h-[160px] rounded border border-default bg-surface px-2 py-1 text-sm font-mono" @bind="_membersRaw"></textarea>
-                <div class="text-xs text-muted">Accepted formats: <span class="font-mono">user_123</span> (principal by user id), <span class="font-mono">principal,user_123[,Display]</span>, or <span class="font-mono">external,ops@contoso.com[,Display]</span>.</div>
+                <div class="text-xs text-muted">Accepted formats: <span class="font-mono">user_123</span> (principal), <span class="font-mono">mcontact_…</span> (managed contact id), email for external, or <span class="font-mono">managed,mcontact_…[,Display]</span>, <span class="font-mono">principal,…</span>, <span class="font-mono">external,…</span>.</div>
                 <div class="text-xs text-muted">Manage users at <a class="underline" href="/config/governance/users">/config/governance/users</a>.</div>
                 <button type="button" class="rounded bg-surface-muted px-3 py-1 text-sm disabled:opacity-50" disabled="@_savingMembers" @onclick="SaveMembersAsync">Replace members</button>
             </div>
@@ -83,7 +83,7 @@
                             {
                                 <tr class="border-b border-default">
                                     <td class="px-3 py-2 text-xs">@m.MemberKind</td>
-                                    <td class="px-3 py-2 font-mono text-xs">@(m.MemberKind == "Principal" ? m.PrincipalUserId : m.EmailAddress)</td>
+                                    <td class="px-3 py-2 font-mono text-xs">@MemberValue(m)</td>
                                     <td class="px-3 py-2">@(m.DisplayName ?? "—")</td>
                                     <td class="px-3 py-2">@(m.IsEnabled ? "Yes" : "No")</td>
                                 </tr>
@@ -200,11 +200,15 @@
 
                     if (LooksLikeEmail(valueOnly))
                     {
-                        inputs.Add(new OperationalTeamMemberInputDto(null, "ExternalEmail", null, valueOnly, null, IsEnabled: true));
+                        inputs.Add(new OperationalTeamMemberInputDto(null, "ExternalEmail", null, valueOnly, null, null, IsEnabled: true));
+                    }
+                    else if (valueOnly.StartsWith("mcontact_", StringComparison.OrdinalIgnoreCase))
+                    {
+                        inputs.Add(new OperationalTeamMemberInputDto(null, "ManagedContact", null, null, valueOnly, null, IsEnabled: true));
                     }
                     else
                     {
-                        inputs.Add(new OperationalTeamMemberInputDto(null, "Principal", valueOnly, null, null, IsEnabled: true));
+                        inputs.Add(new OperationalTeamMemberInputDto(null, "Principal", valueOnly, null, null, null, IsEnabled: true));
                     }
                     continue;
                 }
@@ -216,15 +220,19 @@
                     continue;
                 if (kindRaw is "principal" or "p")
                 {
-                    inputs.Add(new OperationalTeamMemberInputDto(null, "Principal", value, null, string.IsNullOrEmpty(display) ? null : display, IsEnabled: true));
+                    inputs.Add(new OperationalTeamMemberInputDto(null, "Principal", value, null, null, string.IsNullOrEmpty(display) ? null : display, IsEnabled: true));
                 }
                 else if (kindRaw is "external" or "email" or "e")
                 {
-                    inputs.Add(new OperationalTeamMemberInputDto(null, "ExternalEmail", null, value, string.IsNullOrEmpty(display) ? null : display, IsEnabled: true));
+                    inputs.Add(new OperationalTeamMemberInputDto(null, "ExternalEmail", null, value, null, string.IsNullOrEmpty(display) ? null : display, IsEnabled: true));
+                }
+                else if (kindRaw is "managed" or "mc" or "contact")
+                {
+                    inputs.Add(new OperationalTeamMemberInputDto(null, "ManagedContact", null, null, value, string.IsNullOrEmpty(display) ? null : display, IsEnabled: true));
                 }
                 else
                 {
-                    _error = $"Unrecognized member kind '{parts[0]}'. Use 'principal' or 'external', or provide a plain user id.";
+                    _error = $"Unrecognized member kind '{parts[0]}'. Use principal, external, or managed, or provide a plain user id / mcontact id / email.";
                     return;
                 }
             }
@@ -246,13 +254,23 @@
         }
     }
 
-    private static string MemberKindToken(string kind) =>
-        string.Equals(kind, "Principal", StringComparison.OrdinalIgnoreCase) ? "principal" : "external";
+    private static string MemberKindToken(string kind)
+    {
+        if (string.Equals(kind, "Principal", StringComparison.OrdinalIgnoreCase))
+            return "principal";
+        if (string.Equals(kind, "ManagedContact", StringComparison.OrdinalIgnoreCase))
+            return "managed";
+        return "external";
+    }
 
-    private static string? MemberValue(OperationalTeamMemberDto member) =>
-        string.Equals(member.MemberKind, "Principal", StringComparison.OrdinalIgnoreCase)
-            ? member.PrincipalUserId
-            : member.EmailAddress;
+    private static string? MemberValue(OperationalTeamMemberDto member)
+    {
+        if (string.Equals(member.MemberKind, "Principal", StringComparison.OrdinalIgnoreCase))
+            return member.PrincipalUserId;
+        if (string.Equals(member.MemberKind, "ManagedContact", StringComparison.OrdinalIgnoreCase))
+            return member.ManagedContactId;
+        return member.EmailAddress;
+    }
 
     private static bool LooksLikeEmail(string value) =>
         value.Contains('@') && value.Contains('.');

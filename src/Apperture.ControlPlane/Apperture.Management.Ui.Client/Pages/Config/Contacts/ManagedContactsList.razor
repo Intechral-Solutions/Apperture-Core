@@ -1,0 +1,110 @@
+@page "/config/contacts"
+@layout ConfigLayout
+@using Apperture.Management.Client
+@using Apperture.Management.Ui.Shared
+@using Apperture.Management.Ui.Client.Organisms
+@using Apperture.Management.Ui.Client.Services
+@inject IManagementClient Client
+@inject IOperatorCapabilitiesService Capabilities
+
+<div class="p-4">
+    <div class="text-xs text-muted mb-1">Config — Contacts</div>
+    <PageHeader Title="Managed contacts"
+                Subtitle="Canonical people layer for notifications and operational teams. Custom contacts do not require Entra or login." />
+
+    @if (!_canView)
+    {
+        <p class="mt-4 text-sm text-muted">You do not have permission.</p>
+    }
+    else if (_loading)
+    {
+        <p class="mt-4 text-sm text-muted">Loading…</p>
+    }
+    else
+    {
+        <div class="mt-4 flex flex-wrap items-end gap-2">
+            <label class="flex-1 min-w-[12rem] text-xs">
+                Search
+                <input class="mt-1 w-full rounded border border-default px-2 py-1" @bind="_query" @bind:event="oninput" />
+            </label>
+            <button type="button" class="rounded bg-surface-muted px-3 py-2 text-xs font-medium disabled:opacity-50" disabled="@_busy" @onclick="SearchAsync">Search</button>
+            @if (_canManage)
+            {
+                <a href="/config/contacts/new" class="rounded bg-surface-muted px-3 py-2 text-xs font-medium inline-block">Create custom contact</a>
+            }
+        </div>
+
+        @if (_items is not null && _items.Count == 0)
+        {
+            <p class="mt-4 text-sm text-muted">No contacts match.</p>
+        }
+        else if (_items is not null)
+        {
+            <div class="mt-4 overflow-x-auto rounded border border-default">
+                <table class="min-w-full text-left text-xs">
+                    <thead class="bg-surface-muted text-heading">
+                        <tr>
+                            <th class="p-2">Name</th>
+                            <th class="p-2">Email</th>
+                            <th class="p-2">Source</th>
+                            <th class="p-2">Enabled</th>
+                            <th class="p-2">User link</th>
+                            <th class="p-2">Notifications</th>
+                            <th class="p-2"></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var c in _items)
+                        {
+                            <tr class="border-t border-default">
+                                <td class="p-2 font-medium text-heading">@c.DisplayName</td>
+                                <td class="p-2 text-muted break-all">@(c.EmailAddress ?? "—")</td>
+                                <td class="p-2">@c.Source</td>
+                                <td class="p-2">@(c.IsEnabled ? "Yes" : "No")</td>
+                                <td class="p-2">@c.UserLinkStatus</td>
+                                <td class="p-2">@c.NotificationUsabilityStatus</td>
+                                <td class="p-2"><a class="underline" href="@($"/config/contacts/{Uri.EscapeDataString(c.Id)}")">Open</a></td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    }
+</div>
+
+@code {
+    private bool _canView;
+    private bool _canManage;
+    private bool _loading = true;
+    private bool _busy;
+    private string _query = "";
+    private IReadOnlyList<ManagedContactSummaryDto>? _items;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var caps = await Capabilities.GetCapabilitiesAsync();
+        _canView = caps.CanViewManagedContacts;
+        _canManage = caps.CanManageManagedContacts;
+        if (!_canView)
+        {
+            _loading = false;
+            return;
+        }
+        await SearchAsync();
+        _loading = false;
+    }
+
+    private async Task SearchAsync()
+    {
+        _busy = true;
+        try
+        {
+            _items = await Client.ListManagedContactsAsync(string.IsNullOrWhiteSpace(_query) ? null : _query.Trim(), 100);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

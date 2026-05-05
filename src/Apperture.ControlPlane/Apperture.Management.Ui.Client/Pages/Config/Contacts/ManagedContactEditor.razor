@@ -1,0 +1,290 @@
+@page "/config/contacts/{Id?}"
+@layout ConfigLayout
+@using System.Net.Http
+@using Apperture.Management.Client
+@using Apperture.Management.Ui.Shared
+@using Apperture.Management.Ui.Client.Organisms
+@using Apperture.Management.Ui.Client.Services
+@inject IManagementClient Client
+@inject IOperatorCapabilitiesService Capabilities
+@inject NavigationManager Nav
+
+<div class="p-4">
+    <p class="text-xs text-muted mb-1"><a class="underline" href="/config/contacts">← Managed contacts</a></p>
+    <PageHeader Title="@(_isCreate ? "Create custom contact" : "Managed contact")"
+                Subtitle="Details, identity link, and optional link to a platform user." />
+
+    @if (!_canView)
+    {
+        <p class="mt-4 text-sm text-muted">You do not have permission.</p>
+    }
+    else if (_loading)
+    {
+        <p class="mt-4 text-sm text-muted">Loading…</p>
+    }
+    else if (_isCreate)
+    {
+        <div class="mt-4 max-w-lg space-y-2 text-sm">
+            <label class="block text-xs">Display name *</label>
+            <input class="w-full rounded border border-default px-2 py-1" @bind="_editName" />
+            <label class="block text-xs">Email (for notifications)</label>
+            <input class="w-full rounded border border-default px-2 py-1" type="email" @bind="_editEmail" />
+            <label class="flex items-center gap-2"><input type="checkbox" @bind="_editEnabled" /> Enabled</label>
+            @if (_canManage)
+            {
+                <button type="button" class="rounded bg-surface-muted px-3 py-2 text-xs disabled:opacity-50" disabled="@_busy" @onclick="CreateAsync">Create</button>
+            }
+            @if (!string.IsNullOrEmpty(_error))
+            {
+                <p class="text-xs text-red-600">@_error</p>
+            }
+        </div>
+    }
+    else if (_detail is null)
+    {
+        <p class="mt-4 text-sm text-muted">Contact not found.</p>
+    }
+    else
+    {
+        <div class="mt-4 grid gap-6 lg:grid-cols-2">
+            <div class="rounded border border-default bg-surface p-3 text-sm space-y-2">
+                <div class="text-xs font-semibold text-heading">Profile</div>
+                <div><span class="text-muted">Source:</span> @_detail.Source</div>
+                <div><span class="text-muted">User link:</span> @_detail.UserLinkStatus</div>
+                <div><span class="text-muted">Notifications:</span> @_detail.NotificationUsabilityStatus</div>
+                @if (_detail.Source == "Custom" && _canManage)
+                {
+                    <label class="block text-xs">Display name</label>
+                    <input class="w-full rounded border border-default px-2 py-1" @bind="_editName" />
+                    <label class="block text-xs">Email</label>
+                    <input class="w-full rounded border border-default px-2 py-1" @bind="_editEmail" />
+                    <label class="flex items-center gap-2"><input type="checkbox" @bind="_editEnabled" /> Enabled</label>
+                    <button type="button" class="rounded bg-surface-muted px-3 py-1 text-xs disabled:opacity-50" disabled="@_busy" @onclick="SaveCustomAsync">Save</button>
+                }
+                else if (_detail.Source != "Custom")
+                {
+                    <p class="text-xs text-muted">Entra-backed contacts are updated by directory import. Toggle enabled below.</p>
+                    <label class="flex items-center gap-2"><input type="checkbox" @bind="_editEnabled" /> Enabled</label>
+                    @if (_canManage)
+                    {
+                        <button type="button" class="rounded bg-surface-muted px-3 py-1 text-xs disabled:opacity-50" disabled="@_busy" @onclick="SaveEnabledOnlyAsync">Save enabled flag</button>
+                    }
+                }
+
+                @if (_canManage && _detail.LinkedUserId is null)
+                {
+                    <div class="mt-4 border-t border-default pt-3 space-y-2">
+                        <div class="text-xs font-semibold text-heading">Link to platform user</div>
+                        <label class="block text-xs">User id</label>
+                        <input class="w-full rounded border border-default px-2 py-1 font-mono text-xs" @bind="_linkUserId" placeholder="user_..." />
+                        <button type="button" class="rounded bg-surface-muted px-3 py-1 text-xs disabled:opacity-50" disabled="@_busy" @onclick="LinkUserAsync">Link user</button>
+                    </div>
+                }
+                else if (_detail.LinkedUserId is not null && _canManage)
+                {
+                    <div class="mt-4 border-t border-default pt-3">
+                        <div class="text-xs text-muted">Linked user: <span class="font-mono">@_detail.LinkedUserId</span></div>
+                        <button type="button" class="mt-2 rounded bg-surface-muted px-3 py-1 text-xs disabled:opacity-50" disabled="@_busy" @onclick="UnlinkUserAsync">Unlink user</button>
+                    </div>
+                }
+            </div>
+
+            <div class="rounded border border-default bg-surface p-3 text-sm">
+                <div class="text-xs font-semibold text-heading mb-2">Identity links</div>
+                @if (_detail.IdentityLinks.Count == 0)
+                {
+                    <p class="text-xs text-muted">No external identity links (expected for custom-only contacts).</p>
+                }
+                else
+                {
+                    <ul class="space-y-2 text-xs">
+                        @foreach (var l in _detail.IdentityLinks)
+                        {
+                            <li class="border-b border-default pb-2">
+                                <div><span class="text-muted">Provider:</span> @l.Provider</div>
+                                <div class="font-mono break-all">@l.ExternalObjectId</div>
+                                <div><span class="text-muted">Status:</span> @l.LinkStatus</div>
+                                @if (l.LastSyncedAtUtc is { } t)
+                                {
+                                    <div class="text-muted">Synced @t.UtcDateTime.ToString("u") UTC</div>
+                                }
+                            </li>
+                        }
+                    </ul>
+                }
+            </div>
+        </div>
+        @if (!string.IsNullOrEmpty(_error))
+        {
+            <p class="mt-4 text-xs text-red-600">@_error</p>
+        }
+    }
+</div>
+
+@code {
+    [Parameter] public string? Id { get; set; }
+
+    private bool _canView;
+    private bool _canManage;
+    private bool _loading = true;
+    private bool _busy;
+    private bool _isCreate;
+    private ManagedContactDetailDto? _detail;
+    private string _editName = "";
+    private string? _editEmail;
+    private bool _editEnabled = true;
+    private string _linkUserId = "";
+    private string? _error;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var caps = await Capabilities.GetCapabilitiesAsync();
+        _canView = caps.CanViewManagedContacts;
+        _canManage = caps.CanManageManagedContacts;
+        _isCreate = string.IsNullOrEmpty(Id) || string.Equals(Id, "new", StringComparison.OrdinalIgnoreCase);
+        if (!_canView)
+        {
+            _loading = false;
+            return;
+        }
+        if (_isCreate)
+        {
+            _loading = false;
+            return;
+        }
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _error = null;
+        try
+        {
+            _detail = await Client.GetManagedContactAsync(Id!);
+            if (_detail is not null)
+            {
+                _editName = _detail.DisplayName;
+                _editEmail = _detail.EmailAddress;
+                _editEnabled = _detail.IsEnabled;
+            }
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task CreateAsync()
+    {
+        if (!_canManage) return;
+        _busy = true;
+        _error = null;
+        try
+        {
+            var created = await Client.CreateManagedContactAsync(
+                new CreateManagedContactRequest(_editName, string.IsNullOrWhiteSpace(_editEmail) ? null : _editEmail, _editEnabled));
+            if (created is null)
+            {
+                _error = "Create failed.";
+                return;
+            }
+            Nav.NavigateTo($"/config/contacts/{Uri.EscapeDataString(created.Id)}");
+        }
+        catch (HttpRequestException ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task SaveCustomAsync()
+    {
+        if (!_canManage || _detail is null || _detail.Source != "Custom") return;
+        _busy = true;
+        _error = null;
+        try
+        {
+            var updated = await Client.UpdateManagedContactAsync(
+                _detail.Id,
+                new UpdateManagedContactRequest(_editName, string.IsNullOrWhiteSpace(_editEmail) ? null : _editEmail, _editEnabled));
+            _detail = updated ?? _detail;
+        }
+        catch (HttpRequestException ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task SaveEnabledOnlyAsync()
+    {
+        if (!_canManage || _detail is null) return;
+        _busy = true;
+        _error = null;
+        try
+        {
+            var updated = await Client.SetManagedContactEnabledAsync(_detail.Id, _editEnabled);
+            _detail = updated ?? _detail;
+        }
+        catch (HttpRequestException ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task LinkUserAsync()
+    {
+        if (!_canManage || _detail is null || string.IsNullOrWhiteSpace(_linkUserId)) return;
+        _busy = true;
+        _error = null;
+        try
+        {
+            var updated = await Client.LinkManagedContactToUserAsync(_detail.Id, new LinkManagedContactUserRequest(_linkUserId.Trim()));
+            _detail = updated ?? _detail;
+            _linkUserId = "";
+        }
+        catch (HttpRequestException ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task UnlinkUserAsync()
+    {
+        if (!_canManage || _detail is null) return;
+        _busy = true;
+        _error = null;
+        try
+        {
+            var updated = await Client.UnlinkManagedContactUserAsync(_detail.Id);
+            _detail = updated ?? _detail;
+        }
+        catch (HttpRequestException ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

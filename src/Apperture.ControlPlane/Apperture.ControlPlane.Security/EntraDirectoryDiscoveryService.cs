@@ -118,6 +118,132 @@ public sealed class EntraDirectoryDiscoveryService : IEntraDirectoryDiscoverySer
         }
     }
 
+    /// <inheritdoc />
+    public async Task<DirectoryDiscoveryResult<EntraDirectoryUser?>> GetUserByIdAsync(
+        EntraDirectoryDiscoveryContext context,
+        string objectId,
+        CancellationToken cancellationToken = default)
+    {
+        var cfg = ValidateContext(context);
+        if (cfg is not null)
+            return Failed<EntraDirectoryUser?>(DiscoveryFailureCategory.Configuration, cfg);
+
+        if (string.IsNullOrWhiteSpace(objectId))
+            return Failed<EntraDirectoryUser?>(DiscoveryFailureCategory.Configuration, "Object id is required.");
+
+        try
+        {
+            var graph = CreateGraphClient(context);
+            var u = await graph.Users[objectId.Trim()].GetAsync(
+                requestConfiguration =>
+                {
+                    requestConfiguration.QueryParameters.Select =
+                        ["id", "displayName", "userPrincipalName", "mail"];
+                },
+                cancellationToken).ConfigureAwait(false);
+
+            if (u?.Id is null)
+                return new DirectoryDiscoveryResult<EntraDirectoryUser?>(
+                    true,
+                    DiscoveryFailureCategory.None,
+                    "User not found.",
+                    null,
+                    null);
+
+            var dto = new EntraDirectoryUser(
+                u.Id,
+                u.DisplayName ?? "",
+                u.UserPrincipalName,
+                u.Mail);
+            return new DirectoryDiscoveryResult<EntraDirectoryUser?>(
+                true,
+                DiscoveryFailureCategory.None,
+                "User retrieved from Microsoft Graph.",
+                null,
+                dto);
+        }
+        catch (ApiException ex) when ((int)ex.ResponseStatusCode == 404)
+        {
+            return new DirectoryDiscoveryResult<EntraDirectoryUser?>(
+                true,
+                DiscoveryFailureCategory.None,
+                "User not found in directory.",
+                null,
+                null);
+        }
+        catch (ApiException ex)
+        {
+            return MapGraphException<EntraDirectoryUser?>(ex, "user get by id");
+        }
+        catch (Exception ex)
+        {
+            return Transient<EntraDirectoryUser?>(ex, "user get by id");
+        }
+    }
+
+    /// <inheritdoc />
+    public async Task<DirectoryDiscoveryResult<EntraDirectoryGroup?>> GetGroupByIdAsync(
+        EntraDirectoryDiscoveryContext context,
+        string objectId,
+        CancellationToken cancellationToken = default)
+    {
+        var cfg = ValidateContext(context);
+        if (cfg is not null)
+            return Failed<EntraDirectoryGroup?>(DiscoveryFailureCategory.Configuration, cfg);
+
+        if (string.IsNullOrWhiteSpace(objectId))
+            return Failed<EntraDirectoryGroup?>(DiscoveryFailureCategory.Configuration, "Object id is required.");
+
+        try
+        {
+            var graph = CreateGraphClient(context);
+            var g = await graph.Groups[objectId.Trim()].GetAsync(
+                requestConfiguration =>
+                {
+                    requestConfiguration.QueryParameters.Select =
+                        ["id", "displayName", "mailNickname", "description"];
+                },
+                cancellationToken).ConfigureAwait(false);
+
+            if (g?.Id is null)
+                return new DirectoryDiscoveryResult<EntraDirectoryGroup?>(
+                    true,
+                    DiscoveryFailureCategory.None,
+                    "Group not found.",
+                    null,
+                    null);
+
+            var dto = new EntraDirectoryGroup(
+                g.Id,
+                g.DisplayName ?? "",
+                g.MailNickname,
+                g.Description);
+            return new DirectoryDiscoveryResult<EntraDirectoryGroup?>(
+                true,
+                DiscoveryFailureCategory.None,
+                "Group retrieved from Microsoft Graph.",
+                null,
+                dto);
+        }
+        catch (ApiException ex) when ((int)ex.ResponseStatusCode == 404)
+        {
+            return new DirectoryDiscoveryResult<EntraDirectoryGroup?>(
+                true,
+                DiscoveryFailureCategory.None,
+                "Group not found in directory.",
+                null,
+                null);
+        }
+        catch (ApiException ex)
+        {
+            return MapGraphException<EntraDirectoryGroup?>(ex, "group get by id");
+        }
+        catch (Exception ex)
+        {
+            return Transient<EntraDirectoryGroup?>(ex, "group get by id");
+        }
+    }
+
     private static GraphServiceClient CreateGraphClient(EntraDirectoryDiscoveryContext context)
     {
         var credential = new ClientSecretCredential(context.TenantId, context.ClientId, context.ClientSecret);

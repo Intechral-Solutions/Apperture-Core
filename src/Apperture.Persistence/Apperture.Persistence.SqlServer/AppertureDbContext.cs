@@ -51,6 +51,9 @@ public class AppertureDbContext : DbContext
     public DbSet<IntegrationAttentionRoutingEntity> IntegrationAttentionRoutings => Set<IntegrationAttentionRoutingEntity>();
     public DbSet<OperationalTeamEntity> OperationalTeams => Set<OperationalTeamEntity>();
     public DbSet<OperationalTeamMemberEntity> OperationalTeamMembers => Set<OperationalTeamMemberEntity>();
+    public DbSet<ManagedContactEntity> ManagedContacts => Set<ManagedContactEntity>();
+    public DbSet<ManagedContactIdentityLinkEntity> ManagedContactIdentityLinks => Set<ManagedContactIdentityLinkEntity>();
+    public DbSet<ManagedContactGroupEntity> ManagedContactGroups => Set<ManagedContactGroupEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -611,11 +614,13 @@ public class AppertureDbContext : DbContext
             e.Property(x => x.PrincipalUserId).HasMaxLength(64);
             e.Property(x => x.EmailAddress).HasMaxLength(512);
             e.Property(x => x.DisplayName).HasMaxLength(256);
+            e.Property(x => x.ManagedContactId).HasMaxLength(64);
             e.HasIndex(x => x.OperationalTeamId);
             e.HasIndex(x => new { x.MemberKind, x.PrincipalUserId });
+            e.HasIndex(x => new { x.MemberKind, x.ManagedContactId });
             e.HasCheckConstraint(
                 "CK_OperationalTeamMembers_MemberKindPayload",
-                "([MemberKind] = N'Principal' AND [PrincipalUserId] IS NOT NULL) OR ([MemberKind] = N'ExternalEmail' AND [EmailAddress] IS NOT NULL)");
+                "([MemberKind] = N'Principal' AND [PrincipalUserId] IS NOT NULL AND [EmailAddress] IS NULL AND [ManagedContactId] IS NULL) OR ([MemberKind] = N'ExternalEmail' AND [EmailAddress] IS NOT NULL AND [PrincipalUserId] IS NULL AND [ManagedContactId] IS NULL) OR ([MemberKind] = N'ManagedContact' AND [ManagedContactId] IS NOT NULL AND [PrincipalUserId] IS NULL AND [EmailAddress] IS NULL)");
             e.HasOne<OperationalTeamEntity>()
                 .WithMany()
                 .HasForeignKey(x => x.OperationalTeamId)
@@ -624,6 +629,57 @@ public class AppertureDbContext : DbContext
                 .WithMany()
                 .HasForeignKey(x => x.PrincipalUserId)
                 .OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<ManagedContactEntity>()
+                .WithMany()
+                .HasForeignKey(x => x.ManagedContactId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<ManagedContactEntity>(e =>
+        {
+            e.ToTable("ManagedContacts");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasMaxLength(64);
+            e.Property(x => x.DisplayName).HasMaxLength(256);
+            e.Property(x => x.EmailAddress).HasMaxLength(512);
+            e.Property(x => x.Source).HasMaxLength(32);
+            e.Property(x => x.LinkedUserId).HasMaxLength(64);
+            e.HasIndex(x => x.Source);
+            e.HasIndex(x => x.LinkedUserId);
+            e.HasOne<UserEntity>()
+                .WithMany()
+                .HasForeignKey(x => x.LinkedUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<ManagedContactIdentityLinkEntity>(e =>
+        {
+            e.ToTable("ManagedContactIdentityLinks");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasMaxLength(64);
+            e.Property(x => x.ManagedContactId).HasMaxLength(64);
+            e.Property(x => x.Provider).HasMaxLength(32);
+            e.Property(x => x.ExternalObjectId).HasMaxLength(64);
+            e.Property(x => x.ExternalPrincipalName).HasMaxLength(512);
+            e.Property(x => x.ExternalGroupObjectId).HasMaxLength(64);
+            e.Property(x => x.LinkStatus).HasMaxLength(32);
+            e.HasIndex(x => x.ManagedContactId);
+            e.HasIndex(x => new { x.Provider, x.ExternalObjectId }).IsUnique();
+            e.HasOne<ManagedContactEntity>()
+                .WithMany()
+                .HasForeignKey(x => x.ManagedContactId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<ManagedContactGroupEntity>(e =>
+        {
+            e.ToTable("ManagedContactGroups");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasMaxLength(64);
+            e.Property(x => x.DisplayName).HasMaxLength(256);
+            e.Property(x => x.Source).HasMaxLength(32);
+            e.Property(x => x.EntraGroupObjectId).HasMaxLength(64);
+            e.HasIndex(x => x.EntraGroupObjectId).IsUnique();
         });
     }
 }

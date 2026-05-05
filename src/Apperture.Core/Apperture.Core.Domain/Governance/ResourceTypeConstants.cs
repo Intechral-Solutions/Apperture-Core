@@ -15,6 +15,8 @@ public static class ResourceTypeConstants
 
     // Identity
     public const string User = "User";
+    /// <summary>Canonical person/contact record (Epic 76); distinct from login-capable User resource.</summary>
+    public const string ManagedContact = "ManagedContact";
     public const string Role = "Role";
     public const string ServiceAccount = "ServiceAccount";
 
