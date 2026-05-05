@@ -150,20 +150,35 @@ public sealed class ManagedContactManagementService : IManagedContactManagementS
             var oid = oidRaw.Trim();
             if (oid.Length == 0)
             {
-                results.Add(new ImportEntraUserItemResult("", false, null, "Empty object id."));
+                results.Add(new ImportEntraUserItemResult(
+                    "",
+                    false,
+                    null,
+                    EntraUserImportOutcomeCodes.InvalidObjectId,
+                    "Empty object id."));
                 continue;
             }
 
             var graph = await _directory.GetUserByIdAsync(ctx, oid, cancellationToken).ConfigureAwait(false);
             if (!graph.Success)
             {
-                results.Add(new ImportEntraUserItemResult(oid, false, null, graph.Summary));
+                results.Add(new ImportEntraUserItemResult(
+                    oid,
+                    false,
+                    null,
+                    EntraUserImportOutcomeCodes.DirectoryError,
+                    graph.Summary));
                 continue;
             }
 
             if (graph.Data is null)
             {
-                results.Add(new ImportEntraUserItemResult(oid, false, null, "User was not found in the directory."));
+                results.Add(new ImportEntraUserItemResult(
+                    oid,
+                    false,
+                    null,
+                    EntraUserImportOutcomeCodes.UserNotFoundInDirectory,
+                    "User was not found in the directory."));
                 continue;
             }
 
@@ -179,6 +194,7 @@ public sealed class ManagedContactManagementService : IManagedContactManagementS
                         oid,
                         false,
                         null,
+                        EntraUserImportOutcomeCodes.EmailConflictExistingContact,
                         $"This directory user's mail matches managed contact '{emailOwner.Id}', which is not linked to this Entra principal. Resolve the conflict before import."));
                     continue;
                 }
@@ -193,6 +209,7 @@ public sealed class ManagedContactManagementService : IManagedContactManagementS
                         oid,
                         false,
                         null,
+                        EntraUserImportOutcomeCodes.EmailConflictExistingContact,
                         $"Updated mail would match another managed contact ({emailOwner.Id})."));
                     continue;
                 }
@@ -208,11 +225,19 @@ public sealed class ManagedContactManagementService : IManagedContactManagementS
                     u.ObjectId,
                     now,
                     cancellationToken).ConfigureAwait(false);
-                results.Add(new ImportEntraUserItemResult(oid, true, upsert.ManagedContactId, null));
+                var code = upsert.Created
+                    ? EntraUserImportOutcomeCodes.Success
+                    : EntraUserImportOutcomeCodes.AlreadyLinked;
+                results.Add(new ImportEntraUserItemResult(oid, true, upsert.ManagedContactId, code, null));
             }
             catch (Exception ex)
             {
-                results.Add(new ImportEntraUserItemResult(oid, false, null, ex.Message));
+                results.Add(new ImportEntraUserItemResult(
+                    oid,
+                    false,
+                    null,
+                    EntraUserImportOutcomeCodes.ImportFailed,
+                    ex.Message));
             }
         }
 

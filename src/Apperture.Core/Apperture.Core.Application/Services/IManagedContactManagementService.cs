@@ -67,6 +67,7 @@ public sealed record ImportEntraUserItemResult(
     string EntraObjectId,
     bool Success,
     string? ManagedContactId,
+    string OutcomeCode,
     string? ErrorMessage);
 
 public sealed record ImportEntraUsersResult(IReadOnlyList<ImportEntraUserItemResult> Items);

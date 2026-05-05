@@ -586,7 +586,7 @@ public sealed record UpdateManagedContactRequest(string DisplayName, string? Ema
 
 public sealed record ImportEntraUsersRequest(string EntraRegistrationId, IReadOnlyList<string> EntraUserObjectIds);
 
-public sealed record ImportEntraUserItemResultDto(string EntraObjectId, bool Success, string? ManagedContactId, string? ErrorMessage);
+public sealed record ImportEntraUserItemResultDto(string EntraObjectId, bool Success, string? ManagedContactId, string OutcomeCode, string? ErrorMessage);
 
 public sealed record ImportEntraUsersResponseDto(IReadOnlyList<ImportEntraUserItemResultDto> Items);
 

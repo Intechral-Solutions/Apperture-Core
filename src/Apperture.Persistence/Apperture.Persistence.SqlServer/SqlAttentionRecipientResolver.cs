@@ -250,11 +250,14 @@ public sealed class SqlAttentionRecipientResolver : IAttentionRecipientResolver
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
 
-        var noRouteReason = recipients.Length == 0
-            ? (principalIds.Length > 0 || managedContactIds.Length > 0
-                ? AttentionNoRouteReasons.PrincipalMembersNoEmail
-                : AttentionNoRouteReasons.TeamEmpty)
-            : null;
+        var noRouteReason = ResolveNoRouteWhenRecipientsEmpty(
+            recipients,
+            members,
+            principalIds,
+            principalEmails,
+            managedContactIds,
+            managedContactEmails,
+            externalRecipients);
 
         return new TeamExpansion(
             recipients,
@@ -275,5 +278,45 @@ public sealed class SqlAttentionRecipientResolver : IAttentionRecipientResolver
     {
         public static TeamExpansion NoRoute(string reason, string? teamId = null, string? teamName = null) =>
             new(Array.Empty<string>(), Array.Empty<string>(), Array.Empty<string>(), teamId, teamName, reason);
+    }
+
+    /// <summary>
+    /// When the union of deliverable addresses is empty but the team has enabled members,
+    /// classify why routing failed without mis-attributing managed-contact gaps to principals.
+    /// </summary>
+    private static string? ResolveNoRouteWhenRecipientsEmpty(
+        string[] recipients,
+        List<OperationalTeamMemberEntity> members,
+        string[] principalIds,
+        string[] principalEmails,
+        string[] managedContactIds,
+        string[] managedContactEmails,
+        string[] externalRecipients)
+    {
+        if (recipients.Length > 0)
+            return null;
+
+        static bool HasDeliverable(IEnumerable<string> emails) =>
+            emails.Any(e => !string.IsNullOrWhiteSpace(e) && e.Trim().Length > 0);
+
+        var principalsDeliverable = HasDeliverable(principalEmails);
+        var managedDeliverable = HasDeliverable(managedContactEmails);
+        var externalDeliverable = externalRecipients.Length > 0;
+        if (principalsDeliverable || managedDeliverable || externalDeliverable)
+            return null;
+
+        var hasPrincipalMember = principalIds.Length > 0;
+        var hasManagedMember = managedContactIds.Length > 0;
+        var hasExternalMember = members.Exists(m =>
+            m.IsEnabled &&
+            string.Equals(m.MemberKind, MemberKindExternalEmail, StringComparison.OrdinalIgnoreCase));
+
+        if (hasPrincipalMember && !hasManagedMember && !hasExternalMember)
+            return AttentionNoRouteReasons.PrincipalMembersNoEmail;
+
+        if (hasManagedMember && !hasPrincipalMember && !hasExternalMember)
+            return AttentionNoRouteReasons.ManagedContactMembersNoDeliverableEmail;
+
+        return AttentionNoRouteReasons.MemberRecipientsNoDeliverableEmail;
     }
 }

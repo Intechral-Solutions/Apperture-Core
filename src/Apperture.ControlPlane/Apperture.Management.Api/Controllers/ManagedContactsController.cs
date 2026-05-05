@@ -139,6 +139,7 @@ public sealed class ManagedContactsController : ControllerBase
                     i.EntraObjectId,
                     i.Success,
                     i.ManagedContactId,
+                    i.OutcomeCode,
                     i.ErrorMessage)).ToList());
             return Ok(dto);
         }
