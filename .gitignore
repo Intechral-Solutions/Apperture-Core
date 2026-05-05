@@ -58,6 +58,7 @@ yarn-error.log*
 
 # Local dev (spikes, discarded designs, meeting notes)
 archives/
+backups/
 
 # Temp and OS
 *.tmp
