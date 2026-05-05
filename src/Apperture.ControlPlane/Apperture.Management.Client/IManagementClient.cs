@@ -408,6 +408,15 @@ public interface IManagementClient
     /// <summary>Activates an Entra registration (clears other actives). Throws on 400/403/404.</summary>
     Task ActivateEntraTenantAsync(string id, CancellationToken cancellationToken = default);
 
+    /// <summary>Validates OpenID metadata for an Entra registration. Throws on 403/404.</summary>
+    Task<ValidateOpenIdResponseDto?> ValidateEntraTenantOpenIdAsync(string id, CancellationToken cancellationToken = default);
+
+    /// <summary>Browses Entra directory users via Graph (discovery only).</summary>
+    Task<EntraDirectoryUsersApiDto?> GetEntraDirectoryUsersAsync(string id, string? search = null, int top = 25, CancellationToken cancellationToken = default);
+
+    /// <summary>Browses Entra directory groups via Graph (discovery only).</summary>
+    Task<EntraDirectoryGroupsApiDto?> GetEntraDirectoryGroupsAsync(string id, string? search = null, int top = 25, CancellationToken cancellationToken = default);
+
     // --- Governance admin (Epic 39/40) ---
 
     /// <summary>Gets the governance descriptor catalog (resources and permissions). Requires user.read.</summary>
@@ -944,7 +953,15 @@ public sealed record ConfigAuthOverviewDto(
     [property: JsonPropertyName("entraSignInEnabled")] bool EntraSignInEnabled,
     [property: JsonPropertyName("effectiveExperience")] string EffectiveExperience,
     [property: JsonPropertyName("effectiveExperienceDescription")] string EffectiveExperienceDescription,
-    [property: JsonPropertyName("warnings")] IReadOnlyList<string> Warnings);
+    [property: JsonPropertyName("warnings")] IReadOnlyList<string> Warnings,
+    [property: JsonPropertyName("authProviderAvailability")] AuthProviderAvailabilityDto? AuthProviderAvailability = null);
+
+public sealed record AuthProviderAvailabilityDto(
+    [property: JsonPropertyName("entraSignInReady")] bool EntraSignInReady,
+    [property: JsonPropertyName("localSignInAvailable")] bool LocalSignInAvailable,
+    [property: JsonPropertyName("activeEntraOpenIdConfigurationStatus")] string? ActiveEntraOpenIdConfigurationStatus,
+    [property: JsonPropertyName("activeEntraDirectoryDiscoveryStatus")] string? ActiveEntraDirectoryDiscoveryStatus,
+    [property: JsonPropertyName("adminDiagnosis")] string? AdminDiagnosis);
 
 public sealed record EntraTenantListItemDto(
     [property: JsonPropertyName("id")] string Id,
@@ -956,7 +973,16 @@ public sealed record EntraTenantListItemDto(
     [property: JsonPropertyName("enabled")] bool Enabled,
     [property: JsonPropertyName("isActive")] bool IsActive,
     [property: JsonPropertyName("deploymentSecretConfigured")] bool DeploymentSecretConfigured,
-    [property: JsonPropertyName("rowVersionBase64")] string? RowVersionBase64);
+    [property: JsonPropertyName("azureTenantId")] string? AzureTenantId = null,
+    [property: JsonPropertyName("openIdConfigurationStatus")] string? OpenIdConfigurationStatus = null,
+    [property: JsonPropertyName("lastOpenIdValidationUtc")] DateTimeOffset? LastOpenIdValidationUtc = null,
+    [property: JsonPropertyName("lastOpenIdValidationSummary")] string? LastOpenIdValidationSummary = null,
+    [property: JsonPropertyName("lastOpenIdValidationDetail")] string? LastOpenIdValidationDetail = null,
+    [property: JsonPropertyName("directoryDiscoveryStatus")] string? DirectoryDiscoveryStatus = null,
+    [property: JsonPropertyName("lastDirectoryDiscoveryUtc")] DateTimeOffset? LastDirectoryDiscoveryUtc = null,
+    [property: JsonPropertyName("lastDirectoryDiscoverySummary")] string? LastDirectoryDiscoverySummary = null,
+    [property: JsonPropertyName("lastDirectoryDiscoveryDetail")] string? LastDirectoryDiscoveryDetail = null,
+    [property: JsonPropertyName("rowVersionBase64")] string? RowVersionBase64 = null);
 
 public sealed record CreateEntraTenantRequest(
     [property: JsonPropertyName("displayName")] string DisplayName,
@@ -964,7 +990,8 @@ public sealed record CreateEntraTenantRequest(
     [property: JsonPropertyName("clientId")] string ClientId,
     [property: JsonPropertyName("usesDeploymentSecret")] bool UsesDeploymentSecret = true,
     [property: JsonPropertyName("callbackPath")] string? CallbackPath = null,
-    [property: JsonPropertyName("enabled")] bool Enabled = true);
+    [property: JsonPropertyName("enabled")] bool Enabled = true,
+    [property: JsonPropertyName("azureTenantId")] string? AzureTenantId = null);
 
 public sealed record UpdateEntraTenantRequest(
     [property: JsonPropertyName("displayName")] string DisplayName,
@@ -973,7 +1000,45 @@ public sealed record UpdateEntraTenantRequest(
     [property: JsonPropertyName("usesDeploymentSecret")] bool UsesDeploymentSecret,
     [property: JsonPropertyName("callbackPath")] string? CallbackPath,
     [property: JsonPropertyName("enabled")] bool Enabled,
-    [property: JsonPropertyName("rowVersionBase64")] string? RowVersionBase64);
+    [property: JsonPropertyName("rowVersionBase64")] string? RowVersionBase64,
+    [property: JsonPropertyName("azureTenantId")] string? AzureTenantId = null);
+
+public sealed record ValidationResultDto(
+    [property: JsonPropertyName("success")] bool Success,
+    [property: JsonPropertyName("openIdConfigurationStatus")] string OpenIdConfigurationStatus,
+    [property: JsonPropertyName("code")] string? Code,
+    [property: JsonPropertyName("summary")] string Summary,
+    [property: JsonPropertyName("technicalDetail")] string? TechnicalDetail);
+
+public sealed record ValidateOpenIdResponseDto(
+    [property: JsonPropertyName("validation")] ValidationResultDto Validation,
+    [property: JsonPropertyName("tenant")] EntraTenantListItemDto Tenant);
+
+public sealed record EntraDirectoryUserItemDto(
+    [property: JsonPropertyName("objectId")] string ObjectId,
+    [property: JsonPropertyName("displayName")] string DisplayName,
+    [property: JsonPropertyName("userPrincipalName")] string? UserPrincipalName,
+    [property: JsonPropertyName("mail")] string? Mail);
+
+public sealed record EntraDirectoryGroupItemDto(
+    [property: JsonPropertyName("objectId")] string ObjectId,
+    [property: JsonPropertyName("displayName")] string DisplayName,
+    [property: JsonPropertyName("mailNickname")] string? MailNickname,
+    [property: JsonPropertyName("description")] string? Description);
+
+public sealed record EntraDirectoryUsersApiDto(
+    [property: JsonPropertyName("success")] bool Success,
+    [property: JsonPropertyName("failureCategory")] string? FailureCategory,
+    [property: JsonPropertyName("summary")] string Summary,
+    [property: JsonPropertyName("technicalDetail")] string? TechnicalDetail,
+    [property: JsonPropertyName("items")] IReadOnlyList<EntraDirectoryUserItemDto> Items);
+
+public sealed record EntraDirectoryGroupsApiDto(
+    [property: JsonPropertyName("success")] bool Success,
+    [property: JsonPropertyName("failureCategory")] string? FailureCategory,
+    [property: JsonPropertyName("summary")] string Summary,
+    [property: JsonPropertyName("technicalDetail")] string? TechnicalDetail,
+    [property: JsonPropertyName("items")] IReadOnlyList<EntraDirectoryGroupItemDto> Items);
 
 public sealed record AuthUiPolicyDto(
     [property: JsonPropertyName("showLocalSignInInPrimaryChooser")] bool ShowLocalSignInInPrimaryChooser,

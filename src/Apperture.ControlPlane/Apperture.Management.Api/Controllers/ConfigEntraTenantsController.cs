@@ -22,6 +22,8 @@ public sealed class ConfigEntraTenantsController : ControllerBase
     private readonly IConfiguration _configuration;
     private readonly IOptions<LocalAuthOptions> _localOptions;
     private readonly IInstanceAuthUiPolicyRepository _policyRepository;
+    private readonly IEntraOpenIdConnectConfigurationValidator _openIdValidator;
+    private readonly IEntraDirectoryDiscoveryService _directoryDiscovery;
 
     public ConfigEntraTenantsController(
         IEntraInstanceRegistrationRepository repository,
@@ -29,7 +31,9 @@ public sealed class ConfigEntraTenantsController : ControllerBase
         IAuthorizationEvaluationService authorizationEvaluation,
         IConfiguration configuration,
         IOptions<LocalAuthOptions> localOptions,
-        IInstanceAuthUiPolicyRepository policyRepository)
+        IInstanceAuthUiPolicyRepository policyRepository,
+        IEntraOpenIdConnectConfigurationValidator openIdValidator,
+        IEntraDirectoryDiscoveryService directoryDiscovery)
     {
         _repository = repository;
         _principalContext = principalContext;
@@ -37,6 +41,8 @@ public sealed class ConfigEntraTenantsController : ControllerBase
         _configuration = configuration;
         _localOptions = localOptions;
         _policyRepository = policyRepository;
+        _openIdValidator = openIdValidator;
+        _directoryDiscovery = directoryDiscovery;
     }
 
     [HttpGet]
@@ -97,7 +103,8 @@ public sealed class ConfigEntraTenantsController : ControllerBase
             UsesDeploymentSecret = body.UsesDeploymentSecret,
             CallbackPath = string.IsNullOrWhiteSpace(body.CallbackPath) ? null : body.CallbackPath.Trim(),
             Enabled = body.Enabled,
-            IsActive = false
+            IsActive = false,
+            AzureTenantId = string.IsNullOrWhiteSpace(body.AzureTenantId) ? null : body.AzureTenantId.Trim()
         };
 
         var created = await _repository.AddAsync(draft, cancellationToken);
@@ -157,11 +164,20 @@ public sealed class ConfigEntraTenantsController : ControllerBase
             ClientId = body.ClientId.Trim(),
             UsesDeploymentSecret = body.UsesDeploymentSecret,
             CallbackPath = string.IsNullOrWhiteSpace(body.CallbackPath) ? null : body.CallbackPath.Trim(),
+            AzureTenantId = string.IsNullOrWhiteSpace(body.AzureTenantId) ? null : body.AzureTenantId.Trim(),
             Enabled = body.Enabled,
             IsActive = existing.IsActive,
             RowVersion = existing.RowVersion,
             CreatedUtc = existing.CreatedUtc,
-            UpdatedUtc = existing.UpdatedUtc
+            UpdatedUtc = existing.UpdatedUtc,
+            OpenIdConfigurationStatus = existing.OpenIdConfigurationStatus,
+            LastOpenIdValidationUtc = existing.LastOpenIdValidationUtc,
+            LastOpenIdValidationSummary = existing.LastOpenIdValidationSummary,
+            LastOpenIdValidationDetail = existing.LastOpenIdValidationDetail,
+            DirectoryDiscoveryStatus = existing.DirectoryDiscoveryStatus,
+            LastDirectoryDiscoveryUtc = existing.LastDirectoryDiscoveryUtc,
+            LastDirectoryDiscoverySummary = existing.LastDirectoryDiscoverySummary,
+            LastDirectoryDiscoveryDetail = existing.LastDirectoryDiscoveryDetail
         };
 
         // If disabling or breaking the active registration, ensure we do not lock the instance out.
@@ -253,6 +269,191 @@ public sealed class ConfigEntraTenantsController : ControllerBase
         return NoContent();
     }
 
+    [HttpPost("{id}/validate-openid")]
+    [ProducesResponseType(typeof(ValidateOpenIdResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<ValidateOpenIdResponse>> ValidateOpenId(
+        string id,
+        CancellationToken cancellationToken)
+    {
+        if (!await AuthorizeManageAsync(cancellationToken))
+            return Forbid();
+
+        var reg = await _repository.GetByIdAsync(id, cancellationToken);
+        if (reg is null)
+            return NotFound();
+
+        var secretConfigured = !string.IsNullOrWhiteSpace(
+            _configuration[EntraAuthOptions.SectionName + ":" + nameof(EntraAuthOptions.ClientSecret)]);
+
+        var outcome = await _openIdValidator.ValidateAsync(
+            reg.Authority,
+            reg.ClientId,
+            reg.UsesDeploymentSecret,
+            secretConfigured,
+            reg.AzureTenantId,
+            cancellationToken);
+
+        var status = outcome.Status;
+
+        await _repository.UpdateOpenIdValidationOutcomeAsync(
+            id,
+            status,
+            DateTimeOffset.UtcNow,
+            outcome.Summary,
+            outcome.TechnicalDetail,
+            cancellationToken);
+
+        var refreshed = await _repository.GetByIdAsync(id, cancellationToken);
+        if (refreshed is null)
+            return NotFound();
+
+        return Ok(new ValidateOpenIdResponse
+        {
+            Validation = new ValidationResultResponse
+            {
+                Success = outcome.Success,
+                OpenIdConfigurationStatus = status.ToString(),
+                Code = outcome.Code,
+                Summary = outcome.Summary,
+                TechnicalDetail = outcome.TechnicalDetail
+            },
+            Tenant = ToListItem(refreshed, secretConfigured)
+        });
+    }
+
+    [HttpGet("{id}/directory/users")]
+    [ProducesResponseType(typeof(EntraDirectoryUsersApiResponse), StatusCodes.Status200OK)]
+    public async Task<ActionResult<EntraDirectoryUsersApiResponse>> ListDirectoryUsers(
+        string id,
+        [FromQuery] string? search,
+        [FromQuery] int top = 25,
+        CancellationToken cancellationToken = default)
+    {
+        if (!await AuthorizeReadAsync(cancellationToken))
+            return Forbid();
+
+        return await SearchDirectoryUsersCoreAsync(id, search, top, cancellationToken);
+    }
+
+    [HttpGet("{id}/directory/groups")]
+    [ProducesResponseType(typeof(EntraDirectoryGroupsApiResponse), StatusCodes.Status200OK)]
+    public async Task<ActionResult<EntraDirectoryGroupsApiResponse>> ListDirectoryGroups(
+        string id,
+        [FromQuery] string? search,
+        [FromQuery] int top = 25,
+        CancellationToken cancellationToken = default)
+    {
+        if (!await AuthorizeReadAsync(cancellationToken))
+            return Forbid();
+
+        return await SearchDirectoryGroupsCoreAsync(id, search, top, cancellationToken);
+    }
+
+    private async Task<ActionResult<EntraDirectoryUsersApiResponse>> SearchDirectoryUsersCoreAsync(
+        string id,
+        string? search,
+        int top,
+        CancellationToken cancellationToken)
+    {
+        var reg = await _repository.GetByIdAsync(id, cancellationToken);
+        if (reg is null)
+            return NotFound();
+
+        var secret = _configuration[EntraAuthOptions.SectionName + ":" + nameof(EntraAuthOptions.ClientSecret)]
+            ?? "";
+        var tenantId = EntraDirectoryTenantResolver.TryResolveGraphTenantId(reg) ?? "";
+        var ctx = new EntraDirectoryDiscoveryContext(tenantId, reg.ClientId, secret, reg.Id);
+
+        var result = await _directoryDiscovery.SearchUsersAsync(ctx, search, top, cancellationToken);
+        var discStatus = ToDirectoryDiscoveryStatus(result);
+        await _repository.UpdateDirectoryDiscoveryOutcomeAsync(
+            id,
+            discStatus,
+            DateTimeOffset.UtcNow,
+            result.Summary,
+            result.TechnicalDetail,
+            cancellationToken);
+
+        var items = (result.Data ?? Array.Empty<EntraDirectoryUser>())
+            .Select(u => new EntraDirectoryUserResponse
+            {
+                ObjectId = u.ObjectId,
+                DisplayName = u.DisplayName,
+                UserPrincipalName = u.UserPrincipalName,
+                Mail = u.Mail
+            })
+            .ToList();
+
+        return Ok(new EntraDirectoryUsersApiResponse
+        {
+            Success = result.Success,
+            FailureCategory = result.Success ? null : result.FailureCategory.ToString(),
+            Summary = result.Summary,
+            TechnicalDetail = result.TechnicalDetail,
+            Items = items
+        });
+    }
+
+    private async Task<ActionResult<EntraDirectoryGroupsApiResponse>> SearchDirectoryGroupsCoreAsync(
+        string id,
+        string? search,
+        int top,
+        CancellationToken cancellationToken)
+    {
+        var reg = await _repository.GetByIdAsync(id, cancellationToken);
+        if (reg is null)
+            return NotFound();
+
+        var secret = _configuration[EntraAuthOptions.SectionName + ":" + nameof(EntraAuthOptions.ClientSecret)]
+            ?? "";
+        var tenantId = EntraDirectoryTenantResolver.TryResolveGraphTenantId(reg) ?? "";
+        var ctx = new EntraDirectoryDiscoveryContext(tenantId, reg.ClientId, secret, reg.Id);
+
+        var result = await _directoryDiscovery.SearchGroupsAsync(ctx, search, top, cancellationToken);
+        var discStatus = ToDirectoryDiscoveryStatus(result);
+        await _repository.UpdateDirectoryDiscoveryOutcomeAsync(
+            id,
+            discStatus,
+            DateTimeOffset.UtcNow,
+            result.Summary,
+            result.TechnicalDetail,
+            cancellationToken);
+
+        var items = (result.Data ?? Array.Empty<EntraDirectoryGroup>())
+            .Select(g => new EntraDirectoryGroupResponse
+            {
+                ObjectId = g.ObjectId,
+                DisplayName = g.DisplayName,
+                MailNickname = g.MailNickname,
+                Description = g.Description
+            })
+            .ToList();
+
+        return Ok(new EntraDirectoryGroupsApiResponse
+        {
+            Success = result.Success,
+            FailureCategory = result.Success ? null : result.FailureCategory.ToString(),
+            Summary = result.Summary,
+            TechnicalDetail = result.TechnicalDetail,
+            Items = items
+        });
+    }
+
+    private static DirectoryDiscoveryStatus ToDirectoryDiscoveryStatus<T>(DirectoryDiscoveryResult<T> result)
+    {
+        if (result.Success)
+            return DirectoryDiscoveryStatus.Success;
+        return result.FailureCategory switch
+        {
+            DiscoveryFailureCategory.Configuration => DirectoryDiscoveryStatus.FailedConfiguration,
+            DiscoveryFailureCategory.Permissions => DirectoryDiscoveryStatus.FailedPermissions,
+            DiscoveryFailureCategory.Transient => DirectoryDiscoveryStatus.TransientFailure,
+            DiscoveryFailureCategory.Throttled => DirectoryDiscoveryStatus.Throttled,
+            _ => DirectoryDiscoveryStatus.Unknown
+        };
+    }
+
     private static EntraAuthOptions SimulateEffectiveEntraAfterUpdate(
         EntraAuthOptions legacy,
         IReadOnlyList<EntraInstanceRegistration> all,
@@ -295,6 +496,15 @@ public sealed class ConfigEntraTenantsController : ControllerBase
             Enabled = e.Enabled,
             IsActive = e.IsActive,
             DeploymentSecretConfigured = e.UsesDeploymentSecret && deploymentSecretConfigured,
+            AzureTenantId = e.AzureTenantId,
+            OpenIdConfigurationStatus = e.OpenIdConfigurationStatus.ToString(),
+            LastOpenIdValidationUtc = e.LastOpenIdValidationUtc,
+            LastOpenIdValidationSummary = e.LastOpenIdValidationSummary,
+            LastOpenIdValidationDetail = e.LastOpenIdValidationDetail,
+            DirectoryDiscoveryStatus = e.DirectoryDiscoveryStatus.ToString(),
+            LastDirectoryDiscoveryUtc = e.LastDirectoryDiscoveryUtc,
+            LastDirectoryDiscoverySummary = e.LastDirectoryDiscoverySummary,
+            LastDirectoryDiscoveryDetail = e.LastDirectoryDiscoveryDetail,
             RowVersionBase64 = e.RowVersion is { Length: > 0 } ? Convert.ToBase64String(e.RowVersion) : null
         };
 

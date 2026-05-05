@@ -57,4 +57,25 @@ public sealed class ConfigAuthOverviewResponse
 
     [JsonPropertyName("warnings")]
     public IReadOnlyList<string> Warnings { get; init; } = Array.Empty<string>();
+
+    [JsonPropertyName("authProviderAvailability")]
+    public AuthProviderAvailabilityResponse? AuthProviderAvailability { get; init; }
+}
+
+public sealed class AuthProviderAvailabilityResponse
+{
+    [JsonPropertyName("entraSignInReady")]
+    public bool EntraSignInReady { get; init; }
+
+    [JsonPropertyName("localSignInAvailable")]
+    public bool LocalSignInAvailable { get; init; }
+
+    [JsonPropertyName("activeEntraOpenIdConfigurationStatus")]
+    public string? ActiveEntraOpenIdConfigurationStatus { get; init; }
+
+    [JsonPropertyName("activeEntraDirectoryDiscoveryStatus")]
+    public string? ActiveEntraDirectoryDiscoveryStatus { get; init; }
+
+    [JsonPropertyName("adminDiagnosis")]
+    public string? AdminDiagnosis { get; init; }
 }

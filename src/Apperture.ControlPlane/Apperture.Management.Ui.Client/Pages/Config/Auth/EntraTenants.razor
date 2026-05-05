@@ -12,8 +12,8 @@
 
 <div class="p-4">
     <div class="text-xs text-muted mb-1">Config — Authentication</div>
-    <PageHeader Title="Entra registrations"
-                Subtitle="Store tenant metadata and choose which registration supplies authority and client ID for sign-in. Client secret stays in deployment configuration for this version. Restart the management host after changing the active registration so OIDC picks up authority and client ID changes." />
+    <PageHeader Title="Entra tenant setup"
+                Subtitle="Register authority and client id (secret stays in deployment). Validate OpenID metadata, then browse users and groups for directory discovery. Importing contacts is a later step. Restart the management host after changing the active registration so OIDC picks up authority and client id." />
 
     @if (!_canView)
     {
@@ -36,14 +36,20 @@
                              Message="@_overview.RuntimeApplicationStatus" />
             }
 
+            <p class="text-xs text-muted max-w-3xl">
+                <a class="underline" href="/config/auth">← Back to authentication overview</a>
+                · OID = last OpenID discovery validation. Dir = last Microsoft Graph browse. These do not create platform users.
+            </p>
+
             <div class="overflow-x-auto rounded border border-default">
                 <table class="min-w-full text-left text-xs">
                     <thead class="bg-surface-muted text-heading">
                         <tr>
-                            <th class="p-2">Name</th>
+                            <th class="p-2">Name / authority</th>
                             <th class="p-2">Active</th>
-                            <th class="p-2">Enabled</th>
-                            <th class="p-2">Secret (deployment)</th>
+                            <th class="p-2">OID</th>
+                            <th class="p-2">Dir</th>
+                            <th class="p-2">Secret</th>
                             <th class="p-2"></th>
                         </tr>
                     </thead>
@@ -54,19 +60,32 @@
                                 <td class="p-2">
                                     <div class="font-medium text-heading">@r.DisplayName</div>
                                     <div class="text-muted break-all">@r.Authority</div>
-                                    <div class="text-muted">Client ID: @r.ClientId</div>
+                                    <div class="text-muted">Client: @r.ClientId</div>
+                                    @if (!string.IsNullOrEmpty(r.AzureTenantId))
+                                    {
+                                        <div class="text-muted">Azure tenant id: @r.AzureTenantId</div>
+                                    }
                                 </td>
                                 <td class="p-2">@(r.IsActive ? "Yes" : "—")</td>
-                                <td class="p-2">@(r.Enabled ? "Yes" : "No")</td>
-                                <td class="p-2">@(r.DeploymentSecretConfigured ? "configured" : "missing")</td>
-                                <td class="p-2 space-x-2 whitespace-nowrap">
+                                <td class="p-2" title="@r.LastOpenIdValidationSummary">@ShortStatus(r.OpenIdConfigurationStatus ?? "")</td>
+                                <td class="p-2" title="@r.LastDirectoryDiscoverySummary">@ShortStatus(r.DirectoryDiscoveryStatus ?? "")</td>
+                                <td class="p-2">@(r.DeploymentSecretConfigured ? "ok" : "missing")</td>
+                                <td class="p-2 space-y-1 whitespace-nowrap text-right">
+                                    <div class="space-x-2">
+                                        <a class="underline" href="/config/auth/entra/@r.Id/users">Users</a>
+                                        <a class="underline" href="/config/auth/entra/@r.Id/groups">Groups</a>
+                                    </div>
                                     @if (_canManage)
                                     {
-                                        if (!r.IsActive && r.Enabled)
-                                        {
-                                            <button type="button" class="underline disabled:opacity-50" disabled="@_busy" @onclick="() => ActivateAsync(r.Id)">Activate</button>
-                                        }
-                                        <button type="button" class="underline text-error disabled:opacity-50" disabled="@_busy" @onclick="() => DeleteAsync(r.Id)">Delete</button>
+                                        <div class="space-x-2">
+                                            <button type="button" class="underline disabled:opacity-50" disabled="@_busy" @onclick="() => ValidateOpenIdAsync(r.Id)">Validate OIDC</button>
+                                            <button type="button" class="underline disabled:opacity-50" disabled="@_busy" @onclick="() => BeginEdit(r)">Edit</button>
+                                            @if (!r.IsActive && r.Enabled)
+                                            {
+                                                <button type="button" class="underline disabled:opacity-50" disabled="@_busy" @onclick="() => ActivateAsync(r.Id)">Activate</button>
+                                            }
+                                            <button type="button" class="underline text-error disabled:opacity-50" disabled="@_busy" @onclick="() => DeleteAsync(r.Id)">Delete</button>
+                                        </div>
                                     }
                                 </td>
                             </tr>
@@ -75,6 +94,30 @@
                 </table>
             </div>
 
+            @if (_editing is not null)
+            {
+                <section class="max-w-xl rounded border border-default bg-surface p-4 space-y-3">
+                    <h2 class="font-medium text-heading">Edit registration</h2>
+                    <label class="block text-xs">Display name<input class="mt-1 w-full rounded border border-default px-2 py-1" @bind="_editingDisplay" /></label>
+                    <label class="block text-xs">Authority (https)<input class="mt-1 w-full rounded border border-default px-2 py-1" @bind="_editingAuthority" /></label>
+                    <label class="block text-xs">Client ID<input class="mt-1 w-full rounded border border-default px-2 py-1" @bind="_editingClientId" /></label>
+                    <label class="block text-xs">Azure tenant id (optional, for Graph and issuer checks)<input class="mt-1 w-full rounded border border-default px-2 py-1" @bind="_editingAzureTenantId" /></label>
+                    <label class="block text-xs">Callback path (optional)<input class="mt-1 w-full rounded border border-default px-2 py-1" @bind="_editingCallbackPath" /></label>
+                    <label class="flex items-center gap-2 text-xs">
+                        <input type="checkbox" @bind="_editingEnabled" />
+                        Enabled
+                    </label>
+                    @if (!string.IsNullOrEmpty(_formError))
+                    {
+                        <PageMessage Kind="PageMessageKind.Error" Message="@_formError" />
+                    }
+                    <div class="space-x-2">
+                        <button type="button" class="rounded bg-surface-muted px-3 py-2 text-sm font-medium disabled:opacity-50" disabled="@_busy" @onclick="SaveEditAsync">Save</button>
+                        <button type="button" class="rounded px-3 py-2 text-sm text-muted" @onclick="CancelEdit">Cancel</button>
+                    </div>
+                </section>
+            }
+
             @if (_canManage)
             {
                 <section class="max-w-xl rounded border border-default bg-surface p-4 space-y-3">
@@ -82,6 +125,7 @@
                     <label class="block text-xs">Display name<input class="mt-1 w-full rounded border border-default px-2 py-1" @bind="_newDisplay" /></label>
                     <label class="block text-xs">Authority (https) <input class="mt-1 w-full rounded border border-default px-2 py-1" @bind="_newAuthority" /></label>
                     <label class="block text-xs">Client ID <input class="mt-1 w-full rounded border border-default px-2 py-1" @bind="_newClientId" /></label>
+                    <label class="block text-xs">Azure tenant id (optional)<input class="mt-1 w-full rounded border border-default px-2 py-1" @bind="_newAzureTenantId" /></label>
                     <label class="flex items-center gap-2 text-xs">
                         <input type="checkbox" @bind="_newUsesDeploymentSecret" disabled="true" />
                         Use deployment client secret (required in v1)
@@ -107,8 +151,21 @@
     private string _newDisplay = "";
     private string _newAuthority = "";
     private string _newClientId = "";
+    private string? _newAzureTenantId;
     private bool _newUsesDeploymentSecret = true;
     private string? _formError;
+
+    private string? _editing;
+    private string _editingDisplay = "";
+    private string _editingAuthority = "";
+    private string _editingClientId = "";
+    private string? _editingAzureTenantId;
+    private string? _editingCallbackPath;
+    private bool _editingEnabled;
+    private string? _editingRowVersion;
+
+    private static string ShortStatus(string? s) =>
+        string.IsNullOrEmpty(s) ? "—" : (s.Length > 12 ? s[..12] + "…" : s);
 
     protected override async Task OnInitializedAsync()
     {
@@ -131,6 +188,59 @@
         _overview = await Client.GetConfigAuthOverviewAsync();
     }
 
+    private void BeginEdit(EntraTenantListItemDto r)
+    {
+        _formError = null;
+        _editing = r.Id;
+        _editingDisplay = r.DisplayName;
+        _editingAuthority = r.Authority;
+        _editingClientId = r.ClientId;
+        _editingAzureTenantId = r.AzureTenantId;
+        _editingCallbackPath = r.CallbackPath;
+        _editingEnabled = r.Enabled;
+        _editingRowVersion = r.RowVersionBase64;
+    }
+
+    private void CancelEdit()
+    {
+        _editing = null;
+        _formError = null;
+    }
+
+    private async Task SaveEditAsync()
+    {
+        if (_editing is null || string.IsNullOrWhiteSpace(_editingRowVersion))
+            return;
+        _formError = null;
+        _busy = true;
+        try
+        {
+            await Client.PatchEntraTenantAsync(
+                _editing,
+                new UpdateEntraTenantRequest(
+                    _editingDisplay,
+                    _editingAuthority,
+                    _editingClientId,
+                    UsesDeploymentSecret: true,
+                    string.IsNullOrWhiteSpace(_editingCallbackPath) ? null : _editingCallbackPath.Trim(),
+                    _editingEnabled,
+                    _editingRowVersion,
+                    string.IsNullOrWhiteSpace(_editingAzureTenantId) ? null : _editingAzureTenantId.Trim()));
+            _editing = null;
+            await ReloadAsync();
+            await SignInOptions.RefreshAsync();
+            Toasts.Show(ToastSeverity.Success, "Registration updated.");
+        }
+        catch (HttpRequestException ex)
+        {
+            _formError = ex.Message;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
     private async Task CreateAsync()
     {
         _formError = null;
@@ -143,10 +253,12 @@
                 _newClientId,
                 UsesDeploymentSecret: true,
                 CallbackPath: null,
-                Enabled: true));
+                Enabled: true,
+                AzureTenantId: string.IsNullOrWhiteSpace(_newAzureTenantId) ? null : _newAzureTenantId.Trim()));
             _newDisplay = "";
             _newAuthority = "";
             _newClientId = "";
+            _newAzureTenantId = null;
             await ReloadAsync();
             await SignInOptions.RefreshAsync();
             Toasts.Show(ToastSeverity.Success, $"Created registration {created.DisplayName}.");
@@ -154,6 +266,35 @@
         catch (HttpRequestException ex)
         {
             _formError = ex.Message;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task ValidateOpenIdAsync(string id)
+    {
+        _busy = true;
+        try
+        {
+            var result = await Client.ValidateEntraTenantOpenIdAsync(id);
+            if (result is null)
+            {
+                Toasts.Show(ToastSeverity.Error, "Validation failed or access denied.");
+                return;
+            }
+
+            await ReloadAsync();
+            await SignInOptions.RefreshAsync();
+            var v = result.Validation;
+            Toasts.Show(
+                v.Success ? ToastSeverity.Success : ToastSeverity.Warning,
+                v.Summary);
+        }
+        catch (HttpRequestException ex)
+        {
+            Toasts.Show(ToastSeverity.Error, ex.Message);
         }
         finally
         {

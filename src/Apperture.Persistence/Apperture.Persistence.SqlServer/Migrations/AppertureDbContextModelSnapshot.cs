@@ -398,6 +398,10 @@ namespace Apperture.Persistence.SqlServer.Migrations
                         .HasMaxLength(512)
                         .HasColumnType("nvarchar(512)");
 
+                    b.Property<string>("AzureTenantId")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
                     b.Property<string>("CallbackPath")
                         .HasMaxLength(256)
                         .HasColumnType("nvarchar(256)");
@@ -410,6 +414,9 @@ namespace Apperture.Persistence.SqlServer.Migrations
                     b.Property<DateTimeOffset>("CreatedUtc")
                         .HasColumnType("datetimeoffset");
 
+                    b.Property<int>("DirectoryDiscoveryStatus")
+                        .HasColumnType("int");
+
                     b.Property<string>("DisplayName")
                         .IsRequired()
                         .HasMaxLength(256)
@@ -420,6 +427,31 @@ namespace Apperture.Persistence.SqlServer.Migrations
 
                     b.Property<bool>("IsActive")
                         .HasColumnType("bit");
+
+                    b.Property<string>("LastDirectoryDiscoveryDetail")
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
+                    b.Property<string>("LastDirectoryDiscoverySummary")
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)");
+
+                    b.Property<DateTimeOffset?>("LastDirectoryDiscoveryUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("LastOpenIdValidationDetail")
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
+                    b.Property<string>("LastOpenIdValidationSummary")
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)");
+
+                    b.Property<DateTimeOffset?>("LastOpenIdValidationUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<int>("OpenIdConfigurationStatus")
+                        .HasColumnType("int");
 
                     b.Property<byte[]>("RowVersion")
                         .IsConcurrencyToken()

@@ -1264,6 +1264,56 @@ public sealed class ManagementClient : IManagementClient
         response.EnsureSuccessStatusCode();
     }
 
+    public async Task<ValidateOpenIdResponseDto?> ValidateEntraTenantOpenIdAsync(string id, CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.PostAsync(
+            $"config/auth/entra-tenants/{Uri.EscapeDataString(id)}/validate-openid",
+            content: null,
+            cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden or HttpStatusCode.NotFound)
+            return null;
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<ValidateOpenIdResponseDto>(cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<EntraDirectoryUsersApiDto?> GetEntraDirectoryUsersAsync(
+        string id,
+        string? search = null,
+        int top = 25,
+        CancellationToken cancellationToken = default)
+    {
+        var url = $"config/auth/entra-tenants/{Uri.EscapeDataString(id)}/directory/users?top={top}";
+        if (!string.IsNullOrEmpty(search))
+            url += $"&search={Uri.EscapeDataString(search)}";
+
+        using var response = await _http.GetAsync(url, cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
+            return null;
+        if (response.StatusCode == HttpStatusCode.NotFound)
+            return null;
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<EntraDirectoryUsersApiDto>(cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<EntraDirectoryGroupsApiDto?> GetEntraDirectoryGroupsAsync(
+        string id,
+        string? search = null,
+        int top = 25,
+        CancellationToken cancellationToken = default)
+    {
+        var url = $"config/auth/entra-tenants/{Uri.EscapeDataString(id)}/directory/groups?top={top}";
+        if (!string.IsNullOrEmpty(search))
+            url += $"&search={Uri.EscapeDataString(search)}";
+
+        using var response = await _http.GetAsync(url, cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
+            return null;
+        if (response.StatusCode == HttpStatusCode.NotFound)
+            return null;
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<EntraDirectoryGroupsApiDto>(cancellationToken).ConfigureAwait(false);
+    }
+
     private static async Task EnsureSuccessOrThrowAsync(HttpResponseMessage response, CancellationToken cancellationToken)
     {
         if (response.IsSuccessStatusCode)

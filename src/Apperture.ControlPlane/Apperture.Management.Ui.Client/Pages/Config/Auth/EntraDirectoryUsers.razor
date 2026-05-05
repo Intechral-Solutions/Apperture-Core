@@ -1,0 +1,116 @@
+@page "/config/auth/entra/{RegistrationId}/users"
+@layout ConfigLayout
+@using Apperture.Management.Client
+@using Apperture.Management.Ui.Client.Organisms
+@using Apperture.Management.Ui.Shared
+@inject IManagementClient Client
+@inject IOperatorCapabilitiesService Capabilities
+
+<div class="p-4">
+    <div class="text-xs text-muted mb-1">Config — Authentication — Entra directory</div>
+    <PageHeader Title="Entra directory users"
+                Subtitle="Browse-only view from Microsoft Graph. These directory objects are not imported as contacts or login identities until a future import flow runs." />
+
+    @if (!_canView)
+    {
+        <p class="mt-4 text-sm text-muted">You do not have permission.</p>
+    }
+    else if (_loading)
+    {
+        <p class="mt-4 text-sm text-muted">Loading…</p>
+    }
+    else if (_result is null)
+    {
+        <PageMessage Kind="PageMessageKind.Error" Message="Could not load directory users." />
+    }
+    else
+    {
+        <div class="mt-4 space-y-4 text-sm">
+            <PageMessage Kind="PageMessageKind.Info"
+                         Message="Epic 76 will use these object ids for managed-contact import. Nothing here creates platform users." />
+
+            <p class="text-xs"><a class="underline" href="/config/auth/tenants">← Entra tenant setup</a></p>
+
+            <div class="flex flex-wrap items-end gap-2 max-w-2xl">
+                <label class="flex-1 min-w-[12rem] text-xs">
+                    Search (display name, mail, UPN)
+                    <input class="mt-1 w-full rounded border border-default px-2 py-1" @bind="_search" @bind:event="oninput" />
+                </label>
+                <button type="button" class="rounded bg-surface-muted px-3 py-2 text-xs font-medium disabled:opacity-50" disabled="@_busy" @onclick="SearchAsync">Search</button>
+            </div>
+
+            @if (!_result.Success)
+            {
+                <PageMessage Kind="PageMessageKind.Error" Message="@_result.Summary" />
+                @if (!string.IsNullOrEmpty(_result.TechnicalDetail))
+                {
+                    <pre class="text-xs text-muted whitespace-pre-wrap max-w-3xl overflow-x-auto">@_result.TechnicalDetail</pre>
+                }
+            }
+
+            <div class="overflow-x-auto rounded border border-default">
+                <table class="min-w-full text-left text-xs">
+                    <thead class="bg-surface-muted text-heading">
+                        <tr>
+                            <th class="p-2">Display name</th>
+                            <th class="p-2">UPN</th>
+                            <th class="p-2">Mail</th>
+                            <th class="p-2">Object id</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var u in _result.Items)
+                        {
+                            <tr class="border-t border-default">
+                                <td class="p-2 font-medium text-heading">@u.DisplayName</td>
+                                <td class="p-2 text-muted break-all">@(u.UserPrincipalName ?? "—")</td>
+                                <td class="p-2 text-muted break-all">@(u.Mail ?? "—")</td>
+                                <td class="p-2 font-mono text-muted break-all text-[11px]">@u.ObjectId</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public string RegistrationId { get; set; } = "";
+
+    private bool _canView;
+    private bool _loading = true;
+    private bool _busy;
+    private EntraDirectoryUsersApiDto? _result;
+    private string _search = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        var caps = await Capabilities.GetCapabilitiesAsync();
+        _canView = caps.CanViewAuthConfiguration || caps.CanManageEntraTenants;
+        if (!_canView)
+        {
+            _loading = false;
+            return;
+        }
+
+        await SearchAsync();
+        _loading = false;
+    }
+
+    private async Task SearchAsync()
+    {
+        _busy = true;
+        try
+        {
+            _result = await Client.GetEntraDirectoryUsersAsync(
+                RegistrationId,
+                string.IsNullOrWhiteSpace(_search) ? null : _search.Trim(),
+                50);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

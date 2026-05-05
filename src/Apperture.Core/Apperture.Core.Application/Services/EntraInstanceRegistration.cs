@@ -28,4 +28,23 @@ public sealed class EntraInstanceRegistration
     public DateTimeOffset CreatedUtc { get; init; }
 
     public DateTimeOffset UpdatedUtc { get; init; }
+
+    /// <summary>Optional Azure AD tenant id (directory id) for Graph and issuer checks.</summary>
+    public string? AzureTenantId { get; init; }
+
+    public OpenIdConfigurationStatus OpenIdConfigurationStatus { get; init; }
+
+    public DateTimeOffset? LastOpenIdValidationUtc { get; init; }
+
+    public string? LastOpenIdValidationSummary { get; init; }
+
+    public string? LastOpenIdValidationDetail { get; init; }
+
+    public DirectoryDiscoveryStatus DirectoryDiscoveryStatus { get; init; }
+
+    public DateTimeOffset? LastDirectoryDiscoveryUtc { get; init; }
+
+    public string? LastDirectoryDiscoverySummary { get; init; }
+
+    public string? LastDirectoryDiscoveryDetail { get; init; }
 }

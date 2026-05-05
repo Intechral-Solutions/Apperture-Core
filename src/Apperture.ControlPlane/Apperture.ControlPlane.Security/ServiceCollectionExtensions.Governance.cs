@@ -51,6 +51,12 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IScopeContainmentEvaluator, ScopeContainmentEvaluator>();
         services.AddScoped<IInstanceAuthUiPolicyRepository, SqlInstanceAuthUiPolicyRepository>();
         services.AddScoped<IEntraInstanceRegistrationRepository, SqlEntraInstanceRegistrationRepository>();
+        services.AddHttpClient(EntraOpenIdConnectConfigurationValidator.HttpClientName, client =>
+        {
+            client.Timeout = TimeSpan.FromSeconds(20);
+        });
+        services.AddSingleton<IEntraOpenIdConnectConfigurationValidator, EntraOpenIdConnectConfigurationValidator>();
+        services.AddSingleton<IEntraDirectoryDiscoveryService, EntraDirectoryDiscoveryService>();
         services.AddSingleton<IPostConfigureOptions<EntraAuthOptions>, EntraAuthOptionsDatabasePostConfigure>();
         services.AddScoped<IAuthenticationAdminOverviewService, AuthenticationAdminOverviewService>();
         services.AddScoped<IUserRepository, SqlUserRepository>();

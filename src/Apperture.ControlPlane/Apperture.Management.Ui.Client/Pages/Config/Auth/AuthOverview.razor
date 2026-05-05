@@ -44,6 +44,32 @@
                 </ul>
             </section>
 
+            @if (_overview.AuthProviderAvailability is not null)
+            {
+                var ap = _overview.AuthProviderAvailability;
+                <section class="rounded border border-default bg-surface p-4">
+                    <h2 class="font-medium text-heading">Provider readiness</h2>
+                    <ul class="mt-2 list-inside list-disc space-y-1 text-xs">
+                        <li>Entra sign-in ready (effective): @(ap.EntraSignInReady ? "yes" : "no")</li>
+                        <li>Local sign-in available: @(ap.LocalSignInAvailable ? "yes" : "no")</li>
+                        <li>Active registration OID validation status: @(ap.ActiveEntraOpenIdConfigurationStatus ?? "—")</li>
+                        <li>Active registration directory discovery status: @(ap.ActiveEntraDirectoryDiscoveryStatus ?? "—")</li>
+                    </ul>
+                    @if (!string.IsNullOrEmpty(ap.AdminDiagnosis))
+                    {
+                        <PageMessage Kind="PageMessageKind.Warning" Message="@ap.AdminDiagnosis" />
+                    }
+                </section>
+            }
+
+            <section class="rounded border border-default bg-surface p-4">
+                <h2 class="font-medium text-heading">Entra administration</h2>
+                <p class="mt-2 text-xs text-muted">
+                    Configure tenants, validate OpenID metadata, and browse directory objects:
+                    <a class="underline" href="/config/auth/tenants">Entra tenant setup</a>
+                </p>
+            </section>
+
             <section class="rounded border border-default bg-surface p-4">
                 <h2 class="font-medium text-heading">Capabilities vs policy</h2>
                 <ul class="mt-2 list-inside list-disc space-y-1 text-xs">

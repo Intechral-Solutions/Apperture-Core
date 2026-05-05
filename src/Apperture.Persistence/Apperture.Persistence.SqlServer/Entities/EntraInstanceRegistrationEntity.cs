@@ -23,4 +23,22 @@ public sealed class EntraInstanceRegistrationEntity
     public DateTimeOffset UpdatedUtc { get; set; }
 
     public byte[] RowVersion { get; set; } = Array.Empty<byte>();
+
+    public string? AzureTenantId { get; set; }
+
+    public int OpenIdConfigurationStatus { get; set; }
+
+    public DateTimeOffset? LastOpenIdValidationUtc { get; set; }
+
+    public string? LastOpenIdValidationSummary { get; set; }
+
+    public string? LastOpenIdValidationDetail { get; set; }
+
+    public int DirectoryDiscoveryStatus { get; set; }
+
+    public DateTimeOffset? LastDirectoryDiscoveryUtc { get; set; }
+
+    public string? LastDirectoryDiscoverySummary { get; set; }
+
+    public string? LastDirectoryDiscoveryDetail { get; set; }
 }

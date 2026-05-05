@@ -512,6 +512,11 @@ public class AppertureDbContext : DbContext
             e.Property(x => x.Authority).HasMaxLength(512);
             e.Property(x => x.ClientId).HasMaxLength(128);
             e.Property(x => x.CallbackPath).HasMaxLength(256);
+            e.Property(x => x.AzureTenantId).HasMaxLength(64);
+            e.Property(x => x.LastOpenIdValidationSummary).HasMaxLength(512);
+            e.Property(x => x.LastOpenIdValidationDetail).HasMaxLength(4000);
+            e.Property(x => x.LastDirectoryDiscoverySummary).HasMaxLength(512);
+            e.Property(x => x.LastDirectoryDiscoveryDetail).HasMaxLength(4000);
             e.Property(x => x.RowVersion).IsRowVersion();
             e.HasIndex(x => x.IsActive).IsUnique().HasFilter("[IsActive] = 1");
         });

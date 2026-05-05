@@ -56,7 +56,15 @@ public sealed class ConfigAuthOverviewController : ControllerBase
             EntraSignInEnabled = o.EntraSignInEnabled,
             EffectiveExperience = o.EffectiveExperience.ToString(),
             EffectiveExperienceDescription = o.EffectiveExperienceDescription,
-            Warnings = o.Warnings
+            Warnings = o.Warnings,
+            AuthProviderAvailability = new AuthProviderAvailabilityResponse
+            {
+                EntraSignInReady = o.AuthProviderAvailability.EntraSignInReady,
+                LocalSignInAvailable = o.AuthProviderAvailability.LocalSignInAvailable,
+                ActiveEntraOpenIdConfigurationStatus = o.AuthProviderAvailability.ActiveEntraOpenIdConfigurationStatus,
+                ActiveEntraDirectoryDiscoveryStatus = o.AuthProviderAvailability.ActiveEntraDirectoryDiscoveryStatus,
+                AdminDiagnosis = o.AuthProviderAvailability.AdminDiagnosis
+            }
         });
     }
 
