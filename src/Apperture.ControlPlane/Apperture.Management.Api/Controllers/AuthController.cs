@@ -110,7 +110,8 @@ public sealed class AuthController : ControllerBase
             return Forbid();
 
         var roles = await _roleProvider.GetRolesForUserAsync(uid, cancellationToken);
-        return Ok(new MeResponse(user.Id.Value, user.DisplayName, roles.Select(r => r.Id.Value).ToArray()));
+        var userPrincipal = ResolveUserPrincipal(User);
+        return Ok(new MeResponse(user.Id.Value, user.DisplayName, roles.Select(r => r.Id.Value).ToArray(), userPrincipal));
     }
 
     /// <summary>
@@ -269,10 +270,21 @@ public sealed class AuthController : ControllerBase
         await HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
         return NoContent();
     }
+
+    private static string? ResolveUserPrincipal(ClaimsPrincipal principal)
+    {
+        return principal.FindFirst("preferred_username")?.Value
+            ?? principal.FindFirst("upn")?.Value
+            ?? principal.FindFirst(ClaimTypes.Upn)?.Value
+            ?? principal.FindFirst("email")?.Value
+            ?? principal.FindFirst(ClaimTypes.Email)?.Value
+            ?? principal.FindFirst("unique_name")?.Value
+            ?? principal.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+    }
 }
 
 public sealed record LocalLoginRequest(string Username, string? Password);
 
 public sealed record LocalLoginResponse(string UserId, string DisplayName);
 
-public sealed record MeResponse(string UserId, string DisplayName, string[] Roles);
+public sealed record MeResponse(string UserId, string DisplayName, string[] Roles, string? UserPrincipal);

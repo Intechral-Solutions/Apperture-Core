@@ -988,7 +988,8 @@ public sealed record RuntimeControlRequestDto(
 public sealed record MeResponse(
     [property: JsonPropertyName("userId")] string UserId,
     [property: JsonPropertyName("displayName")] string DisplayName,
-    [property: JsonPropertyName("roles")] IReadOnlyList<string> Roles);
+    [property: JsonPropertyName("roles")] IReadOnlyList<string> Roles,
+    [property: JsonPropertyName("userPrincipal")] string? UserPrincipal);
 
 public sealed record LocalLoginRequest(
     [property: JsonPropertyName("username")] string Username,

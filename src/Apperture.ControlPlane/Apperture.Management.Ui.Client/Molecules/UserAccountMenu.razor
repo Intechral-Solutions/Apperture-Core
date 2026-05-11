@@ -26,7 +26,7 @@
             </span>
             <span class="min-w-0">
                 <span class="block truncate font-medium text-heading">@Session.User.DisplayName</span>
-                <span class="block truncate text-xs text-muted" title="@Session.User.UserId">@Session.User.UserId</span>
+                <span class="block truncate text-xs text-muted" title="@SecondaryIdentity(Session.User)">@SecondaryIdentity(Session.User)</span>
             </span>
         </button>
         @if (_open)
@@ -112,5 +112,14 @@
         var host = HostNav.GetManagementHostBase(Nav);
         var url = new Uri(host, "signout").ToString();
         Nav.NavigateTo(url, forceLoad: true);
+    }
+
+    private static string SecondaryIdentity(MeResponse user)
+    {
+        if (!string.IsNullOrWhiteSpace(user.UserPrincipal))
+            return user.UserPrincipal;
+        if (!string.IsNullOrWhiteSpace(user.DisplayName))
+            return user.DisplayName;
+        return user.UserId;
     }
 }
