@@ -1,4 +1,5 @@
 using Apperture.ModuleSdk.Abstractions;
+using Apperture.ModuleSdk.Abstractions.Signals;
 using Apperture.RuntimePlane.Abstractions;
 using Apperture.Core.Domain.Governance;
 using Apperture.Core.Domain.Operations;
@@ -22,6 +23,15 @@ public sealed class HelloWorldModule : IModule, IModuleStepHandlerRegistrar, IOp
             ,
             // Allow operation execution for this module's operations.
             new ModulePermissionDeclaration(ActionConstants.OperationExecute, ResourceTypeConstants.OperationDefinition)
+        ],
+        Signals =
+        [
+            new ModuleSignalDeclaration(
+                "demo.completed",
+                "Demo completed",
+                "Emitted when the HelloWorld Complete step runs with emitDemoPlatformEvent=true.",
+                "info",
+                RequiredDataProperties: ["message"])
         ],
         Procedures =
         [

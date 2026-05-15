@@ -1,4 +1,5 @@
 using Apperture.Core.Application.Execution;
+using Apperture.Core.Application.PlatformEvents;
 using Apperture.ModuleSdk.Abstractions;
 using Apperture.RuntimePlane.Abstractions;
 
@@ -20,6 +21,8 @@ internal static class WorkerHostStartupValidation
             if (!seenModuleIds.Add(id))
                 throw new InvalidOperationException($"Duplicate module id '{id}' in WorkerHost module list.");
         }
+
+        ModuleSignalManifestValidator.ThrowIfInvalid(modules);
 
         // Definition ownership guardrail:
         // - WorkflowDefinition.Id must be globally unique across loaded modules.

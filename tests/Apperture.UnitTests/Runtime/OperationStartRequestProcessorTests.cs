@@ -337,11 +337,8 @@ public sealed class OperationStartRequestProcessorTests
             string stepName,
             WorkflowInstance instance,
             IReadOnlyDictionary<string, object?>? parameters,
-            CancellationToken cancellationToken = default)
-        {
-            Calls++;
-            return ValueTask.FromResult<object?>(null);
-        }
+            CancellationToken cancellationToken = default) =>
+            ExecuteStepAsync(definition, stepName, instance, parameters, integrationId: null, executionScope: null, cancellationToken);
 
         public ValueTask<object?> ExecuteStepAsync(
             WorkflowDefinition definition,
@@ -350,7 +347,20 @@ public sealed class OperationStartRequestProcessorTests
             IReadOnlyDictionary<string, object?>? parameters,
             string? integrationId,
             CancellationToken cancellationToken) =>
-            ExecuteStepAsync(definition, stepName, instance, parameters, cancellationToken);
+            ExecuteStepAsync(definition, stepName, instance, parameters, integrationId, executionScope: null, cancellationToken);
+
+        public ValueTask<object?> ExecuteStepAsync(
+            WorkflowDefinition definition,
+            string stepName,
+            WorkflowInstance instance,
+            IReadOnlyDictionary<string, object?>? parameters,
+            string? integrationId,
+            WorkflowStepExecutionScope? executionScope,
+            CancellationToken cancellationToken)
+        {
+            Calls++;
+            return ValueTask.FromResult<object?>(null);
+        }
     }
 
     private sealed class ThrowingExecutor : IWorkflowExecutor
@@ -361,7 +371,7 @@ public sealed class OperationStartRequestProcessorTests
             WorkflowInstance instance,
             IReadOnlyDictionary<string, object?>? parameters,
             CancellationToken cancellationToken = default)
-            => throw new InvalidOperationException("boom");
+            => ExecuteStepAsync(definition, stepName, instance, parameters, integrationId: null, executionScope: null, cancellationToken);
 
         public ValueTask<object?> ExecuteStepAsync(
             WorkflowDefinition definition,
@@ -370,7 +380,17 @@ public sealed class OperationStartRequestProcessorTests
             IReadOnlyDictionary<string, object?>? parameters,
             string? integrationId,
             CancellationToken cancellationToken) =>
-            ExecuteStepAsync(definition, stepName, instance, parameters, cancellationToken);
+            ExecuteStepAsync(definition, stepName, instance, parameters, integrationId, executionScope: null, cancellationToken);
+
+        public ValueTask<object?> ExecuteStepAsync(
+            WorkflowDefinition definition,
+            string stepName,
+            WorkflowInstance instance,
+            IReadOnlyDictionary<string, object?>? parameters,
+            string? integrationId,
+            WorkflowStepExecutionScope? executionScope,
+            CancellationToken cancellationToken)
+            => throw new InvalidOperationException("boom");
     }
 
     private sealed class DeclaredFailureExecutor : IWorkflowExecutor
@@ -381,7 +401,7 @@ public sealed class OperationStartRequestProcessorTests
             WorkflowInstance instance,
             IReadOnlyDictionary<string, object?>? parameters,
             CancellationToken cancellationToken = default)
-            => throw OperatorExecutionResult.FailWithheld("declared-op-withheld");
+            => ExecuteStepAsync(definition, stepName, instance, parameters, integrationId: null, executionScope: null, cancellationToken);
 
         public ValueTask<object?> ExecuteStepAsync(
             WorkflowDefinition definition,
@@ -390,7 +410,17 @@ public sealed class OperationStartRequestProcessorTests
             IReadOnlyDictionary<string, object?>? parameters,
             string? integrationId,
             CancellationToken cancellationToken) =>
-            ExecuteStepAsync(definition, stepName, instance, parameters, cancellationToken);
+            ExecuteStepAsync(definition, stepName, instance, parameters, integrationId, executionScope: null, cancellationToken);
+
+        public ValueTask<object?> ExecuteStepAsync(
+            WorkflowDefinition definition,
+            string stepName,
+            WorkflowInstance instance,
+            IReadOnlyDictionary<string, object?>? parameters,
+            string? integrationId,
+            WorkflowStepExecutionScope? executionScope,
+            CancellationToken cancellationToken)
+            => throw OperatorExecutionResult.FailWithheld("declared-op-withheld");
     }
 
     private sealed class TestLogger : ILogger

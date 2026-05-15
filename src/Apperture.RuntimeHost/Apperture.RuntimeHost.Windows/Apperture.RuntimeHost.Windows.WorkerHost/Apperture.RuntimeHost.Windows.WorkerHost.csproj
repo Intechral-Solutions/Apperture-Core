@@ -22,4 +22,9 @@
     <ProjectReference Include="..\..\..\Apperture.Modules\Proof.CampusNexus.StudentReview\Proof.CampusNexus.StudentReview.csproj" />
     <ProjectReference Include="..\Apperture.RuntimeHost.Windows.ModuleHost\Apperture.RuntimeHost.Windows.ModuleHost.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <None Update="appsettings.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
 </Project>

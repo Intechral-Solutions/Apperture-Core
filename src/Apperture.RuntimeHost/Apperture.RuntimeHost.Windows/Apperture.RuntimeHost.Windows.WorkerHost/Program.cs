@@ -11,6 +11,7 @@ using Apperture.Persistence.SqlServer.Options;
 using Apperture.RuntimeHost.Windows.WorkerHost;
 using Apperture.RuntimePlane.Abstractions;
 using Apperture.RuntimePlane.Engine;
+using Apperture.RuntimePlane.Engine.PlatformEvents;
 using Apperture.Shared.Kernel;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -113,6 +114,8 @@ builder.Services.AddWorkerHostIntegrationRepository();
         sp.GetRequiredService<UnisaCampusNexusPaymentPlansModule>(),
         sp.GetRequiredService<ProofCampusNexusStudentReviewModule>()
     });
+
+    builder.Services.AddRuntimePlatformEvents(builder.Configuration);
 
     builder.Services.AddSingleton<IWorkflowDefinitionResolver, WorkflowDefinitionResolver>();
     builder.Services.AddSingleton<IOperationRegistryService, OperationRegistryService>();

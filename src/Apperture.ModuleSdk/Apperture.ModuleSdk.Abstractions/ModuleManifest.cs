@@ -1,3 +1,5 @@
+using Apperture.ModuleSdk.Abstractions.Signals;
+
 namespace Apperture.ModuleSdk.Abstractions;
 
 /// <summary>
@@ -34,4 +36,9 @@ public sealed record ModuleManifest(string Id, string Name, string Version, stri
     /// Optional module-declared operator procedures (integration-scoped launch surface). See ADR-0029.
     /// </summary>
     public IReadOnlyList<ModuleProcedureDeclaration>? Procedures { get; init; }
+
+    /// <summary>
+    /// Optional module-authored platform signal declarations (Epic 77 Phase 2).
+    /// </summary>
+    public IReadOnlyList<ModuleSignalDeclaration>? Signals { get; init; }
 }

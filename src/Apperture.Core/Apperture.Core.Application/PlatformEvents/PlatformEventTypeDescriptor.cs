@@ -7,4 +7,5 @@ public sealed record PlatformEventTypeDescriptor(
     bool RequiresIntegrationId,
     bool RequiresScheduleId,
     IReadOnlyList<string> RequiredDataProperties,
-    int MaxDataJsonLength);
+    int MaxDataJsonLength,
+    bool RequiresRunId = false);

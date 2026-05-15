@@ -9,7 +9,9 @@
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
     <PackageReference Include="Microsoft.Extensions.Options" />
+    <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" />
     <ProjectReference Include="..\..\Apperture.Core\Apperture.Core.Application\Apperture.Core.Application.csproj" />
+    <ProjectReference Include="..\..\Apperture.ModuleSdk\Apperture.ModuleSdk.Abstractions\Apperture.ModuleSdk.Abstractions.csproj" />
     <ProjectReference Include="..\..\Apperture.Persistence\Apperture.Persistence.SqlServer\Apperture.Persistence.SqlServer.csproj" />
     <ProjectReference Include="..\Apperture.RuntimePlane.Abstractions\Apperture.RuntimePlane.Abstractions.csproj" />
   </ItemGroup>

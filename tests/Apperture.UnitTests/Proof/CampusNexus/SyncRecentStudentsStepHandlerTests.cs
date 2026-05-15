@@ -1,6 +1,8 @@
 using System.Data;
 using Apperture.Connectors.CampusNexus;
 using Apperture.Core.Application.Execution;
+using Apperture.ModuleSdk.Abstractions.Signals;
+using Apperture.RuntimePlane.Engine.PlatformEvents;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
@@ -40,6 +42,18 @@ public sealed class SyncRecentStudentsStepHandlerTests
         public string ModuleId => ProofCampusNexusStudentReviewConstants.ModuleId;
 
         public string? IntegrationId => _integrationId;
+
+        public IModulePlatformEventEmitter PlatformEvents => NullModulePlatformEventEmitter.Instance;
+
+        public string? RunId => null;
+
+        public string? ProcedureId => null;
+
+        public string? ScheduleId => null;
+
+        public string? CorrelationId => null;
+
+        public string? CausationId => null;
 
         public ValueTask<T?> ResolveSlotAsync<T>(string slotName, CancellationToken cancellationToken = default)
             where T : class

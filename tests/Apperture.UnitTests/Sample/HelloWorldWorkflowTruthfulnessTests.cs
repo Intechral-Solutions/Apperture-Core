@@ -4,10 +4,12 @@ using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Workflow;
 using Apperture.Core.Application.Execution;
 using Apperture.ModuleSdk.Abstractions;
+using Apperture.ModuleSdk.Abstractions.Signals;
 using Apperture.Persistence.SqlServer;
 using Apperture.Persistence.SqlServer.Options;
 using Apperture.RuntimePlane.Abstractions;
 using Apperture.RuntimePlane.Engine;
+using Apperture.RuntimePlane.Engine.PlatformEvents;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
@@ -202,6 +204,18 @@ public sealed class HelloWorldWorkflowTruthfulnessTests
         public string ModuleId { get; } = moduleId;
 
         public string? IntegrationId => null;
+
+        public IModulePlatformEventEmitter PlatformEvents => NullModulePlatformEventEmitter.Instance;
+
+        public string? RunId => null;
+
+        public string? ProcedureId => null;
+
+        public string? ScheduleId => null;
+
+        public string? CorrelationId => null;
+
+        public string? CausationId => null;
 
         public ValueTask<T?> ResolveSlotAsync<T>(string slotName, CancellationToken cancellationToken = default)
             where T : class

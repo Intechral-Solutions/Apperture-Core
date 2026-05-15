@@ -1,20 +1,17 @@
+using Apperture.ModuleSdk.Abstractions.Signals;
+
 namespace Apperture.Core.Application.Execution;
 
 /// <summary>
 /// Execution context for a workflow step. Supplies the module id and slot-bound dependency resolution.
 /// Step code receives this from the executor; it does not receive connection ids or the resolver directly.
 /// </summary>
-public interface IStepExecutionContext
+public interface IStepExecutionContext : IModulePlatformEmitContext
 {
     /// <summary>
-    /// Module id of the workflow under execution (e.g. from WorkflowDefinition.ModuleId).
+    /// Module-scoped platform signal emitter when the runtime registers one; otherwise returns a no-op instance.
     /// </summary>
-    string ModuleId { get; }
-
-    /// <summary>
-    /// Integration this execution is scoped to, when known (Epic 54); affects slot resolution.
-    /// </summary>
-    string? IntegrationId { get; }
+    IModulePlatformEventEmitter PlatformEvents { get; }
 
     /// <summary>
     /// Resolves the slot to a live client of type T. Returns null if no active connection binding exists for the slot.

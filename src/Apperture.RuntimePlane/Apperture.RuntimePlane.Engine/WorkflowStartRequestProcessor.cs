@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Apperture.Core.Application;
+using Apperture.Core.Application.ControlFacade;
 using Apperture.Core.Application.Execution;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Audit;
@@ -329,6 +330,7 @@ WHERE RunId = {runId} AND (
                         domainInstance,
                         parameters,
                         integrationScope,
+                        CreateWorkflowCorrelationScope(run, request, instance),
                         cancellationToken);
 
                     activeStep.Status = WorkflowLifecycleStatusNames.Completed;
@@ -660,6 +662,23 @@ WHERE RunId = {runId} AND (
             workflowDefinitionId,
             ExecutionDefinitionKind.Workflow,
             $"Unknown workflow definition id '{workflowDefinitionId}'.");
+    }
+
+    private static WorkflowStepExecutionScope CreateWorkflowCorrelationScope(
+        OperationRunEntity run,
+        WorkflowStartRequestEntity request,
+        WorkflowInstanceEntity instance)
+    {
+        string? scheduleId = null;
+        if (ControlFacade.TryParseScheduleId(instance.CorrelationKey, out var parsedSchedule))
+            scheduleId = parsedSchedule;
+
+        return new WorkflowStepExecutionScope(
+            RunId: run.Id,
+            ProcedureId: request.ProcedureId,
+            ScheduleId: scheduleId,
+            CorrelationId: request.CorrelationId,
+            CausationId: null);
     }
 
     private static IReadOnlyDictionary<string, object?>? DeserializeParameters(string? parametersJson)

@@ -147,11 +147,8 @@ public sealed class WorkflowCancelTests
             string stepName,
             WorkflowInstance instance,
             IReadOnlyDictionary<string, object?>? parameters,
-            CancellationToken cancellationToken = default)
-        {
-            Calls++;
-            return ValueTask.FromResult<object?>(null);
-        }
+            CancellationToken cancellationToken = default) =>
+            ExecuteStepAsync(definition, stepName, instance, parameters, integrationId: null, executionScope: null, cancellationToken);
 
         public ValueTask<object?> ExecuteStepAsync(
             WorkflowDefinition definition,
@@ -160,7 +157,20 @@ public sealed class WorkflowCancelTests
             IReadOnlyDictionary<string, object?>? parameters,
             string? integrationId,
             CancellationToken cancellationToken) =>
-            ExecuteStepAsync(definition, stepName, instance, parameters, cancellationToken);
+            ExecuteStepAsync(definition, stepName, instance, parameters, integrationId, executionScope: null, cancellationToken);
+
+        public ValueTask<object?> ExecuteStepAsync(
+            WorkflowDefinition definition,
+            string stepName,
+            WorkflowInstance instance,
+            IReadOnlyDictionary<string, object?>? parameters,
+            string? integrationId,
+            WorkflowStepExecutionScope? executionScope,
+            CancellationToken cancellationToken)
+        {
+            Calls++;
+            return ValueTask.FromResult<object?>(null);
+        }
     }
 
     private sealed class CancelAfterFirstStepExecutor : IWorkflowExecutor
@@ -170,12 +180,31 @@ public sealed class WorkflowCancelTests
 
         public CancelAfterFirstStepExecutor(AppertureDbContext db) => _db = db;
 
+        public ValueTask<object?> ExecuteStepAsync(
+            WorkflowDefinition definition,
+            string stepName,
+            WorkflowInstance instance,
+            IReadOnlyDictionary<string, object?>? parameters,
+            CancellationToken cancellationToken = default) =>
+            ExecuteStepAsync(definition, stepName, instance, parameters, integrationId: null, executionScope: null, cancellationToken);
+
+        public ValueTask<object?> ExecuteStepAsync(
+            WorkflowDefinition definition,
+            string stepName,
+            WorkflowInstance instance,
+            IReadOnlyDictionary<string, object?>? parameters,
+            string? integrationId,
+            CancellationToken cancellationToken) =>
+            ExecuteStepAsync(definition, stepName, instance, parameters, integrationId, executionScope: null, cancellationToken);
+
         public async ValueTask<object?> ExecuteStepAsync(
             WorkflowDefinition definition,
             string stepName,
             WorkflowInstance instance,
             IReadOnlyDictionary<string, object?>? parameters,
-            CancellationToken cancellationToken = default)
+            string? integrationId,
+            WorkflowStepExecutionScope? executionScope,
+            CancellationToken cancellationToken)
         {
             Calls++;
             if (Calls == 1)
@@ -189,17 +218,9 @@ public sealed class WorkflowCancelTests
                 });
                 await _db.SaveChangesAsync(cancellationToken);
             }
+
             return null;
         }
-
-        public ValueTask<object?> ExecuteStepAsync(
-            WorkflowDefinition definition,
-            string stepName,
-            WorkflowInstance instance,
-            IReadOnlyDictionary<string, object?>? parameters,
-            string? integrationId,
-            CancellationToken cancellationToken) =>
-            ExecuteStepAsync(definition, stepName, instance, parameters, cancellationToken);
     }
 
     private sealed class SingleDefinitionResolver : IWorkflowDefinitionResolver
@@ -219,12 +240,31 @@ public sealed class WorkflowCancelTests
 
         public CancelOnLastStepExecutor(AppertureDbContext db) => _db = db;
 
+        public ValueTask<object?> ExecuteStepAsync(
+            WorkflowDefinition definition,
+            string stepName,
+            WorkflowInstance instance,
+            IReadOnlyDictionary<string, object?>? parameters,
+            CancellationToken cancellationToken = default) =>
+            ExecuteStepAsync(definition, stepName, instance, parameters, integrationId: null, executionScope: null, cancellationToken);
+
+        public ValueTask<object?> ExecuteStepAsync(
+            WorkflowDefinition definition,
+            string stepName,
+            WorkflowInstance instance,
+            IReadOnlyDictionary<string, object?>? parameters,
+            string? integrationId,
+            CancellationToken cancellationToken) =>
+            ExecuteStepAsync(definition, stepName, instance, parameters, integrationId, executionScope: null, cancellationToken);
+
         public async ValueTask<object?> ExecuteStepAsync(
             WorkflowDefinition definition,
             string stepName,
             WorkflowInstance instance,
             IReadOnlyDictionary<string, object?>? parameters,
-            CancellationToken cancellationToken = default)
+            string? integrationId,
+            WorkflowStepExecutionScope? executionScope,
+            CancellationToken cancellationToken)
         {
             Calls++;
             // When executing the last step, simulate a cancel arriving "at" final completion.
@@ -242,14 +282,5 @@ public sealed class WorkflowCancelTests
 
             return null;
         }
-
-        public ValueTask<object?> ExecuteStepAsync(
-            WorkflowDefinition definition,
-            string stepName,
-            WorkflowInstance instance,
-            IReadOnlyDictionary<string, object?>? parameters,
-            string? integrationId,
-            CancellationToken cancellationToken) =>
-            ExecuteStepAsync(definition, stepName, instance, parameters, cancellationToken);
     }
 }

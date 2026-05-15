@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Apperture.Core.Application;
+using Apperture.Core.Application.ControlFacade;
 using Apperture.Core.Application.Execution;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Audit;
@@ -38,6 +39,8 @@ public sealed class OperationStartRequestProcessor
     private readonly string _workerId;
     private readonly OperationStartRequestLeaseOptions _leaseOptions;
 
+    private readonly IntegrationExecutionOptions? _integrationExecution;
+
     public OperationStartRequestProcessor(
         AppertureDbContext db,
         IWorkflowExecutor executor,
@@ -46,7 +49,8 @@ public sealed class OperationStartRequestProcessor
         IOptions<OperationStartRequestLeaseOptions> leaseOptions,
         ILogger? logger = null,
         IModuleRegistryService? moduleRegistry = null,
-        IAuditService? audit = null)
+        IAuditService? audit = null,
+        IOptions<IntegrationExecutionOptions>? integrationExecution = null)
     {
         _db = db;
         _executor = executor;
@@ -56,6 +60,7 @@ public sealed class OperationStartRequestProcessor
         _logger = logger;
         _moduleRegistry = moduleRegistry;
         _audit = audit;
+        _integrationExecution = integrationExecution?.Value;
     }
 
     public async Task<bool> TryClaimAsync(string runId, CancellationToken cancellationToken = default)
@@ -242,11 +247,29 @@ WHERE RunId = {runId} AND (
                     instance.CurrentStepName,
                     instance.Version);
 
+                var integrationScope =
+                    request.IntegrationId ??
+                    run.IntegrationId ??
+                    _integrationExecution?.DefaultIntegrationId;
+
+                string? scheduleId = null;
+                if (ControlFacade.TryParseScheduleId(instance.CorrelationKey, out var parsedSchedule))
+                    scheduleId = parsedSchedule;
+
+                var executionScope = new WorkflowStepExecutionScope(
+                    RunId: run.Id,
+                    ProcedureId: request.ProcedureId,
+                    ScheduleId: scheduleId,
+                    CorrelationId: request.CorrelationId,
+                    CausationId: request.IdempotencyKey);
+
                 var result = await _executor.ExecuteStepAsync(
                     fakeWorkflowDefinition,
                     stepName,
                     fakeWorkflowInstance,
                     parameters,
+                    integrationScope,
+                    executionScope,
                     cancellationToken);
 
                 // Heartbeat after step completion: detect ownership loss and stop safely without writing terminal lifecycle state.

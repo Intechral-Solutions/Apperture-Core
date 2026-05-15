@@ -91,7 +91,8 @@ public sealed class StartRequestWorker : BackgroundService
                     _operationLeaseOptions,
                     _logger,
                     moduleRegistry,
-                    audit);
+                    audit,
+                    integrationExecution);
 
                 // Best-effort: attempt a small batch each poll.
                 var now = DateTimeOffset.UtcNow;

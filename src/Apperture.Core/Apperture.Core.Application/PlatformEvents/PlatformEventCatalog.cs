@@ -76,6 +76,9 @@ public sealed class PlatformEventCatalog : IPlatformEventCatalog
         if (descriptor.RequiresScheduleId && string.IsNullOrWhiteSpace(request.ScheduleId))
             throw new PlatformEventValidationException($"scheduleId is required for type '{descriptor.Type}'.");
 
+        if (descriptor.RequiresRunId && string.IsNullOrWhiteSpace(request.RunId))
+            throw new PlatformEventValidationException($"runId is required for type '{descriptor.Type}'.");
+
         if (string.IsNullOrWhiteSpace(request.DataJson))
             throw new PlatformEventValidationException("dataJson is required.");
 
