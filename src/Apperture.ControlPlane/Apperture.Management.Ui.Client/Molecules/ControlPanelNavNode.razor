@@ -31,7 +31,8 @@
     {
         <div class="flex items-center gap-0 text-sm text-body hover:bg-surface-muted">
             <a href="@Item.Href"
-               class="@linkBaseClass min-w-0 flex-1 @linkActiveClass">
+               class="@linkBaseClass min-w-0 flex-1 @linkActiveClass"
+               @onclick="EnsureExpandedOnNavigateAsync">
                 @Item.Text
             </a>
             <button type="button"
@@ -78,7 +79,8 @@
                                      IndexPath="@childPath"
                                      CurrentPath="@CurrentPath"
                                      Expanded="@Expanded"
-                                     OnToggleKey="@OnToggleKey" />
+                                     OnToggleKey="@OnToggleKey"
+                                     OnEnsureExpandedKey="@OnEnsureExpandedKey" />
             }
         </ul>
     }
@@ -91,7 +93,16 @@
     [Parameter, EditorRequired] public string CurrentPath { get; set; } = "";
     [Parameter, EditorRequired] public HashSet<string> Expanded { get; set; } = default!;
     [Parameter, EditorRequired] public EventCallback<string> OnToggleKey { get; set; }
+    [Parameter, EditorRequired] public EventCallback<string> OnEnsureExpandedKey { get; set; }
 
     private Task NotifyToggleAsync() =>
         OnToggleKey.InvokeAsync(DomainMenuTree.GetExpandStateKey(DomainName, IndexPath, Item));
+
+    private Task EnsureExpandedOnNavigateAsync()
+    {
+        var key = DomainMenuTree.GetExpandStateKey(DomainName, IndexPath, Item);
+        if (Expanded.Contains(key))
+            return Task.CompletedTask;
+        return OnEnsureExpandedKey.InvokeAsync(key);
+    }
 }

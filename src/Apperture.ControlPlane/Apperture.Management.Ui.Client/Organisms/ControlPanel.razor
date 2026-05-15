@@ -45,7 +45,8 @@
                                      IndexPath="@i.ToString()"
                                      CurrentPath="@NormalizedCurrentPath"
                                      Expanded="@_expanded"
-                                     OnToggleKey="HandleToggleKey" />
+                                     OnToggleKey="HandleToggleKey"
+                                     OnEnsureExpandedKey="HandleEnsureExpandedKey" />
             }
         </ul>
     }
@@ -152,6 +153,13 @@
         else
             _expanded.Add(key);
         StateHasChanged();
+        return Task.CompletedTask;
+    }
+
+    private Task HandleEnsureExpandedKey(string key)
+    {
+        if (_expanded.Add(key))
+            StateHasChanged();
         return Task.CompletedTask;
     }
 }
