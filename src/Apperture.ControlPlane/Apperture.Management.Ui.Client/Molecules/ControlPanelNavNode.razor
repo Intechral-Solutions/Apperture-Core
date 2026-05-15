@@ -80,7 +80,7 @@
                                      CurrentPath="@CurrentPath"
                                      Expanded="@Expanded"
                                      OnToggleKey="@OnToggleKey"
-                                     OnEnsureExpandedKey="@OnEnsureExpandedKey" />
+                                     OnExpandHeader="@OnExpandHeader" />
             }
         </ul>
     }
@@ -93,7 +93,7 @@
     [Parameter, EditorRequired] public string CurrentPath { get; set; } = "";
     [Parameter, EditorRequired] public HashSet<string> Expanded { get; set; } = default!;
     [Parameter, EditorRequired] public EventCallback<string> OnToggleKey { get; set; }
-    [Parameter, EditorRequired] public EventCallback<string> OnEnsureExpandedKey { get; set; }
+    [Parameter, EditorRequired] public EventCallback<(string Key, string IndexPath)> OnExpandHeader { get; set; }
 
     private Task NotifyToggleAsync() =>
         OnToggleKey.InvokeAsync(DomainMenuTree.GetExpandStateKey(DomainName, IndexPath, Item));
@@ -101,8 +101,6 @@
     private Task EnsureExpandedOnNavigateAsync()
     {
         var key = DomainMenuTree.GetExpandStateKey(DomainName, IndexPath, Item);
-        if (Expanded.Contains(key))
-            return Task.CompletedTask;
-        return OnEnsureExpandedKey.InvokeAsync(key);
+        return OnExpandHeader.InvokeAsync((key, IndexPath));
     }
 }

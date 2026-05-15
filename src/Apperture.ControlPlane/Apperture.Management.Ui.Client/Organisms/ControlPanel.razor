@@ -46,7 +46,7 @@
                                      CurrentPath="@NormalizedCurrentPath"
                                      Expanded="@_expanded"
                                      OnToggleKey="HandleToggleKey"
-                                     OnEnsureExpandedKey="HandleEnsureExpandedKey" />
+                                     OnExpandHeader="HandleExpandHeader" />
             }
         </ul>
     }
@@ -156,10 +156,55 @@
         return Task.CompletedTask;
     }
 
-    private Task HandleEnsureExpandedKey(string key)
+    private Task HandleExpandHeader((string Key, string IndexPath) request)
     {
-        if (_expanded.Add(key))
+        var keep = CollectAncestorExpandKeys(request.IndexPath);
+        keep.Add(request.Key);
+
+        var changed = false;
+        foreach (var key in _expanded.Where(k => !keep.Contains(k)).ToList())
+        {
+            _expanded.Remove(key);
+            changed = true;
+        }
+
+        if (_expanded.Add(request.Key))
+            changed = true;
+
+        if (changed)
             StateHasChanged();
         return Task.CompletedTask;
+    }
+
+    private HashSet<string> CollectAncestorExpandKeys(string indexPath)
+    {
+        var keep = new HashSet<string>(StringComparer.Ordinal);
+        if (Definition?.Items is null)
+            return keep;
+
+        var segments = indexPath.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        if (segments.Length <= 1)
+            return keep;
+
+        IList<DomainMenuItem> items = Definition.Items;
+        var builtPath = "";
+
+        for (var i = 0; i < segments.Length - 1; i++)
+        {
+            if (!int.TryParse(segments[i], out var idx) || idx < 0 || idx >= items.Count)
+                return keep;
+
+            var item = items[idx];
+            builtPath = string.IsNullOrEmpty(builtPath) ? segments[i] : $"{builtPath}/{segments[i]}";
+
+            if (item.Children is { Count: > 0 })
+                keep.Add(DomainMenuTree.GetExpandStateKey(DomainName, builtPath, item));
+
+            if (item.Children is null)
+                return keep;
+            items = item.Children;
+        }
+
+        return keep;
     }
 }

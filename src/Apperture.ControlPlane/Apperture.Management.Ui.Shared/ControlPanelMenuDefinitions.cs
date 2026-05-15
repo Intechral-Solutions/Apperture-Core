@@ -112,7 +112,6 @@ public static class ControlPanelMenuDefinitions
                         Href = "/config/auth",
                         Children = new List<DomainMenuItem>
                         {
-                            new DomainMenuItem { Text = "Overview", Href = "/config/auth" },
                             new DomainMenuItem { Text = "Sign-in chooser", Href = "/config/auth/sign-in" },
                             new DomainMenuItem { Text = "Entra registrations", Href = "/config/auth/tenants" }
                         }
@@ -132,7 +131,6 @@ public static class ControlPanelMenuDefinitions
                         Href = "/config/governance",
                         Children = new List<DomainMenuItem>
                         {
-                            new DomainMenuItem { Text = "Overview", Href = "/config/governance" },
                             new DomainMenuItem { Text = "Permission Catalog", Href = "/config/governance/catalog" },
                             new DomainMenuItem { Text = "Roles", Href = "/config/governance/roles" },
                             new DomainMenuItem { Text = "Users", Href = "/config/governance/users" }
