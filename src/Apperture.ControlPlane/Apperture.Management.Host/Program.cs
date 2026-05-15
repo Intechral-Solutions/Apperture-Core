@@ -50,6 +50,7 @@ builder.Services.AddAppertureSftpConnector();
 builder.Services.AddPlatformSqlConnector();
 builder.Services.AddAppertureConnectorWorkflows();
 builder.Services.AddAppertureIntegrationWorkflows();
+builder.Services.AddApperturePlatformEvents(builder.Configuration);
 builder.Services.AddAttentionIncidentObservation(builder.Configuration);
 builder.Services.AddUnisaCampusNexusPaymentPlansIntegration(applyModulePersistenceMigrationsOnStartup: true);
 builder.Services.AddProofCampusNexusStudentReviewIntegration();

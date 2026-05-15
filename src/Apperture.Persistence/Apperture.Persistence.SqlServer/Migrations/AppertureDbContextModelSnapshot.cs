@@ -17,7 +17,7 @@ namespace Apperture.Persistence.SqlServer.Migrations
         {
 #pragma warning disable 612, 618
             modelBuilder
-                .HasAnnotation("ProductVersion", "10.0.0")
+                .HasAnnotation("ProductVersion", "10.0.7")
                 .HasAnnotation("Relational:MaxIdentifierLength", 128);
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
@@ -1285,6 +1285,116 @@ namespace Apperture.Persistence.SqlServer.Migrations
                         {
                             t.HasCheckConstraint("CK_OperationalTeamMembers_MemberKindPayload", "([MemberKind] = N'Principal' AND [PrincipalUserId] IS NOT NULL AND [EmailAddress] IS NULL AND [ManagedContactId] IS NULL) OR ([MemberKind] = N'ExternalEmail' AND [EmailAddress] IS NOT NULL AND [PrincipalUserId] IS NULL AND [ManagedContactId] IS NULL) OR ([MemberKind] = N'ManagedContact' AND [ManagedContactId] IS NOT NULL AND [PrincipalUserId] IS NULL AND [EmailAddress] IS NULL)");
                         });
+                });
+
+            modelBuilder.Entity("Apperture.Persistence.SqlServer.PlatformEventEntity", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("ActorId")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("CausationId")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("CorrelationId")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("DataContentType")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("DataJson")
+                        .IsRequired()
+                        .HasMaxLength(16384)
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("DedupeKey")
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)");
+
+                    b.Property<string>("IntegrationId")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("ModuleId")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<DateTimeOffset>("OccurredAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("ProcedureId")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<DateTimeOffset>("RecordedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("RunId")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("ScheduleId")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("Severity")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("SpecVersion")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)");
+
+                    b.Property<string>("Subject")
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CorrelationId")
+                        .HasFilter("[CorrelationId] IS NOT NULL");
+
+                    b.HasIndex("RecordedAtUtc")
+                        .IsDescending();
+
+                    b.HasIndex("IntegrationId", "OccurredAtUtc")
+                        .IsDescending(false, true);
+
+                    b.HasIndex("ScheduleId", "OccurredAtUtc")
+                        .IsDescending(false, true)
+                        .HasFilter("[ScheduleId] IS NOT NULL");
+
+                    b.HasIndex("Severity", "OccurredAtUtc")
+                        .IsDescending(false, true);
+
+                    b.HasIndex("Type", "OccurredAtUtc")
+                        .IsDescending(false, true);
+
+                    b.HasIndex("Source", "Type", "DedupeKey")
+                        .IsUnique()
+                        .HasFilter("[DedupeKey] IS NOT NULL");
+
+                    b.ToTable("PlatformEvents", (string)null);
                 });
 
             modelBuilder.Entity("Apperture.Persistence.SqlServer.RoleEntity", b =>

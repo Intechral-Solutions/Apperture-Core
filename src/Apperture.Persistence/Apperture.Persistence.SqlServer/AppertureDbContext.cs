@@ -25,6 +25,7 @@ public class AppertureDbContext : DbContext
     public DbSet<OperationStepInstanceEntity> OperationStepInstances => Set<OperationStepInstanceEntity>();
     public DbSet<AuditLogEntity> AuditLogs => Set<AuditLogEntity>();
     public DbSet<TelemetryEventEntity> TelemetryEvents => Set<TelemetryEventEntity>();
+    public DbSet<PlatformEventEntity> PlatformEvents => Set<PlatformEventEntity>();
     public DbSet<SecretDescriptorEntity> SecretDescriptors => Set<SecretDescriptorEntity>();
     public DbSet<SecretVersionEntity> SecretVersions => Set<SecretVersionEntity>();
     public DbSet<SecretAuditEntity> SecretAudits => Set<SecretAuditEntity>();
@@ -286,6 +287,40 @@ public class AppertureDbContext : DbContext
             e.Property(x => x.Id).ValueGeneratedOnAdd();
             e.Property(x => x.CorrelationId).HasMaxLength(64);
             e.Property(x => x.EventType).HasMaxLength(128);
+        });
+
+        modelBuilder.Entity<PlatformEventEntity>(e =>
+        {
+            e.ToTable("PlatformEvents");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasMaxLength(64);
+            e.Property(x => x.Type).HasMaxLength(256);
+            e.Property(x => x.Source).HasMaxLength(256);
+            e.Property(x => x.SpecVersion).HasMaxLength(16);
+            e.Property(x => x.DataContentType).HasMaxLength(128);
+            e.Property(x => x.DataJson).HasMaxLength(16384);
+            e.Property(x => x.Severity).HasMaxLength(32);
+            e.Property(x => x.Subject).HasMaxLength(512);
+            e.Property(x => x.DedupeKey).HasMaxLength(512);
+            e.Property(x => x.IntegrationId).HasMaxLength(64);
+            e.Property(x => x.ModuleId).HasMaxLength(128);
+            e.Property(x => x.ProcedureId).HasMaxLength(128);
+            e.Property(x => x.RunId).HasMaxLength(64);
+            e.Property(x => x.ScheduleId).HasMaxLength(64);
+            e.Property(x => x.ActorId).HasMaxLength(64);
+            e.Property(x => x.CorrelationId).HasMaxLength(128);
+            e.Property(x => x.CausationId).HasMaxLength(64);
+            e.HasIndex(x => new { x.IntegrationId, x.OccurredAtUtc }).IsDescending(false, true);
+            e.HasIndex(x => new { x.ScheduleId, x.OccurredAtUtc })
+                .HasFilter("[ScheduleId] IS NOT NULL")
+                .IsDescending(false, true);
+            e.HasIndex(x => new { x.Type, x.OccurredAtUtc }).IsDescending(false, true);
+            e.HasIndex(x => new { x.Severity, x.OccurredAtUtc }).IsDescending(false, true);
+            e.HasIndex(x => x.CorrelationId).HasFilter("[CorrelationId] IS NOT NULL");
+            e.HasIndex(x => x.RecordedAtUtc).IsDescending();
+            e.HasIndex(x => new { x.Source, x.Type, x.DedupeKey })
+                .HasFilter("[DedupeKey] IS NOT NULL")
+                .IsUnique();
         });
 
         modelBuilder.Entity<SecretDescriptorEntity>(e =>

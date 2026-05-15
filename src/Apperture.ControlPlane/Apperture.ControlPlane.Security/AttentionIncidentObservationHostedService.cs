@@ -70,6 +70,7 @@ public sealed class AttentionIncidentObservationHostedService : BackgroundServic
         var readiness = scope.ServiceProvider.GetRequiredService<IIntegrationReadinessService>();
         var tracker = scope.ServiceProvider.GetRequiredService<IAttentionIncidentTracker>();
         var notifier = scope.ServiceProvider.GetRequiredService<AttentionIncidentNotificationOrchestrator>();
+        var platformEvents = scope.ServiceProvider.GetRequiredService<ScheduleExpectationPlatformEventDualEmitter>();
         var clock = scope.ServiceProvider.GetRequiredService<TimeProvider>();
         var observedAt = clock.GetUtcNow();
 
@@ -84,6 +85,10 @@ public sealed class AttentionIncidentObservationHostedService : BackgroundServic
 
             var observe = await tracker
                 .ObserveScheduleExpectationAsync(integration.Id, snapshot, observedAt, cancellationToken)
+                .ConfigureAwait(false);
+
+            await platformEvents
+                .TryEmitForObserveResultAsync(integration.Id, observe, snapshot, observedAt, cancellationToken)
                 .ConfigureAwait(false);
 
             try
