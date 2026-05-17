@@ -38,6 +38,8 @@ public sealed class PlatformEventsController : ControllerBase
         [FromQuery] string? eventType,
         [FromQuery] DateTimeOffset? fromOccurredAtUtc,
         [FromQuery] DateTimeOffset? toOccurredAtUtc,
+        [FromQuery] string? runId,
+        [FromQuery] string? moduleId,
         [FromQuery] int take = 50,
         CancellationToken cancellationToken = default)
     {
@@ -52,6 +54,8 @@ public sealed class PlatformEventsController : ControllerBase
                     Severity: null,
                     fromOccurredAtUtc,
                     toOccurredAtUtc,
+                    runId,
+                    moduleId,
                     take),
                 cancellationToken)
             .ConfigureAwait(false);

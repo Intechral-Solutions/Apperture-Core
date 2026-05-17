@@ -6,6 +6,8 @@ public sealed record PlatformEventQuery(
     string? Severity = null,
     DateTimeOffset? FromOccurredAtUtc = null,
     DateTimeOffset? ToOccurredAtUtc = null,
+    string? RunId = null,
+    string? ModuleId = null,
     int Take = 50);
 
 public sealed record PlatformEventQueryPage(

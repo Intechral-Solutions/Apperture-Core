@@ -45,7 +45,7 @@ At least one of `eventTypes`, `incidentTransitions`:
 
 | Field | Description |
 |-------|-------------|
-| `eventTypes` | Platform event `type` values |
+| `eventTypes` | Platform event `type` values; must match the merged catalog on the Management Host (`IPlatformEventCatalog`), e.g. `apperture.schedule.expected_run.missing` and module types such as `apperture.module.sample.helloworld.demo.completed` |
 | `incidentTransitions` | Maps from `AttentionIncidentObserveTransition` + resolved |
 | `notificationKinds` | Sub-select for incident-driven templates (Epic 69 parity) |
 

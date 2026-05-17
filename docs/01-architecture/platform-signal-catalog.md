@@ -130,7 +130,14 @@ All catalog types use the envelope in ADR-0037 (`specversion` `1.0`, `dataconten
 
 ## Module-owned types
 
-### Pattern: `apperture.module.{moduleId}.{signalName}`
+### Pattern: `apperture.module.{normalizedModuleId}.{signalName}`
+
+Full event `type` strings are produced by `ModulePlatformEventTypes.Format(moduleManifestId, signalName)`:
+
+- Module id segments from the manifest are **lower-cased** for the type token (e.g. manifest id `Sample.HelloWorld`, signal `demo.completed` → `apperture.module.sample.helloworld.demo.completed`).
+- **Source** on the envelope is `/modules/{normalizedModuleId}` (lowercase).
+
+The sample `Sample.HelloWorld` module declares `demo.completed`; the **Complete** step emits only when workflow parameters include a truthy `emitDemoPlatformEvent` (otherwise no platform event is written).
 
 Modules register signals in the module manifest:
 
@@ -153,9 +160,11 @@ Modules register signals in the module manifest:
 }
 ```
 
-**Source:** `/modules/{moduleId}`
+**Source:** `/modules/{normalizedModuleId}`
 
-**Validation:** Emit-time payload validated against manifest schema; unknown properties stripped before persist.
+**Validation:** Manifest lists required top-level JSON property names (camelCase); the emitter serializes the module payload and `PlatformEventCatalog.ValidateRequest` checks presence, JSON shape, and max serialized size (~16 KB). Undeclared signals or missing required properties fail validation before append. Unknown JSON properties are not stripped automatically in the current implementation.
+
+**Management / Phase 3:** The Management Host builds the same merged in-memory catalog (`CompositePlatformEventCatalog` over known `IModule` instances) for validating `event.type` and template allowlists when saving notification definitions (no separate SQL table for signal metadata in Phase 2B).
 
 ---
 

@@ -321,6 +321,12 @@ public class AppertureDbContext : DbContext
             e.HasIndex(x => new { x.Source, x.Type, x.DedupeKey })
                 .HasFilter("[DedupeKey] IS NOT NULL")
                 .IsUnique();
+            e.HasIndex(x => new { x.RunId, x.OccurredAtUtc })
+                .HasFilter("[RunId] IS NOT NULL")
+                .IsDescending(false, true);
+            e.HasIndex(x => new { x.ModuleId, x.OccurredAtUtc })
+                .HasFilter("[ModuleId] IS NOT NULL")
+                .IsDescending(false, true);
         });
 
         modelBuilder.Entity<SecretDescriptorEntity>(e =>

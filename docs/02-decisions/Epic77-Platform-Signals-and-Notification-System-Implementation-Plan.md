@@ -71,7 +71,7 @@ flowchart TB
 | `apperture.schedule.expected_run.cleared` | `/platform/readiness` | info | integrationId |
 | `apperture.execution.run.failed` | `/platform/runtime` | error | runId, integrationId, moduleId |
 | `apperture.execution.run.completed` | `/platform/runtime` | info | runId |
-| `apperture.module.signal.{name}` | `/modules/{moduleId}` | per manifest | moduleId, runId, integrationId |
+| `apperture.module.{normalizedModuleId}.{signalName}` | `/modules/{normalizedModuleId}` | per manifest | moduleId, runId, integrationId |
 
 **Exit criteria:** Schemas reviewed; variable allowlists documented; no code.
 
@@ -134,16 +134,17 @@ public interface IModuleTelemetry
 ```
 
 - Wire emitters into `IStepExecutionContext` from runtime DI
-- `ModuleManifest` section `signals` / `notificationDefinitions` (JSON schema validated at registration)
+- `ModuleManifest.Signals`: validated at worker / Management startup via `ModuleSignalManifestValidator` (naming, severities, required payload property names); emit-time validation enforces declared required JSON properties (not an arbitrary JSON Schema document in v1)
 
 ### 2.2 Runtime registration
 
 - `StartRequestWorker` / processors resolve scoped `IPlatformEventEmitter` per run
-- Unknown `type` → fail emit in Production; log warning in Development
+- Unknown module signal name at emit → validation failure (fail fast)
+- Undeclared platform `type` → validation failure
 
 ### 2.3 Sample module
 
-- `Sample.HelloWorld`: emit one demo `apperture.module.signal.demo` on step success (disabled by default)
+- `Sample.HelloWorld`: declares signal `demo.completed`; `HelloWorldCompleteStepHandler` emits when workflow step parameter `emitDemoPlatformEvent` is truthy (otherwise no emission). Persisted event type: `apperture.module.sample.helloworld.demo.completed` (`ModulePlatformEventTypes.Format`).
 
 ### 2.4 Tests
 
@@ -151,6 +152,24 @@ public interface IModuleTelemetry
 - Manifest validation tests
 
 **Exit criteria:** Module can emit catalog-typed events from a step; logs unchanged.
+
+---
+
+## Phase 2B — Management catalog + query parity (substrate hardening)
+
+**Goal:** Align Management Host with Worker validation surfaces so Phase 3 can validate notification rules/templates against real platform + module event types without persisting signal declarations separately.
+
+### Implemented behaviors
+
+- **Merged catalog on Management:** `AddApperturePlatformEvents` registers `IModuleSignalRegistry` + `CompositePlatformEventCatalog` from the same `IEnumerable<IModule>` used by `AddKnownModules`. Startup warmup resolves `IPlatformEventCatalog` so invalid manifests fail fast.
+- **Read API filters:** `PlatformEventQuery` / `GET api/platform/events` support optional `runId` and `moduleId`. Indexes: `(RunId, OccurredAtUtc DESC)`, `(ModuleId, OccurredAtUtc DESC)` on `PlatformEvents` where columns non-null.
+- **Workflow causation:** When present on `WorkflowStartRequestEntity`, `IdempotencyKey` is copied to platform-event `CausationId` via `WorkflowStepExecutionScope` (aligned with operation starts).
+
+### Design note — emit failures vs workflow completion
+
+ADR-0037 / this epic defer explicit “best-effort platform telemetry” wording for module emits. **Current behavior:** module emission uses the same durable `IPlatformEventEmitter` path as platform-owned events; **SQL append or validation failures propagate and fail the workflow step** (same as any other step exception). Changing to non-fatal emit requires an explicit ADR amendment.
+
+**Exit criteria:** Management DI exposes a merged `IPlatformEventCatalog`; SQL/API support run/module filtering for authoring and debugging.
 
 ---
 

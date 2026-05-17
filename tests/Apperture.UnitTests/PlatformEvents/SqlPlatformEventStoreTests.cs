@@ -16,7 +16,13 @@ public sealed class SqlPlatformEventStoreTests
         return new AppertureDbContext(opts);
     }
 
-    private static PlatformEventEnvelope SampleEnvelope(string id, string type, string integrationId, DateTimeOffset occurred) =>
+    private static PlatformEventEnvelope SampleEnvelope(
+        string id,
+        string type,
+        string integrationId,
+        DateTimeOffset occurred,
+        string? runId = null,
+        string? moduleId = null) =>
         new(
             new PlatformEventId(id),
             type,
@@ -30,9 +36,9 @@ public sealed class SqlPlatformEventStoreTests
             Subject: $"{integrationId}:expected_run_missing",
             DedupeKey: null,
             IntegrationId: integrationId,
-            ModuleId: null,
+            ModuleId: moduleId,
             ProcedureId: null,
-            RunId: null,
+            RunId: runId,
             ScheduleId: "sch1",
             ActorId: null,
             CorrelationId: null,
@@ -61,5 +67,24 @@ public sealed class SqlPlatformEventStoreTests
                 Take: 10));
         range.Items.Should().ContainSingle();
         range.Items[0].Type.Should().Be(PlatformEventTypes.ScheduleExpectedRunCleared);
+    }
+
+    [Fact]
+    public async Task Query_filters_by_runId_and_moduleId()
+    {
+        await using var db = CreateDb();
+        var sut = new SqlPlatformEventStore(db);
+        var t0 = DateTimeOffset.Parse("2026-05-15T10:00:00Z");
+        await sut.AppendAsync(SampleEnvelope("a", "t1", "int1", t0, runId: "run-a", moduleId: "Mod.A"));
+        await sut.AppendAsync(SampleEnvelope("b", "t1", "int1", t0.AddMinutes(1), runId: "run-b", moduleId: "Mod.A"));
+        await sut.AppendAsync(SampleEnvelope("c", "t1", "int1", t0.AddMinutes(2), runId: "run-b", moduleId: "Mod.B"));
+
+        var byRun = await sut.QueryAsync(new PlatformEventQuery(RunId: "run-b", Take: 10));
+        byRun.Items.Should().HaveCount(2);
+        byRun.Items.Should().OnlyContain(e => e.RunId == "run-b");
+
+        var byModule = await sut.QueryAsync(new PlatformEventQuery(ModuleId: "Mod.A", Take: 10));
+        byModule.Items.Should().HaveCount(2);
+        byModule.Items.Should().OnlyContain(e => e.ModuleId == "Mod.A");
     }
 }

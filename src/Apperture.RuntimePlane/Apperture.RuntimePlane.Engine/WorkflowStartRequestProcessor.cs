@@ -678,7 +678,7 @@ WHERE RunId = {runId} AND (
             ProcedureId: request.ProcedureId,
             ScheduleId: scheduleId,
             CorrelationId: request.CorrelationId,
-            CausationId: null);
+            CausationId: request.IdempotencyKey);
     }
 
     private static IReadOnlyDictionary<string, object?>? DeserializeParameters(string? parametersJson)

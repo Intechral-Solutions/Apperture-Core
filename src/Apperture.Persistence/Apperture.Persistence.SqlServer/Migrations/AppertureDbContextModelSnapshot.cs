@@ -1380,6 +1380,14 @@ namespace Apperture.Persistence.SqlServer.Migrations
                     b.HasIndex("IntegrationId", "OccurredAtUtc")
                         .IsDescending(false, true);
 
+                    b.HasIndex("ModuleId", "OccurredAtUtc")
+                        .IsDescending(false, true)
+                        .HasFilter("[ModuleId] IS NOT NULL");
+
+                    b.HasIndex("RunId", "OccurredAtUtc")
+                        .IsDescending(false, true)
+                        .HasFilter("[RunId] IS NOT NULL");
+
                     b.HasIndex("ScheduleId", "OccurredAtUtc")
                         .IsDescending(false, true)
                         .HasFilter("[ScheduleId] IS NOT NULL");

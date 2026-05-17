@@ -3,7 +3,7 @@
 **Status:** Proposed (ADR-0037)  
 **Schema id:** `apperture.notification.template/v1`
 
-Templates define **what** recipients see. They are first-class on `NotificationDefinitions` and validated against the [platform signal catalog](./platform-signal-catalog.md) variable allowlist per `event.type`.
+Templates define **what** recipients see. They are first-class on `NotificationDefinitions` and validated against the [platform signal catalog](./platform-signal-catalog.md) variable allowlist per `event.type`. Phase 3 validation resolves allowed types via the Management Host merged catalog (`IPlatformEventCatalog`: platform-owned + known module manifests).
 
 ## Top-level document
 
