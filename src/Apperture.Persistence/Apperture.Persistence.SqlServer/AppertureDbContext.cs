@@ -27,6 +27,9 @@ public class AppertureDbContext : DbContext
     public DbSet<TelemetryEventEntity> TelemetryEvents => Set<TelemetryEventEntity>();
     public DbSet<PlatformEventEntity> PlatformEvents => Set<PlatformEventEntity>();
     public DbSet<NotificationDefinitionEntity> NotificationDefinitions => Set<NotificationDefinitionEntity>();
+    public DbSet<NotificationSubscriptionEntity> NotificationSubscriptions => Set<NotificationSubscriptionEntity>();
+    public DbSet<NotificationSubscriptionUserOverrideEntity> NotificationSubscriptionUserOverrides =>
+        Set<NotificationSubscriptionUserOverrideEntity>();
     public DbSet<SecretDescriptorEntity> SecretDescriptors => Set<SecretDescriptorEntity>();
     public DbSet<SecretVersionEntity> SecretVersions => Set<SecretVersionEntity>();
     public DbSet<SecretAuditEntity> SecretAudits => Set<SecretAuditEntity>();
@@ -356,6 +359,48 @@ public class AppertureDbContext : DbContext
             e.HasIndex(x => x.Origin);
             e.HasIndex(x => new { x.Scope, x.IntegrationId, x.DisplayName })
                 .HasFilter("[Origin] = N'userCreated'")
+                .IsUnique();
+        });
+
+        modelBuilder.Entity<NotificationSubscriptionEntity>(e =>
+        {
+            e.ToTable("NotificationSubscriptions");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasMaxLength(64);
+            e.Property(x => x.NotificationDefinitionId).HasMaxLength(64);
+            e.Property(x => x.IntegrationId).HasMaxLength(64);
+            e.Property(x => x.RecipientKind).HasMaxLength(32);
+            e.Property(x => x.RecipientRef).HasMaxLength(128);
+            e.Property(x => x.DeliveryMode).HasMaxLength(32);
+            e.Property(x => x.Origin).HasMaxLength(32);
+            e.Property(x => x.CreatedByActorId).HasMaxLength(64);
+            e.Property(x => x.UpdatedByActorId).HasMaxLength(64);
+            e.HasIndex(x => x.NotificationDefinitionId);
+            e.HasIndex(x => x.IntegrationId).HasFilter("[IntegrationId] IS NOT NULL");
+            e.HasIndex(x => new { x.RecipientKind, x.RecipientRef });
+            e.HasIndex(x => new { x.NotificationDefinitionId, x.RecipientKind, x.RecipientRef })
+                .HasFilter("[IntegrationId] IS NULL")
+                .IsUnique();
+            e.HasIndex(x => new { x.NotificationDefinitionId, x.IntegrationId, x.RecipientKind, x.RecipientRef })
+                .HasFilter("[IntegrationId] IS NOT NULL")
+                .IsUnique();
+        });
+
+        modelBuilder.Entity<NotificationSubscriptionUserOverrideEntity>(e =>
+        {
+            e.ToTable("NotificationSubscriptionUserOverrides");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasMaxLength(64);
+            e.Property(x => x.UserId).HasMaxLength(64);
+            e.Property(x => x.NotificationDefinitionId).HasMaxLength(64);
+            e.Property(x => x.OperationalTeamId).HasMaxLength(64);
+            e.Property(x => x.CreatedByActorId).HasMaxLength(64);
+            e.HasIndex(x => new { x.UserId, x.NotificationDefinitionId });
+            e.HasIndex(x => new { x.UserId, x.NotificationDefinitionId, x.OperationalTeamId })
+                .HasFilter("[OperationalTeamId] IS NOT NULL")
+                .IsUnique();
+            e.HasIndex(x => new { x.UserId, x.NotificationDefinitionId })
+                .HasFilter("[OperationalTeamId] IS NULL")
                 .IsUnique();
         });
 

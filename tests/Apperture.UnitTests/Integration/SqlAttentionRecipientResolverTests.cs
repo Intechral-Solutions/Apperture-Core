@@ -20,6 +20,9 @@ public sealed class SqlAttentionRecipientResolverTests
 
     private static DateTimeOffset UtcNow() => DateTimeOffset.UtcNow;
 
+    private static SqlAttentionRecipientResolver CreateSut(AppertureDbContext db) =>
+        new(db, new OperationalTeamRecipientExpander(db));
+
     [Fact]
     public async Task Integration_primary_overrides_instance()
     {
@@ -83,7 +86,7 @@ public sealed class SqlAttentionRecipientResolverTests
         db.IntegrationAttentionRoutings.Add(intRow);
         await db.SaveChangesAsync();
 
-        var sut = new SqlAttentionRecipientResolver(db);
+        var sut = CreateSut(db);
         var r = await sut.ResolveAsync(new IntegrationId("int1"), AttentionConditionKeys.ExpectedRunMissing);
 
         r.PrimaryRecipients.Should().Equal("override@test.com");
@@ -98,7 +101,7 @@ public sealed class SqlAttentionRecipientResolverTests
     public async Task When_no_instance_row_returns_disabled_resolution()
     {
         await using var db = CreateDb();
-        var sut = new SqlAttentionRecipientResolver(db);
+        var sut = CreateSut(db);
         var r = await sut.ResolveAsync(new IntegrationId("int1"), AttentionConditionKeys.ExpectedRunMissing);
 
         r.Enabled.Should().BeFalse();
@@ -145,7 +148,7 @@ public sealed class SqlAttentionRecipientResolverTests
         });
         await db.SaveChangesAsync();
 
-        var sut = new SqlAttentionRecipientResolver(db);
+        var sut = CreateSut(db);
         var r = await sut.ResolveAsync(new IntegrationId("int1"), AttentionConditionKeys.ExpectedRunMissing);
         r.PrimaryRecipients.Should().ContainSingle().Which.Should().Be("owner@test.com");
         r.ResolvedPrimaryPrincipalUserIds.Should().ContainSingle().Which.Should().Be("user_1");
@@ -191,7 +194,7 @@ public sealed class SqlAttentionRecipientResolverTests
         });
         await db.SaveChangesAsync();
 
-        var sut = new SqlAttentionRecipientResolver(db);
+        var sut = CreateSut(db);
         var r = await sut.ResolveAsync(new IntegrationId("int1"), AttentionConditionKeys.ExpectedRunMissing);
 
         r.HasPrimaryRoute.Should().BeFalse();
@@ -242,7 +245,7 @@ public sealed class SqlAttentionRecipientResolverTests
         });
         await db.SaveChangesAsync();
 
-        var sut = new SqlAttentionRecipientResolver(db);
+        var sut = CreateSut(db);
         var r = await sut.ResolveAsync(new IntegrationId("int1"), AttentionConditionKeys.ExpectedRunMissing);
 
         r.PrimaryRecipients.Should().BeEquivalentTo(new[] { "ok@test.com", "fallback@test.com" });
@@ -294,7 +297,7 @@ public sealed class SqlAttentionRecipientResolverTests
         });
         await db.SaveChangesAsync();
 
-        var sut = new SqlAttentionRecipientResolver(db);
+        var sut = CreateSut(db);
         var r = await sut.ResolveAsync(new IntegrationId("int1"), AttentionConditionKeys.ExpectedRunMissing);
 
         r.PrimaryRecipients.Should().Equal("mc@test.com");
@@ -346,7 +349,7 @@ public sealed class SqlAttentionRecipientResolverTests
         });
         await db.SaveChangesAsync();
 
-        var sut = new SqlAttentionRecipientResolver(db);
+        var sut = CreateSut(db);
         var r = await sut.ResolveAsync(new IntegrationId("int1"), AttentionConditionKeys.ExpectedRunMissing);
 
         r.HasPrimaryRoute.Should().BeFalse();
@@ -416,7 +419,7 @@ public sealed class SqlAttentionRecipientResolverTests
         });
         await db.SaveChangesAsync();
 
-        var sut = new SqlAttentionRecipientResolver(db);
+        var sut = CreateSut(db);
         var r = await sut.ResolveAsync(new IntegrationId("int1"), AttentionConditionKeys.ExpectedRunMissing);
 
         r.HasPrimaryRoute.Should().BeFalse();

@@ -1,4 +1,5 @@
 using Apperture.Core.Application.Notifications;
+using Apperture.Core.Application.Notifications.Subscriptions;
 using Apperture.Core.Application.PlatformEvents;
 using Apperture.Persistence.SqlServer;
 using Microsoft.Extensions.Configuration;
@@ -27,8 +28,14 @@ public static class NotificationsServiceCollectionExtensions
         services.AddScoped<INotificationRuleEvaluator, NotificationRuleEvaluator>();
         services.AddScoped<INotificationEvaluateOnlyCoordinator, NotificationEvaluateOnlyCoordinator>();
         services.AddScoped<INotificationDefinitionStore, SqlNotificationDefinitionStore>();
+        services.AddScoped<INotificationSubscriptionStore, SqlNotificationSubscriptionStore>();
+        services.AddScoped<OperationalTeamRecipientExpander>();
+        services.AddScoped<INotificationRecipientResolver, SqlNotificationRecipientResolver>();
+        services.AddSingleton<NotificationRecipientAddressParser>();
+        services.AddScoped<ManagedContactRecipientProvisioner>();
         services.AddScoped<NotificationDefinitionAuthorization>();
         services.AddScoped<INotificationDefinitionService, NotificationDefinitionService>();
+        services.AddScoped<INotificationSubscriptionService, NotificationSubscriptionService>();
 
         services.AddScoped<SqlPlatformEventStore>();
         services.AddScoped<IPlatformEventStore, EvaluatingPlatformEventStore>();

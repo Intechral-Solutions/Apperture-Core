@@ -12,8 +12,13 @@ public sealed class SqlAttentionRecipientResolver : IAttentionRecipientResolver
     private const string MemberKindManagedContact = "ManagedContact";
 
     private readonly AppertureDbContext _db;
+    private readonly OperationalTeamRecipientExpander _teamExpander;
 
-    public SqlAttentionRecipientResolver(AppertureDbContext db) => _db = db;
+    public SqlAttentionRecipientResolver(AppertureDbContext db, OperationalTeamRecipientExpander teamExpander)
+    {
+        _db = db;
+        _teamExpander = teamExpander;
+    }
 
     public async ValueTask<AttentionRecipientResolution> ResolveInstanceDefaultsAsync(
         string conditionKey,
@@ -187,38 +192,34 @@ public sealed class SqlAttentionRecipientResolver : IAttentionRecipientResolver
         if (string.IsNullOrWhiteSpace(teamId))
             return TeamExpansion.NoRoute(AttentionNoRouteReasons.NoTeamConfigured);
 
-        var team = await _db.OperationalTeams.AsNoTracking()
-            .FirstOrDefaultAsync(x => x.Id == teamId, cancellationToken)
-            .ConfigureAwait(false);
-        if (team is null)
+        var expansion = await _teamExpander.ExpandAsync(teamId, cancellationToken).ConfigureAwait(false);
+        if (expansion.NoRouteReason == "NoTeamConfigured")
             return TeamExpansion.NoRoute(AttentionNoRouteReasons.NoTeamConfigured, teamId, null);
-        if (!team.IsEnabled)
-            return TeamExpansion.NoRoute(AttentionNoRouteReasons.TeamDisabled, team.Id, team.Name);
+        if (expansion.NoRouteReason == "TeamDisabled")
+            return TeamExpansion.NoRoute(AttentionNoRouteReasons.TeamDisabled, expansion.TeamId, expansion.TeamName);
+        if (expansion.NoRouteReason == "TeamEmpty")
+            return TeamExpansion.NoRoute(AttentionNoRouteReasons.TeamEmpty, expansion.TeamId, expansion.TeamName);
 
         var members = await _db.OperationalTeamMembers.AsNoTracking()
-            .Where(m => m.OperationalTeamId == team.Id && m.IsEnabled)
+            .Where(m => m.OperationalTeamId == expansion.TeamId && m.IsEnabled)
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
-        if (members.Count == 0)
-            return TeamExpansion.NoRoute(AttentionNoRouteReasons.TeamEmpty, team.Id, team.Name);
 
-        var principalIds = members
+        var principalIds = expansion.Members
             .Where(m => string.Equals(m.MemberKind, MemberKindPrincipal, StringComparison.OrdinalIgnoreCase))
-            .Select(m => m.PrincipalUserId)
+            .Select(m => m.UserId)
             .Where(x => !string.IsNullOrWhiteSpace(x))
             .Select(x => x!)
             .Distinct(StringComparer.Ordinal)
             .ToArray();
-        var externalRecipients = members
+        var externalRecipients = expansion.Members
             .Where(m => string.Equals(m.MemberKind, MemberKindExternalEmail, StringComparison.OrdinalIgnoreCase))
-            .Select(m => m.EmailAddress)
+            .Select(m => m.Email)
             .Where(x => !string.IsNullOrWhiteSpace(x))
             .Select(x => x!.Trim())
-            .Where(x => x.Length > 0)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
-
-        var managedContactIds = members
+        var managedContactIds = expansion.Members
             .Where(m => string.Equals(m.MemberKind, MemberKindManagedContact, StringComparison.OrdinalIgnoreCase))
             .Select(m => m.ManagedContactId)
             .Where(x => !string.IsNullOrWhiteSpace(x))
@@ -226,29 +227,18 @@ public sealed class SqlAttentionRecipientResolver : IAttentionRecipientResolver
             .Distinct(StringComparer.Ordinal)
             .ToArray();
 
-        var principalEmails = principalIds.Length == 0
-            ? Array.Empty<string>()
-            : await _db.Users.AsNoTracking()
-                .Where(u => principalIds.Contains(u.Id) && u.EmailAddress != null)
-                .Select(u => u.EmailAddress!)
-                .ToArrayAsync(cancellationToken)
-                .ConfigureAwait(false);
-
-        var managedContactEmails = managedContactIds.Length == 0
-            ? Array.Empty<string>()
-            : await _db.ManagedContacts.AsNoTracking()
-                .Where(c => managedContactIds.Contains(c.Id) && c.IsEnabled && c.EmailAddress != null)
-                .Select(c => c.EmailAddress!)
-                .ToArrayAsync(cancellationToken)
-                .ConfigureAwait(false);
-
-        var recipients = principalEmails
-            .Concat(externalRecipients)
-            .Concat(managedContactEmails)
-            .Select(x => x.Trim())
-            .Where(x => x.Length > 0)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
+        var principalEmails = expansion.Members
+            .Where(m => string.Equals(m.MemberKind, MemberKindPrincipal, StringComparison.OrdinalIgnoreCase)
+                        && m.Usability == NotificationUsabilityStatusValues.Deliverable)
+            .Select(m => m.Email!)
             .ToArray();
+        var managedContactEmails = expansion.Members
+            .Where(m => string.Equals(m.MemberKind, MemberKindManagedContact, StringComparison.OrdinalIgnoreCase)
+                        && m.Usability == NotificationUsabilityStatusValues.Deliverable)
+            .Select(m => m.Email!)
+            .ToArray();
+
+        var recipients = await _teamExpander.ExpandToEmailAddressesAsync(teamId, cancellationToken).ConfigureAwait(false);
 
         var noRouteReason = ResolveNoRouteWhenRecipientsEmpty(
             recipients,
@@ -263,8 +253,8 @@ public sealed class SqlAttentionRecipientResolver : IAttentionRecipientResolver
             recipients,
             principalIds,
             externalRecipients,
-            team.Id,
-            team.Name,
+            expansion.TeamId,
+            expansion.TeamName,
             noRouteReason);
     }
 
