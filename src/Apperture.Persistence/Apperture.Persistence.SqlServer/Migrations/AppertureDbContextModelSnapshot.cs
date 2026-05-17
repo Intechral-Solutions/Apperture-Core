@@ -877,6 +877,106 @@ namespace Apperture.Persistence.SqlServer.Migrations
                     b.ToTable("ModuleInstallationStates", (string)null);
                 });
 
+            modelBuilder.Entity("Apperture.Persistence.SqlServer.NotificationDefinitionEntity", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("CreatedByActorId")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("DefaultSeverity")
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(1024)
+                        .HasColumnType("nvarchar(1024)");
+
+                    b.Property<string>("DisplayName")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("IntegrationId")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<bool>("IsEnabled")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("ModuleId")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("Mutability")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("Origin")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<string>("PrimaryEventType")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("RuleJson")
+                        .IsRequired()
+                        .HasMaxLength(65536)
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Scope")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<string>("SourceKind")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<string>("TemplateJson")
+                        .IsRequired()
+                        .HasMaxLength(65536)
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("UpdatedByActorId")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("IntegrationId")
+                        .HasFilter("[IntegrationId] IS NOT NULL");
+
+                    b.HasIndex("ModuleId")
+                        .HasFilter("[ModuleId] IS NOT NULL");
+
+                    b.HasIndex("Origin");
+
+                    b.HasIndex("PrimaryEventType")
+                        .HasFilter("[PrimaryEventType] IS NOT NULL");
+
+                    b.HasIndex("SourceKind", "IsEnabled");
+
+                    b.HasIndex("Scope", "IntegrationId", "DisplayName")
+                        .IsUnique()
+                        .HasFilter("[Origin] = N'userCreated'");
+
+                    b.ToTable("NotificationDefinitions", (string)null);
+                });
+
             modelBuilder.Entity("Apperture.Persistence.SqlServer.OperationCancelRequestEntity", b =>
                 {
                     b.Property<string>("RunId")

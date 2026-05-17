@@ -26,6 +26,7 @@ public class AppertureDbContext : DbContext
     public DbSet<AuditLogEntity> AuditLogs => Set<AuditLogEntity>();
     public DbSet<TelemetryEventEntity> TelemetryEvents => Set<TelemetryEventEntity>();
     public DbSet<PlatformEventEntity> PlatformEvents => Set<PlatformEventEntity>();
+    public DbSet<NotificationDefinitionEntity> NotificationDefinitions => Set<NotificationDefinitionEntity>();
     public DbSet<SecretDescriptorEntity> SecretDescriptors => Set<SecretDescriptorEntity>();
     public DbSet<SecretVersionEntity> SecretVersions => Set<SecretVersionEntity>();
     public DbSet<SecretAuditEntity> SecretAudits => Set<SecretAuditEntity>();
@@ -327,6 +328,35 @@ public class AppertureDbContext : DbContext
             e.HasIndex(x => new { x.ModuleId, x.OccurredAtUtc })
                 .HasFilter("[ModuleId] IS NOT NULL")
                 .IsDescending(false, true);
+        });
+
+        modelBuilder.Entity<NotificationDefinitionEntity>(e =>
+        {
+            e.ToTable("NotificationDefinitions");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasMaxLength(64);
+            e.Property(x => x.DisplayName).HasMaxLength(256);
+            e.Property(x => x.Description).HasMaxLength(1024);
+            e.Property(x => x.SourceKind).HasMaxLength(32);
+            e.Property(x => x.Origin).HasMaxLength(32);
+            e.Property(x => x.Scope).HasMaxLength(32);
+            e.Property(x => x.Mutability).HasMaxLength(64);
+            e.Property(x => x.ModuleId).HasMaxLength(128);
+            e.Property(x => x.IntegrationId).HasMaxLength(64);
+            e.Property(x => x.PrimaryEventType).HasMaxLength(256);
+            e.Property(x => x.DefaultSeverity).HasMaxLength(32);
+            e.Property(x => x.RuleJson).HasMaxLength(65536);
+            e.Property(x => x.TemplateJson).HasMaxLength(65536);
+            e.Property(x => x.CreatedByActorId).HasMaxLength(64);
+            e.Property(x => x.UpdatedByActorId).HasMaxLength(64);
+            e.HasIndex(x => new { x.SourceKind, x.IsEnabled });
+            e.HasIndex(x => x.PrimaryEventType).HasFilter("[PrimaryEventType] IS NOT NULL");
+            e.HasIndex(x => x.ModuleId).HasFilter("[ModuleId] IS NOT NULL");
+            e.HasIndex(x => x.IntegrationId).HasFilter("[IntegrationId] IS NOT NULL");
+            e.HasIndex(x => x.Origin);
+            e.HasIndex(x => new { x.Scope, x.IntegrationId, x.DisplayName })
+                .HasFilter("[Origin] = N'userCreated'")
+                .IsUnique();
         });
 
         modelBuilder.Entity<SecretDescriptorEntity>(e =>

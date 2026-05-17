@@ -114,6 +114,10 @@ public static class PlatformPermissionSeeder
         Register(registry, ActionConstants.ManagedContactRead, ResourceTypeConstants.ManagedContact, ScopeKeyConstants.Instance, ResourceFamily.Core);
         Register(registry, ActionConstants.ManagedContactManage, ResourceTypeConstants.ManagedContact, ScopeKeyConstants.Instance, ResourceFamily.Core);
         Register(registry, ActionConstants.ManagedContactImport, ResourceTypeConstants.ManagedContact, ScopeKeyConstants.Instance, ResourceFamily.Core);
+
+        // Notification definitions (Epic 77)
+        Register(registry, ActionConstants.NotificationDefinitionRead, ResourceTypeConstants.NotificationDefinition, ScopeKeyConstants.Instance, ResourceFamily.Core);
+        Register(registry, ActionConstants.NotificationDefinitionManage, ResourceTypeConstants.NotificationDefinition, ScopeKeyConstants.Instance, ResourceFamily.Core);
     }
 
     private static void Register(

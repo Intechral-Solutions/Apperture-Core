@@ -50,4 +50,7 @@ public static class ResourceTypeConstants
     public const string OperationDefinition = "OperationDefinition";
     public const string OperationRun = "OperationRun";
     public const string WorkflowInstance = "WorkflowInstance";
+
+    /// <summary>Notification definition (rule + template). Epic 77.</summary>
+    public const string NotificationDefinition = "NotificationDefinition";
 }

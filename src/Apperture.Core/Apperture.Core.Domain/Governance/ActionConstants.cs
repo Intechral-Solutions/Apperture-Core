@@ -98,4 +98,10 @@ public static class ActionConstants
 
     /// <summary>Import from Entra directory into managed contacts. Epic 76.</summary>
     public const string ManagedContactImport = "managed_contact.import";
+
+    /// <summary>Read notification definitions (instance and integration-scoped). Epic 77.</summary>
+    public const string NotificationDefinitionRead = "notification.definition.read";
+
+    /// <summary>Create/update/enable notification definitions. Epic 77.</summary>
+    public const string NotificationDefinitionManage = "notification.definition.manage";
 }

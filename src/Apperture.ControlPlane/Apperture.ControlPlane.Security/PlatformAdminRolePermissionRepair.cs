@@ -41,6 +41,13 @@ public static class PlatformAdminRolePermissionRepair
         new(ActionConstants.ManagedContactImport, new ResourceDescriptor(ResourceTypeConstants.ManagedContact, ScopeKeyConstants.Instance))
     ];
 
+    /// <summary>Notification definitions (Epic 77).</summary>
+    public static readonly PermissionDescriptor[] RequiredNotificationDefinitionPermissions =
+    [
+        new(ActionConstants.NotificationDefinitionRead, new ResourceDescriptor(ResourceTypeConstants.NotificationDefinition, ScopeKeyConstants.Instance)),
+        new(ActionConstants.NotificationDefinitionManage, new ResourceDescriptor(ResourceTypeConstants.NotificationDefinition, ScopeKeyConstants.Instance))
+    ];
+
     /// <summary>
     /// Config — Authentication UI (sign-in chooser, Entra registrations, auth overview). Epic 41+ operator capabilities.
     /// </summary>
@@ -102,6 +109,7 @@ public static class PlatformAdminRolePermissionRepair
         step = EnsureSet(step, RequiredGovernanceSurfacePermissions);
         step = EnsureSet(step, RequiredInstanceAuthConfigurationPermissions);
         step = EnsureSet(step, RequiredManagedContactPermissions);
+        step = EnsureSet(step, RequiredNotificationDefinitionPermissions);
         return step;
     }
 

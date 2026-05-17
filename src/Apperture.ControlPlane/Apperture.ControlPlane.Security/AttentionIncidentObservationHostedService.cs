@@ -1,3 +1,5 @@
+using Apperture.Core.Application.Integration;
+using Apperture.Core.Application.Notifications;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Governance;
 using Microsoft.Extensions.DependencyInjection;
@@ -71,6 +73,7 @@ public sealed class AttentionIncidentObservationHostedService : BackgroundServic
         var tracker = scope.ServiceProvider.GetRequiredService<IAttentionIncidentTracker>();
         var notifier = scope.ServiceProvider.GetRequiredService<AttentionIncidentNotificationOrchestrator>();
         var platformEvents = scope.ServiceProvider.GetRequiredService<ScheduleExpectationPlatformEventDualEmitter>();
+        var notificationEvaluation = scope.ServiceProvider.GetRequiredService<INotificationEvaluateOnlyCoordinator>();
         var clock = scope.ServiceProvider.GetRequiredService<TimeProvider>();
         var observedAt = clock.GetUtcNow();
 
@@ -90,6 +93,30 @@ public sealed class AttentionIncidentObservationHostedService : BackgroundServic
             await platformEvents
                 .TryEmitForObserveResultAsync(integration.Id, observe, snapshot, observedAt, cancellationToken)
                 .ConfigureAwait(false);
+
+            if (observe.Transition == AttentionIncidentObserveTransition.ObservedStillActive)
+            {
+                try
+                {
+                    await notificationEvaluation
+                        .EvaluateIncidentAsync(
+                            new IncidentEvaluationContext(
+                                integration.Id.Value,
+                                observe.Transition,
+                                observe.IncidentId,
+                                snapshot,
+                                observedAt),
+                            cancellationToken)
+                        .ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(
+                        ex,
+                        "Notification evaluate-only reminder evaluation failed for integration {IntegrationId}.",
+                        integration.Id.Value);
+                }
+            }
 
             try
             {

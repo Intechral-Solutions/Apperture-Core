@@ -1,0 +1,37 @@
+using Apperture.Core.Application.Notifications;
+using Apperture.Core.Application.PlatformEvents;
+using Apperture.Persistence.SqlServer;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+
+namespace Apperture.ControlPlane.Security;
+
+/// <summary>Epic 77: notification definitions, validation, render preview, and evaluate-only rule matching.</summary>
+public static class NotificationsServiceCollectionExtensions
+{
+    public static IServiceCollection AddAppertureNotifications(
+        this IServiceCollection services,
+        IConfiguration? configuration = null)
+    {
+        if (configuration is not null)
+            services.Configure<NotificationEvaluationOptions>(configuration.GetSection(NotificationEvaluationOptions.SectionName));
+
+        services.AddSingleton<INotificationTemplateVariableCatalog, NotificationTemplateVariableCatalog>();
+        services.AddSingleton<IRedactionPolicy, NoOpRedactionPolicy>();
+        services.AddSingleton<INotificationThrottleStore, InMemoryNotificationThrottleStore>();
+        services.AddScoped<INotificationRuleValidator, NotificationRuleValidator>();
+        services.AddScoped<INotificationTemplateValidator, NotificationTemplateValidator>();
+        services.AddScoped<INotificationTemplateRenderer, NotificationTemplateRenderer>();
+        services.AddSingleton<INotificationRenderContextFactory, NotificationRenderContextFactory>();
+        services.AddScoped<INotificationRenderContextBuilder, NotificationRenderContextBuilder>();
+        services.AddScoped<INotificationRuleEvaluator, NotificationRuleEvaluator>();
+        services.AddScoped<INotificationEvaluateOnlyCoordinator, NotificationEvaluateOnlyCoordinator>();
+        services.AddScoped<INotificationDefinitionStore, SqlNotificationDefinitionStore>();
+        services.AddScoped<NotificationDefinitionAuthorization>();
+        services.AddScoped<INotificationDefinitionService, NotificationDefinitionService>();
+
+        services.AddScoped<SqlPlatformEventStore>();
+        services.AddScoped<IPlatformEventStore, EvaluatingPlatformEventStore>();
+        return services;
+    }
+}
