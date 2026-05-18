@@ -1,0 +1,190 @@
+@page "/config/notifications/diagnostics"
+@layout ConfigLayout
+@using Apperture.Management.Client
+@using Apperture.Management.Ui.Client.Organisms
+@using Apperture.Management.Ui.Client.Services
+@inject IManagementClient Client
+@inject IOperatorCapabilitiesService Capabilities
+@inject NavigationManager Nav
+
+<div class="p-4">
+    <div class="text-xs text-muted mb-1">Config — Notifications — Diagnostics</div>
+    <PageHeader Title="Notification diagnostics"
+                Subtitle="Parity acceptance for expected-run-missing cutover. Read-only — does not change flags or send mail." />
+
+    @if (!_capabilitiesLoaded)
+    {
+        <p class="mt-4 text-sm text-muted">Loading…</p>
+    }
+    else if (!_canView)
+    {
+        <div class="mt-4 rounded border border-default bg-surface px-3 py-2 text-sm">
+            <div class="font-semibold">Not authorized</div>
+            <div class="text-muted">You do not have permission to view notification diagnostics.</div>
+        </div>
+    }
+    else
+    {
+        @if (_health is not null)
+        {
+            <p class="mt-4 text-xs text-muted">
+                Global: @_health.RecentFailedDeliveryCount failed deliveries,
+                @_health.RecentSuppressedInstanceCount suppressed instances (as of @_health.GeneratedAtUtc.UtcDateTime.ToString("u")).
+            </p>
+        }
+
+        <div class="mt-4 rounded border border-default bg-surface p-3 text-xs">
+            <div class="font-semibold text-heading mb-2">Integration diagnostics</div>
+            <div class="flex flex-wrap items-end gap-2">
+                <label>
+                    Integration id (required for tables)
+                    <input class="mt-1 block rounded border border-default px-2 py-1 font-mono" @bind="_integrationId" />
+                </label>
+                <label>
+                    Definition id (optional filter)
+                    <input class="mt-1 block rounded border border-default px-2 py-1 font-mono" @bind="_definitionId" />
+                </label>
+                <button type="button" class="rounded bg-surface-muted px-3 py-2 disabled:opacity-50" disabled="@_busy" @onclick="LoadIntegrationDiagAsync">Load</button>
+            </div>
+            @if (_integrationDiag is not null)
+            {
+                <p class="mt-2 text-muted">Suppressed instances: @_integrationDiag.RecentSuppressedInstances.Count · Failed outbox: @_integrationDiag.RecentFailedDeliveries.Count</p>
+            }
+        </div>
+
+        <div class="mt-4 rounded border border-default bg-surface p-3 text-xs">
+            <div class="font-semibold text-heading mb-2">Expected-run-missing parity acceptance</div>
+            <div class="flex flex-wrap items-end gap-2">
+                <label>
+                    Integration id *
+                    <input class="mt-1 block rounded border border-default px-2 py-1 font-mono" @bind="_parityIntegrationId" />
+                </label>
+                <label>
+                    Incident id (optional)
+                    <input class="mt-1 block rounded border border-default px-2 py-1 font-mono" @bind="_parityIncidentId" />
+                </label>
+                <label>
+                    Max incidents
+                    <input type="number" class="mt-1 block w-20 rounded border border-default px-2 py-1" @bind="_maxIncidents" />
+                </label>
+                <button type="button" class="rounded bg-surface-muted px-3 py-2 disabled:opacity-50" disabled="@_busy" @onclick="RunAcceptanceAsync">Evaluate</button>
+            </div>
+            @if (_acceptance is not null)
+            {
+                <div class="mt-3 p-2 rounded @(_acceptance.LooksAcceptableForCutover ? "bg-green-500/10" : "bg-amber-500/10")">
+                    <div class="font-semibold">@(_acceptance.LooksAcceptableForCutover ? "Looks acceptable for cutover" : "Not yet acceptable")</div>
+                    <p>Incidents evaluated: @_acceptance.IncidentsEvaluated · Kinds aligned: @_acceptance.KindsAligned / @_acceptance.KindComparisonsTotal</p>
+                    @if (_acceptance.BlockingFindings.Count > 0)
+                    {
+                        <ul class="mt-1 list-disc list-inside text-muted">
+                            @foreach (var f in _acceptance.BlockingFindings)
+                            {
+                                <li>@f</li>
+                            }
+                        </ul>
+                    }
+                </div>
+                <button type="button" class="mt-2 underline text-muted disabled:opacity-50" disabled="@_busy" @onclick="LoadFullParityAsync">Show full parity detail</button>
+            }
+            @if (_fullParity is not null)
+            {
+                <details class="mt-3">
+                    <summary class="cursor-pointer font-semibold">Full parity (@_fullParity.AttentionIncidentId)</summary>
+                    @foreach (var k in _fullParity.ByKind)
+                    {
+                        <div class="mt-2 border-t border-default pt-2">
+                            <div class="font-medium">@k.NotificationKind — @k.DifferenceKind</div>
+                            <p class="text-muted">@k.Summary</p>
+                        </div>
+                    }
+                </details>
+            }
+        </div>
+
+        @if (!string.IsNullOrEmpty(_error))
+        {
+            <p class="mt-4 text-sm text-muted">@_error</p>
+        }
+    }
+</div>
+
+@code {
+    private bool _capabilitiesLoaded;
+    private bool _canView;
+    private bool _busy;
+    private string? _error;
+    private string _integrationId = "";
+    private string _definitionId = "";
+    private string _parityIntegrationId = "";
+    private string _parityIncidentId = "";
+    private int _maxIncidents = 10;
+    private NotificationDeliveryHealthSummaryDto? _health;
+    private NotificationIntegrationDiagnosticsDto? _integrationDiag;
+    private ExpectedRunMissingParityAcceptanceSummaryDto? _acceptance;
+    private ExpectedRunMissingParityDiagnosticsDto? _fullParity;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var caps = await Capabilities.GetCapabilitiesAsync();
+        _canView = caps.CanViewNotificationDefinitions;
+        _capabilitiesLoaded = true;
+        if (!_canView) return;
+
+        var q = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(Nav.ToAbsoluteUri(Nav.Uri).Query);
+        if (q.TryGetValue("definitionId", out var did)) _definitionId = did.ToString();
+        if (q.TryGetValue("integrationId", out var iid))
+        {
+            _integrationId = iid.ToString();
+            _parityIntegrationId = iid.ToString();
+        }
+
+        try { _health = await Client.GetNotificationDeliveryHealthAsync(); }
+        catch (Exception ex) { _error = ex.Message; }
+    }
+
+    private async Task LoadIntegrationDiagAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_integrationId)) return;
+        _busy = true;
+        _error = null;
+        try
+        {
+            _integrationDiag = await Client.GetNotificationIntegrationDiagnosticsAsync(
+                _integrationId.Trim(),
+                string.IsNullOrWhiteSpace(_definitionId) ? null : _definitionId.Trim());
+        }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _busy = false; }
+    }
+
+    private async Task RunAcceptanceAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_parityIntegrationId)) return;
+        _busy = true;
+        _error = null;
+        _fullParity = null;
+        try
+        {
+            _acceptance = await Client.GetExpectedRunMissingParityAcceptanceAsync(
+                _parityIntegrationId.Trim(),
+                string.IsNullOrWhiteSpace(_parityIncidentId) ? null : _parityIncidentId.Trim(),
+                _maxIncidents);
+        }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _busy = false; }
+    }
+
+    private async Task LoadFullParityAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_parityIntegrationId)) return;
+        _busy = true;
+        try
+        {
+            _fullParity = await Client.GetExpectedRunMissingParityAsync(
+                _parityIntegrationId.Trim(),
+                string.IsNullOrWhiteSpace(_parityIncidentId) ? null : _parityIncidentId.Trim());
+        }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _busy = false; }
+    }
+}

@@ -32,4 +32,6 @@ public sealed record OperatorCapabilitiesDto(
     bool CanRetireConnections = false,
     bool CanViewManagedContacts = false,
     bool CanManageManagedContacts = false,
-    bool CanImportManagedContacts = false);
+    bool CanImportManagedContacts = false,
+    bool CanViewNotificationDefinitions = false,
+    bool CanManageNotificationDefinitions = false);

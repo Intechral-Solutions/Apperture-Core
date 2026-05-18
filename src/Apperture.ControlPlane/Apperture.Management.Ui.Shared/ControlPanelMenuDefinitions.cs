@@ -135,6 +135,18 @@ public static class ControlPanelMenuDefinitions
                             new DomainMenuItem { Text = "Roles", Href = "/config/governance/roles" },
                             new DomainMenuItem { Text = "Users", Href = "/config/governance/users" }
                         }
+                    },
+                    new DomainMenuItem
+                    {
+                        Text = "Notifications",
+                        Href = "/config/notifications",
+                        Children = new List<DomainMenuItem>
+                        {
+                            new DomainMenuItem { Text = "Definitions", Href = "/config/notifications/definitions" },
+                            new DomainMenuItem { Text = "Instances", Href = "/config/notifications/instances" },
+                            new DomainMenuItem { Text = "Delivery", Href = "/config/notifications/delivery" },
+                            new DomainMenuItem { Text = "Diagnostics", Href = "/config/notifications/diagnostics" }
+                        }
                     }
                 }
             }

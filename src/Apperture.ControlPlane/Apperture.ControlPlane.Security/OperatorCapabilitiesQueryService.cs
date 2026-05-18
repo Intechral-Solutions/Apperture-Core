@@ -12,7 +12,7 @@ namespace Apperture.ControlPlane.Security;
 public sealed class OperatorCapabilitiesQueryService : IOperatorCapabilitiesQueryService
 {
     private static readonly OperatorCapabilitiesDto DenyAll =
-        new(false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false);
+        new(false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false);
 
     private readonly IPrincipalContext _principalContext;
     private readonly IAuthorizationEvaluationService _authorization;
@@ -117,6 +117,16 @@ public sealed class OperatorCapabilitiesQueryService : IOperatorCapabilitiesQuer
                 ActionConstants.ManagedContactImport,
                 ResourceTypeConstants.ManagedContact,
                 cancellationToken).ConfigureAwait(false);
+            var canViewNotificationDefinitions = await EvaluateAsync(
+                actor,
+                ActionConstants.NotificationDefinitionRead,
+                ResourceTypeConstants.NotificationDefinition,
+                cancellationToken).ConfigureAwait(false);
+            var canManageNotificationDefinitions = await EvaluateAsync(
+                actor,
+                ActionConstants.NotificationDefinitionManage,
+                ResourceTypeConstants.NotificationDefinition,
+                cancellationToken).ConfigureAwait(false);
 
             return new OperatorCapabilitiesDto(
                 canManageSchedules,
@@ -139,7 +149,9 @@ public sealed class OperatorCapabilitiesQueryService : IOperatorCapabilitiesQuer
                 canRetireConnections,
                 canViewManagedContacts,
                 canManageManagedContacts,
-                canImportManagedContacts);
+                canImportManagedContacts,
+                canViewNotificationDefinitions,
+                canManageNotificationDefinitions);
         }
         catch (Exception ex)
         {

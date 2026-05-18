@@ -1,0 +1,161 @@
+@page "/config/notifications/delivery"
+@layout ConfigLayout
+@using Apperture.Management.Client
+@using Apperture.Management.Ui.Client.Organisms
+@using Apperture.Management.Ui.Client.Services
+@inject IManagementClient Client
+@inject IOperatorCapabilitiesService Capabilities
+
+<div class="p-4">
+    <div class="text-xs text-muted mb-1">Config — Notifications — Delivery</div>
+    <PageHeader Title="Delivery health"
+                Subtitle="Read-only operational view. Does not send mail or change delivery flags." />
+
+    @if (!_capabilitiesLoaded)
+    {
+        <p class="mt-4 text-sm text-muted">Loading…</p>
+    }
+    else if (!_canView)
+    {
+        <div class="mt-4 rounded border border-default bg-surface px-3 py-2 text-sm">
+            <div class="font-semibold">Not authorized</div>
+            <div class="text-muted">You do not have permission to view notification delivery health.</div>
+        </div>
+    }
+    else
+    {
+        @if (_globalHealth is not null)
+        {
+            <div class="mt-4 grid grid-cols-2 gap-2 md:grid-cols-4 text-xs">
+                <div class="rounded border border-default p-2"><div class="text-muted">Failed deliveries</div><div class="text-lg font-semibold">@_globalHealth.RecentFailedDeliveryCount</div></div>
+                <div class="rounded border border-default p-2"><div class="text-muted">Suppressed instances</div><div class="text-lg font-semibold">@_globalHealth.RecentSuppressedInstanceCount</div></div>
+                <div class="rounded border border-default p-2"><div class="text-muted">Pending / delivering</div><div class="text-lg font-semibold">@_globalHealth.RecentPendingOrDeliveringOutboxCount</div></div>
+                <div class="rounded border border-default p-2"><div class="text-muted">Generated</div><div class="text-lg font-semibold">@_globalHealth.GeneratedAtUtc.UtcDateTime.ToString("u")</div></div>
+            </div>
+        }
+
+        <div class="mt-4 flex flex-wrap items-end gap-2 text-xs">
+            <label>
+                Integration
+                <select class="mt-1 block min-w-[14rem] rounded border border-default px-2 py-1" @bind="_selectedIntegrationId">
+                    <option value="">— select —</option>
+                    @foreach (var i in _integrations)
+                    {
+                        <option value="@i.Id">@i.DisplayName</option>
+                    }
+                </select>
+            </label>
+            <button type="button" class="rounded bg-surface-muted px-3 py-2 disabled:opacity-50" disabled="@_busy" @onclick="LoadIntegrationAsync">Load</button>
+        </div>
+
+        @if (!string.IsNullOrEmpty(_error))
+        {
+            <p class="mt-4 text-sm text-muted">@_error</p>
+        }
+        else if (_integrationDiag is not null)
+        {
+            <section class="mt-4 rounded border border-default bg-surface p-3">
+                <div class="font-semibold text-heading text-sm mb-2">Recent failed deliveries</div>
+                @RenderOutboxTable(_integrationDiag.RecentFailedDeliveries)
+            </section>
+            <section class="mt-4 rounded border border-default bg-surface p-3">
+                <div class="font-semibold text-heading text-sm mb-2">Pending / delivering outbox</div>
+                @RenderOutboxTable(_integrationDiag.RecentOutboxRows.Where(r => r.Status is "pending" or "delivering").ToList())
+            </section>
+        }
+    }
+</div>
+
+@code {
+    private bool _capabilitiesLoaded;
+    private bool _canView;
+    private bool _busy;
+    private string? _error;
+    private string _selectedIntegrationId = "";
+    private NotificationDeliveryHealthSummaryDto? _globalHealth;
+    private NotificationIntegrationDiagnosticsDto? _integrationDiag;
+    private IReadOnlyList<IntegrationDto> _integrations = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        var caps = await Capabilities.GetCapabilitiesAsync();
+        _canView = caps.CanViewNotificationDefinitions;
+        _capabilitiesLoaded = true;
+        if (!_canView) return;
+        _busy = true;
+        try
+        {
+            _globalHealth = await Client.GetNotificationDeliveryHealthAsync();
+            if (caps.CanViewIntegrations)
+                _integrations = await Client.ListIntegrationsAsync();
+        }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _busy = false; }
+    }
+
+    private async Task LoadIntegrationAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_selectedIntegrationId)) return;
+        _busy = true;
+        _error = null;
+        try
+        {
+            _integrationDiag = await Client.GetNotificationIntegrationDiagnosticsAsync(_selectedIntegrationId.Trim());
+        }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _busy = false; }
+    }
+
+    private RenderFragment RenderOutboxTable(IReadOnlyList<NotificationOutboxDiagnosticDto> rows) => builder =>
+    {
+        if (rows.Count == 0)
+        {
+            builder.OpenElement(0, "p");
+            builder.AddAttribute(1, "class", "text-xs text-muted");
+            builder.AddContent(2, "None in window.");
+            builder.CloseElement();
+            return;
+        }
+        builder.OpenElement(0, "table");
+        builder.AddAttribute(1, "class", "min-w-full text-left text-xs");
+        builder.OpenElement(2, "thead");
+        builder.OpenElement(3, "tr");
+        foreach (var h in new[] { "Recipient", "Kind", "Status", "Error", "Instance" })
+        {
+            builder.OpenElement(4, "th");
+            builder.AddAttribute(5, "class", "p-1");
+            builder.AddContent(6, h);
+            builder.CloseElement();
+        }
+        builder.CloseElement();
+        builder.CloseElement();
+        builder.OpenElement(7, "tbody");
+        var seq = 8;
+        foreach (var r in rows)
+        {
+            builder.OpenElement(seq++, "tr");
+            builder.OpenElement(seq++, "td");
+            builder.AddContent(seq++, r.RecipientEmail);
+            builder.CloseElement();
+            builder.OpenElement(seq++, "td");
+            builder.AddContent(seq++, r.NotificationKind);
+            builder.CloseElement();
+            builder.OpenElement(seq++, "td");
+            builder.AddContent(seq++, r.Status);
+            builder.CloseElement();
+            builder.OpenElement(seq++, "td");
+            builder.AddContent(seq++, r.LastError ?? "—");
+            builder.CloseElement();
+            builder.OpenElement(seq++, "td");
+            builder.OpenElement(seq++, "a");
+            builder.AddAttribute(seq++, "class", "underline");
+            builder.AddAttribute(seq++, "href", $"/config/notifications/instances/{Uri.EscapeDataString(r.NotificationInstanceId)}");
+            builder.AddContent(seq++, "Open");
+            builder.CloseElement();
+            builder.CloseElement();
+            builder.CloseElement();
+        }
+        builder.CloseElement();
+        builder.CloseElement();
+    };
+}

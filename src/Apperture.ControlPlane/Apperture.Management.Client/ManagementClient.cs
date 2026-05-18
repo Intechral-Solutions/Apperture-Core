@@ -1453,6 +1453,278 @@ public sealed class ManagementClient : IManagementClient
         return await response.Content.ReadFromJsonAsync<ManagedContactDetailDto>(ApiJsonReadOptions, cancellationToken).ConfigureAwait(false);
     }
 
+    public async Task<IReadOnlyList<NotificationDefinitionSummaryDto>> ListNotificationDefinitionsAsync(
+        string? integrationId = null,
+        string? eventType = null,
+        bool? enabled = null,
+        string? origin = null,
+        int take = 100,
+        CancellationToken cancellationToken = default)
+    {
+        var query = new List<string> { $"take={take}" };
+        if (!string.IsNullOrWhiteSpace(integrationId))
+            query.Add($"integrationId={Uri.EscapeDataString(integrationId.Trim())}");
+        if (!string.IsNullOrWhiteSpace(eventType))
+            query.Add($"eventType={Uri.EscapeDataString(eventType.Trim())}");
+        if (enabled is not null)
+            query.Add($"enabled={enabled.Value.ToString().ToLowerInvariant()}");
+        if (!string.IsNullOrWhiteSpace(origin))
+            query.Add($"origin={Uri.EscapeDataString(origin.Trim())}");
+        var path = $"notification-definitions?{string.Join("&", query)}";
+        var list = await _http.GetFromJsonAsync<NotificationDefinitionSummaryDto[]>(path, ApiJsonReadOptions, cancellationToken).ConfigureAwait(false);
+        return list ?? Array.Empty<NotificationDefinitionSummaryDto>();
+    }
+
+    public async Task<NotificationDefinitionDetailDto?> GetNotificationDefinitionAsync(string id, CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.GetAsync($"notification-definitions/{Uri.EscapeDataString(id)}", cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode == HttpStatusCode.NotFound)
+            return null;
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<NotificationDefinitionDetailDto>(ApiJsonReadOptions, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<NotificationDefinitionDetailDto?> SetNotificationDefinitionEnabledAsync(
+        string id,
+        bool isEnabled,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.PatchAsJsonAsync(
+            $"notification-definitions/{Uri.EscapeDataString(id)}/enabled",
+            new SetNotificationDefinitionEnabledRequest(isEnabled),
+            ApiJsonWriteOptions,
+            cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode == HttpStatusCode.NotFound)
+            return null;
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<NotificationDefinitionDetailDto>(ApiJsonReadOptions, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<RenderedNotificationSnapshotDto> RenderNotificationPreviewAsync(
+        string definitionId,
+        RenderNotificationPreviewRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.PostAsJsonAsync(
+            $"notification-definitions/{Uri.EscapeDataString(definitionId)}/render-preview",
+            request,
+            ApiJsonWriteOptions,
+            cancellationToken).ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<RenderedNotificationSnapshotDto>(ApiJsonReadOptions, cancellationToken).ConfigureAwait(false)
+            ?? throw new InvalidOperationException("Unexpected null response from RenderNotificationPreview.");
+    }
+
+    public async Task<IReadOnlyList<NotificationSubscriptionDto>> ListNotificationSubscriptionsByDefinitionAsync(
+        string definitionId,
+        CancellationToken cancellationToken = default)
+    {
+        var list = await _http.GetFromJsonAsync<NotificationSubscriptionDto[]>(
+            $"notification-definitions/{Uri.EscapeDataString(definitionId)}/subscriptions",
+            ApiJsonReadOptions,
+            cancellationToken).ConfigureAwait(false);
+        return list ?? Array.Empty<NotificationSubscriptionDto>();
+    }
+
+    public async Task<NotificationSubscriptionDto> AddNotificationSubscriptionAsync(
+        string definitionId,
+        AddNotificationSubscriptionRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.PostAsJsonAsync(
+            $"notification-definitions/{Uri.EscapeDataString(definitionId)}/subscriptions",
+            request,
+            ApiJsonWriteOptions,
+            cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode == HttpStatusCode.BadRequest)
+            await EnsureSuccessOrThrowAsync(response, cancellationToken).ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<NotificationSubscriptionDto>(ApiJsonReadOptions, cancellationToken).ConfigureAwait(false)
+            ?? throw new InvalidOperationException("Unexpected null response from AddNotificationSubscription.");
+    }
+
+    public async Task<NotificationSubscriptionDto?> PatchNotificationSubscriptionAsync(
+        string definitionId,
+        string subscriptionId,
+        PatchNotificationSubscriptionRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.PatchAsJsonAsync(
+            $"notification-definitions/{Uri.EscapeDataString(definitionId)}/subscriptions/{Uri.EscapeDataString(subscriptionId)}",
+            request,
+            ApiJsonWriteOptions,
+            cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode == HttpStatusCode.NotFound)
+            return null;
+        if (response.StatusCode == HttpStatusCode.BadRequest)
+            await EnsureSuccessOrThrowAsync(response, cancellationToken).ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<NotificationSubscriptionDto>(ApiJsonReadOptions, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task RemoveNotificationSubscriptionAsync(
+        string definitionId,
+        string subscriptionId,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.DeleteAsync(
+            $"notification-definitions/{Uri.EscapeDataString(definitionId)}/subscriptions/{Uri.EscapeDataString(subscriptionId)}",
+            cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode == HttpStatusCode.NotFound)
+            return;
+        response.EnsureSuccessStatusCode();
+    }
+
+    public async Task<NotificationRecipientResolutionPreviewDto> ResolveNotificationRecipientsAsync(
+        string definitionId,
+        ResolveNotificationRecipientsRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.PostAsJsonAsync(
+            $"notification-definitions/{Uri.EscapeDataString(definitionId)}/recipients/resolve",
+            request,
+            ApiJsonWriteOptions,
+            cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode == HttpStatusCode.BadRequest)
+            await EnsureSuccessOrThrowAsync(response, cancellationToken).ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<NotificationRecipientResolutionPreviewDto>(ApiJsonReadOptions, cancellationToken).ConfigureAwait(false)
+            ?? throw new InvalidOperationException("Unexpected null response from ResolveNotificationRecipients.");
+    }
+
+    public async Task<IReadOnlyList<NotificationInstanceSummaryDto>> ListNotificationInstancesAsync(
+        string? integrationId = null,
+        string? definitionId = null,
+        string? incidentId = null,
+        int take = 50,
+        CancellationToken cancellationToken = default)
+    {
+        var query = new List<string> { $"take={take}" };
+        if (!string.IsNullOrWhiteSpace(integrationId))
+            query.Add($"integrationId={Uri.EscapeDataString(integrationId.Trim())}");
+        if (!string.IsNullOrWhiteSpace(definitionId))
+            query.Add($"definitionId={Uri.EscapeDataString(definitionId.Trim())}");
+        if (!string.IsNullOrWhiteSpace(incidentId))
+            query.Add($"incidentId={Uri.EscapeDataString(incidentId.Trim())}");
+        var path = $"notification-instances?{string.Join("&", query)}";
+        var list = await _http.GetFromJsonAsync<NotificationInstanceSummaryDto[]>(path, ApiJsonReadOptions, cancellationToken).ConfigureAwait(false);
+        return list ?? Array.Empty<NotificationInstanceSummaryDto>();
+    }
+
+    public async Task<NotificationInstanceDetailDto?> GetNotificationInstanceAsync(string id, CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.GetAsync($"notification-instances/{Uri.EscapeDataString(id)}", cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode == HttpStatusCode.NotFound)
+            return null;
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<NotificationInstanceDetailDto>(ApiJsonReadOptions, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<IReadOnlyList<NotificationDeliveryOutboxDto>> ListNotificationInstanceOutboxAsync(
+        string instanceId,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.GetAsync($"notification-instances/{Uri.EscapeDataString(instanceId)}/outbox", cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode == HttpStatusCode.NotFound)
+            return Array.Empty<NotificationDeliveryOutboxDto>();
+        response.EnsureSuccessStatusCode();
+        var list = await response.Content.ReadFromJsonAsync<NotificationDeliveryOutboxDto[]>(ApiJsonReadOptions, cancellationToken).ConfigureAwait(false);
+        return list ?? Array.Empty<NotificationDeliveryOutboxDto>();
+    }
+
+    public async Task<NotificationDeliveryHealthSummaryDto> GetNotificationDeliveryHealthAsync(
+        string? definitionId = null,
+        int take = 50,
+        CancellationToken cancellationToken = default)
+    {
+        var query = $"take={take}";
+        if (!string.IsNullOrWhiteSpace(definitionId))
+            query += $"&definitionId={Uri.EscapeDataString(definitionId.Trim())}";
+        var dto = await _http.GetFromJsonAsync<NotificationDeliveryHealthSummaryDto>(
+            $"notification-diagnostics/health?{query}",
+            ApiJsonReadOptions,
+            cancellationToken).ConfigureAwait(false);
+        return dto ?? throw new InvalidOperationException("Unexpected null response from GetNotificationDeliveryHealth.");
+    }
+
+    public async Task<NotificationIntegrationDiagnosticsDto> GetNotificationIntegrationDiagnosticsAsync(
+        string integrationId,
+        string? definitionId = null,
+        int take = 50,
+        CancellationToken cancellationToken = default)
+    {
+        var query = $"take={take}";
+        if (!string.IsNullOrWhiteSpace(definitionId))
+            query += $"&definitionId={Uri.EscapeDataString(definitionId.Trim())}";
+        var dto = await _http.GetFromJsonAsync<NotificationIntegrationDiagnosticsDto>(
+            $"notification-diagnostics/by-integration/{Uri.EscapeDataString(integrationId)}?{query}",
+            ApiJsonReadOptions,
+            cancellationToken).ConfigureAwait(false);
+        return dto ?? throw new InvalidOperationException("Unexpected null response from GetNotificationIntegrationDiagnostics.");
+    }
+
+    public async Task<NotificationIncidentDiagnosticsDto?> GetNotificationIncidentDiagnosticsAsync(
+        string attentionIncidentId,
+        string? definitionId = null,
+        int take = 50,
+        CancellationToken cancellationToken = default)
+    {
+        var query = $"take={take}";
+        if (!string.IsNullOrWhiteSpace(definitionId))
+            query += $"&definitionId={Uri.EscapeDataString(definitionId.Trim())}";
+        using var response = await _http.GetAsync(
+            $"notification-diagnostics/by-incident/{Uri.EscapeDataString(attentionIncidentId)}?{query}",
+            cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode == HttpStatusCode.NotFound)
+            return null;
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<NotificationIncidentDiagnosticsDto>(ApiJsonReadOptions, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<ExpectedRunMissingParityDiagnosticsDto?> GetExpectedRunMissingParityAsync(
+        string? integrationId = null,
+        string? attentionIncidentId = null,
+        int take = 50,
+        CancellationToken cancellationToken = default)
+    {
+        var query = new List<string> { $"take={take}" };
+        if (!string.IsNullOrWhiteSpace(integrationId))
+            query.Add($"integrationId={Uri.EscapeDataString(integrationId.Trim())}");
+        if (!string.IsNullOrWhiteSpace(attentionIncidentId))
+            query.Add($"attentionIncidentId={Uri.EscapeDataString(attentionIncidentId.Trim())}");
+        using var response = await _http.GetAsync(
+            $"notification-diagnostics/expected-run-missing/parity?{string.Join("&", query)}",
+            cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode == HttpStatusCode.NotFound)
+            return null;
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<ExpectedRunMissingParityDiagnosticsDto>(ApiJsonReadOptions, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<ExpectedRunMissingParityAcceptanceSummaryDto?> GetExpectedRunMissingParityAcceptanceAsync(
+        string integrationId,
+        string? attentionIncidentId = null,
+        int maxIncidents = 10,
+        int takePerIncident = 50,
+        CancellationToken cancellationToken = default)
+    {
+        var query = new List<string>
+        {
+            $"integrationId={Uri.EscapeDataString(integrationId.Trim())}",
+            $"maxIncidents={maxIncidents}",
+            $"takePerIncident={takePerIncident}"
+        };
+        if (!string.IsNullOrWhiteSpace(attentionIncidentId))
+            query.Add($"attentionIncidentId={Uri.EscapeDataString(attentionIncidentId.Trim())}");
+        using var response = await _http.GetAsync(
+            $"notification-diagnostics/expected-run-missing/parity-acceptance?{string.Join("&", query)}",
+            cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode == HttpStatusCode.NotFound)
+            return null;
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<ExpectedRunMissingParityAcceptanceSummaryDto>(ApiJsonReadOptions, cancellationToken).ConfigureAwait(false);
+    }
+
     private static async Task EnsureSuccessOrThrowAsync(HttpResponseMessage response, CancellationToken cancellationToken)
     {
         if (response.IsSuccessStatusCode)

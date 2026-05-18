@@ -437,6 +437,96 @@ public interface IManagementClient
 
     Task<ManagedContactDetailDto?> UnlinkManagedContactUserAsync(string id, CancellationToken cancellationToken = default);
 
+    // --- Notifications (Epic 77) ---
+
+    Task<IReadOnlyList<NotificationDefinitionSummaryDto>> ListNotificationDefinitionsAsync(
+        string? integrationId = null,
+        string? eventType = null,
+        bool? enabled = null,
+        string? origin = null,
+        int take = 100,
+        CancellationToken cancellationToken = default);
+
+    Task<NotificationDefinitionDetailDto?> GetNotificationDefinitionAsync(string id, CancellationToken cancellationToken = default);
+
+    Task<NotificationDefinitionDetailDto?> SetNotificationDefinitionEnabledAsync(
+        string id,
+        bool isEnabled,
+        CancellationToken cancellationToken = default);
+
+    Task<RenderedNotificationSnapshotDto> RenderNotificationPreviewAsync(
+        string definitionId,
+        RenderNotificationPreviewRequest request,
+        CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<NotificationSubscriptionDto>> ListNotificationSubscriptionsByDefinitionAsync(
+        string definitionId,
+        CancellationToken cancellationToken = default);
+
+    Task<NotificationSubscriptionDto> AddNotificationSubscriptionAsync(
+        string definitionId,
+        AddNotificationSubscriptionRequest request,
+        CancellationToken cancellationToken = default);
+
+    Task<NotificationSubscriptionDto?> PatchNotificationSubscriptionAsync(
+        string definitionId,
+        string subscriptionId,
+        PatchNotificationSubscriptionRequest request,
+        CancellationToken cancellationToken = default);
+
+    Task RemoveNotificationSubscriptionAsync(
+        string definitionId,
+        string subscriptionId,
+        CancellationToken cancellationToken = default);
+
+    Task<NotificationRecipientResolutionPreviewDto> ResolveNotificationRecipientsAsync(
+        string definitionId,
+        ResolveNotificationRecipientsRequest request,
+        CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<NotificationInstanceSummaryDto>> ListNotificationInstancesAsync(
+        string? integrationId = null,
+        string? definitionId = null,
+        string? incidentId = null,
+        int take = 50,
+        CancellationToken cancellationToken = default);
+
+    Task<NotificationInstanceDetailDto?> GetNotificationInstanceAsync(string id, CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<NotificationDeliveryOutboxDto>> ListNotificationInstanceOutboxAsync(
+        string instanceId,
+        CancellationToken cancellationToken = default);
+
+    Task<NotificationDeliveryHealthSummaryDto> GetNotificationDeliveryHealthAsync(
+        string? definitionId = null,
+        int take = 50,
+        CancellationToken cancellationToken = default);
+
+    Task<NotificationIntegrationDiagnosticsDto> GetNotificationIntegrationDiagnosticsAsync(
+        string integrationId,
+        string? definitionId = null,
+        int take = 50,
+        CancellationToken cancellationToken = default);
+
+    Task<NotificationIncidentDiagnosticsDto?> GetNotificationIncidentDiagnosticsAsync(
+        string attentionIncidentId,
+        string? definitionId = null,
+        int take = 50,
+        CancellationToken cancellationToken = default);
+
+    Task<ExpectedRunMissingParityDiagnosticsDto?> GetExpectedRunMissingParityAsync(
+        string? integrationId = null,
+        string? attentionIncidentId = null,
+        int take = 50,
+        CancellationToken cancellationToken = default);
+
+    Task<ExpectedRunMissingParityAcceptanceSummaryDto?> GetExpectedRunMissingParityAcceptanceAsync(
+        string integrationId,
+        string? attentionIncidentId = null,
+        int maxIncidents = 10,
+        int takePerIncident = 50,
+        CancellationToken cancellationToken = default);
+
     // --- Governance admin (Epic 39/40) ---
 
     /// <summary>Gets the governance descriptor catalog (resources and permissions). Requires user.read.</summary>
@@ -546,7 +636,9 @@ public sealed record OperatorCapabilitiesDto(
     [property: JsonPropertyName("canRetireConnections")] bool CanRetireConnections = false,
     [property: JsonPropertyName("canViewManagedContacts")] bool CanViewManagedContacts = false,
     [property: JsonPropertyName("canManageManagedContacts")] bool CanManageManagedContacts = false,
-    [property: JsonPropertyName("canImportManagedContacts")] bool CanImportManagedContacts = false);
+    [property: JsonPropertyName("canImportManagedContacts")] bool CanImportManagedContacts = false,
+    [property: JsonPropertyName("canViewNotificationDefinitions")] bool CanViewNotificationDefinitions = false,
+    [property: JsonPropertyName("canManageNotificationDefinitions")] bool CanManageNotificationDefinitions = false);
 
 public sealed record ManagedContactSummaryDto(
     string Id,

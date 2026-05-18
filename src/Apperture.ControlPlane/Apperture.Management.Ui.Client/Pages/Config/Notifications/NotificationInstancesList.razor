@@ -1,0 +1,142 @@
+@page "/config/notifications/instances"
+@layout ConfigLayout
+@using Apperture.Management.Client
+@using Apperture.Management.Ui.Client.Organisms
+@using Apperture.Management.Ui.Client.Services
+@inject IManagementClient Client
+@inject IOperatorCapabilitiesService Capabilities
+@inject NavigationManager Nav
+
+<div class="p-4">
+    <div class="text-xs text-muted mb-1">Config — Notifications — Instances</div>
+    <PageHeader Title="Notification instances" Subtitle="Rendered platform notification instances (read-only)." />
+
+    @if (!_capabilitiesLoaded)
+    {
+        <p class="mt-4 text-sm text-muted">Loading…</p>
+    }
+    else if (!_canView)
+    {
+        <div class="mt-4 rounded border border-default bg-surface px-3 py-2 text-sm">
+            <div class="font-semibold">Not authorized</div>
+            <div class="text-muted">You do not have permission to view notification instances.</div>
+        </div>
+    }
+    else
+    {
+        <div class="mt-4 flex flex-wrap items-end gap-2 text-xs">
+            <label>
+                Integration id
+                <input class="mt-1 block rounded border border-default px-2 py-1 font-mono" @bind="_integrationId" />
+            </label>
+            <label>
+                Definition id
+                <input class="mt-1 block rounded border border-default px-2 py-1 font-mono" @bind="_definitionId" />
+            </label>
+            <label>
+                Incident id
+                <input class="mt-1 block rounded border border-default px-2 py-1 font-mono" @bind="_incidentId" />
+            </label>
+            <button type="button" class="rounded bg-surface-muted px-3 py-2 disabled:opacity-50" disabled="@_busy" @onclick="LoadAsync">Apply</button>
+        </div>
+
+        @if (!string.IsNullOrEmpty(_error))
+        {
+            <p class="mt-4 text-sm text-muted">@_error</p>
+        }
+        else if (_loading)
+        {
+            <p class="mt-4 text-sm text-muted">Loading…</p>
+        }
+        else if (_items is { Count: 0 })
+        {
+            <p class="mt-4 text-sm text-muted">No instances match.</p>
+        }
+        else if (_items is not null)
+        {
+            <div class="mt-4 overflow-x-auto rounded border border-default">
+                <table class="min-w-full text-left text-xs">
+                    <thead class="bg-surface-muted text-heading">
+                        <tr>
+                            <th class="p-2">Status</th>
+                            <th class="p-2">Kind</th>
+                            <th class="p-2">Definition</th>
+                            <th class="p-2">Integration</th>
+                            <th class="p-2">Incident</th>
+                            <th class="p-2">Created</th>
+                            <th class="p-2"></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var i in _items)
+                        {
+                            <tr class="border-t border-default">
+                                <td class="p-2">@i.Status</td>
+                                <td class="p-2">@i.NotificationKind</td>
+                                <td class="p-2 font-mono break-all">@i.NotificationDefinitionId</td>
+                                <td class="p-2 font-mono break-all">@(i.IntegrationId ?? "—")</td>
+                                <td class="p-2 font-mono break-all">@(i.AttentionIncidentId ?? "—")</td>
+                                <td class="p-2">@i.CreatedAtUtc.UtcDateTime.ToString("u")</td>
+                                <td class="p-2"><a class="underline" href="@($"/config/notifications/instances/{Uri.EscapeDataString(i.Id)}")">View</a></td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    }
+</div>
+
+@code {
+    private bool _capabilitiesLoaded;
+    private bool _canView;
+    private bool _loading = true;
+    private bool _busy;
+    private string? _error;
+    private string _integrationId = "";
+    private string _definitionId = "";
+    private string _incidentId = "";
+    private IReadOnlyList<NotificationInstanceSummaryDto>? _items;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var caps = await Capabilities.GetCapabilitiesAsync();
+        _canView = caps.CanViewNotificationDefinitions;
+        _capabilitiesLoaded = true;
+        if (!_canView)
+        {
+            _loading = false;
+            return;
+        }
+
+        var q = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(Nav.ToAbsoluteUri(Nav.Uri).Query);
+        if (q.TryGetValue("integrationId", out var iid)) _integrationId = iid.ToString();
+        if (q.TryGetValue("definitionId", out var did)) _definitionId = did.ToString();
+        if (q.TryGetValue("incidentId", out var inc)) _incidentId = inc.ToString();
+
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _busy = true;
+        _error = null;
+        try
+        {
+            _items = await Client.ListNotificationInstancesAsync(
+                string.IsNullOrWhiteSpace(_integrationId) ? null : _integrationId.Trim(),
+                string.IsNullOrWhiteSpace(_definitionId) ? null : _definitionId.Trim(),
+                string.IsNullOrWhiteSpace(_incidentId) ? null : _incidentId.Trim());
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+            _items = null;
+        }
+        finally
+        {
+            _busy = false;
+            _loading = false;
+        }
+    }
+}

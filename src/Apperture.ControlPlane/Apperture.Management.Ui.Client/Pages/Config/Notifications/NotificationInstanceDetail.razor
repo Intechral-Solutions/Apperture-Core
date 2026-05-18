@@ -1,0 +1,165 @@
+@page "/config/notifications/instances/{InstanceId}"
+@layout ConfigLayout
+@using Apperture.Management.Client
+@using Apperture.Management.Ui.Client.Organisms
+@using Apperture.Management.Ui.Client.Services
+@inject IManagementClient Client
+@inject IOperatorCapabilitiesService Capabilities
+
+<div class="p-4">
+    <div class="text-xs text-muted mb-1">
+        <a class="underline" href="/config/notifications/instances">Instances</a> — @InstanceId
+    </div>
+
+    @if (!_capabilitiesLoaded)
+    {
+        <p class="mt-4 text-sm text-muted">Loading…</p>
+    }
+    else if (!_canView)
+    {
+        <div class="mt-4 rounded border border-default bg-surface px-3 py-2 text-sm">
+            <div class="font-semibold">Not authorized</div>
+            <div class="text-muted">You do not have permission to view this instance.</div>
+        </div>
+    }
+    else if (_loading)
+    {
+        <p class="mt-4 text-sm text-muted">Loading…</p>
+    }
+    else if (_detail is null)
+    {
+        <p class="mt-4 text-sm text-muted">Instance not found.</p>
+    }
+    else
+    {
+        <PageHeader Title="@_detail.RenderedSubject" Subtitle="@_detail.NotificationKind / @_detail.Status" />
+
+        <div class="mt-4 space-y-4 text-sm">
+            <section class="rounded border border-default bg-surface p-3 text-xs">
+                <div class="font-semibold text-heading mb-2">Metadata</div>
+                <dl class="grid grid-cols-1 gap-1 md:grid-cols-2">
+                    <div><dt class="text-muted">Definition</dt><dd><a class="underline font-mono" href="@($"/config/notifications/definitions/{Uri.EscapeDataString(_detail.NotificationDefinitionId)}")">@_detail.NotificationDefinitionId</a></dd></div>
+                    <div><dt class="text-muted">Integration</dt><dd class="font-mono">@(_detail.IntegrationId ?? "—")</dd></div>
+                    <div><dt class="text-muted">Incident</dt><dd class="font-mono">@(_detail.AttentionIncidentId ?? "—")</dd></div>
+                    <div><dt class="text-muted">Suppression</dt><dd>@(_detail.SuppressionReason ?? "—")</dd></div>
+                    <div><dt class="text-muted">Created</dt><dd>@_detail.CreatedAtUtc.UtcDateTime.ToString("u")</dd></div>
+                </dl>
+                @if (!string.IsNullOrWhiteSpace(_detail.IntegrationId))
+                {
+                    <a class="mt-2 inline-block text-xs underline" href="@($"/integrations/{Uri.EscapeDataString(_detail.IntegrationId!)}/schedule-diagnostics")">Schedule diagnostics</a>
+                }
+            </section>
+
+            <section class="rounded border border-default bg-surface p-3">
+                <div class="font-semibold text-heading mb-2 text-sm">Rendered content</div>
+                <p class="text-xs"><span class="text-muted">Summary:</span> @_detail.RenderedSummary</p>
+                <details class="mt-2 text-xs">
+                    <summary class="cursor-pointer text-muted">Body</summary>
+                    <pre class="mt-1 bg-surface-muted p-2 rounded whitespace-pre-wrap">@_detail.RenderedBodyText</pre>
+                </details>
+            </section>
+
+            @if (!string.IsNullOrWhiteSpace(_detail.RecipientSnapshotJson))
+            {
+                <section class="rounded border border-default bg-surface p-3">
+                    <details class="text-xs">
+                        <summary class="cursor-pointer font-semibold text-heading">Recipient snapshot JSON</summary>
+                        <pre class="mt-2 bg-surface-muted p-2 rounded overflow-x-auto">@_detail.RecipientSnapshotJson</pre>
+                    </details>
+                </section>
+            }
+
+            <section class="rounded border border-default bg-surface p-3">
+                <details class="text-xs">
+                    <summary class="cursor-pointer font-semibold text-heading">Render context JSON</summary>
+                    <pre class="mt-2 bg-surface-muted p-2 rounded overflow-x-auto max-h-64">@_detail.RenderContextJson</pre>
+                </details>
+            </section>
+
+            <section class="rounded border border-default bg-surface p-3">
+                <div class="font-semibold text-heading mb-2 text-sm">Delivery outbox</div>
+                @if (_outbox is { Count: 0 })
+                {
+                    <p class="text-xs text-muted">No outbox rows.</p>
+                }
+                else if (_outbox is not null)
+                {
+                    <table class="min-w-full text-left text-xs">
+                        <thead class="text-muted">
+                            <tr>
+                                <th class="p-1">Recipient</th>
+                                <th class="p-1">Source</th>
+                                <th class="p-1">Status</th>
+                                <th class="p-1">Attempts</th>
+                                <th class="p-1">Last error</th>
+                                <th class="p-1">Sent</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var o in _outbox)
+                            {
+                                <tr class="border-t border-default">
+                                    <td class="p-1">@o.RecipientEmail</td>
+                                    <td class="p-1">@(o.RecipientSource ?? "—")</td>
+                                    <td class="p-1">@o.Status</td>
+                                    <td class="p-1">@o.AttemptCount</td>
+                                    <td class="p-1 break-all">@(o.LastError ?? "—")</td>
+                                    <td class="p-1">@(o.SentAtUtc?.UtcDateTime.ToString("u") ?? "—")</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                }
+            </section>
+        </div>
+
+        @if (!string.IsNullOrEmpty(_error))
+        {
+            <p class="mt-4 text-sm text-muted">@_error</p>
+        }
+    }
+</div>
+
+@code {
+    [Parameter] public string InstanceId { get; set; } = "";
+
+    private bool _capabilitiesLoaded;
+    private bool _canView;
+    private bool _loading = true;
+    private string? _error;
+    private NotificationInstanceDetailDto? _detail;
+    private IReadOnlyList<NotificationDeliveryOutboxDto>? _outbox;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var caps = await Capabilities.GetCapabilitiesAsync();
+        _canView = caps.CanViewNotificationDefinitions;
+        _capabilitiesLoaded = true;
+        if (!_canView)
+        {
+            _loading = false;
+            return;
+        }
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _error = null;
+        try
+        {
+            _detail = await Client.GetNotificationInstanceAsync(InstanceId);
+            if (_detail is not null)
+                _outbox = await Client.ListNotificationInstanceOutboxAsync(InstanceId);
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+}

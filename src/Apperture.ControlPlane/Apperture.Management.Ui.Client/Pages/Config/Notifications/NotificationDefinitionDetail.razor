@@ -1,0 +1,449 @@
+@page "/config/notifications/definitions/{DefinitionId}"
+@layout ConfigLayout
+@using Apperture.Management.Client
+@using Apperture.Management.Ui.Client.Organisms
+@using Apperture.Management.Ui.Client.Services
+@inject IManagementClient Client
+@inject IOperatorCapabilitiesService Capabilities
+@inject NavigationManager Nav
+
+<div class="p-4">
+    <div class="text-xs text-muted mb-1">
+        <a class="underline" href="/config/notifications/definitions">Definitions</a> — @DefinitionId
+    </div>
+
+    @if (!_capabilitiesLoaded)
+    {
+        <p class="mt-4 text-sm text-muted">Loading…</p>
+    }
+    else if (!_canView)
+    {
+        <div class="mt-4 rounded border border-default bg-surface px-3 py-2 text-sm">
+            <div class="font-semibold">Not authorized</div>
+            <div class="text-muted">You do not have permission to view this definition.</div>
+        </div>
+    }
+    else if (_loading)
+    {
+        <p class="mt-4 text-sm text-muted">Loading…</p>
+    }
+    else if (_detail is null)
+    {
+        <p class="mt-4 text-sm text-muted">Definition not found.</p>
+    }
+    else
+    {
+        <PageHeader Title="@_detail.DisplayName" Subtitle="@_detail.Id" />
+
+        <div class="mt-4 space-y-4">
+            <section class="rounded border border-default bg-surface p-3 text-sm">
+                <div class="font-semibold text-heading mb-2">Metadata</div>
+                <dl class="grid grid-cols-1 gap-1 md:grid-cols-2 text-xs">
+                    <div><dt class="text-muted">Origin</dt><dd>@_detail.Origin</dd></div>
+                    <div><dt class="text-muted">Scope</dt><dd>@_detail.Scope</dd></div>
+                    <div><dt class="text-muted">Source kind</dt><dd>@_detail.SourceKind</dd></div>
+                    <div><dt class="text-muted">Primary event</dt><dd>@(_detail.PrimaryEventType ?? "—")</dd></div>
+                    <div><dt class="text-muted">Mutability</dt><dd>@_detail.Mutability</dd></div>
+                    <div><dt class="text-muted">Integration</dt><dd class="font-mono break-all">@(_detail.IntegrationId ?? "—")</dd></div>
+                    <div><dt class="text-muted">Module</dt><dd class="font-mono">@(_detail.ModuleId ?? "—")</dd></div>
+                    <div><dt class="text-muted">Enabled</dt><dd>
+                        @if (_canManage)
+                        {
+                            <input type="checkbox" checked="@_detail.IsEnabled" disabled="@_busy" @onchange="ToggleDefinitionEnabledAsync" />
+                        }
+                        else
+                        {
+                            @(_detail.IsEnabled ? "Yes" : "No")
+                        }
+                    </dd></div>
+                    <div><dt class="text-muted">Severity</dt><dd>@(_detail.DefaultSeverity ?? "—")</dd></div>
+                    <div><dt class="text-muted">Updated</dt><dd>@_detail.UpdatedAtUtc.UtcDateTime.ToString("u")</dd></div>
+                </dl>
+                @if (!string.IsNullOrWhiteSpace(_detail.Description))
+                {
+                    <p class="mt-2 text-muted">@_detail.Description</p>
+                }
+            </section>
+
+            <section class="rounded border border-default bg-surface p-3">
+                <div class="font-semibold text-heading mb-2 text-sm">Rule JSON (read-only)</div>
+                <pre class="overflow-x-auto text-xs bg-surface-muted p-2 rounded">@_detail.RuleJson</pre>
+            </section>
+
+            <section class="rounded border border-default bg-surface p-3">
+                <div class="font-semibold text-heading mb-2 text-sm">Template JSON (read-only)</div>
+                <pre class="overflow-x-auto text-xs bg-surface-muted p-2 rounded">@_detail.TemplateJson</pre>
+            </section>
+
+            <section class="rounded border border-default bg-surface p-3">
+                <div class="flex items-center justify-between gap-2 mb-2">
+                    <div class="font-semibold text-heading text-sm">Render preview</div>
+                    <button type="button" class="rounded bg-surface-muted px-3 py-1 text-xs disabled:opacity-50" disabled="@_busy" @onclick="RenderPreviewAsync">Preview</button>
+                </div>
+                @if (_preview is not null)
+                {
+                    <div class="text-xs space-y-1">
+                        <div><span class="text-muted">Subject:</span> @_preview.Subject</div>
+                        <div><span class="text-muted">Summary:</span> @_preview.Summary</div>
+                        @if (!string.IsNullOrWhiteSpace(_preview.BodyText))
+                        {
+                            <pre class="mt-1 bg-surface-muted p-2 rounded whitespace-pre-wrap">@_preview.BodyText</pre>
+                        }
+                    </div>
+                }
+                else
+                {
+                    <p class="text-xs text-muted">No preview yet. Uses a sample event payload (does not send mail).</p>
+                }
+            </section>
+
+            <section class="rounded border border-default bg-surface p-3">
+                <div class="font-semibold text-heading mb-2 text-sm">Subscriptions</div>
+                @if (_canManage)
+                {
+                    <div class="mb-3 flex flex-wrap items-end gap-2 text-xs border-b border-default pb-3">
+                        <label>
+                            Kind
+                            <select class="mt-1 block rounded border border-default px-2 py-1" @bind="_addKind">
+                                <option value="principal">principal</option>
+                                <option value="operational_team">operational_team</option>
+                                <option value="managed_contact">managed_contact</option>
+                            </select>
+                        </label>
+                        <label class="min-w-[10rem] flex-1">
+                            Ref
+                            <select class="mt-1 block w-full rounded border border-default px-2 py-1 font-mono" @bind="_addRef">
+                                <option value="">— select —</option>
+                                @foreach (var opt in RecipientOptions)
+                                {
+                                    <option value="@opt.Id">@opt.Label</option>
+                                }
+                            </select>
+                        </label>
+                        @if (_addKind == "managed_contact" && _canManageContacts)
+                        {
+                            <label class="flex items-center gap-1">
+                                <input type="checkbox" @bind="_createContactIfMissing" />
+                                Create contact if missing
+                            </label>
+                        }
+                        <button type="button" class="rounded bg-surface-muted px-3 py-2 disabled:opacity-50" disabled="@_busy" @onclick="AddSubscriptionAsync">Add</button>
+                    </div>
+                }
+                @if (_subscriptions is { Count: 0 })
+                {
+                    <p class="text-xs text-muted">No subscriptions.</p>
+                }
+                else if (_subscriptions is not null)
+                {
+                    <table class="min-w-full text-left text-xs">
+                        <thead class="text-muted">
+                            <tr>
+                                <th class="p-1">Kind</th>
+                                <th class="p-1">Ref</th>
+                                <th class="p-1">Mode</th>
+                                <th class="p-1">Enabled</th>
+                                <th class="p-1"></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var s in _subscriptions)
+                            {
+                                <tr class="border-t border-default">
+                                    <td class="p-1">@s.RecipientKind</td>
+                                    <td class="p-1 font-mono break-all">@s.RecipientRef</td>
+                                    <td class="p-1">@s.DeliveryMode</td>
+                                    <td class="p-1">
+                                        @if (_canManage)
+                                        {
+                                            <input type="checkbox" checked="@s.IsEnabled" disabled="@_busy" @onchange="e => PatchSubscriptionEnabledAsync(s, e)" />
+                                        }
+                                        else
+                                        {
+                                            @(s.IsEnabled ? "Yes" : "No")
+                                        }
+                                    </td>
+                                    <td class="p-1">
+                                        @if (_canManage)
+                                        {
+                                            <button type="button" class="underline text-muted disabled:opacity-50" disabled="@_busy" @onclick="() => RemoveSubscriptionAsync(s)">Remove</button>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                }
+            </section>
+
+            <section class="rounded border border-default bg-surface p-3">
+                <div class="font-semibold text-heading mb-2 text-sm">Recipient preview</div>
+                <div class="flex flex-wrap items-end gap-2 text-xs">
+                    <label>
+                        Integration id
+                        <input class="mt-1 block rounded border border-default px-2 py-1 font-mono" @bind="_resolveIntegrationId" />
+                    </label>
+                    <button type="button" class="rounded bg-surface-muted px-3 py-2 disabled:opacity-50" disabled="@_busy" @onclick="ResolveRecipientsAsync">Preview</button>
+                </div>
+                @if (_resolution is not null)
+                {
+                    <div class="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+                        <div>
+                            <div class="text-xs font-semibold mb-1">Deliverable (@_resolution.Deliverable.Count)</div>
+                            <ul class="text-xs space-y-1 max-h-48 overflow-y-auto">
+                                @foreach (var r in _resolution.Deliverable)
+                                {
+                                    <li>@r.Email <span class="text-muted">(@r.Source / @r.RecipientKind)</span></li>
+                                }
+                            </ul>
+                        </div>
+                        <div>
+                            <div class="text-xs font-semibold mb-1">Skipped (@_resolution.Skipped.Count)</div>
+                            <ul class="text-xs space-y-1 max-h-48 overflow-y-auto">
+                                @foreach (var r in _resolution.Skipped)
+                                {
+                                    <li>@(r.Email ?? r.UserId ?? r.ManagedContactId ?? "—") <span class="text-muted">@r.Reason</span></li>
+                                }
+                            </ul>
+                        </div>
+                    </div>
+                }
+            </section>
+
+            <section class="rounded border border-default bg-surface p-3">
+                <div class="font-semibold text-heading mb-2 text-sm">Recent instances</div>
+                @if (_recentInstances is { Count: 0 })
+                {
+                    <p class="text-xs text-muted">No recent instances.</p>
+                }
+                else if (_recentInstances is not null)
+                {
+                    <table class="min-w-full text-left text-xs">
+                        <thead class="text-muted">
+                            <tr>
+                                <th class="p-1">Created</th>
+                                <th class="p-1">Status</th>
+                                <th class="p-1">Kind</th>
+                                <th class="p-1"></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var i in _recentInstances)
+                            {
+                                <tr class="border-t border-default">
+                                    <td class="p-1">@i.CreatedAtUtc.UtcDateTime.ToString("u")</td>
+                                    <td class="p-1">@i.Status</td>
+                                    <td class="p-1">@i.NotificationKind</td>
+                                    <td class="p-1"><a class="underline" href="@($"/config/notifications/instances/{Uri.EscapeDataString(i.Id)}")">Open</a></td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                }
+                <div class="mt-2 text-xs">
+                    <a class="underline" href="@DiagnosticsHref">Diagnostics for this definition</a>
+                </div>
+            </section>
+        </div>
+
+        @if (!string.IsNullOrEmpty(_error))
+        {
+            <p class="mt-4 text-sm text-muted">@_error</p>
+        }
+    }
+</div>
+
+@code {
+    [Parameter] public string DefinitionId { get; set; } = "";
+
+    private bool _capabilitiesLoaded;
+    private bool _canView;
+    private bool _canManage;
+    private bool _canManageContacts;
+    private bool _loading = true;
+    private bool _busy;
+    private string? _error;
+    private NotificationDefinitionDetailDto? _detail;
+    private IReadOnlyList<NotificationSubscriptionDto>? _subscriptions;
+    private IReadOnlyList<NotificationInstanceSummaryDto>? _recentInstances;
+    private RenderedNotificationSnapshotDto? _preview;
+    private NotificationRecipientResolutionPreviewDto? _resolution;
+    private string _addKind = "principal";
+    private string _addRef = "";
+    private bool _createContactIfMissing;
+    private string _resolveIntegrationId = "";
+    private IReadOnlyList<UserListDto> _users = [];
+    private IReadOnlyList<OperationalTeamSummaryDto> _teams = [];
+    private IReadOnlyList<ManagedContactSummaryDto> _contacts = [];
+
+    private string DiagnosticsHref =>
+        $"/config/notifications/diagnostics?definitionId={Uri.EscapeDataString(DefinitionId)}";
+
+    private IEnumerable<(string Id, string Label)> RecipientOptions => _addKind switch
+    {
+        "operational_team" => _teams.Select(t => (t.Id, $"{t.Name} ({t.Id})")),
+        "managed_contact" => _contacts.Select(c => (c.Id, $"{c.DisplayName} ({c.Id})")),
+        _ => _users.Select(u => (u.UserId, $"{u.DisplayName} ({u.UserId})"))
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        var caps = await Capabilities.GetCapabilitiesAsync();
+        _canView = caps.CanViewNotificationDefinitions;
+        _canManage = caps.CanManageNotificationDefinitions;
+        _canManageContacts = caps.CanManageManagedContacts;
+        _capabilitiesLoaded = true;
+        if (!_canView)
+        {
+            _loading = false;
+            return;
+        }
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _busy = true;
+        _error = null;
+        try
+        {
+            _detail = await Client.GetNotificationDefinitionAsync(DefinitionId);
+            if (_detail is null)
+                return;
+
+            _resolveIntegrationId = _detail.IntegrationId ?? _resolveIntegrationId;
+            _subscriptions = await Client.ListNotificationSubscriptionsByDefinitionAsync(DefinitionId);
+            _recentInstances = await Client.ListNotificationInstancesAsync(definitionId: DefinitionId, take: 10);
+
+            if (_canManage)
+            {
+                var userPage = await Client.GetUserPageAsync(0, 200);
+                _users = userPage.Items;
+                _teams = await Client.ListOperationalTeamsAsync(includeDisabled: false);
+                _contacts = await Client.ListManagedContactsAsync(null, 200) ?? [];
+            }
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _busy = false;
+            _loading = false;
+        }
+    }
+
+    private async Task ToggleDefinitionEnabledAsync(ChangeEventArgs e)
+    {
+        if (!_canManage || _detail is null)
+            return;
+        var enabled = ParseCheckbox(e);
+        _busy = true;
+        try
+        {
+            _detail = await Client.SetNotificationDefinitionEnabledAsync(DefinitionId, enabled) ?? _detail;
+        }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _busy = false; }
+    }
+
+    private async Task RenderPreviewAsync()
+    {
+        if (_detail is null)
+            return;
+        _busy = true;
+        _error = null;
+        try
+        {
+            var sample = new NotificationRenderSampleDto(
+                _detail.PrimaryEventType ?? "platform.schedule.expected_run_missing",
+                DateTimeOffset.UtcNow,
+                _detail.DefaultSeverity ?? "warning",
+                _resolveIntegrationId.Trim(),
+                null,
+                "activation",
+                null,
+                null,
+                null,
+                null);
+            _preview = await Client.RenderNotificationPreviewAsync(
+                DefinitionId,
+                new RenderNotificationPreviewRequest(null, null, sample));
+        }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _busy = false; }
+    }
+
+    private async Task AddSubscriptionAsync()
+    {
+        if (!_canManage || string.IsNullOrWhiteSpace(_addRef))
+            return;
+        _busy = true;
+        _error = null;
+        try
+        {
+            await Client.AddNotificationSubscriptionAsync(
+                DefinitionId,
+                new AddNotificationSubscriptionRequest(
+                    _detail?.IntegrationId,
+                    _addKind,
+                    _addRef,
+                    null,
+                    _createContactIfMissing));
+            _subscriptions = await Client.ListNotificationSubscriptionsByDefinitionAsync(DefinitionId);
+            _addRef = "";
+        }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _busy = false; }
+    }
+
+    private async Task PatchSubscriptionEnabledAsync(NotificationSubscriptionDto s, ChangeEventArgs e)
+    {
+        if (!_canManage)
+            return;
+        _busy = true;
+        try
+        {
+            await Client.PatchNotificationSubscriptionAsync(
+                DefinitionId,
+                s.Id,
+                new PatchNotificationSubscriptionRequest(ParseCheckbox(e), null));
+            _subscriptions = await Client.ListNotificationSubscriptionsByDefinitionAsync(DefinitionId);
+        }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _busy = false; }
+    }
+
+    private async Task RemoveSubscriptionAsync(NotificationSubscriptionDto s)
+    {
+        if (!_canManage)
+            return;
+        _busy = true;
+        try
+        {
+            await Client.RemoveNotificationSubscriptionAsync(DefinitionId, s.Id);
+            _subscriptions = await Client.ListNotificationSubscriptionsByDefinitionAsync(DefinitionId);
+        }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _busy = false; }
+    }
+
+    private async Task ResolveRecipientsAsync()
+    {
+        _busy = true;
+        _error = null;
+        try
+        {
+            _resolution = await Client.ResolveNotificationRecipientsAsync(
+                DefinitionId,
+                new ResolveNotificationRecipientsRequest(
+                    string.IsNullOrWhiteSpace(_resolveIntegrationId) ? null : _resolveIntegrationId.Trim()));
+        }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _busy = false; }
+    }
+
+    private static bool ParseCheckbox(ChangeEventArgs e) =>
+        e.Value is bool b ? b : string.Equals(e.Value?.ToString(), "true", StringComparison.OrdinalIgnoreCase);
+}

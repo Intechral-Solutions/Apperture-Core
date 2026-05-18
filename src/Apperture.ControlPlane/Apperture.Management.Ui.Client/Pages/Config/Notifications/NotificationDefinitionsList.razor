@@ -1,0 +1,188 @@
+@page "/config/notifications/definitions"
+@layout ConfigLayout
+@using Apperture.Management.Client
+@using Apperture.Management.Ui.Client.Organisms
+@using Apperture.Management.Ui.Client.Services
+@inject IManagementClient Client
+@inject IOperatorCapabilitiesService Capabilities
+@inject NavigationManager Nav
+
+<div class="p-4">
+    <div class="text-xs text-muted mb-1">Config — Notifications — Definitions</div>
+    <PageHeader Title="Notification definitions"
+                Subtitle="Built-in and user-scoped definitions. Enable or disable delivery; edit subscriptions on the detail page." />
+
+    @if (!_capabilitiesLoaded)
+    {
+        <p class="mt-4 text-sm text-muted">Loading…</p>
+    }
+    else if (!_canView)
+    {
+        <div class="mt-4 rounded border border-default bg-surface px-3 py-2 text-sm">
+            <div class="font-semibold">Not authorized</div>
+            <div class="text-muted">You do not have permission to view notification definitions.</div>
+        </div>
+    }
+    else
+    {
+        <div class="mt-4 flex flex-wrap items-end gap-2 text-xs">
+            <label>
+                Enabled
+                <select class="mt-1 block rounded border border-default px-2 py-1" @bind="_enabledFilter">
+                    <option value="">Any</option>
+                    <option value="true">Yes</option>
+                    <option value="false">No</option>
+                </select>
+            </label>
+            <label>
+                Origin
+                <input class="mt-1 block rounded border border-default px-2 py-1" @bind="_originFilter" placeholder="builtIn, user…" />
+            </label>
+            <label>
+                Integration id
+                <input class="mt-1 block rounded border border-default px-2 py-1 font-mono" @bind="_integrationFilter" />
+            </label>
+            <button type="button" class="rounded bg-surface-muted px-3 py-2 disabled:opacity-50" disabled="@_busy" @onclick="LoadAsync">Apply</button>
+        </div>
+
+        @if (!string.IsNullOrEmpty(_error))
+        {
+            <p class="mt-4 text-sm text-muted">@_error</p>
+        }
+        else if (_loading)
+        {
+            <p class="mt-4 text-sm text-muted">Loading…</p>
+        }
+        else if (_items is { Count: 0 })
+        {
+            <p class="mt-4 text-sm text-muted">No definitions match.</p>
+        }
+        else if (_items is not null)
+        {
+            <div class="mt-4 overflow-x-auto rounded border border-default">
+                <table class="min-w-full text-left text-xs">
+                    <thead class="bg-surface-muted text-heading">
+                        <tr>
+                            <th class="p-2">Name</th>
+                            <th class="p-2">Id</th>
+                            <th class="p-2">Origin</th>
+                            <th class="p-2">Scope</th>
+                            <th class="p-2">Source / event</th>
+                            <th class="p-2">Enabled</th>
+                            <th class="p-2">Integration</th>
+                            <th class="p-2"></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var d in _items)
+                        {
+                            <tr class="border-t border-default">
+                                <td class="p-2 font-medium text-heading">@d.DisplayName</td>
+                                <td class="p-2 font-mono break-all">@d.Id</td>
+                                <td class="p-2">@d.Origin</td>
+                                <td class="p-2">@d.Scope</td>
+                                <td class="p-2">@d.SourceKind / @(d.PrimaryEventType ?? "—")</td>
+                                <td class="p-2">
+                                    @if (_canManage)
+                                    {
+                                        <input type="checkbox" checked="@d.IsEnabled" disabled="@_busy" @onchange="e => ToggleEnabledAsync(d, e)" />
+                                    }
+                                    else
+                                    {
+                                        @(d.IsEnabled ? "Yes" : "No")
+                                    }
+                                </td>
+                                <td class="p-2 font-mono break-all">@(d.IntegrationId ?? "—")</td>
+                                <td class="p-2"><a class="underline" href="@DetailHref(d.Id)">View</a></td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    }
+</div>
+
+@code {
+    private bool _capabilitiesLoaded;
+    private bool _canView;
+    private bool _canManage;
+    private bool _loading = true;
+    private bool _busy;
+    private string? _error;
+    private string _enabledFilter = "";
+    private string _originFilter = "";
+    private string _integrationFilter = "";
+    private IReadOnlyList<NotificationDefinitionSummaryDto>? _items;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var caps = await Capabilities.GetCapabilitiesAsync();
+        _canView = caps.CanViewNotificationDefinitions;
+        _canManage = caps.CanManageNotificationDefinitions;
+        _capabilitiesLoaded = true;
+        if (!_canView)
+        {
+            _loading = false;
+            return;
+        }
+
+        var uri = Nav.ToAbsoluteUri(Nav.Uri);
+        if (Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(uri.Query).TryGetValue("integrationId", out var iid))
+            _integrationFilter = iid.ToString();
+
+        await LoadAsync();
+    }
+
+    private string DetailHref(string id) => $"/config/notifications/definitions/{Uri.EscapeDataString(id)}";
+
+    private async Task LoadAsync()
+    {
+        _busy = true;
+        _error = null;
+        try
+        {
+            bool? enabled = _enabledFilter switch
+            {
+                "true" => true,
+                "false" => false,
+                _ => null
+            };
+            _items = await Client.ListNotificationDefinitionsAsync(
+                string.IsNullOrWhiteSpace(_integrationFilter) ? null : _integrationFilter.Trim(),
+                enabled: enabled,
+                origin: string.IsNullOrWhiteSpace(_originFilter) ? null : _originFilter.Trim());
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+            _items = null;
+        }
+        finally
+        {
+            _busy = false;
+            _loading = false;
+        }
+    }
+
+    private async Task ToggleEnabledAsync(NotificationDefinitionSummaryDto d, ChangeEventArgs e)
+    {
+        if (!_canManage)
+            return;
+        var enabled = e.Value is bool b ? b : string.Equals(e.Value?.ToString(), "true", StringComparison.OrdinalIgnoreCase);
+        _busy = true;
+        try
+        {
+            await Client.SetNotificationDefinitionEnabledAsync(d.Id, enabled);
+            await LoadAsync();
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}
