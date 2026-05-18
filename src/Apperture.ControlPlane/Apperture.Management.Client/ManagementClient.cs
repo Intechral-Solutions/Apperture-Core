@@ -1526,6 +1526,21 @@ public sealed class ManagementClient : IManagementClient
         return list ?? Array.Empty<NotificationSubscriptionDto>();
     }
 
+    public async Task<IReadOnlyList<NotificationSubscriptionDto>> ListNotificationSubscriptionsByIntegrationAsync(
+        string integrationId,
+        string? definitionId = null,
+        CancellationToken cancellationToken = default)
+    {
+        var query = string.IsNullOrWhiteSpace(definitionId)
+            ? ""
+            : $"?definitionId={Uri.EscapeDataString(definitionId.Trim())}";
+        var list = await _http.GetFromJsonAsync<NotificationSubscriptionDto[]>(
+            $"integrations/{Uri.EscapeDataString(integrationId)}/notification-subscriptions{query}",
+            ApiJsonReadOptions,
+            cancellationToken).ConfigureAwait(false);
+        return list ?? Array.Empty<NotificationSubscriptionDto>();
+    }
+
     public async Task<NotificationSubscriptionDto> AddNotificationSubscriptionAsync(
         string definitionId,
         AddNotificationSubscriptionRequest request,

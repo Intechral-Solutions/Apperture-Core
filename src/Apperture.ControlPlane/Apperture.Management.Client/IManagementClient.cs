@@ -463,6 +463,11 @@ public interface IManagementClient
         string definitionId,
         CancellationToken cancellationToken = default);
 
+    Task<IReadOnlyList<NotificationSubscriptionDto>> ListNotificationSubscriptionsByIntegrationAsync(
+        string integrationId,
+        string? definitionId = null,
+        CancellationToken cancellationToken = default);
+
     Task<NotificationSubscriptionDto> AddNotificationSubscriptionAsync(
         string definitionId,
         AddNotificationSubscriptionRequest request,
@@ -638,7 +643,8 @@ public sealed record OperatorCapabilitiesDto(
     [property: JsonPropertyName("canManageManagedContacts")] bool CanManageManagedContacts = false,
     [property: JsonPropertyName("canImportManagedContacts")] bool CanImportManagedContacts = false,
     [property: JsonPropertyName("canViewNotificationDefinitions")] bool CanViewNotificationDefinitions = false,
-    [property: JsonPropertyName("canManageNotificationDefinitions")] bool CanManageNotificationDefinitions = false);
+    [property: JsonPropertyName("canManageNotificationDefinitions")] bool CanManageNotificationDefinitions = false,
+    [property: JsonPropertyName("canUpdateIntegrations")] bool CanUpdateIntegrations = false);
 
 public sealed record ManagedContactSummaryDto(
     string Id,

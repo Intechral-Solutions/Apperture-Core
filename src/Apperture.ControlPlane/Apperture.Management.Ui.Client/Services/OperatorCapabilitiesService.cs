@@ -15,7 +15,7 @@ public interface IOperatorCapabilitiesService
 public sealed class OperatorCapabilitiesService : IOperatorCapabilitiesService
 {
     private static readonly OperatorCapabilitiesDto DenyAll =
-        new(false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false);
+        new(false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false);
 
     private readonly IManagementClient _client;
     private readonly ILogger<OperatorCapabilitiesService> _logger;
@@ -61,5 +61,5 @@ public sealed class OperatorCapabilitiesService : IOperatorCapabilitiesService
         && !d.CanViewIntegrations && !d.CanManageIntegrations && !d.CanViewConnectorDefinitions
         && !d.CanCreateConnections && !d.CanUpdateConnections && !d.CanRetireConnections
         && !d.CanViewManagedContacts && !d.CanManageManagedContacts && !d.CanImportManagedContacts
-        && !d.CanViewNotificationDefinitions && !d.CanManageNotificationDefinitions;
+        && !d.CanViewNotificationDefinitions && !d.CanManageNotificationDefinitions && !d.CanUpdateIntegrations;
 }

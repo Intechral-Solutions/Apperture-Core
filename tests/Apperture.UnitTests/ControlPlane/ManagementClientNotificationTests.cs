@@ -36,6 +36,18 @@ public sealed class ManagementClientNotificationTests
     }
 
     [Fact]
+    public async Task ListNotificationSubscriptionsByIntegrationAsync_UsesIntegrationPath()
+    {
+        var handler = new CaptureHandler(HttpStatusCode.OK, "[]");
+        var client = new ManagementClient(new HttpClient(handler) { BaseAddress = new Uri("https://api.example/") });
+
+        _ = await client.ListNotificationSubscriptionsByIntegrationAsync("int-1", definitionId: "def-1");
+
+        handler.LastUri!.AbsolutePath.Should().Contain("integrations/int-1/notification-subscriptions");
+        handler.LastUri!.Query.Should().Contain("definitionId=def-1");
+    }
+
+    [Fact]
     public async Task ListNotificationSubscriptionsByDefinitionAsync_UsesDefinitionPath()
     {
         var handler = new CaptureHandler(HttpStatusCode.OK, "[]");

@@ -18,6 +18,10 @@
                class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface">
                 Execute
             </a>
+            <a href="@($"/integrations/{Uri.EscapeDataString(IntegrationId)}/notifications")"
+               class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface">
+                Notifications
+            </a>
             <button type="button"
                     class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface disabled:opacity-50"
                     disabled="@_loading"

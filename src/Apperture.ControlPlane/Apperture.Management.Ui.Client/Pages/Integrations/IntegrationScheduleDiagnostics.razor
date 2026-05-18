@@ -370,6 +370,23 @@
                 {
                     <div class="text-sm text-muted">No notification rows for recent incidents.</div>
                 }
+
+                @if (_diagnostics.RecentPlatformNotificationInstances is { Count: > 0 } platformInstances
+                    || _diagnostics.RecentPlatformNotificationOutbox is { Count: > 0 } platformOutbox)
+                {
+                    <div class="mt-4 flex flex-wrap items-center justify-between gap-2">
+                        <div class="text-xs font-semibold text-heading">Platform pipeline (Epic 77)</div>
+                        <a class="text-xs underline" href="@($"/integrations/{Uri.EscapeDataString(IntegrationId)}/notifications")">Integration notifications</a>
+                    </div>
+                    @if (platformInstances is { Count: > 0 })
+                    {
+                        <p class="mt-2 text-xs text-muted">@platformInstances.Count recent instance(s)</p>
+                    }
+                    @if (platformOutbox is { Count: > 0 })
+                    {
+                        <p class="text-xs text-muted">@platformOutbox.Count recent outbox row(s)</p>
+                    }
+                }
             </div>
 
             <div class="rounded border border-default bg-surface p-3">
