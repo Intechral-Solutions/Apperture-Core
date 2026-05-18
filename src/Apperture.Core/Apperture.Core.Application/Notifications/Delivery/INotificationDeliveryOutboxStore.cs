@@ -15,8 +15,9 @@ public interface INotificationDeliveryOutboxStore
         DateTimeOffset utcNow,
         CancellationToken cancellationToken = default);
 
-    ValueTask UpdateAfterAttemptAsync(
+    ValueTask<bool> TryUpdateAfterAttemptAsync(
         NotificationDeliveryOutboxUpdateCommand command,
+        string requiredCurrentStatus,
         CancellationToken cancellationToken = default);
 
     ValueTask<DateTimeOffset?> GetLatestSuccessfulActivationOrReminderSentUtcAsync(

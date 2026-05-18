@@ -1,7 +1,10 @@
 using Apperture.Core.Application.Integration;
+using Apperture.Core.Application.Notifications;
+using Apperture.Core.Application.Notifications.Diagnostics;
 using Apperture.Core.Application.Scheduling;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Integration;
+using Apperture.Core.Domain.Notifications;
 using Apperture.Core.Domain.Scheduling;
 
 namespace Apperture.ControlPlane.Security;
@@ -15,6 +18,7 @@ public sealed class IntegrationScheduleDiagnosticsService : IIntegrationSchedule
     private const int RecentExpectedFiresCap = 10;
     private const int RecentAttentionIncidentsCap = 20;
     private const int RecentAttentionIncidentNotificationsCap = 40;
+    private const int RecentPlatformNotificationCap = 40;
     private static readonly TimeSpan TimelineSearchMaxLookback = TimeSpan.FromDays(30);
 
     private readonly IIntegrationManagementService _integrationManagement;
@@ -24,6 +28,7 @@ public sealed class IntegrationScheduleDiagnosticsService : IIntegrationSchedule
     private readonly IAttentionIncidentTracker _attentionIncidentTracker;
     private readonly IAttentionIncidentNotificationLedger _attentionIncidentNotificationLedger;
     private readonly IAttentionRecipientResolver _attentionRecipientResolver;
+    private readonly INotificationDeliveryDiagnosticsStore _platformNotificationDiagnostics;
     private readonly TimeProvider _timeProvider;
 
     public IntegrationScheduleDiagnosticsService(
@@ -34,6 +39,7 @@ public sealed class IntegrationScheduleDiagnosticsService : IIntegrationSchedule
         IAttentionIncidentTracker attentionIncidentTracker,
         IAttentionIncidentNotificationLedger attentionIncidentNotificationLedger,
         IAttentionRecipientResolver attentionRecipientResolver,
+        INotificationDeliveryDiagnosticsStore platformNotificationDiagnostics,
         TimeProvider timeProvider)
     {
         _integrationManagement = integrationManagement;
@@ -43,6 +49,7 @@ public sealed class IntegrationScheduleDiagnosticsService : IIntegrationSchedule
         _attentionIncidentTracker = attentionIncidentTracker;
         _attentionIncidentNotificationLedger = attentionIncidentNotificationLedger;
         _attentionRecipientResolver = attentionRecipientResolver;
+        _platformNotificationDiagnostics = platformNotificationDiagnostics;
         _timeProvider = timeProvider;
     }
 
@@ -229,6 +236,14 @@ public sealed class IntegrationScheduleDiagnosticsService : IIntegrationSchedule
             route.IntegrationRowPrimaryOperationalTeamId,
             route.IntegrationRowEscalationOperationalTeamId);
 
+        var platformDiag = await _platformNotificationDiagnostics
+            .GetByIntegrationAsync(
+                integrationId.Value,
+                NotificationDefinitionIds.PlatformScheduleExpectedRunMissing,
+                RecentPlatformNotificationCap,
+                cancellationToken)
+            .ConfigureAwait(false);
+
         return new IntegrationScheduleDiagnosticsProjection(
             integrationId,
             evaluation.ExpectsRecurringRuns,
@@ -250,7 +265,9 @@ public sealed class IntegrationScheduleDiagnosticsService : IIntegrationSchedule
             recentTimeline,
             incidents,
             notifications,
-            routingSummary);
+            routingSummary,
+            platformDiag.RecentInstances,
+            platformDiag.RecentOutboxRows);
     }
 
     private static ScheduleDefinition? FindReferenceSchedule(

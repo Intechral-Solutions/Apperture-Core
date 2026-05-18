@@ -24,6 +24,7 @@ public sealed class SqlNotificationDeliveryOutboxStore : INotificationDeliveryOu
                      && (x.NextAttemptAtUtc == null || x.NextAttemptAtUtc <= utcNow))
             .OrderBy(x => x.CreatedAtUtc)
             .Take(take)
+            .AsNoTracking()
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
 
@@ -62,19 +63,30 @@ public sealed class SqlNotificationDeliveryOutboxStore : INotificationDeliveryOu
 
         entity.Status = NotificationOutboxStatuses.Delivering;
         entity.UpdatedAtUtc = utcNow;
-        await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-        return true;
+        try
+        {
+            await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            return true;
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            _db.ChangeTracker.Clear();
+            return false;
+        }
     }
 
-    public async ValueTask UpdateAfterAttemptAsync(
+    public async ValueTask<bool> TryUpdateAfterAttemptAsync(
         NotificationDeliveryOutboxUpdateCommand command,
+        string requiredCurrentStatus,
         CancellationToken cancellationToken = default)
     {
         var entity = await _db.NotificationDeliveryOutbox
-            .FirstOrDefaultAsync(x => x.Id == command.Id.Value, cancellationToken)
+            .FirstOrDefaultAsync(
+                x => x.Id == command.Id.Value && x.Status == requiredCurrentStatus,
+                cancellationToken)
             .ConfigureAwait(false);
         if (entity is null)
-            throw new InvalidOperationException($"Notification delivery outbox row {command.Id.Value} was not found.");
+            return false;
 
         entity.Status = command.Status;
         entity.AttemptCount = command.AttemptCount;
@@ -82,7 +94,16 @@ public sealed class SqlNotificationDeliveryOutboxStore : INotificationDeliveryOu
         entity.LastError = command.LastError;
         entity.SentAtUtc = command.SentAtUtc;
         entity.UpdatedAtUtc = command.UpdatedAtUtc;
-        await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            return true;
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            _db.ChangeTracker.Clear();
+            return false;
+        }
     }
 
     public async ValueTask<DateTimeOffset?> GetLatestSuccessfulActivationOrReminderSentUtcAsync(

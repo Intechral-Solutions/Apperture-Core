@@ -27,7 +27,9 @@ public sealed record IntegrationScheduleDiagnosticsDto(
     IReadOnlyList<ExpectedFireDiagnosticDto> RecentExpectedFires,
     IReadOnlyList<AttentionIncidentDto> RecentAttentionIncidents,
     IReadOnlyList<AttentionIncidentNotificationDto> RecentAttentionIncidentNotifications,
-    AttentionRoutingEffectiveDto AttentionRouting);
+    AttentionRoutingEffectiveDto AttentionRouting,
+    IReadOnlyList<PlatformNotificationInstanceDiagnosticDto> RecentPlatformNotificationInstances,
+    IReadOnlyList<PlatformNotificationOutboxDiagnosticDto> RecentPlatformNotificationOutbox);
 
 /// <summary>Epic 68: bounded incident history for schedule attention conditions.</summary>
 public sealed record AttentionIncidentDto(

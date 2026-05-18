@@ -1,5 +1,6 @@
 using Apperture.Core.Application.Integration;
 using Apperture.Core.Application.Notifications;
+using Apperture.Core.Application.Notifications.Instances;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Governance;
 using Microsoft.Extensions.DependencyInjection;
@@ -74,6 +75,7 @@ public sealed class AttentionIncidentObservationHostedService : BackgroundServic
         var notifier = scope.ServiceProvider.GetRequiredService<AttentionIncidentNotificationOrchestrator>();
         var platformEvents = scope.ServiceProvider.GetRequiredService<ScheduleExpectationPlatformEventDualEmitter>();
         var notificationEvaluation = scope.ServiceProvider.GetRequiredService<INotificationEvaluateOnlyCoordinator>();
+        var platformPipeline = scope.ServiceProvider.GetRequiredService<IOptions<NotificationPipelineOptions>>();
         var clock = scope.ServiceProvider.GetRequiredService<TimeProvider>();
         var observedAt = clock.GetUtcNow();
 
@@ -118,19 +120,28 @@ public sealed class AttentionIncidentObservationHostedService : BackgroundServic
                 }
             }
 
-            try
+            if (PlatformNotificationCutoverGate.ShouldInvokeEpic69Orchestrator(platformPipeline.Value))
             {
-                await notifier
-                    .HandleObserveResultAsync(integration.Id, observe, snapshot, cancellationToken)
-                    .ConfigureAwait(false);
+                try
+                {
+                    await notifier
+                        .HandleObserveResultAsync(integration.Id, observe, snapshot, cancellationToken)
+                        .ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(
+                        ex,
+                        "Attention incident notification handling failed for integration {IntegrationId} after transition {Transition}.",
+                        integration.Id.Value,
+                        observe.Transition);
+                }
             }
-            catch (Exception ex)
+            else
             {
-                _logger.LogError(
-                    ex,
-                    "Attention incident notification handling failed for integration {IntegrationId} after transition {Transition}.",
-                    integration.Id.Value,
-                    observe.Transition);
+                _logger.LogDebug(
+                    "Skipping Epic 69 AttentionIncidentNotificationOrchestrator for integration {IntegrationId}; Notifications:UsePlatformPipeline=true.",
+                    integration.Id.Value);
             }
         }
     }

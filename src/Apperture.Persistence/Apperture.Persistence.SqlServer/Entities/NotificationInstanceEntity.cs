@@ -44,4 +44,5 @@ public sealed class NotificationDeliveryOutboxEntity
     public DateTimeOffset? SentAtUtc { get; set; }
     public DateTimeOffset CreatedAtUtc { get; set; }
     public DateTimeOffset UpdatedAtUtc { get; set; }
+    public byte[]? RowVersion { get; set; }
 }

@@ -1,4 +1,5 @@
 using Apperture.Core.Application.Notifications;
+using Apperture.Core.Application.Notifications.Diagnostics;
 using Apperture.Core.Application.Notifications.Delivery;
 using Apperture.Core.Application.Notifications.Instances;
 using Apperture.Core.Application.Notifications.Subscriptions;
@@ -47,6 +48,8 @@ public static class NotificationsServiceCollectionExtensions
         services.AddScoped<INotificationDeliveryOutboxStore, SqlNotificationDeliveryOutboxStore>();
         services.AddScoped<INotificationInstanceCoordinator, NotificationInstanceCoordinator>();
         services.AddScoped<INotificationInstanceQueryService, NotificationInstanceQueryService>();
+        services.AddScoped<INotificationDeliveryDiagnosticsStore, SqlNotificationDeliveryDiagnosticsStore>();
+        services.AddScoped<INotificationDeliveryDiagnosticsService, NotificationDeliveryDiagnosticsService>();
         services.AddScoped<IEmailNotificationChannel, SmtpEmailNotificationChannel>();
         services.AddScoped<NotificationDispatchProcessor>();
         services.AddHostedService<NotificationDispatchHostedService>();

@@ -553,7 +553,26 @@ public sealed class IntegrationsController : ControllerBase
                 n.SuppressedDueToAcknowledgment,
                 n.OperationalTeamId,
                 n.OperationalTeamNameSnapshot)).ToList(),
-            ToAttentionRoutingDto(p.AttentionRouting));
+            ToAttentionRoutingDto(p.AttentionRouting),
+            p.RecentPlatformNotificationInstances.Select(i => new PlatformNotificationInstanceDiagnosticDto(
+                i.Id,
+                i.NotificationDefinitionId,
+                i.NotificationKind,
+                i.Status,
+                i.AttentionIncidentId,
+                i.SuppressionReason,
+                i.CreatedAtUtc)).ToList(),
+            p.RecentPlatformNotificationOutbox.Select(o => new PlatformNotificationOutboxDiagnosticDto(
+                o.Id,
+                o.NotificationInstanceId,
+                o.NotificationKind,
+                o.AttentionIncidentId,
+                o.RecipientEmail,
+                o.RecipientSource,
+                o.Status,
+                o.LastError,
+                o.SentAtUtc,
+                o.UpdatedAtUtc)).ToList());
 
     private static AttentionRoutingEffectiveDto ToAttentionRoutingDto(AttentionRecipientResolution r) =>
         new(

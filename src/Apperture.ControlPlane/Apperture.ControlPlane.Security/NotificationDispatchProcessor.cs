@@ -49,14 +49,14 @@ public sealed class NotificationDispatchProcessor
             if (row.Status == NotificationOutboxStatuses.Succeeded)
                 continue;
 
-            await ProcessRowAsync(row, opts, now, cancellationToken).ConfigureAwait(false);
-            processed++;
+            if (await ProcessRowAsync(row, opts, now, cancellationToken).ConfigureAwait(false))
+                processed++;
         }
 
         return processed;
     }
 
-    private async ValueTask ProcessRowAsync(
+    private async ValueTask<bool> ProcessRowAsync(
         NotificationDeliveryOutbox row,
         NotificationDeliveryOptions opts,
         DateTimeOffset now,
@@ -68,7 +68,7 @@ public sealed class NotificationDispatchProcessor
             || string.IsNullOrWhiteSpace(instance.RenderedSubject)
             || string.IsNullOrWhiteSpace(instance.RenderedBodyText))
         {
-            await _outbox.UpdateAfterAttemptAsync(
+            var skipped = await _outbox.TryUpdateAfterAttemptAsync(
                 new NotificationDeliveryOutboxUpdateCommand(
                     row.Id,
                     NotificationOutboxStatuses.Skipped,
@@ -77,19 +77,36 @@ public sealed class NotificationDispatchProcessor
                     "parent_instance_missing_or_invalid",
                     null,
                     now),
+                NotificationOutboxStatuses.Delivering,
                 cancellationToken).ConfigureAwait(false);
-            return;
+            if (!skipped)
+                _logger.LogDebug("Outbox row {OutboxId} skip update lost claim race.", row.Id.Value);
+            return skipped;
         }
 
         if (!opts.Enabled)
         {
-            await RevertToPendingAsync(row, now, cancellationToken).ConfigureAwait(false);
-            _logger.LogInformation(
-                "Dry-run: would send email to {Recipient} for notification instance {InstanceId} (subject: {Subject}).",
-                row.RecipientEmail,
-                row.NotificationInstanceId.Value,
-                instance.RenderedSubject);
-            return;
+            var reverted = await _outbox.TryUpdateAfterAttemptAsync(
+                new NotificationDeliveryOutboxUpdateCommand(
+                    row.Id,
+                    NotificationOutboxStatuses.Pending,
+                    row.AttemptCount,
+                    row.NextAttemptAtUtc,
+                    row.LastError,
+                    row.SentAtUtc,
+                    now),
+                NotificationOutboxStatuses.Delivering,
+                cancellationToken).ConfigureAwait(false);
+            if (reverted)
+            {
+                _logger.LogInformation(
+                    "Dry-run: would send email to {Recipient} for notification instance {InstanceId} (subject: {Subject}).",
+                    row.RecipientEmail,
+                    row.NotificationInstanceId.Value,
+                    instance.RenderedSubject);
+            }
+
+            return reverted;
         }
 
         var attemptNumber = row.AttemptCount + 1;
@@ -104,7 +121,7 @@ public sealed class NotificationDispatchProcessor
 
         if (sendResult.Succeeded)
         {
-            await _outbox.UpdateAfterAttemptAsync(
+            var updated = await _outbox.TryUpdateAfterAttemptAsync(
                 new NotificationDeliveryOutboxUpdateCommand(
                     row.Id,
                     NotificationOutboxStatuses.Succeeded,
@@ -113,14 +130,19 @@ public sealed class NotificationDispatchProcessor
                     null,
                     now,
                     now),
+                NotificationOutboxStatuses.Delivering,
                 cancellationToken).ConfigureAwait(false);
-            return;
+            if (!updated)
+                _logger.LogWarning(
+                    "Outbox row {OutboxId} success update lost claim race; another host may have sent.",
+                    row.Id.Value);
+            return updated;
         }
 
         var failureSummary = sendResult.FailureSummary ?? "send_failed";
         if (attemptNumber >= opts.MaxAttempts)
         {
-            await _outbox.UpdateAfterAttemptAsync(
+            return await _outbox.TryUpdateAfterAttemptAsync(
                 new NotificationDeliveryOutboxUpdateCommand(
                     row.Id,
                     NotificationOutboxStatuses.Failed,
@@ -129,12 +151,12 @@ public sealed class NotificationDispatchProcessor
                     failureSummary,
                     null,
                     now),
+                NotificationOutboxStatuses.Delivering,
                 cancellationToken).ConfigureAwait(false);
-            return;
         }
 
         var backoff = ComputeBackoff(opts, attemptNumber);
-        await _outbox.UpdateAfterAttemptAsync(
+        return await _outbox.TryUpdateAfterAttemptAsync(
             new NotificationDeliveryOutboxUpdateCommand(
                 row.Id,
                 NotificationOutboxStatuses.Pending,
@@ -143,23 +165,7 @@ public sealed class NotificationDispatchProcessor
                 failureSummary,
                 null,
                 now),
-            cancellationToken).ConfigureAwait(false);
-    }
-
-    private async ValueTask RevertToPendingAsync(
-        NotificationDeliveryOutbox row,
-        DateTimeOffset now,
-        CancellationToken cancellationToken)
-    {
-        await _outbox.UpdateAfterAttemptAsync(
-            new NotificationDeliveryOutboxUpdateCommand(
-                row.Id,
-                NotificationOutboxStatuses.Pending,
-                row.AttemptCount,
-                row.NextAttemptAtUtc,
-                row.LastError,
-                row.SentAtUtc,
-                now),
+            NotificationOutboxStatuses.Delivering,
             cancellationToken).ConfigureAwait(false);
     }
 

@@ -1,4 +1,5 @@
 using Apperture.Core.Application.Integration;
+using Apperture.Core.Application.Notifications.Diagnostics;
 using Apperture.Core.Application.Scheduling;
 using Apperture.Core.Application.Services;
 using Apperture.ControlPlane.Security;
@@ -159,6 +160,21 @@ public sealed class IntegrationScheduleDiagnosticsTests
                     SuppressEscalationWhenAcknowledged: true,
                     IntegrationRowPrimaryOperationalTeamId: null,
                     IntegrationRowEscalationOperationalTeamId: null));
+        var platformDiag = new Mock<INotificationDeliveryDiagnosticsStore>();
+        platformDiag.Setup(x => x.GetByIntegrationAsync(
+                It.IsAny<string>(),
+                It.IsAny<string?>(),
+                It.IsAny<int>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(
+                new NotificationIntegrationDiagnostics(
+                    "int01",
+                    new NotificationDeliveryHealthSummary(null, [], [], 0, 0, 0, utcNow),
+                    [],
+                    [],
+                    [],
+                    []));
+
         var service = new IntegrationScheduleDiagnosticsService(
             integrationManagement.Object,
             readiness.Object,
@@ -167,6 +183,7 @@ public sealed class IntegrationScheduleDiagnosticsTests
             attention.Object,
             ledger.Object,
             resolver.Object,
+            platformDiag.Object,
             new FixedUtcTimeProvider(utcNow));
         return service;
     }

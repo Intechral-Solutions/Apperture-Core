@@ -455,6 +455,7 @@ public class AppertureDbContext : DbContext
             e.Property(x => x.Status).HasMaxLength(32);
             e.Property(x => x.LastError).HasMaxLength(2048);
             e.Property(x => x.SentAtUtc);
+            e.Property(x => x.RowVersion).IsRowVersion();
             e.HasIndex(x => new { x.NotificationInstanceId, x.RecipientEmail, x.Channel }).IsUnique();
             e.HasIndex(x => new { x.Status, x.NextAttemptAtUtc });
         });
