@@ -65,7 +65,7 @@ public sealed class Epic77NotificationDefinitionAuthoringUiTests
         detail.Should().Contain("Edit definition");
         detail.Should().Contain("_canManageDefinitions");
         integration.Should().Contain("notifications/definitions/new");
-        integration.Should().Contain("/edit");
+        integration.Should().Contain("NotificationUiRoutes.DefinitionEdit");
     }
 
     [Fact]

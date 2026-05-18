@@ -94,4 +94,14 @@ public sealed class Epic77NotificationWorkflowUiTests
         content.Should().Contain("GetDefinitionDisplayName");
         content.Should().Contain("NotificationDefinitionPostCreatePrompt");
     }
+
+    [Fact]
+    public void Schedule_diagnostics_supports_incidentId_query_highlight()
+    {
+        var content = ReadRepoFile(
+            "src/Apperture.ControlPlane/Apperture.Management.Ui.Client/Pages/Integrations/IntegrationScheduleDiagnostics.razor");
+        content.Should().Contain("incidentId");
+        content.Should().Contain("IsHighlightedIncident");
+        content.Should().Contain("NotificationUiRoutes.IntegrationNotifications");
+    }
 }

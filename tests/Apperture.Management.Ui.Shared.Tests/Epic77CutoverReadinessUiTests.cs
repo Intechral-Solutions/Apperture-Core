@@ -93,6 +93,6 @@ public sealed class Epic77CutoverReadinessUiTests
         var content = ReadRepoFile(
             "src/Apperture.ControlPlane/Apperture.Management.Ui.Client/Pages/Integrations/IntegrationScheduleDiagnostics.razor");
         content.Should().Contain("View platform notification cutover readiness");
-        content.Should().Contain("/notifications#cutover-readiness");
+        content.Should().Contain("NotificationUiRoutes.IntegrationCutoverReadiness");
     }
 }

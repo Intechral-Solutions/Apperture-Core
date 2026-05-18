@@ -286,7 +286,7 @@
                                     <a class="underline" href="@NotificationUiRoutes.DefinitionDetail(d.Summary.Id)">Detail</a>
                                     @if (_canManageSubscriptions && string.Equals(d.Mutability, "fullyEditable", StringComparison.Ordinal))
                                     {
-                                        <a class="underline" href="@($"/config/notifications/definitions/{Uri.EscapeDataString(d.Summary.Id)}/edit")">Edit</a>
+                                        <a class="underline" href="@NotificationUiRoutes.DefinitionEdit(d.Summary.Id)">Edit</a>
                                     }
                                 </td>
                             </tr>
@@ -587,13 +587,12 @@
     private IReadOnlyList<OperationalTeamSummaryDto> _teams = [];
     private IReadOnlyList<ManagedContactSummaryDto> _contacts = [];
 
-    private string ConfigDiagnosticsHref =>
-        $"/config/notifications/diagnostics?integrationId={Uri.EscapeDataString(IntegrationId)}";
+    private string ConfigDiagnosticsHref => NotificationUiRoutes.DiagnosticsForIntegration(IntegrationId);
 
     private string PostCreateViewDefinitionHref =>
         string.IsNullOrWhiteSpace(_postCreateDefinitionId)
             ? "#"
-            : $"/config/notifications/definitions/{Uri.EscapeDataString(_postCreateDefinitionId)}";
+            : NotificationUiRoutes.DefinitionDetail(_postCreateDefinitionId);
 
     private ExpectedRunMissingCutoverReadinessState ReadinessState =>
         ExpectedRunMissingCutoverReadiness.ResolveState(_parityEvaluated, _parityAcceptance);

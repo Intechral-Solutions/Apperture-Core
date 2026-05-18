@@ -23,4 +23,29 @@ public static class NotificationUiRoutes
     }
 
     public static string DeliveryDiagnostics() => "/config/notifications/diagnostics";
+
+    public static string Landing() => "/config/notifications";
+
+    public static string DefinitionsList() => "/config/notifications/definitions";
+
+    public static string DefinitionCreate() => "/config/notifications/definitions/new";
+
+    public static string DefinitionEdit(string definitionId) =>
+        $"/config/notifications/definitions/{Uri.EscapeDataString(definitionId)}/edit";
+
+    public static string InstancesList() => "/config/notifications/instances";
+
+    public static string Delivery() => "/config/notifications/delivery";
+
+    public static string IntegrationDefinitionCreate(string integrationId) =>
+        $"/integrations/{Uri.EscapeDataString(integrationId)}/notifications/definitions/new";
+
+    public static string DiagnosticsForIntegration(string integrationId) =>
+        $"{DeliveryDiagnostics()}?integrationId={Uri.EscapeDataString(integrationId)}";
+
+    public static string DiagnosticsForDefinition(string definitionId) =>
+        $"{DeliveryDiagnostics()}?definitionId={Uri.EscapeDataString(definitionId)}";
+
+    public static string IntegrationCutoverReadiness(string integrationId) =>
+        $"{IntegrationNotifications(integrationId)}#cutover-readiness";
 }

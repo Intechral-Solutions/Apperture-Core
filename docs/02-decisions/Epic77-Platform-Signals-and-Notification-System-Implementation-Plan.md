@@ -1,8 +1,24 @@
 # Epic 77 — Platform signals and notification system (implementation plan)
 
-**Status:** Proposed (documentation only; no implementation in this epic)  
+**Status:** Implemented for current milestone (Phases 0–8C in Apperture-Core; Phase 9A UAT/hardening). Production cutover remains **manual** per [cutover runbook](../03-operations/epic77-expected-run-missing-notification-cutover-runbook.md).  
 **ADR:** [ADR-0037-platform-signals-events-and-notification-system.md](./ADR-0037-platform-signals-events-and-notification-system.md)  
-**Replaces (eventually):** Epic 69 incident email orchestration; extends Epic 68 incidents, Epic 71–72 routing, Epic 76 managed contacts
+**Replaces (eventually):** Epic 69 incident email orchestration; extends Epic 68 incidents, Epic 71–72 routing, Epic 76 managed contacts  
+**UAT:** [epic77-notification-system-uat-checklist.md](../03-operations/epic77-notification-system-uat-checklist.md)  
+**Backlog:** [epic77-notification-system-backlog.md](../03-operations/epic77-notification-system-backlog.md)
+
+### Milestone delivery summary (implemented)
+
+| Area | Status |
+|------|--------|
+| Platform events + SQL store | Done |
+| Notification definitions, rules, templates | Done (property stage; built-in expected-run-missing) |
+| Instances + delivery outbox + `NotificationDispatchHostedService` | Done (email; dry-run when delivery disabled) |
+| Subscriptions + recipient resolution | Done |
+| Management UI (config + integration notifications) | Done |
+| Authoring + post-create subscription flow | Done (Phases 8A–8B) |
+| Subscription polish + drill-down links | Done (Phase 8C) |
+| Cutover readiness, parity, sign-off | Done (read-only UI; no flag automation) |
+| Log/telemetry rules, digest, escalation, user prefs | Not in milestone — see backlog |
 
 ## Goal
 

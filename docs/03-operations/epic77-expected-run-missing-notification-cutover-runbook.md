@@ -2,7 +2,26 @@
 
 Operator guide for moving `expected_run_missing` notifications from Epic 69 (`AttentionIncidentNotificationOrchestrator` + ledger) to the platform notification pipeline (platform events → rule evaluation → notification instances → delivery outbox → SMTP).
 
-**Related:** [Epic 77 implementation plan](../02-decisions/Epic77-Platform-Signals-and-Notification-System-Implementation-Plan.md), [ADR-0037](../02-decisions/ADR-0037-platform-signals-events-and-notification-system.md), [Epic 69 attention notifications](../02-decisions/Epic69-Attention-Notification-Policy-and-Delivery-Evidence.md).
+**Related:** [Epic 77 implementation plan](../02-decisions/Epic77-Platform-Signals-and-Notification-System-Implementation-Plan.md), [ADR-0037](../02-decisions/ADR-0037-platform-signals-events-and-notification-system.md), [Epic 69 attention notifications](../02-decisions/Epic69-Attention-Notification-Policy-and-Delivery-Evidence.md), [UAT checklist](./epic77-notification-system-uat-checklist.md), [Backlog](./epic77-notification-system-backlog.md).
+
+---
+
+## Management UI routes (operator)
+
+| Page | Route |
+|------|--------|
+| Notifications home | `/config/notifications` |
+| Definitions | `/config/notifications/definitions` |
+| Definition detail / subscriptions | `/config/notifications/definitions/{definitionId}` |
+| Instances | `/config/notifications/instances` |
+| Instance detail (snapshot, outbox) | `/config/notifications/instances/{instanceId}` |
+| Delivery health | `/config/notifications/delivery` |
+| Diagnostics (parity, flags) | `/config/notifications/diagnostics` |
+| Integration cutover + subscriptions | `/integrations/{integrationId}/notifications` |
+| Schedule + incident history | `/integrations/{integrationId}/schedule-diagnostics` |
+| Incident deep-link | `/integrations/{integrationId}/schedule-diagnostics?incidentId={id}` |
+
+The UI does **not** change configuration flags or send mail. Sign-off is audit evidence only.
 
 ---
 

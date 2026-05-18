@@ -345,13 +345,11 @@
     private IReadOnlyList<OperationalTeamSummaryDto> _teams = [];
     private IReadOnlyList<ManagedContactSummaryDto> _contacts = [];
 
-    private string DiagnosticsHref =>
-        $"/config/notifications/diagnostics?definitionId={Uri.EscapeDataString(DefinitionId)}";
+    private string DiagnosticsHref => NotificationUiRoutes.DiagnosticsForDefinition(DefinitionId);
 
-    private string EditHref => $"/config/notifications/definitions/{Uri.EscapeDataString(DefinitionId)}/edit";
+    private string EditHref => NotificationUiRoutes.DefinitionEdit(DefinitionId);
 
-    private string DetailSelfHref =>
-        $"/config/notifications/definitions/{Uri.EscapeDataString(DefinitionId)}";
+    private string DetailSelfHref => NotificationUiRoutes.DefinitionDetail(DefinitionId);
 
     private string? PostCreateIntegrationNotificationsHref
     {

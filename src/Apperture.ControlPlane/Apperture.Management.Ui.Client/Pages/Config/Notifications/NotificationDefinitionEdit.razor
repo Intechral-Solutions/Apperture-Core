@@ -69,7 +69,7 @@
     private bool _loading = true;
     private NotificationDefinitionDetailDto? _detail;
 
-    private string DetailHref => $"/config/notifications/definitions/{Uri.EscapeDataString(DefinitionId)}";
+    private string DetailHref => NotificationUiRoutes.DefinitionDetail(DefinitionId);
 
     protected override async Task OnInitializedAsync()
     {

@@ -36,6 +36,13 @@
     }
     else
     {
+        @if (!string.IsNullOrWhiteSpace(_highlightIncidentId))
+        {
+            <div class="mt-4 rounded border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs">
+                Highlighting attention incident <span class="font-mono">@_highlightIncidentId</span> in history below.
+                <a class="ml-2 underline" href="@NotificationUiRoutes.IntegrationScheduleDiagnostics(IntegrationId)">Clear filter</a>
+            </div>
+        }
         <div class="mt-4 space-y-4">
             <div class="rounded border border-default bg-surface p-3">
                 <div class="text-sm font-semibold text-heading mb-2">Current status</div>
@@ -208,7 +215,8 @@
                             <tbody>
                                 @foreach (var i in _diagnostics.RecentAttentionIncidents)
                                 {
-                                    <tr class="border-b border-default">
+                                    <tr class="border-b border-default @(IsHighlightedIncident(i.Id) ? "bg-amber-500/10 ring-1 ring-inset ring-amber-500/30" : "")"
+                                        id="@(IsHighlightedIncident(i.Id) ? $"incident-{i.Id}" : null)">
                                         <td class="px-3 py-2 font-mono text-xs">@i.StartedAtUtc.UtcDateTime.ToString("u")</td>
                                         <td class="px-3 py-2">@i.Status</td>
                                         <td class="px-3 py-2 font-mono text-xs">@i.LastObservedAtUtc.UtcDateTime.ToString("u")</td>
@@ -376,7 +384,7 @@
                 {
                     <div class="mt-4 flex flex-wrap items-center justify-between gap-2">
                         <div class="text-xs font-semibold text-heading">Platform pipeline (Epic 77)</div>
-                        <a class="text-xs underline" href="@($"/integrations/{Uri.EscapeDataString(IntegrationId)}/notifications")">Integration notifications</a>
+                        <a class="text-xs underline" href="@NotificationUiRoutes.IntegrationNotifications(IntegrationId)">Integration notifications</a>
                     </div>
                     @if ((_diagnostics.RecentPlatformNotificationInstances?.Count ?? 0) > 0)
                     {
@@ -391,7 +399,7 @@
 
             <div class="rounded border border-default bg-surface p-3">
                 <p class="text-xs text-muted">
-                    <a class="underline font-medium" href="@($"/integrations/{Uri.EscapeDataString(IntegrationId)}/notifications#cutover-readiness")">View platform notification cutover readiness</a>
+                    <a class="underline font-medium" href="@NotificationUiRoutes.IntegrationCutoverReadiness(IntegrationId)">View platform notification cutover readiness</a>
                     — Epic 77 parity and instance flag guidance (read-only).
                 </p>
             </div>
@@ -416,6 +424,10 @@
 @code {
     [Parameter] public string IntegrationId { get; set; } = "";
 
+    [SupplyParameterFromQuery(Name = "incidentId")]
+    public string? IncidentIdQuery { get; set; }
+
+    private string? _highlightIncidentId;
     private IntegrationScheduleDiagnosticsDto? _diagnostics;
     private OperatorCapabilitiesDto? _capabilities;
     private bool _loading = true;
@@ -438,8 +450,13 @@
             // UI can still render read-only diagnostics even if capabilities call fails.
             _capabilities = null;
         }
+        _highlightIncidentId = string.IsNullOrWhiteSpace(IncidentIdQuery) ? null : IncidentIdQuery.Trim();
         await LoadAsync();
     }
+
+    private bool IsHighlightedIncident(string incidentId) =>
+        !string.IsNullOrWhiteSpace(_highlightIncidentId)
+        && string.Equals(_highlightIncidentId, incidentId, StringComparison.Ordinal);
 
     private async Task LoadAsync()
     {
