@@ -283,7 +283,7 @@
                                 </td>
                                 <td class="p-1">@d.RecentInstanceCount</td>
                                 <td class="p-1 space-x-2">
-                                    <a class="underline" href="@($"/config/notifications/definitions/{Uri.EscapeDataString(d.Summary.Id)}")">Detail</a>
+                                    <a class="underline" href="@NotificationUiRoutes.DefinitionDetail(d.Summary.Id)">Detail</a>
                                     @if (_canManageSubscriptions && string.Equals(d.Mutability, "fullyEditable", StringComparison.Ordinal))
                                     {
                                         <a class="underline" href="@($"/config/notifications/definitions/{Uri.EscapeDataString(d.Summary.Id)}/edit")">Edit</a>
@@ -352,6 +352,15 @@
                             }
                         </select>
                     </label>
+                    <label>
+                        Delivery mode
+                        <select class="mt-1 block rounded border border-default px-2 py-1" @bind="_addDeliveryMode">
+                            @foreach (var mode in NotificationDeliveryModeOptions.All)
+                            {
+                                <option value="@mode.Value">@mode.Label</option>
+                            }
+                        </select>
+                    </label>
                     @if (_addKind == "managed_contact" && _canManageContacts)
                     {
                         <label class="flex items-center gap-1">
@@ -381,6 +390,7 @@
                             <th class="p-1">Definition</th>
                             <th class="p-1">Kind</th>
                             <th class="p-1">Ref</th>
+                            <th class="p-1">Mode</th>
                             <th class="p-1">Enabled</th>
                             <th class="p-1"></th>
                         </tr>
@@ -389,13 +399,30 @@
                         @foreach (var s in _explicitSubscriptions)
                         {
                             <tr class="border-t border-default">
-                                <td class="p-1 font-mono break-all">@s.NotificationDefinitionId</td>
+                                <td class="p-1 font-mono break-all">
+                                    <a class="underline" href="@NotificationUiRoutes.DefinitionDetail(s.NotificationDefinitionId)">@s.NotificationDefinitionId</a>
+                                </td>
                                 <td class="p-1">@s.RecipientKind</td>
                                 <td class="p-1 font-mono">@s.RecipientRef</td>
                                 <td class="p-1">
                                     @if (_canManageSubscriptions)
                                     {
-                                        <input type="checkbox" checked="@s.IsEnabled" disabled="@_busy" @onchange="e => PatchSubscriptionAsync(s, e)" />
+                                        <select class="rounded border border-default px-1 py-0.5" value="@s.DeliveryMode" disabled="@_busy" @onchange="e => PatchSubscriptionDeliveryModeAsync(s, e)">
+                                            @foreach (var mode in NotificationDeliveryModeOptions.All)
+                                            {
+                                                <option value="@mode.Value">@mode.Label</option>
+                                            }
+                                        </select>
+                                    }
+                                    else
+                                    {
+                                        @s.DeliveryMode
+                                    }
+                                </td>
+                                <td class="p-1">
+                                    @if (_canManageSubscriptions)
+                                    {
+                                        <input type="checkbox" checked="@s.IsEnabled" disabled="@_busy" @onchange="e => PatchSubscriptionEnabledAsync(s, e)" />
                                     }
                                     else
                                     {
@@ -416,6 +443,7 @@
 
             <div class="mt-4 border-t border-default pt-3">
                 <div class="text-xs font-semibold mb-2">Recipient resolution preview</div>
+                <p class="text-xs text-muted mb-2">Preview for <span class="font-mono">@GetDefinitionDisplayName(_previewDefinitionId)</span></p>
                 <div class="flex flex-wrap items-end gap-2 text-xs">
                     <label>
                         Definition
@@ -428,6 +456,10 @@
                     </label>
                     <button type="button" class="rounded bg-surface-muted px-3 py-2 disabled:opacity-50" disabled="@_busy" @onclick="ResolveRecipientsAsync">Preview</button>
                 </div>
+                @if (_recipientPreviewRefreshedAt is not null)
+                {
+                    <p class="mt-2 text-xs text-muted">Last refreshed @_recipientPreviewRefreshedAt.Value.UtcDateTime.ToString("u") UTC.</p>
+                }
                 <NotificationRecipientResolutionDisplay Resolution="_resolution" />
             </div>
         </section>
@@ -459,8 +491,10 @@
                                 <td class="p-1">@i.NotificationKind</td>
                                 <td class="p-1">@i.Status</td>
                                 <td class="p-1">@(i.SuppressionReason ?? "—")</td>
-                                <td class="p-1 font-mono">@i.NotificationDefinitionId</td>
-                                <td class="p-1"><a class="underline" href="@($"/config/notifications/instances/{Uri.EscapeDataString(i.Id)}")">Open</a></td>
+                                <td class="p-1 font-mono">
+                                    <a class="underline" href="@NotificationUiRoutes.DefinitionDetail(i.NotificationDefinitionId)">@i.NotificationDefinitionId</a>
+                                </td>
+                                <td class="p-1"><a class="underline" href="@NotificationUiRoutes.InstanceDetail(i.Id)">Open</a></td>
                             </tr>
                         }
                     </tbody>
@@ -546,7 +580,9 @@
     private bool _showPostCreatePrompt;
     private string _addKind = "principal";
     private string _addRef = "";
+    private string _addDeliveryMode = "immediate";
     private bool _createContactIfMissing;
+    private DateTimeOffset? _recipientPreviewRefreshedAt;
     private IReadOnlyList<UserListDto> _users = [];
     private IReadOnlyList<OperationalTeamSummaryDto> _teams = [];
     private IReadOnlyList<ManagedContactSummaryDto> _contacts = [];
@@ -860,7 +896,7 @@
         {
             await Client.AddNotificationSubscriptionAsync(
                 _addDefinitionId,
-                new AddNotificationSubscriptionRequest(IntegrationId, _addKind, _addRef, null, _createContactIfMissing));
+                new AddNotificationSubscriptionRequest(IntegrationId, _addKind, _addRef, null, _createContactIfMissing, _addDeliveryMode));
             _explicitSubscriptions = (await Client.ListNotificationSubscriptionsByIntegrationAsync(IntegrationId)).ToList();
             _addRef = "";
             _previewDefinitionId = _addDefinitionId;
@@ -870,7 +906,7 @@
         finally { _busy = false; }
     }
 
-    private async Task PatchSubscriptionAsync(NotificationSubscriptionDto s, ChangeEventArgs e)
+    private async Task PatchSubscriptionEnabledAsync(NotificationSubscriptionDto s, ChangeEventArgs e)
     {
         if (!_canManageSubscriptions) return;
         _busy = true;
@@ -881,6 +917,28 @@
                 s.Id,
                 new PatchNotificationSubscriptionRequest(ParseCheckbox(e), null));
             _explicitSubscriptions = (await Client.ListNotificationSubscriptionsByIntegrationAsync(IntegrationId)).ToList();
+            if (string.Equals(s.NotificationDefinitionId, _previewDefinitionId, StringComparison.Ordinal))
+                await ResolveRecipientsAsync();
+        }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _busy = false; }
+    }
+
+    private async Task PatchSubscriptionDeliveryModeAsync(NotificationSubscriptionDto s, ChangeEventArgs e)
+    {
+        if (!_canManageSubscriptions) return;
+        var mode = e.Value?.ToString();
+        if (string.IsNullOrWhiteSpace(mode)) return;
+        _busy = true;
+        try
+        {
+            await Client.PatchNotificationSubscriptionAsync(
+                s.NotificationDefinitionId,
+                s.Id,
+                new PatchNotificationSubscriptionRequest(null, mode));
+            _explicitSubscriptions = (await Client.ListNotificationSubscriptionsByIntegrationAsync(IntegrationId)).ToList();
+            if (string.Equals(s.NotificationDefinitionId, _previewDefinitionId, StringComparison.Ordinal))
+                await ResolveRecipientsAsync();
         }
         catch (Exception ex) { _error = ex.Message; }
         finally { _busy = false; }
@@ -894,6 +952,8 @@
         {
             await Client.RemoveNotificationSubscriptionAsync(s.NotificationDefinitionId, s.Id);
             _explicitSubscriptions = (await Client.ListNotificationSubscriptionsByIntegrationAsync(IntegrationId)).ToList();
+            if (string.Equals(s.NotificationDefinitionId, _previewDefinitionId, StringComparison.Ordinal))
+                await ResolveRecipientsAsync();
         }
         catch (Exception ex) { _error = ex.Message; }
         finally { _busy = false; }
@@ -908,10 +968,15 @@
             _resolution = await Client.ResolveNotificationRecipientsAsync(
                 _previewDefinitionId,
                 new ResolveNotificationRecipientsRequest(IntegrationId));
+            _recipientPreviewRefreshedAt = DateTimeOffset.UtcNow;
         }
         catch (Exception ex) { _error = ex.Message; }
         finally { _busy = false; }
     }
+
+    private string GetDefinitionDisplayName(string definitionId) =>
+        _definitions.FirstOrDefault(d => string.Equals(d.Summary.Id, definitionId, StringComparison.Ordinal))?.Summary.DisplayName
+        ?? definitionId;
 
     private static bool ParseCheckbox(ChangeEventArgs e) =>
         e.Value is bool b ? b : string.Equals(e.Value?.ToString(), "true", StringComparison.OrdinalIgnoreCase);

@@ -2,7 +2,9 @@
 @layout ConfigLayout
 @using Apperture.Management.Client
 @using Apperture.Management.Ui.Client.Organisms
+@using Apperture.Management.Ui.Client.Organisms.Notifications
 @using Apperture.Management.Ui.Client.Services
+@using Apperture.Management.Ui.Shared
 @inject IManagementClient Client
 @inject IOperatorCapabilitiesService Capabilities
 
@@ -38,36 +40,62 @@
             <section class="rounded border border-default bg-surface p-3 text-xs">
                 <div class="font-semibold text-heading mb-2">Metadata</div>
                 <dl class="grid grid-cols-1 gap-1 md:grid-cols-2">
-                    <div><dt class="text-muted">Definition</dt><dd><a class="underline font-mono" href="@($"/config/notifications/definitions/{Uri.EscapeDataString(_detail.NotificationDefinitionId)}")">@_detail.NotificationDefinitionId</a></dd></div>
-                    <div><dt class="text-muted">Integration</dt><dd class="font-mono">@(_detail.IntegrationId ?? "—")</dd></div>
-                    <div><dt class="text-muted">Incident</dt><dd class="font-mono">@(_detail.AttentionIncidentId ?? "—")</dd></div>
+                    <div><dt class="text-muted">Notification kind</dt><dd>@_detail.NotificationKind</dd></div>
+                    <div><dt class="text-muted">Status</dt><dd>@_detail.Status</dd></div>
                     <div><dt class="text-muted">Suppression</dt><dd>@(_detail.SuppressionReason ?? "—")</dd></div>
+                    <div><dt class="text-muted">Template hash</dt><dd class="font-mono break-all">@_detail.TemplateVersionHash</dd></div>
+                    <div><dt class="text-muted">Definition</dt><dd><a class="underline font-mono" href="@NotificationUiRoutes.DefinitionDetail(_detail.NotificationDefinitionId)">@_detail.NotificationDefinitionId</a></dd></div>
+                    <div><dt class="text-muted">Integration</dt><dd>
+                        @if (!string.IsNullOrWhiteSpace(_detail.IntegrationId))
+                        {
+                            <a class="underline font-mono" href="@NotificationUiRoutes.IntegrationNotifications(_detail.IntegrationId)">@_detail.IntegrationId</a>
+                        }
+                        else
+                        {
+                            <span>—</span>
+                        }
+                    </dd></div>
+                    <div><dt class="text-muted">Incident</dt><dd>
+                        @if (!string.IsNullOrWhiteSpace(_detail.AttentionIncidentId) && !string.IsNullOrWhiteSpace(_detail.IntegrationId))
+                        {
+                            <a class="underline font-mono" href="@NotificationUiRoutes.IntegrationScheduleDiagnostics(_detail.IntegrationId, _detail.AttentionIncidentId)">@_detail.AttentionIncidentId</a>
+                        }
+                        else
+                        {
+                            <span class="font-mono">@(_detail.AttentionIncidentId ?? "—")</span>
+                        }
+                    </dd></div>
                     <div><dt class="text-muted">Created</dt><dd>@_detail.CreatedAtUtc.UtcDateTime.ToString("u")</dd></div>
+                    <div><dt class="text-muted">Updated</dt><dd>@_detail.UpdatedAtUtc.UtcDateTime.ToString("u")</dd></div>
                 </dl>
                 @if (!string.IsNullOrWhiteSpace(_detail.IntegrationId))
                 {
-                    <a class="mt-2 inline-block text-xs underline" href="@($"/integrations/{Uri.EscapeDataString(_detail.IntegrationId!)}/schedule-diagnostics")">Schedule diagnostics</a>
+                    <div class="mt-2 flex flex-wrap gap-3 text-xs">
+                        <a class="underline" href="@NotificationUiRoutes.IntegrationNotifications(_detail.IntegrationId)">Integration notifications</a>
+                        <a class="underline" href="@NotificationUiRoutes.IntegrationScheduleDiagnostics(_detail.IntegrationId)">Schedule diagnostics</a>
+                    </div>
                 }
             </section>
 
             <section class="rounded border border-default bg-surface p-3">
                 <div class="font-semibold text-heading mb-2 text-sm">Rendered content</div>
-                <p class="text-xs"><span class="text-muted">Summary:</span> @_detail.RenderedSummary</p>
-                <details class="mt-2 text-xs">
-                    <summary class="cursor-pointer text-muted">Body</summary>
-                    <pre class="mt-1 bg-surface-muted p-2 rounded whitespace-pre-wrap">@_detail.RenderedBodyText</pre>
-                </details>
+                <dl class="text-xs space-y-1">
+                    <div><dt class="text-muted inline">Subject:</dt> <dd class="inline">@_detail.RenderedSubject</dd></div>
+                    <div><dt class="text-muted inline">Summary:</dt> <dd class="inline">@_detail.RenderedSummary</dd></div>
+                </dl>
+                @if (!string.IsNullOrWhiteSpace(_detail.RenderedBodyText))
+                {
+                    <details class="mt-2 text-xs" open>
+                        <summary class="cursor-pointer text-muted">Body</summary>
+                        <pre class="mt-1 bg-surface-muted p-2 rounded whitespace-pre-wrap">@_detail.RenderedBodyText</pre>
+                    </details>
+                }
             </section>
 
-            @if (!string.IsNullOrWhiteSpace(_detail.RecipientSnapshotJson))
-            {
-                <section class="rounded border border-default bg-surface p-3">
-                    <details class="text-xs">
-                        <summary class="cursor-pointer font-semibold text-heading">Recipient snapshot JSON</summary>
-                        <pre class="mt-2 bg-surface-muted p-2 rounded overflow-x-auto">@_detail.RecipientSnapshotJson</pre>
-                    </details>
-                </section>
-            }
+            <section class="rounded border border-default bg-surface p-3">
+                <div class="font-semibold text-heading mb-2 text-sm">Recipient snapshot</div>
+                <NotificationRecipientSnapshotDisplay RecipientSnapshotJson="@_detail.RecipientSnapshotJson" />
+            </section>
 
             <section class="rounded border border-default bg-surface p-3">
                 <details class="text-xs">
@@ -99,8 +127,8 @@
                             @foreach (var o in _outbox)
                             {
                                 <tr class="border-t border-default">
-                                    <td class="p-1">@o.RecipientEmail</td>
-                                    <td class="p-1">@(o.RecipientSource ?? "—")</td>
+                                    <td class="p-1">@(o.RecipientDisplayName ?? o.RecipientEmail)</td>
+                                    <td class="p-1">@NotificationRecipientSourceLabels.Label(o.RecipientSource)</td>
                                     <td class="p-1">@o.Status</td>
                                     <td class="p-1">@o.AttemptCount</td>
                                     <td class="p-1 break-all">@(o.LastError ?? "—")</td>

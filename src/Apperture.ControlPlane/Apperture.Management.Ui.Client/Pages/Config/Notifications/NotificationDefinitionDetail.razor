@@ -69,7 +69,16 @@
                     <div><dt class="text-muted">Source kind</dt><dd>@_detail.SourceKind</dd></div>
                     <div><dt class="text-muted">Primary event</dt><dd>@(_detail.PrimaryEventType ?? "—")</dd></div>
                     <div><dt class="text-muted">Mutability</dt><dd>@_detail.Mutability</dd></div>
-                    <div><dt class="text-muted">Integration</dt><dd class="font-mono break-all">@(_detail.IntegrationId ?? "—")</dd></div>
+                    <div><dt class="text-muted">Integration</dt><dd class="font-mono break-all">
+                        @if (!string.IsNullOrWhiteSpace(_detail.IntegrationId))
+                        {
+                            <a class="underline" href="@NotificationUiRoutes.IntegrationNotifications(_detail.IntegrationId)">@_detail.IntegrationId</a>
+                        }
+                        else
+                        {
+                            <span>—</span>
+                        }
+                    </dd></div>
                     <div><dt class="text-muted">Module</dt><dd class="font-mono">@(_detail.ModuleId ?? "—")</dd></div>
                     <div><dt class="text-muted">Enabled</dt><dd>
                         @if (_canManage)
@@ -123,7 +132,13 @@
             </section>
 
             <section class="rounded border border-default bg-surface p-3" id="definition-subscriptions">
-                <div class="font-semibold text-heading mb-2 text-sm">Subscriptions</div>
+                <div class="font-semibold text-heading mb-2 text-sm">Explicit subscriptions</div>
+                @if (_attentionRouting is not null && HasAttentionRoutingRecipients)
+                {
+                    <p class="mb-2 text-xs text-muted rounded border border-default bg-surface-muted/50 p-2">
+                        Implicit attention-routing compatibility recipients may apply for this integration (Epic 69 parity). They are not platform subscriptions.
+                    </p>
+                }
                 @if (_canManage)
                 {
                     <div class="mb-3 flex flex-wrap items-end gap-2 text-xs border-b border-default pb-3">
@@ -142,6 +157,15 @@
                                 @foreach (var opt in RecipientOptions)
                                 {
                                     <option value="@opt.Id">@opt.Label</option>
+                                }
+                            </select>
+                        </label>
+                        <label>
+                            Delivery mode
+                            <select class="mt-1 block rounded border border-default px-2 py-1" @bind="_addDeliveryMode">
+                                @foreach (var mode in NotificationDeliveryModeOptions.All)
+                                {
+                                    <option value="@mode.Value">@mode.Label</option>
                                 }
                             </select>
                         </label>
@@ -180,7 +204,21 @@
                                 <tr class="border-t border-default">
                                     <td class="p-1">@s.RecipientKind</td>
                                     <td class="p-1 font-mono break-all">@s.RecipientRef</td>
-                                    <td class="p-1">@s.DeliveryMode</td>
+                                    <td class="p-1">
+                                        @if (_canManage)
+                                        {
+                                            <select class="rounded border border-default px-1 py-0.5" value="@s.DeliveryMode" disabled="@_busy" @onchange="e => PatchSubscriptionDeliveryModeAsync(s, e)">
+                                                @foreach (var mode in NotificationDeliveryModeOptions.All)
+                                                {
+                                                    <option value="@mode.Value">@mode.Label</option>
+                                                }
+                                            </select>
+                                        }
+                                        else
+                                        {
+                                            @s.DeliveryMode
+                                        }
+                                    </td>
                                     <td class="p-1">
                                         @if (_canManage)
                                         {
@@ -213,11 +251,24 @@
                     </label>
                     <button type="button" class="rounded bg-surface-muted px-3 py-2 disabled:opacity-50" disabled="@_busy" @onclick="ResolveRecipientsAsync">Preview</button>
                 </div>
+                @if (_recipientPreviewRefreshedAt is not null)
+                {
+                    <p class="mt-2 text-xs text-muted">Last refreshed @_recipientPreviewRefreshedAt.Value.UtcDateTime.ToString("u") UTC.</p>
+                }
                 <NotificationRecipientResolutionDisplay Resolution="_resolution" />
+                @if (ShowNoDeliverableRecipientsWarning)
+                {
+                    <p class="mt-2 rounded border border-amber-500/40 bg-amber-500/10 p-2 text-xs">
+                        No deliverable recipients for this definition. Platform delivery will not create outbox rows until at least one explicit subscription resolves to a deliverable recipient.
+                    </p>
+                }
             </section>
 
             <section class="rounded border border-default bg-surface p-3">
-                <div class="font-semibold text-heading mb-2 text-sm">Recent instances</div>
+                <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
+                    <div class="font-semibold text-heading text-sm">Recent instances</div>
+                    <a class="text-xs underline" href="@NotificationUiRoutes.DefinitionInstances(DefinitionId)">View all instances</a>
+                </div>
                 @if (_recentInstances is { Count: 0 })
                 {
                     <p class="text-xs text-muted">No recent instances.</p>
@@ -240,7 +291,7 @@
                                     <td class="p-1">@i.CreatedAtUtc.UtcDateTime.ToString("u")</td>
                                     <td class="p-1">@i.Status</td>
                                     <td class="p-1">@i.NotificationKind</td>
-                                    <td class="p-1"><a class="underline" href="@($"/config/notifications/instances/{Uri.EscapeDataString(i.Id)}")">Open</a></td>
+                                    <td class="p-1"><a class="underline" href="@NotificationUiRoutes.InstanceDetail(i.Id)">Open</a></td>
                                 </tr>
                             }
                         </tbody>
@@ -284,9 +335,12 @@
     private NotificationRecipientResolutionPreviewDto? _resolution;
     private string _addKind = "principal";
     private string _addRef = "";
+    private string _addDeliveryMode = "immediate";
     private bool _createContactIfMissing;
     private string _resolveIntegrationId = "";
     private bool _showPostCreatePrompt;
+    private DateTimeOffset? _recipientPreviewRefreshedAt;
+    private AttentionRoutingEffectiveDto? _attentionRouting;
     private IReadOnlyList<UserListDto> _users = [];
     private IReadOnlyList<OperationalTeamSummaryDto> _teams = [];
     private IReadOnlyList<ManagedContactSummaryDto> _contacts = [];
@@ -318,6 +372,16 @@
         _canManage
         && _detail is not null
         && string.Equals(_detail.Mutability, "fullyEditable", StringComparison.Ordinal);
+
+    private bool HasAttentionRoutingRecipients =>
+        _attentionRouting is not null
+        && (_attentionRouting.PrimaryRecipients.Count > 0 || _attentionRouting.EscalationRecipients.Count > 0);
+
+    private bool ShowNoDeliverableRecipientsWarning =>
+        _detail is not null
+        && string.Equals(_detail.Origin, "userCreated", StringComparison.OrdinalIgnoreCase)
+        && _resolution is not null
+        && _resolution.Deliverable.Count == 0;
 
     private IEnumerable<(string Id, string Label)> RecipientOptions => _addKind switch
     {
@@ -365,6 +429,18 @@
                 _users = userPage.Items;
                 _teams = await Client.ListOperationalTeamsAsync(includeDisabled: false);
                 _contacts = await Client.ListManagedContactsAsync(null, 200) ?? [];
+            }
+
+            if (!string.IsNullOrWhiteSpace(_detail.IntegrationId))
+            {
+                try
+                {
+                    _attentionRouting = await Client.GetIntegrationAttentionRoutingAsync(_detail.IntegrationId);
+                }
+                catch
+                {
+                    _attentionRouting = null;
+                }
             }
         }
         catch (Exception ex)
@@ -452,7 +528,8 @@
                     _addKind,
                     _addRef,
                     null,
-                    _createContactIfMissing));
+                    _createContactIfMissing,
+                    _addDeliveryMode));
             _subscriptions = await Client.ListNotificationSubscriptionsByDefinitionAsync(DefinitionId);
             _addRef = "";
             await ResolveRecipientsAsync();
@@ -473,6 +550,28 @@
                 s.Id,
                 new PatchNotificationSubscriptionRequest(ParseCheckbox(e), null));
             _subscriptions = await Client.ListNotificationSubscriptionsByDefinitionAsync(DefinitionId);
+            await ResolveRecipientsAsync();
+        }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _busy = false; }
+    }
+
+    private async Task PatchSubscriptionDeliveryModeAsync(NotificationSubscriptionDto s, ChangeEventArgs e)
+    {
+        if (!_canManage)
+            return;
+        var mode = e.Value?.ToString();
+        if (string.IsNullOrWhiteSpace(mode))
+            return;
+        _busy = true;
+        try
+        {
+            await Client.PatchNotificationSubscriptionAsync(
+                DefinitionId,
+                s.Id,
+                new PatchNotificationSubscriptionRequest(null, mode));
+            _subscriptions = await Client.ListNotificationSubscriptionsByDefinitionAsync(DefinitionId);
+            await ResolveRecipientsAsync();
         }
         catch (Exception ex) { _error = ex.Message; }
         finally { _busy = false; }
@@ -487,6 +586,7 @@
         {
             await Client.RemoveNotificationSubscriptionAsync(DefinitionId, s.Id);
             _subscriptions = await Client.ListNotificationSubscriptionsByDefinitionAsync(DefinitionId);
+            await ResolveRecipientsAsync();
         }
         catch (Exception ex) { _error = ex.Message; }
         finally { _busy = false; }
@@ -502,6 +602,7 @@
                 DefinitionId,
                 new ResolveNotificationRecipientsRequest(
                     string.IsNullOrWhiteSpace(_resolveIntegrationId) ? null : _resolveIntegrationId.Trim()));
+            _recipientPreviewRefreshedAt = DateTimeOffset.UtcNow;
         }
         catch (Exception ex) { _error = ex.Message; }
         finally { _busy = false; }

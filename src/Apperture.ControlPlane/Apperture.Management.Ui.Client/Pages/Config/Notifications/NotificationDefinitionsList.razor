@@ -3,6 +3,7 @@
 @using Apperture.Management.Client
 @using Apperture.Management.Ui.Client.Organisms
 @using Apperture.Management.Ui.Client.Services
+@using Apperture.Management.Ui.Shared
 @inject IManagementClient Client
 @inject IOperatorCapabilitiesService Capabilities
 @inject NavigationManager Nav
@@ -101,7 +102,16 @@
                                         @(d.IsEnabled ? "Yes" : "No")
                                     }
                                 </td>
-                                <td class="p-2 font-mono break-all">@(d.IntegrationId ?? "—")</td>
+                                <td class="p-2 font-mono break-all">
+                                    @if (!string.IsNullOrWhiteSpace(d.IntegrationId))
+                                    {
+                                        <a class="underline" href="@NotificationUiRoutes.IntegrationNotifications(d.IntegrationId)">@d.IntegrationId</a>
+                                    }
+                                    else
+                                    {
+                                        <span>—</span>
+                                    }
+                                </td>
                                 <td class="p-2"><a class="underline" href="@DetailHref(d.Id)">View</a></td>
                             </tr>
                         }
@@ -145,7 +155,7 @@
         await LoadAsync();
     }
 
-    private string DetailHref(string id) => $"/config/notifications/definitions/{Uri.EscapeDataString(id)}";
+    private static string DetailHref(string id) => NotificationUiRoutes.DefinitionDetail(id);
 
     private async Task LoadAsync()
     {

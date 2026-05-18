@@ -1,0 +1,78 @@
+@using Apperture.Management.Ui.Shared
+
+@if (_snapshot is null)
+{
+    <p class="text-xs text-muted">Recipient snapshot unavailable or invalid.</p>
+}
+else
+{
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+        <div>
+            <div class="font-semibold text-heading">Deliverable (@_snapshot.Deliverable.Count)</div>
+            @if (ImplicitDeliverable.Count > 0)
+            {
+                <p class="mt-1 text-muted">Implicit (attention routing compatibility)</p>
+                <ul class="mt-1 space-y-1 max-h-40 overflow-y-auto">
+                    @foreach (var r in ImplicitDeliverable)
+                    {
+                        <li>@FormatEntry(r) <span class="text-muted">(@NotificationRecipientSourceLabels.Label(r.Source))</span></li>
+                    }
+                </ul>
+            }
+            @if (ExplicitDeliverable.Count > 0)
+            {
+                <p class="mt-2 text-muted">Explicit subscriptions and team membership</p>
+                <ul class="mt-1 space-y-1 max-h-40 overflow-y-auto">
+                    @foreach (var r in ExplicitDeliverable)
+                    {
+                        <li>@FormatEntry(r) <span class="text-muted">(@NotificationRecipientSourceLabels.Label(r.Source))</span></li>
+                    }
+                </ul>
+            }
+            @if (_snapshot.Deliverable.Count == 0)
+            {
+                <p class="mt-1 text-muted">No deliverable recipients in snapshot.</p>
+            }
+        </div>
+        <div>
+            <div class="font-semibold text-heading">Skipped / suppressed (@_snapshot.Skipped.Count)</div>
+            @if (_snapshot.Skipped.Count == 0)
+            {
+                <p class="mt-1 text-muted">None.</p>
+            }
+            else
+            {
+                <ul class="mt-1 space-y-1 max-h-40 overflow-y-auto">
+                    @foreach (var r in _snapshot.Skipped)
+                    {
+                        <li>@FormatEntry(r) <span class="text-muted">@(r.Reason ?? "—")</span></li>
+                    }
+                </ul>
+            }
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public string? RecipientSnapshotJson { get; set; }
+
+    private NotificationRecipientSnapshotModel? _snapshot;
+
+    protected override void OnParametersSet() =>
+        _snapshot = NotificationRecipientSnapshotParser.TryParse(RecipientSnapshotJson);
+
+    private IReadOnlyList<NotificationRecipientSnapshotEntry> ImplicitDeliverable =>
+        _snapshot?.Deliverable.Where(r => NotificationRecipientSourceLabels.IsImplicitAttentionRouting(r.Source)).ToList()
+        ?? [];
+
+    private IReadOnlyList<NotificationRecipientSnapshotEntry> ExplicitDeliverable =>
+        _snapshot?.Deliverable.Where(r => !NotificationRecipientSourceLabels.IsImplicitAttentionRouting(r.Source)).ToList()
+        ?? [];
+
+    private static string FormatEntry(NotificationRecipientSnapshotEntry r) =>
+        r.Email
+        ?? r.DisplayName
+        ?? r.UserId
+        ?? r.ManagedContactId
+        ?? "—";
+}

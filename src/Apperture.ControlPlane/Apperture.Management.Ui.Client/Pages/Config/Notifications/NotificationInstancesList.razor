@@ -3,6 +3,7 @@
 @using Apperture.Management.Client
 @using Apperture.Management.Ui.Client.Organisms
 @using Apperture.Management.Ui.Client.Services
+@using Apperture.Management.Ui.Shared
 @inject IManagementClient Client
 @inject IOperatorCapabilitiesService Capabilities
 @inject NavigationManager Nav
@@ -73,11 +74,31 @@
                             <tr class="border-t border-default">
                                 <td class="p-2">@i.Status</td>
                                 <td class="p-2">@i.NotificationKind</td>
-                                <td class="p-2 font-mono break-all">@i.NotificationDefinitionId</td>
-                                <td class="p-2 font-mono break-all">@(i.IntegrationId ?? "—")</td>
-                                <td class="p-2 font-mono break-all">@(i.AttentionIncidentId ?? "—")</td>
+                                <td class="p-2 font-mono break-all">
+                                    <a class="underline" href="@NotificationUiRoutes.DefinitionDetail(i.NotificationDefinitionId)">@i.NotificationDefinitionId</a>
+                                </td>
+                                <td class="p-2 font-mono break-all">
+                                    @if (!string.IsNullOrWhiteSpace(i.IntegrationId))
+                                    {
+                                        <a class="underline" href="@NotificationUiRoutes.IntegrationNotifications(i.IntegrationId)">@i.IntegrationId</a>
+                                    }
+                                    else
+                                    {
+                                        <span>—</span>
+                                    }
+                                </td>
+                                <td class="p-2 font-mono break-all">
+                                    @if (!string.IsNullOrWhiteSpace(i.AttentionIncidentId) && !string.IsNullOrWhiteSpace(i.IntegrationId))
+                                    {
+                                        <a class="underline" href="@NotificationUiRoutes.IntegrationScheduleDiagnostics(i.IntegrationId, i.AttentionIncidentId)">@i.AttentionIncidentId</a>
+                                    }
+                                    else
+                                    {
+                                        @(i.AttentionIncidentId ?? "—")
+                                    }
+                                </td>
                                 <td class="p-2">@i.CreatedAtUtc.UtcDateTime.ToString("u")</td>
-                                <td class="p-2"><a class="underline" href="@($"/config/notifications/instances/{Uri.EscapeDataString(i.Id)}")">View</a></td>
+                                <td class="p-2"><a class="underline" href="@NotificationUiRoutes.InstanceDetail(i.Id)">View</a></td>
                             </tr>
                         }
                     </tbody>

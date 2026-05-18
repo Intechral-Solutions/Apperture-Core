@@ -3,6 +3,7 @@
 @using Apperture.Management.Client
 @using Apperture.Management.Ui.Client.Organisms
 @using Apperture.Management.Ui.Client.Services
+@using Apperture.Management.Ui.Shared
 @inject IManagementClient Client
 @inject IOperatorCapabilitiesService Capabilities
 
@@ -24,6 +25,38 @@
     }
     else
     {
+        @if (_configDiagnostics is not null)
+        {
+            <section class="mt-4 rounded border border-default bg-surface p-3 text-xs">
+                <div class="font-semibold text-heading mb-2">Platform pipeline configuration</div>
+                <dl class="grid grid-cols-2 md:grid-cols-5 gap-2">
+                    <div><dt class="text-muted">Platform events</dt><dd>@FlagLabel(_configDiagnostics.PlatformEventsEnabled)</dd></div>
+                    <div><dt class="text-muted">Evaluation</dt><dd>@FlagLabel(_configDiagnostics.EvaluationEnabled)</dd></div>
+                    <div><dt class="text-muted">Instances</dt><dd>@FlagLabel(_configDiagnostics.InstancesEnabled)</dd></div>
+                    <div><dt class="text-muted">Delivery</dt><dd>@FlagLabel(_configDiagnostics.DeliveryEnabled)</dd></div>
+                    <div><dt class="text-muted">Use platform pipeline</dt><dd>@FlagLabel(_configDiagnostics.UsePlatformPipelineEnabled)</dd></div>
+                </dl>
+                @if (!_configDiagnostics.DeliveryEnabled)
+                {
+                    <p class="mt-2 rounded border border-amber-500/40 bg-amber-500/10 p-2">
+                        Delivery is disabled — outbox rows may be created but mail is not sent. Review diagnostics and dev/staging logs before enabling delivery.
+                    </p>
+                }
+                else if (_configDiagnostics.Warnings.Count > 0)
+                {
+                    <ul class="mt-2 list-disc list-inside text-muted">
+                        @foreach (var w in _configDiagnostics.Warnings)
+                        {
+                            <li>@w.Message</li>
+                        }
+                    </ul>
+                }
+                <p class="mt-2 text-muted">
+                    <a class="underline" href="@NotificationUiRoutes.DeliveryDiagnostics()">Full notification diagnostics</a>
+                </p>
+            </section>
+        }
+
         @if (_globalHealth is not null)
         {
             <div class="mt-4 grid grid-cols-2 gap-2 md:grid-cols-4 text-xs">
@@ -54,13 +87,17 @@
         }
         else if (_integrationDiag is not null)
         {
-            <section class="mt-4 rounded border border-default bg-surface p-3">
-                <div class="font-semibold text-heading text-sm mb-2">Recent failed deliveries</div>
+            <section class="mt-4 rounded border border-red-500/30 bg-red-500/5 p-3">
+                <div class="font-semibold text-heading text-sm mb-2">Failed deliveries</div>
                 @RenderOutboxTable(_integrationDiag.RecentFailedDeliveries)
             </section>
-            <section class="mt-4 rounded border border-default bg-surface p-3">
-                <div class="font-semibold text-heading text-sm mb-2">Pending / delivering outbox</div>
+            <section class="mt-4 rounded border border-amber-500/30 bg-amber-500/5 p-3">
+                <div class="font-semibold text-heading text-sm mb-2">Pending / delivering</div>
                 @RenderOutboxTable(_integrationDiag.RecentOutboxRows.Where(r => r.Status is "pending" or "delivering").ToList())
+            </section>
+            <section class="mt-4 rounded border border-green-500/30 bg-green-500/5 p-3">
+                <div class="font-semibold text-heading text-sm mb-2">Succeeded (recent window)</div>
+                @RenderOutboxTable(_integrationDiag.RecentOutboxRows.Where(r => r.Status is "succeeded" or "delivered").ToList())
             </section>
         }
     }
@@ -73,6 +110,7 @@
     private string? _error;
     private string _selectedIntegrationId = "";
     private NotificationDeliveryHealthSummaryDto? _globalHealth;
+    private NotificationConfigurationDiagnosticsDto? _configDiagnostics;
     private NotificationIntegrationDiagnosticsDto? _integrationDiag;
     private IReadOnlyList<IntegrationDto> _integrations = [];
 
@@ -86,6 +124,15 @@
         try
         {
             _globalHealth = await Client.GetNotificationDeliveryHealthAsync();
+            try
+            {
+                _configDiagnostics = await Client.GetNotificationConfigurationDiagnosticsAsync();
+            }
+            catch
+            {
+                _configDiagnostics = null;
+            }
+
             if (caps.CanViewIntegrations)
                 _integrations = await Client.GetIntegrationsAsync();
         }
@@ -106,6 +153,8 @@
         finally { _busy = false; }
     }
 
+    private static string FlagLabel(bool enabled) => enabled ? "Enabled" : "Disabled";
+
     private RenderFragment RenderOutboxTable(IReadOnlyList<NotificationOutboxDiagnosticDto> rows) => builder =>
     {
         if (rows.Count == 0)
@@ -120,7 +169,7 @@
         builder.AddAttribute(1, "class", "min-w-full text-left text-xs");
         builder.OpenElement(2, "thead");
         builder.OpenElement(3, "tr");
-        foreach (var h in new[] { "Recipient", "Kind", "Status", "Error", "Instance" })
+        foreach (var h in new[] { "Recipient", "Kind", "Status", "Attempts", "Error", "Instance" })
         {
             builder.OpenElement(4, "th");
             builder.AddAttribute(5, "class", "p-1");
@@ -134,23 +183,33 @@
         foreach (var r in rows)
         {
             builder.OpenElement(seq++, "tr");
+            builder.AddAttribute(seq++, "class", "border-t border-default");
             builder.OpenElement(seq++, "td");
+            builder.AddAttribute(seq++, "class", "p-1");
             builder.AddContent(seq++, r.RecipientEmail);
             builder.CloseElement();
             builder.OpenElement(seq++, "td");
+            builder.AddAttribute(seq++, "class", "p-1");
             builder.AddContent(seq++, r.NotificationKind);
             builder.CloseElement();
             builder.OpenElement(seq++, "td");
+            builder.AddAttribute(seq++, "class", "p-1");
             builder.AddContent(seq++, r.Status);
             builder.CloseElement();
             builder.OpenElement(seq++, "td");
+            builder.AddAttribute(seq++, "class", "p-1");
+            builder.AddContent(seq++, r.AttemptCount);
+            builder.CloseElement();
+            builder.OpenElement(seq++, "td");
+            builder.AddAttribute(seq++, "class", "p-1 break-all");
             builder.AddContent(seq++, r.LastError ?? "—");
             builder.CloseElement();
             builder.OpenElement(seq++, "td");
+            builder.AddAttribute(seq++, "class", "p-1");
             builder.OpenElement(seq++, "a");
             builder.AddAttribute(seq++, "class", "underline");
-            builder.AddAttribute(seq++, "href", $"/config/notifications/instances/{Uri.EscapeDataString(r.NotificationInstanceId)}");
-            builder.AddContent(seq++, "Open");
+            builder.AddAttribute(seq++, "href", NotificationUiRoutes.InstanceDetail(r.NotificationInstanceId));
+            builder.AddContent(seq++, "Open instance");
             builder.CloseElement();
             builder.CloseElement();
             builder.CloseElement();
@@ -159,3 +218,4 @@
         builder.CloseElement();
     };
 }
+
