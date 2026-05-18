@@ -36,10 +36,12 @@ See [Configuration reference](#configuration-reference) for safe defaults and da
 2. **`Notifications:Evaluation:Enabled=true`** — Evaluate rules on append / incident observation.
 3. **`Notifications:Instances:Enabled=true`** — Materialize instances and pending outbox rows (no email yet).
 4. **`Notifications:Delivery:Enabled=false`** — Dispatch runs in **dry-run** mode (logs “would send”, rows stay `pending`).
-5. **Review parity diagnostics** — Per integration/incident; see [Diagnostics APIs](#diagnostics-apis). Target: parity acceptance with no blocking findings.
-6. **`Notifications:Delivery:Enabled=true`** (dev/staging only) — Live send from stored instance snapshots; Epic 69 may still send unless step 8.
-7. **Review send behavior** — Outbox `succeeded` / `failed`, subjects/bodies, recipient provenance.
-8. **`Notifications:UsePlatformPipeline=true`** — Only after acceptance; disables Epic 69 orchestrator for observation cycle. **Do not enable in production until staging sign-off.**
+5. **Review parity diagnostics** — Per integration/incident; see [Diagnostics APIs](#diagnostics-apis). Target: parity acceptance with no blocking findings. Use **Config → Notifications → Diagnostics** or **Integrations → {id} → Notifications** cutover readiness panel.
+6. **Dry-run review** — With `Notifications:Delivery:Enabled=false`, confirm instances and outbox rows are created; dispatch logs show would-send only. Review dangerous flag combinations in the UI or `GET /api/notification-diagnostics/configuration`.
+7. **Operator sign-off** — On the integration notifications page, record sign-off when parity looks acceptable (`readyForCutover`) or document `notReady` if not. Sign-off is **evidence for audit**; it does **not** change flags or enable cutover. Revoke sign-off if conditions change. Audit events: `notification.cutover.expected_run_missing.signed_off`, `.sign_off_replaced`, `.sign_off_revoked`.
+8. **`Notifications:Delivery:Enabled=true`** (dev/staging only) — Live send from stored instance snapshots; Epic 69 may still send unless step 10.
+9. **Review send behavior** — Outbox `succeeded` / `failed`, subjects/bodies, recipient provenance.
+10. **`Notifications:UsePlatformPipeline=true`** — Only after sign-off and staging validation; disables Epic 69 orchestrator for observation cycle. **Manual config change only** — the UI does not flip this flag.
 
 ---
 
@@ -66,6 +68,10 @@ Epic 69 ledger history is unchanged. Platform instances/outbox are audit-only af
 | `GET /api/notification-diagnostics/by-incident/{attentionIncidentId}` | Per-incident platform rows. |
 | `GET /api/notification-diagnostics/expected-run-missing/parity` | Side-by-side Epic 69 ledger vs platform (by kind/recipient). |
 | `GET /api/notification-diagnostics/expected-run-missing/parity-acceptance` | Aggregated acceptance summary for cutover decision. |
+| `GET /api/notification-diagnostics/configuration` | Instance notification flag state and dangerous-combination warnings. |
+| `GET /api/integrations/{id}/expected-run-missing/cutover-sign-off` | Latest operator sign-off for the integration. |
+| `POST /api/integrations/{id}/expected-run-missing/cutover-sign-off` | Create/replace sign-off (`readyForCutover` or `notReady`). Requires integration update + notification manage. |
+| `POST /api/integrations/{id}/expected-run-missing/cutover-sign-off/revoke` | Revoke the latest active sign-off. |
 | `GET /api/integrations/{id}/schedule-diagnostics` | Schedule view + Epic 69 ledger + platform instances/outbox. |
 
 ---

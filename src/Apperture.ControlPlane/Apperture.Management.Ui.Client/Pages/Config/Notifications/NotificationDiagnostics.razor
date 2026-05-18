@@ -58,8 +58,22 @@
                        href="@($"/integrations/{Uri.EscapeDataString(_parityIntegrationId.Trim())}/notifications#cutover-readiness")">
                         Open integration cutover readiness
                     </a>
+                    <button type="button" class="rounded bg-surface-muted px-3 py-2 self-end disabled:opacity-50" disabled="@_busy" @onclick="LoadCutoverSignOffAsync">Load sign-off</button>
                 }
             </div>
+            @if (_cutoverSignOff is not null)
+            {
+                <p class="mt-3 text-xs">
+                    Latest sign-off: <span class="font-medium">@ExpectedRunMissingCutoverSignOffUi.GetStatusLabel(_cutoverSignOff.Status)</span>
+                    at @_cutoverSignOff.ReviewedAtUtc.UtcDateTime.ToString("u")
+                    by @(_cutoverSignOff.ReviewedByDisplayName ?? _cutoverSignOff.ReviewedByActorId).
+                    Parity at review: @(_cutoverSignOff.ParityAcceptableAtReview ? "acceptable" : "not acceptable").
+                </p>
+            }
+            else if (_cutoverSignOffLoaded)
+            {
+                <p class="mt-3 text-xs text-muted">No cutover sign-off on file for this integration.</p>
+            }
         </section>
 
         <div class="mt-4 rounded border border-default bg-surface p-3 text-xs">
@@ -152,6 +166,8 @@
     private NotificationConfigurationDiagnosticsDto? _configDiagnostics;
     private ExpectedRunMissingParityAcceptanceSummaryDto? _acceptance;
     private ExpectedRunMissingParityDiagnosticsDto? _fullParity;
+    private ExpectedRunMissingCutoverSignOffDto? _cutoverSignOff;
+    private bool _cutoverSignOffLoaded;
     private bool _parityEvaluated;
 
     private string AcceptanceReadinessLabel =>
@@ -188,6 +204,23 @@
             _configDiagnostics = await Client.GetNotificationConfigurationDiagnosticsAsync();
         }
         catch (Exception ex) { _error = ex.Message; }
+
+        if (!string.IsNullOrWhiteSpace(_parityIntegrationId))
+            await LoadCutoverSignOffAsync();
+    }
+
+    private async Task LoadCutoverSignOffAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_parityIntegrationId)) return;
+        _busy = true;
+        _error = null;
+        try
+        {
+            _cutoverSignOff = await Client.GetExpectedRunMissingCutoverSignOffAsync(_parityIntegrationId.Trim());
+            _cutoverSignOffLoaded = true;
+        }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _busy = false; }
     }
 
     private async Task LoadIntegrationDiagAsync()

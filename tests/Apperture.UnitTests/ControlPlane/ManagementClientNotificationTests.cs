@@ -104,6 +104,35 @@ public sealed class ManagementClientNotificationTests
     }
 
     [Fact]
+    public async Task GetExpectedRunMissingCutoverSignOffAsync_UsesIntegrationPath()
+    {
+        var json = JsonSerializer.Serialize(new
+        {
+            id = "so-1",
+            integrationId = "int-1",
+            notificationDefinitionId = "platform.schedule.expected_run_missing",
+            status = "readyForCutover",
+            reviewedAtUtc = DateTimeOffset.UtcNow,
+            reviewedByActorId = "user:1",
+            reviewedByDisplayName = "Op",
+            parityAcceptableAtReview = true,
+            configurationWarningCodes = Array.Empty<string>(),
+            blockingFindings = Array.Empty<string>(),
+            nonBlockingFindings = Array.Empty<string>(),
+            operatorNote = (string?)null,
+            createdAtUtc = DateTimeOffset.UtcNow,
+            updatedAtUtc = DateTimeOffset.UtcNow
+        });
+        var handler = new CaptureHandler(HttpStatusCode.OK, json);
+        var client = new ManagementClient(new HttpClient(handler) { BaseAddress = new Uri("https://api.example/") });
+
+        var result = await client.GetExpectedRunMissingCutoverSignOffAsync("int-1");
+
+        handler.LastUri!.AbsolutePath.Should().Contain("integrations/int-1/expected-run-missing/cutover-sign-off");
+        result!.Status.Should().Be("readyForCutover");
+    }
+
+    [Fact]
     public async Task GetExpectedRunMissingParityAcceptanceAsync_BuildsQuery()
     {
         var json = JsonSerializer.Serialize(new

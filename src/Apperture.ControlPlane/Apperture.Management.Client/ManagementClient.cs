@@ -1752,6 +1752,53 @@ public sealed class ManagementClient : IManagementClient
                 cancellationToken).ConfigureAwait(false))!;
     }
 
+    public async Task<ExpectedRunMissingCutoverSignOffDto?> GetExpectedRunMissingCutoverSignOffAsync(
+        string integrationId,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.GetAsync(
+            $"integrations/{Uri.EscapeDataString(integrationId.Trim())}/expected-run-missing/cutover-sign-off",
+            cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode == HttpStatusCode.NotFound)
+            return null;
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<ExpectedRunMissingCutoverSignOffDto>(
+            ApiJsonReadOptions,
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<ExpectedRunMissingCutoverSignOffDto> CreateExpectedRunMissingCutoverSignOffAsync(
+        string integrationId,
+        CreateExpectedRunMissingCutoverSignOffRequestDto request,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.PostAsJsonAsync(
+            $"integrations/{Uri.EscapeDataString(integrationId.Trim())}/expected-run-missing/cutover-sign-off",
+            request,
+            ApiJsonWriteOptions,
+            cancellationToken).ConfigureAwait(false);
+        await EnsureSuccessOrThrowAsync(response, cancellationToken).ConfigureAwait(false);
+        return (await response.Content.ReadFromJsonAsync<ExpectedRunMissingCutoverSignOffDto>(
+            ApiJsonReadOptions,
+            cancellationToken).ConfigureAwait(false))!;
+    }
+
+    public async Task<ExpectedRunMissingCutoverSignOffDto> RevokeExpectedRunMissingCutoverSignOffAsync(
+        string integrationId,
+        RevokeExpectedRunMissingCutoverSignOffRequestDto? request = null,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.PostAsJsonAsync(
+            $"integrations/{Uri.EscapeDataString(integrationId.Trim())}/expected-run-missing/cutover-sign-off/revoke",
+            request ?? new RevokeExpectedRunMissingCutoverSignOffRequestDto(null),
+            ApiJsonWriteOptions,
+            cancellationToken).ConfigureAwait(false);
+        await EnsureSuccessOrThrowAsync(response, cancellationToken).ConfigureAwait(false);
+        return (await response.Content.ReadFromJsonAsync<ExpectedRunMissingCutoverSignOffDto>(
+            ApiJsonReadOptions,
+            cancellationToken).ConfigureAwait(false))!;
+    }
+
     private static async Task EnsureSuccessOrThrowAsync(HttpResponseMessage response, CancellationToken cancellationToken)
     {
         if (response.IsSuccessStatusCode)

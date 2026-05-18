@@ -1,4 +1,5 @@
 using Apperture.Core.Application.Notifications;
+using Apperture.Core.Application.Notifications.Cutover;
 using Apperture.Core.Application.Notifications.Diagnostics;
 using Apperture.Core.Application.Notifications.Delivery;
 using Apperture.Core.Application.Notifications.Instances;
@@ -50,6 +51,8 @@ public static class NotificationsServiceCollectionExtensions
         services.AddScoped<INotificationInstanceQueryService, NotificationInstanceQueryService>();
         services.AddScoped<INotificationDeliveryDiagnosticsStore, SqlNotificationDeliveryDiagnosticsStore>();
         services.AddScoped<INotificationDeliveryDiagnosticsService, NotificationDeliveryDiagnosticsService>();
+        services.AddScoped<IExpectedRunMissingCutoverSignOffStore, SqlExpectedRunMissingCutoverSignOffStore>();
+        services.AddScoped<IExpectedRunMissingCutoverSignOffService, ExpectedRunMissingCutoverSignOffService>();
         services.AddScoped<IEmailNotificationChannel, SmtpEmailNotificationChannel>();
         services.AddScoped<NotificationDispatchProcessor>();
         services.AddHostedService<NotificationDispatchHostedService>();

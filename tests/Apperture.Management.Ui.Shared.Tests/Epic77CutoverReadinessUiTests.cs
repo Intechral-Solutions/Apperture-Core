@@ -17,6 +17,17 @@ public sealed class Epic77CutoverReadinessUiTests
     }
 
     [Fact]
+    public void IntegrationNotifications_includes_operator_sign_off_section()
+    {
+        var content = ReadRepoFile(
+            "src/Apperture.ControlPlane/Apperture.Management.Ui.Client/Pages/Integrations/IntegrationNotifications.razor");
+        content.Should().Contain("Operator sign-off");
+        content.Should().Contain("Sign off — ready for cutover");
+        content.Should().Contain("Revoke sign-off");
+        content.Should().Contain("GetExpectedRunMissingCutoverSignOffAsync");
+    }
+
+    [Fact]
     public void IntegrationNotifications_includes_cutover_readiness_panel()
     {
         var content = ReadRepoFile(
@@ -36,6 +47,15 @@ public sealed class Epic77CutoverReadinessUiTests
             "src/Apperture.ControlPlane/Apperture.Management.Ui.Client/Pages/Integrations/IntegrationNotifications.razor");
         content.Should().Contain("_canView = caps.CanViewIntegrations && caps.CanViewNotificationDefinitions");
         content.Should().Contain("_canManageSubscriptions = caps.CanUpdateIntegrations");
+    }
+
+    [Fact]
+    public void NotificationDiagnostics_shows_cutover_sign_off_when_loaded()
+    {
+        var content = ReadRepoFile(
+            "src/Apperture.ControlPlane/Apperture.Management.Ui.Client/Pages/Config/Notifications/NotificationDiagnostics.razor");
+        content.Should().Contain("Latest sign-off");
+        content.Should().Contain("LoadCutoverSignOffAsync");
     }
 
     [Fact]

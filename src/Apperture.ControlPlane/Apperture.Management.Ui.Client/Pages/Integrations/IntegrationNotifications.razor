@@ -107,6 +107,55 @@
                 <p class="mt-3 text-xs text-muted">No recent expected-run-missing incidents with comparable Epic 69 and platform rows for this integration.</p>
             }
 
+            <div class="mt-4 border-t border-default pt-3">
+                <div class="text-xs font-semibold mb-2">Operator sign-off</div>
+                <p class="text-xs text-muted mb-2">Sign-off records operator review for audit. It does not change configuration or enable cutover.</p>
+                @if (_latestSignOff is not null)
+                {
+                    <dl class="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
+                        <div><dt class="text-muted">Status</dt><dd class="font-medium">@ExpectedRunMissingCutoverSignOffUi.GetStatusLabel(_latestSignOff.Status)</dd></div>
+                        <div><dt class="text-muted">Reviewed</dt><dd>@_latestSignOff.ReviewedAtUtc.UtcDateTime.ToString("u") by @(_latestSignOff.ReviewedByDisplayName ?? _latestSignOff.ReviewedByActorId)</dd></div>
+                        <div><dt class="text-muted">Parity at sign-off</dt><dd>@(_latestSignOff.ParityAcceptableAtReview ? "Acceptable" : "Not acceptable")</dd></div>
+                        @if (!string.IsNullOrWhiteSpace(_latestSignOff.OperatorNote))
+                        {
+                            <div class="md:col-span-2"><dt class="text-muted">Note</dt><dd>@_latestSignOff.OperatorNote</dd></div>
+                        }
+                    </dl>
+                    @if (SignOffIsStale)
+                    {
+                        <p class="mt-2 text-xs text-amber-600">Current parity or configuration warnings differ from this sign-off — review again before cutover.</p>
+                    }
+                }
+                else
+                {
+                    <p class="text-xs text-muted">No sign-off recorded for this integration.</p>
+                }
+                @if (_canManageSubscriptions)
+                {
+                    <label class="mt-2 block text-xs">
+                        Operator note (optional)
+                        <textarea class="mt-1 block w-full max-w-xl rounded border border-default px-2 py-1 text-xs" rows="2" @bind="_signOffNote" disabled="@_busy"></textarea>
+                    </label>
+                    <div class="mt-2 flex flex-wrap gap-2">
+                        <button type="button" class="rounded bg-green-600/20 px-3 py-1 text-xs disabled:opacity-50"
+                                disabled="@(_busy || !CanSignOffReady)" @onclick="SignOffReadyAsync">
+                            Sign off — ready for cutover
+                        </button>
+                        <button type="button" class="rounded bg-surface-muted px-3 py-1 text-xs disabled:opacity-50"
+                                disabled="@_busy" @onclick="SignOffNotReadyAsync">
+                            Record not ready
+                        </button>
+                        @if (_latestSignOff is not null && _latestSignOff.Status is not "revoked")
+                        {
+                            <button type="button" class="rounded bg-amber-500/20 px-3 py-1 text-xs disabled:opacity-50"
+                                    disabled="@_busy" @onclick="RevokeSignOffAsync">
+                                Revoke sign-off
+                            </button>
+                        }
+                    </div>
+                }
+            </div>
+
             <div class="mt-3 flex flex-wrap gap-2 text-xs">
                 <button type="button" class="rounded bg-surface-muted px-3 py-1 disabled:opacity-50" disabled="@_busy" @onclick="LoadCutoverReadinessAsync">Refresh readiness</button>
                 @if (_parityDetail is not null)
@@ -435,6 +484,8 @@
     private ExpectedRunMissingParityAcceptanceSummaryDto? _parityAcceptance;
     private ExpectedRunMissingParityDiagnosticsDto? _parityDetail;
     private NotificationConfigurationDiagnosticsDto? _configDiagnostics;
+    private ExpectedRunMissingCutoverSignOffDto? _latestSignOff;
+    private string _signOffNote = "";
     private bool _parityEvaluated;
     private int _recentPlatformInstanceCount;
     private bool? _builtInDefinitionEnabled;
@@ -470,6 +521,14 @@
             _recentPlatformInstanceCount,
             ReadinessState);
 
+    private bool CanSignOffReady =>
+        ReadinessState is ExpectedRunMissingCutoverReadinessState.LooksAcceptableForCutover
+        or ExpectedRunMissingCutoverReadinessState.NeedsReview;
+
+    private bool SignOffIsStale =>
+        _latestSignOff is not null
+        && ExpectedRunMissingCutoverSignOffUi.HasStaleness(_latestSignOff, _parityAcceptance, _configDiagnostics);
+
     private IReadOnlyList<ChecklistItem> CutoverChecklist
     {
         get
@@ -484,7 +543,9 @@
                 new("Dry-run reviewed (delivery off or logs reviewed)", cfg?.DeliveryEnabled == false, true),
                 new("Parity acceptance reviewed", _parityEvaluated && parityOk, _parityAcceptance is null),
                 new("Delivery tested in dev/staging", false, true),
-                new("Operator sign-off completed", false, true),
+                new("Operator sign-off completed",
+                    _latestSignOff?.Status == "readyForCutover",
+                    _latestSignOff is null),
                 new("UsePlatformPipeline only enabled after acceptance",
                     cfg?.UsePlatformPipelineEnabled != true || parityOk,
                     cfg?.UsePlatformPipelineEnabled == true && !parityOk),
@@ -630,6 +691,15 @@
                 _parityDetail = await Client.GetExpectedRunMissingParityAsync(IntegrationId, take: 50);
             else
                 _parityDetail = null;
+
+            try
+            {
+                _latestSignOff = await Client.GetExpectedRunMissingCutoverSignOffAsync(IntegrationId);
+            }
+            catch
+            {
+                _latestSignOff = null;
+            }
         }
         catch (Exception ex)
         {
@@ -640,6 +710,44 @@
             if (!wasBusy)
                 _busy = false;
         }
+    }
+
+    private async Task SignOffReadyAsync() =>
+        await SubmitSignOffAsync("readyForCutover");
+
+    private async Task SignOffNotReadyAsync() =>
+        await SubmitSignOffAsync("notReady");
+
+    private async Task SubmitSignOffAsync(string status)
+    {
+        if (!_canManageSubscriptions) return;
+        _busy = true;
+        _error = null;
+        try
+        {
+            _latestSignOff = await Client.CreateExpectedRunMissingCutoverSignOffAsync(
+                IntegrationId,
+                new CreateExpectedRunMissingCutoverSignOffRequestDto(status, string.IsNullOrWhiteSpace(_signOffNote) ? null : _signOffNote.Trim()));
+            _signOffNote = "";
+        }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _busy = false; }
+    }
+
+    private async Task RevokeSignOffAsync()
+    {
+        if (!_canManageSubscriptions) return;
+        _busy = true;
+        _error = null;
+        try
+        {
+            _latestSignOff = await Client.RevokeExpectedRunMissingCutoverSignOffAsync(
+                IntegrationId,
+                new RevokeExpectedRunMissingCutoverSignOffRequestDto(string.IsNullOrWhiteSpace(_signOffNote) ? null : _signOffNote.Trim()));
+            _signOffNote = "";
+        }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _busy = false; }
     }
 
     private static string FlagLabel(bool enabled) => enabled ? "Enabled" : "Disabled";

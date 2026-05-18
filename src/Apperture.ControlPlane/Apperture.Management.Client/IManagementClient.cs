@@ -535,6 +535,20 @@ public interface IManagementClient
     Task<NotificationConfigurationDiagnosticsDto> GetNotificationConfigurationDiagnosticsAsync(
         CancellationToken cancellationToken = default);
 
+    Task<ExpectedRunMissingCutoverSignOffDto?> GetExpectedRunMissingCutoverSignOffAsync(
+        string integrationId,
+        CancellationToken cancellationToken = default);
+
+    Task<ExpectedRunMissingCutoverSignOffDto> CreateExpectedRunMissingCutoverSignOffAsync(
+        string integrationId,
+        CreateExpectedRunMissingCutoverSignOffRequestDto request,
+        CancellationToken cancellationToken = default);
+
+    Task<ExpectedRunMissingCutoverSignOffDto> RevokeExpectedRunMissingCutoverSignOffAsync(
+        string integrationId,
+        RevokeExpectedRunMissingCutoverSignOffRequestDto? request = null,
+        CancellationToken cancellationToken = default);
+
     // --- Governance admin (Epic 39/40) ---
 
     /// <summary>Gets the governance descriptor catalog (resources and permissions). Requires user.read.</summary>
