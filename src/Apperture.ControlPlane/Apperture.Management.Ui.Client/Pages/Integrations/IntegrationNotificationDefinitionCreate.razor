@@ -57,7 +57,7 @@
 
     private Task OnSavedAsync(string definitionId)
     {
-        Nav.NavigateTo(ReturnUrl);
+        Nav.NavigateTo(NotificationPostCreateNavigation.IntegrationNotificationsAfterCreate(IntegrationId, definitionId));
         return Task.CompletedTask;
     }
 }

@@ -61,7 +61,7 @@
 
     private Task OnSavedAsync(string definitionId)
     {
-        Nav.NavigateTo($"/config/notifications/definitions/{Uri.EscapeDataString(definitionId)}");
+        Nav.NavigateTo(NotificationPostCreateNavigation.DefinitionDetailAfterCreate(definitionId, IntegrationId));
         return Task.CompletedTask;
     }
 }

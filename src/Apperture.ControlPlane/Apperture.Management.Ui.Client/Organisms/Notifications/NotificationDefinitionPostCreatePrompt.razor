@@ -1,0 +1,43 @@
+@using Apperture.Management.Ui.Shared
+
+@if (Visible)
+{
+    <div class="mt-4 rounded border border-amber-500/40 bg-amber-500/10 p-3 text-sm" role="status">
+        <div class="font-semibold text-heading">Notification definition created</div>
+        <p class="mt-1 text-xs text-muted">Add recipients so this notification can deliver.</p>
+        <div class="mt-3 flex flex-wrap gap-2 text-xs">
+            @if (CanManageSubscriptions)
+            {
+                <button type="button" class="rounded bg-surface-muted px-3 py-2 hover:bg-surface disabled:opacity-50"
+                        disabled="@Disabled" @onclick="OnAddSubscription">
+                    Add subscription
+                </button>
+            }
+            <button type="button" class="rounded bg-surface-muted px-3 py-2 hover:bg-surface disabled:opacity-50"
+                    disabled="@Disabled" @onclick="OnPreviewRecipients">
+                Preview recipients
+            </button>
+            <a class="rounded bg-surface-muted px-3 py-2 hover:bg-surface" href="@ViewDefinitionHref">View definition</a>
+            @if (!string.IsNullOrWhiteSpace(IntegrationNotificationsHref))
+            {
+                <a class="rounded bg-surface-muted px-3 py-2 hover:bg-surface" href="@IntegrationNotificationsHref">
+                    Open integration notifications
+                </a>
+            }
+            <button type="button" class="underline text-muted disabled:opacity-50" disabled="@Disabled" @onclick="OnDismiss">
+                Dismiss
+            </button>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public bool Visible { get; set; }
+    [Parameter] public bool CanManageSubscriptions { get; set; }
+    [Parameter] public bool Disabled { get; set; }
+    [Parameter] public string ViewDefinitionHref { get; set; } = "";
+    [Parameter] public string? IntegrationNotificationsHref { get; set; }
+    [Parameter] public EventCallback OnAddSubscription { get; set; }
+    [Parameter] public EventCallback OnPreviewRecipients { get; set; }
+    [Parameter] public EventCallback OnDismiss { get; set; }
+}

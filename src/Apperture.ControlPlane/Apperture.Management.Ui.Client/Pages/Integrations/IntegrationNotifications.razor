@@ -2,6 +2,7 @@
 @using Apperture.Management.Client
 @using Apperture.Management.Ui.Client.Molecules
 @using Apperture.Management.Ui.Client.Organisms
+@using Apperture.Management.Ui.Client.Organisms.Notifications
 @using Apperture.Management.Ui.Client.Services
 @using Apperture.Management.Ui.Shared
 @inject IManagementClient Client
@@ -45,6 +46,14 @@
     else
     {
         <p class="mt-4 text-xs text-muted">Read-only cutover readiness and diagnostics. Enabling the platform pipeline or delivery is manual per the runbook — nothing on this page changes flags or sends mail.</p>
+
+        <NotificationDefinitionPostCreatePrompt Visible="@_showPostCreatePrompt"
+                                                CanManageSubscriptions="@_canManageSubscriptions"
+                                                Disabled="@_busy"
+                                                ViewDefinitionHref="@PostCreateViewDefinitionHref"
+                                                OnAddSubscription="FocusSubscriptionsAsync"
+                                                OnPreviewRecipients="PreviewPostCreateRecipientsAsync"
+                                                OnDismiss="DismissPostCreatePromptAsync" />
 
         <section class="mt-4 rounded border border-default bg-surface p-3" id="cutover-readiness">
             <div class="flex flex-wrap items-start justify-between gap-2">
@@ -254,7 +263,8 @@
                     <tbody>
                         @foreach (var d in _definitions)
                         {
-                            <tr class="border-t border-default">
+                            <tr class="border-t border-default @(IsPostCreateDefinition(d.Summary.Id) ? "bg-amber-500/10 ring-1 ring-inset ring-amber-500/30" : "")"
+                                id="@(IsPostCreateDefinition(d.Summary.Id) ? "created-definition-row" : null)">
                                 <td class="p-1 font-medium">@d.Summary.DisplayName</td>
                                 <td class="p-1 font-mono break-all">@d.Summary.Id</td>
                                 <td class="p-1">@d.Summary.Origin</td>
@@ -310,7 +320,7 @@
             }
         </section>
 
-        <section class="mt-4 rounded border border-default bg-surface p-3">
+        <section class="mt-4 rounded border border-default bg-surface p-3" id="explicit-subscriptions">
             <h2 class="text-sm font-semibold text-heading mb-2">Explicit subscriptions</h2>
             @if (_canManageSubscriptions)
             {
@@ -350,6 +360,13 @@
                         </label>
                     }
                     <button type="button" class="rounded bg-surface-muted px-3 py-2 disabled:opacity-50" disabled="@_busy" @onclick="AddSubscriptionAsync">Add</button>
+                </div>
+            }
+            @if (!string.IsNullOrWhiteSpace(_addDefinitionId) && !HasExplicitSubscriptions(_addDefinitionId))
+            {
+                <div class="mb-3 rounded border border-default bg-surface-muted/50 p-2 text-xs">
+                    <p class="font-medium text-heading">No explicit subscriptions yet</p>
+                    <p class="mt-1 text-muted">@GetEmptySubscriptionsMessage(_addDefinitionId)</p>
                 </div>
             }
             @if (_explicitSubscriptions.Count == 0)
@@ -411,29 +428,7 @@
                     </label>
                     <button type="button" class="rounded bg-surface-muted px-3 py-2 disabled:opacity-50" disabled="@_busy" @onclick="ResolveRecipientsAsync">Preview</button>
                 </div>
-                @if (_resolution is not null)
-                {
-                    <div class="mt-2 grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
-                        <div>
-                            <div class="font-semibold">Deliverable (@_resolution.Deliverable.Count)</div>
-                            <ul class="mt-1 space-y-1 max-h-40 overflow-y-auto">
-                                @foreach (var r in _resolution.Deliverable)
-                                {
-                                    <li>@r.Email <span class="text-muted">(@RecipientSourceLabel(r.Source))</span></li>
-                                }
-                            </ul>
-                        </div>
-                        <div>
-                            <div class="font-semibold">Skipped (@_resolution.Skipped.Count)</div>
-                            <ul class="mt-1 space-y-1 max-h-40 overflow-y-auto">
-                                @foreach (var r in _resolution.Skipped)
-                                {
-                                    <li>@(r.Email ?? r.UserId ?? "—") <span class="text-muted">@r.Reason</span></li>
-                                }
-                            </ul>
-                        </div>
-                    </div>
-                }
+                <NotificationRecipientResolutionDisplay Resolution="_resolution" />
             </div>
         </section>
 
@@ -519,6 +514,9 @@
 
     [Parameter] public string IntegrationId { get; set; } = "";
 
+    [SupplyParameterFromQuery(Name = NotificationPostCreateNavigation.CreatedDefinitionIdQuery)]
+    public string? CreatedDefinitionIdQuery { get; set; }
+
     private bool _capabilitiesLoaded;
     private bool _canView;
     private bool _canManageSubscriptions;
@@ -544,6 +542,8 @@
     private NotificationRecipientResolutionPreviewDto? _resolution;
     private string _addDefinitionId = BuiltInExpectedRunMissingDefinitionId;
     private string _previewDefinitionId = BuiltInExpectedRunMissingDefinitionId;
+    private string? _postCreateDefinitionId;
+    private bool _showPostCreatePrompt;
     private string _addKind = "principal";
     private string _addRef = "";
     private bool _createContactIfMissing;
@@ -553,6 +553,11 @@
 
     private string ConfigDiagnosticsHref =>
         $"/config/notifications/diagnostics?integrationId={Uri.EscapeDataString(IntegrationId)}";
+
+    private string PostCreateViewDefinitionHref =>
+        string.IsNullOrWhiteSpace(_postCreateDefinitionId)
+            ? "#"
+            : $"/config/notifications/definitions/{Uri.EscapeDataString(_postCreateDefinitionId)}";
 
     private ExpectedRunMissingCutoverReadinessState ReadinessState =>
         ExpectedRunMissingCutoverReadiness.ResolveState(_parityEvaluated, _parityAcceptance);
@@ -707,6 +712,7 @@
             }
 
             await LoadCutoverReadinessAsync();
+            await ApplyPostCreateContextAsync();
         }
         catch (Exception ex)
         {
@@ -717,6 +723,22 @@
             _busy = false;
             _loading = false;
         }
+    }
+
+    private async Task ApplyPostCreateContextAsync()
+    {
+        if (string.IsNullOrWhiteSpace(CreatedDefinitionIdQuery))
+            return;
+
+        var createdId = CreatedDefinitionIdQuery.Trim();
+        if (!_definitions.Any(d => string.Equals(d.Summary.Id, createdId, StringComparison.Ordinal)))
+            return;
+
+        _postCreateDefinitionId = createdId;
+        _addDefinitionId = createdId;
+        _previewDefinitionId = createdId;
+        _showPostCreatePrompt = true;
+        await ResolveRecipientsAsync();
     }
 
     private async Task LoadCutoverReadinessAsync()
@@ -841,6 +863,8 @@
                 new AddNotificationSubscriptionRequest(IntegrationId, _addKind, _addRef, null, _createContactIfMissing));
             _explicitSubscriptions = (await Client.ListNotificationSubscriptionsByIntegrationAsync(IntegrationId)).ToList();
             _addRef = "";
+            _previewDefinitionId = _addDefinitionId;
+            await ResolveRecipientsAsync();
         }
         catch (Exception ex) { _error = ex.Message; }
         finally { _busy = false; }
@@ -892,13 +916,60 @@
     private static bool ParseCheckbox(ChangeEventArgs e) =>
         e.Value is bool b ? b : string.Equals(e.Value?.ToString(), "true", StringComparison.OrdinalIgnoreCase);
 
-    private static string RecipientSourceLabel(string? source) => source switch
+    private static string RecipientSourceLabel(string? source) => NotificationRecipientSourceLabels.Label(source);
+
+    private bool IsPostCreateDefinition(string definitionId) =>
+        !string.IsNullOrWhiteSpace(_postCreateDefinitionId)
+        && string.Equals(_postCreateDefinitionId, definitionId, StringComparison.Ordinal);
+
+    private bool HasExplicitSubscriptions(string definitionId) =>
+        _explicitSubscriptions.Any(s => string.Equals(s.NotificationDefinitionId, definitionId, StringComparison.Ordinal));
+
+    private bool HasAttentionRoutingRecipients =>
+        _attentionRouting is not null
+        && (_attentionRouting.PrimaryRecipients.Count > 0 || _attentionRouting.EscalationRecipients.Count > 0);
+
+    private string GetEmptySubscriptionsMessage(string definitionId)
     {
-        "attentionRoutingIntegrationOverride" => "Implicit (attention routing compatibility)",
-        "directSubscription" => "Explicit subscription",
-        "operationalTeamMembership" => "Operational team membership",
-        _ => source ?? "—"
-    };
+        var row = _definitions.FirstOrDefault(d => string.Equals(d.Summary.Id, definitionId, StringComparison.Ordinal));
+        if (row is null)
+            return "Add explicit subscriptions so platform delivery can create outbox rows for this definition.";
+
+        if (string.Equals(definitionId, BuiltInExpectedRunMissingDefinitionId, StringComparison.Ordinal))
+        {
+            if (HasAttentionRoutingRecipients)
+                return "Epic 69 attention routing may still supply implicit compatibility recipients for this integration. Add explicit subscriptions for platform pipeline delivery.";
+            return "Add explicit subscriptions for platform pipeline delivery of expected-run-missing notifications.";
+        }
+
+        if (string.Equals(row.Summary.Origin, "userCreated", StringComparison.OrdinalIgnoreCase))
+            return "No recipients are configured. Platform delivery will not create outbox rows until you add at least one explicit subscription.";
+
+        return "Add explicit subscriptions so platform delivery can create outbox rows for this definition.";
+    }
+
+    private Task FocusSubscriptionsAsync()
+    {
+        if (!string.IsNullOrWhiteSpace(_postCreateDefinitionId))
+            _addDefinitionId = _postCreateDefinitionId;
+        Nav.NavigateTo($"/integrations/{Uri.EscapeDataString(IntegrationId)}/notifications#explicit-subscriptions", replace: true);
+        return Task.CompletedTask;
+    }
+
+    private async Task PreviewPostCreateRecipientsAsync()
+    {
+        if (!string.IsNullOrWhiteSpace(_postCreateDefinitionId))
+            _previewDefinitionId = _postCreateDefinitionId;
+        await ResolveRecipientsAsync();
+    }
+
+    private Task DismissPostCreatePromptAsync()
+    {
+        _showPostCreatePrompt = false;
+        CreatedDefinitionIdQuery = null;
+        Nav.NavigateTo($"/integrations/{Uri.EscapeDataString(IntegrationId)}/notifications", replace: true);
+        return Task.CompletedTask;
+    }
 
     private sealed record DefinitionRow(
         NotificationDefinitionSummaryDto Summary,
