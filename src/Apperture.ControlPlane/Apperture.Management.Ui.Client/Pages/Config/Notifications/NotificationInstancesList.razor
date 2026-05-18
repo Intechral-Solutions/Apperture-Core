@@ -109,10 +109,10 @@
             return;
         }
 
-        var q = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(Nav.ToAbsoluteUri(Nav.Uri).Query);
-        if (q.TryGetValue("integrationId", out var iid)) _integrationId = iid.ToString();
-        if (q.TryGetValue("definitionId", out var did)) _definitionId = did.ToString();
-        if (q.TryGetValue("incidentId", out var inc)) _incidentId = inc.ToString();
+        var q = NavigationQueryHelper.ParseQuery(Nav.ToAbsoluteUri(Nav.Uri).Query);
+        if (q.TryGetValue("integrationId", out var iid)) _integrationId = iid;
+        if (q.TryGetValue("definitionId", out var did)) _definitionId = did;
+        if (q.TryGetValue("incidentId", out var inc)) _incidentId = inc;
 
         await LoadAsync();
     }

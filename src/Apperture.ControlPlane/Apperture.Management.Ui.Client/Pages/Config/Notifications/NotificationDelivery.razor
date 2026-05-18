@@ -87,7 +87,7 @@
         {
             _globalHealth = await Client.GetNotificationDeliveryHealthAsync();
             if (caps.CanViewIntegrations)
-                _integrations = await Client.ListIntegrationsAsync();
+                _integrations = await Client.GetIntegrationsAsync();
         }
         catch (Exception ex) { _error = ex.Message; }
         finally { _busy = false; }

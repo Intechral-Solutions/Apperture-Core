@@ -32,7 +32,7 @@
     }
     else
     {
-        <PageHeader Title="@_detail.RenderedSubject" Subtitle="@_detail.NotificationKind / @_detail.Status" />
+        <PageHeader Title="@_detail.RenderedSubject" Subtitle="@InstanceSubtitle" />
 
         <div class="mt-4 space-y-4 text-sm">
             <section class="rounded border border-default bg-surface p-3 text-xs">
@@ -129,6 +129,9 @@
     private string? _error;
     private NotificationInstanceDetailDto? _detail;
     private IReadOnlyList<NotificationDeliveryOutboxDto>? _outbox;
+
+    private string InstanceSubtitle =>
+        _detail is null ? "" : $"{_detail.NotificationKind} / {_detail.Status}";
 
     protected override async Task OnInitializedAsync()
     {

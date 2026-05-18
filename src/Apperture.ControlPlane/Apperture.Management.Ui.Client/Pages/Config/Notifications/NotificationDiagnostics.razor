@@ -190,12 +190,12 @@
         _capabilitiesLoaded = true;
         if (!_canView) return;
 
-        var q = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(Nav.ToAbsoluteUri(Nav.Uri).Query);
-        if (q.TryGetValue("definitionId", out var did)) _definitionId = did.ToString();
+        var q = NavigationQueryHelper.ParseQuery(Nav.ToAbsoluteUri(Nav.Uri).Query);
+        if (q.TryGetValue("definitionId", out var did)) _definitionId = did;
         if (q.TryGetValue("integrationId", out var iid))
         {
-            _integrationId = iid.ToString();
-            _parityIntegrationId = iid.ToString();
+            _integrationId = iid;
+            _parityIntegrationId = iid;
         }
 
         try
