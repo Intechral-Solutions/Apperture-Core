@@ -10,9 +10,32 @@ namespace Apperture.Management.Api.Controllers;
 public sealed class ExpectedRunMissingCutoverSignOffController : ControllerBase
 {
     private readonly IExpectedRunMissingCutoverSignOffService _signOffs;
+    private readonly IExpectedRunMissingCutoverValidationService _validation;
 
-    public ExpectedRunMissingCutoverSignOffController(IExpectedRunMissingCutoverSignOffService signOffs) =>
+    public ExpectedRunMissingCutoverSignOffController(
+        IExpectedRunMissingCutoverSignOffService signOffs,
+        IExpectedRunMissingCutoverValidationService validation)
+    {
         _signOffs = signOffs;
+        _validation = validation;
+    }
+
+    [HttpGet("api/integrations/{integrationId}/expected-run-missing/cutover-validation")]
+    [ProducesResponseType(typeof(ExpectedRunMissingCutoverValidationDto), StatusCodes.Status200OK)]
+    public async Task<ActionResult<ExpectedRunMissingCutoverValidationDto>> GetValidation(
+        string integrationId,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var row = await _validation.ValidateAsync(integrationId, cancellationToken).ConfigureAwait(false);
+            return Ok(ToValidationDto(row));
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return Forbid();
+        }
+    }
 
     [HttpGet("api/integrations/{integrationId}/expected-run-missing/cutover-sign-off")]
     [ProducesResponseType(typeof(ExpectedRunMissingCutoverSignOffDto), StatusCodes.Status200OK)]
@@ -88,6 +111,27 @@ public sealed class ExpectedRunMissingCutoverSignOffController : ControllerBase
             return BadRequest(ex.Message);
         }
     }
+
+    private static ExpectedRunMissingCutoverValidationDto ToValidationDto(ExpectedRunMissingCutoverValidation v) =>
+        new(
+            v.IntegrationId,
+            v.OperatingModes,
+            v.OperatingModes.Select(ExpectedRunMissingCutoverOperatingModes.GetDisplayLabel).ToList(),
+            v.HasReadyForCutoverSignOff,
+            v.SignOffIsRevoked,
+            v.SignOffIsStale,
+            v.LatestSignOffStatus,
+            v.LatestSignOffReviewedAtUtc,
+            v.ParityCurrentlyAcceptable,
+            v.HasDangerousConfigurationWarnings,
+            v.ConfigurationWarningCodes,
+            v.RecentFailedOutboxCount,
+            v.RecentSucceededOutboxCount,
+            v.HasUnresolvedFailedOutbox,
+            v.HasRecipientParityGap,
+            v.RecipientsMissingInPlatform,
+            v.ReadinessBlockers,
+            v.GeneratedAtUtc);
 
     private static ExpectedRunMissingCutoverSignOffDto ToDto(ExpectedRunMissingCutoverSignOff s) =>
         new(

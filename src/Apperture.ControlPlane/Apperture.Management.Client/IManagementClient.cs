@@ -549,6 +549,10 @@ public interface IManagementClient
         RevokeExpectedRunMissingCutoverSignOffRequestDto? request = null,
         CancellationToken cancellationToken = default);
 
+    Task<ExpectedRunMissingCutoverValidationDto> GetExpectedRunMissingCutoverValidationAsync(
+        string integrationId,
+        CancellationToken cancellationToken = default);
+
     // --- Governance admin (Epic 39/40) ---
 
     /// <summary>Gets the governance descriptor catalog (resources and permissions). Requires user.read.</summary>

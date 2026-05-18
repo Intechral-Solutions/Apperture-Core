@@ -27,6 +27,25 @@ public sealed class Epic77CutoverDocumentationTests
         content.Should().Contain("Rollback");
         content.Should().Contain("missing_in_platform");
         content.Should().Contain("dual-send");
+        content.Should().Contain("Staging validation script");
+        content.Should().Contain("Epic 69 ledger history");
+        content.Should().Contain("Recipient parity gap");
+        content.Should().Contain("Resolved-event behavior");
+        content.Should().Contain("cutover-validation");
+    }
+
+    [Fact]
+    public void Cutover_runbook_documents_staging_enablement_sequence()
+    {
+        var path = Path.Combine(
+            RepoRoot,
+            "docs",
+            "03-operations",
+            "epic77-expected-run-missing-notification-cutover-runbook.md");
+        var content = File.ReadAllText(path);
+        content.Should().Contain("Enable `Notifications:Delivery:Enabled=true` in staging");
+        content.Should().Contain("Enable `Notifications:UsePlatformPipeline=true` in staging");
+        content.Should().Contain("Verify Epic 69 still sends");
     }
 
     [Fact]

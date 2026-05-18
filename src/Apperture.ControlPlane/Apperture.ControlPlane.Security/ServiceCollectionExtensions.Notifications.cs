@@ -53,6 +53,7 @@ public static class NotificationsServiceCollectionExtensions
         services.AddScoped<INotificationDeliveryDiagnosticsService, NotificationDeliveryDiagnosticsService>();
         services.AddScoped<IExpectedRunMissingCutoverSignOffStore, SqlExpectedRunMissingCutoverSignOffStore>();
         services.AddScoped<IExpectedRunMissingCutoverSignOffService, ExpectedRunMissingCutoverSignOffService>();
+        services.AddScoped<IExpectedRunMissingCutoverValidationService, ExpectedRunMissingCutoverValidationService>();
         services.AddScoped<IEmailNotificationChannel, SmtpEmailNotificationChannel>();
         services.AddScoped<NotificationDispatchProcessor>();
         services.AddHostedService<NotificationDispatchHostedService>();

@@ -104,6 +104,39 @@ public sealed class ManagementClientNotificationTests
     }
 
     [Fact]
+    public async Task GetExpectedRunMissingCutoverValidationAsync_UsesValidationPath()
+    {
+        var json = JsonSerializer.Serialize(new
+        {
+            integrationId = "int-1",
+            operatingModes = new[] { "shadow_mode" },
+            operatingModeLabels = new[] { "Shadow mode" },
+            hasReadyForCutoverSignOff = false,
+            signOffIsRevoked = false,
+            signOffIsStale = false,
+            latestSignOffStatus = (string?)null,
+            latestSignOffReviewedAtUtc = (DateTimeOffset?)null,
+            parityCurrentlyAcceptable = true,
+            hasDangerousConfigurationWarnings = false,
+            configurationWarningCodes = Array.Empty<string>(),
+            recentFailedOutboxCount = 0,
+            recentSucceededOutboxCount = 1,
+            hasUnresolvedFailedOutbox = false,
+            hasRecipientParityGap = false,
+            recipientsMissingInPlatform = 0,
+            readinessBlockers = Array.Empty<string>(),
+            generatedAtUtc = DateTimeOffset.UtcNow
+        });
+        var handler = new CaptureHandler(HttpStatusCode.OK, json);
+        var client = new ManagementClient(new HttpClient(handler) { BaseAddress = new Uri("https://api.example/") });
+
+        var result = await client.GetExpectedRunMissingCutoverValidationAsync("int-1");
+
+        handler.LastUri!.AbsolutePath.Should().Contain("expected-run-missing/cutover-validation");
+        result.ParityCurrentlyAcceptable.Should().BeTrue();
+    }
+
+    [Fact]
     public async Task GetExpectedRunMissingCutoverSignOffAsync_UsesIntegrationPath()
     {
         var json = JsonSerializer.Serialize(new

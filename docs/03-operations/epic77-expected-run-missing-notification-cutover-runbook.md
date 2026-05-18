@@ -73,6 +73,65 @@ Epic 69 ledger history is unchanged. Platform instances/outbox are audit-only af
 | `POST /api/integrations/{id}/expected-run-missing/cutover-sign-off` | Create/replace sign-off (`readyForCutover` or `notReady`). Requires integration update + notification manage. |
 | `POST /api/integrations/{id}/expected-run-missing/cutover-sign-off/revoke` | Revoke the latest active sign-off. |
 | `GET /api/integrations/{id}/schedule-diagnostics` | Schedule view + Epic 69 ledger + platform instances/outbox. |
+| `GET /api/integrations/{id}/expected-run-missing/cutover-validation` | Read-only staging validation (modes, sign-off, parity, blockers). |
+
+---
+
+## Staging validation script (manual)
+
+Execute in **staging** only. No step changes production flags automatically.
+
+| Step | Action | Pass criteria |
+|------|--------|---------------|
+| 1 | Set **shadow mode** flags (see [Configuration reference](#configuration-reference)) | `GET /api/notification-diagnostics/configuration` shows shadow/dry-run modes, no dual-send warning |
+| 2 | Trigger or wait for `expected_run_missing` on a test integration | Attention incident opens; platform missing event stored when `PlatformEvents:Enabled=true` |
+| 3 | Open **Integrations → {id} → Notifications** cutover panel | Platform instances and pending outbox rows appear; Epic 69 ledger may still send if delivery enabled |
+| 4 | Run parity acceptance API or UI refresh | No blocking findings; note any `missing_in_platform` recipient gaps |
+| 5 | Resolve recipient gaps | External operational-team emails added as managed contacts + explicit subscriptions |
+| 6 | Record **readyForCutover** sign-off | `GET cutover-sign-off` returns `readyForCutover`; audit event emitted |
+| 7 | Enable `Notifications:Delivery:Enabled=true` in staging | Platform outbox moves to `succeeded` for test recipients; inspect subjects/bodies |
+| 8 | Verify Epic 69 still sends while `UsePlatformPipeline=false` | Expect possible duplicate email — confirms dual-send risk |
+| 9 | Enable `Notifications:UsePlatformPipeline=true` in staging | Epic 69 orchestrator skipped on next observation; only platform sends |
+| 10 | Verify platform activation, reminder (if applicable), and **resolved** | Resolved instance requires `apperture.schedule.expected_run.cleared` platform event on incident resolve (emitted when `PlatformEvents:Enabled=true`) |
+| 11 | Run `GET cutover-validation` | No readiness blockers; sign-off not stale |
+| 12 | If failed, follow [Rollback steps](#rollback-steps) | Epic 69 restored when `UsePlatformPipeline=false` |
+
+Sign-off is **evidence only** — completing the script does not enable production cutover.
+
+---
+
+## Epic 69 ledger history (replacement plan)
+
+| Decision | Detail |
+|----------|--------|
+| **Keep** | All historical `AttentionIncidentNotifications` rows remain as legacy evidence |
+| **Display** | Schedule diagnostics and integration notifications show Epic 69 ledger alongside platform instances/outbox |
+| **Do not migrate** | No backfill of old ledger rows into `NotificationInstances` unless a future phase requires it |
+| **Dual-write** | **Not implemented** — platform deliveries do not write to Epic 69 ledger; operators use platform outbox + audit for post-cutover evidence |
+| **UI label** | Epic 69 table labeled “legacy attention notification ledger” in schedule diagnostics |
+
+---
+
+## Recipient parity gap
+
+| Topic | Guidance |
+|-------|----------|
+| **Cause** | Epic 69 resolves recipients via attention routing and operational teams (including external email members). Platform path uses explicit subscriptions (principals, operational teams, managed contacts). |
+| **Symptom** | Parity `missing_in_platform` — Epic 69 sent or would send to recipients with no platform subscription |
+| **Before cutover** | Convert external-email-only team members to **managed contacts** and add explicit subscriptions on the integration notifications page |
+| **Diagnostics** | Cutover validation returns `recipients:missing_in_platform` blocker; UI shows recipient parity gap warning |
+
+---
+
+## Resolved-event behavior
+
+| Topic | Guidance |
+|-------|----------|
+| **Platform path** | Resolved notification instances are driven by `apperture.schedule.expected_run.cleared` platform events |
+| **Emission** | `ScheduleExpectationPlatformEventDualEmitter` emits cleared events on `AttentionIncidentObserveTransition.Resolved` when `PlatformEvents:Enabled=true` |
+| **Gap** | If platform events are disabled, resolved platform instances will not be created from events; Epic 69 may still send resolved email via orchestrator |
+| **Incident-only evaluation** | Reminder instances use incident observation path; activation/resolved from events require platform events enabled |
+| **Backlog** | If incidents can resolve without observation cycle, ensure cleared events are emitted on all resolve transitions — do not enable partial cutover without verifying resolve path in your deployment |
 
 ---
 

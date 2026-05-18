@@ -65,6 +65,42 @@
                 <p class="mt-1 text-xs">@IntegrationStatusSummary</p>
             </div>
 
+            @if (_cutoverValidation is not null)
+            {
+                <div class="mt-3 rounded border border-default bg-surface-muted/50 p-2 text-xs">
+                    <div class="font-semibold text-heading">Staging cutover validation</div>
+                    <p class="mt-1 text-muted">Read-only — flags are not changed by this summary.</p>
+                    <ul class="mt-2 space-y-1">
+                        @foreach (var label in _cutoverValidation.OperatingModeLabels)
+                        {
+                            <li><span class="font-medium">Mode:</span> @label</li>
+                        }
+                    </ul>
+                    @if (_cutoverValidation.ReadinessBlockers.Count > 0)
+                    {
+                        <p class="mt-2 font-medium">Readiness blockers</p>
+                        <ul class="list-disc list-inside text-muted">
+                            @foreach (var b in _cutoverValidation.ReadinessBlockers) { <li>@b</li> }
+                        </ul>
+                    }
+                    @if (_cutoverValidation.HasRecipientParityGap)
+                    {
+                        <p class="mt-2 rounded border border-amber-500/40 bg-amber-500/10 p-2">
+                            Recipient parity gap: @_cutoverValidation.RecipientsMissingInPlatform recipient(s) appear in Epic 69 but not in platform subscriptions.
+                            Convert external operational-team emails to managed contacts before cutover.
+                        </p>
+                    }
+                    @if (_cutoverValidation.HasUnresolvedFailedOutbox)
+                    {
+                        <p class="mt-2 text-muted">@_cutoverValidation.RecentFailedOutboxCount failed platform outbox row(s) in the recent window.</p>
+                    }
+                    @if (_cutoverValidation.RecentSucceededOutboxCount > 0)
+                    {
+                        <p class="mt-1 text-muted">@_cutoverValidation.RecentSucceededOutboxCount recent succeeded platform delivery row(s).</p>
+                    }
+                </div>
+            }
+
             @if (_configDiagnostics is not null)
             {
                 <dl class="mt-3 grid grid-cols-2 md:grid-cols-5 gap-2 text-xs">
@@ -485,6 +521,7 @@
     private ExpectedRunMissingParityDiagnosticsDto? _parityDetail;
     private NotificationConfigurationDiagnosticsDto? _configDiagnostics;
     private ExpectedRunMissingCutoverSignOffDto? _latestSignOff;
+    private ExpectedRunMissingCutoverValidationDto? _cutoverValidation;
     private string _signOffNote = "";
     private bool _parityEvaluated;
     private int _recentPlatformInstanceCount;
@@ -526,8 +563,10 @@
         or ExpectedRunMissingCutoverReadinessState.NeedsReview;
 
     private bool SignOffIsStale =>
-        _latestSignOff is not null
-        && ExpectedRunMissingCutoverSignOffUi.HasStaleness(_latestSignOff, _parityAcceptance, _configDiagnostics);
+        _cutoverValidation?.SignOffIsStale == true
+        || (_latestSignOff is not null
+            && _configDiagnostics is not null
+            && ExpectedRunMissingCutoverSignOffUi.HasStaleness(_latestSignOff, _parityAcceptance, _configDiagnostics));
 
     private IReadOnlyList<ChecklistItem> CutoverChecklist
     {
@@ -700,6 +739,15 @@
             {
                 _latestSignOff = null;
             }
+
+            try
+            {
+                _cutoverValidation = await Client.GetExpectedRunMissingCutoverValidationAsync(IntegrationId);
+            }
+            catch
+            {
+                _cutoverValidation = null;
+            }
         }
         catch (Exception ex)
         {
@@ -729,6 +777,7 @@
                 IntegrationId,
                 new CreateExpectedRunMissingCutoverSignOffRequestDto(status, string.IsNullOrWhiteSpace(_signOffNote) ? null : _signOffNote.Trim()));
             _signOffNote = "";
+            await LoadCutoverReadinessAsync();
         }
         catch (Exception ex) { _error = ex.Message; }
         finally { _busy = false; }
@@ -745,6 +794,7 @@
                 IntegrationId,
                 new RevokeExpectedRunMissingCutoverSignOffRequestDto(string.IsNullOrWhiteSpace(_signOffNote) ? null : _signOffNote.Trim()));
             _signOffNote = "";
+            await LoadCutoverReadinessAsync();
         }
         catch (Exception ex) { _error = ex.Message; }
         finally { _busy = false; }

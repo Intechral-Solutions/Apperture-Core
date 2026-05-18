@@ -1,3 +1,4 @@
+using Apperture.Core.Application.Notifications.Diagnostics;
 using Apperture.Core.Application.Notifications.Instances;
 using Apperture.ControlPlane.Security;
 using FluentAssertions;
@@ -29,5 +30,23 @@ public sealed class PlatformPipelineCutoverGuardTests
             .ShouldInvokeEpic69Orchestrator(new NotificationPipelineOptions { Enabled = true })
             .Should()
             .BeFalse();
+    }
+
+    [Fact]
+    public void Platform_path_requires_evaluation_instances_and_delivery_for_live_send()
+    {
+        var shadow = new NotificationConfigurationDiagnostics(
+            PlatformEventsEnabled: true,
+            EvaluationEnabled: true,
+            InstancesEnabled: true,
+            DeliveryEnabled: false,
+            UsePlatformPipelineEnabled: false,
+            Warnings: [],
+            GeneratedAtUtc: DateTimeOffset.UtcNow);
+
+        shadow.PlatformEventsEnabled.Should().BeTrue();
+        shadow.EvaluationEnabled.Should().BeTrue();
+        shadow.InstancesEnabled.Should().BeTrue();
+        shadow.DeliveryEnabled.Should().BeFalse();
     }
 }

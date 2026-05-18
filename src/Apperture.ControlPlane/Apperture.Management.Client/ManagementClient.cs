@@ -1783,6 +1783,19 @@ public sealed class ManagementClient : IManagementClient
             cancellationToken).ConfigureAwait(false))!;
     }
 
+    public async Task<ExpectedRunMissingCutoverValidationDto> GetExpectedRunMissingCutoverValidationAsync(
+        string integrationId,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.GetAsync(
+            $"integrations/{Uri.EscapeDataString(integrationId.Trim())}/expected-run-missing/cutover-validation",
+            cancellationToken).ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+        return (await response.Content.ReadFromJsonAsync<ExpectedRunMissingCutoverValidationDto>(
+            ApiJsonReadOptions,
+            cancellationToken).ConfigureAwait(false))!;
+    }
+
     public async Task<ExpectedRunMissingCutoverSignOffDto> RevokeExpectedRunMissingCutoverSignOffAsync(
         string integrationId,
         RevokeExpectedRunMissingCutoverSignOffRequestDto? request = null,

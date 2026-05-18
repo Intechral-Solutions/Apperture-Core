@@ -17,6 +17,24 @@ public sealed class Epic77CutoverReadinessUiTests
     }
 
     [Fact]
+    public void IntegrationNotifications_includes_staging_validation_section()
+    {
+        var content = ReadRepoFile(
+            "src/Apperture.ControlPlane/Apperture.Management.Ui.Client/Pages/Integrations/IntegrationNotifications.razor");
+        content.Should().Contain("Staging cutover validation");
+        content.Should().Contain("GetExpectedRunMissingCutoverValidationAsync");
+        content.Should().Contain("Recipient parity gap");
+    }
+
+    [Fact]
+    public void ScheduleDiagnostics_labels_legacy_ledger()
+    {
+        var content = ReadRepoFile(
+            "src/Apperture.ControlPlane/Apperture.Management.Ui.Client/Pages/Integrations/IntegrationScheduleDiagnostics.razor");
+        content.Should().Contain("legacy");
+    }
+
+    [Fact]
     public void IntegrationNotifications_includes_operator_sign_off_section()
     {
         var content = ReadRepoFile(
