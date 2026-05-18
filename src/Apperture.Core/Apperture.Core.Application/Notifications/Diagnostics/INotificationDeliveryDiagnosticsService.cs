@@ -31,4 +31,7 @@ public interface INotificationDeliveryDiagnosticsService
         int maxIncidents,
         int takePerIncident,
         CancellationToken cancellationToken = default);
+
+    ValueTask<NotificationConfigurationDiagnostics> GetConfigurationDiagnosticsAsync(
+        CancellationToken cancellationToken = default);
 }

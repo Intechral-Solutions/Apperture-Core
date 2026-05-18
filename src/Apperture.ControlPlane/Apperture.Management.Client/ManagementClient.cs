@@ -1740,6 +1740,18 @@ public sealed class ManagementClient : IManagementClient
         return await response.Content.ReadFromJsonAsync<ExpectedRunMissingParityAcceptanceSummaryDto>(ApiJsonReadOptions, cancellationToken).ConfigureAwait(false);
     }
 
+    public async Task<NotificationConfigurationDiagnosticsDto> GetNotificationConfigurationDiagnosticsAsync(
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.GetAsync(
+            "notification-diagnostics/configuration",
+            cancellationToken).ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+        return (await response.Content.ReadFromJsonAsync<NotificationConfigurationDiagnosticsDto>(
+                ApiJsonReadOptions,
+                cancellationToken).ConfigureAwait(false))!;
+    }
+
     private static async Task EnsureSuccessOrThrowAsync(HttpResponseMessage response, CancellationToken cancellationToken)
     {
         if (response.IsSuccessStatusCode)

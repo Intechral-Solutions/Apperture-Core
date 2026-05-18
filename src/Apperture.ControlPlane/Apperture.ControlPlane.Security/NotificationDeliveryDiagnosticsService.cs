@@ -1,6 +1,9 @@
 using Apperture.Core.Application.Notifications;
 using Apperture.Core.Application.Notifications.Diagnostics;
+using Apperture.Core.Application.Notifications.Instances;
+using Apperture.Core.Application.PlatformEvents;
 using Apperture.Core.Domain.Notifications;
+using Microsoft.Extensions.Options;
 
 namespace Apperture.ControlPlane.Security;
 
@@ -9,15 +12,30 @@ public sealed class NotificationDeliveryDiagnosticsService : INotificationDelive
     private readonly INotificationDeliveryDiagnosticsStore _store;
     private readonly NotificationDefinitionAuthorization _authorization;
     private readonly TimeProvider _time;
+    private readonly IOptions<PlatformEventsOptions> _platformEvents;
+    private readonly IOptions<NotificationEvaluationOptions> _evaluation;
+    private readonly IOptions<NotificationInstanceOptions> _instances;
+    private readonly IOptions<NotificationDeliveryOptions> _delivery;
+    private readonly IOptions<NotificationPipelineOptions> _pipeline;
 
     public NotificationDeliveryDiagnosticsService(
         INotificationDeliveryDiagnosticsStore store,
         NotificationDefinitionAuthorization authorization,
-        TimeProvider time)
+        TimeProvider time,
+        IOptions<PlatformEventsOptions> platformEvents,
+        IOptions<NotificationEvaluationOptions> evaluation,
+        IOptions<NotificationInstanceOptions> instances,
+        IOptions<NotificationDeliveryOptions> delivery,
+        IOptions<NotificationPipelineOptions> pipeline)
     {
         _store = store;
         _authorization = authorization;
         _time = time;
+        _platformEvents = platformEvents;
+        _evaluation = evaluation;
+        _instances = instances;
+        _delivery = delivery;
+        _pipeline = pipeline;
     }
 
     public async ValueTask<NotificationDeliveryHealthSummary> GetHealthSummaryAsync(
@@ -166,6 +184,28 @@ public sealed class NotificationDeliveryDiagnosticsService : INotificationDelive
         return ExpectedRunMissingParityAcceptanceEvaluator.Summarize(
             integrationId,
             parityResults,
+            _time.GetUtcNow());
+    }
+
+    public async ValueTask<NotificationConfigurationDiagnostics> GetConfigurationDiagnosticsAsync(
+        CancellationToken cancellationToken = default)
+    {
+        await _authorization.RequirePlatformReadAsync(cancellationToken).ConfigureAwait(false);
+
+        var snapshot = new NotificationConfigurationSnapshot(
+            _platformEvents.Value.Enabled,
+            _evaluation.Value.Enabled,
+            _instances.Value.Enabled,
+            _delivery.Value.Enabled,
+            _pipeline.Value.Enabled);
+
+        return new NotificationConfigurationDiagnostics(
+            snapshot.PlatformEventsEnabled,
+            snapshot.EvaluationEnabled,
+            snapshot.InstancesEnabled,
+            snapshot.DeliveryEnabled,
+            snapshot.UsePlatformPipelineEnabled,
+            NotificationConfigurationSafetyValidator.Validate(snapshot),
             _time.GetUtcNow());
     }
 

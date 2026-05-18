@@ -1,8 +1,10 @@
 @page "/config/notifications/diagnostics"
 @layout ConfigLayout
 @using Apperture.Management.Client
+@using Apperture.Management.Ui.Client.Molecules
 @using Apperture.Management.Ui.Client.Organisms
 @using Apperture.Management.Ui.Client.Services
+@using Apperture.Management.Ui.Shared
 @inject IManagementClient Client
 @inject IOperatorCapabilitiesService Capabilities
 @inject NavigationManager Nav
@@ -20,18 +22,45 @@
     {
         <div class="mt-4 rounded border border-default bg-surface px-3 py-2 text-sm">
             <div class="font-semibold">Not authorized</div>
-            <div class="text-muted">You do not have permission to view notification diagnostics.</div>
+            <div class="text-muted">Requires integration read and notification definition read.</div>
         </div>
     }
     else
     {
-        @if (_health is not null)
-        {
-            <p class="mt-4 text-xs text-muted">
-                Global: @_health.RecentFailedDeliveryCount failed deliveries,
-                @_health.RecentSuppressedInstanceCount suppressed instances (as of @_health.GeneratedAtUtc.UtcDateTime.ToString("u")).
-            </p>
-        }
+        <section class="mt-4 rounded border border-default bg-surface p-3 text-xs">
+            <h2 class="text-sm font-semibold text-heading mb-2">Expected-run-missing cutover (instance)</h2>
+            <p class="text-muted mb-3">Read-only health and flag guidance. Per-integration readiness is on the integration notifications page.</p>
+            @if (_health is not null)
+            {
+                <dl class="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    <div><dt class="text-muted">Failed deliveries</dt><dd class="font-semibold">@_health.RecentFailedDeliveryCount</dd></div>
+                    <div><dt class="text-muted">Suppressed instances</dt><dd class="font-semibold">@_health.RecentSuppressedInstanceCount</dd></div>
+                    <div><dt class="text-muted">Pending/delivering outbox</dt><dd class="font-semibold">@_health.RecentPendingOrDeliveringOutboxCount</dd></div>
+                    <div><dt class="text-muted">As of (UTC)</dt><dd>@_health.GeneratedAtUtc.UtcDateTime.ToString("u")</dd></div>
+                </dl>
+            }
+            else
+            {
+                <p class="text-muted">Health summary unavailable.</p>
+            }
+            @if (_configDiagnostics is not null)
+            {
+                <ExpectedRunMissingCutoverConfigWarnings Configuration="_configDiagnostics" />
+            }
+            <div class="mt-3 flex flex-wrap items-end gap-2">
+                <label>
+                    Integration id (cutover readiness)
+                    <input class="mt-1 block rounded border border-default px-2 py-1 font-mono" @bind="_parityIntegrationId" />
+                </label>
+                @if (!string.IsNullOrWhiteSpace(_parityIntegrationId))
+                {
+                    <a class="rounded bg-surface-muted px-3 py-2 self-end"
+                       href="@($"/integrations/{Uri.EscapeDataString(_parityIntegrationId.Trim())}/notifications#cutover-readiness")">
+                        Open integration cutover readiness
+                    </a>
+                }
+            </div>
+        </section>
 
         <div class="mt-4 rounded border border-default bg-surface p-3 text-xs">
             <div class="font-semibold text-heading mb-2">Integration diagnostics</div>
@@ -71,8 +100,8 @@
             </div>
             @if (_acceptance is not null)
             {
-                <div class="mt-3 p-2 rounded @(_acceptance.LooksAcceptableForCutover ? "bg-green-500/10" : "bg-amber-500/10")">
-                    <div class="font-semibold">@(_acceptance.LooksAcceptableForCutover ? "Looks acceptable for cutover" : "Not yet acceptable")</div>
+                <div class="mt-3 p-2 rounded @AcceptanceBadgeClass">
+                    <div class="font-semibold">@AcceptanceReadinessLabel</div>
                     <p>Incidents evaluated: @_acceptance.IncidentsEvaluated · Kinds aligned: @_acceptance.KindsAligned / @_acceptance.KindComparisonsTotal</p>
                     @if (_acceptance.BlockingFindings.Count > 0)
                     {
@@ -120,13 +149,28 @@
     private int _maxIncidents = 10;
     private NotificationDeliveryHealthSummaryDto? _health;
     private NotificationIntegrationDiagnosticsDto? _integrationDiag;
+    private NotificationConfigurationDiagnosticsDto? _configDiagnostics;
     private ExpectedRunMissingParityAcceptanceSummaryDto? _acceptance;
     private ExpectedRunMissingParityDiagnosticsDto? _fullParity;
+    private bool _parityEvaluated;
+
+    private string AcceptanceReadinessLabel =>
+        ExpectedRunMissingCutoverReadiness.GetLabel(
+            ExpectedRunMissingCutoverReadiness.ResolveState(_parityEvaluated, _acceptance));
+
+    private string AcceptanceBadgeClass =>
+        ExpectedRunMissingCutoverReadiness.ResolveState(_parityEvaluated, _acceptance) switch
+        {
+            ExpectedRunMissingCutoverReadinessState.LooksAcceptableForCutover => "bg-green-500/10",
+            ExpectedRunMissingCutoverReadinessState.NotReadyForCutover => "bg-red-500/10",
+            ExpectedRunMissingCutoverReadinessState.NeedsReview => "bg-amber-500/10",
+            _ => "bg-amber-500/10",
+        };
 
     protected override async Task OnInitializedAsync()
     {
         var caps = await Capabilities.GetCapabilitiesAsync();
-        _canView = caps.CanViewNotificationDefinitions;
+        _canView = caps.CanViewIntegrations && caps.CanViewNotificationDefinitions;
         _capabilitiesLoaded = true;
         if (!_canView) return;
 
@@ -138,7 +182,11 @@
             _parityIntegrationId = iid.ToString();
         }
 
-        try { _health = await Client.GetNotificationDeliveryHealthAsync(); }
+        try
+        {
+            _health = await Client.GetNotificationDeliveryHealthAsync();
+            _configDiagnostics = await Client.GetNotificationConfigurationDiagnosticsAsync();
+        }
         catch (Exception ex) { _error = ex.Message; }
     }
 
@@ -169,6 +217,7 @@
                 _parityIntegrationId.Trim(),
                 string.IsNullOrWhiteSpace(_parityIncidentId) ? null : _parityIncidentId.Trim(),
                 _maxIncidents);
+            _parityEvaluated = true;
         }
         catch (Exception ex) { _error = ex.Message; }
         finally { _busy = false; }

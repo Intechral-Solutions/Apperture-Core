@@ -16,6 +16,24 @@ public sealed class NotificationDiagnosticsController : ControllerBase
     public NotificationDiagnosticsController(INotificationDeliveryDiagnosticsService diagnostics) =>
         _diagnostics = diagnostics;
 
+    [HttpGet("configuration")]
+    [ProducesResponseType(typeof(NotificationConfigurationDiagnosticsDto), StatusCodes.Status200OK)]
+    public async Task<ActionResult<NotificationConfigurationDiagnosticsDto>> GetConfiguration(
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var row = await _diagnostics
+                .GetConfigurationDiagnosticsAsync(cancellationToken)
+                .ConfigureAwait(false);
+            return Ok(ToConfigurationDto(row));
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return Forbid();
+        }
+    }
+
     [HttpGet("health")]
     [ProducesResponseType(typeof(NotificationDeliveryHealthSummaryDto), StatusCodes.Status200OK)]
     public async Task<ActionResult<NotificationDeliveryHealthSummaryDto>> GetHealth(
@@ -128,6 +146,16 @@ public sealed class NotificationDiagnosticsController : ControllerBase
             return Forbid();
         }
     }
+
+    private static NotificationConfigurationDiagnosticsDto ToConfigurationDto(NotificationConfigurationDiagnostics c) =>
+        new(
+            c.PlatformEventsEnabled,
+            c.EvaluationEnabled,
+            c.InstancesEnabled,
+            c.DeliveryEnabled,
+            c.UsePlatformPipelineEnabled,
+            c.Warnings.Select(w => new NotificationConfigurationSafetyWarningDto(w.Code, w.Message)).ToList(),
+            c.GeneratedAtUtc);
 
     private static NotificationDeliveryHealthSummaryDto ToHealthDto(NotificationDeliveryHealthSummary s) =>
         new(

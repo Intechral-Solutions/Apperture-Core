@@ -532,6 +532,9 @@ public interface IManagementClient
         int takePerIncident = 50,
         CancellationToken cancellationToken = default);
 
+    Task<NotificationConfigurationDiagnosticsDto> GetNotificationConfigurationDiagnosticsAsync(
+        CancellationToken cancellationToken = default);
+
     // --- Governance admin (Epic 39/40) ---
 
     /// <summary>Gets the governance descriptor catalog (resources and permissions). Requires user.read.</summary>

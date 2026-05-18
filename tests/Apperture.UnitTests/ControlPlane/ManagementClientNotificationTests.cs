@@ -81,6 +81,29 @@ public sealed class ManagementClientNotificationTests
     }
 
     [Fact]
+    public async Task GetNotificationConfigurationDiagnosticsAsync_UsesConfigurationPath()
+    {
+        var json = JsonSerializer.Serialize(new
+        {
+            platformEventsEnabled = true,
+            evaluationEnabled = true,
+            instancesEnabled = true,
+            deliveryEnabled = false,
+            usePlatformPipelineEnabled = false,
+            warnings = Array.Empty<object>(),
+            generatedAtUtc = DateTimeOffset.UtcNow
+        });
+        var handler = new CaptureHandler(HttpStatusCode.OK, json);
+        var client = new ManagementClient(new HttpClient(handler) { BaseAddress = new Uri("https://api.example/") });
+
+        var result = await client.GetNotificationConfigurationDiagnosticsAsync();
+
+        handler.LastUri!.AbsolutePath.Should().Contain("notification-diagnostics/configuration");
+        result.PlatformEventsEnabled.Should().BeTrue();
+        result.Warnings.Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task GetExpectedRunMissingParityAcceptanceAsync_BuildsQuery()
     {
         var json = JsonSerializer.Serialize(new

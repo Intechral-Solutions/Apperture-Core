@@ -56,6 +56,21 @@ public sealed class OperatorCapabilitiesIntegrationNotificationTests
     }
 
     [Fact]
+    public async Task CutoverReadinessView_DoesNotRequireIntegrationUpdate()
+    {
+        var auth = new IntegrationNotificationAuthStub(
+            integrationRead: true,
+            notificationRead: true,
+            integrationUpdate: false,
+            notificationManage: false);
+        var service = CreateService(auth);
+        var dto = await service.GetCapabilitiesAsync(CancellationToken.None);
+
+        (dto.CanViewIntegrations && dto.CanViewNotificationDefinitions).Should().BeTrue();
+        dto.CanUpdateIntegrations.Should().BeFalse();
+    }
+
+    [Fact]
     public async Task IntegrationNotificationManage_WithUpdateOnly_DoesNotGrantCreateCapability()
     {
         var auth = new IntegrationNotificationAuthStub(

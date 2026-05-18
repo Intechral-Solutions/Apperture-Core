@@ -87,6 +87,17 @@ public sealed record ExpectedRunMissingParityDiagnosticsDto(
     IReadOnlyList<Epic69NotificationDiagnosticDto> Epic69LedgerRows,
     DateTimeOffset GeneratedAtUtc);
 
+public sealed record NotificationConfigurationSafetyWarningDto(string Code, string Message);
+
+public sealed record NotificationConfigurationDiagnosticsDto(
+    bool PlatformEventsEnabled,
+    bool EvaluationEnabled,
+    bool InstancesEnabled,
+    bool DeliveryEnabled,
+    bool UsePlatformPipelineEnabled,
+    IReadOnlyList<NotificationConfigurationSafetyWarningDto> Warnings,
+    DateTimeOffset GeneratedAtUtc);
+
 public sealed record ExpectedRunMissingParityAcceptanceSummaryDto(
     string IntegrationId,
     int IncidentsEvaluated,

@@ -1,0 +1,23 @@
+@using Apperture.Management.Client
+
+@if (Configuration is not null && Configuration.Warnings.Count > 0)
+{
+    <div class="mt-3 rounded border border-amber-500/40 bg-amber-500/10 p-2 text-xs">
+        <div class="font-semibold text-heading">Dangerous configuration combinations</div>
+        <p class="mt-1 text-muted">These instance flag combinations can cause dual-send, no-send, or pipeline gaps. Cutover is manual — adjust flags only per the runbook.</p>
+        <ul class="mt-2 list-disc list-inside space-y-1">
+            @foreach (var w in Configuration.Warnings)
+            {
+                <li><span class="font-mono text-muted">@w.Code</span> — @w.Message</li>
+            }
+        </ul>
+    </div>
+}
+else if (Configuration is not null)
+{
+    <p class="mt-2 text-xs text-muted">No dangerous flag combinations detected for the current instance configuration.</p>
+}
+
+@code {
+    [Parameter] public NotificationConfigurationDiagnosticsDto? Configuration { get; set; }
+}

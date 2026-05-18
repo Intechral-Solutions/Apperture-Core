@@ -1,7 +1,9 @@
 @page "/integrations/{IntegrationId}/notifications"
 @using Apperture.Management.Client
+@using Apperture.Management.Ui.Client.Molecules
 @using Apperture.Management.Ui.Client.Organisms
 @using Apperture.Management.Ui.Client.Services
+@using Apperture.Management.Ui.Shared
 @inject IManagementClient Client
 @inject IOperatorCapabilitiesService Capabilities
 @inject NavigationManager Nav
@@ -42,7 +44,96 @@
     }
     else
     {
-        <p class="mt-4 text-xs text-muted">Read-only delivery and cutover flags from this page. No live send.</p>
+        <p class="mt-4 text-xs text-muted">Read-only cutover readiness and diagnostics. Enabling the platform pipeline or delivery is manual per the runbook — nothing on this page changes flags or sends mail.</p>
+
+        <section class="mt-4 rounded border border-default bg-surface p-3" id="cutover-readiness">
+            <div class="flex flex-wrap items-start justify-between gap-2">
+                <h2 class="text-sm font-semibold text-heading">Expected-run-missing cutover readiness</h2>
+                <div class="flex flex-wrap gap-2 text-xs">
+                    <a class="underline" href="@ConfigDiagnosticsHref">Config diagnostics</a>
+                    <span class="text-muted">·</span>
+                    <span class="text-muted font-mono" title="Repository runbook path">@ExpectedRunMissingCutoverReadiness.RunbookDocPath</span>
+                </div>
+            </div>
+            <p class="mt-1 text-xs text-muted">
+                Compare Epic 69 attention notifications with the Epic 77 platform pipeline before setting
+                <code class="font-mono">Notifications:UsePlatformPipeline</code>. Cutover is not automatic.
+            </p>
+
+            <div class="mt-3 p-2 rounded text-sm @ReadinessBadgeClass">
+                <div class="font-semibold">@ReadinessLabel</div>
+                <p class="mt-1 text-xs">@IntegrationStatusSummary</p>
+            </div>
+
+            @if (_configDiagnostics is not null)
+            {
+                <dl class="mt-3 grid grid-cols-2 md:grid-cols-5 gap-2 text-xs">
+                    <div><dt class="text-muted">Platform events</dt><dd>@FlagLabel(_configDiagnostics.PlatformEventsEnabled)</dd></div>
+                    <div><dt class="text-muted">Evaluation</dt><dd>@FlagLabel(_configDiagnostics.EvaluationEnabled)</dd></div>
+                    <div><dt class="text-muted">Instances</dt><dd>@FlagLabel(_configDiagnostics.InstancesEnabled)</dd></div>
+                    <div><dt class="text-muted">Delivery</dt><dd>@FlagLabel(_configDiagnostics.DeliveryEnabled)</dd></div>
+                    <div><dt class="text-muted">Use platform pipeline</dt><dd>@FlagLabel(_configDiagnostics.UsePlatformPipelineEnabled)</dd></div>
+                </dl>
+                <ExpectedRunMissingCutoverConfigWarnings Configuration="_configDiagnostics" />
+            }
+
+            @if (_parityEvaluated && _parityAcceptance is not null)
+            {
+                <div class="mt-3 text-xs">
+                    <p>
+                        Parity evaluated @_parityAcceptance.GeneratedAtUtc.UtcDateTime.ToString("u") —
+                        @_parityAcceptance.IncidentsEvaluated incident(s),
+                        kinds aligned @_parityAcceptance.KindsAligned / @_parityAcceptance.KindComparisonsTotal,
+                        recipients aligned @_parityAcceptance.RecipientsAligned / @_parityAcceptance.RecipientComparisonsTotal.
+                    </p>
+                    @if (_parityAcceptance.BlockingFindings.Count > 0)
+                    {
+                        <p class="mt-2 font-medium">Blocking findings</p>
+                        <ul class="list-disc list-inside text-muted">
+                            @foreach (var f in _parityAcceptance.BlockingFindings) { <li>@f</li> }
+                        </ul>
+                    }
+                    @if (_parityAcceptance.NonBlockingFindings.Count > 0)
+                    {
+                        <p class="mt-2 font-medium">Non-blocking findings</p>
+                        <ul class="list-disc list-inside text-muted">
+                            @foreach (var f in _parityAcceptance.NonBlockingFindings) { <li>@f</li> }
+                        </ul>
+                    }
+                </div>
+            }
+            else if (_parityEvaluated)
+            {
+                <p class="mt-3 text-xs text-muted">No recent expected-run-missing incidents with comparable Epic 69 and platform rows for this integration.</p>
+            }
+
+            <div class="mt-3 flex flex-wrap gap-2 text-xs">
+                <button type="button" class="rounded bg-surface-muted px-3 py-1 disabled:opacity-50" disabled="@_busy" @onclick="LoadCutoverReadinessAsync">Refresh readiness</button>
+                @if (_parityDetail is not null)
+                {
+                    <details>
+                        <summary class="cursor-pointer underline">Full parity detail</summary>
+                        @foreach (var k in _parityDetail.ByKind)
+                        {
+                            <div class="mt-2 border-t border-default pt-1">@k.NotificationKind — @k.DifferenceKind: @k.Summary</div>
+                        }
+                    </details>
+                }
+            </div>
+
+            <div class="mt-4 border-t border-default pt-3">
+                <div class="text-xs font-semibold mb-2">Cutover checklist (display only)</div>
+                <ul class="space-y-1 text-xs">
+                    @foreach (var item in CutoverChecklist)
+                    {
+                        <li class="flex gap-2">
+                            <span class="@(item.IsSatisfied ? "text-green-600" : "text-muted")">@(item.IsSatisfied ? "✓" : "○")</span>
+                            <span>@item.Label@if (item.IsManual) { <span class="text-muted"> (confirm manually)</span> }</span>
+                        </li>
+                    }
+                </ul>
+            </div>
+        </section>
 
         <section class="mt-4 rounded border border-default bg-surface p-3">
             <h2 class="text-sm font-semibold text-heading mb-2">Notification definitions</h2>
@@ -247,42 +338,6 @@
         </section>
 
         <section class="mt-4 rounded border border-default bg-surface p-3">
-            <h2 class="text-sm font-semibold text-heading mb-2">Expected-run-missing parity</h2>
-            <button type="button" class="rounded bg-surface-muted px-3 py-1 text-xs disabled:opacity-50" disabled="@_busy" @onclick="LoadParityAsync">Evaluate acceptance</button>
-            @if (_parityAcceptance is not null)
-            {
-                <div class="mt-2 p-2 rounded text-xs @(_parityAcceptance.LooksAcceptableForCutover ? "bg-green-500/10" : "bg-amber-500/10")">
-                    <div class="font-semibold">@(_parityAcceptance.LooksAcceptableForCutover ? "Looks acceptable for cutover" : "Not yet acceptable")</div>
-                    <p>Incidents: @_parityAcceptance.IncidentsEvaluated · Kinds aligned: @_parityAcceptance.KindsAligned / @_parityAcceptance.KindComparisonsTotal</p>
-                    @if (_parityAcceptance.BlockingFindings.Count > 0)
-                    {
-                        <p class="mt-1 font-medium">Blocking</p>
-                        <ul class="list-disc list-inside text-muted">
-                            @foreach (var f in _parityAcceptance.BlockingFindings) { <li>@f</li> }
-                        </ul>
-                    }
-                    @if (_parityAcceptance.NonBlockingFindings.Count > 0)
-                    {
-                        <p class="mt-1 font-medium">Non-blocking</p>
-                        <ul class="list-disc list-inside text-muted">
-                            @foreach (var f in _parityAcceptance.NonBlockingFindings) { <li>@f</li> }
-                        </ul>
-                    }
-                </div>
-            }
-            @if (_parityDetail is not null)
-            {
-                <details class="mt-2 text-xs">
-                    <summary class="cursor-pointer">Full parity detail</summary>
-                    @foreach (var k in _parityDetail.ByKind)
-                    {
-                        <div class="mt-2 border-t border-default pt-1">@k.NotificationKind — @k.DifferenceKind: @k.Summary</div>
-                    }
-                </details>
-            }
-        </section>
-
-        <section class="mt-4 rounded border border-default bg-surface p-3">
             <h2 class="text-sm font-semibold text-heading mb-2">Recent platform instances</h2>
             @if (_instances.Count == 0)
             {
@@ -379,6 +434,10 @@
     private AttentionRoutingEffectiveDto? _attentionRouting;
     private ExpectedRunMissingParityAcceptanceSummaryDto? _parityAcceptance;
     private ExpectedRunMissingParityDiagnosticsDto? _parityDetail;
+    private NotificationConfigurationDiagnosticsDto? _configDiagnostics;
+    private bool _parityEvaluated;
+    private int _recentPlatformInstanceCount;
+    private bool? _builtInDefinitionEnabled;
     private NotificationRecipientResolutionPreviewDto? _resolution;
     private string _addDefinitionId = BuiltInExpectedRunMissingDefinitionId;
     private string _previewDefinitionId = BuiltInExpectedRunMissingDefinitionId;
@@ -391,6 +450,47 @@
 
     private string ConfigDiagnosticsHref =>
         $"/config/notifications/diagnostics?integrationId={Uri.EscapeDataString(IntegrationId)}";
+
+    private ExpectedRunMissingCutoverReadinessState ReadinessState =>
+        ExpectedRunMissingCutoverReadiness.ResolveState(_parityEvaluated, _parityAcceptance);
+
+    private string ReadinessLabel => ExpectedRunMissingCutoverReadiness.GetLabel(ReadinessState);
+
+    private string ReadinessBadgeClass => ReadinessState switch
+    {
+        ExpectedRunMissingCutoverReadinessState.LooksAcceptableForCutover => "bg-green-500/10",
+        ExpectedRunMissingCutoverReadinessState.NotReadyForCutover => "bg-red-500/10",
+        ExpectedRunMissingCutoverReadinessState.NeedsReview => "bg-amber-500/10",
+        _ => "bg-surface-muted",
+    };
+
+    private string IntegrationStatusSummary =>
+        ExpectedRunMissingCutoverReadiness.GetIntegrationNotificationStatusSummary(
+            _builtInDefinitionEnabled,
+            _recentPlatformInstanceCount,
+            ReadinessState);
+
+    private IReadOnlyList<ChecklistItem> CutoverChecklist
+    {
+        get
+        {
+            var cfg = _configDiagnostics;
+            var parityOk = _parityAcceptance?.LooksAcceptableForCutover == true;
+            return
+            [
+                new("Platform events enabled", cfg?.PlatformEventsEnabled == true, false),
+                new("Notification evaluation enabled", cfg?.EvaluationEnabled == true, false),
+                new("Notification instances enabled", cfg?.InstancesEnabled == true, false),
+                new("Dry-run reviewed (delivery off or logs reviewed)", cfg?.DeliveryEnabled == false, true),
+                new("Parity acceptance reviewed", _parityEvaluated && parityOk, _parityAcceptance is null),
+                new("Delivery tested in dev/staging", false, true),
+                new("Operator sign-off completed", false, true),
+                new("UsePlatformPipeline only enabled after acceptance",
+                    cfg?.UsePlatformPipelineEnabled != true || parityOk,
+                    cfg?.UsePlatformPipelineEnabled == true && !parityOk),
+            ];
+        }
+    }
 
     private IEnumerable<(string Id, string Label)> RecipientOptions => _addKind switch
     {
@@ -428,6 +528,7 @@
             var merged = new Dictionary<string, NotificationDefinitionSummaryDto>(StringComparer.Ordinal);
             foreach (var d in scoped)
                 merged[d.Id] = d;
+            _builtInDefinitionEnabled = builtIn?.IsEnabled;
             if (builtIn is not null)
             {
                 merged[builtIn.Id] = new NotificationDefinitionSummaryDto(
@@ -446,6 +547,7 @@
 
             var diag = await Client.GetNotificationIntegrationDiagnosticsAsync(IntegrationId, take: 50);
             _instances = diag.RecentInstances.ToList();
+            _recentPlatformInstanceCount = _instances.Count;
             var listInstances = await Client.ListNotificationInstancesAsync(integrationId: IntegrationId, take: 100);
             var instanceCounts = listInstances
                 .GroupBy(i => i.NotificationDefinitionId)
@@ -488,6 +590,8 @@
                 _teams = await Client.ListOperationalTeamsAsync(includeDisabled: false);
                 _contacts = await Client.ListManagedContactsAsync(null, 200) ?? [];
             }
+
+            await LoadCutoverReadinessAsync();
         }
         catch (Exception ex)
         {
@@ -500,18 +604,45 @@
         }
     }
 
-    private async Task LoadParityAsync()
+    private async Task LoadCutoverReadinessAsync()
     {
-        _busy = true;
-        _error = null;
+        var wasBusy = _busy;
+        if (!wasBusy)
+        {
+            _busy = true;
+            _error = null;
+        }
+
         try
         {
+            try
+            {
+                _configDiagnostics = await Client.GetNotificationConfigurationDiagnosticsAsync();
+            }
+            catch
+            {
+                // Configuration diagnostics require platform notification read; page remains usable without flags.
+            }
+
+            _parityEvaluated = true;
             _parityAcceptance = await Client.GetExpectedRunMissingParityAcceptanceAsync(IntegrationId, maxIncidents: 10);
-            _parityDetail = await Client.GetExpectedRunMissingParityAsync(IntegrationId, take: 50);
+            if (_parityAcceptance is not null)
+                _parityDetail = await Client.GetExpectedRunMissingParityAsync(IntegrationId, take: 50);
+            else
+                _parityDetail = null;
         }
-        catch (Exception ex) { _error = ex.Message; }
-        finally { _busy = false; }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            if (!wasBusy)
+                _busy = false;
+        }
     }
+
+    private static string FlagLabel(bool enabled) => enabled ? "Enabled" : "Disabled";
 
     private async Task ToggleDefinitionAsync(string definitionId, ChangeEventArgs e)
     {
@@ -600,4 +731,6 @@
         NotificationDefinitionSummaryDto Summary,
         string Mutability,
         int RecentInstanceCount);
+
+    private sealed record ChecklistItem(string Label, bool IsSatisfied, bool IsManual);
 }
