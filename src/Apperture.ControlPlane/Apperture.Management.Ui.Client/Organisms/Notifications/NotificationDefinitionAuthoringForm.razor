@@ -1,0 +1,591 @@
+@using Apperture.Management.Client
+@using Apperture.Management.Ui.Shared
+@inject IManagementClient Client
+
+<div class="space-y-4">
+    <section class="rounded border border-default bg-surface p-3 text-sm">
+        <div class="font-semibold text-heading mb-2">Definition metadata</div>
+        <p class="text-xs text-muted mb-3">User-created definitions are integration-scoped. Global user definitions are not supported.</p>
+        <div class="grid gap-3 md:grid-cols-2">
+            <label class="block text-xs">
+                <span class="text-muted">Display name (required)</span>
+                <input class="mt-1 w-full rounded border border-default bg-surface px-2 py-2 text-sm"
+                       @bind="_model.DisplayName" disabled="@(!CanSave)" />
+            </label>
+            <label class="block text-xs">
+                <span class="text-muted">Integration (required)</span>
+                <select class="mt-1 w-full rounded border border-default bg-surface px-2 py-2 text-sm font-mono"
+                        value="@_model.IntegrationId"
+                        @onchange="OnIntegrationChanged"
+                        disabled="@(!CanSave || LockIntegration)">
+                    <option value="">Select…</option>
+                    @foreach (var integration in _integrations)
+                    {
+                        <option value="@integration.Id">@integration.DisplayName (@integration.Id)</option>
+                    }
+                </select>
+            </label>
+            <label class="block text-xs md:col-span-2">
+                <span class="text-muted">Description</span>
+                <textarea class="mt-1 w-full rounded border border-default bg-surface px-2 py-2 text-sm"
+                          rows="2"
+                          @bind="_model.Description"
+                          disabled="@(!CanSave)"></textarea>
+            </label>
+            <label class="block text-xs">
+                <span class="text-muted">Default severity</span>
+                <select class="mt-1 w-full rounded border border-default bg-surface px-2 py-2 text-sm"
+                        @bind="_model.DefaultSeverity"
+                        disabled="@(!CanSave || _model.SelectedCatalogEntry is null)">
+                    <option value="">—</option>
+                    @if (_model.SelectedCatalogEntry is not null)
+                    {
+                        @foreach (var sev in _model.SelectedCatalogEntry.AllowedSeverities)
+                        {
+                            <option value="@sev">@sev</option>
+                        }
+                    }
+                </select>
+            </label>
+            <label class="flex items-center gap-2 text-xs mt-6">
+                <input type="checkbox" @bind="_model.IsEnabled" disabled="@(!CanSave)" />
+                <span>Enabled</span>
+            </label>
+        </div>
+    </section>
+
+    <section class="rounded border border-default bg-surface p-3 text-sm">
+        <div class="font-semibold text-heading mb-2">Event type</div>
+        <p class="text-xs text-muted mb-2">Platform event source only (log/telemetry rules are not supported in this editor).</p>
+        <label class="block text-xs mb-2">
+            <span class="text-muted">Search</span>
+            <input class="mt-1 w-full rounded border border-default bg-surface px-2 py-2 text-sm"
+                   placeholder="Filter by type, name, or source…"
+                   @bind="_catalogFilter"
+                   @bind:event="oninput"
+                   disabled="@(!CanSave)" />
+        </label>
+        @if (_catalogLoading)
+        {
+            <p class="text-xs text-muted">Loading catalog…</p>
+        }
+        else if (_catalogError is not null)
+        {
+            <p class="text-xs text-muted">@_catalogError</p>
+        }
+        else
+        {
+            <div class="max-h-48 overflow-y-auto rounded border border-default">
+                <table class="min-w-full text-left text-xs">
+                    <thead class="bg-surface-muted text-muted sticky top-0">
+                        <tr>
+                            <th class="p-2">Event</th>
+                            <th class="p-2">Source</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var entry in FilteredCatalog)
+                        {
+                            var selected = string.Equals(_model.SelectedEventType, entry.Type, StringComparison.Ordinal);
+                            <tr class="border-t border-default cursor-pointer @(selected ? "bg-surface-muted" : "")"
+                                @onclick="() => SelectEventTypeAsync(entry)">
+                                <td class="p-2">
+                                    <div class="font-medium text-heading">@entry.DisplayName</div>
+                                    <div class="font-mono text-muted break-all">@entry.Type</div>
+                                </td>
+                                <td class="p-2 text-muted">@entry.Source</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+        @if (_model.SelectedCatalogEntry is not null)
+        {
+            <div class="mt-3 text-xs space-y-2 border-t border-default pt-3">
+                @if (!string.IsNullOrWhiteSpace(_model.SelectedCatalogEntry.Description))
+                {
+                    <p class="text-muted">@_model.SelectedCatalogEntry.Description</p>
+                }
+                <div>
+                    <span class="text-muted">Required data fields:</span>
+                    @( _model.SelectedCatalogEntry.RequiredDataProperties.Count == 0
+                        ? " —"
+                        : " " + string.Join(", ", _model.SelectedCatalogEntry.RequiredDataProperties))
+                </div>
+                <div>
+                    <span class="text-muted">Template variables:</span>
+                    <div class="mt-1 flex flex-wrap gap-1">
+                        @foreach (var variable in _model.SelectedCatalogEntry.TemplateVariables.Take(24))
+                        {
+                            <button type="button"
+                                    class="rounded bg-surface-muted px-2 py-0.5 font-mono hover:bg-surface"
+                                    title="Insert into last focused template field"
+                                    disabled="@(!CanSave)"
+                                    @onclick="() => InsertVariable(variable)">
+                                @variable
+                            </button>
+                        }
+                    </div>
+                </div>
+            </div>
+        }
+    </section>
+
+    <section class="rounded border border-default bg-surface p-3 text-sm">
+        <div class="font-semibold text-heading mb-2">Rule (v1)</div>
+        <label class="flex items-center gap-2 text-xs mb-2">
+            <input type="checkbox" @bind="_model.UseAdvancedRuleJson" disabled="@(!CanSave)" />
+            <span>Advanced rule JSON</span>
+        </label>
+        @if (_model.UseAdvancedRuleJson)
+        {
+            <textarea class="w-full rounded border border-default bg-surface px-2 py-2 font-mono text-xs"
+                      rows="10"
+                      @bind="_model.AdvancedRuleJson"
+                      disabled="@(!CanSave)"></textarea>
+        }
+        else
+        {
+            <p class="text-xs text-muted mb-2">Integration id is pinned to the selected integration.</p>
+            <div class="grid gap-3 md:grid-cols-2">
+                <label class="text-xs">
+                    <span class="text-muted">Severity filter operator</span>
+                    <select class="mt-1 block w-full rounded border border-default px-2 py-1"
+                            @bind="_model.IndexSeverityOperator"
+                            disabled="@(!CanSave)">
+                        <option value="">None</option>
+                        <option value="equals">equals</option>
+                        <option value="in">in (comma-separated)</option>
+                    </select>
+                </label>
+                <label class="text-xs">
+                    <span class="text-muted">Severity value</span>
+                    <input class="mt-1 block w-full rounded border border-default px-2 py-1"
+                           @bind="_model.IndexSeverityValue"
+                           placeholder="warning or warning,error"
+                           disabled="@(!CanSave)" />
+                </label>
+                <label class="text-xs md:col-span-2">
+                    <span class="text-muted">Module id (equals)</span>
+                    <input class="mt-1 block w-full rounded border border-default px-2 py-1 font-mono"
+                           @bind="_model.IndexModuleId"
+                           disabled="@(!CanSave)" />
+                </label>
+            </div>
+            <div class="mt-3">
+                <div class="text-xs font-semibold mb-1">Data property filters</div>
+                @foreach (var row in _model.PropertyFilters)
+                {
+                    <div class="flex flex-wrap gap-2 mb-2 items-end">
+                        <label class="text-xs flex-1 min-w-[8rem]">
+                            Field
+                            <input class="mt-1 block w-full rounded border border-default px-2 py-1 font-mono"
+                                   @bind="row.DataField"
+                                   placeholder="evaluationStatus"
+                                   disabled="@(!CanSave)" />
+                        </label>
+                        <label class="text-xs">
+                            Operator
+                            <select class="mt-1 block rounded border border-default px-2 py-1"
+                                    @bind="row.Operator"
+                                    disabled="@(!CanSave)">
+                                <option value="equals">equals</option>
+                                <option value="neq">neq</option>
+                                <option value="in">in</option>
+                                <option value="gte">gte</option>
+                                <option value="lte">lte</option>
+                            </select>
+                        </label>
+                        <label class="text-xs flex-1 min-w-[8rem]">
+                            Value
+                            <input class="mt-1 block w-full rounded border border-default px-2 py-1"
+                                   @bind="row.Value"
+                                   disabled="@(!CanSave)" />
+                        </label>
+                        <button type="button"
+                                class="rounded bg-surface-muted px-2 py-1 text-xs"
+                                disabled="@(!CanSave)"
+                                @onclick="() => RemovePropertyFilter(row)">Remove</button>
+                    </div>
+                }
+                <button type="button"
+                        class="rounded bg-surface-muted px-3 py-1 text-xs"
+                        disabled="@(!CanSave)"
+                        @onclick="AddPropertyFilter">Add filter</button>
+            </div>
+        }
+    </section>
+
+    <section class="rounded border border-default bg-surface p-3 text-sm">
+        <div class="font-semibold text-heading mb-2">Template (v1)</div>
+        <label class="flex items-center gap-2 text-xs mb-2">
+            <input type="checkbox" @bind="_model.UseAdvancedTemplateJson" disabled="@(!CanSave)" />
+            <span>Advanced template JSON</span>
+        </label>
+        @if (_model.UseAdvancedTemplateJson)
+        {
+            <textarea class="w-full rounded border border-default bg-surface px-2 py-2 font-mono text-xs"
+                      rows="10"
+                      @bind="_model.AdvancedTemplateJson"
+                      disabled="@(!CanSave)"></textarea>
+        }
+        else
+        {
+            <div class="grid gap-3">
+                <label class="text-xs">
+                    <span class="text-muted">Subject (required)</span>
+                    <input class="mt-1 block w-full rounded border border-default px-2 py-2"
+                           @bind="_model.Subject"
+                           @onfocus="() => _focusedTemplateField = TemplateField.Subject"
+                           disabled="@(!CanSave)" />
+                </label>
+                <label class="text-xs">
+                    <span class="text-muted">Summary (required)</span>
+                    <input class="mt-1 block w-full rounded border border-default px-2 py-2"
+                           @bind="_model.Summary"
+                           @onfocus="() => _focusedTemplateField = TemplateField.Summary"
+                           disabled="@(!CanSave)" />
+                </label>
+                <label class="text-xs">
+                    <span class="text-muted">Body text (required)</span>
+                    <textarea class="mt-1 block w-full rounded border border-default px-2 py-2"
+                              rows="4"
+                              @bind="_model.BodyText"
+                              @onfocus="() => _focusedTemplateField = TemplateField.BodyText"
+                              disabled="@(!CanSave)"></textarea>
+                </label>
+                <label class="text-xs">
+                    <span class="text-muted">Action text</span>
+                    <input class="mt-1 block w-full rounded border border-default px-2 py-2"
+                           @bind="_model.ActionText"
+                           disabled="@(!CanSave)" />
+                </label>
+                <label class="text-xs">
+                    <span class="text-muted">Action URL</span>
+                    <input class="mt-1 block w-full rounded border border-default px-2 py-2 font-mono"
+                           @bind="_model.ActionUrl"
+                           placeholder="/path or {{instance.baseUrl}}/…"
+                           disabled="@(!CanSave)" />
+                </label>
+            </div>
+            <div class="mt-3">
+                <div class="text-xs font-semibold mb-1">Content fields</div>
+                @foreach (var row in _model.ContentFields)
+                {
+                    <div class="flex flex-wrap gap-2 mb-2">
+                        <input class="flex-1 rounded border border-default px-2 py-1 text-xs" placeholder="Label" @bind="row.Label" disabled="@(!CanSave)" />
+                        <input class="flex-[2] rounded border border-default px-2 py-1 text-xs font-mono" placeholder="Value" @bind="row.Value" disabled="@(!CanSave)" />
+                        <button type="button" class="rounded bg-surface-muted px-2 py-1 text-xs" disabled="@(!CanSave)" @onclick="() => RemoveContentField(row)">Remove</button>
+                    </div>
+                }
+                <button type="button" class="rounded bg-surface-muted px-3 py-1 text-xs" disabled="@(!CanSave)" @onclick="AddContentField">Add content field</button>
+            </div>
+        }
+    </section>
+
+    <section class="rounded border border-default bg-surface p-3 text-sm">
+        <div class="flex flex-wrap items-center gap-2 mb-2">
+            <div class="font-semibold text-heading">Validation and preview</div>
+            <button type="button" class="rounded bg-surface-muted px-3 py-1 text-xs disabled:opacity-50" disabled="@(_busy || !CanSave)" @onclick="ValidateAsync">Validate</button>
+            <button type="button" class="rounded bg-surface-muted px-3 py-1 text-xs disabled:opacity-50" disabled="@(_busy || !CanSave)" @onclick="PreviewAsync">Preview</button>
+        </div>
+        @if (_validation is not null)
+        {
+            @if (_validation.IsValid)
+            {
+                <p class="text-xs text-green-600">Validation passed.</p>
+            }
+            else
+            {
+                <ul class="text-xs text-muted list-disc pl-4 space-y-1">
+                    @foreach (var issue in _validation.Issues)
+                    {
+                        <li><span class="font-mono">@issue.Code</span> — @issue.Message</li>
+                    }
+                </ul>
+            }
+        }
+        @if (_preview is not null)
+        {
+            <div class="mt-3 text-xs border-t border-default pt-2 space-y-1">
+                <div><span class="text-muted">Subject:</span> @_preview.Subject</div>
+                <div><span class="text-muted">Summary:</span> @_preview.Summary</div>
+                @if (!string.IsNullOrWhiteSpace(_preview.BodyText))
+                {
+                    <pre class="bg-surface-muted p-2 rounded whitespace-pre-wrap">@_preview.BodyText</pre>
+                }
+                @if (!string.IsNullOrWhiteSpace(_preview.ActionText))
+                {
+                    <div><span class="text-muted">Action:</span> @_preview.ActionText @(_preview.ActionUrl is not null ? $"→ {_preview.ActionUrl}" : "")</div>
+                }
+            </div>
+        }
+    </section>
+
+    @if (!string.IsNullOrEmpty(_error))
+    {
+        <p class="text-sm text-muted">@_error</p>
+    }
+
+    <div class="flex flex-wrap gap-2">
+        <button type="button"
+                class="rounded bg-surface-muted px-4 py-2 text-sm disabled:opacity-50"
+                disabled="@(_busy || !CanSave || !CanSubmit)"
+                @onclick="SaveAsync">
+            @(Mode == NotificationDefinitionAuthoringMode.Create ? "Create definition" : "Save changes")
+        </button>
+        <a href="@ReturnUrl" class="rounded border border-default px-4 py-2 text-sm">Cancel</a>
+    </div>
+</div>
+
+@code {
+    [Parameter] public NotificationDefinitionAuthoringMode Mode { get; set; }
+    [Parameter] public string? IntegrationId { get; set; }
+    [Parameter] public bool LockIntegration { get; set; }
+    [Parameter] public string? DefinitionId { get; set; }
+    [Parameter] public NotificationDefinitionDetailDto? InitialDetail { get; set; }
+    [Parameter] public string ReturnUrl { get; set; } = "/config/notifications/definitions";
+    [Parameter] public bool CanSave { get; set; }
+    [Parameter] public EventCallback<string> OnSaved { get; set; }
+
+    private readonly NotificationDefinitionAuthoringModel _model = new();
+    private IReadOnlyList<IntegrationDto> _integrations = [];
+    private IReadOnlyList<PlatformEventCatalogEntryDto> _catalog = [];
+    private string _catalogFilter = "";
+    private NotificationValidationResultDto? _validation;
+    private RenderedNotificationSnapshotDto? _preview;
+    private bool _catalogLoading = true;
+    private string? _catalogError;
+    private string? _error;
+    private bool _busy;
+    private bool _dirtySinceValidation = true;
+    private TemplateField _focusedTemplateField = TemplateField.BodyText;
+
+    private bool CanSubmit =>
+        !string.IsNullOrWhiteSpace(_model.DisplayName)
+        && !string.IsNullOrWhiteSpace(_model.IntegrationId)
+        && !string.IsNullOrWhiteSpace(_model.SelectedEventType)
+        && _validation?.IsValid == true
+        && !_dirtySinceValidation;
+
+    private IEnumerable<PlatformEventCatalogEntryDto> FilteredCatalog
+    {
+        get
+        {
+            if (string.IsNullOrWhiteSpace(_catalogFilter))
+                return _catalog;
+            var f = _catalogFilter.Trim();
+            return _catalog.Where(e =>
+                e.Type.Contains(f, StringComparison.OrdinalIgnoreCase)
+                || e.DisplayName.Contains(f, StringComparison.OrdinalIgnoreCase)
+                || e.Source.Contains(f, StringComparison.OrdinalIgnoreCase));
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!string.IsNullOrWhiteSpace(IntegrationId))
+            _model.IntegrationId = IntegrationId.Trim();
+
+        if (InitialDetail is not null)
+            _model.ApplyFromDetail(InitialDetail);
+
+        try
+        {
+            _catalog = await Client.ListPlatformEventCatalogAsync();
+            if (!string.IsNullOrWhiteSpace(_model.SelectedEventType))
+                _model.SelectedCatalogEntry = _catalog.FirstOrDefault(e => e.Type == _model.SelectedEventType);
+        }
+        catch (Exception ex)
+        {
+            _catalogError = ex.Message;
+        }
+        finally
+        {
+            _catalogLoading = false;
+        }
+
+        try
+        {
+            _integrations = await Client.GetIntegrationsAsync();
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private async Task OnIntegrationChanged(ChangeEventArgs e)
+    {
+        _model.IntegrationId = e.Value?.ToString() ?? "";
+        MarkDirty();
+        await Task.CompletedTask;
+    }
+
+    private async Task SelectEventTypeAsync(PlatformEventCatalogEntryDto entry)
+    {
+        _model.SelectedEventType = entry.Type;
+        _model.SelectedCatalogEntry = entry;
+        if (string.IsNullOrWhiteSpace(_model.DefaultSeverity))
+            _model.DefaultSeverity = entry.AllowedSeverities.FirstOrDefault();
+        MarkDirty();
+        await Task.CompletedTask;
+    }
+
+    private void AddPropertyFilter()
+    {
+        _model.PropertyFilters.Add(new NotificationPropertyFilterRow());
+        MarkDirty();
+    }
+
+    private void RemovePropertyFilter(NotificationPropertyFilterRow row)
+    {
+        _model.PropertyFilters.Remove(row);
+        MarkDirty();
+    }
+
+    private void AddContentField()
+    {
+        _model.ContentFields.Add(new NotificationTemplateContentFieldRow());
+        MarkDirty();
+    }
+
+    private void RemoveContentField(NotificationTemplateContentFieldRow row)
+    {
+        _model.ContentFields.Remove(row);
+        MarkDirty();
+    }
+
+    private void InsertVariable(string variable)
+    {
+        var token = "{{" + variable + "}}";
+
+        switch (_focusedTemplateField)
+        {
+            case TemplateField.Subject:
+                _model.Subject += token;
+                break;
+            case TemplateField.Summary:
+                _model.Summary += token;
+                break;
+            default:
+                _model.BodyText += token;
+                break;
+        }
+
+        MarkDirty();
+    }
+
+    private async Task ValidateAsync()
+    {
+        _busy = true;
+        _error = null;
+        try
+        {
+            var ruleJson = _model.BuildRuleJson();
+            var templateJson = _model.BuildTemplateJson();
+            _validation = await Client.ValidateNotificationDefinitionAsync(
+                new ValidateNotificationDefinitionRequest(
+                    ruleJson,
+                    templateJson,
+                    "userCreated",
+                    _model.IntegrationId,
+                    string.IsNullOrWhiteSpace(_model.SelectedEventType) ? null : [_model.SelectedEventType]));
+            _dirtySinceValidation = false;
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task PreviewAsync()
+    {
+        _busy = true;
+        _error = null;
+        try
+        {
+            var integrationName = _integrations.FirstOrDefault(i => i.Id == _model.IntegrationId)?.DisplayName;
+            var sample = _model.BuildRenderSample(integrationName);
+            _preview = await Client.RenderNotificationPreviewDraftAsync(
+                new RenderNotificationPreviewRequest(_model.BuildTemplateJson(), null, sample));
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        if (!CanSubmit)
+            return;
+
+        _busy = true;
+        _error = null;
+        try
+        {
+            var ruleJson = _model.BuildRuleJson();
+            var templateJson = _model.BuildTemplateJson();
+
+            if (Mode == NotificationDefinitionAuthoringMode.Create)
+            {
+                var created = await Client.CreateNotificationDefinitionAsync(
+                    new CreateNotificationDefinitionRequest(
+                        _model.DisplayName.Trim(),
+                        string.IsNullOrWhiteSpace(_model.Description) ? null : _model.Description.Trim(),
+                        _model.IntegrationId.Trim(),
+                        ruleJson,
+                        templateJson,
+                        _model.IsEnabled,
+                        string.IsNullOrWhiteSpace(_model.DefaultSeverity) ? null : _model.DefaultSeverity));
+                await OnSaved.InvokeAsync(created.Id);
+            }
+            else if (!string.IsNullOrWhiteSpace(DefinitionId))
+            {
+                var updated = await Client.UpdateNotificationDefinitionAsync(
+                    DefinitionId,
+                    new UpdateNotificationDefinitionRequest(
+                        _model.DisplayName.Trim(),
+                        string.IsNullOrWhiteSpace(_model.Description) ? null : _model.Description.Trim(),
+                        ruleJson,
+                        templateJson,
+                        _model.IsEnabled,
+                        string.IsNullOrWhiteSpace(_model.DefaultSeverity) ? null : _model.DefaultSeverity))
+                    ?? throw new InvalidOperationException("Definition not found.");
+                await OnSaved.InvokeAsync(updated.Id);
+            }
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private void MarkDirty()
+    {
+        _dirtySinceValidation = true;
+        _validation = null;
+        _preview = null;
+    }
+
+    private enum TemplateField
+    {
+        Subject,
+        Summary,
+        BodyText,
+    }
+}

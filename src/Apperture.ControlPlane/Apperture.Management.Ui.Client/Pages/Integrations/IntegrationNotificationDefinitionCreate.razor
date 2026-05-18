@@ -1,0 +1,63 @@
+@page "/integrations/{IntegrationId}/notifications/definitions/new"
+@using Apperture.Management.Ui.Client.Organisms.Notifications
+@using Apperture.Management.Ui.Client.Services
+@using Apperture.Management.Ui.Shared
+@inject IOperatorCapabilitiesService Capabilities
+@inject NavigationManager Nav
+
+<div class="p-4">
+    <div class="text-xs text-muted mb-1">
+        <a class="underline" href="/integrations">Integrations</a>
+        —
+        <a class="underline" href="@($"/integrations/{Uri.EscapeDataString(IntegrationId)}/notifications")">Notifications</a>
+        — Create definition
+    </div>
+
+    @if (!_capabilitiesLoaded)
+    {
+        <p class="mt-4 text-sm text-muted">Loading…</p>
+    }
+    else if (!_canSave)
+    {
+        <div class="mt-4 rounded border border-default bg-surface px-3 py-2 text-sm">
+            <div class="font-semibold">Not authorized</div>
+            <div class="text-muted">Creating notification definitions requires notification definition manage and integration update permissions.</div>
+        </div>
+    }
+    else
+    {
+        <h1 class="text-xl font-semibold text-heading">Create notification definition</h1>
+        <p class="text-xs text-muted mt-1">For integration @IntegrationId</p>
+
+        <div class="mt-4">
+            <NotificationDefinitionAuthoringForm Mode="NotificationDefinitionAuthoringMode.Create"
+                                                 IntegrationId="@IntegrationId"
+                                                 LockIntegration="true"
+                                                 ReturnUrl="@ReturnUrl"
+                                                 CanSave="true"
+                                                 OnSaved="OnSavedAsync" />
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public string IntegrationId { get; set; } = "";
+
+    private bool _capabilitiesLoaded;
+    private bool _canSave;
+
+    private string ReturnUrl => $"/integrations/{Uri.EscapeDataString(IntegrationId)}/notifications";
+
+    protected override async Task OnInitializedAsync()
+    {
+        var caps = await Capabilities.GetCapabilitiesAsync();
+        _canSave = caps.CanManageNotificationDefinitions && caps.CanUpdateIntegrations;
+        _capabilitiesLoaded = true;
+    }
+
+    private Task OnSavedAsync(string definitionId)
+    {
+        Nav.NavigateTo(ReturnUrl);
+        return Task.CompletedTask;
+    }
+}

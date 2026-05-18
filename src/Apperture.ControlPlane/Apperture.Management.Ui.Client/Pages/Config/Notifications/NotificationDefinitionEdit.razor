@@ -1,0 +1,101 @@
+@page "/config/notifications/definitions/{DefinitionId}/edit"
+@layout ConfigLayout
+@using Apperture.Management.Client
+@using Apperture.Management.Ui.Client.Organisms.Notifications
+@using Apperture.Management.Ui.Client.Services
+@using Apperture.Management.Ui.Shared
+@inject IManagementClient Client
+@inject IOperatorCapabilitiesService Capabilities
+@inject NavigationManager Nav
+
+<div class="p-4">
+    <div class="text-xs text-muted mb-1">
+        <a class="underline" href="/config/notifications/definitions">Definitions</a>
+        —
+        <a class="underline" href="@DetailHref">@DefinitionId</a>
+        — Edit
+    </div>
+
+    @if (!_capabilitiesLoaded)
+    {
+        <p class="mt-4 text-sm text-muted">Loading…</p>
+    }
+    else if (!_canSave)
+    {
+        <div class="mt-4 rounded border border-default bg-surface px-3 py-2 text-sm">
+            <div class="font-semibold">Not authorized</div>
+            <div class="text-muted">Editing notification definitions requires notification definition manage and integration update permissions.</div>
+        </div>
+    }
+    else if (_loading)
+    {
+        <p class="mt-4 text-sm text-muted">Loading…</p>
+    }
+    else if (_detail is null)
+    {
+        <p class="mt-4 text-sm text-muted">Definition not found.</p>
+    }
+    else if (!string.Equals(_detail.Mutability, "fullyEditable", StringComparison.Ordinal))
+    {
+        <div class="mt-4 rounded border border-default bg-surface px-3 py-2 text-sm">
+            <div class="font-semibold">Cannot edit rule or template</div>
+            <p class="text-muted mt-1">This definition is not fully editable. You can change enabled state and subscriptions on the detail page.</p>
+            <a class="underline text-xs mt-2 inline-block" href="@DetailHref">Back to detail</a>
+        </div>
+    }
+    else
+    {
+        <h1 class="text-xl font-semibold text-heading">Edit notification definition</h1>
+        <p class="text-xs text-muted mt-1">@_detail.DisplayName</p>
+
+        <div class="mt-4">
+            <NotificationDefinitionAuthoringForm Mode="NotificationDefinitionAuthoringMode.Edit"
+                                                 IntegrationId="@_detail.IntegrationId"
+                                                 LockIntegration="true"
+                                                 DefinitionId="@DefinitionId"
+                                                 InitialDetail="@_detail"
+                                                 ReturnUrl="@DetailHref"
+                                                 CanSave="true"
+                                                 OnSaved="OnSavedAsync" />
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public string DefinitionId { get; set; } = "";
+
+    private bool _capabilitiesLoaded;
+    private bool _canSave;
+    private bool _loading = true;
+    private NotificationDefinitionDetailDto? _detail;
+
+    private string DetailHref => $"/config/notifications/definitions/{Uri.EscapeDataString(DefinitionId)}";
+
+    protected override async Task OnInitializedAsync()
+    {
+        var caps = await Capabilities.GetCapabilitiesAsync();
+        _canSave = caps.CanManageNotificationDefinitions && caps.CanUpdateIntegrations;
+        _capabilitiesLoaded = true;
+
+        if (!_canSave)
+        {
+            _loading = false;
+            return;
+        }
+
+        try
+        {
+            _detail = await Client.GetNotificationDefinitionAsync(DefinitionId);
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private Task OnSavedAsync(string definitionId)
+    {
+        Nav.NavigateTo(DetailHref);
+        return Task.CompletedTask;
+    }
+}

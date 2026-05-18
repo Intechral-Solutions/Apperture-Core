@@ -459,6 +459,30 @@ public interface IManagementClient
         RenderNotificationPreviewRequest request,
         CancellationToken cancellationToken = default);
 
+    Task<RenderedNotificationSnapshotDto> RenderNotificationPreviewDraftAsync(
+        RenderNotificationPreviewRequest request,
+        CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<PlatformEventCatalogEntryDto>> ListPlatformEventCatalogAsync(
+        CancellationToken cancellationToken = default);
+
+    Task<PlatformEventCatalogEntryDto?> GetPlatformEventCatalogEntryAsync(
+        string eventType,
+        CancellationToken cancellationToken = default);
+
+    Task<NotificationValidationResultDto> ValidateNotificationDefinitionAsync(
+        ValidateNotificationDefinitionRequest request,
+        CancellationToken cancellationToken = default);
+
+    Task<NotificationDefinitionDetailDto> CreateNotificationDefinitionAsync(
+        CreateNotificationDefinitionRequest request,
+        CancellationToken cancellationToken = default);
+
+    Task<NotificationDefinitionDetailDto?> UpdateNotificationDefinitionAsync(
+        string id,
+        UpdateNotificationDefinitionRequest request,
+        CancellationToken cancellationToken = default);
+
     Task<IReadOnlyList<NotificationSubscriptionDto>> ListNotificationSubscriptionsByDefinitionAsync(
         string definitionId,
         CancellationToken cancellationToken = default);

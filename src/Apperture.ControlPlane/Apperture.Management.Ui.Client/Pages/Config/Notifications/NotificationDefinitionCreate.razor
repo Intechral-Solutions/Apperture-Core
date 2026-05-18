@@ -1,0 +1,67 @@
+@page "/config/notifications/definitions/new"
+@layout ConfigLayout
+@using Apperture.Management.Ui.Client.Organisms.Notifications
+@using Apperture.Management.Ui.Client.Services
+@using Apperture.Management.Ui.Shared
+@inject IOperatorCapabilitiesService Capabilities
+@inject NavigationManager Nav
+
+<div class="p-4">
+    <div class="text-xs text-muted mb-1">
+        <a class="underline" href="/config/notifications/definitions">Definitions</a>
+        <span> — Create</span>
+    </div>
+
+    @if (!_capabilitiesLoaded)
+    {
+        <p class="mt-4 text-sm text-muted">Loading…</p>
+    }
+    else if (!_canSave)
+    {
+        <div class="mt-4 rounded border border-default bg-surface px-3 py-2 text-sm">
+            <div class="font-semibold">Not authorized</div>
+            <div class="text-muted">Creating notification definitions requires notification definition manage and integration update permissions.</div>
+        </div>
+    }
+    else
+    {
+        <h1 class="text-xl font-semibold text-heading">Create notification definition</h1>
+        <p class="text-xs text-muted mt-1">Integration-scoped, platform-event rule and template.</p>
+
+        <div class="mt-4">
+            <NotificationDefinitionAuthoringForm Mode="NotificationDefinitionAuthoringMode.Create"
+                                                 IntegrationId="@IntegrationId"
+                                                 LockIntegration="false"
+                                                 ReturnUrl="@ReturnUrl"
+                                                 CanSave="true"
+                                                 OnSaved="OnSavedAsync" />
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public string? IntegrationId { get; set; }
+
+    [SupplyParameterFromQuery(Name = "integrationId")]
+    public string? IntegrationIdQuery { get; set; }
+
+    private bool _capabilitiesLoaded;
+    private bool _canSave;
+    private string ReturnUrl => "/config/notifications/definitions";
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (string.IsNullOrWhiteSpace(IntegrationId) && !string.IsNullOrWhiteSpace(IntegrationIdQuery))
+            IntegrationId = IntegrationIdQuery.Trim();
+
+        var caps = await Capabilities.GetCapabilitiesAsync();
+        _canSave = caps.CanManageNotificationDefinitions && caps.CanUpdateIntegrations;
+        _capabilitiesLoaded = true;
+    }
+
+    private Task OnSavedAsync(string definitionId)
+    {
+        Nav.NavigateTo($"/config/notifications/definitions/{Uri.EscapeDataString(definitionId)}");
+        return Task.CompletedTask;
+    }
+}

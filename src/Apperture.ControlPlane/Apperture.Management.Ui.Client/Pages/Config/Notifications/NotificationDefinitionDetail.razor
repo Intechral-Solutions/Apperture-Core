@@ -33,7 +33,21 @@
     }
     else
     {
-        <PageHeader Title="@_detail.DisplayName" Subtitle="@_detail.Id" />
+        <div class="flex flex-wrap items-start justify-between gap-3">
+            <PageHeader Title="@_detail.DisplayName" Subtitle="@_detail.Id" />
+            @if (_canEditDefinition)
+            {
+                <a href="@EditHref" class="rounded bg-surface-muted px-3 py-2 text-sm hover:bg-surface shrink-0">Edit definition</a>
+            }
+        </div>
+
+        @if (_isRuleTemplateLocked)
+        {
+            <div class="mt-4 rounded border border-default bg-surface px-3 py-2 text-sm">
+                <div class="font-semibold text-heading">Rule and template are locked</div>
+                <p class="text-muted text-xs mt-1">Platform-built-in definitions keep rule and template fixed. You can change enabled state and subscriptions below.</p>
+            </div>
+        }
 
         <div class="mt-4 space-y-4">
             <section class="rounded border border-default bg-surface p-3 text-sm">
@@ -259,6 +273,8 @@
     private bool _capabilitiesLoaded;
     private bool _canView;
     private bool _canManage;
+    private bool _canManageDefinitions;
+    private bool _canUpdateIntegrations;
     private bool _canManageContacts;
     private bool _loading = true;
     private bool _busy;
@@ -279,6 +295,17 @@
     private string DiagnosticsHref =>
         $"/config/notifications/diagnostics?definitionId={Uri.EscapeDataString(DefinitionId)}";
 
+    private string EditHref => $"/config/notifications/definitions/{Uri.EscapeDataString(DefinitionId)}/edit";
+
+    private bool _isRuleTemplateLocked =>
+        _detail is not null
+        && !string.Equals(_detail.Mutability, "fullyEditable", StringComparison.Ordinal);
+
+    private bool _canEditDefinition =>
+        _canManage
+        && _detail is not null
+        && string.Equals(_detail.Mutability, "fullyEditable", StringComparison.Ordinal);
+
     private IEnumerable<(string Id, string Label)> RecipientOptions => _addKind switch
     {
         "operational_team" => _teams.Select(t => (t.Id, $"{t.Name} ({t.Id})")),
@@ -290,7 +317,8 @@
     {
         var caps = await Capabilities.GetCapabilitiesAsync();
         _canView = caps.CanViewNotificationDefinitions;
-        _canManage = caps.CanManageNotificationDefinitions;
+        _canManageDefinitions = caps.CanManageNotificationDefinitions;
+        _canUpdateIntegrations = caps.CanUpdateIntegrations;
         _canManageContacts = caps.CanManageManagedContacts;
         _capabilitiesLoaded = true;
         if (!_canView)
@@ -310,6 +338,9 @@
             _detail = await Client.GetNotificationDefinitionAsync(DefinitionId);
             if (_detail is null)
                 return;
+
+            _canManage = _canManageDefinitions
+                && (string.IsNullOrWhiteSpace(_detail.IntegrationId) || _canUpdateIntegrations);
 
             _resolveIntegrationId = _detail.IntegrationId ?? _resolveIntegrationId;
             _subscriptions = await Client.ListNotificationSubscriptionsByDefinitionAsync(DefinitionId);

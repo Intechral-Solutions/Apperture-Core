@@ -203,6 +203,88 @@ public sealed class ManagementClientNotificationTests
         result!.LooksAcceptableForCutover.Should().BeTrue();
     }
 
+    [Fact]
+    public async Task ListPlatformEventCatalogAsync_UsesCatalogPath()
+    {
+        var handler = new CaptureHandler(HttpStatusCode.OK, "[]");
+        var client = new ManagementClient(new HttpClient(handler) { BaseAddress = new Uri("https://api.example/") });
+
+        _ = await client.ListPlatformEventCatalogAsync();
+
+        handler.LastUri!.AbsolutePath.Should().Contain("platform-events/catalog");
+    }
+
+    [Fact]
+    public async Task ValidateNotificationDefinitionAsync_PostsValidatePath()
+    {
+        var json = JsonSerializer.Serialize(new { isValid = true, issues = Array.Empty<object>() });
+        var handler = new CaptureHandler(HttpStatusCode.OK, json);
+        var client = new ManagementClient(new HttpClient(handler) { BaseAddress = new Uri("https://api.example/") });
+
+        _ = await client.ValidateNotificationDefinitionAsync(
+            new ValidateNotificationDefinitionRequest("{}", "{}", "userCreated", "int-1", ["apperture.schedule.expected_run.missing"]));
+
+        handler.LastMethod.Should().Be(HttpMethod.Post);
+        handler.LastUri!.AbsolutePath.Should().Contain("notification-definitions/validate");
+    }
+
+    [Fact]
+    public async Task CreateNotificationDefinitionAsync_PostsCreatePath()
+    {
+        var json = JsonSerializer.Serialize(new
+        {
+            id = "def-1",
+            displayName = "Test",
+            sourceKind = "platformEvent",
+            origin = "userCreated",
+            scope = "integration",
+            mutability = "fullyEditable",
+            isEnabled = true,
+            ruleJson = "{}",
+            templateJson = "{}",
+            createdAtUtc = DateTimeOffset.UtcNow,
+            updatedAtUtc = DateTimeOffset.UtcNow
+        });
+        var handler = new CaptureHandler(HttpStatusCode.OK, json);
+        var client = new ManagementClient(new HttpClient(handler) { BaseAddress = new Uri("https://api.example/") });
+
+        _ = await client.CreateNotificationDefinitionAsync(
+            new CreateNotificationDefinitionRequest("Test", null, "int-1", "{}", "{}"));
+
+        handler.LastMethod.Should().Be(HttpMethod.Post);
+        handler.LastUri!.AbsolutePath.Should().EndWith("notification-definitions");
+    }
+
+    [Fact]
+    public async Task RenderNotificationPreviewDraftAsync_PostsDraftPreviewPath()
+    {
+        var json = JsonSerializer.Serialize(new
+        {
+            subject = "S",
+            summary = "Su",
+            bodyText = "B",
+            templateVersionHash = "h"
+        });
+        var handler = new CaptureHandler(HttpStatusCode.OK, json);
+        var client = new ManagementClient(new HttpClient(handler) { BaseAddress = new Uri("https://api.example/") });
+
+        _ = await client.RenderNotificationPreviewDraftAsync(
+            new RenderNotificationPreviewRequest("{}", null, new NotificationRenderSampleDto(
+                "apperture.schedule.expected_run.missing",
+                DateTimeOffset.UtcNow,
+                "warning",
+                "int-1",
+                null,
+                "activation",
+                null,
+                null,
+                null,
+                null)));
+
+        handler.LastUri!.AbsolutePath.Should().Contain("notification-definitions/render-preview");
+        handler.LastUri!.AbsolutePath.Should().NotContain("/def-");
+    }
+
     private sealed class CaptureHandler : HttpMessageHandler
     {
         private readonly HttpStatusCode _status;

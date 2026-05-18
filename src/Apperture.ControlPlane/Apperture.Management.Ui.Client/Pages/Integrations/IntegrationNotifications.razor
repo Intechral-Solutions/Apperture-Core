@@ -221,7 +221,16 @@
         </section>
 
         <section class="mt-4 rounded border border-default bg-surface p-3">
-            <h2 class="text-sm font-semibold text-heading mb-2">Notification definitions</h2>
+            <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
+                <h2 class="text-sm font-semibold text-heading">Notification definitions</h2>
+                @if (_canManageSubscriptions)
+                {
+                    <a class="rounded bg-surface-muted px-3 py-1 text-xs hover:bg-surface"
+                       href="@($"/integrations/{Uri.EscapeDataString(IntegrationId)}/notifications/definitions/new")">
+                        Create definition
+                    </a>
+                }
+            </div>
             @if (_definitions.Count == 0)
             {
                 <p class="text-xs text-muted">No definitions apply to this integration.</p>
@@ -263,7 +272,13 @@
                                     }
                                 </td>
                                 <td class="p-1">@d.RecentInstanceCount</td>
-                                <td class="p-1"><a class="underline" href="@($"/config/notifications/definitions/{Uri.EscapeDataString(d.Summary.Id)}")">Config detail</a></td>
+                                <td class="p-1 space-x-2">
+                                    <a class="underline" href="@($"/config/notifications/definitions/{Uri.EscapeDataString(d.Summary.Id)}")">Detail</a>
+                                    @if (_canManageSubscriptions && string.Equals(d.Mutability, "fullyEditable", StringComparison.Ordinal))
+                                    {
+                                        <a class="underline" href="@($"/config/notifications/definitions/{Uri.EscapeDataString(d.Summary.Id)}/edit")">Edit</a>
+                                    }
+                                </td>
                             </tr>
                         }
                     </tbody>

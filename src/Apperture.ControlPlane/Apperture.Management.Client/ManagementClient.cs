@@ -1515,6 +1515,87 @@ public sealed class ManagementClient : IManagementClient
             ?? throw new InvalidOperationException("Unexpected null response from RenderNotificationPreview.");
     }
 
+    public async Task<RenderedNotificationSnapshotDto> RenderNotificationPreviewDraftAsync(
+        RenderNotificationPreviewRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.PostAsJsonAsync(
+            "notification-definitions/render-preview",
+            request,
+            ApiJsonWriteOptions,
+            cancellationToken).ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<RenderedNotificationSnapshotDto>(ApiJsonReadOptions, cancellationToken).ConfigureAwait(false)
+            ?? throw new InvalidOperationException("Unexpected null response from RenderNotificationPreviewDraft.");
+    }
+
+    public async Task<IReadOnlyList<PlatformEventCatalogEntryDto>> ListPlatformEventCatalogAsync(
+        CancellationToken cancellationToken = default)
+    {
+        var list = await _http.GetFromJsonAsync<PlatformEventCatalogEntryDto[]>(
+            "platform-events/catalog",
+            ApiJsonReadOptions,
+            cancellationToken).ConfigureAwait(false);
+        return list ?? Array.Empty<PlatformEventCatalogEntryDto>();
+    }
+
+    public async Task<PlatformEventCatalogEntryDto?> GetPlatformEventCatalogEntryAsync(
+        string eventType,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.GetAsync(
+            $"platform-events/catalog/{Uri.EscapeDataString(eventType)}",
+            cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode == HttpStatusCode.NotFound)
+            return null;
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<PlatformEventCatalogEntryDto>(ApiJsonReadOptions, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<NotificationValidationResultDto> ValidateNotificationDefinitionAsync(
+        ValidateNotificationDefinitionRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.PostAsJsonAsync(
+            "notification-definitions/validate",
+            request,
+            ApiJsonWriteOptions,
+            cancellationToken).ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<NotificationValidationResultDto>(ApiJsonReadOptions, cancellationToken).ConfigureAwait(false)
+            ?? throw new InvalidOperationException("Unexpected null response from ValidateNotificationDefinition.");
+    }
+
+    public async Task<NotificationDefinitionDetailDto> CreateNotificationDefinitionAsync(
+        CreateNotificationDefinitionRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.PostAsJsonAsync(
+            "notification-definitions",
+            request,
+            ApiJsonWriteOptions,
+            cancellationToken).ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<NotificationDefinitionDetailDto>(ApiJsonReadOptions, cancellationToken).ConfigureAwait(false)
+            ?? throw new InvalidOperationException("Unexpected null response from CreateNotificationDefinition.");
+    }
+
+    public async Task<NotificationDefinitionDetailDto?> UpdateNotificationDefinitionAsync(
+        string id,
+        UpdateNotificationDefinitionRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.PutAsJsonAsync(
+            $"notification-definitions/{Uri.EscapeDataString(id)}",
+            request,
+            ApiJsonWriteOptions,
+            cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode == HttpStatusCode.NotFound)
+            return null;
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<NotificationDefinitionDetailDto>(ApiJsonReadOptions, cancellationToken).ConfigureAwait(false);
+    }
+
     public async Task<IReadOnlyList<NotificationSubscriptionDto>> ListNotificationSubscriptionsByDefinitionAsync(
         string definitionId,
         CancellationToken cancellationToken = default)

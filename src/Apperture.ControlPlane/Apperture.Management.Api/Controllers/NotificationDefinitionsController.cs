@@ -164,6 +164,34 @@ public sealed class NotificationDefinitionsController : ControllerBase
         }
     }
 
+    [HttpPost("render-preview")]
+    [ProducesResponseType(typeof(RenderedNotificationSnapshotDto), StatusCodes.Status200OK)]
+    public async Task<ActionResult<RenderedNotificationSnapshotDto>> RenderPreviewDraft(
+        [FromBody] RenderNotificationPreviewRequest body,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var snapshot = await _definitions.RenderPreviewAsync(
+                    definitionId: null,
+                    new NotificationDefinitionRenderPreviewRequest(
+                        body.TemplateJson,
+                        body.VariantKey,
+                        ToSample(body.Sample)),
+                    cancellationToken)
+                .ConfigureAwait(false);
+            return Ok(ToSnapshotDto(snapshot));
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return Forbid();
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { error = ex.Message });
+        }
+    }
+
     [HttpPost("{id}/render-preview")]
     [ProducesResponseType(typeof(RenderedNotificationSnapshotDto), StatusCodes.Status200OK)]
     public async Task<ActionResult<RenderedNotificationSnapshotDto>> RenderPreview(

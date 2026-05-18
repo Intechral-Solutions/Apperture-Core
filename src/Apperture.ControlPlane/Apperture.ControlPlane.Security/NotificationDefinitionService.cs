@@ -188,7 +188,16 @@ public sealed class NotificationDefinitionService : INotificationDefinitionServi
         }
         else
         {
-            await _authorization.RequirePlatformReadAsync(cancellationToken).ConfigureAwait(false);
+            if (!string.IsNullOrWhiteSpace(request.Sample.IntegrationId))
+            {
+                await _authorization.RequireIntegrationManageAsync(request.Sample.IntegrationId, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            else
+            {
+                await _authorization.RequirePlatformReadAsync(cancellationToken).ConfigureAwait(false);
+            }
+
             templateJson = request.TemplateJson
                            ?? throw new InvalidOperationException("templateJson is required when definition id is omitted.");
         }
