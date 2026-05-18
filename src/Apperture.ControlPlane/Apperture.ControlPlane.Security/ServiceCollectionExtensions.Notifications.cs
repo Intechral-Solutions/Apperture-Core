@@ -1,4 +1,5 @@
 using Apperture.Core.Application.Notifications;
+using Apperture.Core.Application.Notifications.Instances;
 using Apperture.Core.Application.Notifications.Subscriptions;
 using Apperture.Core.Application.PlatformEvents;
 using Apperture.Persistence.SqlServer;
@@ -15,7 +16,12 @@ public static class NotificationsServiceCollectionExtensions
         IConfiguration? configuration = null)
     {
         if (configuration is not null)
+        {
             services.Configure<NotificationEvaluationOptions>(configuration.GetSection(NotificationEvaluationOptions.SectionName));
+            services.Configure<NotificationInstanceOptions>(configuration.GetSection(NotificationInstanceOptions.SectionName));
+            services.Configure<NotificationDeliveryOptions>(configuration.GetSection(NotificationDeliveryOptions.SectionName));
+            services.Configure<NotificationPipelineOptions>(configuration.GetSection(NotificationPipelineOptions.SectionName));
+        }
 
         services.AddSingleton<INotificationTemplateVariableCatalog, NotificationTemplateVariableCatalog>();
         services.AddSingleton<IRedactionPolicy, NoOpRedactionPolicy>();
@@ -36,6 +42,9 @@ public static class NotificationsServiceCollectionExtensions
         services.AddScoped<NotificationDefinitionAuthorization>();
         services.AddScoped<INotificationDefinitionService, NotificationDefinitionService>();
         services.AddScoped<INotificationSubscriptionService, NotificationSubscriptionService>();
+        services.AddScoped<INotificationInstanceStore, SqlNotificationInstanceStore>();
+        services.AddScoped<INotificationInstanceCoordinator, NotificationInstanceCoordinator>();
+        services.AddScoped<INotificationInstanceQueryService, NotificationInstanceQueryService>();
 
         services.AddScoped<SqlPlatformEventStore>();
         services.AddScoped<IPlatformEventStore, EvaluatingPlatformEventStore>();

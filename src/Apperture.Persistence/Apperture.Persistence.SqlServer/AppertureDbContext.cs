@@ -30,6 +30,8 @@ public class AppertureDbContext : DbContext
     public DbSet<NotificationSubscriptionEntity> NotificationSubscriptions => Set<NotificationSubscriptionEntity>();
     public DbSet<NotificationSubscriptionUserOverrideEntity> NotificationSubscriptionUserOverrides =>
         Set<NotificationSubscriptionUserOverrideEntity>();
+    public DbSet<NotificationInstanceEntity> NotificationInstances => Set<NotificationInstanceEntity>();
+    public DbSet<NotificationDeliveryOutboxEntity> NotificationDeliveryOutbox => Set<NotificationDeliveryOutboxEntity>();
     public DbSet<SecretDescriptorEntity> SecretDescriptors => Set<SecretDescriptorEntity>();
     public DbSet<SecretVersionEntity> SecretVersions => Set<SecretVersionEntity>();
     public DbSet<SecretAuditEntity> SecretAudits => Set<SecretAuditEntity>();
@@ -402,6 +404,58 @@ public class AppertureDbContext : DbContext
             e.HasIndex(x => new { x.UserId, x.NotificationDefinitionId })
                 .HasFilter("[OperationalTeamId] IS NULL")
                 .IsUnique();
+        });
+
+        modelBuilder.Entity<NotificationInstanceEntity>(e =>
+        {
+            e.ToTable("NotificationInstances");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasMaxLength(64);
+            e.Property(x => x.NotificationDefinitionId).HasMaxLength(64);
+            e.Property(x => x.NotificationKind).HasMaxLength(32);
+            e.Property(x => x.Status).HasMaxLength(32);
+            e.Property(x => x.PlatformEventId).HasMaxLength(64);
+            e.Property(x => x.AttentionIncidentId).HasMaxLength(64);
+            e.Property(x => x.IntegrationId).HasMaxLength(64);
+            e.Property(x => x.ModuleId).HasMaxLength(128);
+            e.Property(x => x.RunId).HasMaxLength(64);
+            e.Property(x => x.ScheduleId).HasMaxLength(64);
+            e.Property(x => x.InstanceDedupeKey).HasMaxLength(256);
+            e.Property(x => x.RenderedSubject).HasMaxLength(512);
+            e.Property(x => x.RenderedSummary).HasMaxLength(1024);
+            e.Property(x => x.RenderedBodyText).HasMaxLength(65536);
+            e.Property(x => x.RenderedBodyHtml).HasMaxLength(65536);
+            e.Property(x => x.RenderedActionText).HasMaxLength(256);
+            e.Property(x => x.RenderedActionUrl).HasMaxLength(2048);
+            e.Property(x => x.RenderedContentFieldsJson).HasMaxLength(65536);
+            e.Property(x => x.TemplateVersionHash).HasMaxLength(64);
+            e.Property(x => x.RenderContextJson).HasMaxLength(65536);
+            e.Property(x => x.RecipientSnapshotJson).HasMaxLength(65536);
+            e.Property(x => x.SuppressionReason).HasMaxLength(128);
+            e.HasIndex(x => new { x.NotificationDefinitionId, x.InstanceDedupeKey }).IsUnique();
+            e.HasIndex(x => new { x.IntegrationId, x.CreatedAtUtc })
+                .HasFilter("[IntegrationId] IS NOT NULL")
+                .IsDescending(false, true);
+            e.HasIndex(x => new { x.AttentionIncidentId, x.NotificationKind })
+                .HasFilter("[AttentionIncidentId] IS NOT NULL");
+            e.HasIndex(x => x.PlatformEventId).HasFilter("[PlatformEventId] IS NOT NULL");
+        });
+
+        modelBuilder.Entity<NotificationDeliveryOutboxEntity>(e =>
+        {
+            e.ToTable("NotificationDeliveryOutbox");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasMaxLength(64);
+            e.Property(x => x.NotificationInstanceId).HasMaxLength(64);
+            e.Property(x => x.RecipientEmail).HasMaxLength(320);
+            e.Property(x => x.RecipientDisplayName).HasMaxLength(256);
+            e.Property(x => x.RecipientKind).HasMaxLength(32);
+            e.Property(x => x.RecipientSource).HasMaxLength(64);
+            e.Property(x => x.Channel).HasMaxLength(32);
+            e.Property(x => x.Status).HasMaxLength(32);
+            e.Property(x => x.LastError).HasMaxLength(2048);
+            e.HasIndex(x => new { x.NotificationInstanceId, x.RecipientEmail, x.Channel }).IsUnique();
+            e.HasIndex(x => new { x.Status, x.NextAttemptAtUtc });
         });
 
         modelBuilder.Entity<SecretDescriptorEntity>(e =>

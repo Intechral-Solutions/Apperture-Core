@@ -1,4 +1,5 @@
 using Apperture.Core.Application.Notifications;
+using Apperture.Core.Application.Notifications.Instances;
 using Apperture.Core.Application.PlatformEvents;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -9,18 +10,24 @@ public sealed class NotificationEvaluateOnlyCoordinator : INotificationEvaluateO
 {
     private readonly INotificationDefinitionStore _definitions;
     private readonly INotificationRuleEvaluator _evaluator;
+    private readonly INotificationInstanceCoordinator _instanceCoordinator;
     private readonly IOptions<NotificationEvaluationOptions> _options;
+    private readonly IOptions<NotificationInstanceOptions> _instanceOptions;
     private readonly ILogger<NotificationEvaluateOnlyCoordinator> _logger;
 
     public NotificationEvaluateOnlyCoordinator(
         INotificationDefinitionStore definitions,
         INotificationRuleEvaluator evaluator,
+        INotificationInstanceCoordinator instanceCoordinator,
         IOptions<NotificationEvaluationOptions> options,
+        IOptions<NotificationInstanceOptions> instanceOptions,
         ILogger<NotificationEvaluateOnlyCoordinator> logger)
     {
         _definitions = definitions;
         _evaluator = evaluator;
+        _instanceCoordinator = instanceCoordinator;
         _options = options;
+        _instanceOptions = instanceOptions;
         _logger = logger;
     }
 
@@ -40,6 +47,7 @@ public sealed class NotificationEvaluateOnlyCoordinator : INotificationEvaluateO
 
         var results = await _evaluator.EvaluateAllAsync(defs, context, cancellationToken).ConfigureAwait(false);
         LogResults("platformEvent", envelope.Type, results);
+        await TryCreateInstancesAsync(context, results, cancellationToken).ConfigureAwait(false);
         return results;
     }
 
@@ -59,7 +67,34 @@ public sealed class NotificationEvaluateOnlyCoordinator : INotificationEvaluateO
 
         var results = await _evaluator.EvaluateAllAsync(defs, context, cancellationToken).ConfigureAwait(false);
         LogResults("incidentTransition", incident.Transition.ToString(), results);
+        await TryCreateInstancesAsync(context, results, cancellationToken).ConfigureAwait(false);
         return results;
+    }
+
+    private async ValueTask TryCreateInstancesAsync(
+        NotificationRuleEvaluationContext context,
+        IReadOnlyList<NotificationMatchResult> results,
+        CancellationToken cancellationToken)
+    {
+        if (!_instanceOptions.Value.Enabled)
+            return;
+
+        foreach (var result in results.Where(r => r.Status == NotificationMatchStatus.Matched))
+        {
+            try
+            {
+                await _instanceCoordinator
+                    .TryCreateFromMatchAsync(result, context, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(
+                    ex,
+                    "Notification instance creation failed for definition {DefinitionId}.",
+                    result.DefinitionId);
+            }
+        }
     }
 
     private async ValueTask<IReadOnlyList<Core.Domain.Notifications.NotificationDefinition>> LoadEnabledDefinitionsAsync(
