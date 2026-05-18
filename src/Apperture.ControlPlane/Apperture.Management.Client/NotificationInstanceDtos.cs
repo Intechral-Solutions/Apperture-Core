@@ -48,4 +48,5 @@ public sealed record NotificationDeliveryOutboxDto(
     int AttemptCount,
     DateTimeOffset? NextAttemptAtUtc,
     string? LastError,
+    DateTimeOffset? SentAtUtc,
     DateTimeOffset CreatedAtUtc);

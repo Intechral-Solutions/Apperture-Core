@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Apperture.Core.Application.Integration;
 using Apperture.Core.Application.Notifications;
+using Apperture.Core.Application.Notifications.Delivery;
 using Apperture.Core.Application.Notifications.Instances;
 using Apperture.Core.Application.Notifications.Subscriptions;
 using Apperture.Core.Application.PlatformEvents;
@@ -21,6 +22,7 @@ public sealed class NotificationInstanceCoordinator : INotificationInstanceCoord
     private readonly INotificationTemplateRenderer _renderer;
     private readonly INotificationRecipientResolver _recipientResolver;
     private readonly INotificationInstanceStore _instances;
+    private readonly INotificationDeliveryOutboxStore _deliveryOutbox;
     private readonly IAttentionRecipientResolver _attentionRecipientResolver;
     private readonly IAttentionIncidentTracker _incidentTracker;
     private readonly IRedactionPolicy _redaction;
@@ -33,6 +35,7 @@ public sealed class NotificationInstanceCoordinator : INotificationInstanceCoord
         INotificationTemplateRenderer renderer,
         INotificationRecipientResolver recipientResolver,
         INotificationInstanceStore instances,
+        INotificationDeliveryOutboxStore deliveryOutbox,
         IAttentionRecipientResolver attentionRecipientResolver,
         IAttentionIncidentTracker incidentTracker,
         IRedactionPolicy redaction,
@@ -44,6 +47,7 @@ public sealed class NotificationInstanceCoordinator : INotificationInstanceCoord
         _renderer = renderer;
         _recipientResolver = recipientResolver;
         _instances = instances;
+        _deliveryOutbox = deliveryOutbox;
         _attentionRecipientResolver = attentionRecipientResolver;
         _incidentTracker = incidentTracker;
         _redaction = redaction;
@@ -77,8 +81,44 @@ public sealed class NotificationInstanceCoordinator : INotificationInstanceCoord
         var incidentId = ResolveIncidentId(evaluationContext, envelope);
         var integrationId = envelope.IntegrationId ?? evaluationContext.Incident?.IntegrationId;
         var observedAt = evaluationContext.EvaluatedAtUtc;
+        var isBuiltInExpectedRunMissing = string.Equals(
+            match.DefinitionId,
+            NotificationDefinitionIds.PlatformScheduleExpectedRunMissing,
+            StringComparison.Ordinal);
 
+        AttentionRecipientResolution? attentionRoute = null;
         TimeSpan? reminderInterval = null;
+
+        if (isBuiltInExpectedRunMissing && !string.IsNullOrWhiteSpace(integrationId))
+        {
+            attentionRoute = await _attentionRecipientResolver
+                .ResolveAsync(new IntegrationId(integrationId), AttentionConditionKeys.ExpectedRunMissing, cancellationToken)
+                .ConfigureAwait(false);
+            reminderInterval = attentionRoute.ReminderInterval;
+
+            var suppression = await EvaluateBuiltInSuppressionAsync(
+                    kind,
+                    match.DefinitionId,
+                    integrationId,
+                    incidentId,
+                    attentionRoute,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            if (suppression is not null)
+            {
+                await CreateSuppressedInstanceAsync(
+                    match,
+                    evaluationContext,
+                    envelope,
+                    incidentId,
+                    integrationId,
+                    dedupeKey: null,
+                    suppression,
+                    cancellationToken).ConfigureAwait(false);
+                return;
+            }
+        }
+
         if (kind == NotificationKinds.Reminder)
         {
             if (string.IsNullOrWhiteSpace(incidentId) || string.IsNullOrWhiteSpace(integrationId))
@@ -89,20 +129,10 @@ public sealed class NotificationInstanceCoordinator : INotificationInstanceCoord
                     integrationId,
                     incidentId,
                     observedAt,
+                    attentionRoute,
                     cancellationToken).ConfigureAwait(false))
             {
                 return;
-            }
-
-            if (string.Equals(
-                    match.DefinitionId,
-                    NotificationDefinitionIds.PlatformScheduleExpectedRunMissing,
-                    StringComparison.Ordinal))
-            {
-                var route = await _attentionRecipientResolver
-                    .ResolveAsync(new IntegrationId(integrationId), AttentionConditionKeys.ExpectedRunMissing, cancellationToken)
-                    .ConfigureAwait(false);
-                reminderInterval = route.ReminderInterval;
             }
         }
 
@@ -153,6 +183,159 @@ public sealed class NotificationInstanceCoordinator : INotificationInstanceCoord
             .ResolvePreviewAsync(match.DefinitionId, integrationId, cancellationToken)
             .ConfigureAwait(false);
 
+        if (isBuiltInExpectedRunMissing)
+        {
+            if (kind == NotificationKinds.Reminder && recipientPreview.Deliverable.Count == 0)
+                return;
+
+            if ((kind == NotificationKinds.Activation || kind == NotificationKinds.Resolved)
+                && recipientPreview.Deliverable.Count == 0)
+            {
+                await CreateSuppressedInstanceAsync(
+                    match,
+                    evaluationContext,
+                    envelope,
+                    incidentId,
+                    integrationId,
+                    dedupeKey,
+                    AttentionNotificationSuppressionReasons.NoRouteConfigured,
+                    cancellationToken,
+                    rendered,
+                    recipientPreview).ConfigureAwait(false);
+                return;
+            }
+        }
+
+        await CreateDeliverableInstanceAsync(
+            match,
+            envelope,
+            incidentId,
+            integrationId,
+            dedupeKey,
+            rendered,
+            renderContext,
+            recipientPreview,
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    private async ValueTask<string?> EvaluateBuiltInSuppressionAsync(
+        string kind,
+        string definitionId,
+        string integrationId,
+        string? incidentId,
+        AttentionRecipientResolution route,
+        CancellationToken cancellationToken)
+    {
+        if (kind is NotificationKinds.Activation or NotificationKinds.Resolved && !route.Enabled)
+            return AttentionNotificationSuppressionReasons.PolicyDisabled;
+
+        if (kind == NotificationKinds.Activation
+            && !string.IsNullOrWhiteSpace(incidentId)
+            && await _instances.HasNonSuppressedActivationInstanceAsync(incidentId, definitionId, cancellationToken)
+                .ConfigureAwait(false))
+        {
+            return AttentionNotificationSuppressionReasons.DuplicateActivationSuppressed;
+        }
+
+        if (kind == NotificationKinds.Resolved)
+        {
+            if (!route.SendResolvedNotification)
+                return AttentionNotificationSuppressionReasons.ResolvedNotificationDisabled;
+
+            if (string.IsNullOrWhiteSpace(incidentId))
+                return AttentionNotificationSuppressionReasons.NoPriorActivationForResolved;
+
+            if (!await _deliveryOutbox.HasPriorSuccessfulActivationAsync(incidentId, definitionId, cancellationToken)
+                    .ConfigureAwait(false))
+            {
+                return AttentionNotificationSuppressionReasons.NoPriorActivationForResolved;
+            }
+        }
+
+        return null;
+    }
+
+    private async ValueTask CreateSuppressedInstanceAsync(
+        NotificationMatchResult match,
+        NotificationRuleEvaluationContext evaluationContext,
+        PlatformEventEnvelope envelope,
+        string? incidentId,
+        string? integrationId,
+        string? dedupeKey,
+        string suppressionReason,
+        CancellationToken cancellationToken,
+        RenderedNotificationSnapshot? rendered = null,
+        NotificationRecipientResolutionPreview? recipientPreview = null)
+    {
+        dedupeKey ??= NotificationInstanceDedupeKeyBuilder.TryBuild(
+            match.DefinitionId,
+            match.NotificationKind!,
+            incidentId,
+            envelope.Id.Value,
+            evaluationContext.EvaluatedAtUtc,
+            reminderInterval: null);
+        if (string.IsNullOrWhiteSpace(dedupeKey))
+            return;
+
+        var subject = rendered?.Subject ?? string.Empty;
+        var summary = rendered?.Summary ?? string.Empty;
+        var bodyText = rendered?.BodyText ?? string.Empty;
+        var bodyHtml = rendered?.BodyHtml;
+        var templateHash = rendered?.TemplateVersionHash ?? "suppressed";
+        var renderContextJson = rendered is not null
+            ? SerializeRenderContext(_renderContextBuilder.Build(envelope, match.NotificationKind!, match.NotificationKind!))
+            : "{}";
+        var recipientSnapshotJson = recipientPreview is not null
+            ? SerializeRecipientSnapshot(recipientPreview)
+            : null;
+
+        var createResult = await _instances.TryCreateInstanceAsync(
+            new NotificationInstanceCreateCommand(
+                match.DefinitionId,
+                match.NotificationKind!,
+                NotificationInstanceStatuses.Suppressed,
+                envelope.Id.Value,
+                incidentId,
+                integrationId,
+                envelope.ModuleId,
+                envelope.RunId,
+                envelope.ScheduleId,
+                dedupeKey,
+                subject,
+                summary,
+                bodyText,
+                bodyHtml,
+                rendered?.ActionText,
+                rendered?.ActionUrl,
+                rendered?.ContentFields is null ? null : JsonSerializer.Serialize(rendered.ContentFields, JsonOptions),
+                templateHash,
+                renderContextJson,
+                recipientSnapshotJson,
+                suppressionReason),
+            cancellationToken).ConfigureAwait(false);
+
+        if (createResult.Created)
+        {
+            _logger.LogInformation(
+                "Suppressed notification instance {InstanceId} for definition {DefinitionId} kind {Kind} reason {Reason}.",
+                createResult.Instance.Id.Value,
+                match.DefinitionId,
+                match.NotificationKind,
+                suppressionReason);
+        }
+    }
+
+    private async ValueTask CreateDeliverableInstanceAsync(
+        NotificationMatchResult match,
+        PlatformEventEnvelope envelope,
+        string? incidentId,
+        string? integrationId,
+        string dedupeKey,
+        RenderedNotificationSnapshot rendered,
+        NotificationRenderContext renderContext,
+        NotificationRecipientResolutionPreview recipientPreview,
+        CancellationToken cancellationToken)
+    {
         var recipientSnapshotJson = SerializeRecipientSnapshot(recipientPreview);
         var renderContextJson = SerializeRenderContext(renderContext);
         var contentFieldsJson = rendered.ContentFields is null
@@ -162,7 +345,7 @@ public sealed class NotificationInstanceCoordinator : INotificationInstanceCoord
         var createResult = await _instances.TryCreateInstanceAsync(
             new NotificationInstanceCreateCommand(
                 match.DefinitionId,
-                kind,
+                match.NotificationKind!,
                 NotificationInstanceStatuses.Pending,
                 envelope.Id.Value,
                 incidentId,
@@ -205,7 +388,7 @@ public sealed class NotificationInstanceCoordinator : INotificationInstanceCoord
             "Notification instance {InstanceId} created for definition {DefinitionId} kind {Kind} with {OutboxCount} outbox rows.",
             createResult.Instance.Id.Value,
             match.DefinitionId,
-            kind,
+            match.NotificationKind,
             outboxRows.Count);
     }
 
@@ -214,6 +397,7 @@ public sealed class NotificationInstanceCoordinator : INotificationInstanceCoord
         string integrationId,
         string incidentId,
         DateTimeOffset observedAt,
+        AttentionRecipientResolution? cachedRoute,
         CancellationToken cancellationToken)
     {
         if (!string.Equals(
@@ -224,9 +408,10 @@ public sealed class NotificationInstanceCoordinator : INotificationInstanceCoord
             return true;
         }
 
-        var route = await _attentionRecipientResolver
-            .ResolveAsync(new IntegrationId(integrationId), AttentionConditionKeys.ExpectedRunMissing, cancellationToken)
-            .ConfigureAwait(false);
+        var route = cachedRoute
+                    ?? await _attentionRecipientResolver
+                        .ResolveAsync(new IntegrationId(integrationId), AttentionConditionKeys.ExpectedRunMissing, cancellationToken)
+                        .ConfigureAwait(false);
         if (!route.Enabled)
             return false;
 
@@ -242,10 +427,14 @@ public sealed class NotificationInstanceCoordinator : INotificationInstanceCoord
                 return false;
         }
 
-        var latest = await _instances
-            .GetLatestActivationOrReminderCreatedUtcAsync(incidentId, definitionId, cancellationToken)
+        // Reminder interval parity: latest successful outbox send (activation or reminder), matching Epic 69 ledger timing.
+        var latestSent = await _deliveryOutbox
+            .GetLatestSuccessfulActivationOrReminderSentUtcAsync(incidentId, definitionId, cancellationToken)
             .ConfigureAwait(false);
-        if (latest is not null && observedAt - latest.Value < interval)
+        if (latestSent is null)
+            return false;
+
+        if (observedAt - latestSent.Value < interval)
             return false;
 
         return true;

@@ -52,6 +52,7 @@ public sealed class NotificationEvaluateOnlyCoordinatorInstanceTests
                 new SqlNotificationDefinitionStore(db),
                 new OperationalTeamRecipientExpander(db)),
             new SqlNotificationInstanceStore(db),
+            new SqlNotificationDeliveryOutboxStore(db),
             new StubAttentionResolver(),
             new StubIncidentTracker(),
             new NoOpRedactionPolicy(),

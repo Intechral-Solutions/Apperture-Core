@@ -108,12 +108,20 @@ public sealed class SqlNotificationInstanceStore : INotificationInstanceStore
                 AttemptCount = 0,
                 NextAttemptAtUtc = null,
                 LastError = null,
+                SentAtUtc = null,
                 CreatedAtUtc = now,
                 UpdatedAtUtc = now,
             });
         }
 
-        await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (DbUpdateException ex) when (IsOutboxUniqueViolation(ex))
+        {
+            _db.ChangeTracker.Clear();
+        }
     }
 
     public async ValueTask<NotificationInstance?> GetByIdAsync(
@@ -159,6 +167,19 @@ public sealed class SqlNotificationInstanceStore : INotificationInstanceStore
         return rows.Select(ToOutboxDomain).ToList();
     }
 
+    public async ValueTask<bool> HasNonSuppressedActivationInstanceAsync(
+        string attentionIncidentId,
+        string notificationDefinitionId,
+        CancellationToken cancellationToken = default) =>
+        await _db.NotificationInstances.AsNoTracking()
+            .AnyAsync(
+                x => x.AttentionIncidentId == attentionIncidentId
+                     && x.NotificationDefinitionId == notificationDefinitionId
+                     && x.NotificationKind == NotificationKinds.Activation
+                     && x.Status != NotificationInstanceStatuses.Suppressed,
+                cancellationToken)
+            .ConfigureAwait(false);
+
     public async ValueTask<DateTimeOffset?> GetLatestActivationOrReminderCreatedUtcAsync(
         string attentionIncidentId,
         string notificationDefinitionId,
@@ -180,6 +201,12 @@ public sealed class SqlNotificationInstanceStore : INotificationInstanceStore
         ex.InnerException?.Message.Contains("IX_NotificationInstances", StringComparison.OrdinalIgnoreCase) == true
         || ex.InnerException?.Message.Contains(
             "NotificationDefinitionId",
+            StringComparison.OrdinalIgnoreCase) == true;
+
+    private static bool IsOutboxUniqueViolation(DbUpdateException ex) =>
+        ex.InnerException?.Message.Contains("IX_NotificationDeliveryOutbox", StringComparison.OrdinalIgnoreCase) == true
+        || ex.InnerException?.Message.Contains(
+            "NotificationInstanceId",
             StringComparison.OrdinalIgnoreCase) == true;
 
     private static NotificationInstance ToDomain(NotificationInstanceEntity e) =>
@@ -222,6 +249,7 @@ public sealed class SqlNotificationInstanceStore : INotificationInstanceStore
             e.AttemptCount,
             e.NextAttemptAtUtc,
             e.LastError,
+            e.SentAtUtc,
             e.CreatedAtUtc,
             e.UpdatedAtUtc);
 }

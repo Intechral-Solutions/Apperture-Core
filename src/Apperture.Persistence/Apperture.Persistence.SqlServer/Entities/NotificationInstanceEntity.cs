@@ -41,6 +41,7 @@ public sealed class NotificationDeliveryOutboxEntity
     public int AttemptCount { get; set; }
     public DateTimeOffset? NextAttemptAtUtc { get; set; }
     public string? LastError { get; set; }
+    public DateTimeOffset? SentAtUtc { get; set; }
     public DateTimeOffset CreatedAtUtc { get; set; }
     public DateTimeOffset UpdatedAtUtc { get; set; }
 }

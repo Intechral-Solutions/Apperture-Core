@@ -128,5 +128,6 @@ public sealed class NotificationInstancesController : ControllerBase
             o.AttemptCount,
             o.NextAttemptAtUtc,
             o.LastError,
+            o.SentAtUtc,
             o.CreatedAtUtc);
 }

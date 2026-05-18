@@ -1,4 +1,5 @@
 using Apperture.Core.Application.Notifications;
+using Apperture.Core.Application.Notifications.Delivery;
 using Apperture.Core.Application.Notifications.Instances;
 using Apperture.Core.Application.Notifications.Subscriptions;
 using Apperture.Core.Application.PlatformEvents;
@@ -43,8 +44,12 @@ public static class NotificationsServiceCollectionExtensions
         services.AddScoped<INotificationDefinitionService, NotificationDefinitionService>();
         services.AddScoped<INotificationSubscriptionService, NotificationSubscriptionService>();
         services.AddScoped<INotificationInstanceStore, SqlNotificationInstanceStore>();
+        services.AddScoped<INotificationDeliveryOutboxStore, SqlNotificationDeliveryOutboxStore>();
         services.AddScoped<INotificationInstanceCoordinator, NotificationInstanceCoordinator>();
         services.AddScoped<INotificationInstanceQueryService, NotificationInstanceQueryService>();
+        services.AddScoped<IEmailNotificationChannel, SmtpEmailNotificationChannel>();
+        services.AddScoped<NotificationDispatchProcessor>();
+        services.AddHostedService<NotificationDispatchHostedService>();
 
         services.AddScoped<SqlPlatformEventStore>();
         services.AddScoped<IPlatformEventStore, EvaluatingPlatformEventStore>();

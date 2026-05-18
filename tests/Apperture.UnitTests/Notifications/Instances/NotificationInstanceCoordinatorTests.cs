@@ -1,6 +1,7 @@
 using Apperture.Core.Application.Integration;
 using Apperture.Core.Application.Notifications;
 using Apperture.Core.Application.Scheduling;
+using Apperture.Core.Application.Notifications.Delivery;
 using Apperture.Core.Application.Notifications.Instances;
 using Apperture.Core.Application.Notifications.Subscriptions;
 using Apperture.Core.Application.PlatformEvents;
@@ -56,6 +57,7 @@ public sealed class NotificationInstanceCoordinatorTests
         IAttentionIncidentTracker? incidentTracker = null)
     {
         var instanceStore = new SqlNotificationInstanceStore(db);
+        var deliveryOutbox = new SqlNotificationDeliveryOutboxStore(db);
         var definitionStore = new SqlNotificationDefinitionStore(db);
         var subscriptionStore = new SqlNotificationSubscriptionStore(db);
         var teamExpander = new OperationalTeamRecipientExpander(db);
@@ -71,6 +73,7 @@ public sealed class NotificationInstanceCoordinatorTests
             new NotificationTemplateRenderer(),
             recipientResolver,
             instanceStore,
+            deliveryOutbox,
             attentionResolver ?? new StubAttentionRecipientResolver(),
             incidentTracker ?? new StubIncidentTracker(),
             new NoOpRedactionPolicy(),
@@ -297,7 +300,7 @@ public sealed class NotificationInstanceCoordinatorTests
         (await db.NotificationDeliveryOutbox.CountAsync()).Should().Be(1);
     }
 
-    private sealed class StubAttentionRecipientResolver : IAttentionRecipientResolver
+    internal sealed class StubAttentionRecipientResolver : IAttentionRecipientResolver
     {
         private readonly TimeSpan? _interval;
         private readonly bool _suppressWhenAck;
@@ -346,7 +349,7 @@ public sealed class NotificationInstanceCoordinatorTests
                     null));
     }
 
-    private sealed class StubIncidentTracker : IAttentionIncidentTracker
+    internal sealed class StubIncidentTracker : IAttentionIncidentTracker
     {
         private readonly bool _acknowledged;
 

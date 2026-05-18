@@ -29,6 +29,11 @@ public interface INotificationInstanceStore
         string attentionIncidentId,
         string notificationDefinitionId,
         CancellationToken cancellationToken = default);
+
+    ValueTask<bool> HasNonSuppressedActivationInstanceAsync(
+        string attentionIncidentId,
+        string notificationDefinitionId,
+        CancellationToken cancellationToken = default);
 }
 
 public sealed record NotificationInstanceCreateResult(
