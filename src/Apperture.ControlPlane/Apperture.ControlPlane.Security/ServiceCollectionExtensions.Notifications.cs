@@ -53,6 +53,7 @@ public static class NotificationsServiceCollectionExtensions
         services.AddScoped<IEmailNotificationChannel, SmtpEmailNotificationChannel>();
         services.AddScoped<NotificationDispatchProcessor>();
         services.AddHostedService<NotificationDispatchHostedService>();
+        services.AddHostedService<NotificationConfigurationSafetyHostedService>();
 
         services.AddScoped<SqlPlatformEventStore>();
         services.AddScoped<IPlatformEventStore, EvaluatingPlatformEventStore>();

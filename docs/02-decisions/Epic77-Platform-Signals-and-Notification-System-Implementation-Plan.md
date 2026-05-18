@@ -332,6 +332,8 @@ Migrate Epic 69 behavior into definition id `platform.schedule.expected_run_miss
 3. Feature flag `Notifications:UsePlatformPipeline`
 4. Disable orchestrator; read legacy for history only
 
+**Operator runbook (Phase 6B.2):** [epic77-expected-run-missing-notification-cutover-runbook.md](../03-operations/epic77-expected-run-missing-notification-cutover-runbook.md) — enablement order, rollback, diagnostics APIs, configuration safety warnings, parity acceptance endpoint.
+
 ### 6.4 Tests
 
 - Orchestrator parity tests (existing `AttentionIncidentNotificationOrchestratorTests` → platform)

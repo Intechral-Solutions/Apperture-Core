@@ -24,4 +24,11 @@ public interface INotificationDeliveryDiagnosticsService
         string? attentionIncidentId,
         int take,
         CancellationToken cancellationToken = default);
+
+    ValueTask<ExpectedRunMissingParityAcceptanceSummary?> GetExpectedRunMissingParityAcceptanceAsync(
+        string integrationId,
+        string? attentionIncidentId,
+        int maxIncidents,
+        int takePerIncident,
+        CancellationToken cancellationToken = default);
 }

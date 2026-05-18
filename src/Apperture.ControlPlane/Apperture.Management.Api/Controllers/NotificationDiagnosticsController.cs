@@ -79,6 +79,34 @@ public sealed class NotificationDiagnosticsController : ControllerBase
         }
     }
 
+    [HttpGet("expected-run-missing/parity-acceptance")]
+    [ProducesResponseType(typeof(ExpectedRunMissingParityAcceptanceSummaryDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<ExpectedRunMissingParityAcceptanceSummaryDto>> GetExpectedRunMissingParityAcceptance(
+        [FromQuery] string integrationId,
+        [FromQuery] string? attentionIncidentId,
+        [FromQuery] int maxIncidents = 10,
+        [FromQuery] int takePerIncident = 50,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var row = await _diagnostics
+                .GetExpectedRunMissingParityAcceptanceAsync(
+                    integrationId,
+                    attentionIncidentId,
+                    maxIncidents,
+                    takePerIncident,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            return row is null ? NotFound() : Ok(ToAcceptanceDto(row));
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return Forbid();
+        }
+    }
+
     [HttpGet("expected-run-missing/parity")]
     [ProducesResponseType(typeof(ExpectedRunMissingParityDiagnosticsDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
@@ -187,6 +215,31 @@ public sealed class NotificationDiagnosticsController : ControllerBase
             o.SentAtUtc,
             o.CreatedAtUtc,
             o.UpdatedAtUtc);
+
+    private static ExpectedRunMissingParityAcceptanceSummaryDto ToAcceptanceDto(
+        ExpectedRunMissingParityAcceptanceSummary s) =>
+        new(
+            s.IntegrationId,
+            s.IncidentsEvaluated,
+            s.KindComparisonsTotal,
+            s.KindsAligned,
+            s.KindsMissingInPlatform,
+            s.KindsExtraInPlatform,
+            s.KindsStatusMismatch,
+            s.KindsDeliveryFailedInPlatform,
+            s.KindsDeliverySucceededInPlatform,
+            s.KindsSuppressedEpic69Only,
+            s.KindsSuppressedPlatformOnly,
+            s.RecipientComparisonsTotal,
+            s.RecipientsAligned,
+            s.RecipientsMissingInPlatform,
+            s.RecipientsExtraInPlatform,
+            s.RecipientsDeliveryFailedInPlatform,
+            s.RecipientsPendingInPlatform,
+            s.BlockingFindings,
+            s.NonBlockingFindings,
+            s.LooksAcceptableForCutover,
+            s.GeneratedAtUtc);
 
     private static Epic69NotificationDiagnosticDto ToEpic69Dto(Epic69NotificationDiagnosticRow n) =>
         new(

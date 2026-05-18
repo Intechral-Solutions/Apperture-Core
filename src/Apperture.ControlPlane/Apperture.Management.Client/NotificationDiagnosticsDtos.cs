@@ -87,6 +87,29 @@ public sealed record ExpectedRunMissingParityDiagnosticsDto(
     IReadOnlyList<Epic69NotificationDiagnosticDto> Epic69LedgerRows,
     DateTimeOffset GeneratedAtUtc);
 
+public sealed record ExpectedRunMissingParityAcceptanceSummaryDto(
+    string IntegrationId,
+    int IncidentsEvaluated,
+    int KindComparisonsTotal,
+    int KindsAligned,
+    int KindsMissingInPlatform,
+    int KindsExtraInPlatform,
+    int KindsStatusMismatch,
+    int KindsDeliveryFailedInPlatform,
+    int KindsDeliverySucceededInPlatform,
+    int KindsSuppressedEpic69Only,
+    int KindsSuppressedPlatformOnly,
+    int RecipientComparisonsTotal,
+    int RecipientsAligned,
+    int RecipientsMissingInPlatform,
+    int RecipientsExtraInPlatform,
+    int RecipientsDeliveryFailedInPlatform,
+    int RecipientsPendingInPlatform,
+    IReadOnlyList<string> BlockingFindings,
+    IReadOnlyList<string> NonBlockingFindings,
+    bool LooksAcceptableForCutover,
+    DateTimeOffset GeneratedAtUtc);
+
 public sealed record Epic69NotificationDiagnosticDto(
     string Id,
     string AttentionIncidentId,

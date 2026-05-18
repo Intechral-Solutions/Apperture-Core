@@ -116,6 +116,82 @@ public sealed class NotificationDeliveryDiagnosticsService : INotificationDelive
             _time.GetUtcNow());
     }
 
+    public async ValueTask<ExpectedRunMissingParityAcceptanceSummary?> GetExpectedRunMissingParityAcceptanceAsync(
+        string integrationId,
+        string? attentionIncidentId,
+        int maxIncidents,
+        int takePerIncident,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(integrationId))
+            return null;
+
+        await _authorization.RequireIntegrationReadAsync(integrationId, cancellationToken).ConfigureAwait(false);
+
+        var parityResults = new List<ExpectedRunMissingParityDiagnostics>();
+        if (!string.IsNullOrWhiteSpace(attentionIncidentId))
+        {
+            var single = await GetExpectedRunMissingParityAsync(
+                    integrationId,
+                    attentionIncidentId,
+                    takePerIncident,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            if (single is not null)
+                parityResults.Add(single);
+        }
+        else
+        {
+            var incidentIds = await ResolveIncidentIdsForAcceptanceAsync(
+                    integrationId,
+                    maxIncidents,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            foreach (var incidentId in incidentIds)
+            {
+                var parity = await GetExpectedRunMissingParityAsync(
+                        integrationId,
+                        incidentId,
+                        takePerIncident,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+                if (parity is not null)
+                    parityResults.Add(parity);
+            }
+        }
+
+        if (parityResults.Count == 0)
+            return null;
+
+        return ExpectedRunMissingParityAcceptanceEvaluator.Summarize(
+            integrationId,
+            parityResults,
+            _time.GetUtcNow());
+    }
+
+    private async ValueTask<IReadOnlyList<string>> ResolveIncidentIdsForAcceptanceAsync(
+        string integrationId,
+        int maxIncidents,
+        CancellationToken cancellationToken)
+    {
+        var take = Math.Clamp(maxIncidents, 1, 50);
+        var diag = await _store.GetByIntegrationAsync(
+                integrationId,
+                NotificationDefinitionIds.PlatformScheduleExpectedRunMissing,
+                take: 100,
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        return diag.RecentInstances
+            .Select(i => i.AttentionIncidentId)
+            .Concat(diag.RecentOutboxRows.Select(o => o.AttentionIncidentId))
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Select(id => id!)
+            .Distinct(StringComparer.Ordinal)
+            .Take(take)
+            .ToList();
+    }
+
     private async ValueTask<string?> ResolveLatestIncidentIdAsync(
         string integrationId,
         CancellationToken cancellationToken)
