@@ -73,7 +73,7 @@
     }
     else if (!string.IsNullOrEmpty(_actionMessage))
     {
-        <PageMessage Kind="PageMessageKind.Info" Title="Action" Message="@_actionMessage" />
+        <ActionFeedback Message="@_actionMessage" />
     }
     else if (_detail is null)
     {

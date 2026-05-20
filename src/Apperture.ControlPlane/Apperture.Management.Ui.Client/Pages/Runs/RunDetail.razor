@@ -64,16 +64,14 @@
     {
         @if (!string.IsNullOrEmpty(_actionMessage))
         {
-            <PageMessage Kind="PageMessageKind.Info"
-                         Title="Action"
-                         Message="@_actionMessage">
+            <ActionFeedback Message="@_actionMessage">
                 @if (!string.IsNullOrEmpty(_newRunId))
                 {
                     <div class="mt-2">
                         <DrillInLink Href="@($"/runs/{_newRunId}")">Open new run: @_newRunId</DrillInLink>
                     </div>
                 }
-            </PageMessage>
+            </ActionFeedback>
         }
 
         <RunSummaryBand Detail="@_detail"

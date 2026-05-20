@@ -138,3 +138,5 @@ Recorded at implementation time:
 ## Recommended next epic
 
 **Async operation shell (tentative Epic 88+):** Start with Run Detail, Schedule Detail, and Blocked Work cooperative commands; adopt a shared operation banner/history model without breaking `_actionMessage` eligibility semantics or 403/409 copy.
+
+**Implemented:** [Epic 88 — Cooperative action feedback shell pilot](Epic88-Cooperative-Action-Feedback-Shell-Pilot.md) (`ActionFeedback` on Run Detail and Schedule Detail). Next: blocked-work adoption and operation history when backend contracts exist.

@@ -19,7 +19,7 @@ Related shell documentation: [control-panel-ui.md](control-panel-ui.md).
 | Summary / detail / advanced layers | `ManagementSection`, `ManagementSummaryCard`, `ManagementAdvancedSection` |
 | Permission / empty / error states | `PageMessage` + thin wrappers (`LoadingState`, `EmptyState`, …) |
 | Drill-in rules | `DrillInLink`; URLs still built with `Epic33UiDisplayHelpers` |
-| Pilot pages | `/config` hub proof; Integration Detail ([Epic 80](../../02-decisions/Epic80-Integration-Detail-Redesign-Pilot.md)); Run Detail ([Epic 81](../../02-decisions/Epic81-Run-Detail-Redesign-Pilot.md)); Control Center ([Epic 82](../../02-decisions/Epic82-Control-Center-Redesign-Pilot.md)); Schedules ([Epic 83](../../02-decisions/Epic83-Schedules-List-Detail-Redesign-Pilot.md)); Notification Definition Authoring ([Epic 84](../../02-decisions/Epic84-Notification-Definition-Authoring-Redesign-Pilot.md)); consolidation guidance ([Epic 85](../../02-decisions/Epic85-Management-UI-Pilot-Consolidation.md)); broader state-branch consistency sweep ([Epic 86](../../02-decisions/Epic86-Management-UI-State-Branch-Consistency-Sweep.md)); action surface and operation feedback groundwork ([Epic 87](../../02-decisions/Epic87-Management-UI-Action-Surface-and-Operation-Feedback-Groundwork.md)); other pilots per Epic 78 |
+| Pilot pages | `/config` hub proof; Integration Detail ([Epic 80](../../02-decisions/Epic80-Integration-Detail-Redesign-Pilot.md)); Run Detail ([Epic 81](../../02-decisions/Epic81-Run-Detail-Redesign-Pilot.md)); Control Center ([Epic 82](../../02-decisions/Epic82-Control-Center-Redesign-Pilot.md)); Schedules ([Epic 83](../../02-decisions/Epic83-Schedules-List-Detail-Redesign-Pilot.md)); Notification Definition Authoring ([Epic 84](../../02-decisions/Epic84-Notification-Definition-Authoring-Redesign-Pilot.md)); consolidation guidance ([Epic 85](../../02-decisions/Epic85-Management-UI-Pilot-Consolidation.md)); state-branch consistency sweep ([Epic 86](../../02-decisions/Epic86-Management-UI-State-Branch-Consistency-Sweep.md)); action surface groundwork ([Epic 87](../../02-decisions/Epic87-Management-UI-Action-Surface-and-Operation-Feedback-Groundwork.md)); cooperative action feedback shell ([Epic 88](../../02-decisions/Epic88-Cooperative-Action-Feedback-Shell-Pilot.md)); other pilots per Epic 78 |
 
 ## Design principles
 
@@ -34,7 +34,7 @@ Related shell documentation: [control-panel-ui.md](control-panel-ui.md).
 | Category | Location | Role |
 |----------|----------|------|
 | **Atoms** | `Atoms/` | `StatusPill`, `AttentionPill`, `DrillInLink`, `ActionButton`, logo |
-| **Molecules** | `Molecules/` | `ManagementSummaryCard`, `ManagementAdvancedSection`, page-state wrappers |
+| **Molecules** | `Molecules/` | `ManagementSummaryCard`, `ManagementAdvancedSection`, page-state wrappers, `ActionFeedback` |
 | **Organisms** | `Organisms/` | `PageHeader`, `PageMessage`, `ManagementSection`, shell, notification forms |
 | **Semantics** | `Apperture.Management.Ui.Shared` | `ManagementUiSemantics`, `Epic33UiDisplayHelpers` (truth/links) |
 
@@ -55,6 +55,7 @@ Related shell documentation: [control-panel-ui.md](control-panel-ui.md).
 | `AttentionPill` | Summary | Dashboard attention tokens (`Critical`, `Warning`, `Info`) |
 | `DrillInLink` | Detail | Underlined drill-in with `ui-drill-in-link` class |
 | `LoadingState` / `EmptyState` / `ForbiddenState` / `ErrorState` | Any | Thin aliases over `PageMessage` for consistent defaults |
+| `ActionFeedback` | Detail (below header) | Cooperative/user-triggered action result banner (Epic 88); defaults Title “Action”, Kind Info |
 
 ## Layout primitives and Epic 78 layers
 
@@ -138,7 +139,7 @@ Epic 87 inventories action and operation-feedback patterns across pilot and repr
 | **Local UI** | Change view state only | Immediate control state (expanded, editing, wizard step) | Schedule Detail Edit mode; Integration wizard step select; Run Detail Poll checkbox |
 | **Form submit/save** | Persist configuration | **Inline** `PageMessage` Error on failure; navigate or stay on success per existing flow | Sign-in policy save (`_saveError`); Entra tenant forms (`_formError`); notification authoring Save |
 | **Immediate command** | Short API call, result known quickly | Toast **or** inline `PageMessage` **or** `ActionButton` success/error state | Connection test/create (`ActionButton`); governance role assign (toast) |
-| **Async/cooperative command** | Work may continue after click; eligibility matters | **Page-level** `PageMessage` Info “Action” banner **or** toast; preserve domain-specific copy | Run Detail cancel/retry/park/resume (`_actionMessage` + optional new-run link); Schedule Detail trigger/enable (`_actionMessage`); Blocked Work recovery |
+| **Async/cooperative command** | Work may continue after click; eligibility matters | **`ActionFeedback`** at page top (below header) **or** toast on dense hubs; preserve domain copy | Run Detail cancel/retry/park/resume; Schedule Detail enable/disable/trigger; Blocked Work (deferred) |
 | **Destructive command** | Irreversible or high-impact change | Existing **confirm** + toast or reload; warning styling on control | Integration Delete (`ConfirmDeleteAsync` + toast); Connection Retire; role permission replace warning |
 | **Refresh/reload** | Reload page data | Usually none; loading state on page/section | Nearly all pilot `PageHeader` Refresh buttons |
 | **Remediation / action-needed** | Jump to fix or diagnostic | Link visible in summary when blocking | Integration readiness blockers; notification “no deliverable recipients” attention |
@@ -150,11 +151,30 @@ Epic 87 inventories action and operation-feedback patterns across pilot and repr
 |---------------|-------------------|----------------|
 | **Form validation** | Field labels, validation lists under form, `ErrorState` **ChildContent** for server validation lists (Schedule Detail) | Whole-page `ErrorState` for field-level validation |
 | **Form save failure** | `PageMessage` Error **adjacent to form actions** | `ForbiddenState` |
-| **Cooperative command result** | `PageMessage` Info with Title “Action” at **page top** (below header), optional `DrillInLink` in `ChildContent` | Toasts alone when operator must correlate with run/schedule state |
+| **Cooperative command result** | **`ActionFeedback`** at **page top** (below header), optional `ChildContent` / `DrillInLink` | Toasts alone when operator must correlate with run/schedule state; `ErrorState` for load failures |
 | **Transient success on dense forms** | `IToastService` | Replacing persistent action banners on Run/Schedule detail |
 | **Section binding / in-flow errors** | `PageMessage` Warning in the **same section** as the control | Page-level error that hides the form |
 | **Load failure** | `ErrorState` / `LoadingState` / `ForbiddenState` / `EmptyState` (Epic 86) | Action result messaging |
-| **Future operation shell** | Reserved for long-running operations with history | Not implemented; do not simulate with new components |
+| **Future operation history shell** | Extend **`ActionFeedback`** or add history UI when backend contracts exist | Operation IDs, persistence, global registry |
+
+### `ActionFeedback` (Epic 88)
+
+Thin presentation shell over **`PageMessage`** for **user-triggered cooperative action results**. Not an operation tracker, registry, or global service.
+
+| Parameter | Default | Use |
+|-----------|---------|-----|
+| `Kind` | `PageMessageKind.Info` | Map to Info/Success/Warning/Error when page semantics require distinct styling; Run/Schedule pilots keep **Info** for all outcomes including 403/409 |
+| `Title` | `"Action"` | Banner heading |
+| `Message` | (required) | Operator-facing result copy from page-local `_actionMessage` |
+| `ChildContent` | — | Optional drill-in (e.g. new run link after retry) |
+
+**Use `ActionFeedback` for:** run cancel/retry/park/resume results; schedule enable/disable/trigger results; future blocked-work cooperative banners when adopted.
+
+**Use `PageMessage` directly for:** static warnings, form save errors, section binding errors, load/empty/forbidden branches (Epic 86 wrappers), diagnostic notices.
+
+**Proof surfaces:** [Run Detail](../../02-decisions/Epic81-Run-Detail-Redesign-Pilot.md) (`/runs/{RunId}`), [Schedule Detail](../../02-decisions/Epic83-Schedules-List-Detail-Redesign-Pilot.md) (`/schedules/{ScheduleId}`).
+
+See [Epic 88 — Cooperative action feedback shell pilot](../02-decisions/Epic88-Cooperative-Action-Feedback-Shell-Pilot.md).
 
 ### `ActionButton` usage
 
@@ -177,8 +197,8 @@ Document for a **future async operation shell** epic (not implemented here):
 
 | Area | Actions | Current feedback |
 |------|---------|------------------|
-| **Run Detail** | Cancel, retry, park, resume | `_actionMessage` + poll; new-run `DrillInLink` on retry |
-| **Schedule Detail** | Enable, disable, trigger run cycle | `_actionMessage` Info banner |
+| **Run Detail** | Cancel, retry, park, resume | `ActionFeedback` + poll; new-run `DrillInLink` in ChildContent on retry |
+| **Schedule Detail** | Enable, disable, trigger run cycle | `ActionFeedback` |
 | **Blocked Work** | Trigger run cycle, per-run retry | `_actionMessage` Info + table actions |
 | **Integration Detail** | Launch procedure, activate/deactivate, binding CRUD, schedule create | Toasts + section warnings |
 | **Connection Detail** | Test connection | `ActionButton` states |
@@ -194,14 +214,14 @@ Document for a **future async operation shell** epic (not implemented here):
 
 ### Future operation shell readiness
 
-When an operation shell epic lands, it should:
+Epic 88 introduced **`ActionFeedback`** as the first reusable **presentation** layer for cooperative results. A future **operation history** epic may add persistence and history UI; until then:
 
-1. Reuse **`PageMessage` Info “Action”** semantics and **`ActionButton`** state machine as prior art.
-2. Absorb **long-running** cooperative commands first (runs, schedules, blocked work, procedure launch).
-3. Leave **navigation**, **local UI**, and **form validation** outside the shell.
-4. Preserve **permission omission** and **403/409** messaging contracts from Run Detail and Schedule Detail.
+1. Keep action copy and eligibility logic **page-local** (`_actionMessage`, handlers unchanged).
+2. Reuse **`ActionFeedback`** + **`ActionButton`** prior art before adding global services.
+3. Absorb **long-running** cooperative commands next (blocked work, integration launch) only when feedback semantics match.
+4. Preserve **403/409** messaging contracts from Run Detail and Schedule Detail.
 
-See [Epic 87 — Action surface and operation feedback groundwork](../02-decisions/Epic87-Management-UI-Action-Surface-and-Operation-Feedback-Groundwork.md).
+See [Epic 87](../02-decisions/Epic87-Management-UI-Action-Surface-and-Operation-Feedback-Groundwork.md) and [Epic 88](../02-decisions/Epic88-Cooperative-Action-Feedback-Shell-Pilot.md).
 
 ## Drill-in conventions
 
@@ -239,7 +259,7 @@ See [Epic 87 — Action surface and operation feedback groundwork](../02-decisio
 
 The pilot stack is now ready for these follow-on epics, but none are implemented by the design-system itself:
 
-- **Async operation shell:** build on `PageMessage` Info “Action” banners (Run Detail, Schedule Detail, Blocked Work), `ActionButton` (connections), and toast patterns (Integration Detail); see [Epic 87](../../02-decisions/Epic87-Management-UI-Action-Surface-and-Operation-Feedback-Groundwork.md) for inventoried candidates — avoid a global shell until operation lifecycle contracts are standardized.
+- **Async operation shell:** `ActionFeedback` (Epic 88) on Run/Schedule detail; extend to blocked work and integration mutations when equivalent; operation **history** and backend tracking remain deferred — see [Epic 88](../../02-decisions/Epic88-Cooperative-Action-Feedback-Shell-Pilot.md).
 - **Schema-driven forms:** evolve `ProcedureParameterForm` only when execution-start and dense authoring surfaces share a stable metadata contract.
 - **Module dashboards:** reuse `ManagementSummaryCard` posture and permission omission from dashboard/card patterns; keep module-owned UI in module assemblies.
 - **Operational stats/charts:** add as summary-layer artifacts only when APIs provide truthful aggregates and drill-in contracts.

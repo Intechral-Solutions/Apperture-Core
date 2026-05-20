@@ -31,3 +31,4 @@ Architecture decision records (ADRs) live in [docs/02-decisions/](../../docs/02-
 | [Epic 85](../../docs/02-decisions/Epic85-Management-UI-Pilot-Consolidation.md) | Pilot consolidation and design-system hardening (Epics 80–84 learnings) |
 | [Epic 86](../../docs/02-decisions/Epic86-Management-UI-State-Branch-Consistency-Sweep.md) | Management UI state branch consistency sweep (non-pilot pages; primitives only) |
 | [Epic 87](../../docs/02-decisions/Epic87-Management-UI-Action-Surface-and-Operation-Feedback-Groundwork.md) | Action surface and operation feedback groundwork (inventory + guidance; no operation shell) |
+| [Epic 88](../../docs/02-decisions/Epic88-Cooperative-Action-Feedback-Shell-Pilot.md) | Cooperative action feedback shell pilot (`ActionFeedback`; Run + Schedule detail) |
