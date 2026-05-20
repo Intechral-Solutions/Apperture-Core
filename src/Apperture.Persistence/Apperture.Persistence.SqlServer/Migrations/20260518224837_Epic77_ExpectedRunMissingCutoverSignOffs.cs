@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
@@ -44,7 +44,8 @@ namespace Apperture.Persistence.SqlServer.Migrations
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.DropTable(name: "ExpectedRunMissingCutoverSignOffs");
+            migrationBuilder.DropTable(
+                name: "ExpectedRunMissingCutoverSignOffs");
         }
     }
 }
