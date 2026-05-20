@@ -19,7 +19,7 @@ Related shell documentation: [control-panel-ui.md](control-panel-ui.md).
 | Summary / detail / advanced layers | `ManagementSection`, `ManagementSummaryCard`, `ManagementAdvancedSection` |
 | Permission / empty / error states | `PageMessage` + thin wrappers (`LoadingState`, `EmptyState`, …) |
 | Drill-in rules | `DrillInLink`; URLs still built with `Epic33UiDisplayHelpers` |
-| Pilot pages | `/config` hub proof; Integration Detail ([Epic 80](../../02-decisions/Epic80-Integration-Detail-Redesign-Pilot.md)); Run Detail ([Epic 81](../../02-decisions/Epic81-Run-Detail-Redesign-Pilot.md)); Control Center ([Epic 82](../../02-decisions/Epic82-Control-Center-Redesign-Pilot.md)); Schedules ([Epic 83](../../02-decisions/Epic83-Schedules-List-Detail-Redesign-Pilot.md)); Notification Definition Authoring ([Epic 84](../../02-decisions/Epic84-Notification-Definition-Authoring-Redesign-Pilot.md)); other pilots per Epic 78 |
+| Pilot pages | `/config` hub proof; Integration Detail ([Epic 80](../../02-decisions/Epic80-Integration-Detail-Redesign-Pilot.md)); Run Detail ([Epic 81](../../02-decisions/Epic81-Run-Detail-Redesign-Pilot.md)); Control Center ([Epic 82](../../02-decisions/Epic82-Control-Center-Redesign-Pilot.md)); Schedules ([Epic 83](../../02-decisions/Epic83-Schedules-List-Detail-Redesign-Pilot.md)); Notification Definition Authoring ([Epic 84](../../02-decisions/Epic84-Notification-Definition-Authoring-Redesign-Pilot.md)); consolidation guidance ([Epic 85](../../02-decisions/Epic85-Management-UI-Pilot-Consolidation.md)); other pilots per Epic 78 |
 
 ## Design principles
 
@@ -119,6 +119,41 @@ Use **`PageMessage`** directly or the wrappers:
 - Present links with **`DrillInLink`** or `class="ui-drill-in-link"`.
 - Label destination explicitly (“View blocked work”, not “Click here”).
 - Omit link when filter unsupported or permission missing.
+- For clickable table rows, keep inner “Open” links as plain anchors with `class="ui-drill-in-link"` and `@onclick:stopPropagation`; `DrillInLink` does not expose event-modifier attributes.
+
+## Proven archetypes from pilots
+
+| Archetype | Pilot proof | Recommended pattern |
+|-----------|-------------|---------------------|
+| **Entity hub** | Integration Detail (Epic 80) | `PageHeader` + summary pills/cards + grouped `ManagementSection` blocks + one advanced section for ids/lineage/diagnostics |
+| **Execution detail** | Run Detail (Epic 81) | Summary band + actionability-first detail sections + advanced technical records/protocol payloads |
+| **Operational console** | Control Center (Epic 82) | Summary section with posture pills/cards + separate operational concerns and activity sections + advanced evidence |
+| **List/detail pair** | Schedules (Epic 83) | List summary + operational table + advanced caveats; detail summary + routine config + advanced identifiers |
+| **Dense authoring surface** | Notification definitions (Epic 84) | Summary orientation + one operational authoring section + advanced raw payloads |
+
+## Consolidated pilot patterns (Epic 85)
+
+- **Summary card layout:** use `ui-summary-card-grid` for repeated 3-up summary card regions; add `ui-summary-card-grid--wide` only when four cards are required.
+- **Status semantics:** keep shared status mapping in `ManagementUiSemantics` for cross-page lifecycle strings; keep domain-only interpretations local to the page.
+- **State wrappers:** use `LoadingState` / `EmptyState` / `ForbiddenState` / `ErrorState` for standard page states; use `PageMessage` directly for contextual informational/warning banners inside a loaded page.
+- **Advanced posture:** collapse raw ids, verbose payloads, and low-frequency diagnostics in `ManagementAdvancedSection`; keep actionable operational blockers visible in detail layers.
+
+## What not to abstract yet
+
+- Do not introduce a generic “summary band” component spanning integrations, runs, control center, schedules, and notifications.
+- Do not centralize page-specific status/token interpretation that depends on route/domain semantics.
+- Do not create a schema-driven authoring abstraction for notification rule/template surfaces in this phase.
+- Do not add a generic operation-history shell or wizard framework without a dedicated epic.
+
+## Future-epic readiness
+
+The pilot stack is now ready for these follow-on epics, but none are implemented by the design-system itself:
+
+- **Async operation shell:** build on `PageMessage` and `ActionButton` patterns from Run Detail/Control Center; avoid a global shell until operation lifecycle contracts are standardized.
+- **Schema-driven forms:** evolve `ProcedureParameterForm` only when execution-start and dense authoring surfaces share a stable metadata contract.
+- **Module dashboards:** reuse `ManagementSummaryCard` posture and permission omission from dashboard/card patterns; keep module-owned UI in module assemblies.
+- **Operational stats/charts:** add as summary-layer artifacts only when APIs provide truthful aggregates and drill-in contracts.
+- **Calendar/temporal context:** extend list/detail filtering conventions only when schedule/audit APIs expose explicit temporal query contracts.
 
 ## Accessibility and responsiveness
 
@@ -143,7 +178,7 @@ Do not add one-off hex colors in Razor; extend semantic tokens in `app.css` when
 - **Module UI projects** — Keep module-specific UI in module `.Ui` assemblies; shared primitives stay in Management.Ui.Client.
 - **`IOperatorCapabilitiesService`** — Gate sections before rendering forbidden states.
 - **Toasts** — Transient feedback on long forms (`IToastService`); not a substitute for `PageMessage`.
-- **Epic 80+ pilots** — control center ([Epic 82](../../02-decisions/Epic82-Control-Center-Redesign-Pilot.md)), run detail ([Epic 81](../../02-decisions/Epic81-Run-Detail-Redesign-Pilot.md)), integration detail ([Epic 80](../../02-decisions/Epic80-Integration-Detail-Redesign-Pilot.md)), schedules ([Epic 83](../../02-decisions/Epic83-Schedules-List-Detail-Redesign-Pilot.md)), notification definition authoring ([Epic 84](../../02-decisions/Epic84-Notification-Definition-Authoring-Redesign-Pilot.md)), and others per Epic 78 §9.
+- **Epic 80+ pilots** — control center ([Epic 82](../../02-decisions/Epic82-Control-Center-Redesign-Pilot.md)), run detail ([Epic 81](../../02-decisions/Epic81-Run-Detail-Redesign-Pilot.md)), integration detail ([Epic 80](../../02-decisions/Epic80-Integration-Detail-Redesign-Pilot.md)), schedules ([Epic 83](../../02-decisions/Epic83-Schedules-List-Detail-Redesign-Pilot.md)), notification definition authoring ([Epic 84](../../02-decisions/Epic84-Notification-Definition-Authoring-Redesign-Pilot.md)), and consolidation/hardening ([Epic 85](../../02-decisions/Epic85-Management-UI-Pilot-Consolidation.md)).
 
 ## Non-goals (Epic 79)
 
@@ -154,4 +189,4 @@ Do not add one-off hex colors in Razor; extend semantic tokens in `app.css` when
 
 ## Proof usage
 
-The `/config` landing page demonstrates `PageHeader`, `ManagementSection`, and `ManagementSummaryCard` (hub landing archetype). **Epic 80** applied the same primitives to [Integration Detail](../../02-decisions/Epic80-Integration-Detail-Redesign-Pilot.md) (`/integrations/{IntegrationId}`). **Epic 81** applied them to [Run Detail](../../02-decisions/Epic81-Run-Detail-Redesign-Pilot.md) (`/runs/{RunId}`). **Epic 82** applied them to [Control Center](../../02-decisions/Epic82-Control-Center-Redesign-Pilot.md) (`/control/center`). **Epic 83** applied them to [schedules list/detail/new](../../02-decisions/Epic83-Schedules-List-Detail-Redesign-Pilot.md). **Epic 84** applied them to [notification definition detail/authoring](../../02-decisions/Epic84-Notification-Definition-Authoring-Redesign-Pilot.md) (`/config/notifications/definitions/{DefinitionId}` cluster). Other pages may continue using legacy markup until their pilot epic.
+The `/config` landing page demonstrates `PageHeader`, `ManagementSection`, and `ManagementSummaryCard` (hub landing archetype). **Epic 80** applied the same primitives to [Integration Detail](../../02-decisions/Epic80-Integration-Detail-Redesign-Pilot.md) (`/integrations/{IntegrationId}`). **Epic 81** applied them to [Run Detail](../../02-decisions/Epic81-Run-Detail-Redesign-Pilot.md) (`/runs/{RunId}`). **Epic 82** applied them to [Control Center](../../02-decisions/Epic82-Control-Center-Redesign-Pilot.md) (`/control/center`). **Epic 83** applied them to [schedules list/detail/new](../../02-decisions/Epic83-Schedules-List-Detail-Redesign-Pilot.md). **Epic 84** applied them to [notification definition detail/authoring](../../02-decisions/Epic84-Notification-Definition-Authoring-Redesign-Pilot.md) (`/config/notifications/definitions/{DefinitionId}` cluster). **Epic 85** consolidates and hardens the shared guidance without introducing another route redesign. Other pages may continue using legacy markup until their pilot epic.

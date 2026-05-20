@@ -28,3 +28,4 @@ Architecture decision records (ADRs) live in [docs/02-decisions/](../../docs/02-
 | [Epic 82](../../docs/02-decisions/Epic82-Control-Center-Redesign-Pilot.md) | Control Center layered console redesign pilot (`/control/center`) |
 | [Epic 83](../../docs/02-decisions/Epic83-Schedules-List-Detail-Redesign-Pilot.md) | Schedules list/detail layered redesign pilot (`/schedules`, `/schedules/{id}`, `/schedules/new` layout pass) |
 | [Epic 84](../../docs/02-decisions/Epic84-Notification-Definition-Authoring-Redesign-Pilot.md) | Notification definition detail/authoring layered redesign pilot (`/config/notifications/definitions/{DefinitionId}` cluster) |
+| [Epic 85](../../docs/02-decisions/Epic85-Management-UI-Pilot-Consolidation.md) | Pilot consolidation and design-system hardening (Epics 80–84 learnings) |

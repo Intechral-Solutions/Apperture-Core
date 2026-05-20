@@ -32,6 +32,29 @@ a.ui-summary-card:hover {
   cursor: default;
 }
 
+.ui-summary-card-grid {
+  margin-top: 1rem;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1rem;
+}
+
+@media (min-width: 48rem) {
+  .ui-summary-card-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 64rem) {
+  .ui-summary-card-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .ui-summary-card-grid--wide {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
 .ui-status-pill,
 .ui-attention-pill {
   display: inline-flex;
