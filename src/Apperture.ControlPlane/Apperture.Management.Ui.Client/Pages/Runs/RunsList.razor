@@ -57,6 +57,13 @@
                     <span class="ml-2 font-mono text-xs break-all">@QueryIntegrationId</span>
                 </div>
             }
+            @if (!string.IsNullOrWhiteSpace(QueryModuleId))
+            {
+                <div>
+                    <span class="text-muted">Module</span>
+                    <span class="ml-2 font-mono text-xs break-all">@QueryModuleId</span>
+                </div>
+            }
             <div>
                 <a href="/runs" class="text-xs underline">Clear URL filters</a>
             </div>
@@ -130,6 +137,9 @@
     [SupplyParameterFromQuery(Name = "integrationId")]
     public string? QueryIntegrationId { get; set; }
 
+    [SupplyParameterFromQuery(Name = "moduleId")]
+    public string? QueryModuleId { get; set; }
+
     private IReadOnlyList<RunSummaryDto>? _runs;
     private string? _executionKindFilter;
     private bool _loading;
@@ -140,7 +150,8 @@
         !string.IsNullOrWhiteSpace(QueryCorrelationKey)
         || !string.IsNullOrWhiteSpace(QueryStatus)
         || !string.IsNullOrWhiteSpace(QueryCreatedFromRaw)
-        || !string.IsNullOrWhiteSpace(QueryIntegrationId);
+        || !string.IsNullOrWhiteSpace(QueryIntegrationId)
+        || !string.IsNullOrWhiteSpace(QueryModuleId);
 
     protected override async Task OnParametersSetAsync()
     {
@@ -152,7 +163,7 @@
     }
 
     private string BuildLoadKey() =>
-        $"{QueryCorrelationKey ?? ""}\u001f{QueryStatus ?? ""}\u001f{QueryCreatedFromRaw ?? ""}\u001f{QueryIntegrationId ?? ""}\u001f{_executionKindFilter ?? ""}";
+        $"{QueryCorrelationKey ?? ""}\u001f{QueryStatus ?? ""}\u001f{QueryCreatedFromRaw ?? ""}\u001f{QueryIntegrationId ?? ""}\u001f{QueryModuleId ?? ""}\u001f{_executionKindFilter ?? ""}";
 
     private async Task LoadAsync()
     {
@@ -163,6 +174,7 @@
             var corr = string.IsNullOrWhiteSpace(QueryCorrelationKey) ? null : QueryCorrelationKey.Trim();
             var status = string.IsNullOrWhiteSpace(QueryStatus) ? null : QueryStatus.Trim();
             var integrationId = string.IsNullOrWhiteSpace(QueryIntegrationId) ? null : QueryIntegrationId.Trim();
+            var moduleId = string.IsNullOrWhiteSpace(QueryModuleId) ? null : QueryModuleId.Trim();
             DateTimeOffset? createdFrom = null;
             if (!string.IsNullOrWhiteSpace(QueryCreatedFromRaw)
                 && DateTimeOffset.TryParse(QueryCreatedFromRaw, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var parsed))
@@ -173,7 +185,8 @@
                 Status: status,
                 CreatedFrom: createdFrom,
                 CorrelationKey: corr,
-                IntegrationId: integrationId));
+                IntegrationId: integrationId,
+                ModuleId: moduleId));
         }
         catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Forbidden)
         {

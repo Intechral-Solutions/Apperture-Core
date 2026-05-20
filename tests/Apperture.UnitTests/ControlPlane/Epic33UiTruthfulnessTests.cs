@@ -138,6 +138,9 @@ public sealed class Epic33UiTruthfulnessTests
     public void AuditLinks_SpecialChars_AreEscaped()
     {
         Epic33UiDisplayHelpers.GetAuditLinkForModule("m/1").Should().Contain("moduleId=");
+
+        Epic33UiDisplayHelpers.GetRunsListModuleFilterHref("m1").Should().Be("/runs?moduleId=m1");
+        Epic33UiDisplayHelpers.GetRunsListIntegrationFilterHref("i1").Should().Be("/runs?integrationId=i1");
         Epic33UiDisplayHelpers.GetAuditLinkForModule("m/1").Should().NotContain("m/1"); // encoded
     }
 

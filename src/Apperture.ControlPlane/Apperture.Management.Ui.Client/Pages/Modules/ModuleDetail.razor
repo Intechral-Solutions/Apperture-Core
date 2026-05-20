@@ -115,7 +115,7 @@
                                            Error="@_activityError"
                                            EmptyMessage="No runs or audit events for this module in the last 7 days (or none visible to you).">
                     <FooterLinks>
-                        <DrillInLink Href="/runs">View runs list</DrillInLink>
+                        <DrillInLink Href="@Epic33UiDisplayHelpers.GetRunsListModuleFilterHref(ModuleId)">View module runs</DrillInLink>
                         @if (_capabilities?.CanViewAudit == true)
                         {
                             <DrillInLink Href="@Epic33UiDisplayHelpers.GetAuditLinkForModule(ModuleId)">View audit for module</DrillInLink>

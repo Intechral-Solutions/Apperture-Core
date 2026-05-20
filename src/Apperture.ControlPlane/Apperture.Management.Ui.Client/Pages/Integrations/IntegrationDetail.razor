@@ -102,7 +102,7 @@
                                        Error="@_activityError"
                                        EmptyMessage="No runs, audit events, or notification instances for this integration in the last 7 days (or none visible to you).">
                 <FooterLinks>
-                    <DrillInLink Href="@($"/runs?integrationId={Uri.EscapeDataString(IntegrationId)}")">View runs for integration</DrillInLink>
+                    <DrillInLink Href="@Epic33UiDisplayHelpers.GetRunsListIntegrationFilterHref(IntegrationId)">View runs for integration</DrillInLink>
                     @if (_capabilities?.CanViewAudit == true && !string.IsNullOrWhiteSpace(_integration.ModuleId))
                     {
                         <DrillInLink Href="@Epic33UiDisplayHelpers.GetAuditLinkForModule(_integration.ModuleId)">View audit for module</DrillInLink>
@@ -689,8 +689,8 @@
 
     private string RecentActivityHelp =>
         _integration is null
-            ? "Recent runs, audit (module-scoped), and notification instances from existing APIs."
-            : $"Merged from runs (integrationId), audit (module {_integration.ModuleId}), and notification instances. Last {EntityRecentActivityComposer.DefaultLookback.Days} days, up to {EntityRecentActivityComposer.DefaultMaxItems} items.";
+            ? "Recent runs (integrationId), module-scoped audit (not integration-scoped), and notification instances from existing APIs."
+            : $"Runs filtered by this integration. Audit filtered by module {_integration.ModuleId} only — the audit API has no integrationId filter, so audit rows may include other integrations using the same module. Notifications are integration-scoped. Last {EntityRecentActivityComposer.DefaultLookback.Days} days, up to {EntityRecentActivityComposer.DefaultMaxItems} items.";
 
     private string SummarySubtitle =>
         _integration is null

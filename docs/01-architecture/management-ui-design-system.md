@@ -284,13 +284,13 @@ First implementation slice for operation-history usefulness **without** a global
 | **Bounds** | Default 7-day lookback, ~5 rows per source, ~10 after client merge. |
 | **Presentation** | `ManagementSection` “Recent activity” + `EntityRecentActivityPanel` (or equivalent table): timestamp, source kind, summary, actor when present, status pill, `DrillInLink`. |
 | **Errors** | Section-level `PageMessage` Error or `EmptyState`; never block the rest of the entity page. |
-| **Drill-ins** | Row links to run/audit/notification detail; footer links to filtered list routes **only when the list route supports the filter** (see [Epic 94](../02-decisions/Epic94-Entity-Local-Recent-Activity-Panels.md) gaps). |
+| **Drill-ins** | Row links to run/audit/notification detail; footer links to filtered list routes **only when the list route supports the filter**. Use `Epic33UiDisplayHelpers.GetRunsListModuleFilterHref` / `GetRunsListIntegrationFilterHref` for runs list drill-ins ([Epic 95](../02-decisions/Epic95-Recent-Activity-Filter-and-Drill-In-Completion.md)). |
 
 Mapping and merge logic live in `EntityRecentActivityComposer` (`Apperture.Management.Ui.Shared`).
 
 ## Drill-in conventions
 
-- Build URLs with **`Epic33UiDisplayHelpers`** (audit, runs, modules) or documented query params (Epic 47, Epic 78 §7).
+- Build URLs with **`Epic33UiDisplayHelpers`** (audit, runs, modules, runs-list filters) or documented query params (Epic 47, Epic 78 §7). Runs list supports `integrationId`, `moduleId`, `correlationKey`, `status`, and `createdFrom` query params when the API filter exists.
 - Present links with **`DrillInLink`** or `class="ui-drill-in-link"`.
 - Label destination explicitly (“View blocked work”, not “Click here”).
 - Omit link when filter unsupported or permission missing.

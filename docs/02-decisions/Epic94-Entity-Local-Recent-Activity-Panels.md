@@ -45,7 +45,7 @@ Canonical context: [Epic 87](Epic87-Management-UI-Action-Surface-and-Operation-F
 
 - **Placement:** `ManagementSection` “Recent activity” after state metadata.
 - **Sources merged:** Authorized **runs** (`ModuleId` on definition via `RunQueryFilter`) and **audit** (`moduleId` filter) under same bounds as integration.
-- **Footer drill-ins:** Full runs list (`/runs` — list UI has no `moduleId` query param today); module audit when permitted.
+- **Footer drill-ins:** Module-filtered runs list (Epic 95); module audit when permitted.
 
 ### Shared UI
 
@@ -64,7 +64,7 @@ Canonical context: [Epic 87](Epic87-Management-UI-Action-Surface-and-Operation-F
 | Gap | Impact | Recommendation |
 |-----|--------|----------------|
 | Audit API has no `integrationId` filter | Integration activity uses **module-scoped** audit only | Add optional `integrationId` on audit records/query when integration-scoped audit events are first-class |
-| Runs list UI lacks `moduleId` query param | Module footer cannot deep-link filtered runs list | Add `moduleId` to Runs list query binding (small UI epic) |
+| Runs list UI lacks `moduleId` query param | Module footer cannot deep-link filtered runs list | **Resolved in [Epic 95](Epic95-Recent-Activity-Filter-and-Drill-In-Completion.md)** |
 | No unified chronological “operation” row | Merge is client-side across heterogeneous sources | Defer global operation registry per Epic 91 Phase 2+ |
 | Run timeline not shown on entity panel | Run rows link to Run Detail | Optional: add run timeline snippet on Run Detail before entity panels expand |
 

@@ -131,4 +131,12 @@ public static class Epic33UiDisplayHelpers
 
     public static string GetRunsListCorrelationFilterHref(string correlationKey) =>
         $"/runs?correlationKey={Uri.EscapeDataString(correlationKey)}";
+
+    /// <summary>Runs list filtered by integration id (Epic 94/95).</summary>
+    public static string GetRunsListIntegrationFilterHref(string integrationId) =>
+        $"/runs?integrationId={Uri.EscapeDataString(integrationId)}";
+
+    /// <summary>Runs list filtered by module id on execution definition (Epic 95).</summary>
+    public static string GetRunsListModuleFilterHref(string moduleId) =>
+        $"/runs?moduleId={Uri.EscapeDataString(moduleId)}";
 }
