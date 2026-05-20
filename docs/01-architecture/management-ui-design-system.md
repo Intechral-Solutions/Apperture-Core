@@ -168,13 +168,13 @@ Thin presentation shell over **`PageMessage`** for **user-triggered cooperative 
 | `Message` | (required) | Operator-facing result copy from page-local `_actionMessage` |
 | `ChildContent` | — | Optional drill-in (e.g. new run link after retry) |
 
-**Use `ActionFeedback` for:** run cancel/retry/park/resume results; schedule enable/disable/trigger results; future blocked-work cooperative banners when adopted.
+**Use `ActionFeedback` for:** run cancel/retry/park/resume results; schedule enable/disable/trigger results; blocked-work retry/run-cycle; module lifecycle results.
 
 **Use `PageMessage` directly for:** static warnings, form save errors, section binding errors, load/empty/forbidden branches (Epic 86 wrappers), diagnostic notices.
 
-**Proof surfaces:** [Run Detail](../../02-decisions/Epic81-Run-Detail-Redesign-Pilot.md) (`/runs/{RunId}`), [Schedule Detail](../../02-decisions/Epic83-Schedules-List-Detail-Redesign-Pilot.md) (`/schedules/{ScheduleId}`).
+**Proof surfaces:** [Run Detail](../../02-decisions/Epic81-Run-Detail-Redesign-Pilot.md) (`/runs/{RunId}`), [Schedule Detail](../../02-decisions/Epic83-Schedules-List-Detail-Redesign-Pilot.md) (`/schedules/{ScheduleId}`), Blocked Work, Module Detail ([Epic 90](../../02-decisions/Epic90-Management-UI-Action-Feedback-Corrective-Pass.md)).
 
-See [Epic 88 — Cooperative action feedback shell pilot](../02-decisions/Epic88-Cooperative-Action-Feedback-Shell-Pilot.md).
+See [Epic 88 — Cooperative action feedback shell pilot](../02-decisions/Epic88-Cooperative-Action-Feedback-Shell-Pilot.md). Operation history planning: [Epic 91](../02-decisions/Epic91-Operation-History-and-Action-Feedback-Groundwork.md).
 
 ### `ActionButton` usage
 
@@ -199,7 +199,7 @@ Document for a **future async operation shell** epic (not implemented here):
 |------|---------|------------------|
 | **Run Detail** | Cancel, retry, park, resume | `ActionFeedback` + poll; new-run `DrillInLink` in ChildContent on retry |
 | **Schedule Detail** | Enable, disable, trigger run cycle | `ActionFeedback` |
-| **Blocked Work** | Trigger run cycle, per-run retry | `_actionMessage` Info + table actions |
+| **Blocked Work** | Trigger run cycle, per-run retry | `ActionFeedback` + table actions |
 | **Integration Detail** | Launch procedure, activate/deactivate, binding CRUD, schedule create | Toasts + section warnings |
 | **Connection Detail** | Test connection | `ActionButton` states |
 | **Governance** | Role assign/revoke, permission save | Toasts |
@@ -214,14 +214,14 @@ Document for a **future async operation shell** epic (not implemented here):
 
 ### Future operation shell readiness
 
-Epic 88 introduced **`ActionFeedback`** as the first reusable **presentation** layer for cooperative results. A future **operation history** epic may add persistence and history UI; until then:
+Epic 88 introduced **`ActionFeedback`** as the first reusable **presentation** layer for cooperative results. [Epic 91](../02-decisions/Epic91-Operation-History-and-Action-Feedback-Groundwork.md) defines operation history semantics, existing sources of truth, and UI placement before any global shell. Until then:
 
 1. Keep action copy and eligibility logic **page-local** (`_actionMessage`, handlers unchanged).
 2. Reuse **`ActionFeedback`** + **`ActionButton`** prior art before adding global services.
-3. Absorb **long-running** cooperative commands next (blocked work, integration launch) only when feedback semantics match.
+3. Prefer **entity-local recent activity** from audit/run timeline before a new operation table.
 4. Preserve **403/409** messaging contracts from Run Detail and Schedule Detail.
 
-See [Epic 87](../02-decisions/Epic87-Management-UI-Action-Surface-and-Operation-Feedback-Groundwork.md) and [Epic 88](../02-decisions/Epic88-Cooperative-Action-Feedback-Shell-Pilot.md).
+See [Epic 87](../02-decisions/Epic87-Management-UI-Action-Surface-and-Operation-Feedback-Groundwork.md), [Epic 88](../02-decisions/Epic88-Cooperative-Action-Feedback-Shell-Pilot.md), and [Epic 91](../02-decisions/Epic91-Operation-History-and-Action-Feedback-Groundwork.md).
 
 ## Drill-in conventions
 
@@ -259,7 +259,7 @@ See [Epic 87](../02-decisions/Epic87-Management-UI-Action-Surface-and-Operation-
 
 The pilot stack is now ready for these follow-on epics, but none are implemented by the design-system itself:
 
-- **Async operation shell:** `ActionFeedback` (Epic 88) on Run/Schedule detail; Blocked Work and Module detail (Epic 90 corrective); operation **history** and backend tracking remain deferred — see [Epic 88](../../02-decisions/Epic88-Cooperative-Action-Feedback-Shell-Pilot.md) and [Epic 90](../../02-decisions/Epic90-Management-UI-Action-Feedback-Corrective-Pass.md).
+- **Async operation shell:** `ActionFeedback` (Epic 88) on Run/Schedule/Blocked Work/Module detail (Epic 90); entity-local history from audit/run timeline (Epic 91 groundwork); operation **registry** and backend tracking remain deferred — see [Epic 88](../../02-decisions/Epic88-Cooperative-Action-Feedback-Shell-Pilot.md), [Epic 90](../../02-decisions/Epic90-Management-UI-Action-Feedback-Corrective-Pass.md), [Epic 91](../../02-decisions/Epic91-Operation-History-and-Action-Feedback-Groundwork.md).
 - **Schema-driven forms:** evolve `ProcedureParameterForm` only when execution-start and dense authoring surfaces share a stable metadata contract.
 - **Module dashboards:** reuse `ManagementSummaryCard` posture and permission omission from dashboard/card patterns; keep module-owned UI in module assemblies.
 - **Operational stats/charts:** add as summary-layer artifacts only when APIs provide truthful aggregates and drill-in contracts.
@@ -288,7 +288,7 @@ Do not add one-off hex colors in Razor; extend semantic tokens in `app.css` when
 - **Module UI projects** — Keep module-specific UI in module `.Ui` assemblies; shared primitives stay in Management.Ui.Client.
 - **`IOperatorCapabilitiesService`** — Gate sections before rendering forbidden states.
 - **Toasts** — Transient feedback on long forms (`IToastService`); not a substitute for `PageMessage`.
-- **Epic 80+ pilots** — control center ([Epic 82](../../02-decisions/Epic82-Control-Center-Redesign-Pilot.md)), run detail ([Epic 81](../../02-decisions/Epic81-Run-Detail-Redesign-Pilot.md)), integration detail ([Epic 80](../../02-decisions/Epic80-Integration-Detail-Redesign-Pilot.md)), schedules ([Epic 83](../../02-decisions/Epic83-Schedules-List-Detail-Redesign-Pilot.md)), notification definition authoring ([Epic 84](../../02-decisions/Epic84-Notification-Definition-Authoring-Redesign-Pilot.md)), consolidation ([Epic 85](../../02-decisions/Epic85-Management-UI-Pilot-Consolidation.md)), state sweep ([Epic 86](../../02-decisions/Epic86-Management-UI-State-Branch-Consistency-Sweep.md)), action groundwork ([Epic 87](../../02-decisions/Epic87-Management-UI-Action-Surface-and-Operation-Feedback-Groundwork.md)), action feedback shell ([Epic 88](../../02-decisions/Epic88-Cooperative-Action-Feedback-Shell-Pilot.md)), progress audit ([Epic 89](../../02-decisions/Epic89-Management-UI-Modernization-Progress-Audit.md)), action feedback corrective pass ([Epic 90](../../02-decisions/Epic90-Management-UI-Action-Feedback-Corrective-Pass.md)).
+- **Epic 80+ pilots** — control center ([Epic 82](../../02-decisions/Epic82-Control-Center-Redesign-Pilot.md)), run detail ([Epic 81](../../02-decisions/Epic81-Run-Detail-Redesign-Pilot.md)), integration detail ([Epic 80](../../02-decisions/Epic80-Integration-Detail-Redesign-Pilot.md)), schedules ([Epic 83](../../02-decisions/Epic83-Schedules-List-Detail-Redesign-Pilot.md)), notification definition authoring ([Epic 84](../../02-decisions/Epic84-Notification-Definition-Authoring-Redesign-Pilot.md)), consolidation ([Epic 85](../../02-decisions/Epic85-Management-UI-Pilot-Consolidation.md)), state sweep ([Epic 86](../../02-decisions/Epic86-Management-UI-State-Branch-Consistency-Sweep.md)), action groundwork ([Epic 87](../../02-decisions/Epic87-Management-UI-Action-Surface-and-Operation-Feedback-Groundwork.md)), action feedback shell ([Epic 88](../../02-decisions/Epic88-Cooperative-Action-Feedback-Shell-Pilot.md)), progress audit ([Epic 89](../../02-decisions/Epic89-Management-UI-Modernization-Progress-Audit.md)), action feedback corrective pass ([Epic 90](../../02-decisions/Epic90-Management-UI-Action-Feedback-Corrective-Pass.md)), operation history groundwork ([Epic 91](../../02-decisions/Epic91-Operation-History-and-Action-Feedback-Groundwork.md)).
 
 ## Non-goals (Epic 79)
 
@@ -299,4 +299,4 @@ Do not add one-off hex colors in Razor; extend semantic tokens in `app.css` when
 
 ## Proof usage
 
-The `/config` landing page demonstrates `PageHeader`, `ManagementSection`, and `ManagementSummaryCard` (hub landing archetype). **Epics 80–84** applied layered primitives to the five redesign pilots. **Epics 85–88** consolidated guidance, swept state branches on non-pilot pages, documented action categories, and introduced `ActionFeedback` on Run/Schedule detail. **Epic 89** audited coherence and documented corrective follow-ups. **Epic 90** fixed action-feedback persistence and extended `ActionFeedback` to Blocked Work and Module detail (see [Epic 90](../../02-decisions/Epic90-Management-UI-Action-Feedback-Corrective-Pass.md)). Other pages may continue using legacy layout until a scoped epic touches them.
+The `/config` landing page demonstrates `PageHeader`, `ManagementSection`, and `ManagementSummaryCard` (hub landing archetype). **Epics 80–84** applied layered primitives to the five redesign pilots. **Epics 85–88** consolidated guidance, swept state branches on non-pilot pages, documented action categories, and introduced `ActionFeedback` on Run/Schedule detail. **Epic 89** audited coherence; **Epic 90** fixed action-feedback persistence and adoption; **Epic 91** defined operation history groundwork (see [Epic 91](../../02-decisions/Epic91-Operation-History-and-Action-Feedback-Groundwork.md)). Other pages may continue using legacy layout until a scoped epic touches them.

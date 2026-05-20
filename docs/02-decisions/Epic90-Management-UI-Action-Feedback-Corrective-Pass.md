@@ -69,4 +69,4 @@ Recorded at implementation time:
 - Mapping cooperative 403/409 to `Kind=Error` (ADV-002)
 - `PageHeader` incremental adoption (ADV-001)
 
-**Recommended next epic:** Broader cooperative feedback consistency or operation-history groundwork — only after manual QA confirms COR-001 fixes on Run/Schedule detail.
+**Recommended next epic:** Operation history groundwork — [Epic 91](Epic91-Operation-History-and-Action-Feedback-Groundwork.md).

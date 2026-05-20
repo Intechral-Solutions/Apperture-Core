@@ -69,7 +69,7 @@ Thin wrapper over `PageMessage` with cooperative-action defaults.
 - **Operation registry** or operation IDs
 - **Persistent operation tracking** / backend APIs
 - **Toast normalization** (Integration Detail, governance, etc.)
-- **Blocked Work** adoption (still `PageMessage` — equivalent but deferred to avoid scope creep)
+- **Blocked Work** adoption — completed in [Epic 90](Epic90-Management-UI-Action-Feedback-Corrective-Pass.md)
 - **Connection test** (`ActionButton` — different feedback model)
 - Mapping Run/Schedule 403/409 to `Kind=Error` (would change visual semantics)
 
@@ -82,6 +82,6 @@ Recorded at implementation time:
 
 ## Recommended next epic
 
-**Operation history / blocked-work adoption:** Extend `ActionFeedback` to Blocked Work when ready; add history/persistence only when backend operation lifecycle contracts exist.
+**Corrective pass:** [Epic 90](Epic90-Management-UI-Action-Feedback-Corrective-Pass.md) (COR-001 persistence, Blocked Work/Module Detail adoption).
 
-**Post–Epic 89 audit:** [Epic 89](Epic89-Management-UI-Modernization-Progress-Audit.md) found that `LoadAsync` clears `_actionMessage` after actions on Run/Schedule detail, so banners may not display until a corrective pass (COR-001) preserves messages across reload.
+**Operation history:** [Epic 91](Epic91-Operation-History-and-Action-Feedback-Groundwork.md) — sources of truth, durability, UI placement; no registry yet.
