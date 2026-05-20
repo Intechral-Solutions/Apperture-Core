@@ -47,4 +47,27 @@ public sealed class ManagementUiSemanticsTests
     {
         Assert.Equal(expected, ManagementUiSemantics.MapIntegrationState(state));
     }
+
+    [Theory]
+    [InlineData("completed", ManagementStatusSemantic.Success)]
+    [InlineData("Running", ManagementStatusSemantic.Pending)]
+    [InlineData("failed", ManagementStatusSemantic.Error)]
+    [InlineData("parked", ManagementStatusSemantic.Warning)]
+    [InlineData("", ManagementStatusSemantic.Unknown)]
+    [InlineData("weird_custom", ManagementStatusSemantic.Neutral)]
+    public void MapRunLifecycleStatus_maps_known_execution_status_strings(string status, ManagementStatusSemantic expected)
+    {
+        Assert.Equal(expected, ManagementUiSemantics.MapRunLifecycleStatus(status));
+    }
+
+    [Theory]
+    [InlineData("Succeeded", ManagementStatusSemantic.Success)]
+    [InlineData("skipped", ManagementStatusSemantic.Neutral)]
+    [InlineData("Failed", ManagementStatusSemantic.Error)]
+    [InlineData("cancelled", ManagementStatusSemantic.Warning)]
+    [InlineData("", ManagementStatusSemantic.Unknown)]
+    public void MapRunOutcomeSemantic_maps_common_outcome_tokens(string outcome, ManagementStatusSemantic expected)
+    {
+        Assert.Equal(expected, ManagementUiSemantics.MapRunOutcomeSemantic(outcome));
+    }
 }

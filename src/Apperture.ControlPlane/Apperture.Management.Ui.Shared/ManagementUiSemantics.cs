@@ -100,4 +100,42 @@ public static class ManagementUiSemantics
 
     public static string GetIntegrationStatePillClass(string? state) =>
         GetStatusPillClass(MapIntegrationState(state));
+
+    /// <summary>
+    /// Run lifecycle status from <see cref="Apperture.Management.Client.RunDetailDto.Status"/> (API string; presentation-only mapping).
+    /// </summary>
+    public static ManagementStatusSemantic MapRunLifecycleStatus(string? status)
+    {
+        if (string.IsNullOrWhiteSpace(status))
+            return ManagementStatusSemantic.Unknown;
+
+        return status.Trim().ToLowerInvariant() switch
+        {
+            "completed" or "succeeded" or "success" => ManagementStatusSemantic.Success,
+            "failed" or "faulted" or "error" => ManagementStatusSemantic.Error,
+            "running" or "in_progress" or "inprogress" or "claimed" or "pending" or "queued" or "starting" =>
+                ManagementStatusSemantic.Pending,
+            "cancelled" or "canceled" => ManagementStatusSemantic.Warning,
+            "parked" => ManagementStatusSemantic.Warning,
+            _ => ManagementStatusSemantic.Neutral
+        };
+    }
+
+    /// <summary>
+    /// Run result outcome from <see cref="Apperture.Management.Client.RunResultDto.Outcome"/> (presentation-only; unknown tokens map to neutral).
+    /// </summary>
+    public static ManagementStatusSemantic MapRunOutcomeSemantic(string? outcome)
+    {
+        if (string.IsNullOrWhiteSpace(outcome))
+            return ManagementStatusSemantic.Unknown;
+
+        var o = outcome.Trim().ToLowerInvariant();
+        if (o.Contains("success", StringComparison.Ordinal) || o is "succeeded" or "completed")
+            return ManagementStatusSemantic.Success;
+        if (o.Contains("fail", StringComparison.Ordinal) || o.Contains("error", StringComparison.Ordinal) || o is "faulted")
+            return ManagementStatusSemantic.Error;
+        if (o.Contains("cancel", StringComparison.Ordinal))
+            return ManagementStatusSemantic.Warning;
+        return ManagementStatusSemantic.Neutral;
+    }
 }

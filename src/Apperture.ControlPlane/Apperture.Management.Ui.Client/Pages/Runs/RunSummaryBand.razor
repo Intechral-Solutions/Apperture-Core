@@ -1,0 +1,83 @@
+@using Apperture.Management.Client
+@using Apperture.Management.Ui.Shared
+@using Apperture.Management.Ui.Client.Molecules
+@using Apperture.Management.Ui.Client.Organisms
+
+<ManagementSection Title="Summary"
+                   Layer="ManagementSection.UiLayer.Summary"
+                   Help="Facts from the run record and forensics; links use the same destinations as before.">
+    <div class="flex flex-wrap items-center gap-2">
+        <StatusPill Label="@Detail.Status" Semantic="@ManagementUiSemantics.MapRunLifecycleStatus(Detail.Status)" />
+        @if (Detail.Result is not null && !string.IsNullOrWhiteSpace(Detail.Result.Outcome))
+        {
+            <StatusPill Label="@($"Outcome: {Detail.Result.Outcome}")"
+                        Semantic="@ManagementUiSemantics.MapRunOutcomeSemantic(Detail.Result.Outcome)" />
+        }
+        @if (BlockedWork is not null)
+        {
+            <AttentionPill Label="Blocked work" Semantic="@ManagementAttentionSemantic.Warning" />
+        }
+    </div>
+
+    @if (Detail.ForensicContext is { } fx)
+    {
+        <div class="mt-3 text-sm text-body">
+            <span class="text-xs text-muted">Origin</span>
+            <span class="ml-1">@Epic33UiDisplayHelpers.FormatRunOriginKind(fx.OriginKind)</span>
+            @if (!string.IsNullOrWhiteSpace(fx.OriginDetail))
+            {
+                <span class="text-xs text-muted"> — @fx.OriginDetail</span>
+            }
+        </div>
+    }
+
+    <div class="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3 text-sm">
+        <div>
+            <div class="text-xs text-muted">Created</div>
+            <div class="text-body">@Detail.CreatedAt.ToLocalTime().ToString("u")</div>
+        </div>
+        <div>
+            <div class="text-xs text-muted">Completed</div>
+            <div class="text-body">@((Detail.CompletedAt is null) ? "—" : Detail.CompletedAt.Value.ToLocalTime().ToString("u"))</div>
+        </div>
+        <div>
+            <div class="text-xs text-muted">@CurrentStepLabel</div>
+            <div class="font-mono text-xs text-body break-all">@Detail.CurrentStepName</div>
+        </div>
+    </div>
+
+    <div class="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+        @if (!string.IsNullOrEmpty(Detail.IntegrationId))
+        {
+            <ManagementSummaryCard Title="Integration"
+                                   Description="Open the deployment unit for this run."
+                                   Href="@($"/integrations/{Uri.EscapeDataString(Detail.IntegrationId)}")" />
+        }
+        @if (Detail.ForensicContext is { ScheduleId: { } sid } && !string.IsNullOrEmpty(sid))
+        {
+            <ManagementSummaryCard Title="Schedule (inferred)"
+                                   Description="May be inferred from idempotency convention; see Investigation."
+                                   Href="@($"/schedules/{Uri.EscapeDataString(sid)}")" />
+        }
+        <ManagementSummaryCard Title="Audit timeline"
+                               Description="Events for this run id."
+                               Href="@Epic33UiDisplayHelpers.GetAuditLinkForRun(RunId)" />
+        <ManagementSummaryCard Title="Blocked work"
+                               Description="Recovery and retry eligibility."
+                               Href="/control/blocked-work" />
+        @if (!string.IsNullOrWhiteSpace(Detail.CorrelationKey))
+        {
+            <ManagementSummaryCard Title="Runs with same correlation"
+                                   Description="Filtered run history."
+                                   Href="@Epic33UiDisplayHelpers.GetRunsListCorrelationFilterHref(Detail.CorrelationKey)" />
+        }
+    </div>
+</ManagementSection>
+
+@code {
+    [Parameter, EditorRequired] public RunDetailDto Detail { get; set; } = null!;
+    [Parameter, EditorRequired] public string RunId { get; set; } = "";
+    [Parameter] public BlockedWorkRemediationEntryDto? BlockedWork { get; set; }
+
+    [Parameter] public string CurrentStepLabel { get; set; } = "Current step";
+}

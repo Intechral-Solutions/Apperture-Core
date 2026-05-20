@@ -19,7 +19,7 @@ Related shell documentation: [control-panel-ui.md](control-panel-ui.md).
 | Summary / detail / advanced layers | `ManagementSection`, `ManagementSummaryCard`, `ManagementAdvancedSection` |
 | Permission / empty / error states | `PageMessage` + thin wrappers (`LoadingState`, `EmptyState`, …) |
 | Drill-in rules | `DrillInLink`; URLs still built with `Epic33UiDisplayHelpers` |
-| Pilot pages | `/config` hub proof only; larger pilots deferred to Epic 80+ |
+| Pilot pages | `/config` hub proof; Integration Detail ([Epic 80](../../02-decisions/Epic80-Integration-Detail-Redesign-Pilot.md)); Run Detail ([Epic 81](../../02-decisions/Epic81-Run-Detail-Redesign-Pilot.md)); other pilots per Epic 78 |
 
 ## Design principles
 
@@ -143,7 +143,7 @@ Do not add one-off hex colors in Razor; extend semantic tokens in `app.css` when
 - **Module UI projects** — Keep module-specific UI in module `.Ui` assemblies; shared primitives stay in Management.Ui.Client.
 - **`IOperatorCapabilitiesService`** — Gate sections before rendering forbidden states.
 - **Toasts** — Transient feedback on long forms (`IToastService`); not a substitute for `PageMessage`.
-- **Epic 80+ pilots** — Control center, run detail, integration detail per Epic 78 §9.
+- **Epic 80+ pilots** — Control center, run detail ([Epic 81](../../02-decisions/Epic81-Run-Detail-Redesign-Pilot.md)), integration detail ([Epic 80](../../02-decisions/Epic80-Integration-Detail-Redesign-Pilot.md)), and others per Epic 78 §9.
 
 ## Non-goals (Epic 79)
 
@@ -154,4 +154,4 @@ Do not add one-off hex colors in Razor; extend semantic tokens in `app.css` when
 
 ## Proof usage
 
-The `/config` landing page demonstrates `PageHeader`, `ManagementSection`, and `ManagementSummaryCard` (hub landing archetype). **Epic 80** applied the same primitives to [Integration Detail](../../02-decisions/Epic80-Integration-Detail-Redesign-Pilot.md) (`/integrations/{IntegrationId}`). Other pages may continue using legacy markup until their pilot epic.
+The `/config` landing page demonstrates `PageHeader`, `ManagementSection`, and `ManagementSummaryCard` (hub landing archetype). **Epic 80** applied the same primitives to [Integration Detail](../../02-decisions/Epic80-Integration-Detail-Redesign-Pilot.md) (`/integrations/{IntegrationId}`). **Epic 81** applied them to [Run Detail](../../02-decisions/Epic81-Run-Detail-Redesign-Pilot.md) (`/runs/{RunId}`). Other pages may continue using legacy markup until their pilot epic.

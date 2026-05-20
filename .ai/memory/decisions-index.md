@@ -24,3 +24,4 @@ Architecture decision records (ADRs) live in [docs/02-decisions/](../../docs/02-
 | [Management UI design system](../../docs/01-architecture/management-ui-design-system.md) | Epic 79: layout/status primitives, semantics, PageMessage conventions |
 | [Epic 79](../../docs/02-decisions/Epic79-Management-UI-Design-System-Foundation.md) | Design system foundation (primitives, CSS, `/config` proof) |
 | [Epic 80](../../docs/02-decisions/Epic80-Integration-Detail-Redesign-Pilot.md) | Integration Detail layered redesign pilot (`/integrations/{id}`) |
+| [Epic 81](../../docs/02-decisions/Epic81-Run-Detail-Redesign-Pilot.md) | Run Detail layered redesign pilot (`/runs/{RunId}`) |
