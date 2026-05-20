@@ -1,0 +1,81 @@
+@using Apperture.Management.Client
+@using Apperture.Management.Ui.Shared
+
+<ManagementSection Title="Overview"
+                   Layer="ManagementSection.UiLayer.Summary"
+                   Subtitle="Operational snapshot from the server.">
+    <div class="flex flex-wrap gap-x-6 gap-y-3">
+        <div>
+            <div class="text-xs text-muted">Lifecycle state</div>
+            <div class="mt-1">
+                <StatusPill Label="@(Integration?.State ?? "—")"
+                            Semantic="@ManagementUiSemantics.MapIntegrationState(Integration?.State)" />
+            </div>
+        </div>
+        @if (Readiness is not null)
+        {
+            <div>
+                <div class="text-xs text-muted">Readiness</div>
+                <div class="mt-1">
+                    <StatusPill Label="@(Readiness.IsRunnable ? "Runnable" : "Not runnable")"
+                                Semantic="@(Readiness.IsRunnable ? ManagementStatusSemantic.Success : ManagementStatusSemantic.Warning)" />
+                </div>
+            </div>
+            <div>
+                <div class="text-xs text-muted">Issues</div>
+                <div class="mt-1 flex flex-wrap gap-2">
+                    @if (Readiness.BlockingIssueCount > 0)
+                    {
+                        <AttentionPill Label="@($"{Readiness.BlockingIssueCount} blocking")"
+                                         Semantic="@ManagementAttentionSemantic.Critical" />
+                    }
+                    @if (Readiness.AdvisoryIssueCount > 0)
+                    {
+                        <AttentionPill Label="@($"{Readiness.AdvisoryIssueCount} advisory")"
+                                         Semantic="@ManagementAttentionSemantic.Warning" />
+                    }
+                    @if (Readiness.BlockingIssueCount == 0 && Readiness.AdvisoryIssueCount == 0)
+                    {
+                        <span class="text-xs text-muted">No open issues</span>
+                    }
+                </div>
+            </div>
+        }
+        <div>
+            <div class="text-xs text-muted">Schedules</div>
+            <div class="mt-1 text-sm text-body">@ScheduleCount total · @EnabledScheduleCount enabled</div>
+        </div>
+        @if (BindingCount > 0)
+        {
+            <div>
+                <div class="text-xs text-muted">Bindings</div>
+                <div class="mt-1 text-sm text-body">@BindingCount active slot binding(s)</div>
+            </div>
+        }
+    </div>
+
+    <div class="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <ManagementSummaryCard Title="Execute"
+                               Description="Start workflows or operations scoped to this integration."
+                               Href="@ExecuteHref" />
+        <ManagementSummaryCard Title="Notifications"
+                               Description="Integration-scoped notification definitions and cutover."
+                               Href="@NotificationsHref" />
+        <ManagementSummaryCard Title="Schedule diagnostics"
+                               Description="Expected-run and schedule evaluation troubleshooting."
+                               Href="@ScheduleDiagnosticsHref" />
+    </div>
+</ManagementSection>
+
+@code {
+    [Parameter] public IntegrationDto? Integration { get; set; }
+    [Parameter] public IntegrationReadinessDto? Readiness { get; set; }
+    [Parameter] public int ScheduleCount { get; set; }
+    [Parameter] public int EnabledScheduleCount { get; set; }
+    [Parameter] public int BindingCount { get; set; }
+    [Parameter] public string IntegrationId { get; set; } = "";
+
+    private string ExecuteHref => $"/execute?integrationId={Uri.EscapeDataString(IntegrationId)}";
+    private string NotificationsHref => $"/integrations/{Uri.EscapeDataString(IntegrationId)}/notifications";
+    private string ScheduleDiagnosticsHref => $"/integrations/{Uri.EscapeDataString(IntegrationId)}/schedule-diagnostics";
+}

@@ -38,4 +38,13 @@ public sealed class ManagementUiSemanticsTests
         Assert.Contains("ui-status-pill--success", ManagementUiSemantics.GetStatusPillClass(ManagementStatusSemantic.Success));
         Assert.Contains("ui-attention-pill--critical", ManagementUiSemantics.GetAttentionPillClass(ManagementAttentionSemantic.Critical));
     }
+
+    [Theory]
+    [InlineData("Active", ManagementStatusSemantic.Success)]
+    [InlineData("Inactive", ManagementStatusSemantic.Warning)]
+    [InlineData("Draft", ManagementStatusSemantic.Neutral)]
+    public void MapIntegrationState_maps_lifecycle(string state, ManagementStatusSemantic expected)
+    {
+        Assert.Equal(expected, ManagementUiSemantics.MapIntegrationState(state));
+    }
 }

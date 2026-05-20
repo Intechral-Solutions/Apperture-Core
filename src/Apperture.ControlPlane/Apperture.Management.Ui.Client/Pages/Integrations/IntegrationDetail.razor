@@ -10,8 +10,10 @@
 @inject IJSRuntime JSRuntime
 @inject IToastService Toasts
 
-<div class="p-4">
-    <PageHeader Title="Integration" Subtitle="@(_integration?.DisplayName ?? IntegrationId)">
+<div class="p-4 ui-page-stack">
+    <PageHeader Eyebrow="Integrations"
+                Title="@(_integration?.DisplayName ?? IntegrationId)"
+                Subtitle="@SummarySubtitle">
         <Toolbar>
             <a href="/integrations" class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface">Back to list</a>
             <a href="@($"/execute?integrationId={Uri.EscapeDataString(IntegrationId)}")"
@@ -63,220 +65,192 @@
 
     @if (!_capabilitiesLoaded)
     {
-        <PageMessage Kind="PageMessageKind.Loading" Message="Loading…" />
+        <LoadingState />
     }
     else if (_capabilities?.CanViewIntegrations != true)
     {
-        <PageMessage Kind="PageMessageKind.Forbidden"
-                     Title="Not authorized"
-                     Message="You do not have permission to view integration details." />
+        <ForbiddenState Message="You do not have permission to view integration details." />
     }
     else if (!string.IsNullOrEmpty(_error))
     {
-        <PageMessage Kind="PageMessageKind.Error" Title="Error" Message="@_error" />
+        <ErrorState Message="@_error" />
     }
     else if (_integration is null)
     {
-        <PageMessage Kind="PageMessageKind.Loading" Message="Loading integration…" />
+        <LoadingState Message="Loading integration…" />
     }
     else
     {
-        <div class="mt-4 space-y-4">
-            @if (_wizardMode)
-            {
+        <IntegrationSummaryBand Integration="@_integration"
+                                Readiness="@_readiness"
+                                IntegrationId="@IntegrationId"
+                                ScheduleCount="@(_schedules?.Count ?? 0)"
+                                EnabledScheduleCount="@EnabledScheduleCount"
+                                BindingCount="@(_bindings?.Count ?? 0)" />
+
+        @if (string.Equals(_integration.State, "Inactive", StringComparison.OrdinalIgnoreCase))
+        {
+            <PageMessage Kind="PageMessageKind.Warning"
+                         Message="Integration is inactive. Configuration is preserved, but schedules and launches are operationally paused until re-activated." />
+        }
+
+        @if (_wizardMode)
+        {
+            <ManagementSection Title="Setup wizard"
+                               Layer="ManagementSection.UiLayer.Detail"
+                               Help="Guided sequence: bind slots, resolve readiness, attach schedules, launch procedures.">
                 <WizardFlowPanel Title="Integration setup wizard"
                                  Description="Follow the guided sequence: bind required slots, resolve readiness blockers, attach schedules, then launch procedures."
                                  Steps="@_wizard.Steps"
                                  StepStates="@_wizardStepMap"
                                  CurrentStepId="@_wizard.CurrentStepId"
                                  OnSelect="OnWizardStepSelectedAsync" />
-            }
+                @if (_capabilities?.CanManageIntegrations == true)
+                {
+                    <div class="mt-3 rounded border border-default bg-surface-muted/40 p-3">
+                        <div class="text-sm font-semibold text-heading">Next action</div>
+                        <div class="mt-1 text-xs text-muted">@CurrentWizardGuidance()</div>
+                        <div class="mt-2 flex gap-2">
+                            <button type="button"
+                                    class="rounded bg-surface-muted px-2 py-1 text-sm text-body hover:bg-surface"
+                                    @onclick="WizardPreviousAsync">
+                                Previous step
+                            </button>
+                            <button type="button"
+                                    class="rounded bg-body px-2 py-1 text-sm text-surface hover:bg-body/90 disabled:opacity-50"
+                                    disabled="@(!WizardCanAdvance())"
+                                    @onclick="WizardAdvanceAsync">
+                                Next step
+                            </button>
+                        </div>
+                    </div>
+                }
+            </ManagementSection>
+        }
 
-            <div class="rounded border border-default bg-surface p-3">
-                <h2 class="text-sm font-semibold text-heading mb-2">Details</h2>
-                <div class="grid grid-cols-1 gap-2 md:grid-cols-2">
-                    <div>
-                        <div class="text-xs text-muted">Display Name</div>
-                        <div class="text-sm text-body">@_integration.DisplayName</div>
-                    </div>
-                    <div>
-                        <div class="text-xs text-muted">Module definition</div>
-                        <div class="text-sm font-mono text-body">@_integration.ModuleId</div>
-                    </div>
-                    <div>
-                        <div class="text-xs text-muted">Scope key</div>
-                        <div class="text-sm text-body">@(_integration.ScopeKey ?? "—")</div>
-                    </div>
-                    <div>
-                        <div class="text-xs text-muted">State</div>
-                        <div class="text-sm text-body">@_integration.State</div>
-                    </div>
-                    <div>
-                        <div class="text-xs text-muted">Created</div>
-                        <div class="text-sm text-body">@_integration.CreatedAt.ToString("yyyy-MM-dd HH:mm")</div>
-                    </div>
-                    <div>
-                        <div class="text-xs text-muted">Updated</div>
-                        <div class="text-sm text-body">@_integration.UpdatedAt.ToString("yyyy-MM-dd HH:mm")</div>
-                    </div>
-                </div>
-            </div>
-
-            @if (string.Equals(_integration.State, "Inactive", StringComparison.OrdinalIgnoreCase))
-            {
-                <div class="rounded border border-message-warning bg-message-warning px-3 py-2 text-sm text-body">
-                    Integration is inactive. Configuration is preserved, but schedules and launches are operationally paused until re-activated.
-                </div>
-            }
-
-            @if (_wizardMode && _capabilities?.CanManageIntegrations == true)
-            {
-                <div class="rounded border border-default bg-surface p-3">
-                    <div class="text-sm font-semibold text-heading">Next action</div>
-                    <div class="mt-1 text-xs text-muted">@CurrentWizardGuidance()</div>
-                    <div class="mt-2 flex gap-2">
-                        <button type="button"
-                                class="rounded bg-surface-muted px-2 py-1 text-sm text-body hover:bg-surface"
-                                @onclick="WizardPreviousAsync">
-                            Previous step
-                        </button>
-                        <button type="button"
-                                class="rounded bg-body px-2 py-1 text-sm text-surface hover:bg-body/90 disabled:opacity-50"
-                                disabled="@(!WizardCanAdvance())"
-                                @onclick="WizardAdvanceAsync">
-                            Next step
-                        </button>
-                    </div>
-                </div>
-            }
-
-            @if (_readiness is not null)
-            {
-                <div class="rounded border border-default bg-surface p-3">
-                    <h2 class="text-sm font-semibold text-heading mb-2">Readiness</h2>
-                    <div class="text-xs text-muted mb-2">Derived from declared module slots, integration bindings, connections, and schedules.</div>
-                    <div class="mb-2">
-                        @if (_readiness.IsRunnable)
-                        {
-                            <span class="rounded bg-success-light px-2 py-0.5 text-xs font-medium text-success">Runnable</span>
-                        }
-                        else
-                        {
-                            <span class="rounded bg-warning-light px-2 py-0.5 text-xs font-medium text-warning">Not runnable</span>
-                        }
-                    </div>
-                    <div class="mb-2 text-xs text-muted">
+        @if (_readiness is not null)
+        {
+            <ManagementSection Title="Readiness"
+                               Layer="ManagementSection.UiLayer.Detail"
+                               Help="Derived from declared module slots, integration bindings, connections, and schedules.">
+                <div class="mb-3 flex flex-wrap items-center gap-2">
+                    <StatusPill Label="@(_readiness.IsRunnable ? "Runnable" : "Not runnable")"
+                                Semantic="@(_readiness.IsRunnable ? ManagementStatusSemantic.Success : ManagementStatusSemantic.Warning)" />
+                    <span class="text-xs text-muted">
                         Blocking: @_readiness.BlockingIssueCount · Advisory: @_readiness.AdvisoryIssueCount
-                    </div>
-                    @if (_readiness.Issues.Length > 0)
-                    {
-                        <ul class="space-y-2 text-sm text-body">
-                            @foreach (var issue in _readiness.Issues)
-                            {
-                                <li class="rounded border border-default bg-surface-muted/30 p-2">
-                                    <div>
-                                        <span class="font-mono text-xs text-muted">@issue.Code</span>
-                                        <span class="ml-1 text-xs text-muted">[@issue.Severity]</span>
-                                        <span class="ml-1">@issue.Message</span>
-                                    </div>
-                                    <div class="mt-1 text-xs text-muted">@ReadinessRemediationCue(issue)</div>
-                                    @if (_capabilities?.CanManageIntegrations == true)
-                                    {
-                                        <div class="mt-2">
-                                            <button type="button"
-                                                    class="rounded bg-surface-muted px-2 py-0.5 text-xs text-body hover:bg-surface"
-                                                    @onclick="() => RemediateReadinessIssueAsync(issue)">
-                                                Fix now
-                                            </button>
-                                        </div>
-                                    }
-                                </li>
-                            }
-                        </ul>
-                    }
-                    else
-                    {
-                        <div class="text-sm text-muted">No blocking issues detected.</div>
-                    }
+                    </span>
                 </div>
-            }
-
-            <div class="rounded border border-default bg-surface p-3">
-                <h2 class="text-sm font-semibold text-heading mb-2">Procedures</h2>
-                <div class="text-xs text-muted mb-2">Module-declared operator actions (ADR-0029). Availability and launchability come from the server; blocked reasons explain what must change.</div>
-                @if (_procedureLoading)
+                @if (_readiness.Issues.Length > 0)
                 {
-                    <div class="text-sm text-muted">Loading procedures…</div>
-                }
-                else if (!string.IsNullOrEmpty(_procedureError))
-                {
-                    <div class="text-sm text-body">@_procedureError</div>
-                }
-                else if (_procedureList is null)
-                {
-                    <div class="text-sm text-muted">No procedure data.</div>
-                }
-                else if (_procedureList.Procedures.Count == 0)
-                {
-                    <div class="text-sm text-muted">This module declares no procedures.</div>
+                    <ul class="space-y-2 text-sm text-body">
+                        @foreach (var issue in _readiness.Issues)
+                        {
+                            <li class="rounded border border-default bg-surface-muted/30 p-2">
+                                <div>
+                                    <span class="font-mono text-xs text-muted">@issue.Code</span>
+                                    <AttentionPill Label="@issue.Severity" Semantic="@MapIssueSeverity(issue.Severity)" />
+                                    <span class="ml-1">@issue.Message</span>
+                                </div>
+                                <div class="mt-1 text-xs text-muted">@ReadinessRemediationCue(issue)</div>
+                                @if (_capabilities?.CanManageIntegrations == true)
+                                {
+                                    <div class="mt-2">
+                                        <button type="button"
+                                                class="rounded bg-surface-muted px-2 py-0.5 text-xs text-body hover:bg-surface"
+                                                @onclick="() => RemediateReadinessIssueAsync(issue)">
+                                            Fix now
+                                        </button>
+                                    </div>
+                                }
+                            </li>
+                        }
+                    </ul>
                 }
                 else
                 {
-                    @if (!_procedureList.IntegrationReady)
-                    {
-                        <div class="mb-2 rounded border border-message-warning bg-message-warning px-2 py-1 text-xs text-body">
-                            Integration is not runnable; procedures are listed but launch is blocked until readiness passes.
-                        </div>
-                    }
-                    <div class="flex flex-wrap gap-2 mb-3">
-                        @foreach (var p in _procedureList.Procedures)
-                        {
-                            <button type="button"
-                                    class="rounded px-2 py-1 text-xs font-mono @(string.Equals(_selectedProcedureId, p.Id, StringComparison.Ordinal) ? "bg-body text-surface" : "bg-surface-muted text-body hover:bg-surface")"
-                                    @onclick="() => SelectProcedureAsync(p.Id)">
-                                @p.DisplayName
-                                @if (!p.Launchable)
-                                {
-                                    <span class="ml-1 text-warning" title="Blocked">●</span>
-                                }
-                            </button>
-                        }
-                    </div>
-                    @if (_selectedProcedureDetail is not null)
-                    {
-                        <div class="rounded border border-default bg-surface-muted/30 p-3">
-                            <div class="text-sm font-semibold text-heading">@_selectedProcedureDetail.DisplayName</div>
-                            @if (!string.IsNullOrEmpty(_selectedProcedureDetail.Description))
-                            {
-                                <div class="text-xs text-muted mt-1">@_selectedProcedureDetail.Description</div>
-                            }
-                            <div class="text-xs text-muted mt-1 font-mono">@_selectedProcedureDetail.Id · @_selectedProcedureDetail.LaunchKind → @_selectedProcedureDetail.TargetDefinitionId</div>
-                            @if (!_selectedProcedureDetail.Launchable && _selectedProcedureDetail.BlockedReasonCodes.Count > 0)
-                            {
-                                <ul class="mt-2 list-disc pl-5 text-xs text-warning">
-                                    @foreach (var blockedCode in _selectedProcedureDetail.BlockedReasonCodes)
-                                    {
-                                        <li><span class="font-mono">@blockedCode</span> — @DescribeBlockedReason(blockedCode)</li>
-                                    }
-                                </ul>
-                            }
-                            <ProcedureParameterForm Fields="@_selectedProcedureDetail.ParameterFields" Values="@_procedureParamValues" />
-                            <button type="button"
-                                    class="mt-3 rounded bg-body px-3 py-2 text-sm text-surface hover:bg-body/90 disabled:opacity-50"
-                                    disabled="@(_procedureLaunching || !_selectedProcedureDetail.Launchable)"
-                                    @onclick="LaunchSelectedProcedureAsync">
-                                Launch
-                            </button>
-                        </div>
-                    }
+                    <EmptyState Message="No blocking issues detected." />
                 }
-            </div>
+            </ManagementSection>
+        }
 
+        <ManagementSection Title="Procedures"
+                           Layer="ManagementSection.UiLayer.Detail"
+                           Help="Module-declared operator actions (ADR-0029). Availability and launchability come from the server; blocked reasons explain what must change.">
+            @if (_procedureLoading)
+            {
+                <LoadingState Message="Loading procedures…" />
+            }
+            else if (!string.IsNullOrEmpty(_procedureError))
+            {
+                <ErrorState Title="Procedure error" Message="@_procedureError" />
+            }
+            else if (_procedureList is null)
+            {
+                <EmptyState Message="No procedure data." />
+            }
+            else if (_procedureList.Procedures.Count == 0)
+            {
+                <EmptyState Message="This module declares no procedures." />
+            }
+            else
+            {
+                @if (!_procedureList.IntegrationReady)
+                {
+                    <PageMessage Kind="PageMessageKind.Warning"
+                                 Message="Integration is not runnable; procedures are listed but launch is blocked until readiness passes." />
+                }
+                <div class="flex flex-wrap gap-2 mb-3">
+                    @foreach (var p in _procedureList.Procedures)
+                    {
+                        <button type="button"
+                                class="rounded px-2 py-1 text-xs font-mono @(string.Equals(_selectedProcedureId, p.Id, StringComparison.Ordinal) ? "bg-body text-surface" : "bg-surface-muted text-body hover:bg-surface")"
+                                @onclick="() => SelectProcedureAsync(p.Id)">
+                            @p.DisplayName
+                            @if (!p.Launchable)
+                            {
+                                <span class="ml-1 text-warning" title="Blocked">●</span>
+                            }
+                        </button>
+                    }
+                </div>
+                @if (_selectedProcedureDetail is not null)
+                {
+                    <div class="rounded border border-default bg-surface-muted/30 p-3">
+                        <div class="text-sm font-semibold text-heading">@_selectedProcedureDetail.DisplayName</div>
+                        @if (!string.IsNullOrEmpty(_selectedProcedureDetail.Description))
+                        {
+                            <div class="text-xs text-muted mt-1">@_selectedProcedureDetail.Description</div>
+                        }
+                        <div class="text-xs text-muted mt-1 font-mono">@_selectedProcedureDetail.Id · @_selectedProcedureDetail.LaunchKind → @_selectedProcedureDetail.TargetDefinitionId</div>
+                        @if (!_selectedProcedureDetail.Launchable && _selectedProcedureDetail.BlockedReasonCodes.Count > 0)
+                        {
+                            <ul class="mt-2 list-disc pl-5 text-xs text-warning">
+                                @foreach (var blockedCode in _selectedProcedureDetail.BlockedReasonCodes)
+                                {
+                                    <li><span class="font-mono">@blockedCode</span> — @DescribeBlockedReason(blockedCode)</li>
+                                }
+                            </ul>
+                        }
+                        <ProcedureParameterForm Fields="@_selectedProcedureDetail.ParameterFields" Values="@_procedureParamValues" />
+                        <button type="button"
+                                class="mt-3 rounded bg-body px-3 py-2 text-sm text-surface hover:bg-body/90 disabled:opacity-50"
+                                disabled="@(_procedureLaunching || !_selectedProcedureDetail.Launchable)"
+                                @onclick="LaunchSelectedProcedureAsync">
+                            Launch
+                        </button>
+                    </div>
+                }
+            }
+        </ManagementSection>
+
+        <ManagementSection Title="Configuration"
+                           Layer="ManagementSection.UiLayer.Detail"
+                           Help="Module slots, instance settings, and connection bindings for this integration.">
             @if (_requiredSlots is { Length: > 0 })
             {
-                <div class="rounded border border-default bg-surface p-3">
-                    <h2 class="text-sm font-semibold text-heading mb-2">Required slots</h2>
-                    <div class="text-xs text-muted mb-2">Declared by the module for this integration.</div>
+                <div class="mb-4">
+                    <h3 class="text-xs font-semibold text-heading mb-2">Required slots</h3>
+                    <p class="text-xs text-muted mb-2">Declared by the module for this integration.</p>
                     <ul class="space-y-1 text-sm">
                         @foreach (var slot in _requiredSlots)
                         {
@@ -284,16 +258,17 @@
                             <li class="flex justify-between gap-2">
                                 <span class="font-mono">@slot.SlotName</span>
                                 <span class="text-muted text-xs">@slot.ContractType</span>
-                                <span class="text-xs @(bound ? "text-success" : "text-warning")">@(bound ? "Bound" : "Unbound")</span>
+                                <StatusPill Label="@(bound ? "Bound" : "Unbound")"
+                                            Semantic="@(bound ? ManagementStatusSemantic.Success : ManagementStatusSemantic.Warning)" />
                             </li>
                         }
                     </ul>
                 </div>
             }
 
-            <div class="rounded border border-default bg-surface p-3">
-                <h2 class="text-sm font-semibold text-heading mb-2">Module instance settings</h2>
-                <div class="text-xs text-muted mb-2">Key-value pairs. Module-specific schema support is deferred.</div>
+            <div class="mb-4">
+                <h3 class="text-xs font-semibold text-heading mb-2">Module instance settings</h3>
+                <p class="text-xs text-muted mb-2">Key-value pairs. Module-specific schema support is deferred.</p>
                 @if (_integration.Settings is { Count: > 0 })
                 {
                     <div class="space-y-2">
@@ -309,7 +284,7 @@
                 }
                 else
                 {
-                    <div class="text-sm text-muted">No settings configured.</div>
+                    <EmptyState Message="No settings configured." />
                 }
                 @if (_capabilities?.CanManageIntegrations == true)
                 {
@@ -340,9 +315,9 @@
                 }
             </div>
 
-            <div class="rounded border border-default bg-surface p-3">
-                <h2 class="text-sm font-semibold text-heading mb-2">Connection bindings</h2>
-                <div class="text-xs text-muted mb-2">Bindings belong to this Integration. Managed from this page.</div>
+            <div>
+                <h3 class="text-xs font-semibold text-heading mb-2">Connection bindings</h3>
+                <p class="text-xs text-muted mb-2">Bindings belong to this Integration. Managed from this page.</p>
                 @if (_bindings is { Count: > 0 })
                 {
                     <ul class="space-y-1">
@@ -350,7 +325,7 @@
                         {
                             <li class="flex items-center justify-between gap-2">
                                 <div>
-                                    <a href="@("/connections/" + Uri.EscapeDataString(b.ConnectionId ?? ""))" class="underline text-sm hover:text-heading">@b.SlotName</a>
+                                    <DrillInLink Href="@("/connections/" + Uri.EscapeDataString(b.ConnectionId ?? ""))">@b.SlotName</DrillInLink>
                                     <span class="text-muted text-xs ml-1">@b.ContractType</span>
                                     @if (!string.IsNullOrEmpty(b.ConnectionId))
                                     {
@@ -371,7 +346,7 @@
                 }
                 else
                 {
-                    <div class="text-sm text-muted">No bindings.</div>
+                    <EmptyState Message="No bindings." />
                 }
                 @if (_capabilities?.CanManageIntegrations == true)
                 {
@@ -380,7 +355,7 @@
                         <div class="mt-3 rounded border border-default bg-surface-muted p-3 space-y-3">
                             @if (!string.IsNullOrEmpty(_bindingError))
                             {
-                                <div class="rounded border border-message-warning bg-message-warning px-2 py-1 text-xs text-body">@_bindingError</div>
+                                <PageMessage Kind="PageMessageKind.Warning" Message="@_bindingError" />
                             }
                             <div>
                                 <label class="block text-xs text-muted">Slot</label>
@@ -420,7 +395,7 @@
                                     <div class="text-xs font-semibold text-heading">Create connection in flow</div>
                                     @if (!string.IsNullOrEmpty(_inFlowCreateError))
                                     {
-                                        <div class="rounded border border-message-warning bg-message-warning px-2 py-1 text-xs text-body">@_inFlowCreateError</div>
+                                        <PageMessage Kind="PageMessageKind.Warning" Message="@_inFlowCreateError" />
                                     }
                                     <div>
                                         <label class="block text-xs text-muted">Connector definition</label>
@@ -480,77 +455,129 @@
                     }
                 }
             </div>
+        </ManagementSection>
 
-            <div class="rounded border border-default bg-surface p-3">
-                <h2 id="schedules" class="text-sm font-semibold text-heading mb-2">Schedules</h2>
-                <div class="text-xs text-muted mb-2">Schedules associated with this Integration.</div>
-                @if (_schedules is { Count: > 0 })
+        <div id="schedules">
+        <ManagementSection Title="Schedules"
+                           Layer="ManagementSection.UiLayer.Detail"
+                           Help="Schedules associated with this integration.">
+            @if (_schedules is { Count: > 0 })
+            {
+                <ul class="space-y-1">
+                    @foreach (var s in _schedules)
+                    {
+                        <li class="flex items-center justify-between gap-2">
+                            <DrillInLink Href="@("/schedules/" + Uri.EscapeDataString(s.Id))">@s.Name</DrillInLink>
+                            <span class="text-muted text-xs">@s.RecurrenceExpression · @(s.Enabled ? "Enabled" : "Disabled")</span>
+                        </li>
+                    }
+                </ul>
+            }
+            else
+            {
+                <EmptyState Message="No schedules." />
+            }
+            @if (_capabilities?.CanManageIntegrations == true)
+            {
+                @if (_addingSchedule)
                 {
-                    <ul class="space-y-1">
-                        @foreach (var s in _schedules)
-                        {
-                            <li class="flex items-center justify-between gap-2">
-                                <a href="@("/schedules/" + Uri.EscapeDataString(s.Id))" class="underline text-sm hover:text-heading">@s.Name</a>
-                                <span class="text-muted text-xs">@s.RecurrenceExpression · @(s.Enabled ? "Enabled" : "Disabled")</span>
-                            </li>
-                        }
-                    </ul>
+                    <div class="mt-3 rounded border border-default bg-surface-muted p-3 space-y-3">
+                        <div>
+                            <label class="block text-xs text-muted">Name</label>
+                            <input class="mt-1 w-full rounded border border-default bg-surface px-2 py-1 text-sm" @bind="_scheduleName" placeholder="e.g. Daily sync" />
+                        </div>
+                        <div>
+                            <label class="block text-xs text-muted">Cron expression</label>
+                            <input class="mt-1 w-full rounded border border-default bg-surface px-2 py-1 text-sm font-mono" @bind="_scheduleCron" placeholder="0 0 * * *" />
+                        </div>
+                        <div>
+                            <label class="block text-xs text-muted">Time zone</label>
+                            <input class="mt-1 w-full rounded border border-default bg-surface px-2 py-1 text-sm" @bind="_scheduleTimeZone" placeholder="UTC" />
+                        </div>
+                        <div>
+                            <label class="block text-xs text-muted">Workflow</label>
+                            <select class="mt-1 w-full rounded border border-default bg-surface px-2 py-1 text-sm" @bind="_scheduleWorkflowId">
+                                <option value="">Select…</option>
+                                @if (_workflows is not null)
+                                {
+                                    @foreach (var w in _workflows)
+                                    {
+                                        <option value="@w.Id">@w.Name</option>
+                                    }
+                                }
+                            </select>
+                        </div>
+                        <div class="flex gap-2">
+                            <button type="button" class="rounded bg-body px-2 py-1 text-sm text-surface hover:bg-body/90" @onclick="CreateScheduleAsync" disabled="@(_scheduleSaving || string.IsNullOrWhiteSpace(_scheduleName) || string.IsNullOrWhiteSpace(_scheduleCron) || string.IsNullOrWhiteSpace(_scheduleWorkflowId))">Create</button>
+                            <button type="button" class="rounded bg-surface-muted px-2 py-1 text-sm text-body hover:bg-surface" @onclick="CancelAddSchedule">Cancel</button>
+                        </div>
+                    </div>
                 }
                 else
                 {
-                    <div class="text-sm text-muted">No schedules.</div>
+                    <button type="button" class="mt-2 rounded bg-surface-muted px-2 py-1 text-sm text-body hover:bg-surface" @onclick="StartAddSchedule">Add schedule</button>
                 }
-                @if (_capabilities?.CanManageIntegrations == true)
-                {
-                    @if (_addingSchedule)
-                    {
-                        <div class="mt-3 rounded border border-default bg-surface-muted p-3 space-y-3">
-                            <div>
-                                <label class="block text-xs text-muted">Name</label>
-                                <input class="mt-1 w-full rounded border border-default bg-surface px-2 py-1 text-sm" @bind="_scheduleName" placeholder="e.g. Daily sync" />
-                            </div>
-                            <div>
-                                <label class="block text-xs text-muted">Cron expression</label>
-                                <input class="mt-1 w-full rounded border border-default bg-surface px-2 py-1 text-sm font-mono" @bind="_scheduleCron" placeholder="0 0 * * *" />
-                            </div>
-                            <div>
-                                <label class="block text-xs text-muted">Time zone</label>
-                                <input class="mt-1 w-full rounded border border-default bg-surface px-2 py-1 text-sm" @bind="_scheduleTimeZone" placeholder="UTC" />
-                            </div>
-                            <div>
-                                <label class="block text-xs text-muted">Workflow</label>
-                                <select class="mt-1 w-full rounded border border-default bg-surface px-2 py-1 text-sm" @bind="_scheduleWorkflowId">
-                                    <option value="">Select…</option>
-                                    @if (_workflows is not null)
-                                    {
-                                        @foreach (var w in _workflows)
-                                        {
-                                            <option value="@w.Id">@w.Name</option>
-                                        }
-                                    }
-                                </select>
-                            </div>
-                            <div class="flex gap-2">
-                                <button type="button" class="rounded bg-body px-2 py-1 text-sm text-surface hover:bg-body/90" @onclick="CreateScheduleAsync" disabled="@(_scheduleSaving || string.IsNullOrWhiteSpace(_scheduleName) || string.IsNullOrWhiteSpace(_scheduleCron) || string.IsNullOrWhiteSpace(_scheduleWorkflowId))">Create</button>
-                                <button type="button" class="rounded bg-surface-muted px-2 py-1 text-sm text-body hover:bg-surface" @onclick="CancelAddSchedule">Cancel</button>
-                            </div>
-                        </div>
-                    }
-                    else
-                    {
-                        <button type="button" class="mt-2 rounded bg-surface-muted px-2 py-1 text-sm text-body hover:bg-surface" @onclick="StartAddSchedule">Add schedule</button>
-                    }
-                }
-            </div>
+            }
+        </ManagementSection>
+        </div>
 
-            <div class="rounded border border-default bg-surface p-3">
-                <h2 class="text-sm font-semibold text-heading mb-2">Runtime and lineage</h2>
-                <div class="text-xs text-muted space-y-2">
-                    <p>Workflow runs started with an integration id (manual start, schedules, or retry) store <span class="font-mono">IntegrationId</span> on the run and instance. The worker resolves slots using that id when present.</p>
-                    <p>Configure <span class="font-mono">Apperture:IntegrationExecution:DefaultIntegrationId</span> or environment <span class="font-mono">APERTURE_INTEGRATION_ID</span> only when a single integration is deployed per worker and persisted starts omit integration id.</p>
+        <ManagementAdvancedSection Title="Identity, lineage, and diagnostics"
+                                   Subtitle="Technical metadata and low-frequency troubleshooting context.">
+            <div class="space-y-4">
+                <div>
+                    <h3 class="text-xs font-semibold text-heading mb-2">Identity</h3>
+                    <div class="grid grid-cols-1 gap-2 md:grid-cols-2 text-sm">
+                        <div>
+                            <div class="text-xs text-muted">Integration id</div>
+                            <div class="font-mono text-body break-all">@_integration.Id</div>
+                        </div>
+                        <div>
+                            <div class="text-xs text-muted">Display name</div>
+                            <div class="text-body">@_integration.DisplayName</div>
+                        </div>
+                        <div>
+                            <div class="text-xs text-muted">Module definition</div>
+                            <div class="font-mono text-body">@_integration.ModuleId</div>
+                        </div>
+                        <div>
+                            <div class="text-xs text-muted">Scope key</div>
+                            <div class="text-body">@(_integration.ScopeKey ?? "—")</div>
+                        </div>
+                        <div>
+                            <div class="text-xs text-muted">Created</div>
+                            <div class="text-body">@_integration.CreatedAt.ToString("yyyy-MM-dd HH:mm")</div>
+                        </div>
+                        <div>
+                            <div class="text-xs text-muted">Updated</div>
+                            <div class="text-body">@_integration.UpdatedAt.ToString("yyyy-MM-dd HH:mm")</div>
+                        </div>
+                    </div>
+                </div>
+                <div>
+                    <h3 class="text-xs font-semibold text-heading mb-2">Related diagnostics</h3>
+                    <ul class="space-y-1 text-sm">
+                        <li>
+                            <DrillInLink Href="@($"/integrations/{Uri.EscapeDataString(IntegrationId)}/schedule-diagnostics")">
+                                Schedule diagnostics
+                            </DrillInLink>
+                            <span class="text-xs text-muted ml-1">— expected-run and evaluation troubleshooting</span>
+                        </li>
+                        <li>
+                            <DrillInLink Href="@($"/integrations/{Uri.EscapeDataString(IntegrationId)}/notifications")">
+                                Notification configuration
+                            </DrillInLink>
+                        </li>
+                    </ul>
+                </div>
+                <div>
+                    <h3 class="text-xs font-semibold text-heading mb-2">Runtime and lineage</h3>
+                    <div class="text-xs text-muted space-y-2">
+                        <p>Workflow runs started with an integration id (manual start, schedules, or retry) store <span class="font-mono">IntegrationId</span> on the run and instance. The worker resolves slots using that id when present.</p>
+                        <p>Configure <span class="font-mono">Apperture:IntegrationExecution:DefaultIntegrationId</span> or environment <span class="font-mono">APERTURE_INTEGRATION_ID</span> only when a single integration is deployed per worker and persisted starts omit integration id.</p>
+                    </div>
                 </div>
             </div>
-        </div>
+        </ManagementAdvancedSection>
     }
 </div>
 
@@ -628,6 +655,23 @@
     private IntegrationProcedureDetailDto? _selectedProcedureDetail;
     private readonly Dictionary<string, object?> _procedureParamValues = new(StringComparer.Ordinal);
     private bool _procedureLaunching;
+
+    private string SummarySubtitle =>
+        _integration is null
+            ? IntegrationId
+            : $"{_integration.ModuleId} · {_integration.State}";
+
+    private int EnabledScheduleCount =>
+        _schedules?.Count(s => s.Enabled) ?? 0;
+
+    private static ManagementAttentionSemantic MapIssueSeverity(string? severity) =>
+        severity?.Trim().ToLowerInvariant() switch
+        {
+            "high" or "blocking" or "critical" => ManagementAttentionSemantic.Critical,
+            "medium" or "warning" or "advisory" => ManagementAttentionSemantic.Warning,
+            "low" or "info" => ManagementAttentionSemantic.Info,
+            _ => ManagementAttentionSemantic.None
+        };
 
     protected override async Task OnInitializedAsync()
     {

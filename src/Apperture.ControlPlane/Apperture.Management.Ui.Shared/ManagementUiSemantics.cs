@@ -87,4 +87,17 @@ public static class ManagementUiSemantics
     /// </summary>
     public static string GetRuntimeHealthInlineTextClass(string? status) =>
         Epic33UiDisplayHelpers.GetStatusCssClass(status ?? "");
+
+    /// <summary>Integration lifecycle state from operator detail APIs.</summary>
+    public static ManagementStatusSemantic MapIntegrationState(string? state)
+    {
+        if (string.Equals(state, "Active", StringComparison.OrdinalIgnoreCase))
+            return ManagementStatusSemantic.Success;
+        if (string.Equals(state, "Inactive", StringComparison.OrdinalIgnoreCase))
+            return ManagementStatusSemantic.Warning;
+        return ManagementStatusSemantic.Neutral;
+    }
+
+    public static string GetIntegrationStatePillClass(string? state) =>
+        GetStatusPillClass(MapIntegrationState(state));
 }

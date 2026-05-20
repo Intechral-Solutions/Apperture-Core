@@ -154,4 +154,4 @@ Do not add one-off hex colors in Razor; extend semantic tokens in `app.css` when
 
 ## Proof usage
 
-The `/config` landing page demonstrates `PageHeader`, `ManagementSection`, and `ManagementSummaryCard` (hub landing archetype). Other pages may continue using legacy markup until their pilot epic.
+The `/config` landing page demonstrates `PageHeader`, `ManagementSection`, and `ManagementSummaryCard` (hub landing archetype). **Epic 80** applied the same primitives to [Integration Detail](../../02-decisions/Epic80-Integration-Detail-Redesign-Pilot.md) (`/integrations/{IntegrationId}`). Other pages may continue using legacy markup until their pilot epic.
