@@ -325,7 +325,7 @@
 
     @if (!string.IsNullOrEmpty(_error))
     {
-        <p class="text-sm text-muted">@_error</p>
+        <PageMessage Kind="PageMessageKind.Error" Message="@_error" />
     }
 
     <div class="flex flex-wrap gap-2">

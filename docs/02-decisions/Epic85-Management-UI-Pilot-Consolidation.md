@@ -10,7 +10,7 @@ Consolidate learnings from the first five modernization pilots (Epics 80–84), 
 
 This epic is explicitly a consolidation effort, not another page redesign.
 
-Follow-on: [Epic 86 — Management UI state branch consistency sweep](Epic86-Management-UI-State-Branch-Consistency-Sweep.md) applies these state primitives to additional non-pilot pages without redesigning layouts.
+Follow-on: [Epic 86 — Management UI state branch consistency sweep](Epic86-Management-UI-State-Branch-Consistency-Sweep.md) applies state primitives to additional non-pilot pages. [Epic 87 — Action surface and operation feedback groundwork](Epic87-Management-UI-Action-Surface-and-Operation-Feedback-Groundwork.md) inventories action categories and feedback placement for a future operation shell.
 
 ## Pilots reviewed
 

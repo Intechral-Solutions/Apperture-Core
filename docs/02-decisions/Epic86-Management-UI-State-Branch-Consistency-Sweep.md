@@ -58,3 +58,4 @@ Recorded at implementation time:
 
 - Optional: normalize **login** shells to state wrappers once copy and layout are reviewed together.
 - Any page mixing **omit vs deny** semantics should stay deferred until Epic 78 permission-display rules are revisited page-by-page.
+- **Action/feedback:** see [Epic 87](Epic87-Management-UI-Action-Surface-and-Operation-Feedback-Groundwork.md) for async-operation-shell candidates (runs, schedules, blocked work, integration mutations).
