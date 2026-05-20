@@ -27,9 +27,14 @@
     {
         <ErrorState Message="@_error" />
     }
-    else if (_module is null && string.IsNullOrEmpty(_actionMessage))
+    else if (_loading && _module is null && string.IsNullOrEmpty(_actionMessage))
     {
         <LoadingState Message="Loading…" />
+    }
+    else if (_module is null && string.IsNullOrEmpty(_actionMessage))
+    {
+        <EmptyState Title="Module not found"
+                    Message="The requested module could not be loaded." />
     }
     else
     {

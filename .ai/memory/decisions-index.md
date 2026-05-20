@@ -35,3 +35,4 @@ Architecture decision records (ADRs) live in [docs/02-decisions/](../../docs/02-
 | [Epic 89](../../docs/02-decisions/Epic89-Management-UI-Modernization-Progress-Audit.md) | Modernization progress audit (Epics 78–88 coherence, findings, next epic) |
 | [Epic 90](../../docs/02-decisions/Epic90-Management-UI-Action-Feedback-Corrective-Pass.md) | Action feedback corrective pass (COR-001–003 from Epic 89 audit) |
 | [Epic 91](../../docs/02-decisions/Epic91-Operation-History-and-Action-Feedback-Groundwork.md) | Operation history and action feedback groundwork (sources of truth, durability, future contract; docs only) |
+| [Epic 92](../../docs/02-decisions/Epic92-UI-Modernization-QA-and-Corrective-Stabilization.md) | UI modernization QA and corrective stabilization (Epics 78–90; state-branch fixes) |

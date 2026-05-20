@@ -77,9 +77,14 @@
         {
             <ActionFeedback Message="@_actionMessage" />
         }
-        else
+        else if (_loading)
         {
             <LoadingState />
+        }
+        else
+        {
+            <EmptyState Title="Schedule not found"
+                        Message="The requested schedule could not be loaded." />
         }
     }
     else

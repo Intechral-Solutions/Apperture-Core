@@ -41,6 +41,10 @@
     {
         <LoadingState />
     }
+    else if (!string.IsNullOrEmpty(_error) && _detail is null)
+    {
+        <ErrorState Message="@_error" />
+    }
     else if (_detail is null)
     {
         <EmptyState Title="Definition not found"
@@ -50,7 +54,9 @@
     {
         @if (!string.IsNullOrEmpty(_error))
         {
-            <ErrorState Message="@_error" />
+            <div class="mb-4">
+                <PageMessage Kind="PageMessageKind.Error" Message="@_error" />
+            </div>
         }
 
         <ManagementSection Title="Summary"
@@ -465,6 +471,22 @@
         _ => _users.Select(u => (u.UserId, $"{u.DisplayName} ({u.UserId})"))
     };
 
+    private string? _dataLoadKey;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        await base.OnParametersSetAsync();
+        var key = DefinitionId ?? "";
+        if (key == _dataLoadKey)
+            return;
+        _dataLoadKey = key;
+        if (!_capabilitiesLoaded)
+            return;
+        if (!_canView)
+            return;
+        await LoadAsync();
+    }
+
     protected override async Task OnInitializedAsync()
     {
         var caps = await Capabilities.GetCapabilitiesAsync();
@@ -484,7 +506,9 @@
     private async Task LoadAsync()
     {
         _busy = true;
+        _loading = true;
         _error = null;
+        _detail = null;
         try
         {
             _detail = await Client.GetNotificationDefinitionAsync(DefinitionId);
@@ -553,6 +577,7 @@
             return;
         var enabled = ParseCheckbox(e);
         _busy = true;
+        _error = null;
         try
         {
             _detail = await Client.SetNotificationDefinitionEnabledAsync(DefinitionId, enabled) ?? _detail;
@@ -618,6 +643,7 @@
         if (!_canManage)
             return;
         _busy = true;
+        _error = null;
         try
         {
             await Client.PatchNotificationSubscriptionAsync(
@@ -639,6 +665,7 @@
         if (string.IsNullOrWhiteSpace(mode))
             return;
         _busy = true;
+        _error = null;
         try
         {
             await Client.PatchNotificationSubscriptionAsync(
@@ -657,6 +684,7 @@
         if (!_canManage)
             return;
         _busy = true;
+        _error = null;
         try
         {
             await Client.RemoveNotificationSubscriptionAsync(DefinitionId, s.Id);

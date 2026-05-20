@@ -75,9 +75,14 @@
     {
         <ErrorState Message="@_error" />
     }
-    else if (_integration is null)
+    else if (_loading)
     {
         <LoadingState Message="Loading integration…" />
+    }
+    else if (_integration is null)
+    {
+        <EmptyState Title="Integration not found"
+                    Message="The requested integration could not be loaded." />
     }
     else
     {

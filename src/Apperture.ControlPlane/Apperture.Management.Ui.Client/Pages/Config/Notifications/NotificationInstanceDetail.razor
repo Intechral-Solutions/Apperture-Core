@@ -1,5 +1,6 @@
 @page "/config/notifications/instances/{InstanceId}"
 @layout ConfigLayout
+@using Apperture.Management.Ui.Client.Molecules
 @using Apperture.Management.Client
 @using Apperture.Management.Ui.Client.Organisms
 @using Apperture.Management.Ui.Client.Organisms.Notifications
@@ -26,6 +27,10 @@
     else if (_loading)
     {
         <LoadingState Message="Loading…" />
+    }
+    else if (!string.IsNullOrEmpty(_error))
+    {
+        <ErrorState Message="@_error" />
     }
     else if (_detail is null)
     {
@@ -162,6 +167,22 @@
     private string InstanceSubtitle =>
         _detail is null ? "" : $"{_detail.NotificationKind} / {_detail.Status}";
 
+    private string? _dataLoadKey;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        await base.OnParametersSetAsync();
+        var key = InstanceId ?? "";
+        if (key == _dataLoadKey)
+            return;
+        _dataLoadKey = key;
+        if (!_capabilitiesLoaded)
+            return;
+        if (!_canView)
+            return;
+        await LoadAsync();
+    }
+
     protected override async Task OnInitializedAsync()
     {
         var caps = await Capabilities.GetCapabilitiesAsync();
@@ -179,6 +200,8 @@
     {
         _loading = true;
         _error = null;
+        _detail = null;
+        _outbox = null;
         try
         {
             _detail = await Client.GetNotificationInstanceAsync(InstanceId);

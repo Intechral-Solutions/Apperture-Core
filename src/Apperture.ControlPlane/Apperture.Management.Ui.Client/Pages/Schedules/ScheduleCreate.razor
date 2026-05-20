@@ -18,7 +18,11 @@
         </Toolbar>
     </PageHeader>
 
-    @if (_capabilities?.CanManageSchedules != true)
+    @if (!_capabilitiesLoaded)
+    {
+        <LoadingState Message="Loading…" />
+    }
+    else if (_capabilities?.CanManageSchedules != true)
     {
         <ForbiddenState Title="Not authorized"
                         Message="You do not have permission to create schedules." />
@@ -155,6 +159,7 @@
 </div>
 
 @code {
+    private bool _capabilitiesLoaded;
     private OperatorCapabilitiesDto? _capabilities;
     private IReadOnlyList<IntegrationDto>? _integrations;
     private IReadOnlyList<WorkflowDto>? _workflows;
@@ -186,6 +191,7 @@
     protected override async Task OnInitializedAsync()
     {
         await LoadCapabilitiesAsync();
+        _capabilitiesLoaded = true;
         if (_capabilities?.CanManageSchedules != true)
             return;
         await LoadIntegrationsAsync();
