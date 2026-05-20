@@ -16,25 +16,29 @@
             <div class="mt-1 font-mono text-xs text-muted break-all">@RunId</div>
         </ChildContent>
         <Toolbar>
-            <button class="ui-toolbar-btn"
+            <button type="button"
+                    class="ui-toolbar-btn"
                     disabled="@(!CanInvoke("execution.cancel"))"
                     title="@ActionReason("execution.cancel")"
                     @onclick="CancelAsync">
                 Cancel
             </button>
-            <button class="ui-toolbar-btn"
+            <button type="button"
+                    class="ui-toolbar-btn"
                     disabled="@(!CanInvoke("execution.retry"))"
                     title="@ActionReason("execution.retry")"
                     @onclick="RetryAsync">
                 Retry (new run)
             </button>
-            <button class="ui-toolbar-btn"
+            <button type="button"
+                    class="ui-toolbar-btn"
                     disabled="@(!CanInvoke("execution.park"))"
                     title="@ActionReason("execution.park")"
                     @onclick="ParkAsync">
                 Park
             </button>
-            <button class="ui-toolbar-btn"
+            <button type="button"
+                    class="ui-toolbar-btn"
                     disabled="@(!CanInvoke("execution.resume"))"
                     title="@ActionReason("execution.resume")"
                     @onclick="ResumeAsync">
@@ -44,7 +48,8 @@
                 <input type="checkbox" class="h-4 w-4" @bind="_pollingEnabled" />
                 Poll
             </label>
-            <button class="ui-toolbar-btn"
+            <button type="button"
+                    class="ui-toolbar-btn"
                     disabled="@_loading"
                     @onclick="RefreshAsync">
                 Refresh

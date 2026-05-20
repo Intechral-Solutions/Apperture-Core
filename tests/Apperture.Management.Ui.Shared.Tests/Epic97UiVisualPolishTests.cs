@@ -53,4 +53,27 @@ public sealed class Epic97UiVisualPolishTests
         content.Should().Contain("ui-page-stack");
         content.Should().Contain("ui-detail-block");
     }
+
+    [Fact]
+    public void ManagementUiPrimitives_toolbar_uses_element_scoped_selectors()
+    {
+        var content = ReadRepoFile(
+            "src/Apperture.ControlPlane/Apperture.Management.Ui.Client/wwwroot/css/management-ui-primitives.css");
+        content.Should().Contain("button.ui-toolbar-btn");
+        content.Should().Contain("a.ui-toolbar-btn");
+        content.Should().Contain("pointer-events: auto");
+        content.Should().Contain(":focus-visible");
+    }
+
+    [Fact]
+    public void RunDetail_toolbar_commands_use_button_type_and_handlers()
+    {
+        var content = ReadRepoFile(
+            "src/Apperture.ControlPlane/Apperture.Management.Ui.Client/Pages/Runs/RunDetail.razor");
+        content.Should().Contain("type=\"button\"");
+        content.Should().Contain("class=\"ui-toolbar-btn\"");
+        content.Should().Contain("@onclick=\"ParkAsync\"");
+        content.Should().Contain("@onclick=\"ResumeAsync\"");
+        content.Should().Contain("@onclick=\"RefreshAsync\"");
+    }
 }

@@ -23,13 +23,15 @@
             </select>
             @if (_capabilities?.CanManageRecovery == true)
             {
-                <button class="ui-toolbar-btn"
+                <button type="button"
+                        class="ui-toolbar-btn"
                         disabled="@_loading"
                         @onclick="TriggerRunCycleAsync">
                     Trigger scheduler cycle
                 </button>
             }
-            <button class="ui-toolbar-btn"
+            <button type="button"
+                    class="ui-toolbar-btn"
                     disabled="@_loading"
                     @onclick="RefreshAsync">
                 Refresh

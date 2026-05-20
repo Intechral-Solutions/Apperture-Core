@@ -19,7 +19,8 @@
             <a href="/schedules" class="ui-toolbar-btn">Back to list</a>
             @if (_capabilities?.CanManageSchedules == true && !_editing)
             {
-                <button class="ui-toolbar-btn"
+                <button type="button"
+                        class="ui-toolbar-btn"
                         title="Edit schedule"
                         @onclick="StartEdit">
                     Edit
@@ -27,13 +28,15 @@
             }
             @if (_capabilities?.CanManageSchedules == true)
             {
-                <button class="ui-toolbar-btn"
+                <button type="button"
+                        class="ui-toolbar-btn"
                         disabled="@(_loading || (_detail?.Enabled == true))"
                         title="Enable this schedule"
                         @onclick="EnableAsync">
                     Enable
                 </button>
-                <button class="ui-toolbar-btn"
+                <button type="button"
+                        class="ui-toolbar-btn"
                         disabled="@(_loading || (_detail?.Enabled != true))"
                         title="Disable this schedule"
                         @onclick="DisableAsync">
@@ -42,14 +45,16 @@
             }
             @if (_capabilities?.CanManageRecovery == true)
             {
-                <button class="ui-toolbar-btn"
+                <button type="button"
+                        class="ui-toolbar-btn"
                         disabled="@_loading"
                         title="@Epic33UiDisplayHelpers.ScheduleActionButtonTitle"
                         @onclick="TriggerRunCycleAsync">
                     @Epic33UiDisplayHelpers.ScheduleActionButtonLabel
                 </button>
             }
-            <button class="ui-toolbar-btn"
+            <button type="button"
+                    class="ui-toolbar-btn"
                     disabled="@_loading"
                     @onclick="RefreshAsync">
                 Refresh
@@ -189,12 +194,14 @@
                     </div>
                     <div class="md:col-span-2">
                         <SectionActions>
-                        <button class="ui-toolbar-btn"
+                        <button type="button"
+                                class="ui-toolbar-btn"
                                 disabled="@_loading"
                                 @onclick="SaveEditAsync">
                             Save
                         </button>
-                        <button class="ui-toolbar-btn"
+                        <button type="button"
+                                class="ui-toolbar-btn"
                                 disabled="@_loading"
                                 @onclick="CancelEdit">
                             Cancel

@@ -18,7 +18,8 @@
         </div>
         <div class="ui-page-header__toolbar ui-action-row">
             <a href="/modules" class="ui-toolbar-btn">Back to list</a>
-            <button class="ui-toolbar-btn"
+            <button type="button"
+                    class="ui-toolbar-btn"
                     disabled="@_loading"
                     @onclick="RefreshAsync">
                 Refresh
@@ -55,25 +56,29 @@
                     <div class="text-sm font-semibold text-heading">Lifecycle actions</div>
                     <div class="text-xs text-muted mt-1">Safe actions supported by the backend. Disabled when not applicable.</div>
                     <div class="ui-section-actions">
-                        <button class="ui-toolbar-btn"
+                        <button type="button"
+                                class="ui-toolbar-btn"
                                 disabled="@(_loading || !CanInstall)"
                                 title="@(CanInstall ? "Install module" : "Already installed or not applicable")"
                                 @onclick="InstallAsync">
                             Install
                         </button>
-                        <button class="ui-toolbar-btn"
+                        <button type="button"
+                                class="ui-toolbar-btn"
                                 disabled="@(_loading || !CanEnable)"
                                 title="@(CanEnable ? "Enable module" : "Already enabled or not applicable")"
                                 @onclick="EnableAsync">
                             Enable
                         </button>
-                        <button class="ui-toolbar-btn"
+                        <button type="button"
+                                class="ui-toolbar-btn"
                                 disabled="@(_loading || !CanDisable)"
                                 title="@(CanDisable ? "Disable module" : "Already disabled or not applicable")"
                                 @onclick="DisableAsync">
                             Disable
                         </button>
-                        <button class="ui-toolbar-btn"
+                        <button type="button"
+                                class="ui-toolbar-btn"
                                 disabled="@(_loading || !CanUninstall)"
                                 title="@(CanUninstall ? "Uninstall module" : "Not installed or not applicable")"
                                 @onclick="UninstallAsync">

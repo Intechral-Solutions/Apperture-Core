@@ -21,7 +21,8 @@ public sealed class Epic93UiInteractionPrimitiveTests
     {
         var content = ReadRepoFile(
             "src/Apperture.ControlPlane/Apperture.Management.Ui.Client/wwwroot/css/management-ui-primitives.css");
-        content.Should().Contain("ui-toolbar-btn");
+        content.Should().Contain("button.ui-toolbar-btn");
+        content.Should().Contain("a.ui-toolbar-btn");
         content.Should().Contain("ui-toolbar-btn--danger");
         content.Should().Contain("ui-metadata-grid");
         content.Should().Contain("ui-section-actions");

@@ -20,7 +20,7 @@
 }
 
 .ui-page-header {
-  margin-bottom: 0.125rem;
+  margin-bottom: 1rem;
   padding-bottom: 1rem;
   border-bottom: 1px solid var(--color-border);
 }
@@ -46,6 +46,9 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 0.5rem;
+  flex-shrink: 0;
+  position: relative;
+  z-index: 1;
 }
 
 /* --- Section panels (summary / detail / help) --- */
@@ -282,10 +285,14 @@ a.ui-summary-card:hover {
 
 /* --- Toolbar & actions --- */
 
-.ui-toolbar-btn {
+button.ui-toolbar-btn,
+a.ui-toolbar-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  flex-shrink: 0;
+  appearance: none;
+  -webkit-appearance: none;
   border: 1px solid var(--color-border);
   border-radius: 0.375rem;
   background-color: var(--color-surface-muted);
@@ -296,6 +303,7 @@ a.ui-summary-card:hover {
   color: var(--color-text-body);
   text-decoration: none;
   cursor: pointer;
+  pointer-events: auto;
   box-shadow: 0 1px 0 color-mix(in oklch, var(--color-text-heading) 4%, transparent);
   transition: background-color 120ms ease, border-color 120ms ease, box-shadow 120ms ease;
 }
@@ -311,10 +319,19 @@ button.ui-toolbar-btn:hover:not(:disabled) {
   border-color: color-mix(in oklch, var(--color-border) 60%, var(--color-primary) 40%);
 }
 
-.ui-toolbar-btn:disabled {
-  opacity: 0.5;
+button.ui-toolbar-btn:focus-visible,
+a.ui-toolbar-btn:focus-visible {
+  outline: 2px solid color-mix(in oklch, var(--color-primary) 55%, var(--color-border) 45%);
+  outline-offset: 2px;
+}
+
+button.ui-toolbar-btn:disabled {
+  opacity: 0.55;
   cursor: not-allowed;
   box-shadow: none;
+  background-color: var(--color-surface-muted);
+  border-color: var(--color-border);
+  color: var(--color-text-muted);
 }
 
 .ui-toolbar-btn--danger {
@@ -323,7 +340,8 @@ button.ui-toolbar-btn:hover:not(:disabled) {
   color: var(--color-destructive-fg);
 }
 
-.ui-toolbar-btn--danger:hover:not(:disabled) {
+button.ui-toolbar-btn--danger:hover:not(:disabled),
+a.ui-toolbar-btn--danger:hover {
   background-color: color-mix(in oklch, var(--color-destructive) 90%, transparent);
   border-color: var(--color-destructive);
 }
