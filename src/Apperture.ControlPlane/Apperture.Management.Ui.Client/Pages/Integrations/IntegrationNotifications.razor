@@ -537,7 +537,9 @@
 
         @if (!string.IsNullOrEmpty(_error))
         {
-            <p class="mt-4 text-sm text-muted">@_error</p>
+            <div class="mt-4">
+                <PageMessage Kind="PageMessageKind.Error" Message="@_error" />
+            </div>
         }
     }
 </div>

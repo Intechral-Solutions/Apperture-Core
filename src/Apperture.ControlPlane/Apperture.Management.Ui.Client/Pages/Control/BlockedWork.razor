@@ -1,4 +1,5 @@
 @page "/control/blocked-work"
+@using Apperture.Management.Ui.Client.Molecules
 @using Apperture.Management.Client
 @using Apperture.Management.Ui.Client.Services
 @using Apperture.Management.Ui.Shared
@@ -16,7 +17,7 @@
             <select class="rounded border border-default bg-surface px-2 py-1 text-sm"
                     disabled="@_loading"
                     @bind="_windowHours"
-                    @bind:after="LoadAsync">
+                    @bind:after="RefreshAsync">
                 <option value="24">Last 24 hours</option>
                 <option value="168">Last 7 days</option>
             </select>
@@ -30,7 +31,7 @@
             }
             <button class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface"
                     disabled="@_loading"
-                    @onclick="LoadAsync">
+                    @onclick="RefreshAsync">
                 Refresh
             </button>
         </div>
@@ -40,27 +41,30 @@
     {
         <ErrorState Message="@_error" />
     }
-    else if (!string.IsNullOrEmpty(_actionMessage))
-    {
-        <PageMessage Kind="PageMessageKind.Info" Title="Action" Message="@_actionMessage">
-            @if (!string.IsNullOrEmpty(_newRunId))
-            {
-                <div class="mt-2">
-                    <a href="@($"/runs/{_newRunId}")" class="underline font-mono text-xs">Open new run: @_newRunId</a>
-                </div>
-            }
-        </PageMessage>
-    }
-    else if (_items is null)
+    else if (_items is null && string.IsNullOrEmpty(_actionMessage))
     {
         <LoadingState Message="Loading…" />
     }
-    else if (_items.Count == 0)
-    {
-        <EmptyState Message="No blocked work in the selected window." />
-    }
     else
     {
+        @if (!string.IsNullOrEmpty(_actionMessage))
+        {
+            <ActionFeedback Message="@_actionMessage">
+                @if (!string.IsNullOrEmpty(_newRunId))
+                {
+                    <div class="mt-2">
+                        <a href="@($"/runs/{_newRunId}")" class="underline font-mono text-xs">Open new run: @_newRunId</a>
+                    </div>
+                }
+            </ActionFeedback>
+        }
+
+        @if (_items is { Count: 0 })
+        {
+            <EmptyState Message="No blocked work in the selected window." />
+        }
+        else if (_items is not null)
+        {
         <div class="mt-4 overflow-x-auto rounded border border-default bg-surface">
             <table class="min-w-full text-left text-sm text-body">
                 <thead class="border-b border-default text-xs text-muted">
@@ -145,6 +149,7 @@
         <div class="mt-2 text-xs text-muted">
             <a href="@Epic33UiDisplayHelpers.GetRecoveryAuditLink()">View recovery audit</a>
         </div>
+        }
     }
 </div>
 
@@ -175,11 +180,17 @@
         }
     }
 
-    private async Task LoadAsync()
+    private Task RefreshAsync() => LoadAsync();
+
+    private async Task LoadAsync(bool preserveActionFeedback = false)
     {
         _loading = true;
         _error = null;
-        _actionMessage = null;
+        if (!preserveActionFeedback)
+        {
+            _actionMessage = null;
+            _newRunId = null;
+        }
         try
         {
             var hours = int.TryParse(_windowHours, out var h) ? h : 24;
@@ -223,7 +234,7 @@
         {
             _loading = false;
         }
-        await LoadAsync();
+        await LoadAsync(preserveActionFeedback: true);
     }
 
     private async Task TriggerRunCycleAsync()
@@ -243,6 +254,6 @@
         {
             _loading = false;
         }
-        await LoadAsync();
+        await LoadAsync(preserveActionFeedback: true);
     }
 }

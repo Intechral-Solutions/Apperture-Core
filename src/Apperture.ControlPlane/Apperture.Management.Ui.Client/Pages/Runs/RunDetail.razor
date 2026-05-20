@@ -46,7 +46,7 @@
             </label>
             <button class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface"
                     disabled="@_loading"
-                    @onclick="LoadAsync">
+                    @onclick="RefreshAsync">
                 Refresh
             </button>
         </Toolbar>
@@ -695,15 +695,20 @@
         _detail?.Result is not null
         && string.Equals(_detail.Result.DiagnosticsAvailability, "unsupported", StringComparison.Ordinal);
 
-    private async Task LoadAsync()
+    private Task RefreshAsync() => LoadAsync();
+
+    private async Task LoadAsync(bool preserveActionFeedback = false)
     {
         if (string.IsNullOrWhiteSpace(RunId))
             return;
 
         _loading = true;
         _error = null;
-        _actionMessage = null;
-        _newRunId = null;
+        if (!preserveActionFeedback)
+        {
+            _actionMessage = null;
+            _newRunId = null;
+        }
         try
         {
             _detail = await Client.GetRunAsync(RunId);
@@ -760,7 +765,7 @@
             {
                 while (await _timer.WaitForNextTickAsync(_pollingCts.Token))
                 {
-                    await InvokeAsync(LoadAsync);
+                    await InvokeAsync(() => LoadAsync());
                 }
             }
             catch (OperationCanceledException)
@@ -841,7 +846,7 @@
             _loading = false;
         }
 
-        await LoadAsync();
+        await LoadAsync(preserveActionFeedback: true);
         StateHasChanged();
     }
 }

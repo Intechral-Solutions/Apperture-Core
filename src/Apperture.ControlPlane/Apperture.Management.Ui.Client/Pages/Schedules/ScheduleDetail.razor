@@ -51,7 +51,7 @@
             }
             <button class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface"
                     disabled="@_loading"
-                    @onclick="LoadAsync">
+                    @onclick="RefreshAsync">
                 Refresh
             </button>
         </Toolbar>
@@ -71,16 +71,24 @@
             }
         </ErrorState>
     }
-    else if (!string.IsNullOrEmpty(_actionMessage))
-    {
-        <ActionFeedback Message="@_actionMessage" />
-    }
     else if (_detail is null)
     {
-        <LoadingState />
+        @if (!string.IsNullOrEmpty(_actionMessage))
+        {
+            <ActionFeedback Message="@_actionMessage" />
+        }
+        else
+        {
+            <LoadingState />
+        }
     }
     else
     {
+        @if (!string.IsNullOrEmpty(_actionMessage))
+        {
+            <ActionFeedback Message="@_actionMessage" />
+        }
+
         <ManagementSection Title="Summary"
                            Layer="ManagementSection.UiLayer.Summary"
                            Help="Facts from the persisted schedule record (no inferred next-fire time).">
@@ -381,14 +389,17 @@
         }
     }
 
-    private async Task LoadAsync()
+    private Task RefreshAsync() => LoadAsync();
+
+    private async Task LoadAsync(bool preserveActionFeedback = false)
     {
         if (string.IsNullOrWhiteSpace(ScheduleId))
             return;
 
         _loading = true;
         _error = null;
-        _actionMessage = null;
+        if (!preserveActionFeedback)
+            _actionMessage = null;
         try
         {
             _detail = await Client.GetScheduleAsync(ScheduleId);
@@ -446,7 +457,7 @@
         {
             _loading = false;
         }
-        await LoadAsync();
+        await LoadAsync(preserveActionFeedback: true);
     }
 
     private static string Fmt(DateTimeOffset? dt) =>

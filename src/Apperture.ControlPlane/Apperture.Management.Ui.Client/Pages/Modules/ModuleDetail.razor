@@ -1,4 +1,5 @@
 @page "/modules/{ModuleId}"
+@using Apperture.Management.Ui.Client.Molecules
 @using Apperture.Management.Client
 @using Apperture.Management.Ui.Client.Services
 @using Apperture.Management.Ui.Shared
@@ -16,7 +17,7 @@
             <a href="/modules" class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface">Back to list</a>
             <button class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface"
                     disabled="@_loading"
-                    @onclick="LoadAsync">
+                    @onclick="RefreshAsync">
                 Refresh
             </button>
         </div>
@@ -26,16 +27,19 @@
     {
         <ErrorState Message="@_error" />
     }
-    else if (!string.IsNullOrEmpty(_actionMessage))
-    {
-        <PageMessage Kind="PageMessageKind.Info" Title="Action" Message="@_actionMessage" />
-    }
-    else if (_module is null)
+    else if (_module is null && string.IsNullOrEmpty(_actionMessage))
     {
         <LoadingState Message="Loading…" />
     }
     else
     {
+        @if (!string.IsNullOrEmpty(_actionMessage))
+        {
+            <ActionFeedback Message="@_actionMessage" />
+        }
+
+        @if (_module is not null)
+        {
         <div class="mt-4 grid gap-4">
             @if (_capabilities?.CanManageModules == true)
             {
@@ -121,6 +125,7 @@
                 </div>
             </div>
         </div>
+        }
     }
 </div>
 
@@ -162,14 +167,17 @@
         }
     }
 
-    private async Task LoadAsync()
+    private Task RefreshAsync() => LoadAsync();
+
+    private async Task LoadAsync(bool preserveActionFeedback = false)
     {
         if (string.IsNullOrWhiteSpace(ModuleId))
             return;
 
         _loading = true;
         _error = null;
-        _actionMessage = null;
+        if (!preserveActionFeedback)
+            _actionMessage = null;
         try
         {
             _module = await Client.GetModuleAsync(ModuleId);
@@ -208,6 +216,6 @@
         {
             _loading = false;
         }
-        await LoadAsync();
+        await LoadAsync(preserveActionFeedback: true);
     }
 }
