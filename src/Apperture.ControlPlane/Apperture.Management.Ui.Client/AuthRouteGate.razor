@@ -2,12 +2,13 @@
 @using Apperture.Management.Ui.Shared.Auth
 @implements IDisposable
 @inject SessionStateService Session
+@inject IOperatorCapabilitiesService Capabilities
 @inject NavigationManager Nav
 
 @if (_blockProtectedShell)
 {
     <div class="flex min-h-screen items-center justify-center bg-surface-elevated px-4">
-        <p class="text-sm text-muted">Loading session…</p>
+        <p class="text-sm text-muted">@_loadingMessage</p>
     </div>
 }
 else
@@ -19,6 +20,10 @@ else
     [Parameter] public RenderFragment? ChildContent { get; set; }
 
     private bool _blockProtectedShell;
+    private string _loadingMessage = "Loading session…";
+    private bool _capabilitiesReady;
+    private SessionLoadState _lastSessionState = SessionLoadState.Unknown;
+    private int _capabilitiesWarmGeneration;
 
     protected override void OnInitialized()
     {
@@ -26,6 +31,7 @@ else
         Nav.LocationChanged += OnLocationChanged;
         UpdateBlocking();
         _ = ApplyNavigationRulesAsync();
+        _ = SyncCapabilitiesWithSessionAsync();
     }
 
     public void Dispose()
@@ -38,6 +44,7 @@ else
     {
         UpdateBlocking();
         _ = ApplyNavigationRulesAsync();
+        _ = SyncCapabilitiesWithSessionAsync();
         _ = InvokeAsync(StateHasChanged);
     }
 
@@ -52,7 +59,58 @@ else
     {
         var path = new Uri(Nav.Uri).AbsolutePath;
         var pub = LoginRouteHelper.IsPublicPath(path);
-        _blockProtectedShell = !pub && Session.State is SessionLoadState.Unknown or SessionLoadState.Loading;
+        if (pub)
+        {
+            _blockProtectedShell = false;
+            return;
+        }
+
+        _loadingMessage = Session.State is SessionLoadState.Unknown or SessionLoadState.Loading
+            ? "Loading session…"
+            : "Loading permissions…";
+
+        _blockProtectedShell = Session.State is SessionLoadState.Unknown or SessionLoadState.Loading
+            || (Session.State == SessionLoadState.Authenticated && !_capabilitiesReady);
+    }
+
+    private async Task SyncCapabilitiesWithSessionAsync()
+    {
+        if (Session.State != SessionLoadState.Authenticated)
+        {
+            if (Session.State is SessionLoadState.Unauthenticated or SessionLoadState.Error)
+                Capabilities.InvalidateCache();
+
+            if (_lastSessionState == SessionLoadState.Authenticated)
+                _capabilitiesReady = false;
+
+            _lastSessionState = Session.State;
+            UpdateBlocking();
+            return;
+        }
+
+        if (_capabilitiesReady && _lastSessionState == SessionLoadState.Authenticated)
+            return;
+
+        var generation = Interlocked.Increment(ref _capabilitiesWarmGeneration);
+        _capabilitiesReady = false;
+        _lastSessionState = Session.State;
+        UpdateBlocking();
+
+        try
+        {
+            await Capabilities.RefreshAsync();
+        }
+        catch
+        {
+            /* RefreshAsync does not throw; guard for future changes */
+        }
+
+        if (generation != _capabilitiesWarmGeneration)
+            return;
+
+        _capabilitiesReady = true;
+        UpdateBlocking();
+        await InvokeAsync(StateHasChanged);
     }
 
     private async Task ApplyNavigationRulesAsync()
