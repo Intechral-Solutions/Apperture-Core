@@ -37,3 +37,4 @@ Architecture decision records (ADRs) live in [docs/02-decisions/](../../docs/02-
 | [Epic 91](../../docs/02-decisions/Epic91-Operation-History-and-Action-Feedback-Groundwork.md) | Operation history and action feedback groundwork (sources of truth, durability, future contract; docs only) |
 | [Epic 92](../../docs/02-decisions/Epic92-UI-Modernization-QA-and-Corrective-Stabilization.md) | UI modernization QA and corrective stabilization (Epics 78–90; state-branch fixes) |
 | [Epic 93](../../docs/02-decisions/Epic93-Management-UI-Interaction-Primitive-Hardening.md) | Interaction primitive hardening (toolbar, metadata grid, section actions; Epic 93) |
+| [Epic 94](../../docs/02-decisions/Epic94-Entity-Local-Recent-Activity-Panels.md) | Entity-local recent activity panels (runs/audit/notifications; existing APIs only) |

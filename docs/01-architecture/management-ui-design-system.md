@@ -273,6 +273,21 @@ Epic 88 introduced **`ActionFeedback`** as the first reusable **presentation** l
 
 See [Epic 87](../02-decisions/Epic87-Management-UI-Action-Surface-and-Operation-Feedback-Groundwork.md), [Epic 88](../02-decisions/Epic88-Cooperative-Action-Feedback-Shell-Pilot.md), and [Epic 91](../02-decisions/Epic91-Operation-History-and-Action-Feedback-Groundwork.md).
 
+### Entity-local recent activity panels (Epic 94)
+
+First implementation slice for operation-history usefulness **without** a global operation registry.
+
+| Rule | Guidance |
+|------|----------|
+| **Data sources** | Only existing APIs (`GetRunsAsync` filters, `GetAuditTimelineAsync`, entity-scoped notification instance lists, etc.). Do not invent or infer operations. |
+| **Scope** | Entity-local only (integration module id for audit, `integrationId` / `moduleId` for runs). Omit sources the user cannot read (403 → omit audit, not fake rows). |
+| **Bounds** | Default 7-day lookback, ~5 rows per source, ~10 after client merge. |
+| **Presentation** | `ManagementSection` “Recent activity” + `EntityRecentActivityPanel` (or equivalent table): timestamp, source kind, summary, actor when present, status pill, `DrillInLink`. |
+| **Errors** | Section-level `PageMessage` Error or `EmptyState`; never block the rest of the entity page. |
+| **Drill-ins** | Row links to run/audit/notification detail; footer links to filtered list routes **only when the list route supports the filter** (see [Epic 94](../02-decisions/Epic94-Entity-Local-Recent-Activity-Panels.md) gaps). |
+
+Mapping and merge logic live in `EntityRecentActivityComposer` (`Apperture.Management.Ui.Shared`).
+
 ## Drill-in conventions
 
 - Build URLs with **`Epic33UiDisplayHelpers`** (audit, runs, modules) or documented query params (Epic 47, Epic 78 §7).
@@ -309,7 +324,7 @@ See [Epic 87](../02-decisions/Epic87-Management-UI-Action-Surface-and-Operation-
 
 The pilot stack is now ready for these follow-on epics, but none are implemented by the design-system itself:
 
-- **Async operation shell:** `ActionFeedback` on cooperative surfaces; entity-local history from audit/run timeline (Epic 91 groundwork); interaction primitives ([Epic 93](../../02-decisions/Epic93-Management-UI-Interaction-Primitive-Hardening.md)) — operation **registry** and backend tracking remain deferred.
+- **Async operation shell:** `ActionFeedback` on cooperative surfaces; entity-local recent activity panels ([Epic 94](../../02-decisions/Epic94-Entity-Local-Recent-Activity-Panels.md)); interaction primitives ([Epic 93](../../02-decisions/Epic93-Management-UI-Interaction-Primitive-Hardening.md)) — operation **registry** and backend tracking remain deferred.
 - **Schema-driven forms:** evolve `ProcedureParameterForm` only when execution-start and dense authoring surfaces share a stable metadata contract.
 - **Module dashboards:** reuse `ManagementSummaryCard` posture and permission omission from dashboard/card patterns; keep module-owned UI in module assemblies.
 - **Operational stats/charts:** add as summary-layer artifacts only when APIs provide truthful aggregates and drill-in contracts.

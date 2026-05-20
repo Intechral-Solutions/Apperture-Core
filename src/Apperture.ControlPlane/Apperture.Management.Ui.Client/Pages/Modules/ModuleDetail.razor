@@ -1,7 +1,9 @@
 @page "/modules/{ModuleId}"
+@using System.Net
 @using Apperture.Management.Ui.Client.Molecules
 @using Apperture.Management.Client
 @using Apperture.Management.Ui.Client.Services
+@using Apperture.Management.Ui.Client.Organisms
 @using Apperture.Management.Ui.Shared
 @inject IManagementClient Client
 @inject IOperatorCapabilitiesService Capabilities
@@ -104,6 +106,24 @@
                 }
             </div>
 
+            <ManagementSection Title="Recent activity"
+                               Layer="ManagementSection.UiLayer.Detail"
+                               Help="@RecentActivityHelp"
+                               Class="rounded border border-default bg-surface p-3">
+                <EntityRecentActivityPanel Items="@_recentActivity"
+                                           Loading="@_activityLoading"
+                                           Error="@_activityError"
+                                           EmptyMessage="No runs or audit events for this module in the last 7 days (or none visible to you).">
+                    <FooterLinks>
+                        <DrillInLink Href="/runs">View runs list</DrillInLink>
+                        @if (_capabilities?.CanViewAudit == true)
+                        {
+                            <DrillInLink Href="@Epic33UiDisplayHelpers.GetAuditLinkForModule(ModuleId)">View audit for module</DrillInLink>
+                        }
+                    </FooterLinks>
+                </EntityRecentActivityPanel>
+            </ManagementSection>
+
             <div class="rounded border border-default bg-surface p-3">
                 <div class="text-sm font-semibold text-heading">Links</div>
                 <div class="ui-action-row">
@@ -124,6 +144,12 @@
     private bool _loading;
     private string? _error;
     private string? _actionMessage;
+    private IReadOnlyList<EntityRecentActivityItem>? _recentActivity;
+    private bool _activityLoading;
+    private string? _activityError;
+
+    private string RecentActivityHelp =>
+        $"Merged from authorized runs (module definition) and audit (moduleId filter). Last {EntityRecentActivityComposer.DefaultLookback.Days} days, up to {EntityRecentActivityComposer.DefaultMaxItems} items.";
 
     private bool CanInstall => _module is not null && string.Equals(_module.State, "Discovered", StringComparison.OrdinalIgnoreCase);
     private bool CanEnable => _module is not null && string.Equals(_module.State, "InstalledDisabled", StringComparison.OrdinalIgnoreCase);
@@ -168,6 +194,13 @@
         try
         {
             _module = await Client.GetModuleAsync(ModuleId);
+            if (_module is not null)
+                await LoadRecentActivityAsync();
+            else
+            {
+                _recentActivity = null;
+                _activityError = null;
+            }
         }
         catch (HttpRequestException ex)
         {
@@ -176,6 +209,62 @@
         finally
         {
             _loading = false;
+        }
+    }
+
+    private async Task LoadRecentActivityAsync()
+    {
+        _activityLoading = true;
+        _activityError = null;
+        _recentActivity = null;
+        try
+        {
+            var fromUtc = EntityRecentActivityComposer.DefaultFromUtc();
+            var take = EntityRecentActivityComposer.PerSourceTake;
+            var rows = new List<EntityRecentActivityItem>();
+
+            try
+            {
+                var runs = await Client.GetRunsAsync(new RunQueryFilter(
+                    ModuleId: ModuleId,
+                    CreatedFrom: fromUtc,
+                    Take: take));
+                rows.AddRange(runs.Select(EntityRecentActivityComposer.FromRun));
+            }
+            catch (HttpRequestException ex)
+            {
+                _activityError = $"Runs: {ex.Message}";
+            }
+
+            if (_capabilities?.CanViewAudit == true)
+            {
+                try
+                {
+                    var auditPage = await Client.GetAuditTimelineAsync(
+                        fromUtc: fromUtc,
+                        moduleId: ModuleId.Trim(),
+                        pageSize: take);
+                    rows.AddRange(auditPage.Items.Select(e => EntityRecentActivityComposer.FromAudit(e, ModuleId)));
+                }
+                catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.Forbidden)
+                {
+                    // Omit audit rows.
+                }
+                catch (HttpRequestException ex) when (_activityError is null)
+                {
+                    _activityError = $"Audit: {ex.Message}";
+                }
+                catch (HttpRequestException ex)
+                {
+                    _activityError = $"{_activityError} Audit: {ex.Message}";
+                }
+            }
+
+            _recentActivity = EntityRecentActivityComposer.MergeAndTake(rows);
+        }
+        finally
+        {
+            _activityLoading = false;
         }
     }
 
