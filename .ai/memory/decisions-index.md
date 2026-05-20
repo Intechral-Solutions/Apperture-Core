@@ -20,3 +20,4 @@ Architecture decision records (ADRs) live in [docs/02-decisions/](../../docs/02-
 | [Epic 74](../../docs/02-decisions/Epic74-CampusNexus-Student-Proof-Integration.md) | Proof module: CNS OData student sync, module-owned persistence, integration-scoped slots, manual/schedule workflow path |
 | [ADR-0037](../../docs/02-decisions/ADR-0037-platform-signals-events-and-notification-system.md) | Platform signals (events/logs/telemetry), notification definitions, templates, staged rules, async delivery (proposed) |
 | [Epic 77 plan](../../docs/02-decisions/Epic77-Platform-Signals-and-Notification-System-Implementation-Plan.md) | Phased implementation plan for ADR-0037 (documentation only) |
+| [Epic 78](../../docs/02-decisions/Epic78-Management-UI-Modernization-Groundwork.md) | Management UI audit, page archetypes, layering/drill-in rules, pilot recommendations (documentation only) |

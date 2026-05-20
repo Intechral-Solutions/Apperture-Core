@@ -43,9 +43,14 @@ The `Automation` domain contains run history (`/runs`) surfaced in the menu as *
 
 ## Operator console (current baseline)
 
-- **Default landing view:** `/` redirects to `/control/center` (unified operator control console).
+- **Default landing view:** `/` redirects to `/dashboard` (`OperatorLanding` → platform summary cards). The **Control Center** (`/control/center`) is the primary operational console under the Operations domain, not the root landing route.
+- **Dashboard home:** `/dashboard` renders the shared default operator summary (`GET /api/dashboard/default`) with permission-aware card omission and drill-ins (see Epics 45–47).
 - **Control center:** `/control/center` provides a cohesive operator facade (targets + recent activity + attention) and links into drill-down pages.
 - **Runs console:** `/runs` list + `/runs/{id}` detail. Detail renders backend truth only: lifecycle events, step history, and external-control request trail.
 - **Control actions:** cancel/retry/park/resume are issued via the existing Management API endpoints and are shown as cooperative/queued until the worker applies them (operator observes outcomes via refresh/poll).
 - **Operation start:** `/operations/start` provides operation-centric discovery and execution. Inputs are metadata-driven from operation definition schema, not module custom UI.
 - **Workflow start:** `/workflows/start` provides a minimal workflow start surface using the existing modules/workflows listing endpoints and `POST /workflows/{id}/start`.
+
+## UI modernization and layering
+
+Page archetypes, summary/detail/advanced layering, drill-in rules, and pilot recommendations for future Management UI work are documented in [Epic 78 — Management UI modernization groundwork](../02-decisions/Epic78-Management-UI-Modernization-Groundwork.md). That epic is documentation-only; this file remains the shell and navigation contract.
