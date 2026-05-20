@@ -16,8 +16,8 @@ else if (Items is null || Items.Count == 0)
 }
 else
 {
-    <div class="overflow-x-auto rounded border border-default bg-surface">
-        <table class="min-w-full text-left text-sm text-body">
+    <div class="ui-data-table">
+        <table class="ui-data-table__table min-w-full text-left text-body">
             <thead class="border-b border-default text-xs text-muted">
                 <tr>
                     <th class="px-2 py-2">When</th>
@@ -31,7 +31,7 @@ else
             <tbody>
                 @foreach (var item in Items)
                 {
-                    <tr class="border-b border-default hover:bg-surface-muted">
+                    <tr>
                         <td class="px-2 py-2">
                             <div class="font-mono text-xs">@FmtWhen(item.TimestampUtc)</div>
                         </td>

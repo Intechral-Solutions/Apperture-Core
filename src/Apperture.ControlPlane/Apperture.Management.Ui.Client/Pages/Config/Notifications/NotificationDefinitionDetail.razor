@@ -214,7 +214,8 @@
                 }
                 else if (_subscriptions is not null)
                 {
-                    <table class="min-w-full text-left text-xs">
+                    <div class="ui-data-table">
+                    <table class="ui-data-table__table min-w-full text-left text-xs">
                         <thead class="text-muted">
                             <tr>
                                 <th class="p-1">Kind</th>
@@ -265,6 +266,7 @@
                             }
                         </tbody>
                     </table>
+                    </div>
                 }
             </div>
 
@@ -324,7 +326,8 @@
                 }
                 else if (_recentInstances is not null)
                 {
-                    <table class="min-w-full text-left text-xs">
+                    <div class="ui-data-table">
+                    <table class="ui-data-table__table min-w-full text-left text-xs">
                         <thead class="text-muted">
                             <tr>
                                 <th class="p-1">Created</th>
@@ -336,7 +339,7 @@
                         <tbody>
                             @foreach (var i in _recentInstances)
                             {
-                                <tr class="border-t border-default">
+                                <tr>
                                     <td class="p-1">@i.CreatedAtUtc.UtcDateTime.ToString("u")</td>
                                     <td class="p-1">@i.Status</td>
                                     <td class="p-1">@i.NotificationKind</td>
@@ -345,6 +348,7 @@
                             }
                         </tbody>
                     </table>
+                    </div>
                 }
                 <div class="mt-2 text-xs">
                     <DrillInLink Href="@DiagnosticsHref">Diagnostics for this definition</DrillInLink>

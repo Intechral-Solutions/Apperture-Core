@@ -9,13 +9,14 @@
 @inject IOperatorCapabilitiesService Capabilities
 @inject NavigationManager Nav
 
-<div class="p-4">
-    <div class="flex items-center justify-between gap-3">
-        <div class="min-w-0">
-            <h1 class="text-xl font-semibold text-heading">Config / Module</h1>
-            <div class="mt-1 font-mono text-xs text-muted break-all">@ModuleId</div>
+<div class="p-4 ui-page-stack">
+    <div class="ui-page-header flex items-center justify-between gap-3">
+        <div class="ui-page-header__intro min-w-0">
+            <div class="ui-page-header__eyebrow text-xs text-muted">Config</div>
+            <h1 class="ui-page-header__title text-xl font-semibold text-heading">Module</h1>
+            <div class="ui-page-header__subtitle mt-1 font-mono text-xs text-muted break-all">@ModuleId</div>
         </div>
-        <div class="flex items-center gap-2 ui-action-row">
+        <div class="ui-page-header__toolbar ui-action-row">
             <a href="/modules" class="ui-toolbar-btn">Back to list</a>
             <button class="ui-toolbar-btn"
                     disabled="@_loading"
@@ -47,12 +48,12 @@
 
         @if (_module is not null)
         {
-        <div class="mt-4 grid gap-4">
+        <div class="grid gap-4">
             @if (_capabilities?.CanManageModules == true)
             {
-                <div class="rounded border border-default bg-surface p-3">
+                <div class="ui-detail-block">
                     <div class="text-sm font-semibold text-heading">Lifecycle actions</div>
-                    <div class="text-xs text-muted">Safe actions supported by the backend. Disabled when not applicable.</div>
+                    <div class="text-xs text-muted mt-1">Safe actions supported by the backend. Disabled when not applicable.</div>
                     <div class="ui-section-actions">
                         <button class="ui-toolbar-btn"
                                 disabled="@(_loading || !CanInstall)"
@@ -82,8 +83,9 @@
                 </div>
             }
 
-            <div class="rounded border border-default bg-surface p-3">
+            <div class="ui-detail-block">
                 <div class="text-sm font-semibold text-heading">State</div>
+                <div class="mt-3">
                 <MetadataGrid>
                     <MetadataItem Label="Name" Value="@_module.Name" />
                     <MetadataItem Label="Version" Value="@_module.Version" />
@@ -92,6 +94,7 @@
                     <MetadataItem Label="Effectively active" Value="@(_module.EffectivelyActive ? "Yes" : "No")" />
                     <MetadataItem Label="Installed" Value="@(_module.Installed ? "Yes" : "No")" />
                 </MetadataGrid>
+                </div>
                 @if (_module.ValidationIssues is { Count: > 0 })
                 {
                     <div class="mt-2">
@@ -108,8 +111,7 @@
 
             <ManagementSection Title="Recent activity"
                                Layer="ManagementSection.UiLayer.Detail"
-                               Help="@RecentActivityHelp"
-                               Class="rounded border border-default bg-surface p-3">
+                               Help="@RecentActivityHelp">
                 <EntityRecentActivityPanel Items="@_recentActivity"
                                            Loading="@_activityLoading"
                                            Error="@_activityError"
@@ -124,9 +126,9 @@
                 </EntityRecentActivityPanel>
             </ManagementSection>
 
-            <div class="rounded border border-default bg-surface p-3">
+            <div class="ui-detail-block">
                 <div class="text-sm font-semibold text-heading">Links</div>
-                <div class="ui-action-row">
+                <div class="ui-action-row mt-2">
                     <a href="@Epic33UiDisplayHelpers.GetAuditLinkForModule(ModuleId)" class="ui-drill-in-link">View audit for this module</a>
                     <a href="/control/blocked-work" class="ui-drill-in-link">Blocked work / recovery</a>
                 </div>

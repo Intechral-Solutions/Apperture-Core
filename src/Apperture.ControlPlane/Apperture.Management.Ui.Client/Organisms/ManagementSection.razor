@@ -1,27 +1,27 @@
 <section class="ui-section-panel @Class" data-ui-layer="@Layer">
-    <div class="flex flex-wrap items-start justify-between gap-2">
+    <div class="ui-section-panel__header flex flex-wrap items-start justify-between gap-2">
         <div class="min-w-0">
             @if (!string.IsNullOrWhiteSpace(Title))
             {
-                <h2 class="text-sm font-semibold text-heading">@Title</h2>
+                <h2 class="ui-section-panel__title text-sm font-semibold text-heading">@Title</h2>
             }
             @if (!string.IsNullOrWhiteSpace(Subtitle))
             {
-                <p class="mt-1 text-xs text-muted">@Subtitle</p>
+                <p class="ui-section-panel__subtitle mt-1 text-xs text-muted">@Subtitle</p>
             }
             @if (!string.IsNullOrWhiteSpace(Help))
             {
-                <p class="mt-1 text-xs text-subtle">@Help</p>
+                <p class="ui-section-panel__help mt-1 text-xs text-subtle">@Help</p>
             }
         </div>
         @if (Toolbar is not null)
         {
-            <div class="flex flex-wrap items-center gap-2">@Toolbar</div>
+            <div class="ui-section-panel__toolbar flex flex-wrap items-center gap-2">@Toolbar</div>
         }
     </div>
     @if (ChildContent is not null)
     {
-        <div class="mt-3">@ChildContent</div>
+        <div class="ui-section-panel__body">@ChildContent</div>
     }
 </section>
 

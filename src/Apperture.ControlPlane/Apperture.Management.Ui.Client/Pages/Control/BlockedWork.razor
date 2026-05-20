@@ -7,7 +7,7 @@
 @inject IOperatorCapabilitiesService Capabilities
 @inject NavigationManager Nav
 
-<div class="p-4">
+<div class="p-4 ui-page-stack">
     <div class="flex items-center justify-between gap-3">
         <div class="min-w-0">
             <h1 class="text-xl font-semibold text-heading">Blocked Work</h1>
@@ -65,8 +65,8 @@
         }
         else if (_items is not null)
         {
-        <div class="mt-4 overflow-x-auto rounded border border-default bg-surface">
-            <table class="min-w-full text-left text-sm text-body">
+        <div class="ui-data-table mt-4">
+            <table class="ui-data-table__table min-w-full text-left text-body">
                 <thead class="border-b border-default text-xs text-muted">
                     <tr>
                         <th class="px-3 py-2">Type</th>

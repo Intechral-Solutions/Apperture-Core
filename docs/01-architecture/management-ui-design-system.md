@@ -55,7 +55,7 @@ Related shell documentation: [control-panel-ui.md](control-panel-ui.md).
 | `AttentionPill` | Summary | Dashboard attention tokens (`Critical`, `Warning`, `Info`) |
 | `DrillInLink` | Detail | Underlined drill-in with `ui-drill-in-link` class |
 | `LoadingState` / `EmptyState` / `ForbiddenState` / `ErrorState` | Any | Thin aliases over `PageMessage` for consistent defaults |
-| `ActionFeedback` | Detail (below header / summary) | Cooperative/user-triggered action result banner (Epic 88; Integration Detail Epic 96); defaults Title “Action”, Kind Info |
+| `ActionFeedback` | Detail (below header / summary) | Cooperative/user-triggered action result banner (Epic 88; Integration Detail Epic 96); uses `ui-feedback-banner` (Epic 97); defaults Title “Action”, Kind Info |
 | `MetadataGrid` / `MetadataItem` | Detail / summary | Repeated label/value facts (Epic 93); optional `ThreeColumn` on summary bands |
 | `SectionActions` | Section body | Save/cancel or routine button groups inside a `ManagementSection` (Epic 93) |
 
@@ -231,6 +231,25 @@ Hardens repeated interaction markup from Epics 80–92 before visual polish or o
 - Use **`Monospace="true"`** on ids, recurrence, and technical tokens.
 - **Do not** replace notification definition `<dl>` grids or Integration summary flex bands — different layout intent.
 - **Do not** fetch data inside metadata components.
+
+## Visual density and polish (Epic 97)
+
+First visual refinement pass after structural modernization (Epics 78–96). **CSS-first** in `wwwroot/css/management-ui-primitives.css`; behavior unchanged.
+
+| Utility | Role |
+|---------|------|
+| `ui-page-stack` | Vertical page rhythm (1.25–1.5rem gap) |
+| `ui-page-header` | Title block with bottom rule; pairs with `ui-page-header__toolbar` |
+| `ui-section-panel` | Detail/summary panels; `data-ui-layer="Summary"` for emphasis |
+| `ui-section-panel__body` | Separates header from content with subtle top rule |
+| `ui-summary-card` / `ui-summary-card-grid` | Quick-link cards with shadow and hover affordance |
+| `ui-advanced-section` | Dashed, muted collapse for secondary evidence |
+| `ui-detail-block` | Titled inline panels when `ManagementSection` is heavy (Module Detail) |
+| `ui-data-table` | Operational tables (lists, recent activity, blocked work) |
+| `ui-metadata-item` | Label/value cell in metadata grids |
+| `ui-feedback-banner` / `ui-state-panel` | Action and load/empty/error/forbidden message padding |
+
+See [Epic 97](../02-decisions/Epic97-Management-UI-Visual-Density-and-Polish-Pass.md). Integration Detail ActionFeedback: [Epic 96](../02-decisions/Epic96-Integration-Detail-Action-Feedback-Alignment.md).
 
 ### When not to abstract (Epic 93)
 

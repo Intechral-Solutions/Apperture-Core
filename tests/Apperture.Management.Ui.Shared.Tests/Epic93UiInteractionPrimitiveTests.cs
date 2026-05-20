@@ -25,6 +25,8 @@ public sealed class Epic93UiInteractionPrimitiveTests
         content.Should().Contain("ui-toolbar-btn--danger");
         content.Should().Contain("ui-metadata-grid");
         content.Should().Contain("ui-section-actions");
+        content.Should().Contain("ui-data-table");
+        content.Should().Contain("ui-page-header");
     }
 
     [Fact]
