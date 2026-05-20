@@ -55,6 +55,19 @@ public sealed class Epic97UiVisualPolishTests
     }
 
     [Fact]
+    public void UiServer_Layout_loads_management_ui_primitives_after_app_css()
+    {
+        var content = ReadRepoFile(
+            "src/Apperture.ControlPlane/Apperture.Management.Ui.Server/Pages/_Layout.cshtml");
+        content.Should().Contain("css/app.css");
+        content.Should().Contain("css/management-ui-primitives.css");
+        content.IndexOf("app.css", StringComparison.Ordinal)
+            .Should()
+            .BeLessThan(content.IndexOf("management-ui-primitives.css", StringComparison.Ordinal),
+                "primitives must load after Tailwind app.css");
+    }
+
+    [Fact]
     public void ManagementUiPrimitives_toolbar_uses_element_scoped_selectors()
     {
         var content = ReadRepoFile(

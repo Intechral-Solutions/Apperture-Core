@@ -80,7 +80,7 @@ Non-pilot pages inherit CSS where they already use primitives (e.g. `ui-toolbar-
 
 ## Corrective patch (toolbar affordance)
 
-Post-release QA found Run Detail toolbar actions looked like plain text and some clicks failed. See **[Epic 97 toolbar affordance corrective patch](Epic97-Toolbar-Affordance-Corrective-Patch.md)** — stronger `button.ui-toolbar-btn` / `a.ui-toolbar-btn` selectors, restored header margin, `type="button"` on pilot cooperative toolbar commands. No handler or permission changes.
+Post-release QA found Run Detail toolbar actions looked like plain text and some clicks failed. See **[Epic 97 toolbar affordance corrective patch](Epic97-Toolbar-Affordance-Corrective-Patch.md)** — **primary fix:** link `management-ui-primitives.css` in `Apperture.Management.Ui.Server/Pages/_Layout.cshtml` (dev host shell on port 9001); plus markup/CSS hardening. No handler or permission changes.
 
 ## Validation
 

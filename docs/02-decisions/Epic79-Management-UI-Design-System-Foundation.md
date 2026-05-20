@@ -16,7 +16,7 @@ Accepted — implemented May 2026.
    - `StatusPill`, `AttentionPill`, `DrillInLink`
    - `ManagementSection`, `ManagementSummaryCard`, `ManagementAdvancedSection`
    - `LoadingState`, `EmptyState`, `ForbiddenState`, `ErrorState` (delegate to `PageMessage`)
-4. **CSS:** `wwwroot/css/management-ui-primitives.css` loaded after `app.css`; uses existing semantic theme variables.
+4. **CSS:** `wwwroot/css/management-ui-primitives.css` loaded after `app.css` in **both** the WASM `wwwroot/index.html` and **`Apperture.Management.Ui.Server/Pages/_Layout.cshtml`** (dev host on port 9001); uses existing semantic theme variables.
 5. **Refinements:** `PageHeader` gains optional `Eyebrow`; no replacement of `PageHeader` / `PageMessage`.
 6. **Proof:** `/config` hub landing uses new primitives only; no large-page refactors.
 

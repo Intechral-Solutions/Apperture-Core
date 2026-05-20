@@ -27,7 +27,7 @@ Related shell documentation: [control-panel-ui.md](control-panel-ui.md).
 2. **Permission omission** — Hide sections or cards when forbidden; do not show locked placeholders on dashboard cards (Epic 45).
 3. **Composable, not generic** — Small Razor components with explicit parameters; no templating engine.
 4. **Incremental adoption** — New and touched pages use primitives; legacy markup remains valid until pilot epics.
-5. **Semantic tokens** — Visual roles use CSS variables in `wwwroot/css/app.css`; layout/status helpers in `management-ui-primitives.css`.
+5. **Semantic tokens** — Visual roles use CSS variables in `wwwroot/css/app.css`; layout/status helpers in `management-ui-primitives.css`. Load both stylesheets after `app.css` in **Ui.Server** `_Layout.cshtml` (dev host) and WASM `wwwroot/index.html`.
 
 ## Component categories
 
