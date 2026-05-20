@@ -12,26 +12,23 @@
 
     @if (_isLoading)
     {
-        <div class="mt-4 text-sm text-muted">Loading dashboard summary...</div>
+        <LoadingState Message="Loading dashboard summary..." />
     }
     else if (!string.IsNullOrWhiteSpace(_loadError))
     {
-        <div class="mt-4 rounded border border-danger/40 bg-danger/10 text-danger p-3 text-sm">
-            @_loadError
-        </div>
+        <ErrorState Message="@_loadError" />
     }
     else if (_dashboard is null || _dashboard.Cards.Count == 0)
     {
-        <div class="mt-4 rounded border border-base bg-surface p-3 text-sm text-muted space-y-2">
-            @if (_dashboard?.ProviderFailureCount > 0)
-            {
-                <p>No dashboard cards could be loaded. One or more summary sources failed; check server logs for details.</p>
-            }
-            else
-            {
-                <p>No dashboard cards are shown for your account. That usually means your role does not include the permissions needed for the available summary sources.</p>
-            }
-        </div>
+        @if (_dashboard?.ProviderFailureCount > 0)
+        {
+            <ErrorState Title="Dashboard summary unavailable"
+                       Message="No dashboard cards could be loaded. One or more summary sources failed; check server logs for details." />
+        }
+        else
+        {
+            <EmptyState Message="No dashboard cards are shown for your account. That usually means your role does not include the permissions needed for the available summary sources." />
+        }
     }
     else
     {

@@ -10,6 +10,8 @@ Consolidate learnings from the first five modernization pilots (Epics 80–84), 
 
 This epic is explicitly a consolidation effort, not another page redesign.
 
+Follow-on: [Epic 86 — Management UI state branch consistency sweep](Epic86-Management-UI-State-Branch-Consistency-Sweep.md) applies these state primitives to additional non-pilot pages without redesigning layouts.
+
 ## Pilots reviewed
 
 - [Epic 80 — Integration Detail redesign pilot](Epic80-Integration-Detail-Redesign-Pilot.md)

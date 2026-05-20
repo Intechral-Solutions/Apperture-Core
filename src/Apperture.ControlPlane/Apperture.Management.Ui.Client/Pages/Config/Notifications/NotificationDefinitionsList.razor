@@ -24,13 +24,12 @@
 
     @if (!_capabilitiesLoaded)
     {
-        <p class="mt-4 text-sm text-muted">Loading…</p>
+        <LoadingState Message="Loading…" />
     }
     else if (!_canView)
     {
-        <div class="mt-4 rounded border border-default bg-surface px-3 py-2 text-sm">
-            <div class="font-semibold">Not authorized</div>
-            <div class="text-muted">You do not have permission to view notification definitions.</div>
+        <div class="mt-4">
+            <ForbiddenState Message="You do not have permission to view notification definitions." />
         </div>
     }
     else
@@ -57,15 +56,17 @@
 
         @if (!string.IsNullOrEmpty(_error))
         {
-            <p class="mt-4 text-sm text-muted">@_error</p>
+            <div class="mt-4">
+                <ErrorState Message="@_error" />
+            </div>
         }
         else if (_loading)
         {
-            <p class="mt-4 text-sm text-muted">Loading…</p>
+            <LoadingState Message="Loading…" />
         }
         else if (_items is { Count: 0 })
         {
-            <p class="mt-4 text-sm text-muted">No definitions match.</p>
+            <EmptyState Message="No definitions match." />
         }
         else if (_items is not null)
         {

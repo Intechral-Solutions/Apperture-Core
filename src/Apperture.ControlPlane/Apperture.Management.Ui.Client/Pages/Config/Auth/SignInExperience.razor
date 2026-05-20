@@ -17,15 +17,21 @@
 
     @if (!_canView)
     {
-        <p class="mt-4 text-sm text-muted">You do not have permission to view sign-in configuration.</p>
+        <div class="mt-4">
+            <ForbiddenState Message="You do not have permission to view sign-in configuration." />
+        </div>
     }
     else if (_loading)
     {
-        <p class="mt-4 text-sm text-muted">Loading…</p>
+        <div class="mt-4">
+            <LoadingState />
+        </div>
     }
     else if (_policy is null || _opts is null)
     {
-        <PageMessage Kind="PageMessageKind.Error" Message="Could not load policy or sign-in options." />
+        <div class="mt-4">
+            <ErrorState Message="Could not load policy or sign-in options." />
+        </div>
     }
     else
     {

@@ -16,13 +16,12 @@
 
     @if (!_capabilitiesLoaded)
     {
-        <p class="mt-4 text-sm text-muted">Loading…</p>
+        <LoadingState Message="Loading…" />
     }
     else if (!_canView)
     {
-        <div class="mt-4 rounded border border-default bg-surface px-3 py-2 text-sm">
-            <div class="font-semibold">Not authorized</div>
-            <div class="text-muted">Requires integration read and notification definition read.</div>
+        <div class="mt-4">
+            <ForbiddenState Message="Requires integration read and notification definition read." />
         </div>
     }
     else

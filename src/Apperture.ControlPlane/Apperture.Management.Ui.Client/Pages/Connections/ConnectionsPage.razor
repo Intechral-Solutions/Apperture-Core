@@ -24,13 +24,11 @@
 
     @if (!_capabilitiesLoaded)
     {
-        <PageMessage Kind="PageMessageKind.Loading" Message="Loading…" />
+        <LoadingState Message="Loading…" />
     }
     else if (!CanAccessPage)
     {
-        <PageMessage Kind="PageMessageKind.Forbidden"
-                     Title="Not authorized"
-                     Message="You do not have permission to view connections or connector definitions." />
+        <ForbiddenState Message="You do not have permission to view connections or connector definitions." />
     }
     else
     {
@@ -60,15 +58,15 @@
         {
             @if (!string.IsNullOrEmpty(_error))
             {
-                <PageMessage Kind="PageMessageKind.Error" Title="Error" Message="@_error" />
+                <ErrorState Message="@_error" />
             }
             else if (_connections is null)
             {
-                <PageMessage Kind="PageMessageKind.Loading" Message="Loading connections…" />
+                <LoadingState Message="Loading connections…" />
             }
             else if (_connections.Count == 0)
             {
-                <PageMessage Kind="PageMessageKind.Empty" Message="No connections found." />
+                <EmptyState Message="No connections found." />
             }
             else
             {

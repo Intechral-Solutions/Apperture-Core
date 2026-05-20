@@ -54,21 +54,19 @@
 
     @if (!_capabilitiesLoaded)
     {
-        <PageMessage Kind="PageMessageKind.Loading" Message="Loading…" />
+        <LoadingState Message="Loading…" />
     }
     else if (_capabilities?.CanViewConnections != true)
     {
-        <PageMessage Kind="PageMessageKind.Forbidden"
-                     Title="Not authorized"
-                     Message="You do not have permission to view connection details." />
+        <ForbiddenState Message="You do not have permission to view connection details." />
     }
     else if (!string.IsNullOrEmpty(_error))
     {
-        <PageMessage Kind="PageMessageKind.Error" Title="Error" Message="@_error" />
+        <ErrorState Message="@_error" />
     }
     else if (_connection is null)
     {
-        <PageMessage Kind="PageMessageKind.Loading" Message="Loading connection…" />
+        <LoadingState Message="Loading connection…" />
     }
     else if (_editing && _editConnectorDefinition is not null)
     {

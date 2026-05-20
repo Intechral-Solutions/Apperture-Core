@@ -81,21 +81,19 @@
     @if (_forbidden)
     {
         <div class="mt-4">
-            <PageMessage Kind="PageMessageKind.Forbidden"
-                         Title="Not authorized"
-                         Message="You do not have permission to view the audit timeline." />
+            <ForbiddenState Message="You do not have permission to view the audit timeline." />
         </div>
     }
     else if (!string.IsNullOrEmpty(_error))
     {
         <div class="mt-4">
-            <PageMessage Kind="PageMessageKind.Error" Title="Error" Message="@_error" />
+            <ErrorState Message="@_error" />
         </div>
     }
     else if (_page is null && !_forbidden)
     {
         <div class="mt-4">
-            <PageMessage Kind="PageMessageKind.Loading" Message="Loading…" />
+            <LoadingState Message="Loading…" />
         </div>
     }
     else
@@ -103,7 +101,7 @@
         @if (_page!.Items.Count == 0)
         {
             <div class="mt-4">
-                <PageMessage Kind="PageMessageKind.Empty" Message="No audit events found." />
+                <EmptyState Message="No audit events found." />
             </div>
         }
         else

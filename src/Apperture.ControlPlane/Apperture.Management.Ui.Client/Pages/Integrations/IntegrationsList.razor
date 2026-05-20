@@ -26,25 +26,23 @@
 
     @if (!_capabilitiesLoaded)
     {
-        <PageMessage Kind="PageMessageKind.Loading" Message="Loading…" />
+        <LoadingState Message="Loading…" />
     }
     else if (_capabilities?.CanViewIntegrations != true)
     {
-        <PageMessage Kind="PageMessageKind.Forbidden"
-                     Title="Not authorized"
-                     Message="You do not have permission to view integrations." />
+        <ForbiddenState Message="You do not have permission to view integrations." />
     }
     else if (!string.IsNullOrEmpty(_error))
     {
-        <PageMessage Kind="PageMessageKind.Error" Title="Error" Message="@_error" />
+        <ErrorState Message="@_error" />
     }
     else if (_fleet is null)
     {
-        <PageMessage Kind="PageMessageKind.Loading" Message="Loading integrations…" />
+        <LoadingState Message="Loading integrations…" />
     }
     else if (_fleet.Count == 0)
     {
-        <PageMessage Kind="PageMessageKind.Empty" Message="No integrations match the current filters." />
+        <EmptyState Message="No integrations match the current filters." />
     }
     else
     {

@@ -38,31 +38,26 @@
 
     @if (!string.IsNullOrEmpty(_error))
     {
-        <div class="mt-4 rounded border border-default bg-surface px-3 py-2 text-sm text-body">
-            <div class="font-semibold">Error</div>
-            <div class="text-muted">@_error</div>
-        </div>
+        <ErrorState Message="@_error" />
     }
     else if (!string.IsNullOrEmpty(_actionMessage))
     {
-        <div class="mt-4 rounded border border-default bg-surface px-3 py-2 text-sm text-body">
-            <div class="font-semibold">Action</div>
-            <div class="text-muted">@_actionMessage</div>
+        <PageMessage Kind="PageMessageKind.Info" Title="Action" Message="@_actionMessage">
             @if (!string.IsNullOrEmpty(_newRunId))
             {
                 <div class="mt-2">
                     <a href="@($"/runs/{_newRunId}")" class="underline font-mono text-xs">Open new run: @_newRunId</a>
                 </div>
             }
-        </div>
+        </PageMessage>
     }
     else if (_items is null)
     {
-        <div class="mt-4 text-sm text-muted">Loading...</div>
+        <LoadingState Message="Loading…" />
     }
     else if (_items.Count == 0)
     {
-        <div class="mt-4 text-sm text-muted">No blocked work in the selected window.</div>
+        <EmptyState Message="No blocked work in the selected window." />
     }
     else
     {

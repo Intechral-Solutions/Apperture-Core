@@ -39,35 +39,32 @@
     @if (!_capabilitiesLoaded)
     {
         <div class="mt-4">
-            <PageMessage Kind="PageMessageKind.Loading" Message="Loading…" />
+            <LoadingState Message="Loading…" />
         </div>
     }
     else if (_capabilities?.CanViewGovernance != true)
     {
         <div class="mt-4">
-            <PageMessage Kind="PageMessageKind.Forbidden"
-                         Title="Not authorized"
-                         Message="You do not have permission to view this role." />
+            <ForbiddenState Message="You do not have permission to view this role." />
         </div>
     }
     else if (_forbidden)
     {
         <div class="mt-4">
-            <PageMessage Kind="PageMessageKind.Forbidden"
-                         Title="Not authorized"
-                         Message="You do not have permission to view this role." />
+            <ForbiddenState Message="You do not have permission to view this role." />
         </div>
     }
     else if (!string.IsNullOrEmpty(_error))
     {
-        <div class="mt-4 rounded border border-default bg-surface px-3 py-2 text-sm text-body">
-            <div class="font-semibold">Error</div>
-            <div class="text-muted">@_error</div>
+        <div class="mt-4">
+            <ErrorState Message="@_error" />
         </div>
     }
     else if (_detail is null)
     {
-        <div class="mt-4 text-sm text-muted">Loading...</div>
+        <div class="mt-4">
+            <LoadingState Message="Loading…" />
+        </div>
     }
     else if (_editing)
     {
@@ -78,7 +75,14 @@
             </div>
             @if (_catalog is null || !string.IsNullOrEmpty(_error))
             {
-                <div class="text-sm text-muted">@(string.IsNullOrEmpty(_error) ? "Loading catalog..." : _error)</div>
+                @if (!string.IsNullOrEmpty(_error))
+                {
+                    <ErrorState Message="@_error" />
+                }
+                else
+                {
+                    <LoadingState Message="Loading catalog…" />
+                }
                 <div class="mt-2 text-xs text-muted">Save is disabled until the catalog loads. Use Cancel to exit edit mode.</div>
             }
             else

@@ -16,17 +16,15 @@
 
     @if (!_capabilitiesLoaded)
     {
-        <PageMessage Kind="PageMessageKind.Loading" Message="Loading…" />
+        <LoadingState Message="Loading…" />
     }
     else if (_capabilities?.CanManageIntegrations != true)
     {
-        <PageMessage Kind="PageMessageKind.Forbidden"
-                     Title="Not authorized"
-                     Message="You do not have permission to create integrations." />
+        <ForbiddenState Message="You do not have permission to create integrations." />
     }
     else if (!string.IsNullOrEmpty(_error))
     {
-        <PageMessage Kind="PageMessageKind.Error" Title="Error" Message="@_error" />
+        <ErrorState Message="@_error" />
     }
     else
     {
@@ -45,11 +43,11 @@
                     <div class="mt-1 text-xs text-muted">Only effectively active modules are shown.</div>
                     @if (_modulesLoading)
                     {
-                        <div class="mt-3 text-sm text-muted">Loading modules…</div>
+                        <LoadingState Message="Loading modules…" />
                     }
                     else if (_availableModules.Count == 0)
                     {
-                        <div class="mt-3 text-sm text-body">No eligible modules are currently active.</div>
+                        <EmptyState Message="No eligible modules are currently active." />
                     }
                     else
                     {

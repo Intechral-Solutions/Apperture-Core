@@ -25,25 +25,23 @@
 
     @if (!_capabilitiesLoaded)
     {
-        <PageMessage Kind="PageMessageKind.Loading" Message="Loading…" />
+        <LoadingState Message="Loading…" />
     }
     else if (_capabilities?.CanViewConnectorDefinitions != true)
     {
-        <PageMessage Kind="PageMessageKind.Forbidden"
-                     Title="Not authorized"
-                     Message="You do not have permission to view connector definitions." />
+        <ForbiddenState Message="You do not have permission to view connector definitions." />
     }
     else if (!string.IsNullOrEmpty(_error))
     {
-        <PageMessage Kind="PageMessageKind.Error" Title="Error" Message="@_error" />
+        <ErrorState Message="@_error" />
     }
     else if (_definitions is null)
     {
-        <PageMessage Kind="PageMessageKind.Loading" Message="Loading connector definitions…" />
+        <LoadingState Message="Loading connector definitions…" />
     }
     else if (_definitions.Count == 0)
     {
-        <PageMessage Kind="PageMessageKind.Empty" Message="No connector definitions registered in this host." />
+        <EmptyState Message="No connector definitions registered in this host." />
     }
     else
     {

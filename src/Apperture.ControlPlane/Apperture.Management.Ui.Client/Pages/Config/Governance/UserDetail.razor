@@ -35,37 +35,37 @@
     @if (!_capabilitiesLoaded)
     {
         <div class="mt-4">
-            <PageMessage Kind="PageMessageKind.Loading" Message="Loading…" />
+            <LoadingState Message="Loading…" />
         </div>
     }
     else if (_capabilities?.CanViewGovernance != true)
     {
         <div class="mt-4">
-            <PageMessage Kind="PageMessageKind.Forbidden"
-                         Title="Not authorized"
-                         Message="You do not have permission to view this user." />
+            <ForbiddenState Message="You do not have permission to view this user." />
         </div>
     }
     else if (_forbidden)
     {
         <div class="mt-4">
-            <PageMessage Kind="PageMessageKind.Forbidden"
-                         Title="Not authorized"
-                         Message="You do not have permission to view this user." />
+            <ForbiddenState Message="You do not have permission to view this user." />
         </div>
     }
     else
     {
         @if (!string.IsNullOrEmpty(_error))
         {
-            <div class="mt-4 rounded border border-message-error bg-message-error px-3 py-2 text-sm text-body">
-                <div class="font-semibold">Error</div>
-                <div class="text-muted">@_error</div>
+            <div class="mt-4">
+                <ErrorState Message="@_error" />
             </div>
         }
         @if (_user is null)
         {
-            <div class="mt-4 text-sm text-muted">@(string.IsNullOrEmpty(_error) ? "Loading..." : "")</div>
+            @if (string.IsNullOrEmpty(_error))
+            {
+                <div class="mt-4">
+                    <LoadingState Message="Loading…" />
+                </div>
+            }
         }
         else
         {

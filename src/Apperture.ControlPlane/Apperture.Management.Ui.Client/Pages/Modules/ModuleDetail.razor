@@ -24,21 +24,15 @@
 
     @if (!string.IsNullOrEmpty(_error))
     {
-        <div class="mt-4 rounded border border-default bg-surface px-3 py-2 text-sm text-body">
-            <div class="font-semibold">Error</div>
-            <div class="text-muted">@_error</div>
-        </div>
+        <ErrorState Message="@_error" />
     }
     else if (!string.IsNullOrEmpty(_actionMessage))
     {
-        <div class="mt-4 rounded border border-default bg-surface px-3 py-2 text-sm text-body">
-            <div class="font-semibold">Action</div>
-            <div class="text-muted">@_actionMessage</div>
-        </div>
+        <PageMessage Kind="PageMessageKind.Info" Title="Action" Message="@_actionMessage" />
     }
     else if (_module is null)
     {
-        <div class="mt-4 text-sm text-muted">Loading...</div>
+        <LoadingState Message="Loading…" />
     }
     else
     {

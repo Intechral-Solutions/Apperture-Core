@@ -13,15 +13,21 @@
 
     @if (!_canView)
     {
-        <p class="mt-4 text-sm text-muted">You do not have permission.</p>
+        <div class="mt-4">
+            <ForbiddenState Message="You do not have permission." />
+        </div>
     }
     else if (_loading)
     {
-        <p class="mt-4 text-sm text-muted">Loading…</p>
+        <div class="mt-4">
+            <LoadingState />
+        </div>
     }
     else if (_result is null)
     {
-        <PageMessage Kind="PageMessageKind.Error" Message="Could not load directory users." />
+        <div class="mt-4">
+            <ErrorState Message="Could not load directory users." />
+        </div>
     }
     else
     {

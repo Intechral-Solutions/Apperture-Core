@@ -15,13 +15,12 @@
 
     @if (!_capabilitiesLoaded)
     {
-        <p class="mt-4 text-sm text-muted">Loading…</p>
+        <LoadingState Message="Loading…" />
     }
     else if (!_canSave)
     {
-        <div class="mt-4 rounded border border-default bg-surface px-3 py-2 text-sm">
-            <div class="font-semibold">Not authorized</div>
-            <div class="text-muted">Creating notification definitions requires notification definition manage and integration update permissions.</div>
+        <div class="mt-4">
+            <ForbiddenState Message="Creating notification definitions requires notification definition manage and integration update permissions." />
         </div>
     }
     else

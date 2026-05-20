@@ -18,17 +18,15 @@
 
     @if (!_capabilitiesLoaded)
     {
-        <PageMessage Kind="PageMessageKind.Loading" Message="Loading…" />
+        <LoadingState Message="Loading…" />
     }
     else if (_capabilities?.CanCreateConnections != true)
     {
-        <PageMessage Kind="PageMessageKind.Forbidden"
-                     Title="Not authorized"
-                     Message="You do not have permission to create connections." />
+        <ForbiddenState Message="You do not have permission to create connections." />
     }
     else if (!string.IsNullOrEmpty(_error))
     {
-        <PageMessage Kind="PageMessageKind.Error" Title="Error" Message="@_error" />
+        <ErrorState Message="@_error" />
     }
     else
     {

@@ -14,11 +14,13 @@
 
     @if (!_canView)
     {
-        <p class="mt-4 text-sm text-muted">You do not have permission.</p>
+        <div class="mt-4">
+            <ForbiddenState Message="You do not have permission." />
+        </div>
     }
     else if (_loading)
     {
-        <p class="mt-4 text-sm text-muted">Loading…</p>
+        <LoadingState Message="Loading…" />
     }
     else
     {
@@ -36,7 +38,7 @@
 
         @if (_items is not null && _items.Count == 0)
         {
-            <p class="mt-4 text-sm text-muted">No contacts match.</p>
+            <EmptyState Message="No contacts match." />
         }
         else if (_items is not null)
         {

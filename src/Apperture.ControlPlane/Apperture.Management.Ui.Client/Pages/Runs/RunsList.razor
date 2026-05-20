@@ -65,18 +65,15 @@
 
     @if (_error is not null)
     {
-        <div class="mt-4 rounded border border-default bg-surface px-3 py-2 text-sm text-body">
-            <div class="font-semibold">Error</div>
-            <div class="text-muted">@_error</div>
-        </div>
+        <ErrorState Message="@_error" />
     }
     else if (_runs is null)
     {
-        <div class="mt-4 text-sm text-muted">Loading…</div>
+        <LoadingState />
     }
     else if (_runs.Count == 0)
     {
-        <div class="mt-4 text-sm text-muted">No runs found.</div>
+        <EmptyState Message="No runs found." />
     }
     else
     {

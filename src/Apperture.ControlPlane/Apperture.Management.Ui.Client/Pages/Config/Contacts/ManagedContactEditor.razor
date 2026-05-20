@@ -16,11 +16,13 @@
 
     @if (!_canView)
     {
-        <p class="mt-4 text-sm text-muted">You do not have permission.</p>
+        <div class="mt-4">
+            <ForbiddenState Message="You do not have permission." />
+        </div>
     }
     else if (_loading)
     {
-        <p class="mt-4 text-sm text-muted">Loading…</p>
+        <LoadingState Message="Loading…" />
     }
     else if (_isCreate)
     {
@@ -42,7 +44,7 @@
     }
     else if (_detail is null)
     {
-        <p class="mt-4 text-sm text-muted">Contact not found.</p>
+        <EmptyState Message="Contact not found." />
     }
     else
     {
