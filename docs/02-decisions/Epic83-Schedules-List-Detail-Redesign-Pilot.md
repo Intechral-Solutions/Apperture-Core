@@ -78,7 +78,7 @@ No new semantic helpers were introduced in `ManagementUiSemantics`.
 | [Management UI design system](../01-architecture/management-ui-design-system.md) | Primitives canon |
 | [Epic 79](Epic79-Management-UI-Design-System-Foundation.md) | Foundations |
 | [Epic 33](Epic33-Management-UI-Deepening.md) | Schedule action copy; audit/runs correlation helpers |
-| [Epic 80](Epic80-Integration-Detail-Redesign-Pilot.md), [Epic 81](Epic81-Run-Detail-Redesign-Pilot.md), [Epic 82](Epic82-Control-Center-Redesign-Pilot.md) | Adjacent layering pilots |
+| [Epic 80](Epic80-Integration-Detail-Redesign-Pilot.md), [Epic 81](Epic81-Run-Detail-Redesign-Pilot.md), [Epic 82](Epic82-Control-Center-Redesign-Pilot.md), [Epic 84](Epic84-Notification-Definition-Authoring-Redesign-Pilot.md) | Adjacent layering pilots |
 
 ## Validation
 

@@ -322,7 +322,7 @@ Recommended **first redesign pilots** (documentation choice for a follow-on epic
 | 4 | `/config/notifications/definitions/{DefinitionId}` | Authoring + detail | Represents complex config authoring cluster (Epic 77). |
 | 5 | `/schedules` + `/schedules/{ScheduleId}` | List + detail | Smaller blast radius than integrations; benefits from list filter gaps identified in Epic 47 when backend ready. |
 
-**Implemented from this table:** priority 1 — [Epic 82 — Control Center redesign pilot](Epic82-Control-Center-Redesign-Pilot.md); priority 5 — [Epic 83 — Schedules redesign pilot](Epic83-Schedules-List-Detail-Redesign-Pilot.md); priority 3 — [Epic 80 — Integration Detail redesign pilot](Epic80-Integration-Detail-Redesign-Pilot.md); priority 2 — [Epic 81 — Run Detail redesign pilot](Epic81-Run-Detail-Redesign-Pilot.md).
+**Implemented from this table:** priority 1 — [Epic 82 — Control Center redesign pilot](Epic82-Control-Center-Redesign-Pilot.md); priority 2 — [Epic 81 — Run Detail redesign pilot](Epic81-Run-Detail-Redesign-Pilot.md); priority 3 — [Epic 80 — Integration Detail redesign pilot](Epic80-Integration-Detail-Redesign-Pilot.md); priority 4 — [Epic 84 — Notification definition detail/authoring redesign pilot](Epic84-Notification-Definition-Authoring-Redesign-Pilot.md); priority 5 — [Epic 83 — Schedules redesign pilot](Epic83-Schedules-List-Detail-Redesign-Pilot.md).
 
 **Secondary pilots:** `/dashboard` (card grid already closer to target), `/execute` (consolidate start UX), `/config` hub (template for other landings).
 

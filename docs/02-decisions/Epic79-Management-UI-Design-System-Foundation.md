@@ -22,7 +22,7 @@ Accepted — implemented May 2026.
 
 ## Consequences
 
-- Epic 80+ pilot epics can adopt primitives incrementally on routes named in Epic 78 §9 (see [Epic 80](Epic80-Integration-Detail-Redesign-Pilot.md), [Epic 81](Epic81-Run-Detail-Redesign-Pilot.md), [Epic 82](Epic82-Control-Center-Redesign-Pilot.md), [Epic 83](Epic83-Schedules-List-Detail-Redesign-Pilot.md)).
+- Epic 80+ pilot epics can adopt primitives incrementally on routes named in Epic 78 §9 (see [Epic 80](Epic80-Integration-Detail-Redesign-Pilot.md), [Epic 81](Epic81-Run-Detail-Redesign-Pilot.md), [Epic 82](Epic82-Control-Center-Redesign-Pilot.md), [Epic 83](Epic83-Schedules-List-Detail-Redesign-Pilot.md), [Epic 84](Epic84-Notification-Definition-Authoring-Redesign-Pilot.md)).
 - Dashboard attention styling can migrate from inline classes to `AttentionPill` when touched.
 - New status visuals should use `ManagementUiSemantics` rather than ad-hoc Tailwind color classes.
 

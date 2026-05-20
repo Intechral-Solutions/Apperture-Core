@@ -2,6 +2,7 @@
 @layout ConfigLayout
 @using Apperture.Management.Client
 @using Apperture.Management.Ui.Client.Organisms
+@using Apperture.Management.Ui.Client.Molecules
 @using Apperture.Management.Ui.Client.Organisms.Notifications
 @using Apperture.Management.Ui.Client.Services
 @using Apperture.Management.Ui.Shared
@@ -9,46 +10,105 @@
 @inject IOperatorCapabilitiesService Capabilities
 @inject NavigationManager Nav
 
-<div class="p-4">
-    <div class="text-xs text-muted mb-1">
-        <a class="underline" href="/config/notifications/definitions">Definitions</a> — @DefinitionId
-    </div>
+<div class="p-4 ui-page-stack">
+    <PageHeader Eyebrow="Notifications"
+                Title="@DetailTitle"
+                Subtitle="@DetailSubtitle">
+        <ChildContent>
+            <div class="mt-1 font-mono text-xs text-muted break-all">@DefinitionId</div>
+        </ChildContent>
+        <Toolbar>
+            <a href="/config/notifications/definitions"
+               class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface">Back to definitions</a>
+            @if (_canEditDefinition)
+            {
+                <a href="@EditHref"
+                   class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface">Edit definition</a>
+            }
+        </Toolbar>
+    </PageHeader>
 
     @if (!_capabilitiesLoaded)
     {
-        <p class="mt-4 text-sm text-muted">Loading…</p>
+        <LoadingState />
     }
     else if (!_canView)
     {
-        <div class="mt-4 rounded border border-default bg-surface px-3 py-2 text-sm">
-            <div class="font-semibold">Not authorized</div>
-            <div class="text-muted">You do not have permission to view this definition.</div>
-        </div>
+        <ForbiddenState Title="Not authorized"
+                        Message="You do not have permission to view this definition." />
     }
     else if (_loading)
     {
-        <p class="mt-4 text-sm text-muted">Loading…</p>
+        <LoadingState />
     }
     else if (_detail is null)
     {
-        <p class="mt-4 text-sm text-muted">Definition not found.</p>
+        <EmptyState Title="Definition not found"
+                    Message="The requested notification definition could not be loaded." />
     }
     else
     {
-        <div class="flex flex-wrap items-start justify-between gap-3">
-            <PageHeader Title="@_detail.DisplayName" Subtitle="@_detail.Id" />
-            @if (_canEditDefinition)
+        @if (!string.IsNullOrEmpty(_error))
+        {
+            <ErrorState Message="@_error" />
+        }
+
+        <ManagementSection Title="Summary"
+                           Layer="ManagementSection.UiLayer.Summary"
+                           Help="Definition identity, ownership, and current enablement from persisted notification metadata.">
+            <div class="flex flex-wrap items-center gap-2">
+                <StatusPill Label="@(_detail.IsEnabled ? "Enabled" : "Disabled")"
+                            Semantic="@(_detail.IsEnabled ? ManagementStatusSemantic.Success : ManagementStatusSemantic.Neutral)" />
+                <StatusPill Label="@($"Scope: {_detail.Scope}")" Semantic="@ManagementStatusSemantic.Neutral" />
+                <StatusPill Label="@($"Origin: {_detail.Origin}")" Semantic="@ManagementStatusSemantic.Neutral" />
+                @if (!string.IsNullOrWhiteSpace(_detail.SourceKind))
+                {
+                    <StatusPill Label="@($"Source: {_detail.SourceKind}")" Semantic="@ManagementStatusSemantic.Neutral" />
+                }
+                @if (_isRuleTemplateLocked)
+                {
+                    <AttentionPill Label="Rule/template locked"
+                                   Semantic="@ManagementAttentionSemantic.Info" />
+                }
+                @if (ShowNoDeliverableRecipientsWarning)
+                {
+                    <AttentionPill Label="No deliverable recipients"
+                                   Semantic="@ManagementAttentionSemantic.Warning" />
+                }
+            </div>
+
+            @if (!string.IsNullOrWhiteSpace(_detail.Description))
             {
-                <a href="@EditHref" class="rounded bg-surface-muted px-3 py-2 text-sm hover:bg-surface shrink-0">Edit definition</a>
+                <p class="mt-3 text-xs text-muted">@_detail.Description</p>
             }
-        </div>
+
+            <div class="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+                <ManagementSummaryCard Title="Instances"
+                                       Description="Recent and historical notification instances for this definition."
+                                       Href="@NotificationUiRoutes.DefinitionInstances(DefinitionId)" />
+                <ManagementSummaryCard Title="Diagnostics"
+                                       Description="Resolution and delivery diagnostics scoped to this definition."
+                                       Href="@DiagnosticsHref" />
+                <ManagementSummaryCard Title="Delivery"
+                                       Description="Outbox and delivery processing posture for notification pipeline."
+                                       Href="/config/notifications/delivery" />
+                @if (!string.IsNullOrWhiteSpace(_detail.IntegrationId))
+                {
+                    <ManagementSummaryCard Title="Integration notifications"
+                                           Description="Integration-scoped notification configuration and attention routing."
+                                           Href="@NotificationUiRoutes.IntegrationNotifications(_detail.IntegrationId)" />
+                }
+                <ManagementSummaryCard Title="All definitions"
+                                       Description="Return to definitions list and filter related entries."
+                                       Href="/config/notifications/definitions" />
+            </div>
+        </ManagementSection>
 
         @if (_isRuleTemplateLocked)
         {
-            <div class="mt-4 rounded border border-default bg-surface px-3 py-2 text-sm">
-                <div class="font-semibold text-heading">Rule and template are locked</div>
-                <p class="text-muted text-xs mt-1">Platform-built-in definitions keep rule and template fixed. You can change enabled state and subscriptions below.</p>
-            </div>
+            <PageMessage Kind="PageMessageKind.Info"
+                         Title="Rule and template are locked"
+                         Message="Platform-built-in definitions keep rule and template fixed. You can still manage enabled state and subscriptions." />
         }
 
         <NotificationDefinitionPostCreatePrompt Visible="@_showPostCreatePrompt"
@@ -60,79 +120,39 @@
                                                 OnPreviewRecipients="PreviewPostCreateRecipientsAsync"
                                                 OnDismiss="DismissPostCreatePromptAsync" />
 
-        <div class="mt-4 space-y-4">
-            <section class="rounded border border-default bg-surface p-3 text-sm">
-                <div class="font-semibold text-heading mb-2">Metadata</div>
-                <dl class="grid grid-cols-1 gap-1 md:grid-cols-2 text-xs">
-                    <div><dt class="text-muted">Origin</dt><dd>@_detail.Origin</dd></div>
-                    <div><dt class="text-muted">Scope</dt><dd>@_detail.Scope</dd></div>
-                    <div><dt class="text-muted">Source kind</dt><dd>@_detail.SourceKind</dd></div>
-                    <div><dt class="text-muted">Primary event</dt><dd>@(_detail.PrimaryEventType ?? "—")</dd></div>
-                    <div><dt class="text-muted">Mutability</dt><dd>@_detail.Mutability</dd></div>
-                    <div><dt class="text-muted">Integration</dt><dd class="font-mono break-all">
-                        @if (!string.IsNullOrWhiteSpace(_detail.IntegrationId))
-                        {
-                            <a class="underline" href="@NotificationUiRoutes.IntegrationNotifications(_detail.IntegrationId)">@_detail.IntegrationId</a>
-                        }
-                        else
-                        {
-                            <span>—</span>
-                        }
-                    </dd></div>
-                    <div><dt class="text-muted">Module</dt><dd class="font-mono">@(_detail.ModuleId ?? "—")</dd></div>
-                    <div><dt class="text-muted">Enabled</dt><dd>
-                        @if (_canManage)
-                        {
-                            <input type="checkbox" checked="@_detail.IsEnabled" disabled="@_busy" @onchange="ToggleDefinitionEnabledAsync" />
-                        }
-                        else
-                        {
-                            @(_detail.IsEnabled ? "Yes" : "No")
-                        }
-                    </dd></div>
-                    <div><dt class="text-muted">Severity</dt><dd>@(_detail.DefaultSeverity ?? "—")</dd></div>
-                    <div><dt class="text-muted">Updated</dt><dd>@_detail.UpdatedAtUtc.UtcDateTime.ToString("u")</dd></div>
-                </dl>
-                @if (!string.IsNullOrWhiteSpace(_detail.Description))
-                {
-                    <p class="mt-2 text-muted">@_detail.Description</p>
-                }
-            </section>
+        <ManagementSection Title="Definition and subscription configuration"
+                           Layer="ManagementSection.UiLayer.Detail"
+                           Help="Routine authoring and operational controls for metadata, recipients, preview, and recent execution evidence.">
+            <div class="grid grid-cols-1 gap-1 md:grid-cols-2 text-xs">
+                <div><dt class="text-muted">Mutability</dt><dd>@_detail.Mutability</dd></div>
+                <div><dt class="text-muted">Primary event</dt><dd>@(_detail.PrimaryEventType ?? "—")</dd></div>
+                <div><dt class="text-muted">Module</dt><dd class="font-mono break-all">@(_detail.ModuleId ?? "—")</dd></div>
+                <div><dt class="text-muted">Severity</dt><dd>@(_detail.DefaultSeverity ?? "—")</dd></div>
+                <div><dt class="text-muted">Updated</dt><dd>@_detail.UpdatedAtUtc.UtcDateTime.ToString("u")</dd></div>
+                <div><dt class="text-muted">Integration</dt><dd class="font-mono break-all">
+                    @if (!string.IsNullOrWhiteSpace(_detail.IntegrationId))
+                    {
+                        <DrillInLink Href="@NotificationUiRoutes.IntegrationNotifications(_detail.IntegrationId)">@_detail.IntegrationId</DrillInLink>
+                    }
+                    else
+                    {
+                        <span>—</span>
+                    }
+                </dd></div>
+                <div><dt class="text-muted">Enabled</dt><dd>
+                    @if (_canManage)
+                    {
+                        <input type="checkbox" checked="@_detail.IsEnabled" disabled="@_busy" @onchange="ToggleDefinitionEnabledAsync" />
+                    }
+                    else
+                    {
+                        @(_detail.IsEnabled ? "Yes" : "No")
+                    }
+                </dd></div>
+            </div>
 
-            <section class="rounded border border-default bg-surface p-3">
-                <div class="font-semibold text-heading mb-2 text-sm">Rule JSON (read-only)</div>
-                <pre class="overflow-x-auto text-xs bg-surface-muted p-2 rounded">@_detail.RuleJson</pre>
-            </section>
-
-            <section class="rounded border border-default bg-surface p-3">
-                <div class="font-semibold text-heading mb-2 text-sm">Template JSON (read-only)</div>
-                <pre class="overflow-x-auto text-xs bg-surface-muted p-2 rounded">@_detail.TemplateJson</pre>
-            </section>
-
-            <section class="rounded border border-default bg-surface p-3">
-                <div class="flex items-center justify-between gap-2 mb-2">
-                    <div class="font-semibold text-heading text-sm">Render preview</div>
-                    <button type="button" class="rounded bg-surface-muted px-3 py-1 text-xs disabled:opacity-50" disabled="@_busy" @onclick="RenderPreviewAsync">Preview</button>
-                </div>
-                @if (_preview is not null)
-                {
-                    <div class="text-xs space-y-1">
-                        <div><span class="text-muted">Subject:</span> @_preview.Subject</div>
-                        <div><span class="text-muted">Summary:</span> @_preview.Summary</div>
-                        @if (!string.IsNullOrWhiteSpace(_preview.BodyText))
-                        {
-                            <pre class="mt-1 bg-surface-muted p-2 rounded whitespace-pre-wrap">@_preview.BodyText</pre>
-                        }
-                    </div>
-                }
-                else
-                {
-                    <p class="text-xs text-muted">No preview yet. Uses a sample event payload (does not send mail).</p>
-                }
-            </section>
-
-            <section class="rounded border border-default bg-surface p-3" id="definition-subscriptions">
-                <div class="font-semibold text-heading mb-2 text-sm">Explicit subscriptions</div>
+            <div class="mt-4 border-t border-default pt-4">
+                <div class="text-sm font-semibold text-heading mb-2">Explicit subscriptions</div>
                 @if (_attentionRouting is not null && HasAttentionRoutingRecipients)
                 {
                     <p class="mb-2 text-xs text-muted rounded border border-default bg-surface-muted/50 p-2">
@@ -141,7 +161,7 @@
                 }
                 @if (_canManage)
                 {
-                    <div class="mb-3 flex flex-wrap items-end gap-2 text-xs border-b border-default pb-3">
+                    <div class="mb-3 flex flex-wrap items-end gap-2 text-xs border-b border-default pb-3" id="definition-subscriptions">
                         <label>
                             Kind
                             <select class="mt-1 block rounded border border-default px-2 py-1" @bind="_addKind">
@@ -240,10 +260,33 @@
                         </tbody>
                     </table>
                 }
-            </section>
+            </div>
 
-            <section class="rounded border border-default bg-surface p-3">
-                <div class="font-semibold text-heading mb-2 text-sm">Recipient preview</div>
+            <div class="mt-4 border-t border-default pt-4">
+                <div class="text-sm font-semibold text-heading mb-2">Render preview</div>
+                <div class="flex items-center justify-between gap-2 mb-2">
+                    <p class="text-xs text-muted">Uses a sample event payload and does not send delivery.</p>
+                    <button type="button" class="rounded bg-surface-muted px-3 py-1 text-xs disabled:opacity-50" disabled="@_busy" @onclick="RenderPreviewAsync">Preview</button>
+                </div>
+                @if (_preview is not null)
+                {
+                    <div class="text-xs space-y-1">
+                        <div><span class="text-muted">Subject:</span> @_preview.Subject</div>
+                        <div><span class="text-muted">Summary:</span> @_preview.Summary</div>
+                        @if (!string.IsNullOrWhiteSpace(_preview.BodyText))
+                        {
+                            <pre class="mt-1 bg-surface-muted p-2 rounded whitespace-pre-wrap">@_preview.BodyText</pre>
+                        }
+                    </div>
+                }
+                else
+                {
+                    <p class="text-xs text-muted">No preview yet.</p>
+                }
+            </div>
+
+            <div class="mt-4 border-t border-default pt-4">
+                <div class="text-sm font-semibold text-heading mb-2">Recipient preview</div>
                 <div class="flex flex-wrap items-end gap-2 text-xs">
                     <label>
                         Integration id
@@ -262,12 +305,12 @@
                         No deliverable recipients for this definition. Platform delivery will not create outbox rows until at least one explicit subscription resolves to a deliverable recipient.
                     </p>
                 }
-            </section>
+            </div>
 
-            <section class="rounded border border-default bg-surface p-3">
+            <div class="mt-4 border-t border-default pt-4">
                 <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
-                    <div class="font-semibold text-heading text-sm">Recent instances</div>
-                    <a class="text-xs underline" href="@NotificationUiRoutes.DefinitionInstances(DefinitionId)">View all instances</a>
+                    <div class="text-sm font-semibold text-heading">Recent instances</div>
+                    <DrillInLink Href="@NotificationUiRoutes.DefinitionInstances(DefinitionId)">View all instances</DrillInLink>
                 </div>
                 @if (_recentInstances is { Count: 0 })
                 {
@@ -291,22 +334,40 @@
                                     <td class="p-1">@i.CreatedAtUtc.UtcDateTime.ToString("u")</td>
                                     <td class="p-1">@i.Status</td>
                                     <td class="p-1">@i.NotificationKind</td>
-                                    <td class="p-1"><a class="underline" href="@NotificationUiRoutes.InstanceDetail(i.Id)">Open</a></td>
+                                    <td class="p-1"><DrillInLink Href="@NotificationUiRoutes.InstanceDetail(i.Id)">Open</DrillInLink></td>
                                 </tr>
                             }
                         </tbody>
                     </table>
                 }
                 <div class="mt-2 text-xs">
-                    <a class="underline" href="@DiagnosticsHref">Diagnostics for this definition</a>
+                    <DrillInLink Href="@DiagnosticsHref">Diagnostics for this definition</DrillInLink>
                 </div>
-            </section>
-        </div>
+            </div>
+        </ManagementSection>
 
-        @if (!string.IsNullOrEmpty(_error))
-        {
-            <p class="mt-4 text-sm text-muted">@_error</p>
-        }
+        <ManagementAdvancedSection Title="Technical payloads and identifiers"
+                                   Subtitle="Raw definition internals, JSON payloads, and low-frequency diagnostics."
+                                   InitiallyOpen="false">
+            <div class="grid grid-cols-1 gap-2 md:grid-cols-2 text-xs">
+                <div><dt class="text-muted">Definition id</dt><dd class="font-mono break-all">@_detail.Id</dd></div>
+                <div><dt class="text-muted">Source kind</dt><dd>@_detail.SourceKind</dd></div>
+                <div><dt class="text-muted">Primary event type</dt><dd class="font-mono break-all">@(_detail.PrimaryEventType ?? "—")</dd></div>
+                <div><dt class="text-muted">Integration id</dt><dd class="font-mono break-all">@(_detail.IntegrationId ?? "—")</dd></div>
+                <div><dt class="text-muted">Module id</dt><dd class="font-mono break-all">@(_detail.ModuleId ?? "—")</dd></div>
+                <div><dt class="text-muted">Updated</dt><dd>@_detail.UpdatedAtUtc.UtcDateTime.ToString("u")</dd></div>
+            </div>
+
+            <div class="mt-4">
+                <div class="font-semibold text-heading mb-2 text-sm">Rule JSON (read-only)</div>
+                <pre class="overflow-x-auto text-xs bg-surface-muted p-2 rounded">@_detail.RuleJson</pre>
+            </div>
+
+            <div class="mt-4">
+                <div class="font-semibold text-heading mb-2 text-sm">Template JSON (read-only)</div>
+                <pre class="overflow-x-auto text-xs bg-surface-muted p-2 rounded">@_detail.TemplateJson</pre>
+            </div>
+        </ManagementAdvancedSection>
     }
 </div>
 
@@ -350,6 +411,22 @@
     private string EditHref => NotificationUiRoutes.DefinitionEdit(DefinitionId);
 
     private string DetailSelfHref => NotificationUiRoutes.DefinitionDetail(DefinitionId);
+
+    private string DetailTitle =>
+        string.IsNullOrWhiteSpace(_detail?.DisplayName) ? "Notification definition" : _detail!.DisplayName;
+
+    private string DetailSubtitle
+    {
+        get
+        {
+            if (_detail is null)
+                return "Definition detail";
+            var enabled = _detail.IsEnabled ? "Enabled" : "Disabled";
+            var source = string.IsNullOrWhiteSpace(_detail.SourceKind) ? "Source: unknown" : $"Source: {_detail.SourceKind}";
+            var scope = string.IsNullOrWhiteSpace(_detail.Scope) ? "Scope: unknown" : $"Scope: {_detail.Scope}";
+            return $"{enabled} · {scope} · {source}";
+        }
+    }
 
     private string? PostCreateIntegrationNotificationsHref
     {

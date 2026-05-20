@@ -1,6 +1,8 @@
 @page "/config/notifications/definitions/{DefinitionId}/edit"
 @layout ConfigLayout
 @using Apperture.Management.Client
+@using Apperture.Management.Ui.Client.Organisms
+@using Apperture.Management.Ui.Client.Molecules
 @using Apperture.Management.Ui.Client.Organisms.Notifications
 @using Apperture.Management.Ui.Client.Services
 @using Apperture.Management.Ui.Shared
@@ -8,47 +10,55 @@
 @inject IOperatorCapabilitiesService Capabilities
 @inject NavigationManager Nav
 
-<div class="p-4">
-    <div class="text-xs text-muted mb-1">
-        <a class="underline" href="/config/notifications/definitions">Definitions</a>
-        —
-        <a class="underline" href="@DetailHref">@DefinitionId</a>
-        — Edit
-    </div>
+<div class="p-4 ui-page-stack">
+    <PageHeader Eyebrow="Notifications"
+                Title="Edit notification definition"
+                Subtitle="@EditSubtitle">
+        <ChildContent>
+            <div class="mt-1 font-mono text-xs text-muted break-all">@DefinitionId</div>
+        </ChildContent>
+        <Toolbar>
+            <DrillInLink Href="@DetailHref">Back to detail</DrillInLink>
+            <DrillInLink Href="/config/notifications/definitions">Definitions</DrillInLink>
+        </Toolbar>
+    </PageHeader>
 
     @if (!_capabilitiesLoaded)
     {
-        <p class="mt-4 text-sm text-muted">Loading…</p>
+        <LoadingState />
     }
     else if (!_canSave)
     {
-        <div class="mt-4 rounded border border-default bg-surface px-3 py-2 text-sm">
-            <div class="font-semibold">Not authorized</div>
-            <div class="text-muted">Editing notification definitions requires notification definition manage and integration update permissions.</div>
-        </div>
+        <ForbiddenState Title="Not authorized"
+                        Message="Editing notification definitions requires notification definition manage and integration update permissions." />
     }
     else if (_loading)
     {
-        <p class="mt-4 text-sm text-muted">Loading…</p>
+        <LoadingState />
     }
     else if (_detail is null)
     {
-        <p class="mt-4 text-sm text-muted">Definition not found.</p>
+        <EmptyState Title="Definition not found"
+                    Message="The definition was not found or is unavailable." />
     }
     else if (!string.Equals(_detail.Mutability, "fullyEditable", StringComparison.Ordinal))
     {
-        <div class="mt-4 rounded border border-default bg-surface px-3 py-2 text-sm">
-            <div class="font-semibold">Cannot edit rule or template</div>
-            <p class="text-muted mt-1">This definition is not fully editable. You can change enabled state and subscriptions on the detail page.</p>
-            <a class="underline text-xs mt-2 inline-block" href="@DetailHref">Back to detail</a>
-        </div>
+        <ManagementSection Title="Editing unavailable"
+                           Layer="ManagementSection.UiLayer.Detail"
+                           Help="Use the detail page to manage enablement and subscriptions for platform-managed definitions.">
+            <PageMessage Kind="PageMessageKind.Warning"
+                         Title="Cannot edit rule or template"
+                         Message="This definition is not fully editable." />
+            <div class="mt-2 text-xs">
+                <DrillInLink Href="@DetailHref">Back to detail</DrillInLink>
+            </div>
+        </ManagementSection>
     }
     else
     {
-        <h1 class="text-xl font-semibold text-heading">Edit notification definition</h1>
-        <p class="text-xs text-muted mt-1">@_detail.DisplayName</p>
-
-        <div class="mt-4">
+        <ManagementSection Title="Authoring"
+                           Layer="ManagementSection.UiLayer.Detail"
+                           Help="Rule and template authoring for fully editable definitions. Save behavior and validation stay unchanged.">
             <NotificationDefinitionAuthoringForm Mode="NotificationDefinitionAuthoringMode.Edit"
                                                  IntegrationId="@_detail.IntegrationId"
                                                  LockIntegration="true"
@@ -57,7 +67,7 @@
                                                  ReturnUrl="@DetailHref"
                                                  CanSave="true"
                                                  OnSaved="OnSavedAsync" />
-        </div>
+        </ManagementSection>
     }
 </div>
 
@@ -70,6 +80,10 @@
     private NotificationDefinitionDetailDto? _detail;
 
     private string DetailHref => NotificationUiRoutes.DefinitionDetail(DefinitionId);
+    private string EditSubtitle =>
+        string.IsNullOrWhiteSpace(_detail?.DisplayName)
+            ? "Update rule/template content and metadata for this definition."
+            : $"Editing {_detail.DisplayName}";
 
     protected override async Task OnInitializedAsync()
     {

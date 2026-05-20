@@ -51,7 +51,7 @@ Before Epic 82, Control Center presented platform health, targets, recent activi
 
 - Optional extraction of targets/activity tables into dedicated presentational child components if reused in other consoles.
 - Evaluate whether recent-activity status semantics should move to shared `ManagementUiSemantics` when another page needs the same mapping.
-- Other Epic 78 pilots: notification definition detail (#4), schedules list/detail (#5) — [Epic 83](Epic83-Schedules-List-Detail-Redesign-Pilot.md).
+- Other Epic 78 pilots: notification definition detail (#4) — [Epic 84](Epic84-Notification-Definition-Authoring-Redesign-Pilot.md), schedules list/detail (#5) — [Epic 83](Epic83-Schedules-List-Detail-Redesign-Pilot.md).
 
 ## Validation
 
@@ -65,3 +65,4 @@ Before Epic 82, Control Center presented platform health, targets, recent activi
 - [Epic 79 — Design system foundation](Epic79-Management-UI-Design-System-Foundation.md)
 - [Epic 80 — Integration Detail redesign pilot](Epic80-Integration-Detail-Redesign-Pilot.md)
 - [Epic 81 — Run Detail redesign pilot](Epic81-Run-Detail-Redesign-Pilot.md)
+- [Epic 84 — Notification definition detail/authoring redesign pilot](Epic84-Notification-Definition-Authoring-Redesign-Pilot.md)

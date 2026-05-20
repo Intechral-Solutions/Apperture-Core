@@ -1,41 +1,43 @@
 @page "/config/notifications/definitions/new"
 @layout ConfigLayout
+@using Apperture.Management.Ui.Client.Organisms
+@using Apperture.Management.Ui.Client.Molecules
 @using Apperture.Management.Ui.Client.Organisms.Notifications
 @using Apperture.Management.Ui.Client.Services
 @using Apperture.Management.Ui.Shared
 @inject IOperatorCapabilitiesService Capabilities
 @inject NavigationManager Nav
 
-<div class="p-4">
-    <div class="text-xs text-muted mb-1">
-        <a class="underline" href="/config/notifications/definitions">Definitions</a>
-        <span> — Create</span>
-    </div>
+<div class="p-4 ui-page-stack">
+    <PageHeader Eyebrow="Notifications"
+                Title="Create notification definition"
+                Subtitle="Integration-scoped, platform-event rule and template authoring.">
+        <Toolbar>
+            <DrillInLink Href="/config/notifications/definitions">Back to definitions</DrillInLink>
+        </Toolbar>
+    </PageHeader>
 
     @if (!_capabilitiesLoaded)
     {
-        <p class="mt-4 text-sm text-muted">Loading…</p>
+        <LoadingState />
     }
     else if (!_canSave)
     {
-        <div class="mt-4 rounded border border-default bg-surface px-3 py-2 text-sm">
-            <div class="font-semibold">Not authorized</div>
-            <div class="text-muted">Creating notification definitions requires notification definition manage and integration update permissions.</div>
-        </div>
+        <ForbiddenState Title="Not authorized"
+                        Message="Creating notification definitions requires notification definition manage and integration update permissions." />
     }
     else
     {
-        <h1 class="text-xl font-semibold text-heading">Create notification definition</h1>
-        <p class="text-xs text-muted mt-1">Integration-scoped, platform-event rule and template.</p>
-
-        <div class="mt-4">
+        <ManagementSection Title="Authoring"
+                           Layer="ManagementSection.UiLayer.Detail"
+                           Help="Create a new definition; save and redirect behavior remains unchanged.">
             <NotificationDefinitionAuthoringForm Mode="NotificationDefinitionAuthoringMode.Create"
                                                  IntegrationId="@IntegrationId"
                                                  LockIntegration="false"
                                                  ReturnUrl="@ReturnUrl"
                                                  CanSave="true"
                                                  OnSaved="OnSavedAsync" />
-        </div>
+        </ManagementSection>
     }
 </div>
 
