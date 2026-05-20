@@ -83,3 +83,5 @@ Recorded at implementation time:
 ## Recommended next epic
 
 **Operation history / blocked-work adoption:** Extend `ActionFeedback` to Blocked Work when ready; add history/persistence only when backend operation lifecycle contracts exist.
+
+**Post–Epic 89 audit:** [Epic 89](Epic89-Management-UI-Modernization-Progress-Audit.md) found that `LoadAsync` clears `_actionMessage` after actions on Run/Schedule detail, so banners may not display until a corrective pass (COR-001) preserves messages across reload.
