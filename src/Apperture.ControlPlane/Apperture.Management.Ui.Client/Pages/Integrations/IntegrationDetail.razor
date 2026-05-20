@@ -4,6 +4,7 @@
 @using Apperture.Management.Ui.Client.Services
 @using Apperture.Management.Ui.Client.Services.Wizard
 @using Apperture.Management.Ui.Client.Organisms
+@using Apperture.Management.Ui.Client.Molecules
 @using Apperture.Management.Ui.Shared
 @inject IManagementClient Client
 @inject IOperatorCapabilitiesService Capabilities
@@ -28,7 +29,7 @@
             <button type="button"
                     class="ui-toolbar-btn"
                     disabled="@_loading"
-                    @onclick="LoadAsync">
+                    @onclick="RefreshAsync">
                 Refresh
             </button>
             @if (_capabilities?.CanManageIntegrations == true && _integration is not null)
@@ -93,6 +94,11 @@
                                 ScheduleCount="@(_schedules?.Count ?? 0)"
                                 EnabledScheduleCount="@EnabledScheduleCount"
                                 BindingCount="@(_bindings?.Count ?? 0)" />
+
+        @if (!string.IsNullOrEmpty(_actionMessage))
+        {
+            <ActionFeedback Kind="@_actionFeedbackKind" Message="@_actionMessage" />
+        }
 
         <ManagementSection Title="Recent activity"
                            Layer="ManagementSection.UiLayer.Detail"
@@ -649,6 +655,8 @@
     private bool _loading;
     private bool _deleting;
     private string? _error;
+    private string? _actionMessage;
+    private PageMessageKind _actionFeedbackKind = PageMessageKind.Info;
 
     private bool _editingSettings;
     private List<(string Key, string Value)> _settingsEditList = new();
@@ -740,11 +748,21 @@
             await LoadAsync();
     }
 
-    private async Task LoadAsync()
+    private Task RefreshAsync() => LoadAsync();
+
+    private void SetActionFeedback(string message, PageMessageKind kind = PageMessageKind.Info)
+    {
+        _actionMessage = message;
+        _actionFeedbackKind = kind;
+    }
+
+    private async Task LoadAsync(bool preserveActionFeedback = false)
     {
         if (_capabilities?.CanViewIntegrations != true || string.IsNullOrEmpty(IntegrationId)) return;
         _loading = true;
         _error = null;
+        if (!preserveActionFeedback)
+            _actionMessage = null;
         try
         {
             var detail = await Client.GetIntegrationOperatorDetailAsync(IntegrationId);
@@ -948,7 +966,9 @@
                 var detail = string.IsNullOrEmpty(outcome.ErrorMessage)
                     ? $"HTTP {outcome.StatusCode}"
                     : $"{outcome.ErrorCode ?? "error"}: {outcome.ErrorMessage}";
-                Toasts.Show(ToastSeverity.Error, $"Launch failed ({detail}).");
+                var launchMsg = $"Launch failed ({detail}).";
+                SetActionFeedback(launchMsg, PageMessageKind.Error);
+                Toasts.Show(ToastSeverity.Error, launchMsg);
                 return;
             }
 
@@ -957,6 +977,7 @@
         }
         catch (HttpRequestException ex)
         {
+            SetActionFeedback(ex.Message, PageMessageKind.Error);
             Toasts.Show(ToastSeverity.Error, ex.Message);
         }
         finally
@@ -1028,12 +1049,14 @@
         try
         {
             _integration = await Client.UpdateIntegrationAsync(IntegrationId, new UpdateIntegrationRequest(Settings: cleaned));
+            SetActionFeedback("Settings saved.");
             Toasts.Show(ToastSeverity.Success, "Settings saved.");
             _editingSettings = false;
-            await LoadAsync();
+            await LoadAsync(preserveActionFeedback: true);
         }
         catch (HttpRequestException ex)
         {
+            SetActionFeedback(ex.Message, PageMessageKind.Error);
             Toasts.Show(ToastSeverity.Error, ex.Message);
         }
         finally
@@ -1052,11 +1075,14 @@
             _integration = await Client.UpdateIntegrationAsync(
                 IntegrationId,
                 new UpdateIntegrationRequest(State: state));
-            Toasts.Show(ToastSeverity.Success, $"Integration state set to {state}.");
-            await LoadAsync();
+            var stateMsg = $"Integration state set to {state}.";
+            SetActionFeedback(stateMsg);
+            Toasts.Show(ToastSeverity.Success, stateMsg);
+            await LoadAsync(preserveActionFeedback: true);
         }
         catch (HttpRequestException ex)
         {
+            SetActionFeedback(ex.Message, PageMessageKind.Error);
             Toasts.Show(ToastSeverity.Error, ex.Message);
         }
     }
@@ -1068,11 +1094,13 @@
         try
         {
             _integration = await Client.ActivateIntegrationAsync(IntegrationId);
+            SetActionFeedback("Integration activated.");
             Toasts.Show(ToastSeverity.Success, "Integration activated.");
-            await LoadAsync();
+            await LoadAsync(preserveActionFeedback: true);
         }
         catch (HttpRequestException ex)
         {
+            SetActionFeedback(ex.Message, PageMessageKind.Error);
             Toasts.Show(ToastSeverity.Error, ex.Message);
         }
     }
@@ -1084,11 +1112,13 @@
         try
         {
             _integration = await Client.DeactivateIntegrationAsync(IntegrationId);
+            SetActionFeedback("Integration deactivated.");
             Toasts.Show(ToastSeverity.Success, "Integration deactivated.");
-            await LoadAsync();
+            await LoadAsync(preserveActionFeedback: true);
         }
         catch (HttpRequestException ex)
         {
+            SetActionFeedback(ex.Message, PageMessageKind.Error);
             Toasts.Show(ToastSeverity.Error, ex.Message);
         }
     }
@@ -1152,9 +1182,10 @@
         try
         {
             await Client.CreateIntegrationBindingAsync(IntegrationId, new CreateIntegrationBindingRequest(_bindingSlot, _moduleSlots?.First(s => s.SlotName == _bindingSlot).ContractType ?? "", _bindingConnectionId));
+            SetActionFeedback("Binding added.");
             Toasts.Show(ToastSeverity.Success, "Binding added.");
             _addingBinding = false;
-            await LoadAsync();
+            await LoadAsync(preserveActionFeedback: true);
         }
         catch (HttpRequestException ex)
         {
@@ -1265,6 +1296,7 @@
             {
                 _bindingConnectionId = nowEligible.Id;
                 _addingConnectionInFlow = false;
+                SetActionFeedback("Connection created and selected for binding.");
                 Toasts.Show(ToastSeverity.Success, "Connection created and selected for binding.");
             }
             else
@@ -1292,11 +1324,13 @@
         try
         {
             await Client.DeleteIntegrationBindingAsync(IntegrationId, b.Id);
+            SetActionFeedback("Binding removed.");
             Toasts.Show(ToastSeverity.Success, "Binding removed.");
-            await LoadAsync();
+            await LoadAsync(preserveActionFeedback: true);
         }
         catch (HttpRequestException ex)
         {
+            SetActionFeedback(ex.Message, PageMessageKind.Error);
             Toasts.Show(ToastSeverity.Error, ex.Message);
         }
     }
@@ -1332,17 +1366,21 @@
                 true,
                 0,
                 targetConfig));
+            SetActionFeedback("Schedule created.");
             Toasts.Show(ToastSeverity.Success, "Schedule created.");
             _addingSchedule = false;
-            await LoadAsync();
+            await LoadAsync(preserveActionFeedback: true);
         }
         catch (HttpRequestException ex)
         {
+            SetActionFeedback(ex.Message, PageMessageKind.Error);
             Toasts.Show(ToastSeverity.Error, ex.Message);
         }
         catch (ScheduleValidationException ex)
         {
-            Toasts.Show(ToastSeverity.Error, string.Join(" ", ex.Errors));
+            var validationMsg = string.Join(" ", ex.Errors);
+            SetActionFeedback(validationMsg, PageMessageKind.Error);
+            Toasts.Show(ToastSeverity.Error, validationMsg);
         }
         finally
         {
@@ -1534,6 +1572,7 @@
         }
         catch (HttpRequestException ex)
         {
+            SetActionFeedback(ex.Message, PageMessageKind.Error);
             Toasts.Show(ToastSeverity.Error, ex.Message);
         }
         finally

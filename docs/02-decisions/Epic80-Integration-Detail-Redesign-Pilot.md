@@ -61,6 +61,10 @@ Integration Detail (`/integrations/{IntegrationId}`) was Epic 78 **pilot #3**: t
 - Prefer `DrillInLink` + existing URL helpers over new link components.
 - Large `@code` blocks may remain in the page until a second extraction pass; markup layering delivers most scanability gains.
 
+## Follow-on (Epic 96)
+
+Mutation feedback on this page now uses **`ActionFeedback`** (persistent banner after reload) in addition to existing toasts — see [Epic 96](Epic96-Integration-Detail-Action-Feedback-Alignment.md). Recent activity: [Epic 94](Epic94-Entity-Local-Recent-Activity-Panels.md), drill-ins: [Epic 95](Epic95-Recent-Activity-Filter-and-Drill-In-Completion.md).
+
 ## Validation
 
 - `Apperture.Management.Ui.Client` builds successfully.

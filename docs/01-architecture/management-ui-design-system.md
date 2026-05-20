@@ -55,7 +55,7 @@ Related shell documentation: [control-panel-ui.md](control-panel-ui.md).
 | `AttentionPill` | Summary | Dashboard attention tokens (`Critical`, `Warning`, `Info`) |
 | `DrillInLink` | Detail | Underlined drill-in with `ui-drill-in-link` class |
 | `LoadingState` / `EmptyState` / `ForbiddenState` / `ErrorState` | Any | Thin aliases over `PageMessage` for consistent defaults |
-| `ActionFeedback` | Detail (below header) | Cooperative/user-triggered action result banner (Epic 88); defaults Title “Action”, Kind Info |
+| `ActionFeedback` | Detail (below header / summary) | Cooperative/user-triggered action result banner (Epic 88; Integration Detail Epic 96); defaults Title “Action”, Kind Info |
 | `MetadataGrid` / `MetadataItem` | Detail / summary | Repeated label/value facts (Epic 93); optional `ThreeColumn` on summary bands |
 | `SectionActions` | Section body | Save/cancel or routine button groups inside a `ManagementSection` (Epic 93) |
 
@@ -264,7 +264,7 @@ Document for a **future async operation shell** epic (not implemented here):
 
 ### Future operation shell readiness
 
-Epic 88 introduced **`ActionFeedback`** as the first reusable **presentation** layer for cooperative results. [Epic 91](../02-decisions/Epic91-Operation-History-and-Action-Feedback-Groundwork.md) defines operation history semantics, existing sources of truth, and UI placement before any global shell. Until then:
+Epic 88 introduced **`ActionFeedback`** as the first reusable **presentation** layer for cooperative results. [Epic 96](../02-decisions/Epic96-Integration-Detail-Action-Feedback-Alignment.md) adopts it on **Integration Detail** for stay-on-page mutations (banner persists across `LoadAsync(preserveActionFeedback: true)`; toasts retained). [Epic 91](../02-decisions/Epic91-Operation-History-and-Action-Feedback-Groundwork.md) defines operation history semantics, existing sources of truth, and UI placement before any global shell. Until then:
 
 1. Keep action copy and eligibility logic **page-local** (`_actionMessage`, handlers unchanged).
 2. Reuse **`ActionFeedback`** + **`ActionButton`** prior art before adding global services.
@@ -324,7 +324,7 @@ Mapping and merge logic live in `EntityRecentActivityComposer` (`Apperture.Manag
 
 The pilot stack is now ready for these follow-on epics, but none are implemented by the design-system itself:
 
-- **Async operation shell:** `ActionFeedback` on cooperative surfaces; entity-local recent activity panels ([Epic 94](../../02-decisions/Epic94-Entity-Local-Recent-Activity-Panels.md)); interaction primitives ([Epic 93](../../02-decisions/Epic93-Management-UI-Interaction-Primitive-Hardening.md)) — operation **registry** and backend tracking remain deferred.
+- **Async operation shell:** `ActionFeedback` on cooperative surfaces and Integration Detail hub mutations ([Epic 96](../../02-decisions/Epic96-Integration-Detail-Action-Feedback-Alignment.md)); entity-local recent activity panels ([Epic 94](../../02-decisions/Epic94-Entity-Local-Recent-Activity-Panels.md)); interaction primitives ([Epic 93](../../02-decisions/Epic93-Management-UI-Interaction-Primitive-Hardening.md)) — operation **registry** and backend tracking remain deferred.
 - **Schema-driven forms:** evolve `ProcedureParameterForm` only when execution-start and dense authoring surfaces share a stable metadata contract.
 - **Module dashboards:** reuse `ManagementSummaryCard` posture and permission omission from dashboard/card patterns; keep module-owned UI in module assemblies.
 - **Operational stats/charts:** add as summary-layer artifacts only when APIs provide truthful aggregates and drill-in contracts.

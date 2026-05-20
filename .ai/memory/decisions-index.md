@@ -39,3 +39,4 @@ Architecture decision records (ADRs) live in [docs/02-decisions/](../../docs/02-
 | [Epic 93](../../docs/02-decisions/Epic93-Management-UI-Interaction-Primitive-Hardening.md) | Interaction primitive hardening (toolbar, metadata grid, section actions; Epic 93) |
 | [Epic 94](../../docs/02-decisions/Epic94-Entity-Local-Recent-Activity-Panels.md) | Entity-local recent activity panels (runs/audit/notifications; existing APIs only) |
 | [Epic 95](../../docs/02-decisions/Epic95-Recent-Activity-Filter-and-Drill-In-Completion.md) | Recent activity drill-in completion (`moduleId` on Runs list; audit scope copy) |
+| [Epic 96](../../docs/02-decisions/Epic96-Integration-Detail-Action-Feedback-Alignment.md) | Integration Detail ActionFeedback alignment (hub mutations; toasts preserved) |
