@@ -1,24 +1,25 @@
 @page "/config"
 @layout ConfigLayout
 
-<div class="p-4">
-    <div class="text-xs text-muted mb-1">Config</div>
-    <h1 class="text-xl font-semibold text-heading">Configuration</h1>
-    <div class="mt-4 text-sm text-body">
-        <p>Select a configuration area:</p>
-        <ul class="mt-2 list-disc list-inside space-y-1">
-            <li>
-                <a href="/config/auth" class="underline hover:no-underline">Authentication</a> — Overview, chooser policy, Entra tenant validation, and directory browse (users/groups)
-            </li>
-            <li>
-                <a href="/config/contacts" class="underline hover:no-underline">Managed contacts</a> — Custom and imported people for notifications and teams (Epic 76)
-            </li>
-            <li>
-                <a href="/config/governance" class="underline hover:no-underline">Governance</a> — Roles, users, permission catalog, and role assignment
-            </li>
-            <li>
-                <a href="/config/notifications" class="underline hover:no-underline">Notifications</a> — Definitions, instances, delivery health, and cutover diagnostics (Epic 77)
-            </li>
-        </ul>
-    </div>
+<div class="p-4 ui-page-stack">
+    <PageHeader Title="Configuration"
+                Eyebrow="Config"
+                Subtitle="Select a configuration area. Each card links to a focused admin surface." />
+
+    <ManagementSection Title="Configuration areas" Layer="@ManagementSection.UiLayer.Summary">
+        <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <ManagementSummaryCard Title="Authentication"
+                                   Description="Overview, chooser policy, Entra tenant validation, and directory browse (users/groups)."
+                                   Href="/config/auth" />
+            <ManagementSummaryCard Title="Managed contacts"
+                                   Description="Custom and imported people for notifications and operational teams (Epic 76)."
+                                   Href="/config/contacts" />
+            <ManagementSummaryCard Title="Governance"
+                                   Description="Roles, users, permission catalog, and role assignment."
+                                   Href="/config/governance" />
+            <ManagementSummaryCard Title="Notifications"
+                                   Description="Definitions, instances, delivery health, and cutover diagnostics (Epic 77)."
+                                   Href="/config/notifications" />
+        </div>
+    </ManagementSection>
 </div>

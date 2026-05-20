@@ -329,7 +329,7 @@ Recommended **first redesign pilots** (documentation choice for a follow-on epic
 | Future capability | Depends on Epic 78 | Notes |
 |-------------------|---------------------|-------|
 | **UI redesign pilots** | Archetypes, layering, drill-in rules | Implement per pilot route without breaking query contracts. |
-| **Shared design system** | Archetypes + extension seams | Formalize `PageHeader`, `PageMessage`, tokens; do not block on new package in Epic 78. |
+| **Shared design system** | Archetypes + extension seams | Implemented in Epic 79 — [management-ui-design-system.md](../01-architecture/management-ui-design-system.md). |
 | **Async operation UX standard** | Run detail pilot, layering | Cooperative actions already exist; standardize banners/poll/disabled patterns. |
 | **Schema-driven parameter forms** | Start/execute archetype | Extend `ProcedureParameterForm`; operations already metadata-driven. |
 | **Module-contributed dashboards/panels** | Dashboard provider seam | `IDashboardCardProvider` pattern; not WASM widget framework yet. |

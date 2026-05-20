@@ -53,4 +53,4 @@ The `Automation` domain contains run history (`/runs`) surfaced in the menu as *
 
 ## UI modernization and layering
 
-Page archetypes, summary/detail/advanced layering, drill-in rules, and pilot recommendations for future Management UI work are documented in [Epic 78 — Management UI modernization groundwork](../02-decisions/Epic78-Management-UI-Modernization-Groundwork.md). That epic is documentation-only; this file remains the shell and navigation contract.
+Page archetypes, summary/detail/advanced layering, drill-in rules, and pilot recommendations are documented in [Epic 78 — Management UI modernization groundwork](../02-decisions/Epic78-Management-UI-Modernization-Groundwork.md). Reusable primitives and visual conventions are in [Management UI design system](management-ui-design-system.md) (Epic 79). This file remains the shell and navigation contract.

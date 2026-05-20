@@ -21,3 +21,5 @@ Architecture decision records (ADRs) live in [docs/02-decisions/](../../docs/02-
 | [ADR-0037](../../docs/02-decisions/ADR-0037-platform-signals-events-and-notification-system.md) | Platform signals (events/logs/telemetry), notification definitions, templates, staged rules, async delivery (proposed) |
 | [Epic 77 plan](../../docs/02-decisions/Epic77-Platform-Signals-and-Notification-System-Implementation-Plan.md) | Phased implementation plan for ADR-0037 (documentation only) |
 | [Epic 78](../../docs/02-decisions/Epic78-Management-UI-Modernization-Groundwork.md) | Management UI audit, page archetypes, layering/drill-in rules, pilot recommendations (documentation only) |
+| [Management UI design system](../../docs/01-architecture/management-ui-design-system.md) | Epic 79: layout/status primitives, semantics, PageMessage conventions |
+| [Epic 79](../../docs/02-decisions/Epic79-Management-UI-Design-System-Foundation.md) | Design system foundation (primitives, CSS, `/config` proof) |

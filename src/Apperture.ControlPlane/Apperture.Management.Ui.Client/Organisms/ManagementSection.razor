@@ -1,0 +1,44 @@
+<section class="ui-section-panel @Class" data-ui-layer="@Layer">
+    <div class="flex flex-wrap items-start justify-between gap-2">
+        <div class="min-w-0">
+            @if (!string.IsNullOrWhiteSpace(Title))
+            {
+                <h2 class="text-sm font-semibold text-heading">@Title</h2>
+            }
+            @if (!string.IsNullOrWhiteSpace(Subtitle))
+            {
+                <p class="mt-1 text-xs text-muted">@Subtitle</p>
+            }
+            @if (!string.IsNullOrWhiteSpace(Help))
+            {
+                <p class="mt-1 text-xs text-subtle">@Help</p>
+            }
+        </div>
+        @if (Toolbar is not null)
+        {
+            <div class="flex flex-wrap items-center gap-2">@Toolbar</div>
+        }
+    </div>
+    @if (ChildContent is not null)
+    {
+        <div class="mt-3">@ChildContent</div>
+    }
+</section>
+
+@code {
+    [Parameter] public string? Title { get; set; }
+    [Parameter] public string? Subtitle { get; set; }
+    [Parameter] public string? Help { get; set; }
+    [Parameter] public string Class { get; set; } = "";
+    [Parameter] public UiLayer Layer { get; set; } = UiLayer.Detail;
+    [Parameter] public RenderFragment? Toolbar { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    public enum UiLayer
+    {
+        Summary,
+        Detail,
+        Advanced,
+        Help
+    }
+}

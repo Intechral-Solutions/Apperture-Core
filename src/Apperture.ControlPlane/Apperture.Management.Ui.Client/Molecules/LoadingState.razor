@@ -1,0 +1,6 @@
+<PageMessage Kind="PageMessageKind.Loading" Title="@Title" Message="@Message" />
+
+@code {
+    [Parameter] public string? Title { get; set; }
+    [Parameter] public string Message { get; set; } = "Loading…";
+}
