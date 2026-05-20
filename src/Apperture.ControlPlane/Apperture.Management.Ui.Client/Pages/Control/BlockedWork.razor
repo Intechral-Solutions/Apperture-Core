@@ -13,7 +13,7 @@
             <h1 class="text-xl font-semibold text-heading">Blocked Work</h1>
             <div class="text-xs text-muted">Blocked deferred work with remediation eligibility. Workflow items may be retried; operation items are inspection-only.</div>
         </div>
-        <div class="flex items-center gap-2">
+        <div class="ui-action-row">
             <select class="rounded border border-default bg-surface px-2 py-1 text-sm"
                     disabled="@_loading"
                     @bind="_windowHours"
@@ -23,13 +23,13 @@
             </select>
             @if (_capabilities?.CanManageRecovery == true)
             {
-                <button class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface"
+                <button class="ui-toolbar-btn"
                         disabled="@_loading"
                         @onclick="TriggerRunCycleAsync">
                     Trigger scheduler cycle
                 </button>
             }
-            <button class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface"
+            <button class="ui-toolbar-btn"
                     disabled="@_loading"
                     @onclick="RefreshAsync">
                 Refresh

@@ -1,0 +1,12 @@
+<div class="@RootClass">
+    @ChildContent
+</div>
+
+@code {
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    /// <summary>When true, uses a three-column layout at large breakpoints (summary-band style).</summary>
+    [Parameter] public bool ThreeColumn { get; set; }
+
+    private string RootClass => ThreeColumn ? "ui-metadata-grid ui-metadata-grid--3" : "ui-metadata-grid";
+}

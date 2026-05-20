@@ -15,9 +15,9 @@
         <Toolbar>
             @if (_capabilities?.CanManageSchedules == true)
             {
-                <a href="/schedules/new" class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface">Create schedule</a>
+                <a href="/schedules/new" class="ui-toolbar-btn">Create schedule</a>
             }
-            <button class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface"
+            <button class="ui-toolbar-btn"
                     disabled="@_loading"
                     @onclick="LoadAsync">
                 Refresh

@@ -13,9 +13,9 @@
             <h1 class="text-xl font-semibold text-heading">Config / Module</h1>
             <div class="mt-1 font-mono text-xs text-muted break-all">@ModuleId</div>
         </div>
-        <div class="flex items-center gap-2">
-            <a href="/modules" class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface">Back to list</a>
-            <button class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface"
+        <div class="flex items-center gap-2 ui-action-row">
+            <a href="/modules" class="ui-toolbar-btn">Back to list</a>
+            <button class="ui-toolbar-btn"
                     disabled="@_loading"
                     @onclick="RefreshAsync">
                 Refresh
@@ -51,26 +51,26 @@
                 <div class="rounded border border-default bg-surface p-3">
                     <div class="text-sm font-semibold text-heading">Lifecycle actions</div>
                     <div class="text-xs text-muted">Safe actions supported by the backend. Disabled when not applicable.</div>
-                    <div class="mt-2 flex flex-wrap gap-2">
-                        <button class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface disabled:opacity-50"
+                    <div class="ui-section-actions">
+                        <button class="ui-toolbar-btn"
                                 disabled="@(_loading || !CanInstall)"
                                 title="@(CanInstall ? "Install module" : "Already installed or not applicable")"
                                 @onclick="InstallAsync">
                             Install
                         </button>
-                        <button class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface disabled:opacity-50"
+                        <button class="ui-toolbar-btn"
                                 disabled="@(_loading || !CanEnable)"
                                 title="@(CanEnable ? "Enable module" : "Already enabled or not applicable")"
                                 @onclick="EnableAsync">
                             Enable
                         </button>
-                        <button class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface disabled:opacity-50"
+                        <button class="ui-toolbar-btn"
                                 disabled="@(_loading || !CanDisable)"
                                 title="@(CanDisable ? "Disable module" : "Already disabled or not applicable")"
                                 @onclick="DisableAsync">
                             Disable
                         </button>
-                        <button class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface disabled:opacity-50"
+                        <button class="ui-toolbar-btn"
                                 disabled="@(_loading || !CanUninstall)"
                                 title="@(CanUninstall ? "Uninstall module" : "Not installed or not applicable")"
                                 @onclick="UninstallAsync">
@@ -82,32 +82,14 @@
 
             <div class="rounded border border-default bg-surface p-3">
                 <div class="text-sm font-semibold text-heading">State</div>
-                <div class="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2">
-                    <div>
-                        <div class="text-xs text-muted">Name</div>
-                        <div class="text-sm text-body">@_module.Name</div>
-                    </div>
-                    <div>
-                        <div class="text-xs text-muted">Version</div>
-                        <div class="text-sm text-body">@_module.Version</div>
-                    </div>
-                    <div>
-                        <div class="text-xs text-muted">Lifecycle state</div>
-                        <div class="text-sm font-mono">@_module.State</div>
-                    </div>
-                    <div>
-                        <div class="text-xs text-muted">Enabled (persisted)</div>
-                        <div class="text-sm text-body">@(_module.Enabled ? "Yes" : "No")</div>
-                    </div>
-                    <div>
-                        <div class="text-xs text-muted">Effectively active</div>
-                        <div class="text-sm text-body">@(_module.EffectivelyActive ? "Yes" : "No")</div>
-                    </div>
-                    <div>
-                        <div class="text-xs text-muted">Installed</div>
-                        <div class="text-sm text-body">@(_module.Installed ? "Yes" : "No")</div>
-                    </div>
-                </div>
+                <MetadataGrid>
+                    <MetadataItem Label="Name" Value="@_module.Name" />
+                    <MetadataItem Label="Version" Value="@_module.Version" />
+                    <MetadataItem Label="Lifecycle state" Monospace="true" Value="@_module.State" />
+                    <MetadataItem Label="Enabled (persisted)" Value="@(_module.Enabled ? "Yes" : "No")" />
+                    <MetadataItem Label="Effectively active" Value="@(_module.EffectivelyActive ? "Yes" : "No")" />
+                    <MetadataItem Label="Installed" Value="@(_module.Installed ? "Yes" : "No")" />
+                </MetadataGrid>
                 @if (_module.ValidationIssues is { Count: > 0 })
                 {
                     <div class="mt-2">
@@ -124,9 +106,9 @@
 
             <div class="rounded border border-default bg-surface p-3">
                 <div class="text-sm font-semibold text-heading">Links</div>
-                <div class="mt-2 flex flex-wrap gap-2">
-                    <a href="@Epic33UiDisplayHelpers.GetAuditLinkForModule(ModuleId)" class="text-sm underline">View audit for this module</a>
-                    <a href="/control/blocked-work" class="text-sm underline">Blocked work / recovery</a>
+                <div class="ui-action-row">
+                    <a href="@Epic33UiDisplayHelpers.GetAuditLinkForModule(ModuleId)" class="ui-drill-in-link">View audit for this module</a>
+                    <a href="/control/blocked-work" class="ui-drill-in-link">Blocked work / recovery</a>
                 </div>
             </div>
         </div>

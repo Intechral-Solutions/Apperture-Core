@@ -16,10 +16,10 @@
             <div class="mt-1 font-mono text-xs text-muted break-all">@ScheduleId</div>
         </ChildContent>
         <Toolbar>
-            <a href="/schedules" class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface">Back to list</a>
+            <a href="/schedules" class="ui-toolbar-btn">Back to list</a>
             @if (_capabilities?.CanManageSchedules == true && !_editing)
             {
-                <button class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface"
+                <button class="ui-toolbar-btn"
                         title="Edit schedule"
                         @onclick="StartEdit">
                     Edit
@@ -27,13 +27,13 @@
             }
             @if (_capabilities?.CanManageSchedules == true)
             {
-                <button class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface disabled:opacity-50"
+                <button class="ui-toolbar-btn"
                         disabled="@(_loading || (_detail?.Enabled == true))"
                         title="Enable this schedule"
                         @onclick="EnableAsync">
                     Enable
                 </button>
-                <button class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface disabled:opacity-50"
+                <button class="ui-toolbar-btn"
                         disabled="@(_loading || (_detail?.Enabled != true))"
                         title="Disable this schedule"
                         @onclick="DisableAsync">
@@ -42,14 +42,14 @@
             }
             @if (_capabilities?.CanManageRecovery == true)
             {
-                <button class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface"
+                <button class="ui-toolbar-btn"
                         disabled="@_loading"
                         title="@Epic33UiDisplayHelpers.ScheduleActionButtonTitle"
                         @onclick="TriggerRunCycleAsync">
                     @Epic33UiDisplayHelpers.ScheduleActionButtonLabel
                 </button>
             }
-            <button class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface"
+            <button class="ui-toolbar-btn"
                     disabled="@_loading"
                     @onclick="RefreshAsync">
                 Refresh
@@ -141,48 +141,18 @@
 
             @if (!_editing)
             {
-                <div class="grid grid-cols-1 gap-2 md:grid-cols-2">
-                    <div>
-                        <div class="text-xs text-muted">Name</div>
-                        <div class="text-sm text-body">@_detail.Name</div>
-                    </div>
-                    <div>
-                        <div class="text-xs text-muted">Integration</div>
-                        <div class="text-sm font-mono text-body">@(_detail.IntegrationId ?? "-")</div>
-                    </div>
-                    <div>
-                        <div class="text-xs text-muted">Recurrence</div>
-                        <div class="text-sm font-mono break-all">@_detail.RecurrenceExpression</div>
-                    </div>
-                    <div>
-                        <div class="text-xs text-muted">Time zone</div>
-                        <div class="text-sm text-body">@_detail.TimeZone</div>
-                    </div>
-                    <div>
-                        <div class="text-xs text-muted">Target type</div>
-                        <div class="text-sm font-mono">@GetTargetKind(_detail.TargetJobType)</div>
-                    </div>
-                    <div>
-                        <div class="text-xs text-muted">Target configuration</div>
-                        <div class="text-sm font-mono break-all">@(_detail.TargetJobConfiguration ?? "-")</div>
-                    </div>
-                    <div>
-                        <div class="text-xs text-muted">Last attempted</div>
-                        <div class="text-sm text-body">@Fmt(_detail.LastAttemptedUtc)</div>
-                    </div>
-                    <div>
-                        <div class="text-xs text-muted">Last outcome</div>
-                        <div class="text-sm text-body">@(_detail.LastOutcome ?? "-")</div>
-                    </div>
-                    <div>
-                        <div class="text-xs text-muted">Last outcome reason</div>
-                        <div class="text-sm text-body">@(_detail.LastOutcomeReason ?? "-")</div>
-                    </div>
-                    <div>
-                        <div class="text-xs text-muted">Last successful dispatch</div>
-                        <div class="text-sm text-body">@Fmt(_detail.LastSuccessfulDispatchUtc)</div>
-                    </div>
-                </div>
+                <MetadataGrid>
+                    <MetadataItem Label="Name" Value="@_detail.Name" />
+                    <MetadataItem Label="Integration" Monospace="true" Value="@(_detail.IntegrationId ?? "-")" />
+                    <MetadataItem Label="Recurrence" Monospace="true" Value="@_detail.RecurrenceExpression" />
+                    <MetadataItem Label="Time zone" Value="@_detail.TimeZone" />
+                    <MetadataItem Label="Target type" Monospace="true" Value="@GetTargetKind(_detail.TargetJobType)" />
+                    <MetadataItem Label="Target configuration" Monospace="true" Value="@(_detail.TargetJobConfiguration ?? "-")" />
+                    <MetadataItem Label="Last attempted" Value="@Fmt(_detail.LastAttemptedUtc)" />
+                    <MetadataItem Label="Last outcome" Value="@(_detail.LastOutcome ?? "-")" />
+                    <MetadataItem Label="Last outcome reason" Value="@(_detail.LastOutcomeReason ?? "-")" />
+                    <MetadataItem Label="Last successful dispatch" Value="@Fmt(_detail.LastSuccessfulDispatchUtc)" />
+                </MetadataGrid>
             }
             else
             {
@@ -217,17 +187,19 @@
                         <input class="mt-1 w-full rounded border border-default bg-surface px-2 py-2 text-sm"
                                @bind="_editTimeZone" />
                     </div>
-                    <div class="md:col-span-2 flex gap-2">
-                        <button class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface"
+                    <div class="md:col-span-2">
+                        <SectionActions>
+                        <button class="ui-toolbar-btn"
                                 disabled="@_loading"
                                 @onclick="SaveEditAsync">
                             Save
                         </button>
-                        <button class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface"
+                        <button class="ui-toolbar-btn"
                                 disabled="@_loading"
                                 @onclick="CancelEdit">
                             Cancel
                         </button>
+                        </SectionActions>
                     </div>
                 </div>
             }
@@ -235,7 +207,7 @@
 
         <ManagementSection Title="Links"
                            Layer="ManagementSection.UiLayer.Detail">
-            <div class="flex flex-wrap gap-2">
+            <div class="ui-action-row">
                 <DrillInLink Href="@Epic33UiDisplayHelpers.GetRunsListCorrelationFilterHref($"schedule:{ScheduleId}")">Runs for this schedule</DrillInLink>
                 <DrillInLink Href="@Epic33UiDisplayHelpers.GetAuditLinkForSchedule(ScheduleId)">View audit for this schedule</DrillInLink>
                 <DrillInLink Href="/control/blocked-work">Blocked work / recovery</DrillInLink>
@@ -245,16 +217,10 @@
         <ManagementAdvancedSection Title="Technical identifiers and scheduler claim"
                                    Subtitle="Raw ids and in-flight claim metadata from the management API."
                                    InitiallyOpen="false">
-            <div class="grid grid-cols-1 gap-2 md:grid-cols-2 text-sm">
-                <div>
-                    <div class="text-xs text-muted">Schedule id</div>
-                    <div class="font-mono text-xs break-all">@_detail.Id</div>
-                </div>
-                <div>
-                    <div class="text-xs text-muted">Version</div>
-                    <div class="font-mono text-xs">@_detail.Version</div>
-                </div>
-            </div>
+            <MetadataGrid>
+                <MetadataItem Label="Schedule id" Monospace="true" Value="@_detail.Id" />
+                <MetadataItem Label="Version" Monospace="true" Value="@_detail.Version.ToString()" />
+            </MetadataGrid>
 
             @if (!string.IsNullOrEmpty(_detail.ClaimedByHostId))
             {

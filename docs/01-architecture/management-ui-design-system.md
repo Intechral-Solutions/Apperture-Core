@@ -56,6 +56,21 @@ Related shell documentation: [control-panel-ui.md](control-panel-ui.md).
 | `DrillInLink` | Detail | Underlined drill-in with `ui-drill-in-link` class |
 | `LoadingState` / `EmptyState` / `ForbiddenState` / `ErrorState` | Any | Thin aliases over `PageMessage` for consistent defaults |
 | `ActionFeedback` | Detail (below header) | Cooperative/user-triggered action result banner (Epic 88); defaults Title “Action”, Kind Info |
+| `MetadataGrid` / `MetadataItem` | Detail / summary | Repeated label/value facts (Epic 93); optional `ThreeColumn` on summary bands |
+| `SectionActions` | Section body | Save/cancel or routine button groups inside a `ManagementSection` (Epic 93) |
+
+### Interaction CSS utilities (Epic 93)
+
+Defined in `management-ui-primitives.css`:
+
+| Class | Use |
+|-------|-----|
+| `ui-page-header__toolbar` | Applied by `PageHeader` toolbar slot — flex wrap, gap |
+| `ui-toolbar-btn` | Page/section toolbar links and buttons (neutral) |
+| `ui-toolbar-btn--danger` | Destructive toolbar actions (e.g. Integration Delete) — **after** positive/neutral actions |
+| `ui-action-row` | Horizontal drill-ins, filters + refresh, link groups |
+| `ui-section-actions` | Section-local button row (edit save/cancel, lifecycle actions) |
+| `ui-metadata-grid` / `ui-metadata-grid--3` | Responsive metadata layout (used by `MetadataGrid`) |
 
 ## Layout primitives and Epic 78 layers
 
@@ -139,7 +154,7 @@ Epic 87 inventories action and operation-feedback patterns across pilot and repr
 | **Local UI** | Change view state only | Immediate control state (expanded, editing, wizard step) | Schedule Detail Edit mode; Integration wizard step select; Run Detail Poll checkbox |
 | **Form submit/save** | Persist configuration | **Inline** `PageMessage` Error on failure; navigate or stay on success per existing flow | Sign-in policy save (`_saveError`); Entra tenant forms (`_formError`); notification authoring Save |
 | **Immediate command** | Short API call, result known quickly | Toast **or** inline `PageMessage` **or** `ActionButton` success/error state | Connection test/create (`ActionButton`); governance role assign (toast) |
-| **Async/cooperative command** | Work may continue after click; eligibility matters | **`ActionFeedback`** at page top (below header) **or** toast on dense hubs; preserve domain copy | Run Detail cancel/retry/park/resume; Schedule Detail enable/disable/trigger; Blocked Work (deferred) |
+| **Async/cooperative command** | Work may continue after click; eligibility matters | **`ActionFeedback`** at page top (below header) **or** toast on dense hubs; preserve domain copy | Run Detail cancel/retry/park/resume; Schedule Detail enable/disable/trigger; Blocked Work; Module Detail |
 | **Destructive command** | Irreversible or high-impact change | Existing **confirm** + toast or reload; warning styling on control | Integration Delete (`ConfirmDeleteAsync` + toast); Connection Retire; role permission replace warning |
 | **Refresh/reload** | Reload page data | Usually none; loading state on page/section | Nearly all pilot `PageHeader` Refresh buttons |
 | **Remediation / action-needed** | Jump to fix or diagnostic | Link visible in summary when blocking | Integration readiness blockers; notification “no deliverable recipients” attention |
@@ -187,9 +202,44 @@ Do **not** replace Run Detail execution controls, Schedule Detail lifecycle butt
 
 ### Destructive actions
 
-- Keep existing **`confirm()`** / `ConfirmDeleteAsync` flows and permission gates.
-- Style: `ActionButtonVariant.Danger`, `btn-danger`, or `bg-destructive` in toolbar.
+- Keep existing **`confirm()`** / `ConfirmDeleteAsync` flows and permission gates unchanged.
+- **Placement:** In `PageHeader` toolbars, put destructive actions **last** (after Refresh and lifecycle commands). Section-level removes (bindings, settings rows) stay in-context with existing `bg-destructive/20` compact styling.
+- **Toolbar style:** `ui-toolbar-btn ui-toolbar-btn--danger` for page-level delete (Integration Detail pilot).
+- **Do not** change severity semantics (403/409 cooperative copy remains Info `ActionFeedback` until a dedicated UX epic).
 - Show **pre-save warnings** in place (e.g. role permission replace banner) — do not collapse into a toast only.
+
+## Interaction primitives (Epic 93)
+
+Hardens repeated interaction markup from Epics 80–92 before visual polish or operation history.
+
+### PageHeader actions
+
+- Use **`PageHeader` `Toolbar`** for page-scoped commands: Back, Refresh, cooperative controls, destructive delete.
+- Prefer **`ui-toolbar-btn`** on `<a>` and `<button>` in toolbars on modernized pilots.
+- **Refresh** stays in toolbar; does not replace `ActionFeedback` for cooperative results.
+- **Poll** (Run Detail) remains a checkbox in toolbar — not a `ui-toolbar-btn`.
+
+### Section actions
+
+- Use **`SectionActions`** or **`ui-section-actions`** for button groups inside a section (Schedule edit Save/Cancel, Module lifecycle row).
+- Use **`ui-action-row`** for drill-in link clusters (Schedule Links section, Module links).
+- Section **table row** actions (Blocked Work Retry) remain per-row — do not move to page toolbar.
+
+### Metadata display
+
+- Use **`MetadataGrid`** + **`MetadataItem`** when showing a block of label/value facts (Schedule configuration read-only, Module state, Run summary band timing fields).
+- Use **`Monospace="true"`** on ids, recurrence, and technical tokens.
+- **Do not** replace notification definition `<dl>` grids or Integration summary flex bands — different layout intent.
+- **Do not** fetch data inside metadata components.
+
+### When not to abstract (Epic 93)
+
+- Integration Detail **Activate** primary CTA (`bg-body`) — intentional emphasis; not normalized to `ui-toolbar-btn`.
+- Wizard step buttons, inline table actions, `ActionButton` connection test.
+- Toast-only Integration Detail mutations.
+- Full metadata abstraction on Run Detail investigation sections (many conditional fields).
+
+See [Epic 93 — Interaction primitive hardening](../02-decisions/Epic93-Management-UI-Interaction-Primitive-Hardening.md).
 
 ### Async/cooperative actions — future shell candidates
 
@@ -259,7 +309,7 @@ See [Epic 87](../02-decisions/Epic87-Management-UI-Action-Surface-and-Operation-
 
 The pilot stack is now ready for these follow-on epics, but none are implemented by the design-system itself:
 
-- **Async operation shell:** `ActionFeedback` (Epic 88) on Run/Schedule/Blocked Work/Module detail (Epic 90); entity-local history from audit/run timeline (Epic 91 groundwork); operation **registry** and backend tracking remain deferred — see [Epic 88](../../02-decisions/Epic88-Cooperative-Action-Feedback-Shell-Pilot.md), [Epic 90](../../02-decisions/Epic90-Management-UI-Action-Feedback-Corrective-Pass.md), [Epic 91](../../02-decisions/Epic91-Operation-History-and-Action-Feedback-Groundwork.md).
+- **Async operation shell:** `ActionFeedback` on cooperative surfaces; entity-local history from audit/run timeline (Epic 91 groundwork); interaction primitives ([Epic 93](../../02-decisions/Epic93-Management-UI-Interaction-Primitive-Hardening.md)) — operation **registry** and backend tracking remain deferred.
 - **Schema-driven forms:** evolve `ProcedureParameterForm` only when execution-start and dense authoring surfaces share a stable metadata contract.
 - **Module dashboards:** reuse `ManagementSummaryCard` posture and permission omission from dashboard/card patterns; keep module-owned UI in module assemblies.
 - **Operational stats/charts:** add as summary-layer artifacts only when APIs provide truthful aggregates and drill-in contracts.
@@ -299,4 +349,4 @@ Do not add one-off hex colors in Razor; extend semantic tokens in `app.css` when
 
 ## Proof usage
 
-The `/config` landing page demonstrates `PageHeader`, `ManagementSection`, and `ManagementSummaryCard` (hub landing archetype). **Epics 80–84** applied layered primitives to the five redesign pilots. **Epics 85–88** consolidated guidance, swept state branches on non-pilot pages, documented action categories, and introduced `ActionFeedback` on Run/Schedule detail. **Epic 89** audited coherence; **Epic 90** fixed action-feedback persistence and adoption; **Epic 91** defined operation history groundwork; **Epic 92** QA/stabilization pass fixed not-found vs loading and notification detail error branches (see [Epic 92](../../02-decisions/Epic92-UI-Modernization-QA-and-Corrective-Stabilization.md)). Other pages may continue using legacy layout until a scoped epic touches them.
+The `/config` landing page demonstrates `PageHeader`, `ManagementSection`, and `ManagementSummaryCard` (hub landing archetype). **Epics 80–84** applied layered primitives to the five redesign pilots. **Epics 85–88** consolidated guidance, swept state branches on non-pilot pages, documented action categories, and introduced `ActionFeedback` on Run/Schedule detail. **Epic 89** audited coherence; **Epic 90** fixed action-feedback persistence; **Epic 91** defined operation history groundwork; **Epic 92** fixed state/reload edge cases; **Epic 93** hardened toolbar, metadata, and section-action primitives (see [Epic 93](../../02-decisions/Epic93-Management-UI-Interaction-Primitive-Hardening.md)). Other pages may continue using legacy layout until a scoped epic touches them.

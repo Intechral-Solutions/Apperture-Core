@@ -15,17 +15,17 @@
                 Title="@(_integration?.DisplayName ?? IntegrationId)"
                 Subtitle="@SummarySubtitle">
         <Toolbar>
-            <a href="/integrations" class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface">Back to list</a>
+            <a href="/integrations" class="ui-toolbar-btn">Back to list</a>
             <a href="@($"/execute?integrationId={Uri.EscapeDataString(IntegrationId)}")"
-               class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface">
+               class="ui-toolbar-btn">
                 Execute
             </a>
             <a href="@($"/integrations/{Uri.EscapeDataString(IntegrationId)}/notifications")"
-               class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface">
+               class="ui-toolbar-btn">
                 Notifications
             </a>
             <button type="button"
-                    class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface disabled:opacity-50"
+                    class="ui-toolbar-btn"
                     disabled="@_loading"
                     @onclick="LoadAsync">
                 Refresh
@@ -35,7 +35,7 @@
                 @if (string.Equals(_integration.State, "Active", StringComparison.OrdinalIgnoreCase))
                 {
                     <button type="button"
-                            class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface disabled:opacity-50"
+                            class="ui-toolbar-btn"
                             disabled="@_loading"
                             @onclick="DeactivateIntegrationAsync">
                         Deactivate
@@ -54,7 +54,7 @@
             @if (_capabilities?.CanManageIntegrations == true && _integration is not null)
             {
                 <button type="button"
-                        class="rounded bg-destructive px-3 py-2 text-sm text-destructive-fg hover:bg-destructive/90 disabled:opacity-50"
+                        class="ui-toolbar-btn ui-toolbar-btn--danger"
                         disabled="@_deleting"
                         @onclick="ConfirmDeleteAsync">
                     Delete
