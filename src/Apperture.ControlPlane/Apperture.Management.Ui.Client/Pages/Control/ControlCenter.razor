@@ -6,41 +6,76 @@
 @inject IOperatorCapabilitiesService Capabilities
 @inject NavigationManager Nav
 
-<div class="p-4">
-    <div class="flex items-center justify-between gap-3">
-        <div class="min-w-0">
-            <h1 class="text-xl font-semibold text-heading">Control Center</h1>
-            <div class="text-xs text-muted">Unified control targets, recent activity, and attention items.</div>
-        </div>
-        <button class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface"
-                disabled="@_loading"
-                @onclick="LoadAsync">
-            Refresh
-        </button>
-    </div>
+<div class="p-4 ui-page-stack">
+    <PageHeader Eyebrow="Operations"
+                Title="Control Center"
+                Subtitle="Unified control targets, recent activity, attention, and platform health signals.">
+        <Toolbar>
+            <button class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface"
+                    disabled="@_loading"
+                    @onclick="LoadAsync">
+                Refresh
+            </button>
+        </Toolbar>
+    </PageHeader>
 
     @if (!string.IsNullOrEmpty(_error))
     {
-        <div class="mt-4 rounded border border-default bg-surface px-3 py-2 text-sm text-body">
-            <div class="font-semibold">Error</div>
-            <div class="text-muted">@_error</div>
-        </div>
+        <ErrorState Message="@_error" />
     }
     else if (_dto is null)
     {
-        <div class="mt-4 text-sm text-muted">Loading...</div>
+        <LoadingState />
     }
     else
     {
+        <ManagementSection Title="Summary"
+                           Layer="ManagementSection.UiLayer.Summary"
+                           Help="Current operator posture from control center and optional runtime health snapshots.">
+            <div class="flex flex-wrap items-center gap-2">
+                <StatusPill Label="@($"Blocked work: {BlockedWorkCount}")" Semantic="@(BlockedWorkCount > 0 ? ManagementStatusSemantic.Blocking : ManagementStatusSemantic.Neutral)" />
+                <StatusPill Label="@($"Attention: {AttentionCount}")" Semantic="@(AttentionCount > 0 ? ManagementStatusSemantic.Warning : ManagementStatusSemantic.Success)" />
+                <StatusPill Label="@($"Recent activity: {RecentActivityCount}")" Semantic="@(RecentActivityCount > 0 ? ManagementStatusSemantic.Pending : ManagementStatusSemantic.Neutral)" />
+                @if (_capabilities?.CanViewRuntimeHealth == true && _health is not null)
+                {
+                    <StatusPill Label="@($"Platform: {_health.OverallStatus}")" RuntimeHealthStatus="@_health.OverallStatus" />
+                }
+                else if (_capabilities?.CanViewRuntimeHealth == false || _healthForbidden)
+                {
+                    <StatusPill Label="Platform health unavailable" Semantic="ManagementStatusSemantic.Forbidden" />
+                }
+            </div>
+
+            <div class="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+                <ManagementSummaryCard Title="Blocked work"
+                                       Description="Inspect deferred and retry-eligible work."
+                                       Href="/control/blocked-work" />
+                <ManagementSummaryCard Title="Runs"
+                                       Description="Review execution history and statuses."
+                                       Href="/runs" />
+                <ManagementSummaryCard Title="Schedules"
+                                       Description="Check schedule definitions and health."
+                                       Href="/schedules" />
+                <ManagementSummaryCard Title="Audit"
+                                       Description="Trace operational events."
+                                       Href="/control/audit" />
+                <ManagementSummaryCard Title="Integrations"
+                                       Description="Open deployment and lifecycle details."
+                                       Href="/integrations" />
+            </div>
+        </ManagementSection>
+
         @if (_capabilities?.CanViewRuntimeHealth == true && _health is not null)
         {
-            <div class="mt-4 rounded border border-default bg-surface p-3">
-                <div class="text-sm font-semibold text-heading">Platform Health</div>
-                <div class="text-xs text-muted">Runtime health snapshot. Epic 30.</div>
-                <div class="mt-3 flex flex-wrap gap-4">
+            <ManagementSection Title="Platform health"
+                               Layer="ManagementSection.UiLayer.Detail"
+                               Help="Runtime health snapshot (Epic 30).">
+                <div class="flex flex-wrap items-center gap-3">
                     <div>
-                        <span class="text-xs text-muted">Status:</span>
-                        <span class="ml-1 font-semibold @Epic33UiDisplayHelpers.GetStatusCssClass(_health.OverallStatus)">@_health.OverallStatus</span>
+                        <span class="text-xs text-muted">Status</span>
+                        <span class="ml-2">
+                            <StatusPill Label="@_health.OverallStatus" RuntimeHealthStatus="@_health.OverallStatus" />
+                        </span>
                     </div>
                     @{
                         var counts = Epic33UiDisplayHelpers.GetPlatformHealthCounts(_health);
@@ -50,21 +85,21 @@
                     }
                     @if (degradedCount > 0)
                     {
-                        <a href="/modules" class="text-xs underline">@degradedCount degraded module(s)</a>
+                        <DrillInLink Href="/modules">@degradedCount degraded module(s)</DrillInLink>
                     }
                     @if (blockedSchedules > 0)
                     {
-                        <a href="/schedules" class="text-xs underline">@blockedSchedules blocked schedule(s)</a>
+                        <DrillInLink Href="/schedules">@blockedSchedules blocked schedule(s)</DrillInLink>
                     }
                     @if (blockedWorkCount > 0)
                     {
-                        <a href="/control/blocked-work" class="text-xs underline">@blockedWorkCount blocked work item(s)</a>
+                        <DrillInLink Href="/control/blocked-work">@blockedWorkCount blocked work item(s)</DrillInLink>
                     }
-                    <a href="/control/audit" class="text-xs underline">Audit</a>
+                    <DrillInLink Href="/control/audit">Audit</DrillInLink>
                 </div>
                 @if (_health.Anomalies.Count > 0)
                 {
-                    <div class="mt-2">
+                    <div class="mt-3">
                         <div class="text-xs text-muted">Recent anomalies:</div>
                         <div class="mt-1 space-y-1">
                             @foreach (var a in _health.Anomalies.Take(5))
@@ -73,36 +108,73 @@
                                     <span class="font-mono">@a.AnomalyKind</span> / @a.Summary
                                     @if (!string.IsNullOrEmpty(a.RunId))
                                     {
-                                        <a href="@($"/runs/{a.RunId}")" class="ml-1 underline">Run</a>
+                                        <DrillInLink Href="@($"/runs/{a.RunId}")">Run</DrillInLink>
                                     }
                                     @if (!string.IsNullOrEmpty(a.ScheduleId))
                                     {
-                                        <a href="@($"/schedules/{a.ScheduleId}")" class="ml-1 underline">Schedule</a>
+                                        <DrillInLink Href="@($"/schedules/{a.ScheduleId}")">Schedule</DrillInLink>
                                     }
                                     @if (!string.IsNullOrEmpty(a.ModuleId))
                                     {
-                                        <a href="@($"/modules/{a.ModuleId}")" class="ml-1 underline">Module</a>
+                                        <DrillInLink Href="@($"/modules/{a.ModuleId}")">Module</DrillInLink>
                                     }
                                 </div>
                             }
                         </div>
                     </div>
                 }
-            </div>
+            </ManagementSection>
         }
         else if (_capabilities?.CanViewRuntimeHealth == false || _healthForbidden)
         {
-            <div class="mt-4 rounded border border-default bg-surface p-3">
-                <div class="text-sm font-semibold text-heading">Platform Health</div>
-                <div class="text-xs text-muted">Not available. You do not have permission to view runtime health.</div>
-            </div>
+            <ManagementSection Title="Platform health"
+                               Layer="ManagementSection.UiLayer.Detail">
+                <ForbiddenState Title="Platform health unavailable"
+                                Message="You do not have permission to view runtime health." />
+            </ManagementSection>
         }
-        <div class="mt-4 grid gap-4 lg:grid-cols-3">
-            <div class="rounded border border-default bg-surface p-3 lg:col-span-1">
-                <div class="text-sm font-semibold text-heading">Targets</div>
-                <div class="text-xs text-muted">Server-projected action availability.</div>
+        <ManagementSection Title="Operational concerns"
+                           Layer="ManagementSection.UiLayer.Detail"
+                           Help="Cross-domain attention items for immediate triage.">
+            @if (_dto.AttentionItems.Count == 0)
+            {
+                <EmptyState Message="Nothing needs attention." />
+            }
+            else
+            {
+                <div class="space-y-2">
+                    @foreach (var it in _dto.AttentionItems)
+                    {
+                        <div class="rounded border border-default bg-surface-muted p-3">
+                            <div class="flex items-start justify-between gap-3">
+                                <div class="min-w-0">
+                                    <div class="text-sm font-semibold">@it.Summary</div>
+                                    <div class="mt-1 flex flex-wrap items-center gap-2">
+                                        <AttentionPill Label="@it.Severity" DashboardAttention="@it.Severity" />
+                                        <span class="text-xs text-muted font-mono">@it.AttentionKind</span>
+                                    </div>
+                                    <div class="text-xs text-muted mt-1">
+                                        Target: <span class="font-mono">@it.TargetKind</span> / <span class="font-mono">@it.TargetId</span>
+                                    </div>
+                                </div>
+                                @if (!string.IsNullOrWhiteSpace(GetAttentionLink(it)))
+                                {
+                                    var attentionHref = GetAttentionLink(it);
+                                    <DrillInLink Href="@attentionHref">Open</DrillInLink>
+                                }
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+        </ManagementSection>
 
-                <div class="mt-3 space-y-3">
+        <div class="grid gap-4 lg:grid-cols-3">
+            <ManagementSection Title="Targets"
+                               Layer="ManagementSection.UiLayer.Detail"
+                               Help="Server-projected action availability."
+                               Class="lg:col-span-1">
+                <div class="space-y-3">
                     @foreach (var t in _dto.Targets)
                     {
                         <div class="rounded border border-default bg-surface-muted p-3">
@@ -119,7 +191,7 @@
                                 </div>
                         @if (!string.IsNullOrWhiteSpace(t.DetailLink))
                         {
-                            <a class="underline text-sm" href="@t.DetailLink">Open</a>
+                            <DrillInLink Href="@t.DetailLink">Open</DrillInLink>
                         }
                             </div>
 
@@ -148,23 +220,19 @@
                         </div>
                     }
                 </div>
-            </div>
+            </ManagementSection>
 
-            <div class="rounded border border-default bg-surface p-3 lg:col-span-2">
-                <div class="flex items-center justify-between gap-3">
-                    <div>
-                        <div class="text-sm font-semibold text-heading">Recent Activity</div>
-                        <div class="text-xs text-muted">Executions and durable runtime control requests.</div>
-                    </div>
-                </div>
-
+            <ManagementSection Title="Recent activity"
+                               Layer="ManagementSection.UiLayer.Detail"
+                               Help="Executions and durable runtime control requests."
+                               Class="lg:col-span-2">
                 @if (_dto.RecentActivity.Count == 0)
                 {
-                    <div class="mt-3 text-sm text-muted">No activity found.</div>
+                    <EmptyState Message="No activity found." />
                 }
                 else
                 {
-                    <div class="mt-3 overflow-x-auto">
+                    <div class="overflow-x-auto">
                         <table class="min-w-full text-left text-sm text-body">
                             <thead class="border-b border-default text-xs text-muted">
                                 <tr>
@@ -185,7 +253,10 @@
                                             <div class="font-mono text-xs">@FmtWhen(a.RequestedAtIso)</div>
                                         </td>
                                         <td class="px-2 py-2">
-                                            <div class="font-semibold">@a.CurrentNormalizedStatus</div>
+                                            <div class="font-semibold">
+                                                <StatusPill Label="@a.CurrentNormalizedStatus"
+                                                            Semantic="@MapActivityStatus(a.CurrentNormalizedStatus)" />
+                                            </div>
                                             <div class="text-xs text-muted">@a.ActivitySource</div>
                                         </td>
                                         <td class="px-2 py-2">
@@ -219,7 +290,7 @@
                                             }
                                         </td>
                                         <td class="px-2 py-2">
-                                            <a class="underline" href="@a.DetailLink">Open</a>
+                                            <DrillInLink Href="@a.DetailLink">Open</DrillInLink>
                                         </td>
                                     </tr>
                                 }
@@ -227,45 +298,66 @@
                         </table>
                     </div>
                 }
-            </div>
+            </ManagementSection>
         </div>
 
-        <div class="mt-4 rounded border border-default bg-surface p-3">
-            <div class="text-sm font-semibold text-heading">Attention</div>
-            <div class="text-xs text-muted">Minimal cross-domain issues for triage.</div>
-
-            @if (_dto.AttentionItems.Count == 0)
+        <ManagementAdvancedSection Title="Diagnostics and evidence"
+                                   Subtitle="Low-level diagnostic records and verbose platform details."
+                                   InitiallyOpen="false">
+            @if (_capabilities?.CanViewRuntimeHealth == true && _health is not null)
             {
-                <div class="mt-3 text-sm text-muted">Nothing needs attention.</div>
+                <div class="space-y-3">
+                    <div>
+                        <div class="text-xs font-semibold text-heading">Degradation reasons</div>
+                        @if (_health.DegradationReasons.Count == 0)
+                        {
+                            <div class="text-xs text-muted mt-1">None reported.</div>
+                        }
+                        else
+                        {
+                            <ul class="mt-1 list-disc pl-4 text-xs text-body">
+                                @foreach (var reason in _health.DegradationReasons)
+                                {
+                                    <li>@reason</li>
+                                }
+                            </ul>
+                        }
+                    </div>
+                    <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
+                        <div>
+                            <div class="text-xs font-semibold text-heading">Restart-bound surfaces</div>
+                            <div class="mt-1 space-y-1">
+                                @foreach (var item in _health.RestartBoundSurfaces)
+                                {
+                                    <div class="text-xs font-mono">@item</div>
+                                }
+                                @if (_health.RestartBoundSurfaces.Count == 0)
+                                {
+                                    <div class="text-xs text-muted">None</div>
+                                }
+                            </div>
+                        </div>
+                        <div>
+                            <div class="text-xs font-semibold text-heading">Not yet implemented surfaces</div>
+                            <div class="mt-1 space-y-1">
+                                @foreach (var item in _health.NotYetImplementedSurfaces)
+                                {
+                                    <div class="text-xs font-mono">@item</div>
+                                }
+                                @if (_health.NotYetImplementedSurfaces.Count == 0)
+                                {
+                                    <div class="text-xs text-muted">None</div>
+                                }
+                            </div>
+                        </div>
+                    </div>
+                </div>
             }
             else
             {
-                <div class="mt-3 space-y-2">
-                    @foreach (var it in _dto.AttentionItems)
-                    {
-                        <div class="rounded border border-default bg-surface-muted p-3">
-                            <div class="flex items-start justify-between gap-3">
-                                <div class="min-w-0">
-                                    <div class="text-sm font-semibold">@it.Summary</div>
-                                    <div class="text-xs text-muted">
-                                        <span class="font-mono">@it.AttentionKind</span> / <span class="font-mono">@it.Severity</span>
-                                    </div>
-                                    <div class="text-xs text-muted">
-                                        Target: <span class="font-mono">@it.TargetKind</span> / <span class="font-mono">@it.TargetId</span>
-                                    </div>
-                                </div>
-                                <div class="text-right">
-                                    @if (!string.IsNullOrWhiteSpace(GetAttentionLink(it)))
-                                    {
-                                        <a class="underline text-sm" href="@GetAttentionLink(it)">Open</a>
-                                    }
-                                </div>
-                            </div>
-                        </div>
-                    }
-                </div>
+                <div class="text-xs text-muted">Diagnostics are unavailable without runtime health access.</div>
             }
-        </div>
+        </ManagementAdvancedSection>
     }
 </div>
 
@@ -329,6 +421,29 @@
 
     private string FmtWhen(string iso) =>
         DateTimeOffset.TryParse(iso, out var dt) ? dt.ToLocalTime().ToString("u") : iso;
+
+    private int BlockedWorkCount =>
+        _health is null ? 0 : Epic33UiDisplayHelpers.GetPlatformHealthCounts(_health).BlockedWorkCount;
+
+    private int AttentionCount => _dto?.AttentionItems.Count ?? 0;
+
+    private int RecentActivityCount => _dto?.RecentActivity.Count ?? 0;
+
+    private static ManagementStatusSemantic MapActivityStatus(string? status)
+    {
+        if (string.IsNullOrWhiteSpace(status))
+            return ManagementStatusSemantic.Unknown;
+
+        return status.Trim().ToLowerInvariant() switch
+        {
+            "completed" or "succeeded" or "success" => ManagementStatusSemantic.Success,
+            "failed" or "faulted" or "error" or "rejected" => ManagementStatusSemantic.Error,
+            "running" or "pending" or "queued" or "requested" or "in_progress" or "inprogress" =>
+                ManagementStatusSemantic.Pending,
+            "cancelled" or "canceled" => ManagementStatusSemantic.Warning,
+            _ => ManagementStatusSemantic.Neutral
+        };
+    }
 
     private string? GetAttentionLink(ControlAttentionItemDto it)
     {

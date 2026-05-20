@@ -54,7 +54,7 @@ Run Detail already exposed rich forensics (Epic 35), cooperative actions, timeli
 - Optional: `ForbiddenState` for 403 if we standardize across pages in a later UX pass.
 - Toolbar buttons → shared secondary button style (Epic 79 follow-up).
 - Further extraction of timeline or result panels if reused elsewhere.
-- Other Epic 78 pilots: Control Center (#1), notification definition detail (#4), schedules list/detail (#5).
+- Other Epic 78 pilots: Control Center (#1) — [Epic 82](Epic82-Control-Center-Redesign-Pilot.md), notification definition detail (#4), schedules list/detail (#5).
 
 ## Validation
 
@@ -67,3 +67,4 @@ Run Detail already exposed rich forensics (Epic 35), cooperative actions, timeli
 - [Management UI design system](../01-architecture/management-ui-design-system.md)
 - [Epic 79 — Design system foundation](Epic79-Management-UI-Design-System-Foundation.md)
 - [Epic 80 — Integration Detail redesign pilot](Epic80-Integration-Detail-Redesign-Pilot.md)
+- [Epic 82 — Control Center redesign pilot](Epic82-Control-Center-Redesign-Pilot.md)
