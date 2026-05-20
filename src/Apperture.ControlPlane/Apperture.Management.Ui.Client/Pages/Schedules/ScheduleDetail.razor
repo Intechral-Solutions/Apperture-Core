@@ -2,17 +2,20 @@
 @using Apperture.Management.Client
 @using Apperture.Management.Ui.Client.Services
 @using Apperture.Management.Ui.Shared
+@using Apperture.Management.Ui.Client.Organisms
+@using Apperture.Management.Ui.Client.Molecules
 @inject IManagementClient Client
 @inject IOperatorCapabilitiesService Capabilities
 @inject NavigationManager Nav
 
-<div class="p-4">
-    <div class="flex items-center justify-between gap-3">
-        <div class="min-w-0">
-            <h1 class="text-xl font-semibold text-heading">Schedule</h1>
+<div class="p-4 ui-page-stack">
+    <PageHeader Eyebrow="Schedules"
+                Title="@ScheduleHeaderTitle"
+                Subtitle="@ScheduleHeaderSubtitle">
+        <ChildContent>
             <div class="mt-1 font-mono text-xs text-muted break-all">@ScheduleId</div>
-        </div>
-        <div class="flex items-center gap-2">
+        </ChildContent>
+        <Toolbar>
             <a href="/schedules" class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface">Back to list</a>
             @if (_capabilities?.CanManageSchedules == true && !_editing)
             {
@@ -51,14 +54,12 @@
                     @onclick="LoadAsync">
                 Refresh
             </button>
-        </div>
-    </div>
+        </Toolbar>
+    </PageHeader>
 
     @if (!string.IsNullOrEmpty(_error))
     {
-        <div class="mt-4 rounded border border-default bg-surface px-3 py-2 text-sm text-body">
-            <div class="font-semibold">Error</div>
-            <div class="text-muted">@_error</div>
+        <ErrorState Message="@_error">
             @if (_validationErrors is { Count: > 0 })
             {
                 <ul class="mt-2 list-disc pl-4 text-muted">
@@ -68,134 +69,186 @@
                     }
                 </ul>
             }
-        </div>
+        </ErrorState>
     }
     else if (!string.IsNullOrEmpty(_actionMessage))
     {
-        <div class="mt-4 rounded border border-default bg-surface px-3 py-2 text-sm text-body">
-            <div class="font-semibold">Action</div>
-            <div class="text-muted">@_actionMessage</div>
-        </div>
+        <PageMessage Kind="PageMessageKind.Info" Title="Action" Message="@_actionMessage" />
     }
     else if (_detail is null)
     {
-        <div class="mt-4 text-sm text-muted">Loading...</div>
+        <LoadingState />
     }
     else
     {
-        <div class="mt-4 grid gap-4">
-            <div class="rounded border border-default bg-surface p-3">
-                <div class="text-xs text-muted mb-2">@Epic33UiDisplayHelpers.ScheduleActionExplanatoryText</div>
+        <ManagementSection Title="Summary"
+                           Layer="ManagementSection.UiLayer.Summary"
+                           Help="Facts from the persisted schedule record (no inferred next-fire time).">
+            <div class="flex flex-wrap items-center gap-2">
+                <StatusPill Label="@(_detail.Enabled ? "Enabled" : "Disabled")"
+                            Semantic="@(_detail.Enabled ? ManagementStatusSemantic.Success : ManagementStatusSemantic.Neutral)" />
+                <StatusPill Label="@GetTargetKind(_detail.TargetJobType)" Semantic="@ManagementStatusSemantic.Neutral" />
+                @if (!string.IsNullOrWhiteSpace(_detail.LastOutcome))
+                {
+                    <StatusPill Label="@($"Last outcome: {_detail.LastOutcome}")"
+                                Semantic="@ManagementUiSemantics.MapRunOutcomeSemantic(_detail.LastOutcome)" />
+                }
+                @if (_detail.IsClaimStale == true)
+                {
+                    <AttentionPill Label="Stale claim" Semantic="@ManagementAttentionSemantic.Warning" />
+                }
             </div>
 
-            <div class="rounded border border-default bg-surface p-3">
-                <div class="text-sm font-semibold text-heading">State</div>
-                <div class="text-xs text-muted mt-1">Target cannot be changed after creation.</div>
-                <div class="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2">
-                    @if (_editing)
-                    {
-                        <div>
-                            <label class="block text-xs text-muted">Name</label>
-                            <input class="mt-1 w-full rounded border border-default bg-surface px-2 py-2 text-sm"
-                                   @bind="_editName" />
+            <div class="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+                @if (!string.IsNullOrWhiteSpace(_detail.IntegrationId))
+                {
+                    <ManagementSummaryCard Title="Integration"
+                                           Description="Bindings, procedures, and readiness for this deployment unit."
+                                           Href="@($"/integrations/{Uri.EscapeDataString(_detail.IntegrationId)}")" />
+                    <ManagementSummaryCard Title="Schedule diagnostics"
+                                           Description="Expected-run and evaluation troubleshooting for this integration."
+                                           Href="@($"/integrations/{Uri.EscapeDataString(_detail.IntegrationId)}/schedule-diagnostics")" />
+                }
+                <ManagementSummaryCard Title="Runs for this schedule"
+                                       Description="Filtered run history (correlation convention)."
+                                       Href="@Epic33UiDisplayHelpers.GetRunsListCorrelationFilterHref($"schedule:{ScheduleId}")" />
+                <ManagementSummaryCard Title="Audit"
+                                       Description="Events scoped to this schedule id."
+                                       Href="@Epic33UiDisplayHelpers.GetAuditLinkForSchedule(ScheduleId)" />
+                <ManagementSummaryCard Title="Blocked work"
+                                       Description="Recovery and retry eligibility."
+                                       Href="/control/blocked-work" />
+            </div>
+        </ManagementSection>
+
+        <ManagementSection Title="Schedule configuration"
+                           Layer="ManagementSection.UiLayer.Detail"
+                           Help="@Epic33UiDisplayHelpers.ScheduleActionExplanatoryText">
+            <div class="text-xs text-muted mb-3">Target cannot be changed after creation.</div>
+
+            @if (!_editing)
+            {
+                <div class="grid grid-cols-1 gap-2 md:grid-cols-2">
+                    <div>
+                        <div class="text-xs text-muted">Name</div>
+                        <div class="text-sm text-body">@_detail.Name</div>
+                    </div>
+                    <div>
+                        <div class="text-xs text-muted">Integration</div>
+                        <div class="text-sm font-mono text-body">@(_detail.IntegrationId ?? "-")</div>
+                    </div>
+                    <div>
+                        <div class="text-xs text-muted">Recurrence</div>
+                        <div class="text-sm font-mono break-all">@_detail.RecurrenceExpression</div>
+                    </div>
+                    <div>
+                        <div class="text-xs text-muted">Time zone</div>
+                        <div class="text-sm text-body">@_detail.TimeZone</div>
+                    </div>
+                    <div>
+                        <div class="text-xs text-muted">Target type</div>
+                        <div class="text-sm font-mono">@GetTargetKind(_detail.TargetJobType)</div>
+                    </div>
+                    <div>
+                        <div class="text-xs text-muted">Target configuration</div>
+                        <div class="text-sm font-mono break-all">@(_detail.TargetJobConfiguration ?? "-")</div>
+                    </div>
+                    <div>
+                        <div class="text-xs text-muted">Last attempted</div>
+                        <div class="text-sm text-body">@Fmt(_detail.LastAttemptedUtc)</div>
+                    </div>
+                    <div>
+                        <div class="text-xs text-muted">Last outcome</div>
+                        <div class="text-sm text-body">@(_detail.LastOutcome ?? "-")</div>
+                    </div>
+                    <div>
+                        <div class="text-xs text-muted">Last outcome reason</div>
+                        <div class="text-sm text-body">@(_detail.LastOutcomeReason ?? "-")</div>
+                    </div>
+                    <div>
+                        <div class="text-xs text-muted">Last successful dispatch</div>
+                        <div class="text-sm text-body">@Fmt(_detail.LastSuccessfulDispatchUtc)</div>
+                    </div>
+                </div>
+            }
+            else
+            {
+                <div class="grid grid-cols-1 gap-2 md:grid-cols-2">
+                    <div>
+                        <label class="block text-xs text-muted">Name</label>
+                        <input class="mt-1 w-full rounded border border-default bg-surface px-2 py-2 text-sm"
+                               @bind="_editName" />
+                    </div>
+                    <div>
+                        <label class="block text-xs text-muted">Enabled</label>
+                        <div class="mt-1 flex items-center gap-2">
+                            <input type="checkbox" id="editEnabled" @bind="_editEnabled" />
+                            <label for="editEnabled" class="text-sm text-body">@(_editEnabled ? "Yes" : "No")</label>
                         </div>
-                        <div>
-                            <label class="block text-xs text-muted">Enabled</label>
-                            <div class="mt-1 flex items-center gap-2">
-                                <input type="checkbox" id="editEnabled" @bind="_editEnabled" />
-                                <label for="editEnabled" class="text-sm text-body">@(_editEnabled ? "Yes" : "No")</label>
-                            </div>
-                        </div>
-                        <div>
-                            <div class="text-xs text-muted">Target type (read-only)</div>
-                            <div class="text-sm font-mono">@GetTargetKind(_detail.TargetJobType)</div>
-                        </div>
-                        <div>
-                            <div class="text-xs text-muted">Target configuration (read-only)</div>
-                            <div class="text-sm font-mono break-all">@(_detail.TargetJobConfiguration ?? "-")</div>
-                        </div>
-                        <div>
-                            <label class="block text-xs text-muted">Recurrence</label>
-                            <input class="mt-1 w-full rounded border border-default bg-surface px-2 py-2 text-sm font-mono"
-                                   @bind="_editRecurrence" />
-                        </div>
-                        <div>
-                            <label class="block text-xs text-muted">Time zone</label>
-                            <input class="mt-1 w-full rounded border border-default bg-surface px-2 py-2 text-sm"
-                                   @bind="_editTimeZone" />
-                        </div>
-                        <div class="md:col-span-2 flex gap-2">
-                            <button class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface"
-                                    disabled="@_loading"
-                                    @onclick="SaveEditAsync">
-                                Save
-                            </button>
-                            <button class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface"
-                                    disabled="@_loading"
-                                    @onclick="CancelEdit">
-                                Cancel
-                            </button>
-                        </div>
-                    }
-                    else
-                    {
-                        <div>
-                            <div class="text-xs text-muted">Name</div>
-                            <div class="text-sm text-body">@_detail.Name</div>
-                        </div>
-                        <div>
-                            <div class="text-xs text-muted">Integration</div>
-                            <div class="text-sm font-mono text-body">@(_detail.IntegrationId ?? "-")</div>
-                        </div>
-                        <div>
-                            <div class="text-xs text-muted">Enabled</div>
-                            <div class="text-sm text-body">@(_detail.Enabled ? "Yes" : "No")</div>
-                        </div>
-                        <div>
-                            <div class="text-xs text-muted">Target type</div>
-                            <div class="text-sm font-mono">@GetTargetKind(_detail.TargetJobType)</div>
-                        </div>
-                        <div>
-                            <div class="text-xs text-muted">Target configuration</div>
-                            <div class="text-sm font-mono break-all">@(_detail.TargetJobConfiguration ?? "-")</div>
-                        </div>
-                        <div>
-                            <div class="text-xs text-muted">Recurrence</div>
-                            <div class="text-sm font-mono">@_detail.RecurrenceExpression</div>
-                        </div>
-                        <div>
-                            <div class="text-xs text-muted">Time zone</div>
-                            <div class="text-sm text-body">@_detail.TimeZone</div>
-                        </div>
-                    }
-                    @if (!_editing)
-                    {
-                        <div>
-                            <div class="text-xs text-muted">Last attempted</div>
-                            <div class="text-sm text-body">@Fmt(_detail.LastAttemptedUtc)</div>
-                        </div>
-                    }
-                    @if (!_editing)
-                    {
-                        <div>
-                            <div class="text-xs text-muted">Last outcome</div>
-                            <div class="text-sm text-body">@(_detail.LastOutcome ?? "-")</div>
-                        </div>
-                        <div>
-                            <div class="text-xs text-muted">Last outcome reason</div>
-                            <div class="text-sm text-body">@(_detail.LastOutcomeReason ?? "-")</div>
-                        </div>
-                        <div>
-                            <div class="text-xs text-muted">Last successful dispatch</div>
-                            <div class="text-sm text-body">@Fmt(_detail.LastSuccessfulDispatchUtc)</div>
-                        </div>
-                    }
-                    @if (!_editing && !string.IsNullOrEmpty(_detail.ClaimedByHostId))
-                    {
-                        <div class="md:col-span-2 border-t border-default pt-2 mt-1">
-                            <div class="text-xs font-semibold text-heading">Active scheduler claim</div>
-                            <div class="text-xs text-muted mt-1">Shown only while a firing is in progress (<code class="text-[11px]">ScheduleRuns</code> not yet completed). Not the owner of past runs.</div>
-                        </div>
+                    </div>
+                    <div>
+                        <div class="text-xs text-muted">Target type (read-only)</div>
+                        <div class="text-sm font-mono">@GetTargetKind(_detail.TargetJobType)</div>
+                    </div>
+                    <div>
+                        <div class="text-xs text-muted">Target configuration (read-only)</div>
+                        <div class="text-sm font-mono break-all">@(_detail.TargetJobConfiguration ?? "-")</div>
+                    </div>
+                    <div>
+                        <label class="block text-xs text-muted">Recurrence</label>
+                        <input class="mt-1 w-full rounded border border-default bg-surface px-2 py-2 text-sm font-mono"
+                               @bind="_editRecurrence" />
+                    </div>
+                    <div>
+                        <label class="block text-xs text-muted">Time zone</label>
+                        <input class="mt-1 w-full rounded border border-default bg-surface px-2 py-2 text-sm"
+                               @bind="_editTimeZone" />
+                    </div>
+                    <div class="md:col-span-2 flex gap-2">
+                        <button class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface"
+                                disabled="@_loading"
+                                @onclick="SaveEditAsync">
+                            Save
+                        </button>
+                        <button class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface"
+                                disabled="@_loading"
+                                @onclick="CancelEdit">
+                            Cancel
+                        </button>
+                    </div>
+                </div>
+            }
+        </ManagementSection>
+
+        <ManagementSection Title="Links"
+                           Layer="ManagementSection.UiLayer.Detail">
+            <div class="flex flex-wrap gap-2">
+                <DrillInLink Href="@Epic33UiDisplayHelpers.GetRunsListCorrelationFilterHref($"schedule:{ScheduleId}")">Runs for this schedule</DrillInLink>
+                <DrillInLink Href="@Epic33UiDisplayHelpers.GetAuditLinkForSchedule(ScheduleId)">View audit for this schedule</DrillInLink>
+                <DrillInLink Href="/control/blocked-work">Blocked work / recovery</DrillInLink>
+            </div>
+        </ManagementSection>
+
+        <ManagementAdvancedSection Title="Technical identifiers and scheduler claim"
+                                   Subtitle="Raw ids and in-flight claim metadata from the management API."
+                                   InitiallyOpen="false">
+            <div class="grid grid-cols-1 gap-2 md:grid-cols-2 text-sm">
+                <div>
+                    <div class="text-xs text-muted">Schedule id</div>
+                    <div class="font-mono text-xs break-all">@_detail.Id</div>
+                </div>
+                <div>
+                    <div class="text-xs text-muted">Version</div>
+                    <div class="font-mono text-xs">@_detail.Version</div>
+                </div>
+            </div>
+
+            @if (!string.IsNullOrEmpty(_detail.ClaimedByHostId))
+            {
+                <div class="mt-4 border-t border-default pt-3">
+                    <div class="text-xs font-semibold text-heading">Active scheduler claim</div>
+                    <div class="text-xs text-muted mt-1">Shown only while a firing is in progress (<code class="text-[11px]">ScheduleRuns</code> not yet completed). Not the owner of past runs.</div>
+                    <div class="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2">
                         <div>
                             <div class="text-xs text-muted">Claimed by host (current)</div>
                             <div class="text-sm text-body">@_detail.ClaimedByHostId</div>
@@ -204,26 +257,17 @@
                             <div class="text-xs text-muted">Claim started (UTC)</div>
                             <div class="text-sm text-body">@Fmt(_detail.ClaimedAtUtc)</div>
                         </div>
-                        @if (_detail.IsClaimStale == true)
-                        {
-                            <div class="md:col-span-2">
-                                <span class="rounded bg-warning-light px-2 py-0.5 text-xs font-medium text-warning">Stale</span>
-                                <span class="ml-2 text-xs text-muted">Past claim lease; another host may take over.</span>
-                            </div>
-                        }
+                    </div>
+                    @if (_detail.IsClaimStale == true)
+                    {
+                        <div class="mt-2">
+                            <span class="rounded bg-warning-light px-2 py-0.5 text-xs font-medium text-warning">Stale</span>
+                            <span class="ml-2 text-xs text-muted">Past claim lease; another host may take over.</span>
+                        </div>
                     }
                 </div>
-            </div>
-
-            <div class="rounded border border-default bg-surface p-3">
-                <div class="text-sm font-semibold text-heading">Links</div>
-                <div class="mt-2 flex flex-wrap gap-2">
-                    <a href="@Epic33UiDisplayHelpers.GetRunsListCorrelationFilterHref($"schedule:{ScheduleId}")" class="text-sm underline">Runs for this schedule</a>
-                    <a href="@Epic33UiDisplayHelpers.GetAuditLinkForSchedule(ScheduleId)" class="text-sm underline">View audit for this schedule</a>
-                    <a href="/control/blocked-work" class="text-sm underline">Blocked work / recovery</a>
-                </div>
-            </div>
-        </div>
+            }
+        </ManagementAdvancedSection>
     }
 </div>
 
@@ -243,6 +287,24 @@
     private string _editTimeZone = "";
     private bool _editEnabled;
     private string? _dataLoadKey;
+
+    private string ScheduleHeaderTitle =>
+        string.IsNullOrWhiteSpace(_detail?.Name) ? "Schedule" : _detail!.Name;
+
+    private string ScheduleHeaderSubtitle
+    {
+        get
+        {
+            if (_detail is null)
+                return string.Empty;
+            var en = _detail.Enabled ? "Enabled" : "Disabled";
+            var target = GetTargetKind(_detail.TargetJobType);
+            var integ = string.IsNullOrWhiteSpace(_detail.IntegrationId)
+                ? ""
+                : $" · {_detail.IntegrationId}";
+            return $"{en} · {target}{integ} · {_detail.RecurrenceExpression}";
+        }
+    }
 
     private void StartEdit()
     {

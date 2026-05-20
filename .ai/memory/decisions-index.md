@@ -26,3 +26,4 @@ Architecture decision records (ADRs) live in [docs/02-decisions/](../../docs/02-
 | [Epic 80](../../docs/02-decisions/Epic80-Integration-Detail-Redesign-Pilot.md) | Integration Detail layered redesign pilot (`/integrations/{id}`) |
 | [Epic 81](../../docs/02-decisions/Epic81-Run-Detail-Redesign-Pilot.md) | Run Detail layered redesign pilot (`/runs/{RunId}`) |
 | [Epic 82](../../docs/02-decisions/Epic82-Control-Center-Redesign-Pilot.md) | Control Center layered console redesign pilot (`/control/center`) |
+| [Epic 83](../../docs/02-decisions/Epic83-Schedules-List-Detail-Redesign-Pilot.md) | Schedules list/detail layered redesign pilot (`/schedules`, `/schedules/{id}`, `/schedules/new` layout pass) |

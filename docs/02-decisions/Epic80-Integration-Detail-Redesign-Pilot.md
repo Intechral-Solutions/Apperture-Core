@@ -52,7 +52,7 @@ Integration Detail (`/integrations/{IntegrationId}`) was Epic 78 **pilot #3**: t
 - Extract additional child components (bindings editor, procedures panel) if Run Detail or other pilots need reuse.
 - Summary band: last run / next schedule when APIs expose stable fields without N+1 queries.
 - Toolbar action buttons → shared secondary button component (optional Epic 79 follow-up).
-- Other Epic 78 pilots: Control Center (#1) — [Epic 82](Epic82-Control-Center-Redesign-Pilot.md), Run Detail (#2) — [Epic 81](Epic81-Run-Detail-Redesign-Pilot.md), notification definition detail (#4), schedules list/detail (#5).
+- Other Epic 78 pilots: Control Center (#1) — [Epic 82](Epic82-Control-Center-Redesign-Pilot.md), Run Detail (#2) — [Epic 81](Epic81-Run-Detail-Redesign-Pilot.md), notification definition detail (#4), schedules list/detail (#5) — [Epic 83](Epic83-Schedules-List-Detail-Redesign-Pilot.md).
 
 ## Implications for later pilots
 

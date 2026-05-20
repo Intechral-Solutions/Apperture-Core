@@ -1,17 +1,18 @@
 @page "/schedules"
 @using Apperture.Management.Client
 @using Apperture.Management.Ui.Client.Services
+@using Apperture.Management.Ui.Shared
+@using Apperture.Management.Ui.Client.Organisms
+@using Apperture.Management.Ui.Client.Molecules
 @inject IManagementClient Client
 @inject IOperatorCapabilitiesService Capabilities
 @inject NavigationManager Nav
 
-<div class="p-4">
-    <div class="flex items-center justify-between gap-3">
-        <div class="min-w-0">
-            <h1 class="text-xl font-semibold text-heading">Schedules</h1>
-            <div class="text-xs text-muted">Schedule definitions and execution state.</div>
-        </div>
-        <div class="flex items-center gap-2">
+<div class="p-4 ui-page-stack">
+    <PageHeader Eyebrow="Automation"
+                Title="Schedules"
+                Subtitle="Schedule definitions and persisted execution linkage; open a row for timing, outcomes, and actions.">
+        <Toolbar>
             @if (_capabilities?.CanManageSchedules == true)
             {
                 <a href="/schedules/new" class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface">Create schedule</a>
@@ -21,65 +22,112 @@
                     @onclick="LoadAsync">
                 Refresh
             </button>
-        </div>
-    </div>
+        </Toolbar>
+    </PageHeader>
 
     @if (!string.IsNullOrEmpty(_error))
     {
-        <div class="mt-4 rounded border border-default bg-surface px-3 py-2 text-sm text-body">
-            <div class="font-semibold">Error</div>
-            <div class="text-muted">@_error</div>
-        </div>
+        <ErrorState Message="@_error" />
     }
     else if (_schedules is null)
     {
-        <div class="mt-4 text-sm text-muted">Loading...</div>
+        <LoadingState />
     }
     else if (_schedules.Count == 0)
     {
-        <div class="mt-4 text-sm text-muted">No schedules found.</div>
+        <EmptyState Message="No schedules found." />
     }
     else
     {
-        <div class="mt-4 overflow-x-auto rounded border border-default bg-surface">
-            <table class="min-w-full text-left text-sm text-body">
-                <thead class="border-b border-default text-xs text-muted">
-                    <tr>
-                        <th class="px-3 py-2">Id</th>
-                        <th class="px-3 py-2">Name</th>
-                        <th class="px-3 py-2">Enabled</th>
-                        <th class="px-3 py-2">Integration</th>
-                        <th class="px-3 py-2">Target</th>
-                        <th class="px-3 py-2"></th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @foreach (var s in _schedules)
-                    {
-                        <tr class="border-b border-default hover:bg-surface-muted cursor-pointer"
-                            @onclick="@(() => Nav.NavigateTo("/schedules/" + Uri.EscapeDataString(s.Id)))">
-                            <td class="px-3 py-2 font-mono text-xs">@s.Id</td>
-                            <td class="px-3 py-2">@s.Name</td>
-                            <td class="px-3 py-2">@(s.Enabled ? "Yes" : "No")</td>
-                            <td class="px-3 py-2 font-mono text-xs">@(!string.IsNullOrWhiteSpace(s.IntegrationId) ? s.IntegrationId : "-")</td>
-                            <td class="px-3 py-2">
-                                <span class="font-mono text-xs">@GetTargetKind(s.TargetJobType)</span>
-                                @if (!string.IsNullOrEmpty(s.TargetJobConfiguration))
-                                {
-                                    <div class="text-xs text-muted truncate max-w-xs">@s.TargetJobConfiguration</div>
-                                }
-                            </td>
-                            <td class="px-3 py-2">
-                                <a href="@("/schedules/" + Uri.EscapeDataString(s.Id))" class="underline text-sm" @onclick:stopPropagation>Open</a>
-                            </td>
+        <ManagementSection Title="Summary"
+                           Layer="ManagementSection.UiLayer.Summary"
+                           Help="Derived from loaded schedule rows only — no degraded-only list filter exists yet (Epic 47).">
+            <div class="flex flex-wrap items-center gap-2">
+                <StatusPill Label="@($"Total: {_schedules.Count}")" Semantic="@ManagementStatusSemantic.Neutral" />
+                <StatusPill Label="@($"Enabled: {EnabledCount}")" Semantic="@ManagementStatusSemantic.Success" />
+                <StatusPill Label="@($"Disabled: {DisabledCount}")" Semantic="@ManagementStatusSemantic.Warning" />
+            </div>
+
+            <div class="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
+                <ManagementSummaryCard Title="Integrations"
+                                       Description="Open deployment units owning schedules."
+                                       Href="/integrations" />
+                <ManagementSummaryCard Title="Runs history"
+                                       Description="Correlation and status filters apply from list rows."
+                                       Href="/runs" />
+                <ManagementSummaryCard Title="Audit timeline"
+                                       Description="Operational events with schedule context."
+                                       Href="/control/audit" />
+                <ManagementSummaryCard Title="Blocked work"
+                                       Description="Deferred runs and retry recovery."
+                                       Href="/control/blocked-work" />
+            </div>
+        </ManagementSection>
+
+        <ManagementSection Title="All schedules"
+                           Layer="ManagementSection.UiLayer.Detail">
+            <div class="overflow-x-auto rounded border border-default bg-surface">
+                <table class="min-w-full text-left text-sm text-body">
+                    <thead class="border-b border-default text-xs text-muted">
+                        <tr>
+                            <th class="px-3 py-2">Id</th>
+                            <th class="px-3 py-2">Name</th>
+                            <th class="px-3 py-2">State</th>
+                            <th class="px-3 py-2">Recurrence</th>
+                            <th class="px-3 py-2">Integration</th>
+                            <th class="px-3 py-2">Target</th>
+                            <th class="px-3 py-2"></th>
                         </tr>
-                    }
-                </tbody>
-            </table>
-        </div>
-        <div class="mt-2 text-xs text-muted">
-            Schedule detail (including last outcome) is shown on the detail page.
-        </div>
+                    </thead>
+                    <tbody>
+                        @foreach (var s in _schedules)
+                        {
+                            <tr class="border-b border-default hover:bg-surface-muted cursor-pointer"
+                                @onclick="@(() => Nav.NavigateTo("/schedules/" + Uri.EscapeDataString(s.Id)))">
+                                <td class="px-3 py-2 font-mono text-xs">@s.Id</td>
+                                <td class="px-3 py-2">@s.Name</td>
+                                <td class="px-3 py-2">
+                                    <StatusPill Label="@(s.Enabled ? "Enabled" : "Disabled")"
+                                                Semantic="@(s.Enabled ? ManagementStatusSemantic.Success : ManagementStatusSemantic.Neutral)" />
+                                </td>
+                                <td class="px-3 py-2 font-mono text-xs break-all max-w-xs">@s.RecurrenceExpression</td>
+                                <td class="px-3 py-2 font-mono text-xs">
+                                    @if (!string.IsNullOrWhiteSpace(s.IntegrationId))
+                                    {
+                                        <DrillInLink Href="@($"/integrations/{Uri.EscapeDataString(s.IntegrationId)}")">@s.IntegrationId</DrillInLink>
+                                    }
+                                    else
+                                    {
+                                        <span>-</span>
+                                    }
+                                </td>
+                                <td class="px-3 py-2">
+                                    <span class="font-mono text-xs">@GetTargetKind(s.TargetJobType)</span>
+                                    @if (!string.IsNullOrEmpty(s.TargetJobConfiguration))
+                                    {
+                                        <div class="text-xs text-muted truncate max-w-xs">@s.TargetJobConfiguration</div>
+                                    }
+                                </td>
+                                <td class="px-3 py-2">
+                                    <a href="@($"/schedules/{Uri.EscapeDataString(s.Id)}")"
+                                       class="ui-drill-in-link text-sm"
+                                       @onclick:stopPropagation>Open</a>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </ManagementSection>
+
+        <ManagementAdvancedSection Title="List semantics and diagnostics"
+                                   Subtitle="Constraints that affect how this view should be interpreted."
+                                   InitiallyOpen="false">
+            <ul class="list-disc space-y-2 pl-4 text-xs text-muted">
+                <li>Last outcome / next-fire timing appears on each schedule&apos;s detail page (not in list DTO).</li>
+                <li>Dashboard and Control Center may surface schedule-health counts; degraded-only filtering for this list is deferred until the API exposes a compatible filter.</li>
+            </ul>
+        </ManagementAdvancedSection>
     }
 </div>
 
@@ -89,9 +137,14 @@
     private bool _loading;
     private string? _error;
 
+    private int EnabledCount => _schedules?.Count(x => x.Enabled) ?? 0;
+
+    private int DisabledCount => _schedules?.Count(x => !x.Enabled) ?? 0;
+
     protected override async Task OnInitializedAsync()
     {
-        try { _capabilities = await Capabilities.GetCapabilitiesAsync(); } catch { _capabilities = new OperatorCapabilitiesDto(false, false, false, false, false, false, false); }
+        try { _capabilities = await Capabilities.GetCapabilitiesAsync(); }
+        catch { _capabilities = new OperatorCapabilitiesDto(false, false, false, false, false, false, false); }
         await LoadAsync();
     }
 

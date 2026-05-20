@@ -2,31 +2,30 @@
 @using Apperture.Management.Client
 @using Apperture.Management.Ui.Client.Services
 @using Apperture.Management.Ui.Shared
+@using Apperture.Management.Ui.Client.Organisms
+@using Apperture.Management.Ui.Client.Molecules
+@using Apperture.Management.Ui.Client.Atoms
 @inject IManagementClient Client
 @inject IOperatorCapabilitiesService Capabilities
 @inject NavigationManager Nav
 
-<div class="p-4">
-    <div class="flex items-center justify-between gap-3">
-        <div class="min-w-0">
-            <h1 class="text-xl font-semibold text-heading">Create schedule</h1>
-            <div class="text-xs text-muted">Define a new scheduled workflow or operation.</div>
-        </div>
-        <a href="/schedules" class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface">Back to list</a>
-    </div>
+<div class="p-4 ui-page-stack">
+    <PageHeader Eyebrow="Automation"
+                Title="Create schedule"
+                Subtitle="Define a new scheduled workflow or operation for an integration.">
+        <Toolbar>
+            <a href="/schedules" class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface">Back to list</a>
+        </Toolbar>
+    </PageHeader>
 
     @if (_capabilities?.CanManageSchedules != true)
     {
-        <div class="mt-4 rounded border border-default bg-surface px-3 py-2 text-sm text-body">
-            <div class="font-semibold">Not authorized</div>
-            <div class="text-muted">You do not have permission to create schedules.</div>
-        </div>
+        <ForbiddenState Title="Not authorized"
+                        Message="You do not have permission to create schedules." />
     }
     else if (!string.IsNullOrEmpty(_error))
     {
-        <div class="mt-4 rounded border border-default bg-surface px-3 py-2 text-sm text-body">
-            <div class="font-semibold">Error</div>
-            <div class="text-muted">@_error</div>
+        <ErrorState Message="@_error">
             @if (_validationErrors is { Count: > 0 })
             {
                 <ul class="mt-2 list-disc pl-4 text-muted">
@@ -36,14 +35,13 @@
                     }
                 </ul>
             }
-        </div>
+        </ErrorState>
     }
     else
     {
-        <div class="mt-4 rounded border border-default bg-surface p-3">
-            <div class="text-xs text-muted mb-3">@Epic33UiDisplayHelpers.ScheduleActionExplanatoryText</div>
-            <div class="text-xs text-muted mb-4">Schedules are integration-owned. Select an integration first, then choose workflow/operation targets from that integration's module.</div>
-
+        <ManagementSection Title="Schedule definition"
+                           Layer="ManagementSection.UiLayer.Detail"
+                           Help="@($"{Epic33UiDisplayHelpers.ScheduleActionExplanatoryText} Schedules are integration-owned — select an integration first, then workflow or operation targets from that integration's module.")">
             <form class="grid gap-4 md:grid-cols-2" @onsubmit="SubmitAsync" @onsubmit:preventDefault>
                 <div class="space-y-3">
                     <div>
@@ -149,10 +147,10 @@
                             disabled="@(_loading || !CanSubmit)">
                         Create schedule
                     </button>
-                    <a href="/schedules" class="text-sm underline w-fit">Cancel</a>
+                    <DrillInLink Href="/schedules" Class="w-fit">Cancel</DrillInLink>
                 </div>
             </form>
-        </div>
+        </ManagementSection>
     }
 </div>
 
