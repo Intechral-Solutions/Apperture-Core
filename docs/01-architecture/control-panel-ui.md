@@ -54,3 +54,7 @@ The `Automation` domain contains run history (`/runs`) surfaced in the menu as *
 ## UI modernization and layering
 
 Page archetypes, summary/detail/advanced layering, drill-in rules, and pilot recommendations are documented in [Epic 78 — Management UI modernization groundwork](../02-decisions/Epic78-Management-UI-Modernization-Groundwork.md). Reusable primitives and visual conventions are in [Management UI design system](management-ui-design-system.md) (Epic 79). This file remains the shell and navigation contract.
+
+**Navigation audit (Epic 98):** Full route/menu inventory, information-flow journeys, hub/detail model, and recommended future domain structure — [Epic 98 — Navigation and information-flow audit](../02-decisions/Epic98-Management-UI-Navigation-and-Information-Flow-Audit.md). Implementation of shell changes is deferred to follow-up epics.
+
+**Stylesheets:** The dev host shell (`Apperture.Management.Ui.Server/Pages/_Layout.cshtml`) must load `css/management-ui-primitives.css` after `css/app.css` (same as WASM `index.html`). See Epic 97 toolbar corrective ADR.

@@ -21,6 +21,8 @@ Related shell documentation: [control-panel-ui.md](control-panel-ui.md).
 | Drill-in rules | `DrillInLink`; URLs still built with `Epic33UiDisplayHelpers` |
 | Pilot pages | `/config` hub proof; Integration Detail ([Epic 80](../../02-decisions/Epic80-Integration-Detail-Redesign-Pilot.md)); Run Detail ([Epic 81](../../02-decisions/Epic81-Run-Detail-Redesign-Pilot.md)); Control Center ([Epic 82](../../02-decisions/Epic82-Control-Center-Redesign-Pilot.md)); Schedules ([Epic 83](../../02-decisions/Epic83-Schedules-List-Detail-Redesign-Pilot.md)); Notification Definition Authoring ([Epic 84](../../02-decisions/Epic84-Notification-Definition-Authoring-Redesign-Pilot.md)); consolidation guidance ([Epic 85](../../02-decisions/Epic85-Management-UI-Pilot-Consolidation.md)); state-branch consistency sweep ([Epic 86](../../02-decisions/Epic86-Management-UI-State-Branch-Consistency-Sweep.md)); action surface groundwork ([Epic 87](../../02-decisions/Epic87-Management-UI-Action-Surface-and-Operation-Feedback-Groundwork.md)); cooperative action feedback shell ([Epic 88](../../02-decisions/Epic88-Cooperative-Action-Feedback-Shell-Pilot.md)); other pilots per Epic 78 |
 
+**Navigation / flow (Epic 98):** Route and menu audit, hub/detail model, and deferred shell restructure — [Epic 98](../02-decisions/Epic98-Management-UI-Navigation-and-Information-Flow-Audit.md); shell contract in [control-panel-ui.md](control-panel-ui.md).
+
 ## Design principles
 
 1. **Backend truth** — Components display API fields and capability gates; no inferred state.
