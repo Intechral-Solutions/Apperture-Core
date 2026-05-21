@@ -31,12 +31,13 @@ public sealed class Epic99RouteMenuTruthCleanupTests
     }
 
     [Fact]
-    public void Config_menu_includes_managed_contacts()
+    public void Config_attention_includes_managed_contacts_child()
     {
         var menus = ControlPanelMenuDefinitions.GetDefaultMenus();
-        var config = menus[SectionOwnerConstants.Config];
-        config.Items.Should().Contain(i =>
-            i.Text == "Managed contacts" && i.Href == "/config/contacts");
+        var attention = menus[SectionOwnerConstants.Config].Items.First(i => i.Text == "Attention");
+        attention.Children.Should().NotBeNull();
+        attention.Children!.Should().Contain(c =>
+            c.Text == "Managed contacts" && c.Href == "/config/contacts");
     }
 
     [Fact]

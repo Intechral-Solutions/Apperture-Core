@@ -137,7 +137,7 @@ public static class ManagementBreadcrumbResolver
         if (p.Equals("/connections", StringComparison.OrdinalIgnoreCase))
             return "Connection instances and connector definitions.";
         if (p.Equals("/config", StringComparison.OrdinalIgnoreCase))
-            return "Authentication, governance, notifications, contacts, and modules.";
+            return "Authentication, governance, notifications, attention, contacts, and modules.";
         if (p.Equals("/execute", StringComparison.OrdinalIgnoreCase))
             return "Start operations and workflows.";
         return null;
@@ -210,6 +210,16 @@ public static class ManagementBreadcrumbResolver
         var segments = new (string Label, string? Href)[2 + tail.Length];
         segments[0] = (SectionOwnerConstants.Config, ShellSectionRoutes.ConfigHome);
         segments[1] = ("Notifications", "/config/notifications");
+        if (tail.Length > 0)
+            Array.Copy(tail, 0, segments, 2, tail.Length);
+        return Trail(segments);
+    }
+
+    private static IReadOnlyList<BreadcrumbItem> Attention(params (string Label, string? Href)[] tail)
+    {
+        var segments = new (string Label, string? Href)[2 + tail.Length];
+        segments[0] = (SectionOwnerConstants.Config, ShellSectionRoutes.ConfigHome);
+        segments[1] = ("Attention", "/attention/operational-teams");
         if (tail.Length > 0)
             Array.Copy(tail, 0, segments, 2, tail.Length);
         return Trail(segments);
@@ -594,7 +604,7 @@ public static class ManagementBreadcrumbResolver
         c = null;
         if (!Matches(s, "config", "contacts", "{id}"))
             return false;
-        c = Config(
+        c = Attention(
             ("Managed contacts", "/config/contacts"),
             ("Contact", null));
         return true;
@@ -605,7 +615,7 @@ public static class ManagementBreadcrumbResolver
         c = null;
         if (!Matches(s, "config", "contacts"))
             return false;
-        c = Config(("Managed contacts", null));
+        c = Attention(("Managed contacts", null));
         return true;
     }
 
@@ -747,7 +757,7 @@ public static class ManagementBreadcrumbResolver
         c = null;
         if (!Matches(s, "attention", "contact-groups", "{id}"))
             return false;
-        c = Operations(
+        c = Attention(
             ("Operational teams", "/attention/operational-teams"),
             ("Team", null));
         return true;
@@ -758,7 +768,7 @@ public static class ManagementBreadcrumbResolver
         c = null;
         if (!Matches(s, "attention", "operational-teams", "{id}"))
             return false;
-        c = Operations(
+        c = Attention(
             ("Operational teams", "/attention/operational-teams"),
             ("Team", null));
         return true;
@@ -769,7 +779,7 @@ public static class ManagementBreadcrumbResolver
         c = null;
         if (!Matches(s, "attention", "contact-groups"))
             return false;
-        c = Operations(("Operational teams", null));
+        c = Attention(("Operational teams", null));
         return true;
     }
 
@@ -778,7 +788,7 @@ public static class ManagementBreadcrumbResolver
         c = null;
         if (!Matches(s, "attention", "operational-teams"))
             return false;
-        c = Operations(("Operational teams", null));
+        c = Attention(("Operational teams", null));
         return true;
     }
 
@@ -787,7 +797,7 @@ public static class ManagementBreadcrumbResolver
         c = null;
         if (!Matches(s, "attention", "routing-defaults"))
             return false;
-        c = Operations(("Routing defaults", null));
+        c = Attention(("Routing defaults", null));
         return true;
     }
 

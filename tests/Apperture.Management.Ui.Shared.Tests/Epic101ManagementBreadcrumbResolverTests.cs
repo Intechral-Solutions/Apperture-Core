@@ -35,8 +35,10 @@ public sealed class Epic101ManagementBreadcrumbResolverTests
     [InlineData("/config/notifications/definitions/def-1", "Config", "Notifications", "Definitions", "Definition")]
     [InlineData("/config/notifications/definitions/def-1/edit", "Config", "Notifications", "Definitions", "Definition", "Edit")]
     [InlineData("/config/notifications/instances/inst-1", "Config", "Notifications", "Instances", "Instance")]
-    [InlineData("/config/contacts", "Config", "Managed contacts")]
-    [InlineData("/config/contacts/c-1", "Config", "Managed contacts", "Contact")]
+    [InlineData("/config/contacts", "Config", "Attention", "Managed contacts")]
+    [InlineData("/config/contacts/c-1", "Config", "Attention", "Managed contacts", "Contact")]
+    [InlineData("/attention/operational-teams", "Config", "Attention", "Operational teams")]
+    [InlineData("/attention/routing-defaults", "Config", "Attention", "Routing defaults")]
     [InlineData("/modules", "Config", "Modules")]
     [InlineData("/modules/mod-1", "Config", "Modules", "Module")]
     public void Resolve_known_routes_returns_expected_labels(string path, params string[] expectedLabels)
@@ -106,11 +108,12 @@ public sealed class Epic101ManagementBreadcrumbResolverTests
     }
 
     [Fact]
-    public void Resolve_attention_operational_teams_under_operations()
+    public void Resolve_attention_routing_defaults_under_config_attention()
     {
         var crumbs = ManagementBreadcrumbResolver.Resolve("/attention/routing-defaults");
-        crumbs.Select(c => c.Label).Should().Equal("Operations", "Routing defaults");
-        crumbs[0].Href.Should().Be("/control/center");
+        crumbs.Select(c => c.Label).Should().Equal("Config", "Attention", "Routing defaults");
+        crumbs[0].Href.Should().Be(ShellSectionRoutes.ConfigHome);
+        crumbs[1].Href.Should().Be("/attention/operational-teams");
     }
 
     [Theory]

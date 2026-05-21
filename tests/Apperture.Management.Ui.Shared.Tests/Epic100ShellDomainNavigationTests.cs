@@ -30,23 +30,25 @@ public sealed class Epic100ShellDomainNavigationTests
     }
 
     [Fact]
-    public void Operations_attention_is_grouped_with_team_and_routing_children()
+    public void Config_attention_is_grouped_with_teams_routing_and_contacts()
     {
         var menus = ControlPanelMenuDefinitions.GetDefaultMenus();
-        var attention = menus["Operations"].Items.First(i => i.Text == "Attention");
+        menus["Operations"].Items.Should().NotContain(i => i.Text == "Attention");
+        var attention = menus[SectionOwnerConstants.Config].Items.First(i => i.Text == "Attention");
         attention.Children.Should().NotBeNullOrEmpty();
         attention.Children!.Select(c => c.Href).Should().Contain("/attention/operational-teams");
         attention.Children!.Select(c => c.Href).Should().Contain("/attention/routing-defaults");
+        attention.Children!.Select(c => c.Href).Should().Contain("/config/contacts");
     }
 
     [Fact]
-    public void RouteResolver_attention_paths_remain_operations()
+    public void RouteResolver_attention_paths_resolve_to_config()
     {
         var menus = ControlPanelMenuDefinitions.GetDefaultMenus();
         RouteToSectionResolver.Resolve("/attention/routing-defaults", menus.GetValueOrDefault, menus.Keys)
-            .Should().Be("Operations");
+            .Should().Be(SectionOwnerConstants.Config);
         RouteToSectionResolver.Resolve("/attention/operational-teams", menus.GetValueOrDefault, menus.Keys)
-            .Should().Be("Operations");
+            .Should().Be(SectionOwnerConstants.Config);
     }
 
     [Fact]
@@ -56,7 +58,7 @@ public sealed class Epic100ShellDomainNavigationTests
         var config = menus[SectionOwnerConstants.Config].Items;
         config[0].Text.Should().Be("Overview");
         config[0].Href.Should().Be("/config");
-        config.Should().Contain(i => i.Text == "Managed contacts" && i.Href == "/config/contacts");
+        config.Should().NotContain(i => i.Text == "Managed contacts" && i.Href == "/config/contacts");
         config.Should().Contain(i => i.Text == "Modules" && i.Href == "/modules");
     }
 }

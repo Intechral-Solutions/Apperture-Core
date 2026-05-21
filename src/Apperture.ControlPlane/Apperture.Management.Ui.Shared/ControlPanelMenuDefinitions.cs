@@ -34,18 +34,7 @@ public static class ControlPanelMenuDefinitions
                     new DomainMenuItem { Text = "Control Center", Href = "/control/center" },
                     new DomainMenuItem { Text = "Blocked Work", Href = "/control/blocked-work" },
                     new DomainMenuItem { Text = "Execute", Href = "/execute" },
-                    new DomainMenuItem { Text = "Audit", Href = "/control/audit" },
-                    new DomainMenuItem
-                    {
-                        Id = "operations-attention",
-                        Text = "Attention",
-                        Href = "/attention/operational-teams",
-                        Children = new List<DomainMenuItem>
-                        {
-                            new DomainMenuItem { Text = "Operational teams", Href = "/attention/operational-teams" },
-                            new DomainMenuItem { Text = "Routing defaults", Href = "/attention/routing-defaults" }
-                        }
-                    }
+                    new DomainMenuItem { Text = "Audit", Href = "/control/audit" }
                 }
             },
             ["Automation"] = new DomainMenu
@@ -112,7 +101,18 @@ public static class ControlPanelMenuDefinitions
                             new DomainMenuItem { Text = "Diagnostics", Href = "/config/notifications/diagnostics" }
                         }
                     },
-                    new DomainMenuItem { Text = "Managed contacts", Href = "/config/contacts" },
+                    new DomainMenuItem
+                    {
+                        Id = "config-attention",
+                        Text = "Attention",
+                        Href = "/attention/operational-teams",
+                        Children = new List<DomainMenuItem>
+                        {
+                            new DomainMenuItem { Text = "Operational teams", Href = "/attention/operational-teams" },
+                            new DomainMenuItem { Text = "Routing defaults", Href = "/attention/routing-defaults" },
+                            new DomainMenuItem { Text = "Managed contacts", Href = "/config/contacts" }
+                        }
+                    },
                     new DomainMenuItem { Text = "Modules", Href = "/modules" }
                 }
             }
