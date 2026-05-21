@@ -103,4 +103,40 @@ public sealed class Epic101ManagementBreadcrumbResolverTests
         crumbs.Select(c => c.Label).Should().Equal("Operations", "Routing defaults");
         crumbs[0].Href.Should().Be("/control/center");
     }
+
+    [Theory]
+    [InlineData("/runs/run-1")]
+    [InlineData("/integrations/int-1/notifications")]
+    [InlineData("/config/notifications/definitions/def-1/edit")]
+    [InlineData("/schedules/sch-1")]
+    [InlineData("/modules/mod-1")]
+    public void Resolve_non_terminal_crumbs_always_have_hrefs(string path)
+    {
+        var crumbs = ManagementBreadcrumbResolver.Resolve(path);
+        crumbs.Should().NotBeEmpty();
+        foreach (var crumb in crumbs.Where(c => !c.IsCurrent))
+        {
+            crumb.Href.Should().NotBeNullOrWhiteSpace();
+        }
+    }
+
+    [Fact]
+    public void Resolve_integration_child_entity_parent_uses_id_in_href()
+    {
+        var crumbs = ManagementBreadcrumbResolver.Resolve("/integrations/int-42/notifications");
+        crumbs.Should().HaveCount(3);
+        crumbs[1].Label.Should().Be("Integration");
+        crumbs[1].Href.Should().Be("/integrations/int-42");
+        crumbs[1].IsCurrent.Should().BeFalse();
+    }
+
+    [Fact]
+    public void Resolve_definition_edit_entity_parent_links_to_definition_detail()
+    {
+        var crumbs = ManagementBreadcrumbResolver.Resolve("/config/notifications/definitions/def-9/edit");
+        crumbs[^2].Label.Should().Be("Definition");
+        crumbs[^2].Href.Should().Be("/config/notifications/definitions/def-9");
+        crumbs[^1].IsCurrent.Should().BeTrue();
+        crumbs[^1].Href.Should().BeNull();
+    }
 }

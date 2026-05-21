@@ -480,7 +480,23 @@ a.ui-toolbar-btn--danger:hover {
   padding: 0.875rem 1rem;
 }
 
-/* --- Top-bar breadcrumbs (Epic 101) --- */
+/* --- Top bar orientation + breadcrumbs (Epic 101) --- */
+
+.ui-topbar {
+  flex-shrink: 0;
+}
+
+.ui-topbar__inner {
+  box-sizing: border-box;
+}
+
+.ui-topbar__orientation {
+  overflow: hidden;
+}
+
+.ui-topbar__title-slot:empty {
+  display: none;
+}
 
 .ui-breadcrumbs {
   font-size: 0.75rem;
@@ -489,21 +505,29 @@ a.ui-toolbar-btn--danger:hover {
 }
 
 .ui-breadcrumbs__list {
-  row-gap: 0.125rem;
+  flex-wrap: nowrap;
+  overflow: hidden;
 }
 
 .ui-breadcrumbs__item {
-  max-width: 100%;
+  max-width: 14rem;
+}
+
+.ui-breadcrumbs__item:last-child {
+  max-width: 18rem;
 }
 
 .ui-breadcrumbs__link {
-  color: var(--color-text-muted);
-  text-decoration: none;
+  color: var(--color-primary, var(--color-text));
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-color: color-mix(in oklch, var(--color-primary, var(--color-text)) 35%, transparent);
+  text-underline-offset: 0.15em;
 }
 
 .ui-breadcrumbs__link:hover {
   color: var(--color-text);
-  text-decoration: underline;
+  text-decoration-color: currentColor;
 }
 
 .ui-breadcrumbs__current {

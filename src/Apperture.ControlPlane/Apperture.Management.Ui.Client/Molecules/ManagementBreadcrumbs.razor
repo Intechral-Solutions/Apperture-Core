@@ -1,16 +1,21 @@
 @using Apperture.Management.Ui.Shared.Models
+@inject NavigationManager Nav
 
 @if (Items.Count > 0)
 {
     <nav class="ui-breadcrumbs min-w-0" aria-label="Breadcrumb">
-        <ol class="ui-breadcrumbs__list m-0 flex min-w-0 list-none flex-wrap items-center gap-0 p-0">
+        <ol class="ui-breadcrumbs__list m-0 flex min-w-0 list-none items-center gap-0 p-0">
             @for (var i = 0; i < Items.Count; i++)
             {
                 var item = Items[i];
-                <li class="ui-breadcrumbs__item flex min-w-0 max-w-full items-center">
-                    @if (!item.IsCurrent && !string.IsNullOrWhiteSpace(item.Href))
+                var isLink = !item.IsCurrent && !string.IsNullOrWhiteSpace(item.Href);
+                <li class="ui-breadcrumbs__item flex min-w-0 max-w-full shrink items-center">
+                    @if (isLink)
                     {
-                        <a class="ui-breadcrumbs__link truncate" href="@item.Href">@item.Label</a>
+                        <a class="ui-breadcrumbs__link truncate"
+                           href="@item.Href"
+                           @onclick="@(() => Navigate(item.Href!))"
+                           @onclick:preventDefault="true">@item.Label</a>
                     }
                     else
                     {
@@ -28,4 +33,6 @@
 
 @code {
     [Parameter] public IReadOnlyList<BreadcrumbItem> Items { get; set; } = [];
+
+    private void Navigate(string href) => Nav.NavigateTo(href);
 }

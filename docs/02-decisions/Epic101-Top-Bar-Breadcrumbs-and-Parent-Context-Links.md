@@ -74,8 +74,25 @@ Full rule set is in `ManagementBreadcrumbResolver.cs` and covered by unit tests.
 - [management-ui-design-system.md](../01-architecture/management-ui-design-system.md) — breadcrumb component
 - [Epic 98](Epic98-Management-UI-Navigation-and-Information-Flow-Audit.md) — navigation audit (recommended breadcrumbs)
 
-## Follow-up (deferred)
+## Corrective pass (QA — placement and navigation)
 
-- Entity display names in crumbs when available from existing page state (no extra API).
-- Capability-aware crumb omission if product requires hiding parent links.
-- Mobile-visible truncated trail (top bar center is `md+` today).
+### Assessment
+
+| Question | Finding |
+|----------|---------|
+| **Difficulty** | **Low–moderate**, contained to `TopBar.razor`, `ManagementBreadcrumbs.razor`, and `management-ui-primitives.css`. No route/menu/shell rail changes. |
+| **Why below the top bar?** | Breadcrumbs were already mounted inside `<header id="topbar">`, but the bar used a fixed `h-16` single-row flex layout with `hidden md:block` on the center slot. Long trails wrapped to a second line (looked like a row under the bar), and viewports below `md` hid shell breadcrumbs entirely so operators only saw `PageHeader` **Eyebrow** text in page content — visually “below” the bar and not part of the shell. |
+| **Why not navigable?** | Resolver already assigned parent `Href` values; the component rendered `<a href>`. Links used muted, non-underlined styles (looked like labels). SPA navigation was not explicit (plain anchors can be inconsistent in some hosts); corrected with `NavigationManager.NavigateTo` on click plus clear link affordance. |
+
+### Changes (corrective)
+
+- **Top bar layout:** `ui-topbar` grid-like flex — menu | **orientation** (breadcrumbs + reserved title slot) | utilities. Removed `hidden md:block`; breadcrumbs always in the orientation region with horizontal truncation (no wrap).
+- **Navigation:** Parent crumbs use underline + primary color; click calls `NavigateTo` (current crumb remains plain text).
+- **Tests:** Non-terminal crumbs must have `Href`; integration/definition dynamic parent hrefs asserted.
+
+### Deferred
+
+- Shell **page title/subtitle** row (`ui-topbar__title-slot`) — markup reserved, not wired to pages.
+- Capability-aware crumb filtering.
+- Entity display names from existing page state (no API).
+- Narrow-viewport overflow menu if truncation is insufficient.

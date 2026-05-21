@@ -12,7 +12,7 @@ The Control Panel UI provides the navigation shell for the Apperture Management 
 
 - **Content area** — Shifts horizontally based on panel state: `ml-17` when closed, `ml-70` when open.
 
-- **Top bar** — Hamburger, **breadcrumb trail** (center, `md+`), theme and account menus (right). Breadcrumbs show domain/parent context and stable parent links; they complement the rail and page titles ([Epic 101](../02-decisions/Epic101-Top-Bar-Breadcrumbs-and-Parent-Context-Links.md)).
+- **Top bar** — Hamburger, **orientation area** (breadcrumb trail; optional future title row), theme and account menus (right). Parent crumbs are navigable links; current crumb is text. See [Epic 101](../02-decisions/Epic101-Top-Bar-Breadcrumbs-and-Parent-Context-Links.md).
 
 ## Terminology
 
