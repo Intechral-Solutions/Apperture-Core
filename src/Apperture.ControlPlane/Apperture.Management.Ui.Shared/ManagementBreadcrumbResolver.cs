@@ -85,22 +85,62 @@ public static class ManagementBreadcrumbResolver
     /// Resolves breadcrumbs for a request path (e.g. <see cref="Uri.AbsolutePath"/>).
     /// Returns an empty list when the path is excluded or unknown.
     /// </summary>
-    public static IReadOnlyList<BreadcrumbItem> Resolve(string path)
+    public static IReadOnlyList<BreadcrumbItem> Resolve(string path) =>
+        ResolveOrientation(path) switch
+        {
+            { Title: not null } o => [.. o.Parents, new BreadcrumbItem(o.Title, IsCurrent: true)],
+            _ => [],
+        };
+
+    /// <summary>
+    /// Resolves shell orientation: parent crumbs (all linkable), page title from the terminal segment, optional route subtitle.
+    /// </summary>
+    public static ManagementShellOrientation ResolveOrientation(string path)
     {
         var segments = SplitPath(path);
-        if (segments.Length == 0)
-            return [];
-
-        if (IsExcludedPath(segments))
-            return [];
+        if (segments.Length == 0 || IsExcludedPath(segments))
+            return ManagementShellOrientation.Empty;
 
         foreach (var rule in Rules)
         {
-            if (rule(segments, out var crumbs) && crumbs is { Count: > 0 })
-                return crumbs;
+            if (!rule(segments, out var crumbs) || crumbs is not { Count: > 0 })
+                continue;
+
+            var title = crumbs[^1].Label;
+            var parents = crumbs.Count > 1
+                ? crumbs.Take(crumbs.Count - 1)
+                    .Select(c => new BreadcrumbItem(c.Label, c.Href, IsCurrent: false))
+                    .ToList()
+                : (IReadOnlyList<BreadcrumbItem>)[];
+            return new ManagementShellOrientation(parents, title, ResolveRouteSubtitle(path));
         }
 
-        return [];
+        return ManagementShellOrientation.Empty;
+    }
+
+    private static string? ResolveRouteSubtitle(string path)
+    {
+        var p = path.TrimEnd('/');
+        if (p.Length == 0)
+            p = "/";
+
+        if (NavPathMatching.IsPathUnder(p, "/control/center"))
+            return "Live operational console for targets, activity, and attention.";
+        if (p.Equals("/dashboard", StringComparison.OrdinalIgnoreCase))
+            return "Platform summary and drill-ins.";
+        if (p.Equals("/runs", StringComparison.OrdinalIgnoreCase))
+            return "Automation run history.";
+        if (p.Equals("/schedules", StringComparison.OrdinalIgnoreCase))
+            return "Schedule definitions and firing.";
+        if (p.Equals("/integrations", StringComparison.OrdinalIgnoreCase))
+            return "Integration fleet overview.";
+        if (p.Equals("/connections", StringComparison.OrdinalIgnoreCase))
+            return "Connection instances and connector definitions.";
+        if (p.Equals("/config", StringComparison.OrdinalIgnoreCase))
+            return "Authentication, governance, notifications, contacts, and modules.";
+        if (p.Equals("/execute", StringComparison.OrdinalIgnoreCase))
+            return "Start operations and workflows.";
+        return null;
     }
 
     private static bool IsExcludedPath(string[] segments) =>

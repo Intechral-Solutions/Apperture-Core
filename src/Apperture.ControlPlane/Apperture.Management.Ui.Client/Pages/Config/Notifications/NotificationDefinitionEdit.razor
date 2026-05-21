@@ -9,10 +9,12 @@
 @inject IManagementClient Client
 @inject IOperatorCapabilitiesService Capabilities
 @inject NavigationManager Nav
+@inject ShellOrientationService ShellOrientation
 
 <div class="p-4 ui-page-stack">
-    <PageHeader Eyebrow="Notifications"
-                Title="Edit notification definition"
+    <PageHeader @key="@DefinitionId"
+                Eyebrow="Notifications"
+                Title="@EditTitle"
                 Subtitle="@EditSubtitle">
         <ChildContent>
             <div class="mt-1 font-mono text-xs text-muted break-all">@DefinitionId</div>
@@ -80,23 +82,37 @@
     private NotificationDefinitionDetailDto? _detail;
 
     private string DetailHref => NotificationUiRoutes.DefinitionDetail(DefinitionId);
+    private string EditTitle =>
+        EntityShellTitles.Detail(_detail?.DisplayName, "Notification definition");
     private string EditSubtitle =>
         string.IsNullOrWhiteSpace(_detail?.DisplayName)
             ? "Update rule/template content and metadata for this definition."
             : $"Editing {_detail.DisplayName}";
+
+    private string? _dataLoadKey;
 
     protected override async Task OnInitializedAsync()
     {
         var caps = await Capabilities.GetCapabilitiesAsync();
         _canSave = caps.CanManageNotificationDefinitions && caps.CanUpdateIntegrations;
         _capabilitiesLoaded = true;
-
         if (!_canSave)
-        {
             _loading = false;
-            return;
-        }
+    }
 
+    protected override async Task OnParametersSetAsync()
+    {
+        await base.OnParametersSetAsync();
+        if (!_capabilitiesLoaded || !_canSave)
+            return;
+
+        var key = DefinitionId ?? "";
+        if (key == _dataLoadKey)
+            return;
+
+        _dataLoadKey = key;
+        _detail = null;
+        _loading = true;
         try
         {
             _detail = await Client.GetNotificationDefinitionAsync(DefinitionId);
@@ -104,6 +120,7 @@
         finally
         {
             _loading = false;
+            ShellOrientation.PublishForCurrentUri(Nav, EditTitle, EditSubtitle);
         }
     }
 

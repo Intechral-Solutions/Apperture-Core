@@ -8,9 +8,8 @@
             @for (var i = 0; i < Items.Count; i++)
             {
                 var item = Items[i];
-                var isLink = !item.IsCurrent && !string.IsNullOrWhiteSpace(item.Href);
                 <li class="ui-breadcrumbs__item flex min-w-0 max-w-full shrink items-center">
-                    @if (isLink)
+                    @if (!string.IsNullOrWhiteSpace(item.Href))
                     {
                         <a class="ui-breadcrumbs__link truncate"
                            href="@item.Href"
@@ -19,7 +18,7 @@
                     }
                     else
                     {
-                        <span class="ui-breadcrumbs__current truncate" aria-current="page">@item.Label</span>
+                        <span class="ui-breadcrumbs__segment truncate text-muted">@item.Label</span>
                     }
                     @if (i < Items.Count - 1)
                     {

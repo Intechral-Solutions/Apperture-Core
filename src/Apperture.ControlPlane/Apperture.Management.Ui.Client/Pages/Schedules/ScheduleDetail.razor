@@ -7,9 +7,11 @@
 @inject IManagementClient Client
 @inject IOperatorCapabilitiesService Capabilities
 @inject NavigationManager Nav
+@inject ShellOrientationService ShellOrientation
 
 <div class="p-4 ui-page-stack">
-    <PageHeader Eyebrow="Schedules"
+    <PageHeader @key="@ScheduleId"
+                Eyebrow="Schedules"
                 Title="@ScheduleHeaderTitle"
                 Subtitle="@ScheduleHeaderSubtitle">
         <ChildContent>
@@ -351,6 +353,7 @@
         if (key == _dataLoadKey)
             return;
         _dataLoadKey = key;
+        _detail = null;
         await LoadCapabilitiesAsync();
         await LoadAsync();
     }
@@ -389,8 +392,12 @@
         finally
         {
             _loading = false;
+            PublishShellTitle();
         }
     }
+
+    private void PublishShellTitle() =>
+        ShellOrientation.PublishForCurrentUri(Nav, ScheduleHeaderTitle, ScheduleHeaderSubtitle);
 
     private async Task EnableAsync()
     {

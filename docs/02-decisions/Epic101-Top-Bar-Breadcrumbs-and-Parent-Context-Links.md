@@ -90,9 +90,15 @@ Full rule set is in `ManagementBreadcrumbResolver.cs` and covered by unit tests.
 - **Navigation:** Parent crumbs use underline + primary color; click calls `NavigateTo` (current crumb remains plain text).
 - **Tests:** Non-terminal crumbs must have `Href`; integration/definition dynamic parent hrefs asserted.
 
+### Title / subtitle row (orientation pass)
+
+- Terminal breadcrumb segment is **not** in the trail (no trailing `/`).
+- **Title** renders on the line below breadcrumbs (`0.875rem`); **subtitle** below title (`0.75rem`, same as breadcrumbs).
+- `PageHeader` publishes `Title` / `Subtitle` to `ShellOrientationService` when present (overrides resolver defaults); hub routes can supply generic route subtitles from the resolver.
+
 ### Deferred
 
-- Shell **page title/subtitle** row (`ui-topbar__title-slot`) — markup reserved, not wired to pages.
+- Hiding duplicate `PageHeader` title/eyebrow in page body after shell titles are trusted.
 - Capability-aware crumb filtering.
 - Entity display names from existing page state (no API).
 - Narrow-viewport overflow menu if truncation is insufficient.

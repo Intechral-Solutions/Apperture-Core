@@ -1,59 +1,111 @@
-@using Apperture.Management.Ui.Client.Molecules
-@using Apperture.Management.Ui.Shared
-@using Apperture.Management.Ui.Shared.Models
-@implements IDisposable
-
-@inject NavigationManager Nav
-
-<header id="topbar" class="ui-topbar sticky top-0 z-30 w-full border-b bg-surface shadow-shell border-default">
-    <div class="ui-topbar__inner flex min-h-16 w-full items-stretch gap-2 px-4 py-2 sm:gap-3">
-        <div class="ui-topbar__menu flex shrink-0 items-center">
-            <HamburgerToggle IsOpen="@IsControlPanelOpen"
-                             IsLocked="@IsControlPanelLocked"
-                             OnToggle="OnHamburgerClick" />
-        </div>
-
-        <div class="ui-topbar__orientation flex min-w-0 flex-1 flex-col justify-center gap-0.5">
-            <ManagementBreadcrumbs Items="@_breadcrumbs" />
-            @* Reserved for optional shell page title/subtitle (deferred). *@
-            <div class="ui-topbar__title-slot hidden" aria-hidden="true"></div>
-        </div>
-
-        <div class="ui-topbar__utilities flex shrink-0 items-center gap-2 md:gap-4">
-            <ThemeMenu />
-            <UserAccountMenu />
-        </div>
-    </div>
-</header>
-
-@code {
-    [Parameter] public bool IsControlPanelLocked { get; set; }
-    [Parameter] public bool IsControlPanelOpen { get; set; }
-    [Parameter] public EventCallback<bool> OnHamburgerClick { get; set; }
-
-    private IReadOnlyList<BreadcrumbItem> _breadcrumbs = [];
-
-    protected override void OnInitialized()
-    {
-        Nav.LocationChanged += OnLocationChanged;
-        RefreshBreadcrumbs();
-    }
-
-    public void Dispose()
-    {
-        Nav.LocationChanged -= OnLocationChanged;
-    }
-
-    private void OnLocationChanged(object? sender, LocationChangedEventArgs e) =>
-        _ = InvokeAsync(() =>
-        {
-            RefreshBreadcrumbs();
-            StateHasChanged();
-        });
-
-    private void RefreshBreadcrumbs()
-    {
-        var path = new Uri(Nav.Uri).AbsolutePath;
-        _breadcrumbs = ManagementBreadcrumbResolver.Resolve(path);
-    }
-}
+@using Apperture.Management.Ui.Client.Molecules
+@using Apperture.Management.Ui.Client.Services
+@using Apperture.Management.Ui.Shared
+@using Apperture.Management.Ui.Shared.Models
+@implements IDisposable
+
+@inject NavigationManager Nav
+@inject ShellOrientationService ShellOrientation
+
+<header id="topbar" class="ui-topbar sticky top-0 z-30 w-full border-b bg-surface shadow-shell border-default">
+    <div class="ui-topbar__inner flex min-h-16 w-full items-stretch gap-2 px-4 py-2 sm:gap-3">
+        <div class="ui-topbar__menu flex shrink-0 items-center">
+            <HamburgerToggle IsOpen="@IsControlPanelOpen"
+                             IsLocked="@IsControlPanelLocked"
+                             OnToggle="OnHamburgerClick" />
+        </div>
+
+        <div class="ui-topbar__orientation flex min-w-0 flex-1 flex-col justify-center">
+            <TopBarOrientation @key="@_orientationKey"
+                               Parents="@RouteOrientation.Parents"
+                               Title="@DisplayTitle"
+                               Subtitle="@DisplaySubtitle" />
+        </div>
+
+        <div class="ui-topbar__utilities flex shrink-0 items-center gap-2 md:gap-4">
+            <ThemeMenu />
+            <UserAccountMenu />
+        </div>
+    </div>
+</header>
+
+@code {
+    [Parameter] public bool IsControlPanelLocked { get; set; }
+    [Parameter] public bool IsControlPanelOpen { get; set; }
+    [Parameter] public EventCallback<bool> OnHamburgerClick { get; set; }
+
+    private string _orientationKey = "/";
+    private bool _disposed;
+
+    private string CurrentPath =>
+        EntityShellTitles.NormalizePath(new Uri(Nav.Uri).AbsolutePath);
+
+    private ManagementShellOrientation RouteOrientation =>
+        ManagementBreadcrumbResolver.ResolveOrientation(CurrentPath);
+
+    private string? DisplayTitle => ResolveDisplayTitle();
+
+    private string? DisplaySubtitle => ResolveDisplaySubtitle();
+
+    private string? ResolveDisplayTitle()
+    {
+        if (ShellOrientation.AppliesTo(CurrentPath)
+            && !string.IsNullOrWhiteSpace(ShellOrientation.PageTitle)
+            && !EntityShellTitles.LooksLikeRouteKey(ShellOrientation.PageTitle, CurrentPath))
+        {
+            return ShellOrientation.PageTitle;
+        }
+
+        return RouteOrientation.Title;
+    }
+
+    private string? ResolveDisplaySubtitle()
+    {
+        if (ShellOrientation.AppliesTo(CurrentPath)
+            && !string.IsNullOrWhiteSpace(ShellOrientation.PageSubtitle)
+            && !EntityShellTitles.LooksLikeRouteKey(ShellOrientation.PageSubtitle, CurrentPath))
+        {
+            return ShellOrientation.PageSubtitle;
+        }
+
+        return RouteOrientation.Subtitle;
+    }
+
+    protected override void OnInitialized()
+    {
+        ShellOrientation.Changed += OnShellOrientationChanged;
+        Nav.LocationChanged += OnLocationChanged;
+        SyncOrientationKey();
+    }
+
+    protected override void OnParametersSet() =>
+        SyncOrientationKey();
+
+    public void Dispose()
+    {
+        if (_disposed)
+            return;
+        _disposed = true;
+        ShellOrientation.Changed -= OnShellOrientationChanged;
+        Nav.LocationChanged -= OnLocationChanged;
+    }
+
+    private void OnShellOrientationChanged()
+    {
+        if (_disposed)
+            return;
+
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    private void OnLocationChanged(object? sender, LocationChangedEventArgs e)
+    {
+        ShellOrientation.ResetPageContext();
+        SyncOrientationKey();
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    private void SyncOrientationKey() =>
+        _orientationKey = CurrentPath;
+}
+

@@ -8,9 +8,12 @@
 @inject IManagementClient Client
 @inject IOperatorCapabilitiesService Capabilities
 @inject IToastService Toasts
+@inject NavigationManager Nav
+@inject ShellOrientationService ShellOrientation
 
 <div class="p-4">
-    <PageHeader Title="Role">
+    <PageHeader @key="@RoleId"
+                Title="@EntityShellTitles.Detail(_detail?.Name, "Role")">
         <ChildContent>
             <div class="mt-1 text-xs text-muted">
                 <a href="/config/governance/roles" class="hover:underline">Roles</a> / Role detail
@@ -209,6 +212,7 @@
         if (key == _dataLoadKey)
             return;
         _dataLoadKey = key;
+        _detail = null;
         await LoadAsync();
     }
 
@@ -237,8 +241,15 @@
         finally
         {
             _loading = false;
+            PublishShellTitle();
         }
     }
+
+    private void PublishShellTitle() =>
+        ShellOrientation.PublishForCurrentUri(
+            Nav,
+            EntityShellTitles.Detail(_detail?.Name, "Role"),
+            subtitle: null);
 
     private async Task StartEdit()
     {

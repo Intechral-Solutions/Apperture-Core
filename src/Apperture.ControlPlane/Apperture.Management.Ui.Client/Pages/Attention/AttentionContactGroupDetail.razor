@@ -1,15 +1,26 @@
 @page "/attention/contact-groups/{Id}"
 @page "/attention/operational-teams/{Id}"
 @using Apperture.Management.Client
+@using Apperture.Management.Ui.Client.Organisms
 @using Apperture.Management.Ui.Client.Services
+@using Apperture.Management.Ui.Shared
 @inject IManagementClient Client
 @inject IOperatorCapabilitiesService Capabilities
 @inject NavigationManager Nav
+@inject ShellOrientationService ShellOrientation
 
 <div class="p-4">
-    <div class="mb-3 text-sm">
-        <a href="/attention/operational-teams" class="underline text-muted">← All teams</a>
-    </div>
+    <PageHeader @key="@Id"
+                Eyebrow="Operational teams"
+                Title="@EntityShellTitles.Detail(_detail?.Name, "Operational team")"
+                Subtitle="@TeamHeaderSubtitle">
+        <ChildContent>
+            <div class="mt-1 font-mono text-xs text-muted break-all">@Id</div>
+        </ChildContent>
+        <Toolbar>
+            <a href="/attention/operational-teams" class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface">All teams</a>
+        </Toolbar>
+    </PageHeader>
 
     @if (!string.IsNullOrEmpty(_error))
     {
@@ -21,9 +32,6 @@
     }
     else
     {
-        <h1 class="text-xl font-semibold text-heading">@_detail.Name</h1>
-        <div class="mt-1 font-mono text-xs text-muted">@_detail.Id</div>
-
         @if (_capabilities?.CanManageSchedules == true)
         {
             <div class="mt-4 space-y-2 rounded border border-default bg-surface p-3">
@@ -96,6 +104,11 @@
 @code {
     [Parameter] public string Id { get; set; } = "";
 
+    private string TeamHeaderSubtitle =>
+        _detail is null
+            ? "Operational team"
+            : _detail.IsEnabled ? "Enabled" : "Disabled";
+
     private OperationalTeamDetailDto? _detail;
     private OperatorCapabilitiesDto? _capabilities;
     private string _editName = "";
@@ -105,6 +118,8 @@
     private bool _savingMeta;
     private bool _savingMembers;
     private string? _error;
+
+    private string? _dataLoadKey;
 
     protected override async Task OnInitializedAsync()
     {
@@ -116,6 +131,17 @@
         {
             _capabilities = null;
         }
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        await base.OnParametersSetAsync();
+        var key = Id ?? "";
+        if (key == _dataLoadKey)
+            return;
+
+        _dataLoadKey = key;
+        _detail = null;
         await LoadAsync();
     }
 
@@ -143,6 +169,13 @@
         catch (HttpRequestException ex)
         {
             _error = ex.Message;
+        }
+        finally
+        {
+            ShellOrientation.PublishForCurrentUri(
+                Nav,
+                EntityShellTitles.Detail(_detail?.Name, "Operational team"),
+                TeamHeaderSubtitle);
         }
     }
 

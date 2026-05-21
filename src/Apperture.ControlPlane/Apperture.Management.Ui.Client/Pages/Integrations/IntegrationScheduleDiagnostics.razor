@@ -1,18 +1,22 @@
 @page "/integrations/{IntegrationId}/schedule-diagnostics"
 @using Apperture.Management.Client
+@using Apperture.Management.Ui.Client.Organisms
 @using Apperture.Management.Ui.Client.Services
 @using Apperture.Management.Ui.Shared
 @inject IManagementClient Client
 @inject IOperatorCapabilitiesService Capabilities
 @inject NavigationManager Nav
+@inject ShellOrientationService ShellOrientation
 
 <div class="p-4">
-    <div class="flex items-center justify-between gap-3">
-        <div class="min-w-0">
-            <h1 class="text-xl font-semibold text-heading">Schedule diagnostics</h1>
+    <PageHeader @key="@IntegrationId"
+                Eyebrow="Integrations"
+                Title="@EntityShellTitles.Detail(_integrationDisplayName, "Integration")"
+                Subtitle="Schedule diagnostics">
+        <ChildContent>
             <div class="mt-1 font-mono text-xs text-muted break-all">@IntegrationId</div>
-        </div>
-        <div class="flex items-center gap-2">
+        </ChildContent>
+        <Toolbar>
             <a href="/integrations" class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface">Back to fleet</a>
             <button type="button"
                     class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface disabled:opacity-50"
@@ -20,8 +24,8 @@
                     @onclick="LoadAsync">
                 Refresh
             </button>
-        </div>
-    </div>
+        </Toolbar>
+    </PageHeader>
 
     @if (!string.IsNullOrEmpty(_error))
     {
@@ -427,6 +431,7 @@
     public string? IncidentIdQuery { get; set; }
 
     private string? _highlightIncidentId;
+    private string? _integrationDisplayName;
     private IntegrationScheduleDiagnosticsDto? _diagnostics;
     private OperatorCapabilitiesDto? _capabilities;
     private bool _loading = true;
@@ -437,6 +442,8 @@
     private string _routingEscalationGroupId = "";
     private bool _routingSaveBusy;
     private string? _routingSaveError;
+
+    private string? _dataLoadKey;
 
     protected override async Task OnInitializedAsync()
     {
@@ -450,6 +457,18 @@
             _capabilities = null;
         }
         _highlightIncidentId = string.IsNullOrWhiteSpace(IncidentIdQuery) ? null : IncidentIdQuery.Trim();
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        await base.OnParametersSetAsync();
+        var key = IntegrationId ?? "";
+        if (key == _dataLoadKey)
+            return;
+
+        _dataLoadKey = key;
+        _integrationDisplayName = null;
+        _diagnostics = null;
         await LoadAsync();
     }
 
@@ -465,6 +484,8 @@
 
         try
         {
+            var integration = await Client.GetIntegrationAsync(IntegrationId);
+            _integrationDisplayName = integration?.DisplayName;
             _contactGroups = await Client.ListOperationalTeamsAsync(includeDisabled: false);
             _diagnostics = await Client.GetIntegrationScheduleDiagnosticsAsync(IntegrationId);
             SyncRoutingEditor();
@@ -476,6 +497,10 @@
         finally
         {
             _loading = false;
+            ShellOrientation.PublishForCurrentUri(
+                Nav,
+                EntityShellTitles.Detail(_integrationDisplayName, "Integration"),
+                "Schedule diagnostics");
         }
     }
 

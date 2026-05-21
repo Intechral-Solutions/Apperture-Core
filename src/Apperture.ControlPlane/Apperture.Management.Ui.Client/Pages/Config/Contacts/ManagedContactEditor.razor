@@ -8,10 +8,12 @@
 @inject IManagementClient Client
 @inject IOperatorCapabilitiesService Capabilities
 @inject NavigationManager Nav
+@inject ShellOrientationService ShellOrientation
 
 <div class="p-4">
     <p class="text-xs text-muted mb-1"><a class="underline" href="/config/contacts">← Managed contacts</a></p>
-    <PageHeader Title="@(_isCreate ? "Create custom contact" : "Managed contact")"
+    <PageHeader @key="@(Id ?? "new")"
+                Title="@(_isCreate ? "Create custom contact" : EntityShellTitles.Detail(_detail?.DisplayName, "Managed contact"))"
                 Subtitle="Details, identity link, and optional link to a platform user." />
 
     @if (!_canView)
@@ -137,6 +139,7 @@
     private bool _editEnabled = true;
     private string _linkUserId = "";
     private string? _error;
+    private string? _dataLoadKey;
 
     protected override async Task OnParametersSetAsync()
     {
@@ -154,6 +157,13 @@
             _loading = false;
             return;
         }
+
+        var key = Id ?? "";
+        if (key == _dataLoadKey)
+            return;
+
+        _dataLoadKey = key;
+        _detail = null;
         await LoadAsync();
     }
 
@@ -178,6 +188,13 @@
         finally
         {
             _loading = false;
+            if (!_isCreate)
+            {
+                ShellOrientation.PublishForCurrentUri(
+                    Nav,
+                    EntityShellTitles.Detail(_detail?.DisplayName, "Managed contact"),
+                    "Details, identity link, and optional link to a platform user.");
+            }
         }
     }
 

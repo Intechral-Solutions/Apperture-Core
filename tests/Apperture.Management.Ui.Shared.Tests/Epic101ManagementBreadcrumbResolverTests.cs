@@ -60,13 +60,22 @@ public sealed class Epic101ManagementBreadcrumbResolverTests
     }
 
     [Fact]
-    public void Resolve_current_crumb_has_no_href()
+    public void ResolveOrientation_terminal_title_not_in_parent_trail()
     {
-        var crumbs = ManagementBreadcrumbResolver.Resolve("/runs/run-1");
-        var current = crumbs[^1];
-        current.Label.Should().Be("Run");
-        current.IsCurrent.Should().BeTrue();
-        current.Href.Should().BeNull();
+        var o = ManagementBreadcrumbResolver.ResolveOrientation("/runs/run-1");
+        o.Title.Should().Be("Run");
+        o.Parents.Select(c => c.Label).Should().Equal("Automation", "Runs");
+        o.Parents.Should().OnlyContain(c => !c.IsCurrent && !string.IsNullOrWhiteSpace(c.Href));
+        ManagementBreadcrumbResolver.Resolve("/runs/run-1").Select(c => c.Label)
+            .Should().Equal("Automation", "Runs", "Run");
+    }
+
+    [Fact]
+    public void ResolveOrientation_single_segment_has_no_parents()
+    {
+        var o = ManagementBreadcrumbResolver.ResolveOrientation("/integrations");
+        o.Title.Should().Be("Integrations");
+        o.Parents.Should().BeEmpty();
     }
 
     [Theory]
@@ -110,33 +119,40 @@ public sealed class Epic101ManagementBreadcrumbResolverTests
     [InlineData("/config/notifications/definitions/def-1/edit")]
     [InlineData("/schedules/sch-1")]
     [InlineData("/modules/mod-1")]
-    public void Resolve_non_terminal_crumbs_always_have_hrefs(string path)
+    public void ResolveOrientation_parent_crumbs_always_have_hrefs(string path)
     {
-        var crumbs = ManagementBreadcrumbResolver.Resolve(path);
-        crumbs.Should().NotBeEmpty();
-        foreach (var crumb in crumbs.Where(c => !c.IsCurrent))
+        var o = ManagementBreadcrumbResolver.ResolveOrientation(path);
+        o.Title.Should().NotBeNullOrWhiteSpace();
+        foreach (var crumb in o.Parents)
         {
             crumb.Href.Should().NotBeNullOrWhiteSpace();
+            crumb.IsCurrent.Should().BeFalse();
         }
     }
 
     [Fact]
     public void Resolve_integration_child_entity_parent_uses_id_in_href()
     {
-        var crumbs = ManagementBreadcrumbResolver.Resolve("/integrations/int-42/notifications");
-        crumbs.Should().HaveCount(3);
-        crumbs[1].Label.Should().Be("Integration");
-        crumbs[1].Href.Should().Be("/integrations/int-42");
-        crumbs[1].IsCurrent.Should().BeFalse();
+        var o = ManagementBreadcrumbResolver.ResolveOrientation("/integrations/int-42/notifications");
+        o.Title.Should().Be("Notifications");
+        o.Parents.Should().HaveCount(2);
+        o.Parents[1].Label.Should().Be("Integration");
+        o.Parents[1].Href.Should().Be("/integrations/int-42");
     }
 
     [Fact]
     public void Resolve_definition_edit_entity_parent_links_to_definition_detail()
     {
-        var crumbs = ManagementBreadcrumbResolver.Resolve("/config/notifications/definitions/def-9/edit");
-        crumbs[^2].Label.Should().Be("Definition");
-        crumbs[^2].Href.Should().Be("/config/notifications/definitions/def-9");
-        crumbs[^1].IsCurrent.Should().BeTrue();
-        crumbs[^1].Href.Should().BeNull();
+        var o = ManagementBreadcrumbResolver.ResolveOrientation("/config/notifications/definitions/def-9/edit");
+        o.Title.Should().Be("Edit");
+        o.Parents[^1].Label.Should().Be("Definition");
+        o.Parents[^1].Href.Should().Be("/config/notifications/definitions/def-9");
+    }
+
+    [Fact]
+    public void ResolveOrientation_hub_routes_may_include_subtitle()
+    {
+        ManagementBreadcrumbResolver.ResolveOrientation("/control/center").Subtitle
+            .Should().NotBeNullOrWhiteSpace();
     }
 }

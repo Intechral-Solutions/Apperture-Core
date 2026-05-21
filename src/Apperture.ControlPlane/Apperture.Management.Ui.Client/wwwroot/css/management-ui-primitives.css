@@ -490,17 +490,53 @@ a.ui-toolbar-btn--danger:hover {
   box-sizing: border-box;
 }
 
+.ui-topbar__menu {
+  padding-inline-end: 0.75rem;
+}
+
 .ui-topbar__orientation {
   overflow: hidden;
 }
 
-.ui-topbar__title-slot:empty {
-  display: none;
+.ui-topbar-orientation {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  min-width: 0;
 }
 
 .ui-breadcrumbs {
   font-size: 0.75rem;
+  line-height: 1.125rem;
+  color: var(--color-text-muted);
+}
+
+.ui-topbar__heading-line {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  min-width: 0;
+  overflow: hidden;
   line-height: 1.25rem;
+}
+
+.ui-topbar__title {
+  margin: 0;
+  padding: 0;
+  flex-shrink: 0;
+  max-width: 55%;
+  font-size: 0.875rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--color-text-heading, var(--color-text));
+}
+
+.ui-topbar__subtitle {
+  margin: 0;
+  padding: 0;
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 0.75rem;
   color: var(--color-text-muted);
 }
 
@@ -528,11 +564,6 @@ a.ui-toolbar-btn--danger:hover {
 .ui-breadcrumbs__link:hover {
   color: var(--color-text);
   text-decoration-color: currentColor;
-}
-
-.ui-breadcrumbs__current {
-  font-weight: 500;
-  color: var(--color-text-heading, var(--color-text));
 }
 
 .ui-breadcrumbs__sep {

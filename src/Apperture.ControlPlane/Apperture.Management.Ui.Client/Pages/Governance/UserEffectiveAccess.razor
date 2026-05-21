@@ -2,18 +2,22 @@
 @layout ConfigLayout
 @using System.Net
 @using Apperture.Management.Client
+@using Apperture.Management.Ui.Client.Organisms
 @using Apperture.Management.Ui.Client.Services
+@using Apperture.Management.Ui.Shared
 @inject IManagementClient Client
 @inject IOperatorCapabilitiesService Capabilities
+@inject NavigationManager Nav
+@inject ShellOrientationService ShellOrientation
 
 <div class="p-4">
-    <div class="flex items-center justify-between gap-3">
-        <div class="min-w-0">
-            <div class="text-xs text-muted mb-1"><a href="/config/governance/users" class="hover:underline">Users</a> / Role-derived access</div>
-            <h1 class="text-xl font-semibold text-heading">Role-derived access</h1>
-            <div class="mt-1 font-mono text-xs text-muted break-all">User @UserId — merged permissions from assigned roles only</div>
-        </div>
-        <div class="flex items-center gap-2">
+    <PageHeader @key="@UserId"
+                Title="@EntityShellTitles.Detail(_userDisplayName, "User")"
+                Subtitle="Role-derived access">
+        <ChildContent>
+            <div class="mt-1 font-mono text-xs text-muted break-all">@UserId — merged permissions from assigned roles only</div>
+        </ChildContent>
+        <Toolbar>
             <a href="@("/config/governance/users/" + Uri.EscapeDataString(UserId))" class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface">Manage role assignments</a>
             <a href="/config/governance/users" class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface">Back to users</a>
             <button class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface"
@@ -21,8 +25,8 @@
                     @onclick="LoadAsync">
                 Refresh
             </button>
-        </div>
-    </div>
+        </Toolbar>
+    </PageHeader>
 
     <div class="mt-2 rounded border border-callout-info bg-callout-info px-3 py-2 text-xs text-body">
         This page shows <strong>merged permissions from assigned roles only</strong>. It is not a complete effective-access model: direct user grants, scope containment, and service principals are excluded.
@@ -104,6 +108,7 @@
     [Parameter] public string UserId { get; set; } = "";
 
     private PrincipalEffectiveAccessDto? _access;
+    private string? _userDisplayName;
     private bool _loading;
     private bool _forbidden;
     private string? _error;
@@ -126,6 +131,8 @@
         if (key == _dataLoadKey)
             return;
         _dataLoadKey = key;
+        _userDisplayName = null;
+        _access = null;
         await LoadAsync();
     }
 
@@ -138,6 +145,8 @@
         _forbidden = false;
         try
         {
+            var user = await Client.GetUserAsync(UserId);
+            _userDisplayName = user?.DisplayName;
             _access = await Client.GetEffectiveAccessAsync(UserId);
             if (_access is null)
                 _error = "User not found.";
@@ -153,6 +162,10 @@
         finally
         {
             _loading = false;
+            ShellOrientation.PublishForCurrentUri(
+                Nav,
+                EntityShellTitles.Detail(_userDisplayName, "User"),
+                "Role-derived access");
         }
     }
 }

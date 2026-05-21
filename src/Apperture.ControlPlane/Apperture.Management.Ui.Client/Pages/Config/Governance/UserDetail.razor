@@ -8,9 +8,13 @@
 @inject IManagementClient Client
 @inject IOperatorCapabilitiesService Capabilities
 @inject IToastService Toasts
+@inject NavigationManager Nav
+@inject ShellOrientationService ShellOrientation
 
 <div class="p-4">
-    <PageHeader Title="User — Role assignments">
+    <PageHeader @key="@UserId"
+                Title="@EntityShellTitles.Detail(_user?.DisplayName, "User")"
+                Subtitle="Role assignments">
         <ChildContent>
             <div class="mt-1 text-xs text-muted">
                 <a href="/config/governance/users" class="hover:underline">Users</a> / Role assignments
@@ -184,6 +188,7 @@
         if (key == _dataLoadKey)
             return;
         _dataLoadKey = key;
+        _user = null;
         await LoadAsync();
     }
 
@@ -220,6 +225,10 @@
         finally
         {
             _loading = false;
+            ShellOrientation.PublishForCurrentUri(
+                Nav,
+                EntityShellTitles.Detail(_user?.DisplayName, "User"),
+                "Role assignments");
         }
     }
 

@@ -15,6 +15,7 @@ public static class AppertureUiShellServiceCollectionExtensions
         services.AddScoped<SessionStateService>();
         services.AddScoped<AuthSignInOptionsService>();
         services.AddScoped<ShellHostNavigation>();
+        services.AddScoped<ShellOrientationService>();
         return services;
     }
 }

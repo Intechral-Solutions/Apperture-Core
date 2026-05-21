@@ -8,15 +8,17 @@
 @inject IManagementClient Client
 @inject IOperatorCapabilitiesService Capabilities
 @inject NavigationManager Nav
+@inject ShellOrientationService ShellOrientation
 
 <div class="p-4 ui-page-stack">
-    <div class="ui-page-header flex items-center justify-between gap-3">
-        <div class="ui-page-header__intro min-w-0">
-            <div class="ui-page-header__eyebrow text-xs text-muted">Config</div>
-            <h1 class="ui-page-header__title text-xl font-semibold text-heading">Module</h1>
-            <div class="ui-page-header__subtitle mt-1 font-mono text-xs text-muted break-all">@ModuleId</div>
-        </div>
-        <div class="ui-page-header__toolbar ui-action-row">
+    <PageHeader @key="@ModuleId"
+                Eyebrow="Modules"
+                Title="@EntityShellTitles.Detail(_module?.Name, "Module")"
+                Subtitle="@ModuleHeaderSubtitle">
+        <ChildContent>
+            <div class="mt-1 font-mono text-xs text-muted break-all">@ModuleId</div>
+        </ChildContent>
+        <Toolbar>
             <a href="/modules" class="ui-toolbar-btn">Back to list</a>
             <button type="button"
                     class="ui-toolbar-btn"
@@ -24,8 +26,8 @@
                     @onclick="RefreshAsync">
                 Refresh
             </button>
-        </div>
-    </div>
+        </Toolbar>
+    </PageHeader>
 
     @if (!string.IsNullOrEmpty(_error))
     {
@@ -146,6 +148,11 @@
 @code {
     [Parameter] public string ModuleId { get; set; } = "";
 
+    private string ModuleHeaderSubtitle =>
+        _module is null
+            ? "Module detail"
+            : $"{_module.Version} · {_module.State}";
+
     private ModuleDto? _module;
     private OperatorCapabilitiesDto? _capabilities;
     private bool _loading;
@@ -171,6 +178,7 @@
         if (key == _dataLoadKey)
             return;
         _dataLoadKey = key;
+        _module = null;
         await LoadCapabilitiesAsync();
         await LoadAsync();
     }
@@ -216,8 +224,15 @@
         finally
         {
             _loading = false;
+            PublishShellTitle();
         }
     }
+
+    private void PublishShellTitle() =>
+        ShellOrientation.PublishForCurrentUri(
+            Nav,
+            EntityShellTitles.Detail(_module?.Name, "Module"),
+            ModuleHeaderSubtitle);
 
     private async Task LoadRecentActivityAsync()
     {

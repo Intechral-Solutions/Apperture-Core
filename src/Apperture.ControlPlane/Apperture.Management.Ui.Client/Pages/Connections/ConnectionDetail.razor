@@ -6,12 +6,18 @@
 @inject IManagementClient Client
 @inject IOperatorCapabilitiesService Capabilities
 @inject NavigationManager Nav
+@inject ShellOrientationService ShellOrientation
 @inject IToastService Toasts
 @inject IJSRuntime JSRuntime
 @using Microsoft.AspNetCore.Components.Web
 
 <div class="p-4">
-    <PageHeader Title="Connection" Subtitle="@ConnectionId">
+    <PageHeader @key="@ConnectionId"
+                Title="@EntityShellTitles.Detail(_connection?.Name, "Connection")"
+                Subtitle="@ConnectionHeaderSubtitle">
+        <ChildContent>
+            <div class="mt-1 font-mono text-xs text-muted break-all">@ConnectionId</div>
+        </ChildContent>
         <Toolbar>
             <a href="/connections" class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface">Back to list</a>
             <button type="button"
@@ -205,6 +211,11 @@
 @code {
     [Parameter] public string ConnectionId { get; set; } = "";
 
+    private string ConnectionHeaderSubtitle =>
+        _connection is null
+            ? "Connection detail"
+            : $"{_connection.ConnectorDefinitionId} · {_connection.State}";
+
     private ConnectionDto? _connection;
     private OperatorCapabilitiesDto? _capabilities;
     private bool _capabilitiesLoaded;
@@ -219,6 +230,7 @@
     private string _editName = "";
     private readonly Dictionary<string, string> _editConfigValues = new(StringComparer.Ordinal);
     private readonly Dictionary<string, string> _editSecretValues = new(StringComparer.Ordinal);
+    private string? _dataLoadKey;
 
     protected override async Task OnInitializedAsync()
     {
@@ -231,6 +243,22 @@
             _capabilities = new OperatorCapabilitiesDto(false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false);
         }
         _capabilitiesLoaded = true;
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        await base.OnParametersSetAsync();
+        if (!_capabilitiesLoaded)
+            return;
+
+        var key = ConnectionId ?? "";
+        if (key == _dataLoadKey)
+            return;
+
+        _dataLoadKey = key;
+        _connection = null;
+        _editing = false;
+        _error = null;
 
         if (_capabilities?.CanViewConnections == true)
             await LoadAsync();
@@ -252,8 +280,15 @@
         finally
         {
             _loading = false;
+            PublishShellTitle();
         }
     }
+
+    private void PublishShellTitle() =>
+        ShellOrientation.PublishForCurrentUri(
+            Nav,
+            EntityShellTitles.Detail(_connection?.Name, "Connection"),
+            ConnectionHeaderSubtitle);
 
     private async Task StartEditAsync()
     {

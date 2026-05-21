@@ -9,12 +9,14 @@
 @inject IManagementClient Client
 @inject IOperatorCapabilitiesService Capabilities
 @inject NavigationManager Nav
+@inject ShellOrientationService ShellOrientation
 @inject IJSRuntime JSRuntime
 @inject IToastService Toasts
 
 <div class="p-4 ui-page-stack">
-    <PageHeader Eyebrow="Integrations"
-                Title="@(_integration?.DisplayName ?? IntegrationId)"
+    <PageHeader @key="@IntegrationId"
+                Eyebrow="Integrations"
+                Title="@EntityShellTitles.Detail(_integration?.DisplayName, "Integration")"
                 Subtitle="@SummarySubtitle">
         <Toolbar>
             <a href="/integrations" class="ui-toolbar-btn">Back to list</a>
@@ -702,7 +704,7 @@
 
     private string SummarySubtitle =>
         _integration is null
-            ? IntegrationId
+            ? "Integration detail"
             : $"{_integration.ModuleId} · {_integration.State}";
 
     private int EnabledScheduleCount =>
@@ -716,6 +718,8 @@
             "low" or "info" => ManagementAttentionSemantic.Info,
             _ => ManagementAttentionSemantic.None
         };
+
+    private string? _dataLoadKey;
 
     protected override async Task OnInitializedAsync()
     {
@@ -743,6 +747,25 @@
         }
         _capabilitiesLoaded = true;
         RecomputeWizardStates();
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        await base.OnParametersSetAsync();
+        if (!_capabilitiesLoaded)
+            return;
+
+        var key = IntegrationId ?? "";
+        if (key == _dataLoadKey)
+            return;
+
+        _dataLoadKey = key;
+        _integration = null;
+        _bindings = null;
+        _schedules = null;
+        _readiness = null;
+        _error = null;
+        _loading = true;
 
         if (_capabilities?.CanViewIntegrations == true)
             await LoadAsync();
@@ -851,8 +874,15 @@
         {
             _loading = false;
             RecomputeWizardStates();
+            PublishShellTitle();
         }
     }
+
+    private void PublishShellTitle() =>
+        ShellOrientation.PublishForCurrentUri(
+            Nav,
+            EntityShellTitles.Detail(_integration?.DisplayName, "Integration"),
+            SummarySubtitle);
 
     private async Task LoadRecentActivityAsync(string moduleId)
     {
