@@ -27,11 +27,13 @@ The Control Panel UI provides the navigation shell for the Apperture Management 
 - **Config** (bottom gear owner)
 
 `Config` is the primary home for module lifecycle management (`/modules`), while `Integrations` and `Connections` remain operational domains.
-The `Automation` domain contains run history (`/runs`) surfaced in the menu as **History** (label rename deferred).
+The `Automation` domain contains **Runs** (`/runs`) and **Schedules** (`/schedules`) — run history and schedule definitions (Epic 100).
 
-**Operations menu (Epic 99):** Control Center, Blocked Work, Audit Timeline, **Execute** (`/execute`), Operational teams, Attention routing defaults. Legacy start routes (`/operations/start`, `/workflows/start`) and demo/broken entries are not in the menu but remain routable where pages exist.
+**Operations menu (Epic 99–100):** Control Center, Blocked Work, **Execute**, **Audit**, **Attention** (Operational teams, Routing defaults). Legacy start routes and demo/broken entries are not in the menu but remain routable where pages exist.
 
-**Config menu (Epic 99):** Config home, Authentication, **Managed contacts**, Modules, Governance, Notifications (with children). Create/detail routes stay off-menu; list pages expose create CTAs.
+**Config menu (Epic 99–100):** **Overview** (`/config`), Authentication, Governance, Notifications (with children), **Managed contacts**, **Modules**. Create/detail routes stay off-menu; list pages expose create CTAs.
+
+**Orientation (Epic 100):** **Dashboard** is the high-level summary home; **Control Center** is the live operational console. Hub pages include short cross-references; no route moves.
 
 ## State Flow
 

@@ -95,7 +95,7 @@ No markup changes — create CTAs already present with correct permissions.
 
 ## Deferred work
 
-- Full shell / domain navigation restructure (Epic 98 §10)
+- Full shell / domain navigation restructure — **label/orientation pass done in [Epic 100](Epic100-Management-Shell-Domain-Navigation-Restructure.md)**; route moves still deferred
 - Rename Automation “History” → Runs
 - Breadcrumb / parent context component
 - Domain landing pages (Operations vs Dashboard)

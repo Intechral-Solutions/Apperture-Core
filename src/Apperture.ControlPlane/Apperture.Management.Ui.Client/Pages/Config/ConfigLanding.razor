@@ -4,7 +4,7 @@
 <div class="p-4 ui-page-stack">
     <PageHeader Title="Configuration"
                 Eyebrow="Config"
-                Subtitle="Select a configuration area. Each card links to a focused admin surface." />
+                Subtitle="Platform administration: authentication, governance, notifications, contacts, and installed modules." />
 
     <ManagementSection Title="Configuration areas" Layer="@ManagementSection.UiLayer.Summary">
         <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -20,6 +20,9 @@
             <ManagementSummaryCard Title="Notifications"
                                    Description="Definitions, instances, delivery health, and cutover diagnostics (Epic 77)."
                                    Href="/config/notifications" />
+            <ManagementSummaryCard Title="Modules"
+                                   Description="Installed module lifecycle, validation, and links to runs and audit."
+                                   Href="/modules" />
         </div>
     </ManagementSection>
 </div>

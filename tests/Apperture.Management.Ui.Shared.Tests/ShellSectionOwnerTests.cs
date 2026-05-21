@@ -83,7 +83,7 @@ public sealed class ShellSectionOwnerTests
         menus.Should().ContainKey(SectionOwnerConstants.Config);
         var config = menus[SectionOwnerConstants.Config];
         config.Items.Should().Contain(i => i.Text == "Governance");
-        config.Items.Should().Contain(i => i.Href == "/config");
+        config.Items.Should().Contain(i => i.Href == "/config" && i.Text == "Overview");
     }
 
     [Fact]

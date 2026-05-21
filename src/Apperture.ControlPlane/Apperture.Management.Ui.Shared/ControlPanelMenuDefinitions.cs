@@ -33,10 +33,19 @@ public static class ControlPanelMenuDefinitions
                 {
                     new DomainMenuItem { Text = "Control Center", Href = "/control/center" },
                     new DomainMenuItem { Text = "Blocked Work", Href = "/control/blocked-work" },
-                    new DomainMenuItem { Text = "Audit Timeline", Href = "/control/audit" },
                     new DomainMenuItem { Text = "Execute", Href = "/execute" },
-                    new DomainMenuItem { Text = "Operational teams", Href = "/attention/operational-teams" },
-                    new DomainMenuItem { Text = "Attention routing defaults", Href = "/attention/routing-defaults" }
+                    new DomainMenuItem { Text = "Audit", Href = "/control/audit" },
+                    new DomainMenuItem
+                    {
+                        Id = "operations-attention",
+                        Text = "Attention",
+                        Href = "/attention/operational-teams",
+                        Children = new List<DomainMenuItem>
+                        {
+                            new DomainMenuItem { Text = "Operational teams", Href = "/attention/operational-teams" },
+                            new DomainMenuItem { Text = "Routing defaults", Href = "/attention/routing-defaults" }
+                        }
+                    }
                 }
             },
             ["Automation"] = new DomainMenu
@@ -44,8 +53,8 @@ public static class ControlPanelMenuDefinitions
                 Title = null,
                 Items =
                 {
-                    new DomainMenuItem { Text = "History", Href = "/runs" },
-                    new DomainMenuItem { Text = "Scheduling", Href = "/schedules" }
+                    new DomainMenuItem { Text = "Runs", Href = "/runs" },
+                    new DomainMenuItem { Text = "Schedules", Href = "/schedules" }
                 }
             },
             ["Integrations"] = new DomainMenu
@@ -69,26 +78,24 @@ public static class ControlPanelMenuDefinitions
                 Title = null,
                 Items =
                 {
-                    new DomainMenuItem { Text = "Config", Href = ShellSectionRoutes.ConfigHome },
+                    new DomainMenuItem { Text = "Overview", Href = ShellSectionRoutes.ConfigHome },
                     new DomainMenuItem
                     {
                         Text = "Authentication",
                         Href = "/config/auth",
                         Children = new List<DomainMenuItem>
                         {
-                            new DomainMenuItem { Text = "Sign-in chooser", Href = "/config/auth/sign-in" },
-                            new DomainMenuItem { Text = "Entra registrations", Href = "/config/auth/tenants" }
+                            new DomainMenuItem { Text = "Sign-in experience", Href = "/config/auth/sign-in" },
+                            new DomainMenuItem { Text = "Entra tenants", Href = "/config/auth/tenants" }
                         }
                     },
-                    new DomainMenuItem { Text = "Managed contacts", Href = "/config/contacts" },
-                    new DomainMenuItem { Text = "Modules", Href = "/modules" },
                     new DomainMenuItem
                     {
                         Text = "Governance",
                         Href = "/config/governance",
                         Children = new List<DomainMenuItem>
                         {
-                            new DomainMenuItem { Text = "Permission Catalog", Href = "/config/governance/catalog" },
+                            new DomainMenuItem { Text = "Permission catalog", Href = "/config/governance/catalog" },
                             new DomainMenuItem { Text = "Roles", Href = "/config/governance/roles" },
                             new DomainMenuItem { Text = "Users", Href = "/config/governance/users" }
                         }
@@ -104,7 +111,9 @@ public static class ControlPanelMenuDefinitions
                             new DomainMenuItem { Text = "Delivery", Href = "/config/notifications/delivery" },
                             new DomainMenuItem { Text = "Diagnostics", Href = "/config/notifications/diagnostics" }
                         }
-                    }
+                    },
+                    new DomainMenuItem { Text = "Managed contacts", Href = "/config/contacts" },
+                    new DomainMenuItem { Text = "Modules", Href = "/modules" }
                 }
             }
         };
