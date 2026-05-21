@@ -35,42 +35,6 @@ public static class ControlPanelMenuDefinitions
                     new DomainMenuItem { Text = "Blocked Work", Href = "/control/blocked-work" },
                     new DomainMenuItem { Text = "Audit Timeline", Href = "/control/audit" },
                     new DomainMenuItem { Text = "Execute", Href = "/execute" },
-                    new DomainMenuItem { Text = "Start Operation (Legacy)", Href = "/operations/start" },
-                    new DomainMenuItem { Text = "Start Workflow (Legacy)", Href = "/workflows/start" },
-                    new DomainMenuItem { Text = "API Explorer", Href = "/tools/explorer" },
-                    new DomainMenuItem
-                    {
-                        Id = "tools-nested-nav-demo",
-                        Text = "Nested nav demo",
-                        Href = "/demo/nested-nav",
-                        Children = new List<DomainMenuItem>
-                        {
-                            new DomainMenuItem
-                            {
-                                Id = "tools-nested-nav-l1",
-                                Text = "Level 1",
-                                Href = "/demo/nested-nav/level-1",
-                                Children = new List<DomainMenuItem>
-                                {
-                                    new DomainMenuItem
-                                    {
-                                        Id = "tools-nested-nav-l2",
-                                        Text = "Level 2",
-                                        Href = "/demo/nested-nav/level-1/level-2",
-                                        Children = new List<DomainMenuItem>
-                                        {
-                                            new DomainMenuItem
-                                            {
-                                                Id = "tools-nested-nav-l3",
-                                                Text = "Level 3",
-                                                Href = "/demo/nested-nav/level-1/level-2/level-3"
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    },
                     new DomainMenuItem { Text = "Operational teams", Href = "/attention/operational-teams" },
                     new DomainMenuItem { Text = "Attention routing defaults", Href = "/attention/routing-defaults" }
                 }
@@ -116,15 +80,8 @@ public static class ControlPanelMenuDefinitions
                             new DomainMenuItem { Text = "Entra registrations", Href = "/config/auth/tenants" }
                         }
                     },
-                    new DomainMenuItem
-                    {
-                        Text = "Modules",
-                        Href = "/modules",
-                        Children = new List<DomainMenuItem>
-                        {
-                            new DomainMenuItem { Text = "Installed Modules", Href = "/modules" }
-                        }
-                    },
+                    new DomainMenuItem { Text = "Managed contacts", Href = "/config/contacts" },
+                    new DomainMenuItem { Text = "Modules", Href = "/modules" },
                     new DomainMenuItem
                     {
                         Text = "Governance",

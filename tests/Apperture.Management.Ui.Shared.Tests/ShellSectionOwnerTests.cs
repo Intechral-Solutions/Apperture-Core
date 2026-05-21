@@ -187,12 +187,12 @@ public sealed class ShellSectionOwnerTests
     }
 
     [Fact]
-    public void RouteResolver_ToolsNestedDemo_RootAndDeepPaths_ReturnOperations()
+    public void RouteResolver_DemoNestedNav_NotInMenu_ReturnsEmpty()
     {
         var menus = ControlPanelMenuDefinitions.GetDefaultMenus();
+        menus["Operations"].Items.Should().NotContain(i =>
+            string.Equals(i.Href, "/demo/nested-nav", StringComparison.OrdinalIgnoreCase));
         RouteToSectionResolver.Resolve("/demo/nested-nav", menus.GetValueOrDefault, menus.Keys)
-            .Should().Be("Operations");
-        RouteToSectionResolver.Resolve("/demo/nested-nav/level-1/level-2/level-3", menus.GetValueOrDefault, menus.Keys)
-            .Should().Be("Operations");
+            .Should().Be(string.Empty);
     }
 }

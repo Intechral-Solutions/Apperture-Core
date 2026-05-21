@@ -43,3 +43,4 @@ Architecture decision records (ADRs) live in [docs/02-decisions/](../../docs/02-
 | [Epic 97](../../docs/02-decisions/Epic97-Management-UI-Visual-Density-and-Polish-Pass.md) | Visual density and polish pass (shared CSS; pilot surfaces) |
 | [Epic 97 corrective](../../docs/02-decisions/Epic97-Toolbar-Affordance-Corrective-Patch.md) | Toolbar button affordance + click fix after Epic 97 QA |
 | [Epic 98](../../docs/02-decisions/Epic98-Management-UI-Navigation-and-Information-Flow-Audit.md) | Navigation and information-flow audit (routes, menu gaps, future nav model) |
+| [Epic 99](../../docs/02-decisions/Epic99-Route-Menu-Truth-Cleanup.md) | Route/menu truth cleanup (remove broken/demo menu entries; Config contacts) |

@@ -407,7 +407,7 @@ Not required today; `PageHeader` eyebrow + `DrillInLink` + summary cards cover m
 
 | Priority | Epic (proposed) | Scope |
 |----------|-----------------|-------|
-| 1 | **Route / menu truth cleanup** | Remove or implement `/tools/explorer`; remove demo from menu; add Config → Contacts; dedupe Modules child; add list CTAs for create routes; legacy start menu reduction |
+| 1 | **Route / menu truth cleanup** | **Done — [Epic 99](Epic99-Route-Menu-Truth-Cleanup.md)** |
 | 2 | **Shell / domain navigation restructure** | Rename Automation “History”; optional Attention/Runtime grouping; align menu labels with hubs |
 | 3 | **Operations & Automation landing improvements** | Control Center as Operations home cross-links; optional `/automation` hub card page |
 | 4 | **Breadcrumb / parent context component** | Reusable “Back to {parent}” without full shell rewrite |
