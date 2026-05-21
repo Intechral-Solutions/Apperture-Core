@@ -1,0 +1,31 @@
+@using Apperture.Management.Ui.Shared.Models
+
+@if (Items.Count > 0)
+{
+    <nav class="ui-breadcrumbs min-w-0" aria-label="Breadcrumb">
+        <ol class="ui-breadcrumbs__list m-0 flex min-w-0 list-none flex-wrap items-center gap-0 p-0">
+            @for (var i = 0; i < Items.Count; i++)
+            {
+                var item = Items[i];
+                <li class="ui-breadcrumbs__item flex min-w-0 max-w-full items-center">
+                    @if (!item.IsCurrent && !string.IsNullOrWhiteSpace(item.Href))
+                    {
+                        <a class="ui-breadcrumbs__link truncate" href="@item.Href">@item.Label</a>
+                    }
+                    else
+                    {
+                        <span class="ui-breadcrumbs__current truncate" aria-current="page">@item.Label</span>
+                    }
+                    @if (i < Items.Count - 1)
+                    {
+                        <span class="ui-breadcrumbs__sep shrink-0" aria-hidden="true">/</span>
+                    }
+                </li>
+            }
+        </ol>
+    </nav>
+}
+
+@code {
+    [Parameter] public IReadOnlyList<BreadcrumbItem> Items { get; set; } = [];
+}

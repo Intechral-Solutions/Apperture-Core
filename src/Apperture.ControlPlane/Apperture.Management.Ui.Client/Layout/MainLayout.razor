@@ -23,8 +23,6 @@
         }
         <TopBar IsControlPanelOpen="@isControlPanelOpen"
                 IsControlPanelLocked="@isControlPanelLocked"
-                CurrentSectionName="@currentDomainName"
-                CurrentPath="@(new Uri(NavManager.Uri).AbsolutePath)"
                 OnHamburgerClick="HandleHamburgerClick" />
         <ToastHost />
         <div id="content-wrapper" class="flex-1 overflow-y-auto">

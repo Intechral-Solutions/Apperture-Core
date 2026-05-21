@@ -12,6 +12,8 @@ The Control Panel UI provides the navigation shell for the Apperture Management 
 
 - **Content area** — Shifts horizontally based on panel state: `ml-17` when closed, `ml-70` when open.
 
+- **Top bar** — Hamburger, **breadcrumb trail** (center, `md+`), theme and account menus (right). Breadcrumbs show domain/parent context and stable parent links; they complement the rail and page titles ([Epic 101](../02-decisions/Epic101-Top-Bar-Breadcrumbs-and-Parent-Context-Links.md)).
+
 ## Terminology
 
 - **Domain** — A grouping of related menu items (e.g. Operations, Automation, Integrations). Replaces "Module" from IntegrationCenter.
@@ -61,6 +63,8 @@ The `Automation` domain contains **Runs** (`/runs`) and **Schedules** (`/schedul
 
 Page archetypes, summary/detail/advanced layering, drill-in rules, and pilot recommendations are documented in [Epic 78 — Management UI modernization groundwork](../02-decisions/Epic78-Management-UI-Modernization-Groundwork.md). Reusable primitives and visual conventions are in [Management UI design system](management-ui-design-system.md) (Epic 79). This file remains the shell and navigation contract.
 
-**Navigation audit (Epic 98):** Full route/menu inventory, information-flow journeys, hub/detail model, and recommended future domain structure — [Epic 98 — Navigation and information-flow audit](../02-decisions/Epic98-Management-UI-Navigation-and-Information-Flow-Audit.md). Implementation of shell changes is deferred to follow-up epics.
+**Navigation audit (Epic 98):** Full route/menu inventory, information-flow journeys, hub/detail model, and recommended future domain structure — [Epic 98 — Navigation and information-flow audit](../02-decisions/Epic98-Management-UI-Navigation-and-Information-Flow-Audit.md).
+
+**Top-bar breadcrumbs (Epic 101):** Route-aware parent context in the shell top bar — [Epic 101](../02-decisions/Epic101-Top-Bar-Breadcrumbs-and-Parent-Context-Links.md).
 
 **Stylesheets:** The dev host shell (`Apperture.Management.Ui.Server/Pages/_Layout.cshtml`) must load `css/management-ui-primitives.css` after `css/app.css` (same as WASM `index.html`). See Epic 97 toolbar corrective ADR.

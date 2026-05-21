@@ -479,3 +479,40 @@ a.ui-toolbar-btn--danger:hover {
 .ui-state-panel {
   padding: 0.875rem 1rem;
 }
+
+/* --- Top-bar breadcrumbs (Epic 101) --- */
+
+.ui-breadcrumbs {
+  font-size: 0.75rem;
+  line-height: 1.25rem;
+  color: var(--color-text-muted);
+}
+
+.ui-breadcrumbs__list {
+  row-gap: 0.125rem;
+}
+
+.ui-breadcrumbs__item {
+  max-width: 100%;
+}
+
+.ui-breadcrumbs__link {
+  color: var(--color-text-muted);
+  text-decoration: none;
+}
+
+.ui-breadcrumbs__link:hover {
+  color: var(--color-text);
+  text-decoration: underline;
+}
+
+.ui-breadcrumbs__current {
+  font-weight: 500;
+  color: var(--color-text-heading, var(--color-text));
+}
+
+.ui-breadcrumbs__sep {
+  margin: 0 0.35rem;
+  color: var(--color-text-subtle, var(--color-text-muted));
+  user-select: none;
+}
