@@ -143,20 +143,23 @@ public sealed class ModuleTestHarness
 
 ---
 
-### Signals-03 — `ModuleTestHarness` v1
+### Signals-03 — `ModuleTestHarness` v1 (Epic 103C — **shipped**)
 
-**Scope:** `Apperture.ModuleSdk.Testing` + unit tests.
+**Scope:** `Apperture.ModuleSdk.Testing` + `ModuleTestHarnessTests`.
 
-| Task | Detail |
-|------|--------|
-| `FakePlatformEventStore` / `InMemoryOperationalLogSink` / `RecordingModuleTelemetry` | In-memory collectors |
-| `ExecuteStepAsync` | Resolve handler from `IModuleStepHandlerRegistrar` or test registry |
-| Assertions helpers | Fluent or xUnit-friendly extensions |
-| Manifest validation | Call `ModuleSignalManifestValidator` on harness build |
+| Component | Detail |
+|-----------|--------|
+| `ModuleTestHarness.ForModule(...).With*().Build()` | Fluent builder |
+| `HarnessStepExecutionContext` | `Signals`, `PlatformEvents` alias, slot resolver |
+| `RecordingModulePlatformEventEmitter` | Manifest validation, `EmittedEvents`, `ShouldContain` / `GetEvent` |
+| `InMemoryOperationalLogSink` | Correlation fields + `OperationalLogs` |
+| `RecordingModuleTelemetry` | Counters + durations |
+| `ExecuteStepAsync` / `CreateStepContext` | Handler invocation without SQL |
+| `PlatformEventCatalog.ValidateEmitRequest` | Public validation API |
 
-**Exit criteria:** HelloWorld `demo.completed` test passes without SQL.
+**Exit criteria:** HelloWorld `demo.completed` harness test passes; undeclared/disabled/required-property tests pass.
 
-**Depends on:** Signals-02 (realistic context shape).
+**Depends on:** Signals-02 (shipped).
 
 ---
 

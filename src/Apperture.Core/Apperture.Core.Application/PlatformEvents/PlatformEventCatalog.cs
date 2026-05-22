@@ -48,6 +48,10 @@ public sealed class PlatformEventCatalog : IPlatformEventCatalog
 
     public IReadOnlyList<PlatformEventTypeDescriptor> GetAll() => Descriptors;
 
+    /// <summary>Validates an emit request against a type descriptor (module harness and emitters).</summary>
+    public static void ValidateEmitRequest(PlatformEventEmitRequest request, PlatformEventTypeDescriptor descriptor) =>
+        ValidateRequest(request, descriptor);
+
     internal static void ValidateRequest(PlatformEventEmitRequest request, PlatformEventTypeDescriptor descriptor)
     {
         if (string.IsNullOrWhiteSpace(request.Type))
