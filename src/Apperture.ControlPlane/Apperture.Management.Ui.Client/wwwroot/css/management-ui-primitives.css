@@ -47,8 +47,6 @@
   align-items: center;
   gap: 0.5rem;
   flex-shrink: 0;
-  position: relative;
-  z-index: 1;
 }
 
 /* --- Section panels (summary / detail / help) --- */
@@ -484,10 +482,29 @@ a.ui-toolbar-btn--danger:hover {
 
 .ui-topbar {
   flex-shrink: 0;
+  overflow: visible;
+  position: sticky;
+  top: 0;
+  /* Above scrollable page content and page-header toolbars (Tailwind z-30 is not in app.css). */
+  z-index: 60;
 }
 
 .ui-topbar__inner {
   box-sizing: border-box;
+}
+
+.ui-topbar__utilities {
+  overflow: visible;
+}
+
+/* Epic 102 — personal notification menu (anchored to bell, opens leftward). */
+.ui-personal-notification-menu__panel {
+  position: absolute;
+  top: calc(100% + 0.25rem);
+  right: 0;
+  z-index: 1;
+  width: 20rem;
+  max-width: calc(100vw - 2rem);
 }
 
 .ui-topbar__menu {

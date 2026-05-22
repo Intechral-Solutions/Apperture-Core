@@ -26,6 +26,29 @@ public sealed class Epic102PersonalNotificationUiTests
         content.Should().Contain("ThemeMenu");
         content.Should().Contain("PersonalNotificationMenu");
         content.Should().Contain("UserAccountMenu");
+
+        var menuPath = Path.Combine(
+            FindRepoRoot(),
+            "src",
+            "Apperture.ControlPlane",
+            "Apperture.Management.Ui.Client",
+            "Organisms",
+            "PersonalNotificationMenu.razor");
+        var menuContent = File.ReadAllText(menuPath);
+        menuContent.Should().Contain("ui-personal-notification-menu__panel");
+
+        var cssPath = Path.Combine(
+            FindRepoRoot(),
+            "src",
+            "Apperture.ControlPlane",
+            "Apperture.Management.Ui.Client",
+            "wwwroot",
+            "css",
+            "management-ui-primitives.css");
+        var cssContent = File.ReadAllText(cssPath);
+        cssContent.Should().Contain(".ui-topbar");
+        cssContent.Should().Contain("z-index: 60");
+        cssContent.Should().Contain(".ui-personal-notification-menu__panel");
         var themeIdx = content.IndexOf("ThemeMenu", StringComparison.Ordinal);
         var notifIdx = content.IndexOf("PersonalNotificationMenu", StringComparison.Ordinal);
         var userIdx = content.IndexOf("UserAccountMenu", StringComparison.Ordinal);
