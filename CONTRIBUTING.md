@@ -18,10 +18,10 @@ Or use `dotnet build Apperture.slnx` and `dotnet test Apperture.slnx`. Use `.\sc
 
 ## Local dev with SQL Server
 
-See [deploy/README.md](deploy/README.md). Quick setup:
+See [deploy/README.md](deploy/README.md) and [management platform configuration](docs/03-operations/management-platform-configuration.md). Quick setup:
 
 1. `dotnet user-secrets set "SqlServer:Password" "<password>" --project src/Apperture.ControlPlane/Apperture.Management.Host`
-2. Copy `appsettings.Development.example.json` to `appsettings.Development.json` in the Host folder.
+2. Copy `deploy/config/examples/appsettings.docker-dev.json.example` to `src/Apperture.ControlPlane/Apperture.Management.Host/appsettings.Development.json`
 3. `.\scripts\Start-Dev.ps1`
 
 ## Architecture and decisions

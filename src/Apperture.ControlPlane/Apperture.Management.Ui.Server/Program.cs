@@ -13,7 +13,11 @@ builder.Services.Configure<ControlPanelMenuOptions>(
 builder.Services.Configure<ShellUiOptions>(
     builder.Configuration.GetSection(ShellUiOptions.SectionName));
 
-var apiBaseUrl = builder.Configuration["ApiBaseUrl"] ?? "http://localhost:9000/api";
+var uiBaseAddress = builder.Configuration["ASPNETCORE_URLS"]?.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).FirstOrDefault()
+    ?? "http://localhost:9001";
+var apiBaseUrl = ManagementUiDevApiRouting.ResolveApiBaseUrl(
+    builder.Configuration["ApiBaseUrl"],
+    uiBaseAddress);
 if (!apiBaseUrl.EndsWith("/", StringComparison.Ordinal))
     apiBaseUrl += "/";
 var apiUri = new Uri(apiBaseUrl);

@@ -1,12 +1,15 @@
 # Deploy
 
-Deployment configuration. Planned structure:
+Deployment configuration.
 
 | Folder | Purpose |
 |--------|---------|
+| [config/](config/) | Canonical `appsettings` templates (docker-dev, Windows, Azure) and shared UI config — see [config/README.md](config/README.md) |
 | docker/ | docker-compose.dev.yml, env files, SQL init/migrations |
 | k8s/ | Kubernetes manifests (future) |
 | azure/ | Azure deployment config (future) |
+
+Management platform configuration reference: [docs/03-operations/management-platform-configuration.md](../docs/03-operations/management-platform-configuration.md).
 
 ## Root Docker Compose shim
 
@@ -40,10 +43,10 @@ This syncs User Secrets to `.env`, starts SQL Server (Docker), and launches the 
    dotnet user-secrets set "SqlServer:Password" "YourStrong!Passw0rd" --project src/Apperture.ControlPlane/Apperture.Management.Host
    ```
 
-2. **Copy appsettings.Development.example.json** (one-time) for Server, Database, User (password comes from User Secrets):
+2. **Copy the docker-dev appsettings template** (one-time) for Server, Database, User (password comes from User Secrets):
 
    ```powershell
-   copy src\Apperture.ControlPlane\Apperture.Management.Host\appsettings.Development.example.json src\Apperture.ControlPlane\Apperture.Management.Host\appsettings.Development.json
+   copy deploy\config\examples\appsettings.docker-dev.json.example src\Apperture.ControlPlane\Apperture.Management.Host\appsettings.Development.json
    ```
 
 3. Run `.\scripts\Start-Dev.ps1`

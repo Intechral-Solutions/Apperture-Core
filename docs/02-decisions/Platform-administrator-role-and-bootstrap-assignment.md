@@ -35,7 +35,7 @@ builder.Services.Configure<BootstrapPlatformAdminOptions>(
     builder.Configuration.GetSection(BootstrapPlatformAdminOptions.SectionName));
 ```
 
-`appsettings.Development.example.json` includes a sample `BootstrapPlatformAdmin` block (and `DevTestUser` for local **`tenny`**). **`appsettings.Development.json` is gitignored** — copy from the example; see `Apperture.Management.Host/README-Development.md`.
+`deploy/config/examples/appsettings.docker-dev.json.example` includes a sample `BootstrapPlatformAdmin` block (and `DevTestUser` for local **`tenny`**). **`appsettings.Development.json` is gitignored** — copy from that template; see [management-platform-configuration.md](../03-operations/management-platform-configuration.md) and `Apperture.Management.Host/README-Development.md`.
 
 ## Related
 

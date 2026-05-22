@@ -10,7 +10,7 @@ From repo root:
 .\scripts\Start-Dev.ps1
 ```
 
-First time: set the SQL password with `dotnet user-secrets set "SqlServer:Password" "<password>" --project src/Apperture.ControlPlane/Apperture.Management.Host` and copy `appsettings.Development.example.json` to `appsettings.Development.json` in the Host folder. See [deploy/README.md](../deploy/README.md).
+First time: set the SQL password with `dotnet user-secrets set "SqlServer:Password" "<password>" --project src/Apperture.ControlPlane/Apperture.Management.Host` and copy `deploy/config/examples/appsettings.docker-dev.json.example` to `appsettings.Development.json` in the Host folder. See [deploy/README.md](../deploy/README.md) and [management-platform-configuration.md](../docs/03-operations/management-platform-configuration.md).
 
 This starts **SQL Server** (Docker), the **Management API** (port 9000), and the **Management UI** (port 9001). Stop with `.\scripts\dev\down.ps1`; run `docker compose down` to stop SQL Server.
 

@@ -1,8 +1,10 @@
 # Local development — Management host
 
+Configuration inventory and file locations: [management-platform-configuration.md](../../../docs/03-operations/management-platform-configuration.md).
+
 ## `tenny` and Platform Administrator
 
-The committed **`appsettings.Development.example.json`** already wires the **`tenny`** local user for admin:
+The committed **`deploy/config/examples/appsettings.docker-dev.json.example`** template wires the **`tenny`** local user for admin:
 
 1. **`DevTestUser`** — In **Development** only, creates/updates the dev user and ensures **`role-platform-administrator`** is assigned (plus local password if configured).
 2. **`BootstrapPlatformAdmin`** — On every host start (any environment if enabled), ensures listed principals have Platform Administrator; for Local auth, **`ExternalId`** is **trim + lowercase** (same as login).
@@ -14,7 +16,7 @@ Because **`appsettings.Development.json` is gitignored**, you must have your own
 From this directory:
 
 ```powershell
-Copy-Item appsettings.Development.example.json appsettings.Development.json
+Copy-Item ..\..\..\..\deploy\config\examples\appsettings.docker-dev.json.example appsettings.Development.json
 ```
 
 Then edit `appsettings.Development.json` if needed (SQL password, etc.) and **restart the Management host** so hosted bootstrap services run.

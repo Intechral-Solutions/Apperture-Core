@@ -49,3 +49,4 @@ Architecture decision records (ADRs) live in [docs/02-decisions/](../../docs/02-
 | [Epic 99](../../docs/02-decisions/Epic99-Route-Menu-Truth-Cleanup.md) | Route/menu truth cleanup (remove broken/demo menu entries; Config contacts) |
 | [Epic 100](../../docs/02-decisions/Epic100-Management-Shell-Domain-Navigation-Restructure.md) | Shell domain labels, menu grouping, hub orientation copy |
 | [Epic 101](../../docs/02-decisions/Epic101-Top-Bar-Breadcrumbs-and-Parent-Context-Links.md) | Top-bar breadcrumbs and parent-context links (route resolver, no entity API) |
+| [Management platform configuration](../../docs/03-operations/management-platform-configuration.md) | Canonical appsettings inventory, dev/deploy setup, topology examples (`deploy/config/`) |
