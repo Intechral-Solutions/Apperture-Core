@@ -2,6 +2,7 @@ using System.Data;
 using Apperture.Connectors.CampusNexus;
 using Apperture.Connectors.CampusNexus.Models;
 using Apperture.Core.Application.Execution;
+using Apperture.ModuleSdk.Abstractions.Signals;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Proof.CampusNexus.StudentReview.Persistence;
@@ -191,6 +192,19 @@ public sealed class SyncRecentStudentsStepHandler : IStepHandler
             runEntity.MaxLastModifiedDateTimeSeen = maxMod;
             runEntity.Status = "succeeded";
             await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+
+            context.Signals.Logs.LogOperational(
+                OperationalLogLevel.Information,
+                "proof.studentReview.sync.completed",
+                "Student review sync completed.",
+                new Dictionary<string, object?>
+                {
+                    ["integrationId"] = integrationId,
+                    ["entitySet"] = entitySet,
+                    ["retrieved"] = rows.Count,
+                    ["inserted"] = inserted,
+                    ["updated"] = updated
+                });
 
             return OperatorExecutionResult.SuccessInline(new
             {

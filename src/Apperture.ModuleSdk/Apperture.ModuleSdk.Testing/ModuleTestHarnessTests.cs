@@ -32,7 +32,7 @@ public sealed class ModuleTestHarnessTests
         new(moduleId, "Test", "1.0", "Harness tests") { Signals = signals };
 
     [Fact]
-    public async Task HelloWorld_Complete_emits_demo_completed_when_flag_set()
+    public async Task HelloWorld_Complete_emits_demo_completed_via_signals_events_when_flag_set()
     {
         var harness = ModuleTestHarness.ForModule(new HelloWorldModule())
             .WithIntegrationId("int-hw")
@@ -41,9 +41,9 @@ public sealed class ModuleTestHarnessTests
                 string.Equals(slot, "Db", StringComparison.Ordinal) ? new HarnessStubDbConnection() : null)
             .Build();
 
-        await harness.ExecuteStepAsync(
-            new HelloWorldCompleteStepHandler(),
-            stepName: "Complete",
+        var context = harness.CreateStepContext("Complete");
+        await new HelloWorldCompleteStepHandler().ExecuteAsync(
+            context,
             new Dictionary<string, object?> { ["emitDemoPlatformEvent"] = true });
 
         harness.PlatformEvents.ShouldContain("demo.completed");
@@ -52,6 +52,11 @@ public sealed class ModuleTestHarnessTests
         ev.RunId.Should().Be("run-hw");
         ev.EventType.Should().Be("apperture.module.sample.helloworld.demo.completed");
         ev.DataJson.Should().Contain("message");
+
+        var logs = ModuleTestHarness.GetOperationalLogs(context);
+        logs.OperationalLogs.Should().Contain(l => l.Code == "helloworld.complete.started");
+        logs.OperationalLogs.Should().Contain(l => l.Code == "helloworld.demo.completed");
+        harness.Telemetry.Counters.Should().ContainSingle(c => c.Name == "helloworld.complete" && c.Value == 1);
     }
 
     [Fact]

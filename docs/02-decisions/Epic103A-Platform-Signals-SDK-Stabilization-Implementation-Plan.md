@@ -181,20 +181,22 @@ public sealed class ModuleTestHarness
 
 ---
 
-### Signals-05 — Sample / proof adoption and handler guidance
+### Signals-05 — Sample / proof adoption and handler guidance (Epic 103E — **shipped**)
 
 **Scope:** Docs + sample modules (minimal code).
 
 | Task | Detail |
 |------|--------|
-| Migrate HelloWorld to `context.Signals` | Events + sample operational log line |
-| Update `execution-contract-handler-patterns.md` | Signals section, anti-patterns |
-| Document handler registration | Prefer DI factory **as future work**; keep `new Handler()` acceptable with context-only signals |
-| Optional Proof module | One operational log in sync step |
+| Migrate HelloWorld to `context.Signals` | **Done** — `Signals.Events`, operational logs, optional `RecordCounter` demo |
+| Update `execution-contract-handler-patterns.md` | **Done** — signals section, examples, anti-patterns |
+| Document handler registration | **Done** — DI factory future work; `new Handler()` + context-only signals |
+| Optional Proof module | **Done** — `proof.studentReview.sync.completed` operational log in `SyncRecentStudentsStepHandler` (no `PlatformEvents` usage existed) |
 
 **Exit criteria:** Sample demonstrates all three surfaces; patterns doc linked from ADR-0038.
 
 **Depends on:** Signals-02, Signals-03.
+
+**Deferred:** Full `module-authoring-guide.md` signals section remains Signals-06 (not updated in 103E).
 
 ---
 
@@ -283,7 +285,7 @@ flowchart LR
 | Signals-02 | Unit tests; worker host smoke with one log line |
 | Signals-03 | Harness tests in CI |
 | Signals-04 | Integration test behind flag |
-| Signals-05 | HelloWorld + patterns doc review |
+| Signals-05 | HelloWorld + patterns doc review (**shipped** Epic 103E) |
 | Signals-06 | Doc review against gates |
 
 ---
