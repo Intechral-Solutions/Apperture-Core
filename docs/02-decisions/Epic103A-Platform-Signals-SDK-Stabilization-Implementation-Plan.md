@@ -24,7 +24,7 @@ Stabilize the **module developer signal SDK** so authoring docs, samples, and te
 - Telemetry aggregate notification rules
 - OpenTelemetry production wiring (Signals-07)
 - Log elevation to platform events (Signals-08) unless product requests
-- `module-authoring-guide.md` rewrite before Signals-06 gates
+- Full `module-authoring-guide.md` rewrite beyond the Platform Signals section (103F)
 - Handler factory / DI registration refactor in code (Signals-05 documents pattern only)
 
 ---
@@ -196,11 +196,9 @@ public sealed class ModuleTestHarness
 
 **Depends on:** Signals-02, Signals-03.
 
-**Deferred:** Full `module-authoring-guide.md` signals section remains Signals-06 (not updated in 103E).
-
 ---
 
-### Signals-06 — Module authoring guide update
+### Signals-06 — Module authoring guide update (Epic 103F — **shipped**)
 
 **Scope:** `docs/05-modules/module-authoring-guide.md`.
 
@@ -213,15 +211,16 @@ public sealed class ModuleTestHarness
 | Lifecycle types shipped or clearly flagged | Signals-04 |
 | Sample uses preferred API | Signals-05 |
 
-**Sections to add:**
+**Sections added (103F):**
 
-- When to emit events vs logs vs telemetry
-- Manifest `Signals` declaration
+- Platform Signals section: `Events`, `Logs`, `Telemetry`, `Correlation`
+- `PlatformEvents` compatibility note
+- Manifest declare-before-emit
+- Operational logs vs notifications; telemetry v1 no-op
 - `ModuleTestHarness` quickstart
-- Notification = events only (v1)
-- Anti-patterns (audit for ops, ILogger.Error for alerting)
+- Anti-patterns; links to ADR-0038 and `execution-contract-handler-patterns.md`
 
-**Exit criteria:** Guide marked production-ready for signals.
+**Exit criteria:** Guide marked production-ready for signals (**met**).
 
 ---
 
@@ -286,7 +285,7 @@ flowchart LR
 | Signals-03 | Harness tests in CI |
 | Signals-04 | Integration test behind flag |
 | Signals-05 | HelloWorld + patterns doc review (**shipped** Epic 103E) |
-| Signals-06 | Doc review against gates |
+| Signals-06 | Doc review against gates (**shipped** Epic 103F) |
 
 ---
 

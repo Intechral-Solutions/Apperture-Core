@@ -66,6 +66,115 @@ throw OperatorExecutionResult.FailInline(
 return OperatorRunOutput.SummaryOnly(new { message = "Compatibility-mode summary." });
 ```
 
+## Platform Signals (Epic 103 — shipped)
+
+Step handlers receive **`IStepExecutionContext`**. Module-authored signals use **`context.Signals`** only — do not resolve `IModulePlatformEventEmitter`, `IModuleOperationalLogger`, or `IModuleTelemetry` from DI inside handlers.
+
+Canonical conventions: [ADR-0038](../02-decisions/ADR-0038-platform-signals-sdk-conventions.md). Copyable handler snippets and anti-patterns: [execution-contract-handler-patterns.md](./execution-contract-handler-patterns.md). Catalog and implementation status: [platform-signal-catalog.md](../01-architecture/platform-signal-catalog.md).
+
+**Sample:** `Sample.HelloWorld` (`HelloWorldCompleteStepHandler`, manifest `Signals`, `ModuleTestHarnessTests`).
+
+### Surfaces on `context.Signals`
+
+| Member | Purpose | v1 behavior |
+|--------|---------|-------------|
+| **`Events`** | Durable facts persisted as platform events | Fail-fast when platform events are enabled and manifest/validation fails |
+| **`Logs`** | Correlated operator diagnostics (progress, counts, context) | Best-effort via structured `ILogger`; **not** notification triggers |
+| **`Telemetry`** | Optional metrics | No-op in default hosts; best-effort when wired (OpenTelemetry adapter is later work) |
+| **`Correlation`** | Emit context (`IntegrationId`, `RunId`, `ProcedureId`, `ScheduleId`, correlation ids) | Same object as the step context; pass to `EmitAsync` |
+
+```csharp
+// Preferred emit (declare signal in manifest first):
+await context.Signals.Events.EmitAsync(
+    context.Signals.Correlation,
+    "demo.completed",
+    new Dictionary<string, object?> { ["message"] = "Done." },
+    cancellationToken: cancellationToken);
+
+context.Signals.Logs.LogOperational(
+    OperationalLogLevel.Information,
+    "myModule.step.completed",
+    "Step finished.",
+    new Dictionary<string, object?> { ["rows"] = count });
+
+// Optional; no-op unless host wires telemetry (Signals-07):
+context.Signals.Telemetry.RecordCounter("myModule.rows", count);
+```
+
+### `context.PlatformEvents` (compatibility only)
+
+`context.PlatformEvents` aliases **`context.Signals.Events`**. Use **`context.Signals.Events`** in new code. Compatibility remains for existing modules and tests; obsolescence/removal is tracked in the Epic 103A plan.
+
+### Manifest: declare before emit
+
+Declare every module signal the handler may emit on **`ModuleManifest.Signals`** (`ModuleSignalDeclaration`: short name, title, description, severity, optional `RequiredDataProperties`). Startup validation builds the module signal registry; **undeclared emits fail** at emit time.
+
+```csharp
+Signals =
+[
+    new ModuleSignalDeclaration(
+        "demo.completed",
+        "Demo completed",
+        "Emitted when the Complete step finishes.",
+        "info",
+        RequiredDataProperties: ["message"])
+],
+```
+
+Emit using the **short name** from the manifest (for example `"demo.completed"`); the platform resolves the full event type (`apperture.module.{moduleId}.{signal}`).
+
+**Platform-owned lifecycle:** Generic run completed/failed (and related execution lifecycle) events are emitted by the platform, not modules. Do not emit `apperture.execution.run.*` (or equivalent) from module handlers.
+
+### When to use which surface
+
+| Need | Use |
+|------|-----|
+| Fact operators or notifications should react to | `Signals.Events` (declared in manifest) |
+| Troubleshooting detail tied to run/integration/step | `Signals.Logs` |
+| Dev-time or optional metrics | `Signals.Telemetry` (optional in v1) |
+
+Operational logs are **correlated diagnostics** (module id, run id, integration, step name in logger scope). They are not durable audit storage and do not trigger notifications in v1.
+
+### Notifications (v1)
+
+**Notification rules evaluate platform events only** in the current release. Emit a declared module event when alerting or workflow-adjacent reactions are required. Do not use `ILogger.LogError` or operational logs as a substitute for notification-worthy facts.
+
+> **Future:** Calendar- or schedule-specific signal documentation and additional notification sources are out of scope for this section; see Epic 103A backlog and [epic77-notification-system-backlog.md](../03-operations/epic77-notification-system-backlog.md).
+
+### Testing with `ModuleTestHarness`
+
+Package: **`Apperture.ModuleSdk.Testing`**. Build a harness from your module, stub slots, then assert recorded events, logs, and telemetry.
+
+```csharp
+var harness = ModuleTestHarness.ForModule(new MyModule())
+    .WithIntegrationId("int-1")
+    .WithRunId("run-1")
+    .WithSlotResolver(slot => /* IDbConnection, API clients, etc. */)
+    .Build();
+
+var context = harness.CreateStepContext("MyStep");
+await new MyStepHandler().ExecuteAsync(context, parameters);
+
+harness.PlatformEvents.ShouldContain("my.signal");
+var logs = ModuleTestHarness.GetOperationalLogs(context);
+logs.OperationalLogs.Should().ContainSingle(l => l.Code == "myModule.step.completed");
+harness.Telemetry.Counters.Should().ContainSingle(c => c.Name == "myModule.rows");
+```
+
+`context.PlatformEvents` on a harness context remains valid for compatibility assertions. See `ModuleTestHarnessTests` and `HelloWorldSignalsAdoptionTests`.
+
+### Handler registration (current)
+
+Handlers may still be registered with **`new MyHandler()`** via `IModuleStepHandlerRegistrar`. A DI-backed handler factory is **future work**; regardless of construction, handlers must use **context-only** signals.
+
+### Anti-patterns
+
+- Resolving signal services from `IServiceProvider` inside a step handler
+- Emitting signal names not declared in `ModuleManifest.Signals`
+- Emitting platform run lifecycle event types from module code
+- Using operational logs or generic `ILogger` severity as notification triggers
+- Treating operational logs as durable audit or compliance records (v1 has no log store)
+
 ## Operations (Execution MVP Contract)
 
 Modules can also expose direct executable operations by implementing `IOperationDefinitionProvider` and returning `OperationDefinition` records.
