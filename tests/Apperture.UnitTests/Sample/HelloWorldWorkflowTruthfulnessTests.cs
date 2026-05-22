@@ -199,13 +199,27 @@ public sealed class HelloWorldWorkflowTruthfulnessTests
         }
     }
 
-    private sealed class StubStepExecutionContext(string moduleId) : IStepExecutionContext
+    private sealed class StubStepExecutionContext : IStepExecutionContext
     {
-        public string ModuleId { get; } = moduleId;
+        private readonly IStepExecutionSignals _signals;
+
+        public StubStepExecutionContext(string moduleId)
+        {
+            ModuleId = moduleId;
+            _signals = new StepExecutionSignals(
+                this,
+                NullModulePlatformEventEmitter.Instance,
+                NullModuleOperationalLogger.Instance,
+                NoOpModuleTelemetry.Instance);
+        }
+
+        public string ModuleId { get; }
 
         public string? IntegrationId => null;
 
-        public IModulePlatformEventEmitter PlatformEvents => NullModulePlatformEventEmitter.Instance;
+        public IStepExecutionSignals Signals => _signals;
+
+        public IModulePlatformEventEmitter PlatformEvents => _signals.Events;
 
         public string? RunId => null;
 

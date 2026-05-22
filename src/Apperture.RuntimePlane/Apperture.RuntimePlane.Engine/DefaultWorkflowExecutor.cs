@@ -3,6 +3,8 @@ using Apperture.Core.Application.Services;
 using Apperture.ModuleSdk.Abstractions.Signals;
 using Apperture.RuntimePlane.Abstractions;
 using Apperture.RuntimePlane.Engine.PlatformEvents;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Apperture.RuntimePlane.Engine;
 
@@ -15,11 +17,20 @@ public sealed class DefaultWorkflowExecutor : IWorkflowExecutor
     private readonly IRuntimeSlotResolver _resolver;
     private readonly IStepHandlerRegistry _registry;
     private readonly IModulePlatformEventEmitter _modulePlatformEvents;
+    private readonly IModuleOperationalLogger _operationalLogger;
+    private readonly IModuleTelemetry _moduleTelemetry;
+    private readonly ILoggerFactory _loggerFactory;
 
     public DefaultWorkflowExecutor(
         IRuntimeSlotResolver resolver,
         IStepHandlerRegistry registry)
-        : this(resolver, registry, NullModulePlatformEventEmitter.Instance)
+        : this(
+            resolver,
+            registry,
+            NullModulePlatformEventEmitter.Instance,
+            NullModuleOperationalLogger.Instance,
+            NoOpModuleTelemetry.Instance,
+            NullLoggerFactory.Instance)
     {
     }
 
@@ -27,10 +38,30 @@ public sealed class DefaultWorkflowExecutor : IWorkflowExecutor
         IRuntimeSlotResolver resolver,
         IStepHandlerRegistry registry,
         IModulePlatformEventEmitter modulePlatformEvents)
+        : this(
+            resolver,
+            registry,
+            modulePlatformEvents,
+            NullModuleOperationalLogger.Instance,
+            NoOpModuleTelemetry.Instance,
+            NullLoggerFactory.Instance)
+    {
+    }
+
+    public DefaultWorkflowExecutor(
+        IRuntimeSlotResolver resolver,
+        IStepHandlerRegistry registry,
+        IModulePlatformEventEmitter modulePlatformEvents,
+        IModuleOperationalLogger operationalLogger,
+        IModuleTelemetry moduleTelemetry,
+        ILoggerFactory loggerFactory)
     {
         _resolver = resolver ?? throw new ArgumentNullException(nameof(resolver));
         _registry = registry ?? throw new ArgumentNullException(nameof(registry));
         _modulePlatformEvents = modulePlatformEvents ?? throw new ArgumentNullException(nameof(modulePlatformEvents));
+        _operationalLogger = operationalLogger ?? throw new ArgumentNullException(nameof(operationalLogger));
+        _moduleTelemetry = moduleTelemetry ?? throw new ArgumentNullException(nameof(moduleTelemetry));
+        _loggerFactory = loggerFactory ?? throw new ArgumentNullException(nameof(loggerFactory));
     }
 
     /// <inheritdoc />
@@ -71,7 +102,11 @@ public sealed class DefaultWorkflowExecutor : IWorkflowExecutor
             definition.ModuleId,
             integrationId,
             executionScope,
-            _modulePlatformEvents);
+            _modulePlatformEvents,
+            _operationalLogger,
+            _moduleTelemetry,
+            _loggerFactory,
+            stepName);
         var parametersDict = parameters ?? new Dictionary<string, object?>();
         return await handler.ExecuteAsync(context, parametersDict, cancellationToken);
     }

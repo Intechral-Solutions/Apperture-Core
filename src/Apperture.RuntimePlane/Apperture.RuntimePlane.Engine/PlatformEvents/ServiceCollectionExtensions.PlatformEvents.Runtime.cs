@@ -35,7 +35,7 @@ public static class PlatformEventsRuntimeServiceCollectionExtensions
         services.AddScoped<IPlatformEventStore, SqlPlatformEventStore>();
         services.AddScoped<IPlatformEventEmitter, PlatformEventEmitter>();
         services.AddScoped<IModulePlatformEventEmitter, ModulePlatformEventEmitter>();
-        services.AddSingleton<IModuleTelemetry, NoOpModuleTelemetry>();
+        services.AddSingleton<IModuleTelemetry>(NoOpModuleTelemetry.Instance);
         services.AddScoped<IModuleOperationalLogger, ModuleOperationalLogger>();
 
         return services;

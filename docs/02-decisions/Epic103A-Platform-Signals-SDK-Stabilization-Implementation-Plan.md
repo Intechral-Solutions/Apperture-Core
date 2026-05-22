@@ -119,7 +119,7 @@ public sealed class ModuleTestHarness
 
 ## Implementation phases
 
-### Signals-02 — Unified signal surface on `IStepExecutionContext`
+### Signals-02 — Unified signal surface on `IStepExecutionContext` (Epic 103B — **shipped**)
 
 **Scope:** Runtime + abstractions only.
 
@@ -127,12 +127,19 @@ public sealed class ModuleTestHarness
 |------|--------|
 | Add `IStepExecutionSignals` + `StepExecutionSignals` | Wire Events, Logs, Telemetry, Correlation |
 | Extend `StepExecutionContext` | Construct signals bag; delegate `PlatformEvents` |
-| Extend `DefaultWorkflowExecutor` | Pass operational logger + telemetry into context |
-| Unit tests | Context exposes all surfaces; log scopes contain run id |
+| Extend `DefaultWorkflowExecutor` | Pass operational logger + telemetry + `ILoggerFactory` into context |
+| `CorrelatedModuleOperationalLogger` | Scope + structured data enrichment; best-effort |
+| Unit tests | `StepExecutionSignalsSurfaceTests` |
 
-**Exit criteria:** Step handler can use `context.Signals.Logs` and `context.Signals.Telemetry` in worker host without DI.
+**Authoring (preferred):** `context.Signals.Events`, `context.Signals.Logs`, `context.Signals.Telemetry`, `context.Signals.Correlation`.
 
-**Suggested prompt:** *Implement ADR-0038 Signals-02: add IStepExecutionSignals to IStepExecutionContext, wire ModuleOperationalLogger and NoOpModuleTelemetry on StepExecutionContext, keep PlatformEvents compatibility. Add unit tests. Do not change HelloWorld yet.*
+**Compatibility:** `context.PlatformEvents` aliases `context.Signals.Events` (not obsolete yet).
+
+**Operational logs:** Diagnostic only; not notification triggers in v1.
+
+**Telemetry:** `NoOpModuleTelemetry` default; best-effort; no SQL table.
+
+**Exit criteria:** Step handler can use `context.Signals.*` in worker host without resolving signal services from DI.
 
 ---
 

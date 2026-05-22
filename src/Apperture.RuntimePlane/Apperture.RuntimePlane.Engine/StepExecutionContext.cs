@@ -3,6 +3,7 @@ using Apperture.Core.Application.Services;
 using Apperture.ModuleSdk.Abstractions.Signals;
 using Apperture.RuntimePlane.Abstractions;
 using Apperture.RuntimePlane.Engine.PlatformEvents;
+using Microsoft.Extensions.Logging;
 
 namespace Apperture.RuntimePlane.Engine;
 
@@ -21,16 +22,47 @@ public sealed class StepExecutionContext : IStepExecutionContext
         string? integrationId = null,
         WorkflowStepExecutionScope? correlation = null,
         IModulePlatformEventEmitter? modulePlatformEventEmitter = null)
+        : this(
+            resolver,
+            moduleId,
+            integrationId,
+            correlation,
+            modulePlatformEventEmitter,
+            operationalLogger: null,
+            telemetry: null,
+            loggerFactory: null,
+            stepName: null)
+    {
+    }
+
+    public StepExecutionContext(
+        IRuntimeSlotResolver resolver,
+        string moduleId,
+        string? integrationId,
+        WorkflowStepExecutionScope? correlation,
+        IModulePlatformEventEmitter? modulePlatformEventEmitter,
+        IModuleOperationalLogger? operationalLogger,
+        IModuleTelemetry? telemetry,
+        ILoggerFactory? loggerFactory,
+        string? stepName)
     {
         _resolver = resolver ?? throw new ArgumentNullException(nameof(resolver));
         _moduleId = moduleId ?? throw new ArgumentNullException(nameof(moduleId));
         _integrationId = integrationId;
-        PlatformEvents = modulePlatformEventEmitter ?? NullModulePlatformEventEmitter.Instance;
         RunId = correlation?.RunId;
         ProcedureId = correlation?.ProcedureId;
         ScheduleId = correlation?.ScheduleId;
         CorrelationId = correlation?.CorrelationId;
         CausationId = correlation?.CausationId;
+
+        var events = modulePlatformEventEmitter ?? NullModulePlatformEventEmitter.Instance;
+        var tel = telemetry ?? NoOpModuleTelemetry.Instance;
+        var innerLogs = operationalLogger ?? NullModuleOperationalLogger.Instance;
+        var logLogger = loggerFactory?.CreateLogger<CorrelatedModuleOperationalLogger>();
+        var logs = new CorrelatedModuleOperationalLogger(innerLogs, this, stepName, logLogger);
+
+        Signals = new StepExecutionSignals(this, events, logs, tel);
+        PlatformEvents = Signals.Events;
     }
 
     /// <inheritdoc />
@@ -53,6 +85,9 @@ public sealed class StepExecutionContext : IStepExecutionContext
 
     /// <inheritdoc />
     public string? CausationId { get; }
+
+    /// <inheritdoc />
+    public IStepExecutionSignals Signals { get; }
 
     /// <inheritdoc />
     public IModulePlatformEventEmitter PlatformEvents { get; }

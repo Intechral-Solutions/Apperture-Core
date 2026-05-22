@@ -2,6 +2,7 @@ using System.Data;
 using Apperture.Connectors.CampusNexus;
 using Apperture.Core.Application.Execution;
 using Apperture.ModuleSdk.Abstractions.Signals;
+using Apperture.RuntimePlane.Engine;
 using Apperture.RuntimePlane.Engine.PlatformEvents;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -37,13 +38,20 @@ public sealed class SyncRecentStudentsStepHandlerTests
         {
             _integrationId = integrationId;
             _cns = cns;
+            Signals = new StepExecutionSignals(
+                this,
+                NullModulePlatformEventEmitter.Instance,
+                NullModuleOperationalLogger.Instance,
+                NoOpModuleTelemetry.Instance);
         }
 
         public string ModuleId => ProofCampusNexusStudentReviewConstants.ModuleId;
 
         public string? IntegrationId => _integrationId;
 
-        public IModulePlatformEventEmitter PlatformEvents => NullModulePlatformEventEmitter.Instance;
+        public IStepExecutionSignals Signals { get; }
+
+        public IModulePlatformEventEmitter PlatformEvents => Signals.Events;
 
         public string? RunId => null;
 

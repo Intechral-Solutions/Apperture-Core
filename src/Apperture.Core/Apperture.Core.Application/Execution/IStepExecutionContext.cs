@@ -9,7 +9,12 @@ namespace Apperture.Core.Application.Execution;
 public interface IStepExecutionContext : IModulePlatformEmitContext
 {
     /// <summary>
-    /// Module-scoped platform signal emitter when the runtime registers one; otherwise returns a no-op instance.
+    /// Preferred module signal surface (events, logs, telemetry, correlation). ADR-0038.
+    /// </summary>
+    IStepExecutionSignals Signals { get; }
+
+    /// <summary>
+    /// Compatibility alias for <see cref="IStepExecutionSignals.Events"/> when the runtime registers an emitter; otherwise no-op.
     /// </summary>
     IModulePlatformEventEmitter PlatformEvents { get; }
 
