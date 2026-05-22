@@ -231,6 +231,10 @@ No requirement for SQL or notification pipeline in harness v1.
 
 - [ADR-0037](./ADR-0037-platform-signals-events-and-notification-system.md) — platform signal and notification platform
 - [ADR-0022](./ADR-0022-declared-execution-result-contracts.md), [ADR-0023](./ADR-0023-execution-contract-author-guidance-and-validation-signals.md) — execution contracts
+- [module-authoring-guide.md](../05-modules/module-authoring-guide.md) — module developer guide (signals, testing, notifications)
+- [module-manifest-spec.md](../05-modules/module-manifest-spec.md) — `ModuleManifest.Signals` and validation
+- [execution-contract-handler-patterns.md](../05-modules/execution-contract-handler-patterns.md) — copyable handler snippets
 - [platform-signal-catalog.md](../01-architecture/platform-signal-catalog.md) — type catalog with implementation status
 - [Epic103A implementation plan](./Epic103A-Platform-Signals-SDK-Stabilization-Implementation-Plan.md)
+- [Epic 104](./Epic104-Module-Authoring-Documentation.md) — authoring guide and doc consistency (104A/104B)
 - [Epic 77 plan](./Epic77-Platform-Signals-and-Notification-System-Implementation-Plan.md) — delivered notification foundation

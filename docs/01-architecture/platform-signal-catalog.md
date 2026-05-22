@@ -3,6 +3,8 @@
 **Status:** Active (ADR-0038)  
 **Related:** [ADR-0037](../02-decisions/ADR-0037-platform-signals-events-and-notification-system.md), [ADR-0038](../02-decisions/ADR-0038-platform-signals-sdk-conventions.md), [Epic 77 plan](../02-decisions/Epic77-Platform-Signals-and-Notification-System-Implementation-Plan.md), [Epic 103A plan](../02-decisions/Epic103A-Platform-Signals-SDK-Stabilization-Implementation-Plan.md)
 
+**Module authors:** [module-authoring-guide.md](../05-modules/module-authoring-guide.md), [module-manifest-spec.md](../05-modules/module-manifest-spec.md) (declare `Signals` before emit).
+
 This document defines canonical **platform event types**, indexed fields for rule stage 1, and **template variable allowlists** per type.
 
 > **Module authors:** Only types with implementation status **shipped** have a live platform or module emitter in production. **planned** types are documented for notification authoring and future observers—do not emit them from module code until status changes. **future** types are design placeholders (rules, elevation, or platform features not scheduled in the SDK stabilization track).
@@ -199,7 +201,7 @@ Full event `type` strings are produced by `ModulePlatformEventTypes.Format(modul
 
 The sample `Sample.HelloWorld` module declares `demo.completed`; the **Complete** step emits only when workflow parameters include a truthy `emitDemoPlatformEvent` (otherwise no platform event is written).
 
-Modules register signals in the module manifest:
+Modules register signals in the module manifest (C# `ModuleSignalDeclaration` — see [module-manifest-spec.md](../05-modules/module-manifest-spec.md)):
 
 ```json
 {

@@ -24,7 +24,7 @@ Stabilize the **module developer signal SDK** so authoring docs, samples, and te
 - Telemetry aggregate notification rules
 - OpenTelemetry production wiring (Signals-07)
 - Log elevation to platform events (Signals-08) unless product requests
-- Full `module-authoring-guide.md` rewrite beyond the Platform Signals section (103F)
+- Full `module-authoring-guide.md` rewrite beyond the Platform Signals section (103F) — completed in [Epic 104A](./Epic104-Module-Authoring-Documentation.md); manifest/playbook alignment in [Epic 104B](./Epic104-Module-Authoring-Documentation.md)
 - Handler factory / DI registration refactor in code (Signals-05 documents pattern only)
 
 ---
@@ -220,7 +220,7 @@ public sealed class ModuleTestHarness
 - `ModuleTestHarness` quickstart
 - Anti-patterns; links to ADR-0038 and `execution-contract-handler-patterns.md`
 
-**Exit criteria:** Guide marked production-ready for signals (**met**).
+**Exit criteria:** Guide marked production-ready for signals (**met**). Full 13-section guide and adjacent doc alignment: [Epic 104](./Epic104-Module-Authoring-Documentation.md).
 
 ---
 
@@ -301,8 +301,23 @@ flowchart LR
 
 ---
 
+## Remaining signals backlog (not Epic 103 / 104)
+
+| Item | Epic / note |
+|------|-------------|
+| Built-in module notification definitions in manifest | ADR-0037; no module seeds in repo |
+| OpenTelemetry adapter | Signals-07 |
+| Log elevation | Signals-08 (optional) |
+| Handler factory / DI activation | 103A backlog |
+| Calendar / event module signal SDK | Not scheduled — do not document as available |
+| `TryEmitAsync` / per-signal best-effort emit | Backlog / ADR amendment |
+
+---
+
 ## References
 
 - [ADR-0038](./ADR-0038-platform-signals-sdk-conventions.md)
+- [Epic 104 — Module authoring documentation](./Epic104-Module-Authoring-Documentation.md)
+- [module-authoring-guide.md](../05-modules/module-authoring-guide.md)
 - [platform-signal-catalog.md](../01-architecture/platform-signal-catalog.md)
 - [epic77-notification-system-backlog.md](../03-operations/epic77-notification-system-backlog.md)

@@ -7,9 +7,11 @@ This guide is for developers building **Apperture modules**: workflow-centric pa
 | Document | Purpose |
 |----------|---------|
 | [.ai/playbooks/module-sdk.md](../../.ai/playbooks/module-sdk.md) | Short project playbook index |
-| [module-manifest-spec.md](./module-manifest-spec.md) | Manifest fields (permissions; partial) |
+| [module-manifest-spec.md](./module-manifest-spec.md) | Manifest schema (permissions, signals, procedures, governance) |
+| [module-types.md](./module-types.md) | Module type taxonomy — placeholder |
 | [ADR-0038](../02-decisions/ADR-0038-platform-signals-sdk-conventions.md) | Platform signals taxonomy and conventions |
 | [Epic 103A plan](../02-decisions/Epic103A-Platform-Signals-SDK-Stabilization-Implementation-Plan.md) | Signals SDK implementation status |
+| [Epic 104](../02-decisions/Epic104-Module-Authoring-Documentation.md) | Guide rewrite (104A) and doc consistency closeout (104B) |
 | [platform-signal-catalog.md](../01-architecture/platform-signal-catalog.md) | Event types, implementation status, template allowlists |
 | [runtime-connection-resolution.md](../01-architecture/runtime-connection-resolution.md) | Slots, bindings, connection resolution |
 | [epic77-notification-system-backlog.md](../03-operations/epic77-notification-system-backlog.md) | Notification system limitations |
@@ -128,6 +130,8 @@ Optional base: `ModuleBase` in `Apperture.ModuleSdk` provides default `BuildDesc
 
 ### Optional contributions (code)
 
+Full field and validation reference: [module-manifest-spec.md](./module-manifest-spec.md).
+
 `ModuleManifest` also supports:
 
 - `Permissions` — `ModulePermissionDeclaration` (action + optional resource type)
@@ -136,7 +140,7 @@ Optional base: `ModuleBase` in `Apperture.ModuleSdk` provides default `BuildDesc
 - `GovernedResources` / `GovernedActions` — extended governance catalog
 - `ConnectorDefinitions` — documentation/tooling only (runtime registration is host-driven)
 
-> **Future:** JSON configuration schema on the manifest for UI-driven module config ([module-manifest-spec.md](./module-manifest-spec.md)).
+> **Future:** JSON configuration schema on the manifest for UI-driven module config — see [module-manifest-spec.md](./module-manifest-spec.md). Signal, procedure, and governance fields are specified there.
 
 ### Example (HelloWorld)
 

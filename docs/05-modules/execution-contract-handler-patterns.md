@@ -3,6 +3,8 @@
 These starter snippets are lightweight copyable patterns for new module handlers.
 They reinforce the preferred declared execution-contract model from ADR-0022/ADR-0023 and the platform signals SDK from [ADR-0038](../02-decisions/ADR-0038-platform-signals-sdk-conventions.md).
 
+**Full guide:** [module-authoring-guide.md](./module-authoring-guide.md) · **Manifest:** [module-manifest-spec.md](./module-manifest-spec.md)
+
 ## Step context and signals (Epic 103)
 
 Step handlers receive **`IStepExecutionContext`**. Use **`context.Signals`** for module-authored signals — do not resolve `IModulePlatformEventEmitter`, `IModuleOperationalLogger`, or `IModuleTelemetry` from DI inside handlers.
@@ -18,7 +20,7 @@ Step handlers receive **`IStepExecutionContext`**. Use **`context.Signals`** for
 
 **Platform lifecycle:** Generic run completed/failed events are platform-owned (`apperture.execution.run.*`). Modules must not emit those types.
 
-**Manifest:** Declare module signals under `ModuleManifest.Signals` before emitting. Undeclared emits fail validation.
+**Manifest:** Declare module signals under `ModuleManifest.Signals` before emitting. Undeclared emits fail validation. See [module-manifest-spec.md § Signals](./module-manifest-spec.md#signals-implemented).
 
 **Handler registration:** `module.RegisterStepHandlers(registry => registry.Register(..., new MyHandler()))` remains acceptable. A DI-backed handler factory is future work — handlers should still use context-only signals.
 
