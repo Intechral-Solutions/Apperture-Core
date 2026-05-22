@@ -27,8 +27,12 @@ public sealed class PlatformEventAuthoringCatalogServiceTests
         var rows = await sut.ListAsync();
 
         rows.Should().Contain(e => e.Type == PlatformEventTypes.ScheduleExpectedRunMissing);
+        rows.Should().Contain(e => e.Type == PlatformEventTypes.ExecutionRunCompleted);
+        rows.Should().Contain(e => e.Type == PlatformEventTypes.ExecutionRunFailed);
         rows.First(e => e.Type == PlatformEventTypes.ScheduleExpectedRunMissing).DisplayName
             .Should().Be("Expected run missing");
+        rows.First(e => e.Type == PlatformEventTypes.ExecutionRunCompleted).DisplayName
+            .Should().Be("Run completed");
         rows.Should().Contain(e =>
             e.Type == ModulePlatformEventTypes.Format("Sample.HelloWorld", "demo.completed"));
     }

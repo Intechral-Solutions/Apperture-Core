@@ -16,6 +16,12 @@ public sealed class PlatformEventAuthoringCatalogService : IPlatformEventAuthori
             [PlatformEventTypes.ScheduleExpectedRunCleared] = (
                 "Expected run cleared",
                 "Schedule expectation returned to healthy."),
+            [PlatformEventTypes.ExecutionRunCompleted] = (
+                "Run completed",
+                "Workflow or operation run reached a successful terminal state."),
+            [PlatformEventTypes.ExecutionRunFailed] = (
+                "Run failed",
+                "Workflow or operation run reached a failed terminal state."),
         };
 
     private readonly IPlatformEventCatalog _catalog;

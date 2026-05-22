@@ -33,6 +33,37 @@ public sealed class PlatformEventCatalog : IPlatformEventCatalog
                 PlatformEventDataProperties.ResolutionReason,
             ],
             DefaultMaxDataJsonLength),
+        new PlatformEventTypeDescriptor(
+            PlatformEventTypes.ExecutionRunCompleted,
+            PlatformEventSources.PlatformRuntime,
+            [PlatformEventSeverities.Info],
+            RequiresIntegrationId: false,
+            RequiresScheduleId: false,
+            RequiredDataProperties:
+            [
+                PlatformEventDataProperties.ExecutionKind,
+                PlatformEventDataProperties.DefinitionId,
+                PlatformEventDataProperties.Status,
+                PlatformEventDataProperties.Outcome,
+            ],
+            DefaultMaxDataJsonLength,
+            RequiresRunId: true),
+        new PlatformEventTypeDescriptor(
+            PlatformEventTypes.ExecutionRunFailed,
+            PlatformEventSources.PlatformRuntime,
+            [PlatformEventSeverities.Error],
+            RequiresIntegrationId: false,
+            RequiresScheduleId: false,
+            RequiredDataProperties:
+            [
+                PlatformEventDataProperties.ExecutionKind,
+                PlatformEventDataProperties.DefinitionId,
+                PlatformEventDataProperties.Status,
+                PlatformEventDataProperties.FailureCode,
+                PlatformEventDataProperties.FailureMessageExcerpt,
+            ],
+            DefaultMaxDataJsonLength,
+            RequiresRunId: true),
     ];
 
     private readonly Dictionary<string, PlatformEventTypeDescriptor> _byType =

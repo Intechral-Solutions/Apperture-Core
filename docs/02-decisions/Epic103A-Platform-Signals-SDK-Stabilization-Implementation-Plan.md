@@ -163,21 +163,21 @@ public sealed class ModuleTestHarness
 
 ---
 
-### Signals-04 — Platform-owned run lifecycle events
+### Signals-04 — Platform-owned run lifecycle events (Epic 103D — **shipped**)
 
-**Scope:** Control/runtime observers — **not** module SDK.
+**Scope:** `ExecutionLifecyclePlatformEventEmitter` wired from `WorkflowStartRequestProcessor` and `OperationStartRequestProcessor` after terminal state commit.
 
-| Task | Detail |
-|------|--------|
-| Add `PlatformEventTypes.ExecutionRunFailed` / `Completed` | Constants |
-| Emit from terminal run processors | Feature flag `PlatformEvents:EmitExecutionLifecycle` default false |
-| Dedupe | `{runId}:terminal:{outcome}` |
-| Catalog | Mark types **shipped** when merged |
-| Integration test | Append + query by runId |
+| Deliverable | Detail |
+|-------------|--------|
+| Types | `apperture.execution.run.completed`, `apperture.execution.run.failed` |
+| Catalog | `PlatformEventCatalog` descriptors + authoring display names |
+| Flag | `PlatformEvents:ExecutionLifecycle:Enabled` (default **false**); requires `PlatformEvents:Enabled` |
+| Dedupe | `{runId}:terminal:{status}`; subject `run:{runId}` |
+| Semantics | Best-effort post-terminal observer — emit failure does not mutate run |
 
-**Exit criteria:** Flag-on instance persists lifecycle events; modules unchanged.
+**Cancelled runs:** not emitted in 103D (`apperture.execution.run.cancelled` remains future).
 
-**Note:** Does not fail workflow on emit failure if observer is async-fire-and-forget; align with dual-emitter pattern used for schedule events (log warning, do not roll back run).
+**Exit criteria:** Flag-on worker persists lifecycle events once per terminal transition; modules unchanged.
 
 ---
 

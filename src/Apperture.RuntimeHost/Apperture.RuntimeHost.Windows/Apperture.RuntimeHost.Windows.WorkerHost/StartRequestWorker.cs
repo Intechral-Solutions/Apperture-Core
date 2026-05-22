@@ -1,3 +1,4 @@
+using Apperture.Core.Application.PlatformEvents;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Workflow;
 using Apperture.ModuleSdk.Abstractions;
@@ -72,6 +73,7 @@ public sealed class StartRequestWorker : BackgroundService
                 var moduleRegistry = scope.ServiceProvider.GetRequiredService<IModuleRegistryService>();
                 var audit = scope.ServiceProvider.GetService<IAuditService>();
                 var integrationExecution = scope.ServiceProvider.GetService<IOptions<IntegrationExecutionOptions>>();
+                var lifecycleEmitter = scope.ServiceProvider.GetService<ExecutionLifecyclePlatformEventEmitter>();
                 var processor = new WorkflowStartRequestProcessor(
                     db,
                     executor,
@@ -81,7 +83,8 @@ public sealed class StartRequestWorker : BackgroundService
                     _logger,
                     moduleRegistry,
                     audit,
-                    integrationExecution);
+                    integrationExecution,
+                    lifecycleEmitter);
                 var operationRegistry = scope.ServiceProvider.GetRequiredService<IOperationRegistryService>();
                 var operationProcessor = new OperationStartRequestProcessor(
                     db,
@@ -92,7 +95,8 @@ public sealed class StartRequestWorker : BackgroundService
                     _logger,
                     moduleRegistry,
                     audit,
-                    integrationExecution);
+                    integrationExecution,
+                    lifecycleEmitter);
 
                 // Best-effort: attempt a small batch each poll.
                 var now = DateTimeOffset.UtcNow;

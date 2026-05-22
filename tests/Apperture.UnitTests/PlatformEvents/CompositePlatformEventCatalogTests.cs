@@ -35,9 +35,12 @@ public sealed class CompositePlatformEventCatalogTests
         var sut = new CompositePlatformEventCatalog(registry);
 
         sut.IsKnownType(PlatformEventTypes.ScheduleExpectedRunMissing).Should().BeTrue();
+        sut.IsKnownType(PlatformEventTypes.ExecutionRunCompleted).Should().BeTrue();
+        sut.IsKnownType(PlatformEventTypes.ExecutionRunFailed).Should().BeTrue();
         sut.IsKnownType("apperture.module.mod.sample.alarm").Should().BeTrue();
 
         sut.GetRequired(PlatformEventTypes.ScheduleExpectedRunMissing).Type.Should().Be(PlatformEventTypes.ScheduleExpectedRunMissing);
+        sut.GetRequired(PlatformEventTypes.ExecutionRunFailed).RequiresRunId.Should().BeTrue();
         sut.GetRequired("apperture.module.mod.sample.alarm").DefaultSource.Should().Be("/modules/mod.sample");
 
         sut.GetAll().Should().Contain(d => d.Type == PlatformEventTypes.ScheduleExpectedRunMissing);

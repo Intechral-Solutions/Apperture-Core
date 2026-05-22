@@ -21,8 +21,8 @@ This document defines canonical **platform event types**, indexed fields for rul
 |------|-------|--------|---------------|
 | `apperture.schedule.expected_run.missing` | Platform | **shipped** | `ScheduleExpectationPlatformEventDualEmitter` |
 | `apperture.schedule.expected_run.cleared` | Platform | **shipped** | `ScheduleExpectationPlatformEventDualEmitter` |
-| `apperture.execution.run.failed` | Platform | **planned** | None — Signals-04 |
-| `apperture.execution.run.completed` | Platform | **planned** | None — Signals-04 |
+| `apperture.execution.run.failed` | Platform | **shipped** | `ExecutionLifecyclePlatformEventEmitter` (worker; flag `PlatformEvents:ExecutionLifecycle:Enabled`) |
+| `apperture.execution.run.completed` | Platform | **shipped** | `ExecutionLifecyclePlatformEventEmitter` (worker; flag `PlatformEvents:ExecutionLifecycle:Enabled`) |
 | `apperture.governance.audit.privileged_action` | Platform | **future** | None |
 | `apperture.module.{moduleId}.{signalName}` | Module | **shipped** (per manifest) | `ModulePlatformEventEmitter` when signal declared |
 | `apperture.module.{moduleId}.log.{code}` | Module (elevated) | **future** | None — Signals-08 optional |
@@ -111,28 +111,33 @@ All catalog types use the envelope in ADR-0037 (`specversion` `1.0`, `dataconten
 
 | Attribute | Value |
 |-----------|-------|
-| **Implementation status** | **planned** (Signals-04) |
+| **Implementation status** | **shipped** (Epic 103D) |
 | **Source** | `/platform/runtime` |
 | **Severity** | `error` |
-| **Dedupe** | Optional per `runId` + terminal failure |
+| **Dedupe** | `{runId}:terminal:failed` |
+| **Subject** | `run:{runId}` |
+| **Requires** | `runId` on envelope; `integrationId` when run is integration-scoped |
 
-> **Not available for module emit.** Platform runtime observer only. Notification definitions may reference this type in staging; production instances will not receive events until Signals-04 ships.
+> **Platform observer only** — emitted by `ExecutionLifecyclePlatformEventEmitter` after terminal failure is persisted. Best-effort: emit failure does not change run state. Not for module handlers.
 
-**`data` schema:**
+**`data` schema (required properties):**
 
 ```json
 {
   "executionKind": "workflow | operation",
   "definitionId": "string",
+  "status": "Failed",
   "failureCode": "string",
-  "failureMessage": "string",
-  "failureMessageExcerpt": "string (max 500)"
+  "failureMessageExcerpt": "string (max 500)",
+  "durationMs": 0,
+  "failedStepName": "string",
+  "exceptionType": "string"
 }
 ```
 
-**Redaction:** `failureMessage` not allowlisted for templates; use `failureMessageExcerpt` only.
+Optional fields: `durationMs`, `failedStepName`, `exceptionType`. No stack traces or secrets.
 
-**Template allowlist:** `event.*`, `run.id`, `run.status`, `run.definitionId`, `integration.*`, `module.*`, `instance.baseUrl`
+**Template allowlist:** `event.*`, `event.data.executionKind`, `event.data.definitionId`, `event.data.failureCode`, `event.data.failureMessageExcerpt`, `run.id`, `run.definitionId`, `integration.*`, `module.*`, `instance.baseUrl`
 
 ---
 
@@ -140,13 +145,31 @@ All catalog types use the envelope in ADR-0037 (`specversion` `1.0`, `dataconten
 
 | Attribute | Value |
 |-----------|-------|
-| **Implementation status** | **planned** (Signals-04) |
+| **Implementation status** | **shipped** (Epic 103D) |
 | **Source** | `/platform/runtime` |
 | **Severity** | `info` |
+| **Dedupe** | `{runId}:terminal:completed` |
+| **Subject** | `run:{runId}` |
+| **Requires** | `runId` on envelope |
 
-> **Not available for module emit.** See `apperture.execution.run.failed` note above.
+> **Platform observer only** — emitted after successful terminal completion is persisted. Enable with `PlatformEvents:Enabled` and `PlatformEvents:ExecutionLifecycle:Enabled`.
 
-**`data` schema:** `{ "executionKind": "workflow | operation", "definitionId": "string", "outcome": "success" }`
+**`data` schema (required properties):**
+
+```json
+{
+  "executionKind": "workflow | operation",
+  "definitionId": "string",
+  "status": "Completed",
+  "outcome": "success",
+  "durationMs": 0,
+  "stepCount": 0
+}
+```
+
+Optional: `durationMs`, `stepCount`.
+
+**Template allowlist:** `event.*`, `event.data.executionKind`, `event.data.definitionId`, `event.data.outcome`, `run.id`, `run.definitionId`, `integration.*`, `module.*`, `instance.baseUrl`
 
 ---
 
@@ -238,7 +261,7 @@ Modules register signals in the module manifest:
 | Fleet token (`IntegrationFleetAttention.Tokens`) | Event type | Platform status | Notes |
 |--------------------------------------------------|------------|-----------------|-------|
 | `expected_run_missing` | `apperture.schedule.expected_run.missing` | shipped | Token may exist before incident |
-| `operational_failure` | `apperture.execution.run.failed` | planned | Aggregate runs → events per failure when Signals-04 ships |
+| `operational_failure` | `apperture.execution.run.failed` | shipped | One event per terminal failure when lifecycle flag enabled |
 | `blocking` | (none) | future | Optional `apperture.integration.readiness.blocking` |
 
 ---

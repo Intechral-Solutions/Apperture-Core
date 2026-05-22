@@ -153,6 +153,8 @@ Authors pass **signal name + payload only**; they must not embed correlation ids
 
 **Future (not v1):** optional `TryEmitAsync` / best-effort emit API for non-critical signals—deferred unless a later epic explicitly needs it (see implementation plan Signals-08).
 
+**Platform-owned lifecycle events (Epic 103D):** `apperture.execution.run.completed` / `.failed` are emitted by `ExecutionLifecyclePlatformEventEmitter` **after** terminal run state is committed. Emission is **best-effort** (log warning on failure; do not change run status). Module-authored emits remain fail-fast when enabled.
+
 ### 8. Operational logger v1
 
 | Property | Value |

@@ -2,6 +2,7 @@ using System.Text.Json;
 using Apperture.Core.Application;
 using Apperture.Core.Application.ControlFacade;
 using Apperture.Core.Application.Execution;
+using Apperture.Core.Application.PlatformEvents;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Audit;
 using Apperture.Core.Domain.Workflow;
@@ -38,6 +39,7 @@ public sealed class WorkflowStartRequestProcessor
     private readonly string _workerId;
     private readonly WorkflowStartRequestLeaseOptions _leaseOptions;
     private readonly IntegrationExecutionOptions? _integrationExecution;
+    private readonly ExecutionLifecyclePlatformEventEmitter? _lifecycleEmitter;
 
     public WorkflowStartRequestProcessor(
         AppertureDbContext db,
@@ -48,7 +50,8 @@ public sealed class WorkflowStartRequestProcessor
         ILogger? logger = null,
         IModuleRegistryService? moduleRegistry = null,
         IAuditService? audit = null,
-        IOptions<IntegrationExecutionOptions>? integrationExecution = null)
+        IOptions<IntegrationExecutionOptions>? integrationExecution = null,
+        ExecutionLifecyclePlatformEventEmitter? lifecycleEmitter = null)
     {
         _db = db;
         _executor = executor;
@@ -59,6 +62,7 @@ public sealed class WorkflowStartRequestProcessor
         _moduleRegistry = moduleRegistry;
         _audit = audit;
         _integrationExecution = integrationExecution?.Value;
+        _lifecycleEmitter = lifecycleEmitter;
     }
 
     public async Task<bool> TryClaimAsync(string runId, CancellationToken cancellationToken = default)
@@ -177,9 +181,31 @@ WHERE RunId = {runId} AND (
             {
                 request.Status = WorkflowLifecycleStatusNames.Failed;
                 request.LastError = "Missing WorkflowInstance or OperationRun record for start request.";
+                if (run is not null)
+                {
+                    run.Status = WorkflowLifecycleStatusNames.Failed;
+                    run.CompletedAt = DateTimeOffset.UtcNow;
+                }
+
                 await _db.SaveChangesAsync(cancellationToken);
                 if (tx is not null)
                     await tx.CommitAsync(cancellationToken);
+
+                if (run is not null && instance is not null)
+                {
+                    await TryEmitExecutionLifecycleAsync(
+                        WorkflowLifecycleStatusNames.Failed,
+                        run,
+                        request.WorkflowDefinitionId,
+                        moduleId: null,
+                        request,
+                        instance,
+                        stepCount: null,
+                        failedStepName: null,
+                        failureException: null,
+                        cancellationToken);
+                }
+
                 return;
             }
 
@@ -388,6 +414,18 @@ WHERE RunId = {runId} AND (
                 await _db.SaveChangesAsync(cancellationToken);
                 if (tx is not null)
                     await tx.CommitAsync(cancellationToken);
+
+                await TryEmitExecutionLifecycleAsync(
+                    WorkflowLifecycleStatusNames.Completed,
+                    run,
+                    definition.Id.Value,
+                    definition.ModuleId,
+                    request,
+                    instance,
+                    definition.StepNames.Count,
+                    failedStepName: null,
+                    failureException: null,
+                    cancellationToken);
             }
             catch (Exception ex)
             {
@@ -433,9 +471,73 @@ WHERE RunId = {runId} AND (
                 await _db.SaveChangesAsync(cancellationToken);
                 if (tx is not null)
                     await tx.CommitAsync(cancellationToken);
+
+                await TryEmitExecutionLifecycleAsync(
+                    WorkflowLifecycleStatusNames.Failed,
+                    run,
+                    instance.DefinitionId,
+                    moduleId: null,
+                    request,
+                    instance,
+                    stepCount: null,
+                    failedStepName: activeStep?.StepName,
+                    failureException: ex,
+                    cancellationToken);
             }
         });
     }
+
+    private async ValueTask TryEmitExecutionLifecycleAsync(
+        string terminalStatus,
+        OperationRunEntity run,
+        string definitionId,
+        string? moduleId,
+        WorkflowStartRequestEntity request,
+        WorkflowInstanceEntity instance,
+        int? stepCount,
+        string? failedStepName,
+        Exception? failureException,
+        CancellationToken cancellationToken)
+    {
+        if (_lifecycleEmitter is null)
+            return;
+
+        string? scheduleId = null;
+        if (ControlFacade.TryParseScheduleId(instance.CorrelationKey, out var parsedSchedule))
+            scheduleId = parsedSchedule;
+
+        var integrationId = request.IntegrationId ?? instance.IntegrationId ?? run.IntegrationId;
+
+        await _lifecycleEmitter.TryEmitTerminalAsync(
+            new ExecutionLifecycleTerminalContext(
+                RunId: run.Id,
+                TerminalStatus: terminalStatus,
+                ExecutionKind: "workflow",
+                DefinitionId: definitionId,
+                IntegrationId: integrationId,
+                ModuleId: moduleId,
+                ProcedureId: request.ProcedureId,
+                ScheduleId: scheduleId,
+                CorrelationId: request.CorrelationId,
+                CausationId: request.IdempotencyKey,
+                StartedAtUtc: run.CreatedAt,
+                CompletedAtUtc: run.CompletedAt ?? DateTimeOffset.UtcNow,
+                StepCount: stepCount,
+                FailedStepName: failedStepName,
+                FailureSummary: run.FailureSummary,
+                FailureCode: ResolveFailureCode(failureException),
+                ExceptionType: failureException?.GetType().Name),
+            cancellationToken);
+    }
+
+    private static string? ResolveFailureCode(Exception? ex) =>
+        ex switch
+        {
+            null => null,
+            OperatorExecutionFailureException => "operator_execution_failure",
+            DefinitionNotExecutableException => "definition_not_executable",
+            _ => "unhandled_exception",
+        };
 
     private void LogExecutionContractSignalForSuccess(string runId, object? result)
     {
