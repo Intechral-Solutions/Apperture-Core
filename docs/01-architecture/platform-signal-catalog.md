@@ -1,9 +1,35 @@
 # Platform signal catalog
 
-**Status:** Proposed (ADR-0037)  
-**Related:** [ADR-0037](../02-decisions/ADR-0037-platform-signals-events-and-notification-system.md), [Epic 77 plan](../02-decisions/Epic77-Platform-Signals-and-Notification-System-Implementation-Plan.md)
+**Status:** Active (ADR-0038)  
+**Related:** [ADR-0037](../02-decisions/ADR-0037-platform-signals-events-and-notification-system.md), [ADR-0038](../02-decisions/ADR-0038-platform-signals-sdk-conventions.md), [Epic 77 plan](../02-decisions/Epic77-Platform-Signals-and-Notification-System-Implementation-Plan.md), [Epic 103A plan](../02-decisions/Epic103A-Platform-Signals-SDK-Stabilization-Implementation-Plan.md)
 
 This document defines canonical **platform event types**, indexed fields for rule stage 1, and **template variable allowlists** per type.
+
+> **Module authors:** Only types with implementation status **shipped** have a live platform or module emitter in production. **planned** types are documented for notification authoring and future observers—do not emit them from module code until status changes. **future** types are design placeholders (rules, elevation, or platform features not scheduled in the SDK stabilization track).
+
+## Implementation status legend
+
+| Status | Meaning |
+|--------|---------|
+| **shipped** | Emitter exists in Apperture-Core today; events may appear in `PlatformEvents` when enabled |
+| **planned** | Catalog + rules may reference the type; emitter not yet implemented (see Epic 103A Signals-04) |
+| **future** | Not implemented; no emitter; notification rules not supported in v1 |
+
+## Catalog index
+
+| Type | Owner | Status | Emitter today |
+|------|-------|--------|---------------|
+| `apperture.schedule.expected_run.missing` | Platform | **shipped** | `ScheduleExpectationPlatformEventDualEmitter` |
+| `apperture.schedule.expected_run.cleared` | Platform | **shipped** | `ScheduleExpectationPlatformEventDualEmitter` |
+| `apperture.execution.run.failed` | Platform | **planned** | None — Signals-04 |
+| `apperture.execution.run.completed` | Platform | **planned** | None — Signals-04 |
+| `apperture.governance.audit.privileged_action` | Platform | **future** | None |
+| `apperture.module.{moduleId}.{signalName}` | Module | **shipped** (per manifest) | `ModulePlatformEventEmitter` when signal declared |
+| `apperture.module.{moduleId}.log.{code}` | Module (elevated) | **future** | None — Signals-08 optional |
+| Log-source notification rules | — | **future** | Not in v1 |
+| Telemetry aggregate notification rules | — | **future** | Not in v1 |
+
+---
 
 ## Envelope recap
 
@@ -24,6 +50,7 @@ All catalog types use the envelope in ADR-0037 (`specversion` `1.0`, `dataconten
 
 | Attribute | Value |
 |-----------|-------|
+| **Implementation status** | **shipped** |
 | **Source** | `/platform/readiness` |
 | **Typical severity** | `warning` or `error` |
 | **Incident** | Opens/updates `expected_run_missing` |
@@ -69,6 +96,7 @@ All catalog types use the envelope in ADR-0037 (`specversion` `1.0`, `dataconten
 
 | Attribute | Value |
 |-----------|-------|
+| **Implementation status** | **shipped** |
 | **Source** | `/platform/readiness` |
 | **Severity** | `info` |
 | **Incident** | Resolves `expected_run_missing` |
@@ -83,9 +111,12 @@ All catalog types use the envelope in ADR-0037 (`specversion` `1.0`, `dataconten
 
 | Attribute | Value |
 |-----------|-------|
+| **Implementation status** | **planned** (Signals-04) |
 | **Source** | `/platform/runtime` |
 | **Severity** | `error` |
 | **Dedupe** | Optional per `runId` + terminal failure |
+
+> **Not available for module emit.** Platform runtime observer only. Notification definitions may reference this type in staging; production instances will not receive events until Signals-04 ships.
 
 **`data` schema:**
 
@@ -109,8 +140,11 @@ All catalog types use the envelope in ADR-0037 (`specversion` `1.0`, `dataconten
 
 | Attribute | Value |
 |-----------|-------|
+| **Implementation status** | **planned** (Signals-04) |
 | **Source** | `/platform/runtime` |
 | **Severity** | `info` |
+
+> **Not available for module emit.** See `apperture.execution.run.failed` note above.
 
 **`data` schema:** `{ "executionKind": "workflow | operation", "definitionId": "string", "outcome": "success" }`
 
@@ -120,15 +154,18 @@ All catalog types use the envelope in ADR-0037 (`specversion` `1.0`, `dataconten
 
 | Attribute | Value |
 |-----------|-------|
+| **Implementation status** | **future** |
 | **Source** | `/platform/governance` |
 | **Severity** | `info` |
 | **Notifications** | Opt-in only; not default |
 
-**Note:** Mirrors select audit actions for operator alerts. Does not replace `AuditLogs`.
+**Note:** Mirrors select audit actions for operator alerts. Does not replace `AuditLogs`. No emitter in v1.
 
 ---
 
 ## Module-owned types
+
+**Implementation status:** **shipped** when the signal is declared in `ModuleManifest.Signals` and the worker registers `ModulePlatformEventEmitter`.
 
 ### Pattern: `apperture.module.{normalizedModuleId}.{signalName}`
 
@@ -170,6 +207,8 @@ Modules register signals in the module manifest:
 
 ## Log-derived types (elevated)
 
+**Implementation status:** **future** (Signals-08 optional)
+
 ### Pattern: `apperture.module.{moduleId}.log.{code}`
 
 | Rule | Value |
@@ -179,15 +218,28 @@ Modules register signals in the module manifest:
 | HTML body | Disallowed |
 | Default subscription | Disabled |
 
+> Operational logs do **not** create these events in v1. `IModuleOperationalLogger` writes to log sinks only (ADR-0038).
+
+---
+
+## Notification rules: non-event sources
+
+| Capability | Status | Notes |
+|------------|--------|-------|
+| Event `trigger.eventTypes` | **shipped** | Primary v1 path |
+| Incident transitions (schedule missing) | **shipped** | Dual-emit with incidents |
+| Log-source rule stage | **future** | Epic 77 backlog P3 |
+| Telemetry aggregate rules | **future** | No SQL telemetry table in v1 |
+
 ---
 
 ## Mapping from legacy attention tokens
 
-| Fleet token (`IntegrationFleetAttention.Tokens`) | Event type | Notes |
-|--------------------------------------------------|------------|-------|
-| `expected_run_missing` | `apperture.schedule.expected_run.missing` | Token may exist before incident |
-| `operational_failure` | `apperture.execution.run.failed` | Aggregate runs → events per failure |
-| `blocking` | (none) | Readiness-only; optional future `apperture.integration.readiness.blocking` |
+| Fleet token (`IntegrationFleetAttention.Tokens`) | Event type | Platform status | Notes |
+|--------------------------------------------------|------------|-----------------|-------|
+| `expected_run_missing` | `apperture.schedule.expected_run.missing` | shipped | Token may exist before incident |
+| `operational_failure` | `apperture.execution.run.failed` | planned | Aggregate runs → events per failure when Signals-04 ships |
+| `blocking` | (none) | future | Optional `apperture.integration.readiness.blocking` |
 
 ---
 

@@ -6,6 +6,8 @@
 | [ADR-0002](ADR-0002-single-tenant-instance.md) | Single-tenant instance deployment boundary |
 | [ADR-0003](ADR-0003-runtime-portability.md) | Runtime portability (portable workflow model, DTFx + Durable Functions adapters) |
 | [ADR-0004](ADR-0004-instance-owned-scheduling.md) | Instance-owned scheduling (control-plane-managed, host-portable execution) |
+| [ADR-0037](ADR-0037-platform-signals-events-and-notification-system.md) | Platform signals and notification system (Epic 77) |
+| [ADR-0038](ADR-0038-platform-signals-sdk-conventions.md) | Module SDK signal conventions (Epic 103A) |
 | [ADR-0005](ADR-0005-federated-external-instance-relationships.md) | Federated external instance relationships |
 | [ADR-0006](ADR-0006-entra-backed-platform-trust-for-instance-authentication.md) | Entra-backed platform trust for instance authentication |
 | [ADR-0007](ADR-0007-separation-of-human-auth-service-auth-and-relationship-authorization.md) | Separation of human auth, service auth, and relationship authorization |

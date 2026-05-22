@@ -2,6 +2,8 @@
 
 Concise backlog after Phases 1–8C and 9A UAT hardening. Items are **out of scope** for the current milestone unless marked blocker.
 
+**Module SDK stabilization:** [Epic 103A plan](../02-decisions/Epic103A-Platform-Signals-SDK-Stabilization-Implementation-Plan.md), [ADR-0038](../02-decisions/ADR-0038-platform-signals-sdk-conventions.md).
+
 ---
 
 ## Implemented in this milestone

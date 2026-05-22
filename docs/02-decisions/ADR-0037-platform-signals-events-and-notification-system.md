@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed
+Accepted (notification foundation delivered in Epic 77). Module SDK authoring conventions: [ADR-0038](./ADR-0038-platform-signals-sdk-conventions.md).
 
 ## Context
 
@@ -339,3 +339,4 @@ Within-instance platform events and delivery evidence become the **source of tru
 - ADR-0010 (federated notifications)
 - ADR-0022, ADR-0023 (execution contracts and validation signals)
 - Implementation plan: [Epic77-Platform-Signals-and-Notification-System-Implementation-Plan.md](./Epic77-Platform-Signals-and-Notification-System-Implementation-Plan.md)
+- Module SDK conventions: [ADR-0038](./ADR-0038-platform-signals-sdk-conventions.md), [Epic103A plan](./Epic103A-Platform-Signals-SDK-Stabilization-Implementation-Plan.md)
