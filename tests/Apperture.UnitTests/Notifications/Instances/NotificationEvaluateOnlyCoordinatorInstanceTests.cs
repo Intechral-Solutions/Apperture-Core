@@ -56,6 +56,7 @@ public sealed class NotificationEvaluateOnlyCoordinatorInstanceTests
             new StubAttentionResolver(),
             new StubIncidentTracker(),
             new NoOpRedactionPolicy(),
+            new NotificationInstanceCoordinatorTests.NoOpUserInboxService(),
             Options.Create(new NotificationInstanceOptions { Enabled = true }),
             NullLogger<NotificationInstanceCoordinator>.Instance);
 

@@ -24,6 +24,22 @@ public sealed class NotificationDefinitionAuthorization
         _integrations = integrations;
     }
 
+    public async ValueTask<bool> CanViewDefinitionsAsync(CancellationToken cancellationToken)
+    {
+        var actor = await _principalContext.GetCurrentActorAsync(cancellationToken).ConfigureAwait(false);
+        if (actor is null)
+            return false;
+
+        return await _auth.EvaluateAsync(
+            actor,
+            new PermissionDescriptor(
+                ActionConstants.NotificationDefinitionRead,
+                new ResourceDescriptor(ResourceTypeConstants.NotificationDefinition, ScopeKeyConstants.Instance)),
+            null,
+            null,
+            cancellationToken).ConfigureAwait(false);
+    }
+
     public async ValueTask RequirePlatformReadAsync(CancellationToken cancellationToken)
     {
         var actor = await RequireActorAsync(cancellationToken).ConfigureAwait(false);

@@ -52,6 +52,9 @@ public sealed class DevTestUserBootstrapHostedService : IHostedService
         var existing = await userRepo.GetByIdentityLinkAsync(IdentitySource.Local, username, cancellationToken);
         if (existing is not null)
         {
+            await EnsureDevPasswordAsync(existing.Id, opts, localCredRepo, passwordHasher, username, cancellationToken)
+                .ConfigureAwait(false);
+
             var roles = await roleRepo.GetForUserAsync(existing.Id, cancellationToken);
             var hasAdmin = roles.Any(r => string.Equals(r.Id.Value, BootstrapConstants.PlatformAdminRoleId, StringComparison.Ordinal));
             if (hasAdmin)
@@ -103,4 +106,21 @@ public sealed class DevTestUserBootstrapHostedService : IHostedService
     }
 
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+    private async Task EnsureDevPasswordAsync(
+        UserId userId,
+        DevTestUserOptions opts,
+        ILocalCredentialRepository? localCredRepo,
+        ILocalPasswordHasher? passwordHasher,
+        string username,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrEmpty(opts.Password) || localCredRepo is null || passwordHasher is null)
+            return;
+
+        var (hash, salt) = passwordHasher.HashPassword(opts.Password);
+        await localCredRepo.SetPasswordAsync(userId, hash, salt, passwordHasher.AlgorithmName, cancellationToken)
+            .ConfigureAwait(false);
+        _logger?.LogDebug("Ensured DevTestUser password for {Username}.", username);
+    }
 }

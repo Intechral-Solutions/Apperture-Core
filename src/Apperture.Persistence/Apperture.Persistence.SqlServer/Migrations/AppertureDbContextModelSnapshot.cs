@@ -1349,6 +1349,61 @@ namespace Apperture.Persistence.SqlServer.Migrations
                     b.ToTable("NotificationSubscriptionUserOverrides", (string)null);
                 });
 
+            modelBuilder.Entity("Apperture.Persistence.SqlServer.NotificationUserInboxItemEntity", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("DeliveryOutboxId")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<DateTimeOffset?>("FirstViewedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<bool>("IsRead")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTimeOffset?>("LastViewedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("NotificationInstanceId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("PrincipalUserId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<DateTimeOffset?>("ReadAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("SourceRecipientKind")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<string>("SourceRecipientRef")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PrincipalUserId", "NotificationInstanceId")
+                        .IsUnique();
+
+                    b.HasIndex("PrincipalUserId", "IsRead", "CreatedAtUtc");
+
+                    b.ToTable("NotificationUserInboxItems", (string)null);
+                });
+
             modelBuilder.Entity("Apperture.Persistence.SqlServer.OperationCancelRequestEntity", b =>
                 {
                     b.Property<string>("RunId")

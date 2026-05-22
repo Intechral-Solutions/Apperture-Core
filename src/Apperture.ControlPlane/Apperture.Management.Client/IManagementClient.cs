@@ -526,6 +526,25 @@ public interface IManagementClient
         string instanceId,
         CancellationToken cancellationToken = default);
 
+    Task<IReadOnlyList<PersonalNotificationInboxItemDto>> GetMyNotificationsAsync(
+        string readFilter = "all",
+        int take = 50,
+        string? integrationId = null,
+        string? kind = null,
+        CancellationToken cancellationToken = default);
+
+    Task<PersonalNotificationUnreadCountDto> GetMyUnreadNotificationCountAsync(CancellationToken cancellationToken = default);
+
+    Task MarkMyNotificationReadAsync(string inboxItemId, CancellationToken cancellationToken = default);
+
+    Task MarkMyNotificationUnreadAsync(string inboxItemId, CancellationToken cancellationToken = default);
+
+    Task<PersonalNotificationMarkAllReadResultDto> MarkAllMyNotificationsReadAsync(CancellationToken cancellationToken = default);
+
+    Task RecordMyNotificationsMenuViewedAsync(int take = 20, CancellationToken cancellationToken = default);
+
+    Task RecordMyNotificationsPageViewedAsync(IReadOnlyList<string> inboxItemIds, CancellationToken cancellationToken = default);
+
     Task<NotificationDeliveryHealthSummaryDto> GetNotificationDeliveryHealthAsync(
         string? definitionId = null,
         int take = 50,

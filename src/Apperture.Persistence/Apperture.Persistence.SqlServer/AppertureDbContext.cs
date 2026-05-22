@@ -34,6 +34,7 @@ public class AppertureDbContext : DbContext
     public DbSet<NotificationDeliveryOutboxEntity> NotificationDeliveryOutbox => Set<NotificationDeliveryOutboxEntity>();
     public DbSet<ExpectedRunMissingCutoverSignOffEntity> ExpectedRunMissingCutoverSignOffs =>
         Set<ExpectedRunMissingCutoverSignOffEntity>();
+    public DbSet<NotificationUserInboxItemEntity> NotificationUserInboxItems => Set<NotificationUserInboxItemEntity>();
     public DbSet<SecretDescriptorEntity> SecretDescriptors => Set<SecretDescriptorEntity>();
     public DbSet<SecretVersionEntity> SecretVersions => Set<SecretVersionEntity>();
     public DbSet<SecretAuditEntity> SecretAudits => Set<SecretAuditEntity>();
@@ -474,6 +475,20 @@ public class AppertureDbContext : DbContext
             e.Property(x => x.ReviewedByDisplayName).HasMaxLength(256);
             e.Property(x => x.OperatorNote).HasMaxLength(1024);
             e.HasIndex(x => new { x.IntegrationId, x.NotificationDefinitionId, x.ReviewedAtUtc });
+        });
+
+        modelBuilder.Entity<NotificationUserInboxItemEntity>(e =>
+        {
+            e.ToTable("NotificationUserInboxItems");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasMaxLength(64);
+            e.Property(x => x.NotificationInstanceId).HasMaxLength(64);
+            e.Property(x => x.PrincipalUserId).HasMaxLength(64);
+            e.Property(x => x.DeliveryOutboxId).HasMaxLength(64);
+            e.Property(x => x.SourceRecipientKind).HasMaxLength(32);
+            e.Property(x => x.SourceRecipientRef).HasMaxLength(64);
+            e.HasIndex(x => new { x.PrincipalUserId, x.NotificationInstanceId }).IsUnique();
+            e.HasIndex(x => new { x.PrincipalUserId, x.IsRead, x.CreatedAtUtc });
         });
 
         modelBuilder.Entity<SecretDescriptorEntity>(e =>

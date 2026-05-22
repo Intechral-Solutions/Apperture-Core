@@ -1,0 +1,41 @@
+@using Apperture.Management.Client
+
+<button type="button"
+        class="block w-full px-3 py-2 text-start hover:bg-surface-muted @(_unread ? "bg-surface-muted/40" : "")"
+        @onclick="OnClick">
+    <div class="flex items-start gap-2">
+        @if (_unread)
+        {
+            <span class="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-blue-600" aria-hidden="true"></span>
+        }
+        else
+        {
+            <span class="mt-1.5 h-2 w-2 shrink-0" aria-hidden="true"></span>
+        }
+        <span class="min-w-0 flex-1">
+            <span class="block truncate text-sm font-medium text-heading">@Item.Subject</span>
+            @if (!string.IsNullOrWhiteSpace(Item.Summary))
+            {
+                <span class="mt-0.5 block truncate text-xs text-muted">@Item.Summary</span>
+            }
+            <span class="mt-1 block text-[11px] text-muted">
+                @FormatTime(Item.InstanceCreatedAtUtc)
+                @if (!string.IsNullOrWhiteSpace(Item.IntegrationId))
+                {
+                    <span> · @Item.IntegrationId</span>
+                }
+            </span>
+        </span>
+    </div>
+</button>
+
+@code {
+    [Parameter, EditorRequired] public PersonalNotificationInboxItemDto Item { get; set; } = null!;
+
+    [Parameter, EditorRequired] public EventCallback OnClick { get; set; }
+
+    private bool _unread => !Item.IsRead;
+
+    private static string FormatTime(DateTimeOffset utc) =>
+        utc.ToLocalTime().ToString("g");
+}

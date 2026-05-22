@@ -2,6 +2,7 @@ using Apperture.Core.Application.Integration;
 using Apperture.Core.Application.Notifications;
 using Apperture.Core.Application.Scheduling;
 using Apperture.Core.Application.Notifications.Delivery;
+using Apperture.Core.Application.Notifications.Inbox;
 using Apperture.Core.Application.Notifications.Instances;
 using Apperture.Core.Application.Notifications.Subscriptions;
 using Apperture.Core.Application.PlatformEvents;
@@ -77,8 +78,22 @@ public sealed class NotificationInstanceCoordinatorTests
             attentionResolver ?? new StubAttentionRecipientResolver(),
             incidentTracker ?? new StubIncidentTracker(),
             new NoOpRedactionPolicy(),
+            new NoOpUserInboxService(),
             Options.Create(new NotificationInstanceOptions { Enabled = true }),
             NullLogger<NotificationInstanceCoordinator>.Instance);
+    }
+
+    internal sealed class NoOpUserInboxService : INotificationUserInboxService
+    {
+        public ValueTask EnsureInboxRowsForUserAsync(string principalUserId, CancellationToken cancellationToken = default) => default;
+        public ValueTask MaterializeForInstanceAsync(string notificationInstanceId, string? recipientSnapshotJson, IReadOnlyList<NotificationOutboxRecipientRef> outboxRows, CancellationToken cancellationToken = default) => default;
+        public ValueTask<IReadOnlyList<NotificationUserInboxItem>> ListForUserAsync(string principalUserId, PersonalNotificationListQuery query, CancellationToken cancellationToken = default) => new([]);
+        public ValueTask<int> GetUnreadCountAsync(string principalUserId, CancellationToken cancellationToken = default) => new(0);
+        public ValueTask<bool> MarkReadAsync(string principalUserId, string inboxItemId, CancellationToken cancellationToken = default) => new(false);
+        public ValueTask<bool> MarkUnreadAsync(string principalUserId, string inboxItemId, CancellationToken cancellationToken = default) => new(false);
+        public ValueTask<int> MarkAllReadAsync(string principalUserId, CancellationToken cancellationToken = default) => new(0);
+        public ValueTask RecordMenuViewedAsync(string principalUserId, int take, CancellationToken cancellationToken = default) => default;
+        public ValueTask RecordPageViewedAsync(string principalUserId, IReadOnlyList<string> inboxItemIds, CancellationToken cancellationToken = default) => default;
     }
 
     private static NotificationMatchResult Matched(string definitionId, string kind) =>

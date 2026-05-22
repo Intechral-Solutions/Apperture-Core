@@ -1707,6 +1707,80 @@ public sealed class ManagementClient : IManagementClient
         return list ?? Array.Empty<NotificationInstanceSummaryDto>();
     }
 
+    public async Task<IReadOnlyList<PersonalNotificationInboxItemDto>> GetMyNotificationsAsync(
+        string readFilter = "all",
+        int take = 50,
+        string? integrationId = null,
+        string? kind = null,
+        CancellationToken cancellationToken = default)
+    {
+        var query = new List<string>
+        {
+            $"readFilter={Uri.EscapeDataString(readFilter)}",
+            $"take={take}",
+        };
+        if (!string.IsNullOrWhiteSpace(integrationId))
+            query.Add($"integrationId={Uri.EscapeDataString(integrationId.Trim())}");
+        if (!string.IsNullOrWhiteSpace(kind))
+            query.Add($"kind={Uri.EscapeDataString(kind.Trim())}");
+        var path = $"me/notifications?{string.Join("&", query)}";
+        var list = await _http.GetFromJsonAsync<PersonalNotificationInboxItemDto[]>(path, ApiJsonReadOptions, cancellationToken)
+            .ConfigureAwait(false);
+        return list ?? Array.Empty<PersonalNotificationInboxItemDto>();
+    }
+
+    public async Task<PersonalNotificationUnreadCountDto> GetMyUnreadNotificationCountAsync(
+        CancellationToken cancellationToken = default)
+    {
+        var dto = await _http
+            .GetFromJsonAsync<PersonalNotificationUnreadCountDto>("me/notifications/unread-count", ApiJsonReadOptions, cancellationToken)
+            .ConfigureAwait(false);
+        return dto ?? new PersonalNotificationUnreadCountDto();
+    }
+
+    public async Task MarkMyNotificationReadAsync(string inboxItemId, CancellationToken cancellationToken = default)
+    {
+        var response = await _http
+            .PostAsync($"me/notifications/{Uri.EscapeDataString(inboxItemId)}/mark-read", content: null, cancellationToken)
+            .ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+    }
+
+    public async Task MarkMyNotificationUnreadAsync(string inboxItemId, CancellationToken cancellationToken = default)
+    {
+        var response = await _http
+            .PostAsync($"me/notifications/{Uri.EscapeDataString(inboxItemId)}/mark-unread", content: null, cancellationToken)
+            .ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+    }
+
+    public async Task<PersonalNotificationMarkAllReadResultDto> MarkAllMyNotificationsReadAsync(
+        CancellationToken cancellationToken = default)
+    {
+        var response = await _http.PostAsync("me/notifications/mark-all-read", content: null, cancellationToken).ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<PersonalNotificationMarkAllReadResultDto>(ApiJsonReadOptions, cancellationToken)
+               ?? new PersonalNotificationMarkAllReadResultDto();
+    }
+
+    public async Task RecordMyNotificationsMenuViewedAsync(int take = 20, CancellationToken cancellationToken = default)
+    {
+        var response = await _http
+            .PostAsync($"me/notifications/record-menu-viewed?take={take}", content: null, cancellationToken)
+            .ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+    }
+
+    public async Task RecordMyNotificationsPageViewedAsync(
+        IReadOnlyList<string> inboxItemIds,
+        CancellationToken cancellationToken = default)
+    {
+        var response = await _http
+            .PostAsJsonAsync("me/notifications/record-page-viewed", inboxItemIds, cancellationToken)
+            .ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+    }
+
     public async Task<NotificationInstanceDetailDto?> GetNotificationInstanceAsync(string id, CancellationToken cancellationToken = default)
     {
         using var response = await _http.GetAsync($"notification-instances/{Uri.EscapeDataString(id)}", cancellationToken).ConfigureAwait(false);

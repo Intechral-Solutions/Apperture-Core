@@ -386,6 +386,7 @@ internal static class NotificationInstanceCoordinatorTestsHelper
             attentionResolver ?? new NotificationInstanceCoordinatorTests.StubAttentionRecipientResolver(),
             incidentTracker ?? new NotificationInstanceCoordinatorTests.StubIncidentTracker(),
             new NoOpRedactionPolicy(),
+            new NotificationInstanceCoordinatorTests.NoOpUserInboxService(),
             Options.Create(new NotificationInstanceOptions { Enabled = true }),
             NullLogger<NotificationInstanceCoordinator>.Instance);
     }

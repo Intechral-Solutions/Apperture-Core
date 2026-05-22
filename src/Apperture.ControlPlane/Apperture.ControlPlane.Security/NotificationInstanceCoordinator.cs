@@ -2,6 +2,7 @@ using System.Text.Json;
 using Apperture.Core.Application.Integration;
 using Apperture.Core.Application.Notifications;
 using Apperture.Core.Application.Notifications.Delivery;
+using Apperture.Core.Application.Notifications.Inbox;
 using Apperture.Core.Application.Notifications.Instances;
 using Apperture.Core.Application.Notifications.Subscriptions;
 using Apperture.Core.Application.PlatformEvents;
@@ -26,6 +27,7 @@ public sealed class NotificationInstanceCoordinator : INotificationInstanceCoord
     private readonly IAttentionRecipientResolver _attentionRecipientResolver;
     private readonly IAttentionIncidentTracker _incidentTracker;
     private readonly IRedactionPolicy _redaction;
+    private readonly INotificationUserInboxService _userInbox;
     private readonly IOptions<NotificationInstanceOptions> _options;
     private readonly ILogger<NotificationInstanceCoordinator> _logger;
 
@@ -39,6 +41,7 @@ public sealed class NotificationInstanceCoordinator : INotificationInstanceCoord
         IAttentionRecipientResolver attentionRecipientResolver,
         IAttentionIncidentTracker incidentTracker,
         IRedactionPolicy redaction,
+        INotificationUserInboxService userInbox,
         IOptions<NotificationInstanceOptions> options,
         ILogger<NotificationInstanceCoordinator> logger)
     {
@@ -51,6 +54,7 @@ public sealed class NotificationInstanceCoordinator : INotificationInstanceCoord
         _attentionRecipientResolver = attentionRecipientResolver;
         _incidentTracker = incidentTracker;
         _redaction = redaction;
+        _userInbox = userInbox;
         _options = options;
         _logger = logger;
     }
@@ -383,6 +387,24 @@ public sealed class NotificationInstanceCoordinator : INotificationInstanceCoord
         await _instances
             .AddOutboxRowsAsync(createResult.Instance.Id, outboxRows, cancellationToken)
             .ConfigureAwait(false);
+
+        try
+        {
+            await _userInbox
+                .MaterializeForInstanceAsync(
+                    createResult.Instance.Id.Value,
+                    recipientSnapshotJson,
+                    [],
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(
+                ex,
+                "Personal inbox materialization failed for instance {InstanceId}.",
+                createResult.Instance.Id.Value);
+        }
 
         _logger.LogInformation(
             "Notification instance {InstanceId} created for definition {DefinitionId} kind {Kind} with {OutboxCount} outbox rows.",

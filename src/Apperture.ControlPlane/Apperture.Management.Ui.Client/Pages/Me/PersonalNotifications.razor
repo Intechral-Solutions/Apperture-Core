@@ -1,0 +1,223 @@
+@page "/me/notifications"
+@layout MainLayout
+@using Apperture.Management.Client
+@using Apperture.Management.Ui.Client.Organisms
+@using Apperture.Management.Ui.Shared
+@inject IManagementClient Client
+@inject NavigationManager Nav
+@inject IOperatorCapabilitiesService Capabilities
+
+<div class="p-4 md:p-6">
+    <PageHeader Title="My notifications"
+                Subtitle="Notifications addressed to you. Opening this page does not mark items as read." />
+
+    <div class="mt-4 flex flex-wrap items-center gap-2">
+        @foreach (var tab in _tabs)
+        {
+            <button type="button"
+                    class="rounded px-3 py-1.5 text-sm @(_filter == tab.Key ? "bg-surface-muted font-medium text-heading" : "text-muted hover:bg-surface-muted/60")"
+                    @onclick="() => SetFilterAsync(tab.Key)">
+                @tab.Label
+            </button>
+        }
+        @if (_unreadCount > 0)
+        {
+            <span class="text-xs text-muted">@_unreadCount unread</span>
+        }
+        <span class="flex-1"></span>
+        @if (_unreadCount > 0)
+        {
+            <button type="button"
+                    class="rounded border border-default px-3 py-1.5 text-sm hover:bg-surface-muted disabled:opacity-50"
+                    disabled="@_busy"
+                    @onclick="MarkAllReadAsync">
+                Mark all as read
+            </button>
+        }
+    </div>
+
+    @if (_loading)
+    {
+        <p class="mt-6 text-sm text-muted">Loading…</p>
+    }
+    else if (_items.Count == 0)
+    {
+        <EmptyState class="mt-6"
+                    Title="@EmptyTitle"
+                    Message="@EmptyMessage" />
+    }
+    else
+    {
+        <ul class="mt-4 divide-y divide-default rounded border border-default bg-surface">
+            @foreach (var item in _items)
+            {
+                <li class="px-4 py-3 @(!item.IsRead ? "bg-surface-muted/30" : "")">
+                    <div class="flex flex-wrap items-start justify-between gap-2">
+                        <button type="button"
+                                class="min-w-0 flex-1 text-start"
+                                @onclick="() => OpenItemAsync(item)">
+                            <div class="flex items-center gap-2">
+                                @if (!item.IsRead)
+                                {
+                                    <span class="h-2 w-2 shrink-0 rounded-full bg-blue-600" aria-hidden="true"></span>
+                                }
+                                <span class="truncate text-sm font-medium text-heading">@item.Subject</span>
+                            </div>
+                            @if (!string.IsNullOrWhiteSpace(item.Summary))
+                            {
+                                <p class="mt-1 text-xs text-muted line-clamp-2">@item.Summary</p>
+                            }
+                            <p class="mt-1 text-[11px] text-muted">
+                                @item.NotificationKind · @item.InstanceCreatedAtUtc.ToLocalTime().ToString("g")
+                                @if (!string.IsNullOrWhiteSpace(item.IntegrationId))
+                                {
+                                    <span> · Integration @item.IntegrationId</span>
+                                }
+                            </p>
+                        </button>
+                        <div class="flex shrink-0 gap-2">
+                            @if (item.IsRead)
+                            {
+                                <button type="button"
+                                        class="text-xs text-muted hover:text-heading"
+                                        disabled="@_busy"
+                                        @onclick="() => MarkUnreadAsync(item)">
+                                    Mark unread
+                                </button>
+                            }
+                            else
+                            {
+                                <button type="button"
+                                        class="text-xs text-muted hover:text-heading"
+                                        disabled="@_busy"
+                                        @onclick="() => MarkReadAsync(item)">
+                                    Mark read
+                                </button>
+                            }
+                        </div>
+                    </div>
+                </li>
+            }
+        </ul>
+    }
+</div>
+
+@code {
+    private static readonly (string Key, string Label)[] _tabs =
+    [
+        ("all", "All"),
+        ("unread", "Unread"),
+        ("read", "Read"),
+    ];
+
+    private string _filter = "all";
+    private bool _loading = true;
+    private bool _busy;
+    private int _unreadCount;
+    private bool _canOpenAdmin;
+    private List<PersonalNotificationInboxItemDto> _items = [];
+
+    private string EmptyTitle => _filter switch
+    {
+        "unread" => "No unread notifications",
+        "read" => "No read notifications",
+        _ => "No notifications",
+    };
+
+    private string EmptyMessage => _filter switch
+    {
+        "unread" => "You are caught up.",
+        "read" => "Nothing marked as read yet.",
+        _ => "When the platform sends you a notification, it will appear here.",
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var caps = await Capabilities.GetCapabilitiesAsync().ConfigureAwait(false);
+            _canOpenAdmin = caps.CanViewNotificationDefinitions;
+        }
+        catch
+        {
+            _canOpenAdmin = false;
+        }
+
+        await LoadAsync();
+    }
+
+    private async Task SetFilterAsync(string filter)
+    {
+        _filter = filter;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        try
+        {
+            _items = (await Client.GetMyNotificationsAsync(readFilter: _filter, take: 100).ConfigureAwait(false)).ToList();
+            _unreadCount = (await Client.GetMyUnreadNotificationCountAsync().ConfigureAwait(false)).UnreadCount;
+            if (_items.Count > 0)
+                await Client.RecordMyNotificationsPageViewedAsync(_items.Select(x => x.Id).ToList()).ConfigureAwait(false);
+        }
+        catch
+        {
+            _items = [];
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task OpenItemAsync(PersonalNotificationInboxItemDto item)
+    {
+        await MarkReadAsync(item);
+        if (item.CanOpenAdminInstanceDetail && _canOpenAdmin)
+            Nav.NavigateTo(PersonalNotificationUiRoutes.AdminInstanceDetail(item.NotificationInstanceId));
+    }
+
+    private async Task MarkReadAsync(PersonalNotificationInboxItemDto item)
+    {
+        _busy = true;
+        try
+        {
+            await Client.MarkMyNotificationReadAsync(item.Id).ConfigureAwait(false);
+            await LoadAsync();
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task MarkUnreadAsync(PersonalNotificationInboxItemDto item)
+    {
+        _busy = true;
+        try
+        {
+            await Client.MarkMyNotificationUnreadAsync(item.Id).ConfigureAwait(false);
+            await LoadAsync();
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task MarkAllReadAsync()
+    {
+        _busy = true;
+        try
+        {
+            await Client.MarkAllMyNotificationsReadAsync().ConfigureAwait(false);
+            await LoadAsync();
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}
