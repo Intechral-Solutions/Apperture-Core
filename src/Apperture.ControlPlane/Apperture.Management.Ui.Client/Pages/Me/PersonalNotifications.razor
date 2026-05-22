@@ -42,9 +42,10 @@
     }
     else if (_items.Count == 0)
     {
-        <EmptyState class="mt-6"
-                    Title="@EmptyTitle"
-                    Message="@EmptyMessage" />
+        <div class="mt-6">
+            <EmptyState Title="@EmptyTitle"
+                        Message="@EmptyMessage" />
+        </div>
     }
     else
     {

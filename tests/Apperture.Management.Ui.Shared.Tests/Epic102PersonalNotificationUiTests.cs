@@ -70,6 +70,22 @@ public sealed class Epic102PersonalNotificationUiTests
     }
 
     [Fact]
+    public void Personal_notifications_page_uses_empty_state_without_invalid_class_parameter()
+    {
+        var path = Path.Combine(
+            FindRepoRoot(),
+            "src",
+            "Apperture.ControlPlane",
+            "Apperture.Management.Ui.Client",
+            "Pages",
+            "Me",
+            "PersonalNotifications.razor");
+        var content = File.ReadAllText(path);
+        content.Should().Contain("<EmptyState");
+        content.Should().NotContain("EmptyState class=");
+    }
+
+    [Fact]
     public void Me_notifications_controller_does_not_require_definition_read_permission()
     {
         var path = Path.Combine(
