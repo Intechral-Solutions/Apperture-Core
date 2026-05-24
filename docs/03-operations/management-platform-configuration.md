@@ -1,8 +1,23 @@
 # Management platform configuration
 
-Canonical guide for **which `appsettings` files matter**, where they live, and how configuration is loaded for the core management platform (Management API, Management UI, Windows Worker).
+Canonical guide for **environment/startup configuration**: which `appsettings` files matter, where they live, and how they are loaded for the core management platform (Management API, Management UI, Windows Worker).
+
+**This document is not the operator settings control plane.** Steady-state platform configuration will live in a future [platform settings registry](../01-architecture/platform-settings-registry.md). See [ADR-0039](../02-decisions/ADR-0039-environment-startup-bootstrap-and-platform-settings.md) for the four-layer model (environment, secrets, bootstrap, platform-managed settings).
 
 For notification cutover flags and staging values, see [epic77-expected-run-missing-notification-cutover-runbook.md](epic77-expected-run-missing-notification-cutover-runbook.md). For bootstrap credentials and secrets boundaries, see [bootstrap-and-secrets-boundary.md](../01-architecture/bootstrap-and-secrets-boundary.md).
+
+## Configuration layers (summary)
+
+| Layer | This doc? | Where to read |
+|-------|-----------|---------------|
+| **Environment / startup** | **Yes** — file inventory below | This document |
+| **Secrets / credentials** | Partial — loading order only | [ADR-0039](../02-decisions/ADR-0039-environment-startup-bootstrap-and-platform-settings.md), [bootstrap-and-secrets-boundary.md](../01-architecture/bootstrap-and-secrets-boundary.md) |
+| **Bootstrap state** | Mentioned in dev templates | [ADR-0039](../02-decisions/ADR-0039-environment-startup-bootstrap-and-platform-settings.md) |
+| **Platform-managed settings** | No — future | [platform-settings-registry.md](../01-architecture/platform-settings-registry.md) |
+
+**Epic 105A** delivered this startup/template inventory. **Epic 106 (Aspire)** is expected to refine local orchestration and dev-time environment wiring; revisit this doc after Aspire lands.
+
+**Rule:** Edit `appsettings` and [deploy/config](../../deploy/config/) templates for **install, dev, and boot defaults** — not for steady-state operator changes. The platform must not write managed settings back to JSON files.
 
 ## Scope
 
@@ -32,11 +47,13 @@ A full-repo file search often finds **~43** paths matching `*appsettings*`. Only
 | `poc/` | 4 | Proof-of-concept hosts |
 | `artifacts/` | 1 | Tooling output |
 
-**Rule:** Only edit paths in [Canonical inventory](#canonical-inventory). Do not edit files under `tests/**/bin`, `**/bin`, or `**/obj`.
+**Rule:** Only edit paths in [Canonical inventory (environment / startup layer)](#canonical-inventory-environment--startup-layer). Do not edit files under `tests/**/bin`, `**/bin`, or `**/obj`.
 
 Integration tests use `WebApplicationFactory` with environment `Testing` and inject SQL via `FixedBootstrapConnectionProfile`; they do not require appsettings under `tests/`.
 
-## Canonical inventory
+## Canonical inventory (environment / startup layer)
+
+Epic 105A file inventory — **startup, template, and boot-default material only**:
 
 | File | Host | Committed? | Purpose |
 |------|------|------------|---------|
@@ -146,9 +163,19 @@ Each ASP.NET Core host uses the default configuration chain (simplified):
 
 See [deploy/config/README.md](../../deploy/config/README.md) for the index.
 
-## Future work
+## Future work and post-Aspire revisit
 
-- **Test `bin/` copies:** Optional MSBuild `PrivateAssets` investigation to stop copying Host/Worker appsettings into test output (cosmetic IDE clutter only).
+Epic 105B defers implementation to **after Epic 106 Aspire**. See [ADR-0039 post-Aspire checklist](../02-decisions/ADR-0039-environment-startup-bootstrap-and-platform-settings.md#post-aspire-revisit-checklist) for:
+
+- Setup automation / installer scripts
+- Bootstrap store and CLI/PowerShell commands
+- DPAPI / Key Vault credential binding
+- First-run setup wizard
+- Platform settings registry and settings management UI
+
+**Cosmetic / tooling (still valid):**
+
+- **Test `bin/` copies:** Optional MSBuild `PrivateAssets` investigation to stop copying Host/Worker appsettings into test output (IDE clutter only).
 - **`poc/`:** Exclude from solution or archive; not part of the platform.
 - **CLI:** `Apperture.Cli.Host` may use optional `appsettings.json` for bootstrap tooling only.
 - **EF design-time:** Run migrations with Management.Host as startup project:
@@ -156,3 +183,5 @@ See [deploy/config/README.md](../../deploy/config/README.md) for the index.
   ```bash
   dotnet ef database update --project src/Apperture.Persistence/Apperture.Persistence.SqlServer --startup-project src/Apperture.ControlPlane/Apperture.Management.Host
   ```
+
+**Platform settings direction (conceptual):** [platform-settings-registry.md](../01-architecture/platform-settings-registry.md).

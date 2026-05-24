@@ -1,6 +1,8 @@
 # Deployment configuration templates
 
-Central templates for management platform `appsettings`. Canonical documentation: [management-platform-configuration.md](../../docs/03-operations/management-platform-configuration.md).
+Central **startup/default templates** for management platform `appsettings` — not the operator settings control plane. See [ADR-0039](../../docs/02-decisions/ADR-0039-environment-startup-bootstrap-and-platform-settings.md) for configuration layers.
+
+Canonical file inventory: [management-platform-configuration.md](../../docs/03-operations/management-platform-configuration.md).
 
 ## Layout
 

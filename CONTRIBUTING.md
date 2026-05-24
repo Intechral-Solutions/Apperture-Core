@@ -18,6 +18,8 @@ Or use `dotnet build Apperture.slnx` and `dotnet test Apperture.slnx`. Use `.\sc
 
 ## Local dev with SQL Server
 
+Dev setup uses the **environment/startup configuration layer** only (appsettings templates, User Secrets, dev scripts). For the full four-layer model and what belongs where, see [ADR-0039](docs/02-decisions/ADR-0039-environment-startup-bootstrap-and-platform-settings.md).
+
 See [deploy/README.md](deploy/README.md) and [management platform configuration](docs/03-operations/management-platform-configuration.md). Quick setup:
 
 1. `dotnet user-secrets set "SqlServer:Password" "<password>" --project src/Apperture.ControlPlane/Apperture.Management.Host`

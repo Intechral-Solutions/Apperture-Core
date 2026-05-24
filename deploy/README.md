@@ -9,7 +9,9 @@ Deployment configuration.
 | k8s/ | Kubernetes manifests (future) |
 | azure/ | Azure deployment config (future) |
 
-Management platform configuration reference: [docs/03-operations/management-platform-configuration.md](../docs/03-operations/management-platform-configuration.md).
+Management platform configuration reference: [docs/03-operations/management-platform-configuration.md](../docs/03-operations/management-platform-configuration.md) (environment/startup layer). Configuration boundaries: [ADR-0039](../docs/02-decisions/ADR-0039-environment-startup-bootstrap-and-platform-settings.md).
+
+**Epic 106 (Aspire)** is expected to refine local orchestration and dev-time startup wiring. Setup automation and installer scripts are deferred until after Aspire — see [ADR-0039 post-Aspire checklist](../docs/02-decisions/ADR-0039-environment-startup-bootstrap-and-platform-settings.md#post-aspire-revisit-checklist).
 
 ## Root Docker Compose shim
 

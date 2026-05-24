@@ -2,6 +2,8 @@
 
 This document defines the boundary between bootstrap configuration, operational secret management, and runtime trust.
 
+For the full four-layer configuration model (environment/startup, secrets, bootstrap, platform-managed settings), see [ADR-0039](../02-decisions/ADR-0039-environment-startup-bootstrap-and-platform-settings.md).
+
 ## Critical Separation
 
 **Bootstrap SQL credentials must NOT depend on the SQL-backed operational secret store they enable.**
