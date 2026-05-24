@@ -22,7 +22,7 @@ First time on the script path: set the SQL password with `dotnet user-secrets se
 
 Stop script-started processes with `.\scripts\dev\down.ps1`; run `docker compose down` to stop SQL Server on the script path.
 
-Do not run Aspire and scripts simultaneously (port conflicts on 1433, 9000, 9001).
+Do not run Aspire and scripts simultaneously (port conflicts on 1433, 9000, 9001). They also use **different SQL volumes** — dev users/passwords from the script path are not present in the Aspire database and vice versa.
 
 ---
 

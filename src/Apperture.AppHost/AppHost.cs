@@ -11,6 +11,7 @@ var db = sql.AddDatabase("Apperture");
 
 var managementApi = builder.AddProject<Projects.Apperture_Management_Host>("management-api")
     .WithHttpEndpoint(port: 9000, name: "http")
+    .WithHttpHealthCheck("/health")
     .WithReference(db, connectionName: "DefaultConnection")
     .WithEnvironment("DOTNET_ENVIRONMENT", "Development")
     .WithEnvironment("ASPNETCORE_ENVIRONMENT", "Development")
@@ -27,6 +28,6 @@ builder.AddProject<Projects.Apperture_RuntimeHost_Windows_WorkerHost>("worker")
     .WithEnvironment("DOTNET_ENVIRONMENT", "Development")
     .WithEnvironment("ASPNETCORE_ENVIRONMENT", "Development")
     .WithEnvironment("APERTURE_RUNTIME_ID", "worker-local")
-    .WaitFor(db);
+    .WaitFor(managementApi);
 
 builder.Build().Run();

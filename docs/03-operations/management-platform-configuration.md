@@ -144,7 +144,9 @@ Each ASP.NET Core host uses the default configuration chain (simplified):
 | **Aspire (preferred)** | `dotnet run --project src/Apperture.AppHost/Apperture.AppHost.csproj` | Aspire-managed container (`apperture-aspire-sql` volume) | Management.Host, Ui.Server, WorkerHost |
 | **Scripts (alternate)** | `.\scripts\Start-Dev.ps1` | docker-compose (`apperture-sqlserver`) | Management.Host, Ui.Server, WorkerHost |
 
-**What Aspire injects:** `ConnectionStrings:DefaultConnection` (SQL) via AppHost references. Hosts do **not** require Aspire to run — `AddServiceDefaults()` in [`Apperture.ServiceDefaults`](../../src/Apperture.ServiceDefaults/) registers passive health/OTEL/service-discovery that also works under direct `dotnet run`.
+**What Aspire injects:** `ConnectionStrings:DefaultConnection` (SQL) via AppHost references. When present, it **overrides** `SqlServer:Server` / `User` / `Password` in `appsettings.Development.json` so Management.Host and WorkerHost share the same Aspire database. Hosts do **not** require Aspire to run — `AddServiceDefaults()` in [`Apperture.ServiceDefaults`](../../src/Apperture.ServiceDefaults/) registers passive health/OTEL/service-discovery that also works under direct `dotnet run`.
+
+**Separate SQL volumes:** Aspire (`apperture-aspire-sql`) and docker-compose (`apperture-sqlserver`) are independent. Dev users/passwords are not shared between paths. Under AppHost, `DevTestUser` / `BootstrapPlatformAdmin` in `appsettings.Development.json` seed the **Aspire** database (Management.Host runs migrations on startup; WorkerHost waits for the API).
 
 **What still comes from appsettings templates:** `DevTestUser`, `BootstrapPlatformAdmin`, notification cutover flags, UI shell config. Copy [`appsettings.docker-dev.json.example`](../../deploy/config/examples/appsettings.docker-dev.json.example) once for Management.Host regardless of orchestration path.
 

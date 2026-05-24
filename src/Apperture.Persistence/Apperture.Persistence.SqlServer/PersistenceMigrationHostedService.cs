@@ -12,13 +12,16 @@ namespace Apperture.Persistence.SqlServer;
 internal sealed class PersistenceMigrationHostedService : IHostedService
 {
     private readonly IServiceProvider _services;
+    private readonly MigrationCompletionState _migrationCompletion;
     private readonly ILogger<PersistenceMigrationHostedService> _logger;
 
     public PersistenceMigrationHostedService(
         IServiceProvider services,
+        MigrationCompletionState migrationCompletion,
         ILogger<PersistenceMigrationHostedService> logger)
     {
         _services = services;
+        _migrationCompletion = migrationCompletion;
         _logger = logger;
     }
 
@@ -29,6 +32,7 @@ internal sealed class PersistenceMigrationHostedService : IHostedService
         try
         {
             await db.Database.MigrateAsync(cancellationToken).ConfigureAwait(false);
+            _migrationCompletion.IsComplete = true;
             _logger.LogInformation("Database migrations applied successfully.");
         }
         catch (Exception ex)

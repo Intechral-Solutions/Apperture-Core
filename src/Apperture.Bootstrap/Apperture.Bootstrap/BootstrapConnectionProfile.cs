@@ -135,11 +135,28 @@ public sealed class BootstrapConnectionProfile : IBootstrapConnectionProfile
         {
             var resolved = _credentialResolver.TryResolveAsync(credRef).ConfigureAwait(false).GetAwaiter().GetResult();
             if (!string.IsNullOrEmpty(resolved))
-                return resolved;
+                return LogAndReturn(resolved, "CredentialReference");
         }
 
-        // 2. Config-based credentials: allowed only in Development
-        if (HasConfigCredentials())
+        // 2. Full ConnectionStrings:DefaultConnection (Aspire injection / explicit) before fragmentary SqlServer: section.
+        if (!string.IsNullOrEmpty(_defaultConnectionString))
+        {
+            if (!_hostEnvironment.IsDevelopment())
+            {
+                throw new InvalidOperationException(
+                    "Bootstrap SQL credentials (User/Password or DefaultConnection) must not be used in Production. " +
+                    "Configure CredentialReference with a secure source (Key Vault, Managed Identity, etc.) and " +
+                    "register a non-stub IBootstrapCredentialResolver.");
+            }
+
+            _logger.LogInformation(
+                "Bootstrap SQL credentials are being read from ConnectionStrings:DefaultConnection. " +
+                "This is allowed only in Development. For Production, use CredentialReference and IBootstrapCredentialResolver.");
+            return LogAndReturn(_defaultConnectionString, "ConnectionStrings:DefaultConnection");
+        }
+
+        // 3. Config-based SqlServer:User/Password (+ Server): allowed only in Development (script/docker-compose path).
+        if (HasSqlServerConfigCredentials())
         {
             if (!_hostEnvironment.IsDevelopment())
             {
@@ -150,12 +167,12 @@ public sealed class BootstrapConnectionProfile : IBootstrapConnectionProfile
             }
 
             _logger.LogWarning(
-                "Bootstrap SQL credentials are being read from config (SqlServer.User/Password or ConnectionStrings.DefaultConnection). " +
+                "Bootstrap SQL credentials are being read from SqlServer:User/Password config. " +
                 "This is allowed only in Development. For Production, use CredentialReference and IBootstrapCredentialResolver.");
-            return BuildConnectionStringFromConfig();
+            return LogAndReturn(BuildConnectionStringFromSqlServerConfig(), "SqlServer");
         }
 
-        // 2.5 Dev-only hardening:
+        // 4. Dev-only hardening:
         // Sometimes the dev scripts pass the SQL password via environment variables, but config binding may
         // not populate BootstrapSqlConfig.Password (e.g., host builder differences). In that case, if we
         // already have SqlServer.Server + SqlServer.User from appsettings.Development.json, allow the
@@ -173,23 +190,25 @@ public sealed class BootstrapConnectionProfile : IBootstrapConnectionProfile
                 _logger.LogWarning(
                     "Bootstrap SQL password is being read from environment variables (SqlServer__Password/MSSQL_SA_PASSWORD) in Development.");
 
-                return new SqlConnectionStringBuilder
+                return LogAndReturn(new SqlConnectionStringBuilder
                 {
                     DataSource = _config.Server,
                     InitialCatalog = _config.Database ?? "Apperture",
                     UserID = _config.User,
                     Password = envPassword,
                     TrustServerCertificate = _config.TrustServerCertificate
-                }.ConnectionString;
+                }.ConnectionString, "SqlServer+environment");
             }
         }
 
-        // 3. LocalDB default: allowed only in Development
+        // 5. LocalDB default: allowed only in Development
         if (_hostEnvironment.IsDevelopment())
         {
             _logger.LogWarning(
                 "Using default LocalDB connection string. For Production, configure CredentialReference and IBootstrapCredentialResolver.");
-            return _defaultConnectionString ?? "Server=(localdb)\\mssqllocaldb;Database=Apperture;Trusted_Connection=True;";
+            return LogAndReturn(
+                "Server=(localdb)\\mssqllocaldb;Database=Apperture;Trusted_Connection=True;",
+                "LocalDB-default");
         }
 
         throw new InvalidOperationException(
@@ -197,25 +216,46 @@ public sealed class BootstrapConnectionProfile : IBootstrapConnectionProfile
             "a non-stub IBootstrapCredentialResolver, or (Development only) set SqlServer.User/Password or ConnectionStrings.DefaultConnection.");
     }
 
-    private bool HasConfigCredentials() =>
-        (!string.IsNullOrEmpty(_config.User) && !string.IsNullOrEmpty(_config.Password)) ||
-        !string.IsNullOrEmpty(_defaultConnectionString);
+    private bool HasSqlServerConfigCredentials() =>
+        !string.IsNullOrEmpty(_config.User) && !string.IsNullOrEmpty(_config.Password);
 
-    private string BuildConnectionStringFromConfig()
+    private string BuildConnectionStringFromSqlServerConfig()
     {
         if (!string.IsNullOrEmpty(_config.Server) && !string.IsNullOrEmpty(_config.User) && !string.IsNullOrEmpty(_config.Password))
         {
-            var sb = new SqlConnectionStringBuilder
+            return new SqlConnectionStringBuilder
             {
                 DataSource = _config.Server,
                 InitialCatalog = _config.Database ?? "Apperture",
                 UserID = _config.User,
                 Password = _config.Password,
                 TrustServerCertificate = _config.TrustServerCertificate
-            };
-            return sb.ConnectionString;
+            }.ConnectionString;
         }
 
-        return _defaultConnectionString ?? "Server=(localdb)\\mssqllocaldb;Database=Apperture;Trusted_Connection=True;";
+        throw new InvalidOperationException(
+            "SqlServer:User and SqlServer:Password are set but SqlServer:Server is missing.");
+    }
+
+    private string LogAndReturn(string connectionString, string source)
+    {
+        if (_hostEnvironment.IsDevelopment())
+        {
+            try
+            {
+                var builder = new SqlConnectionStringBuilder(connectionString);
+                _logger.LogInformation(
+                    "Bootstrap SQL resolved from {Source}: DataSource={DataSource}, InitialCatalog={InitialCatalog}",
+                    source,
+                    builder.DataSource,
+                    builder.InitialCatalog);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Bootstrap SQL resolved from {Source} (could not parse for logging).", source);
+            }
+        }
+
+        return connectionString;
     }
 }

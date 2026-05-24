@@ -159,6 +159,12 @@ public sealed class OperatorCapabilitiesQueryService : IOperatorCapabilitiesQuer
                 canManageNotificationDefinitions,
                 canUpdateIntegrations);
         }
+        catch (OperationCanceledException ex)
+        {
+            // Common when the Blazor client aborts an in-flight fetch during login/navigation (HTTP 499).
+            _logger.LogDebug(ex, "Operator capabilities request canceled; returning deny-all.");
+            return DenyAll;
+        }
         catch (Exception ex)
         {
             // RBAC/DB failures must not take down the capabilities endpoint (UI relies on it broadly).

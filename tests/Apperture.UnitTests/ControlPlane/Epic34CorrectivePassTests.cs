@@ -168,6 +168,26 @@ public sealed class Epic34CorrectivePassTests
         dto.CanViewConnectorDefinitions.Should().BeFalse("capability must reflect connector.definition.read denial");
     }
 
+    [Fact]
+    public async Task OperatorCapabilitiesQueryService_ReturnsDenyAll_WhenComputationCanceled()
+    {
+        var principal = new StubPrincipalContext();
+        var auth = new CancelingAuthorizationEvaluationService();
+        var scheduleGov = new StubScheduleGovernanceService(canManage: true);
+        var recoveryGov = new StubRecoveryGovernanceService(canRead: true, canManage: true);
+        var service = new OperatorCapabilitiesQueryService(
+            principal,
+            auth,
+            scheduleGov,
+            recoveryGov,
+            NullLogger<OperatorCapabilitiesQueryService>.Instance);
+
+        var dto = await service.GetCapabilitiesAsync(CancellationToken.None);
+
+        dto.CanViewGovernance.Should().BeFalse();
+        dto.CanManageModules.Should().BeFalse();
+    }
+
     // --- Stubs ---
 
     private sealed class ThrowingModuleWorkflowListingService : IModuleWorkflowListingService
@@ -300,6 +320,12 @@ public sealed class Epic34CorrectivePassTests
                 return ValueTask.FromResult(_connectorDefinitionRead);
             return ValueTask.FromResult(true);
         }
+    }
+
+    private sealed class CancelingAuthorizationEvaluationService : IAuthorizationEvaluationService
+    {
+        public ValueTask<bool> EvaluateAsync(AuthorizationEvaluationContext context, CancellationToken cancellationToken = default) =>
+            throw new TaskCanceledException("Simulated client abort.");
     }
 
     private sealed class StubScheduleManagementService : IScheduleManagementService

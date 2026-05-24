@@ -39,9 +39,9 @@ After AppHost starts, the console prints a line like `Login to the dashboard at 
 copy deploy\config\examples\appsettings.docker-dev.json.example src\Apperture.ControlPlane\Apperture.Management.Host\appsettings.Development.json
 ```
 
-Aspire injects `ConnectionStrings:DefaultConnection` for SQL; the appsettings overlay is still required for auth/bootstrap dev flags.
+Aspire injects `ConnectionStrings:DefaultConnection` for SQL; that connection **takes precedence** over `SqlServer:Server` / `User` / `Password` in `appsettings.Development.json` when both are present. The appsettings overlay is still required for auth/bootstrap dev flags (`DevTestUser`, `BootstrapPlatformAdmin`, feature toggles) — but **not** for choosing the SQL server under AppHost.
 
-**SQL password (Aspire path):** default in `src/Apperture.AppHost/appsettings.json` (`Parameters:sql-password`). Override via AppHost User Secrets if needed.
+**Separate SQL volumes:** Aspire (`apperture-aspire-sql`) and docker-compose (`apperture-sqlserver`) are independent. Dev users/passwords created on one path do not exist on the other. After switching to Aspire, sign in with the credentials from `DevTestUser` in your `appsettings.Development.json` (template default username/password). To wipe the Aspire database, remove the `apperture-aspire-sql` Docker volume and restart AppHost (migrations and dev bootstrap run again on Management.Host startup).
 
 **Mutual exclusion:** Do not run Aspire and `Start-Dev.ps1` at the same time — both bind ports 1433, 9000, and 9001. Aspire uses its own SQL container/volume (`apperture-aspire-sql`); the script path uses docker-compose (`apperture-sqlserver`).
 

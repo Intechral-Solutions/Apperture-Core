@@ -45,6 +45,8 @@ Requires Docker for the Aspire-managed SQL Server container.
 
    Stop any prior AppHost session before restarting (Ctrl+C, or `scripts/dev/down.ps1` plus stop lingering `dcp.exe` / WorkerHost processes) to avoid port conflicts and file-lock build errors.
 
+   **SQL and login (Aspire vs scripts):** AppHost uses a **separate** persistent SQL volume (`apperture-aspire-sql`), not the docker-compose `apperture-sqlserver` volume. Users and passwords from the script path are **not** shared. Under AppHost, `ConnectionStrings:DefaultConnection` from Aspire wins over `SqlServer:` in `appsettings.Development.json` for Management.Host and WorkerHost. Copy `appsettings.Development.json` for `DevTestUser` / `BootstrapPlatformAdmin` only — local login uses the password from that file (template default `dev`) against the **Aspire** database after Management.Host migrations run. To reset, delete the Aspire SQL volume in Docker and restart AppHost.
+
    Optional: override the SQL password with User Secrets on the AppHost (`dotnet user-secrets set "Parameters:sql-password" "<password>" --project src/Apperture.AppHost`).
 
 **Epic 106 scope:** local dev orchestration only — not platform settings, bootstrap store, setup wizard, or production deployment.

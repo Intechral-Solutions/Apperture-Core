@@ -2,6 +2,7 @@ using Apperture.Core.Application.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
 
 namespace Apperture.Persistence.SqlServer;
 
@@ -70,6 +71,10 @@ public static class ServiceCollectionExtensions
     /// </summary>
     public static IServiceCollection AddApperturePersistenceMigrationsOnStartup(this IServiceCollection services)
     {
+        services.AddSingleton<MigrationCompletionState>();
+        services.AddSingleton<MigrationsCompleteHealthCheck>();
+        services.AddHealthChecks()
+            .AddCheck<MigrationsCompleteHealthCheck>("migrations");
         services.AddHostedService<PersistenceMigrationHostedService>();
         return services;
     }
