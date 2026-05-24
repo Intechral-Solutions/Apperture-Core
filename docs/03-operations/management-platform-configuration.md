@@ -178,6 +178,21 @@ JSON holds non-secret SQL profile + credential **references** only. Configure vi
 
 Aspire local dev does **not** require `configuration.json`. Empty Integrations/Connections on a fresh Aspire DB is expected operator data state, not a bootstrap failure.
 
+### Fresh Aspire DB verification (diagnostics)
+
+Use SQL to confirm **identity/bootstrap seed** and **empty operator data**, not connector-definition catalog rows.
+
+| Check | Expected on fresh Aspire DB |
+|-------|----------------------------|
+| `__EFMigrationsHistory` row count | All migrations applied (Management.Host runs `MigrateAsync` on startup) |
+| `Users` / `IdentityLinks` / `UserRoles` | Bootstrap admin from `BootstrapPlatformAdmin` + `DevTestUser` in `appsettings.Development.json` |
+| `Connections` | **0** — created by operators via Management UI/API |
+| `Integrations` | **0** — created when modules are deployed/registered |
+
+**Do not query `ConnectorDefinitions`.** That table was removed in Epic 53 ([Epic53-Registry-Only-Connector-Definitions](../02-decisions/Epic53-Registry-Only-Connector-Definitions.md)). Connector definitions live in **`IConnectorDefinitionRegistry`** at host startup (well-known platform SQL + connector-package contributors such as Campus Nexus and SFTP). `Connection.ConnectorDefinitionId` is a logical reference to those registry ids, not a foreign key to a SQL catalog.
+
+To verify the catalog at runtime (after Management.Host is up), call `GET /api/connector-definitions` with an authenticated user that has `connector.definition.read` (platform admin on dev seed). An empty `Connections`/`Integrations` result with HTTP 200 and a non-empty connector-definition list is normal. See [connector-resource-family](../01-architecture/connector-resource-family.md).
+
 **Thin dev setup:** [`scripts/Initialize-AppertureEnvironment.ps1`](../../scripts/Initialize-AppertureEnvironment.ps1) copies appsettings template and prints startup commands. Does not create bootstrap `configuration.json`.
 
 **Epic 108 non-goals (unchanged):** platform-managed settings registry (Epic 109), setup wizard, production installer, merging Aspire/docker-compose SQL volumes.
