@@ -43,9 +43,9 @@ IBootstrapCredentialManager, ISqlConnectionBootstrapProfileManager, IBootstrapCo
 | `Get-AppertureBootstrap` | bootstrap show | No secret output |
 | `Test-AppertureBootstrap` | bootstrap validate | Validation result |
 | `Test-AppertureBootstrapSqlConnection` | bootstrap sql test | Connection test |
-| `Set-AppertureBootstrapSqlProfile` | bootstrap sql set-profile | Server, Database |
-| `Set-AppertureBootstrapSqlAuthMode` | bootstrap sql set-auth-mode | AuthMode enum |
-| `Set-AppertureBootstrapSqlPassword` | bootstrap sql set-password | SecureString; no echo |
+| `Set-AppertureBootstrapSqlProfile` | bootstrap set-profile | Server, Database |
+| `Set-AppertureBootstrapSqlAuthMode` | bootstrap set-auth-mode | AuthMode enum |
+| `Set-AppertureBootstrapSqlPassword` | bootstrap set-password | Deferred (108b); no plaintext storage |
 | `Set-AppertureBootstrapSqlKeyVaultBinding` | bootstrap sql bind-keyvault-secret | Secret URI |
 | `Set-AppertureBootstrapSqlManagedIdentityBinding` | bootstrap sql bind-managed-identity | |
 | `Set-AppertureBootstrapSqlIntegratedSecurityBinding` | bootstrap sql bind-integrated-security | |
@@ -67,6 +67,25 @@ Contents: `Profile` (server, database, auth mode), optional `CredentialReference
 Implementation: [`FileBootstrapConfigurationStore`](../../src/Apperture.Bootstrap/Apperture.Bootstrap/FileBootstrapConfigurationStore.cs). Wired in CLI, Management.Host, and WorkerHost via `AddBootstrapScaffolding()`.
 
 **Aspire local dev** does not require this file. SQL comes from Aspire-injected `ConnectionStrings:DefaultConnection` (see [management-platform-configuration.md](../03-operations/management-platform-configuration.md)).
+
+This store is **bootstrap state only** (layer 3 per ADR-0039). It is not the platform-managed settings registry (Epic 109).
+
+### CLI smoke (verify persistence)
+
+Use a temp path so production `%ProgramData%` is not touched:
+
+```powershell
+$env:APPERTURE_BOOTSTRAP_CONFIG_PATH = Join-Path $env:TEMP "apperture-bootstrap-smoke.json"
+Remove-Item $env:APPERTURE_BOOTSTRAP_CONFIG_PATH -ErrorAction SilentlyContinue
+
+dotnet run --project src/Apperture.Cli/Apperture.Cli.Host -- bootstrap set-profile --server prod-sql.example --database Apperture
+dotnet run --project src/Apperture.Cli/Apperture.Cli.Host -- bootstrap show
+Get-Content $env:APPERTURE_BOOTSTRAP_CONFIG_PATH
+
+Remove-Item Env:APPERTURE_BOOTSTRAP_CONFIG_PATH
+```
+
+Expected JSON shape: `Profile` (Server, Database, AuthMode, TrustServerCertificate), optional `CredentialReference`, `Version`. **No `Password` or `User` keys.** `bootstrap set-password` returns a deferred message and must not write the file.
 
 ## CLI commands (implemented vs deferred)
 

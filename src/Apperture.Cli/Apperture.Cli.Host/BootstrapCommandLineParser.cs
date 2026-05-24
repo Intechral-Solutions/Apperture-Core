@@ -2,7 +2,7 @@ using Apperture.Bootstrap.Models;
 
 namespace Apperture.Cli.Host;
 
-internal static class BootstrapCommandLineParser
+public static class BootstrapCommandLineParser
 {
     public static bool TryParseSetProfile(string[] args, out SqlConnectionBootstrapProfile? profile, out string? error)
     {

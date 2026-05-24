@@ -106,6 +106,7 @@ public sealed class FileBootstrapConfigurationStoreTests : IDisposable
         var json = await File.ReadAllTextAsync(path);
         json.Should().NotContain("\"Password\"");
         json.Should().NotContain("\"User\"");
+        json.Should().Contain(Environment.NewLine); // indented for operator readability
     }
 
     [Fact]

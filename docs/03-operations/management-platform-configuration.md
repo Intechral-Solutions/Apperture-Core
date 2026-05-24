@@ -180,7 +180,7 @@ Aspire local dev does **not** require `configuration.json`. Empty Integrations/C
 
 **Thin dev setup:** [`scripts/Initialize-AppertureEnvironment.ps1`](../../scripts/Initialize-AppertureEnvironment.ps1) copies appsettings template and prints startup commands. Does not create bootstrap `configuration.json`.
 
-**Epic 108 non-goals (unchanged):** platform-managed settings registry, setup wizard, production installer, merging Aspire/docker-compose SQL volumes.
+**Epic 108 non-goals (unchanged):** platform-managed settings registry (Epic 109), setup wizard, production installer, merging Aspire/docker-compose SQL volumes.
 
 ## Deployed environment
 

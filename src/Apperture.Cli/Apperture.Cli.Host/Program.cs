@@ -86,7 +86,8 @@ static async Task RunBootstrapAsync(BootstrapCliService bootstrapCli, string[] s
                 return;
             }
 
-            WriteResult(await bootstrapCli.SetProfileAsync(setProfile!));
+            var setProfileResult = await bootstrapCli.SetProfileAsync(setProfile!);
+            WriteResult(setProfileResult);
             break;
         }
         case "set-auth-mode":
@@ -97,7 +98,8 @@ static async Task RunBootstrapAsync(BootstrapCliService bootstrapCli, string[] s
                 return;
             }
 
-            WriteResult(await bootstrapCli.SetAuthModeAsync(authMode!.Value));
+            var setAuthModeResult = await bootstrapCli.SetAuthModeAsync(authMode!.Value);
+            WriteResult(setAuthModeResult);
             break;
         }
         case "bind-keyvault-secret":
