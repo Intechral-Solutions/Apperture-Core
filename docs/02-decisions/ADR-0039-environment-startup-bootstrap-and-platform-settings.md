@@ -14,7 +14,7 @@ Operators and contributors still need a **single decision record** that explains
 - That `appsettings` is **not** the long-term operator control plane.
 - How Epic 106 Aspire integration refines the environment/startup layer without replacing the layered model.
 
-Epic 105B documents boundaries and decisions only. It does not implement setup automation, bootstrap persistence, platform settings storage, or UI.
+Epic 105B documented boundaries and decisions. Epic 108 implemented bootstrap persistence and Epic 109 implemented Phase 1 platform settings storage/API/UI.
 
 ## Decision
 
@@ -25,7 +25,7 @@ Apperture adopts a **four-layer configuration model**. Each layer has a distinct
 1. **`appsettings` and [deploy/config](../../deploy/config/) examples are startup/default/template configuration** — not the steady-state operator settings plane.
 2. **Platform-managed settings must not write values back to `appsettings` files** (or any committed JSON startup template).
 3. **Secret material must not live in committed JSON.**
-4. **Bootstrap store, installer automation, credential binding implementations, first-run wizard, and platform settings registry implementation remain deferred** per the post-Aspire checklist below. Epic 106 delivered local Aspire orchestration only.
+4. **Installer automation, credential binding implementations, and first-run wizard remain deferred** per the post-Aspire checklist below. Epic 106 delivered local Aspire orchestration; Epics 108/109 delivered bootstrap store and platform settings Phase 1.
 
 ```mermaid
 flowchart TB
@@ -217,8 +217,8 @@ Epic 106 local orchestration is **delivered**. Revisit **before implementing** t
 - [x] CLI / PowerShell bootstrap commands — profile and credential-reference persistence (Epic 108)
 - [ ] DPAPI / Key Vault / Managed Identity credential binding (Epic 108b)
 - [ ] First-run setup wizard (UI)
-- [ ] Platform settings registry implementation ([platform-settings-registry.md](../01-architecture/platform-settings-registry.md))
-- [ ] Settings management UI (generated panels / custom config surfaces)
+- [x] Platform settings registry implementation (Phase 1 scope) ([platform-settings-registry.md](../01-architecture/platform-settings-registry.md))
+- [x] Settings management UI (minimal `/config/platform-settings` page for Phase 1 keys)
 - [ ] Migration plan from current `IOptions` + JSON flags to registry-backed settings
 
 ## Consequences

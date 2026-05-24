@@ -2,7 +2,7 @@
 
 Canonical guide for **environment/startup configuration**: which `appsettings` files matter, where they live, and how they are loaded for the core management platform (Management API, Management UI, Windows Worker).
 
-**This document is not the operator settings control plane.** Steady-state platform configuration will live in a future [platform settings registry](../01-architecture/platform-settings-registry.md). See [ADR-0039](../02-decisions/ADR-0039-environment-startup-bootstrap-and-platform-settings.md) for the four-layer model (environment, secrets, bootstrap, platform-managed settings).
+**This document is not the operator settings control plane.** Phase 1 platform-managed settings now use the [platform settings registry](../01-architecture/platform-settings-registry.md) and are edited in Management UI at `/config/platform-settings` (or API `api/config/platform-settings`). `appsettings` still provides boot defaults.
 
 For notification cutover flags and staging values, see [epic77-expected-run-missing-notification-cutover-runbook.md](epic77-expected-run-missing-notification-cutover-runbook.md). For bootstrap credentials and secrets boundaries, see [bootstrap-and-secrets-boundary.md](../01-architecture/bootstrap-and-secrets-boundary.md).
 

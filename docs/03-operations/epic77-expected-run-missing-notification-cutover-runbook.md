@@ -17,11 +17,12 @@ Operator guide for moving `expected_run_missing` notifications from Epic 69 (`At
 | Instance detail (snapshot, outbox) | `/config/notifications/instances/{instanceId}` |
 | Delivery health | `/config/notifications/delivery` |
 | Diagnostics (parity, flags) | `/config/notifications/diagnostics` |
+| Platform settings (flag edits) | `/config/platform-settings` |
 | Integration cutover + subscriptions | `/integrations/{integrationId}/notifications` |
 | Schedule + incident history | `/integrations/{integrationId}/schedule-diagnostics` |
 | Incident deep-link | `/integrations/{integrationId}/schedule-diagnostics?incidentId={id}` |
 
-The UI does **not** change configuration flags or send mail. Sign-off is audit evidence only.
+The diagnostics UI remains **read-only** for flags. Use `/config/platform-settings` for edits and resets. Sign-off is audit evidence only.
 
 ---
 

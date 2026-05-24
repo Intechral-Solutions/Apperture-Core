@@ -55,6 +55,7 @@ public class AppertureDbContext : DbContext
     public DbSet<ScheduleStateEntity> ScheduleStates => Set<ScheduleStateEntity>();
     public DbSet<InstanceAuthUiPolicyEntity> InstanceAuthUiPolicies => Set<InstanceAuthUiPolicyEntity>();
     public DbSet<EntraInstanceRegistrationEntity> EntraInstanceRegistrations => Set<EntraInstanceRegistrationEntity>();
+    public DbSet<PlatformSettingValueEntity> PlatformSettingValues => Set<PlatformSettingValueEntity>();
     public DbSet<AttentionIncidentEntity> AttentionIncidents => Set<AttentionIncidentEntity>();
     public DbSet<AttentionIncidentNotificationEntity> AttentionIncidentNotifications => Set<AttentionIncidentNotificationEntity>();
     public DbSet<InstanceAttentionRoutingEntity> InstanceAttentionRoutings => Set<InstanceAttentionRoutingEntity>();
@@ -725,6 +726,20 @@ public class AppertureDbContext : DbContext
             e.Property(x => x.LastDirectoryDiscoveryDetail).HasMaxLength(4000);
             e.Property(x => x.RowVersion).IsRowVersion();
             e.HasIndex(x => x.IsActive).IsUnique().HasFilter("[IsActive] = 1");
+        });
+
+        modelBuilder.Entity<PlatformSettingValueEntity>(e =>
+        {
+            e.ToTable("PlatformSettingValues");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasMaxLength(256);
+            e.Property(x => x.Key).HasMaxLength(128);
+            e.Property(x => x.ScopeKind).HasMaxLength(32);
+            e.Property(x => x.ScopeId).HasMaxLength(64);
+            e.Property(x => x.ValueJson).HasMaxLength(512);
+            e.Property(x => x.UpdatedByPrincipalId).HasMaxLength(128);
+            e.Property(x => x.RowVersion).IsRowVersion();
+            e.HasIndex(x => new { x.Key, x.ScopeKind, x.ScopeId }).IsUnique();
         });
 
         modelBuilder.Entity<AttentionIncidentEntity>(e =>

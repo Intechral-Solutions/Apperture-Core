@@ -24,7 +24,7 @@ public interface IOperatorCapabilitiesService
 public sealed class OperatorCapabilitiesService : IOperatorCapabilitiesService
 {
     private static readonly OperatorCapabilitiesDto DenyAll =
-        new(false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false);
+        new(false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false);
 
     private static readonly int[] RetryDelaysMs = [50, 150];
 
@@ -145,5 +145,6 @@ public sealed class OperatorCapabilitiesService : IOperatorCapabilitiesService
         && !d.CanViewIntegrations && !d.CanManageIntegrations && !d.CanViewConnectorDefinitions
         && !d.CanCreateConnections && !d.CanUpdateConnections && !d.CanRetireConnections
         && !d.CanViewManagedContacts && !d.CanManageManagedContacts && !d.CanImportManagedContacts
-        && !d.CanViewNotificationDefinitions && !d.CanManageNotificationDefinitions && !d.CanUpdateIntegrations;
+        && !d.CanViewNotificationDefinitions && !d.CanManageNotificationDefinitions && !d.CanUpdateIntegrations
+        && !d.CanViewPlatformSettings && !d.CanManagePlatformSettings;
 }

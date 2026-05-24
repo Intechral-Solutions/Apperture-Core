@@ -1932,6 +1932,56 @@ namespace Apperture.Persistence.SqlServer.Migrations
                     b.ToTable("PlatformEvents", (string)null);
                 });
 
+            modelBuilder.Entity("Apperture.Persistence.SqlServer.PlatformSettingValueEntity", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<DateTimeOffset>("CreatedUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("Key")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<string>("ScopeId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("ScopeKind")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<string>("UpdatedByPrincipalId")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<DateTimeOffset>("UpdatedUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("ValueJson")
+                        .IsRequired()
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Key", "ScopeKind", "ScopeId")
+                        .IsUnique();
+
+                    b.ToTable("PlatformSettingValues", (string)null);
+                });
+
             modelBuilder.Entity("Apperture.Persistence.SqlServer.RoleEntity", b =>
                 {
                     b.Property<string>("Id")

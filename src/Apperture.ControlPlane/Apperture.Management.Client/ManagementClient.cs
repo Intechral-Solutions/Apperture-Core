@@ -1164,6 +1164,48 @@ public sealed class ManagementClient : IManagementClient
         return dto ?? throw new InvalidOperationException("auth-ui-policy patch response was empty.");
     }
 
+    public async Task<IReadOnlyList<PlatformSettingResolvedDto>?> ListPlatformSettingsAsync(CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.GetAsync("config/platform-settings", cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
+            return null;
+        response.EnsureSuccessStatusCode();
+        var dto = await response.Content.ReadFromJsonAsync<PlatformSettingResolvedDto[]>(cancellationToken).ConfigureAwait(false);
+        return dto ?? Array.Empty<PlatformSettingResolvedDto>();
+    }
+
+    public async Task<PlatformSettingResolvedDto?> GetPlatformSettingAsync(string key, CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.GetAsync($"config/platform-settings/{Uri.EscapeDataString(key)}", cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
+            return null;
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<PlatformSettingResolvedDto>(cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<PlatformSettingResolvedDto> SetPlatformSettingAsync(string key, UpdatePlatformSettingRequest request, CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.PutAsJsonAsync($"config/platform-settings/{Uri.EscapeDataString(key)}", request, cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode is HttpStatusCode.BadRequest or HttpStatusCode.Conflict or HttpStatusCode.Forbidden)
+        {
+            var detail = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            throw new HttpRequestException(string.IsNullOrWhiteSpace(detail) ? response.ReasonPhrase : detail, null, response.StatusCode);
+        }
+
+        response.EnsureSuccessStatusCode();
+        var dto = await response.Content.ReadFromJsonAsync<PlatformSettingResolvedDto>(cancellationToken).ConfigureAwait(false);
+        return dto ?? throw new InvalidOperationException("platform-settings put response was empty.");
+    }
+
+    public async Task<PlatformSettingResolvedDto?> ResetPlatformSettingAsync(string key, CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.DeleteAsync($"config/platform-settings/{Uri.EscapeDataString(key)}", cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
+            return null;
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<PlatformSettingResolvedDto>(cancellationToken).ConfigureAwait(false);
+    }
+
     public async Task<ConfigAuthOverviewDto?> GetConfigAuthOverviewAsync(CancellationToken cancellationToken = default)
     {
         using var response = await _http.GetAsync("config/auth-overview", cancellationToken).ConfigureAwait(false);

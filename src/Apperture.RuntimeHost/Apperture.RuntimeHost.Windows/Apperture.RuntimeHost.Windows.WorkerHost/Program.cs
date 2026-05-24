@@ -4,6 +4,7 @@ using Apperture.Connectors.Sftp;
 using Apperture.ConnectorResolution;
 using Apperture.RuntimePlane.Dispatch.SqlServer;
 using Apperture.Core.Application.Execution;
+using Apperture.Core.Application.PlatformSettings;
 using Apperture.Core.Application.Services;
 using Apperture.ModuleSdk.Abstractions;
 using Apperture.Persistence.SqlServer;
@@ -118,6 +119,9 @@ builder.Services.AddWorkerHostIntegrationRepository();
     });
 
     builder.Services.AddRuntimePlatformEvents(builder.Configuration);
+    builder.Services.AddSingleton<IPlatformSettingDefinitionRegistry, PlatformSettingDefinitionRegistry>();
+    builder.Services.AddScoped<IPlatformSettingValueRepository, SqlPlatformSettingValueRepository>();
+    builder.Services.AddScoped<IPlatformSettingsResolver, RuntimePlatformSettingsResolver>();
 
     builder.Services.AddSingleton<IWorkflowDefinitionResolver, WorkflowDefinitionResolver>();
     builder.Services.AddSingleton<IOperationRegistryService, OperationRegistryService>();

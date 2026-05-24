@@ -103,6 +103,11 @@ public static class ControlPanelMenuDefinitions
                     },
                     new DomainMenuItem
                     {
+                        Text = "Platform settings",
+                        Href = "/config/platform-settings"
+                    },
+                    new DomainMenuItem
+                    {
                         Id = "config-attention",
                         Text = "Attention",
                         Href = "/attention/operational-teams",

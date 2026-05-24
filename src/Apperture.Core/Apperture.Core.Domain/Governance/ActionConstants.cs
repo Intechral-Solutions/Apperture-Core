@@ -104,4 +104,10 @@ public static class ActionConstants
 
     /// <summary>Create/update/enable notification definitions. Epic 77.</summary>
     public const string NotificationDefinitionManage = "notification.definition.manage";
+
+    /// <summary>Read instance platform settings registry (Phase 1). Epic 109.</summary>
+    public const string PlatformSettingsRead = "platform.settings.read";
+
+    /// <summary>Update or reset instance platform settings overrides. Epic 109.</summary>
+    public const string PlatformSettingsManage = "platform.settings.manage";
 }

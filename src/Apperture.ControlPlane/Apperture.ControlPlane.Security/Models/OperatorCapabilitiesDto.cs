@@ -35,4 +35,6 @@ public sealed record OperatorCapabilitiesDto(
     bool CanImportManagedContacts = false,
     bool CanViewNotificationDefinitions = false,
     bool CanManageNotificationDefinitions = false,
-    bool CanUpdateIntegrations = false);
+    bool CanUpdateIntegrations = false,
+    bool CanViewPlatformSettings = false,
+    bool CanManagePlatformSettings = false);

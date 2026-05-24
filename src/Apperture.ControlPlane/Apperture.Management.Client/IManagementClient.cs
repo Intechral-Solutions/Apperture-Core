@@ -387,6 +387,18 @@ public interface IManagementClient
     /// <summary>Updates auth UI policy. Throws <see cref="HttpRequestException"/> on 400/403/409.</summary>
     Task<AuthUiPolicyDto> PatchAuthUiPolicyAsync(UpdateAuthUiPolicyRequest request, CancellationToken cancellationToken = default);
 
+    /// <summary>Lists platform settings. Returns null on 401/403.</summary>
+    Task<IReadOnlyList<PlatformSettingResolvedDto>?> ListPlatformSettingsAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>Gets one platform setting. Returns null on 404/401/403.</summary>
+    Task<PlatformSettingResolvedDto?> GetPlatformSettingAsync(string key, CancellationToken cancellationToken = default);
+
+    /// <summary>Updates a platform setting. Throws on 400/403/409.</summary>
+    Task<PlatformSettingResolvedDto> SetPlatformSettingAsync(string key, UpdatePlatformSettingRequest request, CancellationToken cancellationToken = default);
+
+    /// <summary>Resets a platform setting DB override. Returns null on 404/401/403.</summary>
+    Task<PlatformSettingResolvedDto?> ResetPlatformSettingAsync(string key, CancellationToken cancellationToken = default);
+
     /// <summary>Authentication overview for Config (Epic 44). Returns null on 401/403.</summary>
     Task<ConfigAuthOverviewDto?> GetConfigAuthOverviewAsync(CancellationToken cancellationToken = default);
 
@@ -708,7 +720,28 @@ public sealed record OperatorCapabilitiesDto(
     [property: JsonPropertyName("canImportManagedContacts")] bool CanImportManagedContacts = false,
     [property: JsonPropertyName("canViewNotificationDefinitions")] bool CanViewNotificationDefinitions = false,
     [property: JsonPropertyName("canManageNotificationDefinitions")] bool CanManageNotificationDefinitions = false,
-    [property: JsonPropertyName("canUpdateIntegrations")] bool CanUpdateIntegrations = false);
+    [property: JsonPropertyName("canUpdateIntegrations")] bool CanUpdateIntegrations = false,
+    [property: JsonPropertyName("canViewPlatformSettings")] bool CanViewPlatformSettings = false,
+    [property: JsonPropertyName("canManagePlatformSettings")] bool CanManagePlatformSettings = false);
+
+public sealed record PlatformSettingResolvedDto(
+    string Key,
+    string DisplayName,
+    string Description,
+    string Category,
+    string ValueType,
+    string CurrentValue,
+    string Source,
+    bool IsEditable,
+    bool RequiresRestart,
+    string? RowVersionBase64,
+    int? MinInteger,
+    int? MaxInteger,
+    string? MinDurationIso);
+
+public sealed record UpdatePlatformSettingRequest(
+    string Value,
+    string? RowVersionBase64);
 
 public sealed record ManagedContactSummaryDto(
     string Id,

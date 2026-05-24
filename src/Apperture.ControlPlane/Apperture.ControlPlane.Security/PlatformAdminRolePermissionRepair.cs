@@ -58,6 +58,13 @@ public static class PlatformAdminRolePermissionRepair
         new(ActionConstants.AuthEntraManage, new ResourceDescriptor(ResourceTypeConstants.InstanceConfiguration, ScopeKeyConstants.Instance))
     ];
 
+    /// <summary>Platform settings registry (Epic 109).</summary>
+    public static readonly PermissionDescriptor[] RequiredPlatformSettingsPermissions =
+    [
+        new(ActionConstants.PlatformSettingsRead, new ResourceDescriptor(ResourceTypeConstants.InstanceConfiguration, ScopeKeyConstants.Instance)),
+        new(ActionConstants.PlatformSettingsManage, new ResourceDescriptor(ResourceTypeConstants.InstanceConfiguration, ScopeKeyConstants.Instance))
+    ];
+
     /// <summary>
     /// Integration management. Epic 49.
     /// </summary>
@@ -110,6 +117,7 @@ public static class PlatformAdminRolePermissionRepair
         step = EnsureSet(step, RequiredInstanceAuthConfigurationPermissions);
         step = EnsureSet(step, RequiredManagedContactPermissions);
         step = EnsureSet(step, RequiredNotificationDefinitionPermissions);
+        step = EnsureSet(step, RequiredPlatformSettingsPermissions);
         return step;
     }
 

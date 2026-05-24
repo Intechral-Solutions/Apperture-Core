@@ -2,7 +2,9 @@
 
 ## Status
 
-**Proposed / future direction** — documented in Epic 105B. Not an implementation specification. No persistence, API, or UI exists yet.
+**Phase 1 implemented (Epic 109).** Instance-scoped platform settings are now persisted in SQL (`PlatformSettingValues`), resolved with precedence `Database > Configuration > Definition default`, exposed through `api/config/platform-settings`, and editable in Management UI at `/config/platform-settings`.
+
+Phase 1 includes nine platform-owned keys for notification cutover, `PlatformEvents.Enabled`, and attention observation controls. Appsettings remains boot defaults only; runtime updates never write back to JSON files.
 
 **Decision anchor:** [ADR-0039: Environment, startup, bootstrap, and platform settings](../02-decisions/ADR-0039-environment-startup-bootstrap-and-platform-settings.md).
 

@@ -4,6 +4,7 @@ using Apperture.ModuleSdk.Abstractions.Signals;
 using Apperture.Persistence.SqlServer;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 namespace Apperture.RuntimePlane.Engine.PlatformEvents;
 
@@ -20,6 +21,7 @@ public static class PlatformEventsRuntimeServiceCollectionExtensions
         IConfiguration configuration)
     {
         services.Configure<PlatformEventsOptions>(configuration.GetSection(PlatformEventsOptions.SectionName));
+        services.AddSingleton<IPostConfigureOptions<PlatformEventsOptions>, PlatformEventsOptionsPlatformSettingsPostConfigure>();
 
         services.AddSingleton<IModuleSignalRegistry>(sp =>
         {
