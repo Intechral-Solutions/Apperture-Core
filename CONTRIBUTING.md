@@ -38,6 +38,13 @@ Requires Docker for the Aspire-managed SQL Server container.
 
    Starts SQL Server, Management API (:9000), Management UI (:9001), and WorkerHost. Opens the Aspire dashboard. [`Apperture.ServiceDefaults`](src/Apperture.ServiceDefaults/) adds conventional health, OpenTelemetry, and service discovery on orchestrated hosts — hosts still run without Aspire when started directly.
 
+   **URLs (important):**
+   - Management UI: `http://localhost:9001` (HTTP only — there is no HTTPS listener on 9001)
+   - Management API: `http://localhost:9000`
+   - Aspire dashboard: use the **login URL printed in the AppHost console** (for example `https://localhost:17173/login?t=...`). The bare dashboard origin may redirect or fail in the browser if the dev certificate is untrusted; prefer the tokenized login link. HTTP fallback is often `http://localhost:15235`.
+
+   Stop any prior AppHost session before restarting (Ctrl+C, or `scripts/dev/down.ps1` plus stop lingering `dcp.exe` / WorkerHost processes) to avoid port conflicts and file-lock build errors.
+
    Optional: override the SQL password with User Secrets on the AppHost (`dotnet user-secrets set "Parameters:sql-password" "<password>" --project src/Apperture.AppHost`).
 
 **Epic 106 scope:** local dev orchestration only — not platform settings, bootstrap store, setup wizard, or production deployment.

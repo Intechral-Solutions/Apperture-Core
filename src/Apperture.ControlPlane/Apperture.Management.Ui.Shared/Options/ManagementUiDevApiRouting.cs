@@ -6,7 +6,6 @@ namespace Apperture.Management.Ui.Shared.Options;
 /// </summary>
 public static class ManagementUiDevApiRouting
 {
-    private const int DevUiPort = 9001;
     private const int DevManagementHostPort = 9000;
 
     /// <summary>
@@ -15,10 +14,10 @@ public static class ManagementUiDevApiRouting
     public static string ResolveApiBaseUrl(string? apiBaseUrlFromConfig, string wasmBaseAddress)
     {
         var apiBaseUrl = string.IsNullOrWhiteSpace(apiBaseUrlFromConfig) ? "/api" : apiBaseUrlFromConfig.Trim();
+        // Dev split-host: UI on loopback (script path :9001 or Aspire dynamic port behind :9001 proxy).
         if (!apiBaseUrl.StartsWith("http", StringComparison.OrdinalIgnoreCase)
             && Uri.TryCreate(wasmBaseAddress, UriKind.Absolute, out var wasmBase)
-            && wasmBase.IsLoopback
-            && wasmBase.Port == DevUiPort)
+            && wasmBase.IsLoopback)
         {
             return $"http://localhost:{DevManagementHostPort}/api";
         }

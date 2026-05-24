@@ -27,8 +27,11 @@ The AppHost orchestrates:
 |----------|----------------|
 | SQL Server (Aspire container, `2022-latest`, volume `apperture-aspire-sql`) | `localhost:1433` |
 | Management API (`Apperture.Management.Host`) | `http://localhost:9000` |
-| Management UI (`Apperture.Management.Ui.Server` + Blazor WASM client) | `http://localhost:9001` |
+| Management UI (`Apperture.Management.Ui.Server` + Blazor WASM client) | `http://localhost:9001` (HTTP only) |
 | Worker runtime (`Apperture.RuntimeHost.Windows.WorkerHost`) | background worker |
+| Aspire dashboard | `https://localhost:17173` (HTTPS) or `http://localhost:15235` — **open the tokenized login URL printed by AppHost**, not the bare origin |
+
+After AppHost starts, the console prints a line like `Login to the dashboard at https://localhost:17173/login?t=...`. Use that URL. The Management UI is **not** on port 17173; do not use `https://localhost:9001` (no TLS listener on 9001).
 
 **First-time (both Aspire and script paths):** copy the docker-dev appsettings template for Management.Host dev overlays (`DevTestUser`, bootstrap admin, etc.):
 

@@ -12,10 +12,14 @@ var db = sql.AddDatabase("Apperture");
 var managementApi = builder.AddProject<Projects.Apperture_Management_Host>("management-api")
     .WithHttpEndpoint(port: 9000, name: "http")
     .WithReference(db, connectionName: "DefaultConnection")
+    .WithEnvironment("DOTNET_ENVIRONMENT", "Development")
+    .WithEnvironment("ASPNETCORE_ENVIRONMENT", "Development")
     .WaitFor(db);
 
 builder.AddProject<Projects.Apperture_Management_Ui_Server>("management-ui")
     .WithHttpEndpoint(port: 9001, name: "http")
+    .WithEnvironment("DOTNET_ENVIRONMENT", "Development")
+    .WithEnvironment("ASPNETCORE_ENVIRONMENT", "Development")
     .WaitFor(managementApi);
 
 builder.AddProject<Projects.Apperture_RuntimeHost_Windows_WorkerHost>("worker")

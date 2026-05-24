@@ -23,7 +23,13 @@ var apiBaseUrl = ManagementUiDevApiRouting.ResolveApiBaseUrl(
     uiBaseAddress);
 if (!apiBaseUrl.EndsWith("/", StringComparison.Ordinal))
     apiBaseUrl += "/";
-var apiUri = new Uri(apiBaseUrl);
+if (!Uri.TryCreate(apiBaseUrl, UriKind.Absolute, out var apiUri))
+{
+    var uiBase = Uri.TryCreate(uiBaseAddress, UriKind.Absolute, out var parsedUi)
+        ? parsedUi
+        : new Uri("http://localhost:9001");
+    apiUri = new Uri(uiBase, apiBaseUrl);
+}
 
 builder.Services.AddScoped(_ => new HttpClient { BaseAddress = apiUri });
 builder.Services.AddScoped<IManagementClient>(sp => new ManagementClient(sp.GetRequiredService<HttpClient>()));
