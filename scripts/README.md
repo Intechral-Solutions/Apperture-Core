@@ -4,6 +4,14 @@ PowerShell scripts for development, CI, and tooling. Run from the repo root or f
 
 ## Quick start (dev)
 
+**First-time setup (optional helper):**
+
+```powershell
+.\scripts\Initialize-AppertureEnvironment.ps1
+```
+
+Copies the docker-dev appsettings template when missing, optionally prompts for User Secrets SQL password (docker-compose path only), and prints Aspire vs script startup commands. Does not create production bootstrap `configuration.json`.
+
 **Preferred — Aspire** (requires Docker):
 
 ```powershell
@@ -36,6 +44,7 @@ Do not run Aspire and scripts simultaneously (port conflicts on 1433, 9000, 9001
 | **logs.ps1** | Show which processes are listening on dev ports. |
 | **seed.ps1** | Placeholder: seed dev database (implement when persistence is added). |
 | **reset-db.ps1** | Drop/recreate the `Apperture` database and apply all EF migrations. |
+| **Initialize-AppertureEnvironment.ps1** | One-time dev setup: copy appsettings template, optional User Secrets, print Aspire vs script paths. |
 | **Fix-ScheduleTables.ps1** | Create schedule tables if missing (only needed if migrations were out of sync). **Management.Host** on startup also applies migration `EnsureScheduleTablesConditional`, which does the same idempotently. |
 
 **`/api/runs` 500 — invalid `OperationRuns` columns (`CapturedOutputJson`, …):** Your database is missing columns the model expects (often migration history vs. schema drift). **Management.Host** runs `MigrateAsync` on startup; rebuild and restart the API so migration `20260322220000_EnsureOperationRunsExtendedColumns` applies (idempotent `ALTER TABLE`). Or run `dotnet ef database update --project src/Apperture.Persistence/Apperture.Persistence.SqlServer --startup-project src/Apperture.ControlPlane/Apperture.Management.Host`, or **`scripts/dev/reset-db.ps1`** for a clean DB.

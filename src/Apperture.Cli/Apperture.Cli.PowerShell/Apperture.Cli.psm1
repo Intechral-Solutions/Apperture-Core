@@ -98,7 +98,7 @@ function Set-AppertureBootstrapSqlProfile {
         [Parameter(Mandatory = $true)]
         [string]$Database
     )
-    Write-Warning "Set-AppertureBootstrapSqlProfile - not implemented. Use 'apperture bootstrap sql set-profile' when available."
+    Invoke-AppertureBootstrapHelper -Args @('set-profile', '--server', $Server, '--database', $Database)
 }
 
 function Set-AppertureBootstrapSqlAuthMode {
@@ -116,7 +116,7 @@ function Set-AppertureBootstrapSqlAuthMode {
         [ValidateSet('SqlPassword', 'WindowsIntegrated', 'ManagedIdentity', 'KeyVaultReference')]
         [string]$AuthMode
     )
-    Write-Warning "Set-AppertureBootstrapSqlAuthMode - not implemented. Use 'apperture bootstrap set-auth-mode' when available."
+    Invoke-AppertureBootstrapHelper -Args @('set-auth-mode', $AuthMode)
 }
 
 function Set-AppertureBootstrapSqlPassword {
@@ -136,7 +136,7 @@ function Set-AppertureBootstrapSqlPassword {
     if (-not $SecurePassword) {
         $SecurePassword = Read-Host -AsSecureString -Prompt "Enter SQL password"
     }
-    Write-Warning "Set-AppertureBootstrapSqlPassword - not implemented. Use 'apperture bootstrap set-password' when available."
+    Invoke-AppertureBootstrapHelper -Args @('set-password')
 }
 
 function Set-AppertureBootstrapSqlKeyVaultBinding {
@@ -153,7 +153,7 @@ function Set-AppertureBootstrapSqlKeyVaultBinding {
         [Parameter(Mandatory = $true)]
         [string]$SecretUri
     )
-    Write-Warning "Set-AppertureBootstrapSqlKeyVaultBinding - not implemented. Use 'apperture bootstrap bind-keyvault-secret' when available."
+    Invoke-AppertureBootstrapHelper -Args @('bind-keyvault-secret', $SecretUri)
 }
 
 function Set-AppertureBootstrapSqlManagedIdentityBinding {
@@ -165,7 +165,7 @@ function Set-AppertureBootstrapSqlManagedIdentityBinding {
     #>
     [CmdletBinding()]
     param()
-    Write-Warning "Set-AppertureBootstrapSqlManagedIdentityBinding - not implemented. Use 'apperture bootstrap bind-managed-identity' when available."
+    Invoke-AppertureBootstrapHelper -Args @('bind-managed-identity')
 }
 
 function Set-AppertureBootstrapSqlIntegratedSecurityBinding {
@@ -177,7 +177,7 @@ function Set-AppertureBootstrapSqlIntegratedSecurityBinding {
     #>
     [CmdletBinding()]
     param()
-    Write-Warning "Set-AppertureBootstrapSqlIntegratedSecurityBinding - not implemented. Use 'apperture bootstrap bind-integrated-security' when available."
+    Invoke-AppertureBootstrapHelper -Args @('bind-integrated-security')
 }
 
 function Invoke-AppertureBootstrapSqlCredentialRotation {

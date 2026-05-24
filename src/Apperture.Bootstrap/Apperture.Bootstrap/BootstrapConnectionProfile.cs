@@ -17,6 +17,7 @@ public sealed class BootstrapConnectionProfile : IBootstrapConnectionProfile
 {
     private readonly BootstrapSqlConfig _config;
     private readonly string? _defaultConnectionString;
+    private readonly IBootstrapConfigurationStore _configurationStore;
     private readonly IBootstrapCredentialResolver _credentialResolver;
     private readonly IHostEnvironment _hostEnvironment;
     private readonly ILogger<BootstrapConnectionProfile> _logger;
@@ -25,12 +26,14 @@ public sealed class BootstrapConnectionProfile : IBootstrapConnectionProfile
     public BootstrapConnectionProfile(
         IOptions<BootstrapSqlConfig> config,
         IConfiguration configuration,
+        IBootstrapConfigurationStore configurationStore,
         IBootstrapCredentialResolver credentialResolver,
         IHostEnvironment hostEnvironment,
         ILogger<BootstrapConnectionProfile> logger)
     {
         _config = config.Value;
         _defaultConnectionString = configuration.GetConnectionString("DefaultConnection");
+        _configurationStore = configurationStore;
         _credentialResolver = credentialResolver;
         _hostEnvironment = hostEnvironment;
         _logger = logger;
@@ -130,15 +133,7 @@ public sealed class BootstrapConnectionProfile : IBootstrapConnectionProfile
 
     private string BuildConnectionString()
     {
-        // 1. Prefer IBootstrapCredentialResolver when CredentialReference is configured (production path)
-        if (_config.CredentialReference is { } credRef)
-        {
-            var resolved = _credentialResolver.TryResolveAsync(credRef).ConfigureAwait(false).GetAwaiter().GetResult();
-            if (!string.IsNullOrEmpty(resolved))
-                return LogAndReturn(resolved, "CredentialReference");
-        }
-
-        // 2. Full ConnectionStrings:DefaultConnection (Aspire injection / explicit) before fragmentary SqlServer: section.
+        // 1. Development orchestration: Aspire/scripts inject DefaultConnection — wins over file bootstrap store.
         if (!string.IsNullOrEmpty(_defaultConnectionString))
         {
             if (!_hostEnvironment.IsDevelopment())
@@ -155,7 +150,34 @@ public sealed class BootstrapConnectionProfile : IBootstrapConnectionProfile
             return LogAndReturn(_defaultConnectionString, "ConnectionStrings:DefaultConnection");
         }
 
-        // 3. Config-based SqlServer:User/Password (+ Server): allowed only in Development (script/docker-compose path).
+        // 2. File-backed bootstrap configuration (non-secret profile + credential reference).
+        var fileDoc = _configurationStore.GetAsync().ConfigureAwait(false).GetAwaiter().GetResult();
+        if (fileDoc is not null)
+        {
+            if (fileDoc.CredentialReference is { } fileCredRef)
+            {
+                var resolved = _credentialResolver.TryResolveAsync(fileCredRef).ConfigureAwait(false).GetAwaiter().GetResult();
+                if (!string.IsNullOrEmpty(resolved))
+                {
+                    return LogAndReturn(resolved, "bootstrap-file:CredentialReference");
+                }
+            }
+
+            if (TryBuildConnectionStringFromBootstrapProfile(fileDoc.Profile, out var fromFileProfile))
+            {
+                return LogAndReturn(fromFileProfile, "bootstrap-file:Profile");
+            }
+        }
+
+        // 3. Prefer IBootstrapCredentialResolver when CredentialReference is configured in appsettings (production path)
+        if (_config.CredentialReference is { } credRef)
+        {
+            var resolved = _credentialResolver.TryResolveAsync(credRef).ConfigureAwait(false).GetAwaiter().GetResult();
+            if (!string.IsNullOrEmpty(resolved))
+                return LogAndReturn(resolved, "CredentialReference");
+        }
+
+        // 4. Config-based SqlServer:User/Password (+ Server): allowed only in Development (script/docker-compose path).
         if (HasSqlServerConfigCredentials())
         {
             if (!_hostEnvironment.IsDevelopment())
@@ -172,7 +194,7 @@ public sealed class BootstrapConnectionProfile : IBootstrapConnectionProfile
             return LogAndReturn(BuildConnectionStringFromSqlServerConfig(), "SqlServer");
         }
 
-        // 4. Dev-only hardening:
+        // 5. Dev-only hardening:
         // Sometimes the dev scripts pass the SQL password via environment variables, but config binding may
         // not populate BootstrapSqlConfig.Password (e.g., host builder differences). In that case, if we
         // already have SqlServer.Server + SqlServer.User from appsettings.Development.json, allow the
@@ -201,7 +223,7 @@ public sealed class BootstrapConnectionProfile : IBootstrapConnectionProfile
             }
         }
 
-        // 5. LocalDB default: allowed only in Development
+        // 6. LocalDB default: allowed only in Development
         if (_hostEnvironment.IsDevelopment())
         {
             _logger.LogWarning(
@@ -218,6 +240,49 @@ public sealed class BootstrapConnectionProfile : IBootstrapConnectionProfile
 
     private bool HasSqlServerConfigCredentials() =>
         !string.IsNullOrEmpty(_config.User) && !string.IsNullOrEmpty(_config.Password);
+
+    private static bool TryBuildConnectionStringFromBootstrapProfile(
+        SqlConnectionBootstrapProfile profile,
+        out string connectionString)
+    {
+        connectionString = string.Empty;
+        if (string.IsNullOrWhiteSpace(profile.Server) || string.IsNullOrWhiteSpace(profile.Database))
+        {
+            return false;
+        }
+
+        switch (profile.AuthMode)
+        {
+            case BootstrapAuthMode.WindowsIntegrated:
+                connectionString = new SqlConnectionStringBuilder
+                {
+                    DataSource = profile.Server,
+                    InitialCatalog = profile.Database,
+                    IntegratedSecurity = true,
+                    TrustServerCertificate = profile.TrustServerCertificate
+                }.ConnectionString;
+                return true;
+            case BootstrapAuthMode.ManagedIdentity:
+                connectionString = new SqlConnectionStringBuilder
+                {
+                    DataSource = profile.Server,
+                    InitialCatalog = profile.Database,
+                    TrustServerCertificate = profile.TrustServerCertificate
+                }.ConnectionString;
+                return true;
+            case BootstrapAuthMode.Development:
+                connectionString = new SqlConnectionStringBuilder
+                {
+                    DataSource = profile.Server,
+                    InitialCatalog = profile.Database,
+                    IntegratedSecurity = true,
+                    TrustServerCertificate = profile.TrustServerCertificate
+                }.ConnectionString;
+                return true;
+            default:
+                return false;
+        }
+    }
 
     private string BuildConnectionStringFromSqlServerConfig()
     {

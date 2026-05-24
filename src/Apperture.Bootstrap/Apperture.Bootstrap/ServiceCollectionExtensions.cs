@@ -31,14 +31,24 @@ public static class ServiceCollectionExtensions
     }
 
     /// <summary>
+    /// Registers file-backed bootstrap configuration store and store-backed profile/credential managers.
+    /// </summary>
+    public static IServiceCollection AddFileBootstrapConfigurationStore(this IServiceCollection services)
+    {
+        services.AddOptions<BootstrapConfigurationStoreOptions>();
+        services.AddSingleton<IBootstrapConfigurationStore, FileBootstrapConfigurationStore>();
+        services.AddSingleton<ISqlConnectionBootstrapProfileManager, FileSqlConnectionBootstrapProfileManager>();
+        services.AddSingleton<IBootstrapCredentialManager, FileStoreBootstrapCredentialManager>();
+        return services;
+    }
+
+    /// <summary>
     /// Registers bootstrap scaffolding interfaces with stub implementations. Additive; call from AddAppertureBootstrap or for advanced wiring.
     /// </summary>
     public static IServiceCollection AddBootstrapScaffolding(this IServiceCollection services)
     {
-        services.AddSingleton<IBootstrapConfigurationStore, StubBootstrapConfigurationStore>();
+        services.AddFileBootstrapConfigurationStore();
         services.AddSingleton<IBootstrapCredentialResolver, StubBootstrapCredentialResolver>();
-        services.AddSingleton<IBootstrapCredentialManager, StubBootstrapCredentialManager>();
-        services.AddSingleton<ISqlConnectionBootstrapProfileManager, StubSqlConnectionBootstrapProfileManager>();
         services.AddSingleton<IBootstrapConfigurationValidator, StubBootstrapConfigurationValidator>();
         services.AddSingleton<IBootstrapRecoveryAuthorizer, StubBootstrapRecoveryAuthorizer>();
         services.AddSingleton<IBootstrapAuditWriter, StubBootstrapAuditWriter>();

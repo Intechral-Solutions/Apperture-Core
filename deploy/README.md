@@ -11,7 +11,20 @@ Deployment configuration.
 
 Management platform configuration reference: [docs/03-operations/management-platform-configuration.md](../docs/03-operations/management-platform-configuration.md) (environment/startup layer). Configuration boundaries: [ADR-0039](../docs/02-decisions/ADR-0039-environment-startup-bootstrap-and-platform-settings.md).
 
-**Epic 106 (Aspire)** delivers local orchestration via [`Apperture.AppHost`](../../src/Apperture.AppHost/). Setup automation and installer scripts remain deferred — see [ADR-0039 post-Aspire checklist](../docs/02-decisions/ADR-0039-environment-startup-bootstrap-and-platform-settings.md#post-aspire-revisit-checklist).
+**Epic 106 (Aspire)** delivers local orchestration via [`Apperture.AppHost`](../../src/Apperture.AppHost/). **Epic 108** adds the file-backed bootstrap store for Windows/on-prem install/repair. Thin dev setup: [`scripts/Initialize-AppertureEnvironment.ps1`](../scripts/Initialize-AppertureEnvironment.ps1).
+
+## Bootstrap configuration store (Windows / on-prem)
+
+Production bootstrap **state** (non-secret SQL profile + credential references) is persisted to:
+
+| Setting | Value |
+|---------|--------|
+| Default path | `%ProgramData%\Apperture\bootstrap\configuration.json` |
+| Override | `APPERTURE_BOOTSTRAP_CONFIG_PATH` (full file path) |
+
+JSON contains **no plaintext passwords**. Use `apperture bootstrap set-profile`, `bind-integrated-security`, etc. Password binding (DPAPI) is deferred — see [bootstrap-cli-invocation.md](../docs/01-architecture/bootstrap-cli-invocation.md).
+
+Aspire local dev does **not** require this file; SQL comes from Aspire-injected `ConnectionStrings:DefaultConnection`.
 
 ## Local development: Aspire (preferred)
 
@@ -33,7 +46,7 @@ The AppHost orchestrates:
 
 After AppHost starts, the console prints a line like `Login to the dashboard at https://localhost:17173/login?t=...`. Use that URL. The Management UI is **not** on port 17173; do not use `https://localhost:9001` (no TLS listener on 9001).
 
-**First-time (both Aspire and script paths):** copy the docker-dev appsettings template for Management.Host dev overlays (`DevTestUser`, bootstrap admin, etc.):
+**First-time (both Aspire and script paths):** run `.\scripts\Initialize-AppertureEnvironment.ps1` or copy the docker-dev appsettings template manually:
 
 ```powershell
 copy deploy\config\examples\appsettings.docker-dev.json.example src\Apperture.ControlPlane\Apperture.Management.Host\appsettings.Development.json

@@ -1,4 +1,5 @@
 using Apperture.Bootstrap;
+using Apperture.Bootstrap.Models;
 using Apperture.Bootstrap.Stubs;
 using FluentAssertions;
 using Microsoft.Extensions.Configuration;
@@ -52,7 +53,38 @@ public sealed class BootstrapConnectionProfileTests
         profile.ConnectionString.Should().Contain("from-config");
     }
 
-    private static BootstrapConnectionProfile CreateProfile(IConfiguration configuration)
+    [Fact]
+    public void ConnectionString_uses_file_store_profile_when_DefaultConnection_missing()
+    {
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["SqlServer:Server"] = "localhost,1433",
+                ["SqlServer:Database"] = "Apperture",
+                ["SqlServer:User"] = "sa",
+                ["SqlServer:Password"] = "from-config",
+            })
+            .Build();
+
+        var fileDoc = new BootstrapConfigurationDocument
+        {
+            Profile = new SqlConnectionBootstrapProfile
+            {
+                Server = "file-sql",
+                Database = "Apperture",
+                AuthMode = BootstrapAuthMode.WindowsIntegrated
+            }
+        };
+
+        var profile = CreateProfile(config, new FixedBootstrapConfigurationStore(fileDoc));
+
+        profile.ConnectionString.Should().Contain("file-sql");
+        profile.ConnectionString.Should().NotContain("from-config");
+    }
+
+    private static BootstrapConnectionProfile CreateProfile(
+        IConfiguration configuration,
+        IBootstrapConfigurationStore? configurationStore = null)
     {
         var sqlConfig = new BootstrapSqlConfig();
         configuration.GetSection(BootstrapSqlConfig.SectionName).Bind(sqlConfig);
@@ -60,9 +92,24 @@ public sealed class BootstrapConnectionProfileTests
         return new BootstrapConnectionProfile(
             Options.Create(sqlConfig),
             configuration,
+            configurationStore ?? new StubBootstrapConfigurationStore(),
             new StubBootstrapCredentialResolver(),
             new TestHostEnvironment(),
             NullLogger<BootstrapConnectionProfile>.Instance);
+    }
+
+    private sealed class FixedBootstrapConfigurationStore : IBootstrapConfigurationStore
+    {
+        private readonly BootstrapConfigurationDocument _document;
+
+        public FixedBootstrapConfigurationStore(BootstrapConfigurationDocument document) =>
+            _document = document;
+
+        public Task<BootstrapConfigurationDocument?> GetAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult<BootstrapConfigurationDocument?>(_document);
+
+        public Task SaveAsync(BootstrapConfigurationDocument document, CancellationToken cancellationToken = default) =>
+            throw new NotImplementedException();
     }
 
     private sealed class TestHostEnvironment : IHostEnvironment

@@ -93,11 +93,15 @@ public sealed class BootstrapCliService
     }
 
     /// <summary>Updates credential; payload is transient; never persist plaintext.</summary>
-    public async Task<BootstrapCommandResult> SetPasswordAsync(object securePayload, CancellationToken cancellationToken = default)
+    public Task<BootstrapCommandResult> SetPasswordAsync(object securePayload, CancellationToken cancellationToken = default)
     {
-        var request = new BootstrapUpdateRequest { SensitivePayload = securePayload };
-        await _credentialManager.UpdateAsync(request, cancellationToken).ConfigureAwait(false);
-        return new BootstrapCommandResult { Success = true, Message = "Credential updated.", ChangedFields = ["CredentialReference"], RestartRecommended = true };
+        _ = securePayload;
+        return Task.FromResult(new BootstrapCommandResult
+        {
+            Success = false,
+            Message =
+                "SQL password credential binding is deferred (Epic 108b). Use bind-integrated-security, bind-keyvault-secret, or bind-managed-identity."
+        });
     }
 
     /// <summary>Binds Key Vault secret reference.</summary>

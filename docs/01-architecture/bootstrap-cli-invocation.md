@@ -53,29 +53,55 @@ IBootstrapCredentialManager, ISqlConnectionBootstrapProfileManager, IBootstrapCo
 | `Repair-AppertureBootstrap` | bootstrap repair | Repair path |
 | `Unlock-AppertureBootstrapRecovery` | bootstrap recovery-unlock | Recovery only |
 
-## Deferred Implementation (Current Scaffolding)
+## File-backed bootstrap store (Epic 108)
 
-The following are **stubbed** or **not yet implemented**:
+Production/on-prem bootstrap **state** is persisted as non-secret JSON:
+
+| Setting | Value |
+|---------|--------|
+| Default path (Windows) | `%ProgramData%\Apperture\bootstrap\configuration.json` |
+| Override | `APPERTURE_BOOTSTRAP_CONFIG_PATH` (full file path) |
+
+Contents: `Profile` (server, database, auth mode), optional `CredentialReference` (Key Vault URI, Windows Integrated, Managed Identity, etc.), optional `Version`. **No plaintext passwords.**
+
+Implementation: [`FileBootstrapConfigurationStore`](../../src/Apperture.Bootstrap/Apperture.Bootstrap/FileBootstrapConfigurationStore.cs). Wired in CLI, Management.Host, and WorkerHost via `AddBootstrapScaffolding()`.
+
+**Aspire local dev** does not require this file. SQL comes from Aspire-injected `ConnectionStrings:DefaultConnection` (see [management-platform-configuration.md](../03-operations/management-platform-configuration.md)).
+
+## CLI commands (implemented vs deferred)
+
+| Subcommand | Status |
+|------------|--------|
+| `bootstrap show` | Implemented |
+| `bootstrap validate` | Implemented |
+| `bootstrap sql test` | Implemented |
+| `bootstrap set-profile --server X --database Y` | Implemented (file store) |
+| `bootstrap set-auth-mode <mode>` | Implemented (file store) |
+| `bootstrap bind-keyvault-secret <uri>` | Implemented (credential reference only) |
+| `bootstrap bind-managed-identity` | Implemented (credential reference only) |
+| `bootstrap bind-integrated-security` | Implemented (credential reference only) |
+| `bootstrap set-password` | **Deferred (Epic 108b)** — returns explicit message; no plaintext storage |
+| `bootstrap rotate-sql-credential` | Deferred |
+| `bootstrap repair` | Deferred |
+| `bootstrap recovery-unlock` | Deferred (recovery service on Management.Host only) |
+
+## Deferred implementation
 
 | Area | Status | Notes |
 |------|--------|-------|
-| `IBootstrapConfigurationStore` | Stub: GetAsync returns null; SaveAsync throws | bootstrap show / validate succeed with "no configuration" until a real store is wired. |
-| `IBootstrapCredentialManager` | Stub throws | No credential storage or rotation. |
-| `ISqlConnectionBootstrapProfileManager` | Stub throws | No profile persistence. |
-| `IBootstrapCredentialResolver` | Stub | Key Vault, Managed Identity, DPAPI not implemented. |
-| `IBootstrapRecoveryAuthorizer` | Stub denies | Real MFA/proof logic out of scope. |
-| Environment bindings | Stub | `BindKeyVaultAsync` / `BindManagedIdentityAsync` need Azure impl; `BindIntegratedSecurityAsync` needs Windows impl. |
-| Secure credential storage | Deferred | `SetPasswordAsync` must store via DPAPI or Key Vault; not in config. Requires `Apperture.Bootstrap.Windows` / `Apperture.Bootstrap.Azure`. |
-| pwsh assembly loading | Fallback only | Current PowerShell functions invoke `apperture` helper; direct Cli.Bootstrap assembly loading not yet implemented. |
+| `IBootstrapCredentialResolver` | Stub | Key Vault, Managed Identity, DPAPI resolution not implemented |
+| Secure password binding | Deferred (108b) | `SetPasswordAsync` / DPAPI / `Apperture.Bootstrap.Windows` |
+| Credential rotation | Deferred | `RotateAsync` throws with deferred message |
+| `IBootstrapRecoveryAuthorizer` | Stub denies | Real MFA/proof logic out of scope |
+| pwsh assembly loading | Fallback only | PowerShell delegates to `apperture` CLI helper |
 
 ## What to Build Next
 
-**Local dev orchestration** is handled by [`Apperture.AppHost`](../../src/Apperture.AppHost/) (Epic 106). Bootstrap CLI and PowerShell functions below target **production install, post-deploy update, and repair** — not day-to-day contributor startup. See [epic107-post-aspire-assessment.md](../03-operations/epic107-post-aspire-assessment.md).
+**Local dev orchestration** is handled by [`Apperture.AppHost`](../../src/Apperture.AppHost/) (Epic 106) and [`Initialize-AppertureEnvironment.ps1`](../../scripts/Initialize-AppertureEnvironment.ps1) (Epic 108). Bootstrap CLI targets **production install, post-deploy update, and repair**.
 
-1. **Real `IBootstrapConfigurationStore`** — File or DB-backed; Cli.Bootstrap and Host need config path.
-2. **Environment implementations** — `Apperture.Bootstrap.Windows`, `Apperture.Bootstrap.Azure`.
-3. **Full `BootstrapCliService` logic** — Replace stub calls with real update/validation flow.
-4. **PowerShell assembly loading** — Implement pwsh path to load Cli.Bootstrap and call `BootstrapCliService` without helper exe.
+1. **Epic 108b** — DPAPI `IBootstrapCredentialResolver` + `SetPasswordAsync` password binding
+2. **Environment implementations** — `Apperture.Bootstrap.Windows`, `Apperture.Bootstrap.Azure`
+3. **PowerShell assembly loading** — pwsh path to load Cli.Bootstrap without helper exe
 
 ## Related
 

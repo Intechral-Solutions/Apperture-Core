@@ -29,6 +29,8 @@ See [deploy/README.md](deploy/README.md) and [management platform configuration]
 
 Requires Docker for the Aspire-managed SQL Server container.
 
+**One-time setup:** run `.\scripts\Initialize-AppertureEnvironment.ps1` or manually copy the docker-dev template (step 1 below).
+
 1. Copy `deploy/config/examples/appsettings.docker-dev.json.example` to `src/Apperture.ControlPlane/Apperture.Management.Host/appsettings.Development.json` (one-time; needed for `DevTestUser`, bootstrap admin, and dev feature flags).
 2. Run the AppHost:
 
@@ -49,7 +51,7 @@ Requires Docker for the Aspire-managed SQL Server container.
 
    Optional: override the SQL password with User Secrets on the AppHost (`dotnet user-secrets set "Parameters:sql-password" "<password>" --project src/Apperture.AppHost`).
 
-**Epic 106 scope:** local dev orchestration only — not platform settings, bootstrap store, setup wizard, or production deployment.
+**Epic 106 scope:** local dev orchestration. **Epic 108** adds the file-backed bootstrap configuration store for Windows/on-prem production (`%ProgramData%\Apperture\bootstrap\configuration.json`); Aspire local dev does not require that file.
 
 ### Alternate: PowerShell scripts
 

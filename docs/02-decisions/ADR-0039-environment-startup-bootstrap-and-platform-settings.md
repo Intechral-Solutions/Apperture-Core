@@ -206,14 +206,16 @@ Re-evaluate how environment values flow into hosts (files vs Aspire-provided con
 
 **Epic 107 assessment:** [epic107-post-aspire-assessment.md](../03-operations/epic107-post-aspire-assessment.md) — disposition of checklist items and recommended next epics (108/109).
 
+**Epic 108 (implemented):** File-backed bootstrap store at `%ProgramData%\Apperture\bootstrap\configuration.json`; CLI profile/bind commands; thin `Initialize-AppertureEnvironment.ps1`. Password binding (DPAPI) deferred to 108b.
+
 ## Post-Aspire revisit checklist
 
 Epic 106 local orchestration is **delivered**. Revisit **before implementing** the following:
 
-- [ ] Setup automation / `Initialize-AppertureEnvironment.ps1` (or equivalent installer)
-- [ ] Bootstrap configuration store (`IBootstrapConfigurationStore` implementation)
-- [ ] CLI / PowerShell bootstrap commands ([bootstrap-cli-invocation.md](../01-architecture/bootstrap-cli-invocation.md))
-- [ ] DPAPI / Key Vault / Managed Identity credential binding
+- [x] Setup automation / `Initialize-AppertureEnvironment.ps1` (thin dev helper; Epic 108)
+- [x] Bootstrap configuration store (`FileBootstrapConfigurationStore`; Epic 108)
+- [x] CLI / PowerShell bootstrap commands — profile and credential-reference persistence (Epic 108)
+- [ ] DPAPI / Key Vault / Managed Identity credential binding (Epic 108b)
 - [ ] First-run setup wizard (UI)
 - [ ] Platform settings registry implementation ([platform-settings-registry.md](../01-architecture/platform-settings-registry.md))
 - [ ] Settings management UI (generated panels / custom config surfaces)

@@ -156,7 +156,31 @@ Each ASP.NET Core host uses the default configuration chain (simplified):
 
 **Mutual exclusion:** Do not run both paths simultaneously (ports 1433, 9000, 9001).
 
-**Epic 106 non-goals (unchanged):** platform-managed settings, bootstrap store, setup wizard, production orchestration, or writing settings back to appsettings.
+## Bootstrap file store (Epic 108)
+
+Windows/on-prem **bootstrap state** (layer 3 per ADR-0039) is persisted separately from appsettings:
+
+| Setting | Value |
+|---------|--------|
+| Default path | `%ProgramData%\Apperture\bootstrap\configuration.json` |
+| Override | `APPERTURE_BOOTSTRAP_CONFIG_PATH` |
+
+JSON holds non-secret SQL profile + credential **references** only. Configure via `apperture bootstrap set-profile`, `bind-integrated-security`, etc. See [bootstrap-cli-invocation.md](../01-architecture/bootstrap-cli-invocation.md).
+
+### SQL connection precedence (Management.Host / WorkerHost)
+
+| Priority | Source | Notes |
+|----------|--------|-------|
+| 1 | `ConnectionStrings:DefaultConnection` | Development only; Aspire/scripts injection **wins over file store** |
+| 2 | File bootstrap store | `configuration.json` profile + credential reference |
+| 3 | `SqlServer` appsettings / User Secrets | Dev script path |
+| 4 | LocalDB default | Development fallback |
+
+Aspire local dev does **not** require `configuration.json`. Empty Integrations/Connections on a fresh Aspire DB is expected operator data state, not a bootstrap failure.
+
+**Thin dev setup:** [`scripts/Initialize-AppertureEnvironment.ps1`](../../scripts/Initialize-AppertureEnvironment.ps1) copies appsettings template and prints startup commands. Does not create bootstrap `configuration.json`.
+
+**Epic 108 non-goals (unchanged):** platform-managed settings registry, setup wizard, production installer, merging Aspire/docker-compose SQL volumes.
 
 ## Deployed environment
 
@@ -191,8 +215,8 @@ See [deploy/config/README.md](../../deploy/config/README.md) for the index.
 Epic 106 delivered Aspire local orchestration. Epic 107 assessed deferred work — see [epic107-post-aspire-assessment.md](epic107-post-aspire-assessment.md) for checklist disposition and recommended Epic 108/109. Summary from [ADR-0039 post-Aspire checklist](../02-decisions/ADR-0039-environment-startup-bootstrap-and-platform-settings.md#post-aspire-revisit-checklist):
 
 - Setup automation / installer scripts
-- Bootstrap store and CLI/PowerShell commands
-- DPAPI / Key Vault credential binding
+- Platform settings registry and settings UI
+- DPAPI / Key Vault credential binding (Epic 108b)
 - First-run setup wizard
 - Platform settings registry and settings management UI
 

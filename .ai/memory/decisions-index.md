@@ -52,4 +52,5 @@ Architecture decision records (ADRs) live in [docs/02-decisions/](../../docs/02-
 | [Management platform configuration](../../docs/03-operations/management-platform-configuration.md) | Canonical appsettings inventory, dev/deploy setup, topology examples (`deploy/config/`) |
 | [ADR-0039](../../docs/02-decisions/ADR-0039-environment-startup-bootstrap-and-platform-settings.md) | Environment, startup, bootstrap, and platform settings layers (105B); Aspire local orchestration (106) |
 | [Epic 107 assessment](../../docs/03-operations/epic107-post-aspire-assessment.md) | Post-Aspire reassessment; Epic 108/109 recommendations |
+| [Epic 108](../../docs/01-architecture/bootstrap-cli-invocation.md) | File-backed bootstrap store, CLI persistence, dev init script |
 | [Platform settings registry](../../docs/01-architecture/platform-settings-registry.md) | Future steady-state settings direction (conceptual) |
