@@ -12,7 +12,7 @@ Operators and contributors still need a **single decision record** that explains
 
 - Which configuration belongs at **host startup** vs in **secrets storage** vs in **bootstrap state** vs in **future platform-managed settings**.
 - That `appsettings` is **not** the long-term operator control plane.
-- What Epic 106 (Aspire integration) is expected to refine without replacing the layered model.
+- How Epic 106 Aspire integration refines the environment/startup layer without replacing the layered model.
 
 Epic 105B documents boundaries and decisions only. It does not implement setup automation, bootstrap persistence, platform settings storage, or UI.
 
@@ -25,14 +25,14 @@ Apperture adopts a **four-layer configuration model**. Each layer has a distinct
 1. **`appsettings` and [deploy/config](../../deploy/config/) examples are startup/default/template configuration** — not the steady-state operator settings plane.
 2. **Platform-managed settings must not write values back to `appsettings` files** (or any committed JSON startup template).
 3. **Secret material must not live in committed JSON.**
-4. **Bootstrap store, installer automation, credential binding implementations, first-run wizard, and platform settings registry implementation are deferred** until after Epic 106 Aspire integration, then revisited using the post-Aspire checklist below.
+4. **Bootstrap store, installer automation, credential binding implementations, first-run wizard, and platform settings registry implementation remain deferred** per the post-Aspire checklist below. Epic 106 delivered local Aspire orchestration only.
 
 ```mermaid
 flowchart TB
   subgraph envLayer [EnvironmentStartup]
     AppSettings[appsettings and templates]
     EnvVars[Environment variables]
-    AspireLater[Epic106 Aspire AppHost values]
+    AspireAppHost[Aspire AppHost values Epic 106]
   end
   subgraph secretsLayer [SecretsCredentials]
     UserSecrets[Dev User Secrets]
@@ -66,7 +66,7 @@ Gets hosts and processes running **before** steady-state platform configuration 
 - [deploy/config](../../deploy/config/) templates and examples
 - Environment variables and command-line arguments
 - Development User Secrets (Management.Host) and gitignored `.env` where Docker Compose requires it
-- Future: **Epic 106 Aspire** AppHost / deployment-provided values for local orchestration, service discovery, and dev-time wiring
+- [`Apperture.AppHost`](../../src/Apperture.AppHost/) / [`Apperture.ServiceDefaults`](../../src/Apperture.ServiceDefaults/) — local orchestration, service discovery, and dev-time connection/endpoint wiring (Epic 106)
 
 **Typical contents:**
 
@@ -204,9 +204,11 @@ Aspire **does not replace**:
 
 Re-evaluate how environment values flow into hosts (files vs Aspire-provided configuration) using the post-Aspire checklist below. See [management-platform-configuration.md](../03-operations/management-platform-configuration.md) for the local orchestration inventory.
 
+**Epic 107 assessment:** [epic107-post-aspire-assessment.md](../03-operations/epic107-post-aspire-assessment.md) — disposition of checklist items and recommended next epics (108/109).
+
 ## Post-Aspire revisit checklist
 
-Revisit **after Epic 106** before implementing the following:
+Epic 106 local orchestration is **delivered**. Revisit **before implementing** the following:
 
 - [ ] Setup automation / `Initialize-AppertureEnvironment.ps1` (or equivalent installer)
 - [ ] Bootstrap configuration store (`IBootstrapConfigurationStore` implementation)

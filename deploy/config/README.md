@@ -21,4 +21,4 @@ Canonical file inventory: [management-platform-configuration.md](../../docs/03-o
 copy deploy\config\examples\appsettings.docker-dev.json.example src\Apperture.ControlPlane\Apperture.Management.Host\appsettings.Development.json
 ```
 
-Set `SqlServer:Password` via User Secrets on Management.Host (see [deploy/README.md](../README.md)).
+Set `SqlServer:Password` via User Secrets on Management.Host for the **script path** (see [deploy/README.md](../README.md)). For **Aspire**, AppHost injects SQL via `ConnectionStrings:DefaultConnection`; optional password override is on the AppHost project. Both paths still use the docker-dev appsettings template for dev auth/bootstrap flags.

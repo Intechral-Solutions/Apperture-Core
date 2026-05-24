@@ -146,9 +146,9 @@ Not decided in Epic 105B:
 - Migration from current `IOptions` + JSON notification flags
 - Module contribution API for third-party setting definitions
 - Cache invalidation and multi-host (Management.Host + WorkerHost) consistency
-- Interaction with Epic 106 Aspire-provided environment values
+- How platform settings interact with Aspire-injected environment values (local dev only; see [management-platform-configuration.md](../03-operations/management-platform-configuration.md#local-orchestration-epic-106))
 
-Track implementation against [ADR-0039 post-Aspire checklist](../02-decisions/ADR-0039-environment-startup-bootstrap-and-platform-settings.md#post-aspire-revisit-checklist).
+Track implementation against [ADR-0039 post-Aspire checklist](../02-decisions/ADR-0039-environment-startup-bootstrap-and-platform-settings.md#post-aspire-revisit-checklist). Phase 1 candidate settings and recommended slice: [epic107-post-aspire-assessment.md](../03-operations/epic107-post-aspire-assessment.md#4-future-platform-settings-registry).
 
 ## Related
 

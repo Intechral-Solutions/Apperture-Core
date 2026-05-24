@@ -50,5 +50,6 @@ Architecture decision records (ADRs) live in [docs/02-decisions/](../../docs/02-
 | [Epic 100](../../docs/02-decisions/Epic100-Management-Shell-Domain-Navigation-Restructure.md) | Shell domain labels, menu grouping, hub orientation copy |
 | [Epic 101](../../docs/02-decisions/Epic101-Top-Bar-Breadcrumbs-and-Parent-Context-Links.md) | Top-bar breadcrumbs and parent-context links (route resolver, no entity API) |
 | [Management platform configuration](../../docs/03-operations/management-platform-configuration.md) | Canonical appsettings inventory, dev/deploy setup, topology examples (`deploy/config/`) |
-| [ADR-0039](../../docs/02-decisions/ADR-0039-environment-startup-bootstrap-and-platform-settings.md) | Environment, startup, bootstrap, and platform settings layers (Epic 105B) |
+| [ADR-0039](../../docs/02-decisions/ADR-0039-environment-startup-bootstrap-and-platform-settings.md) | Environment, startup, bootstrap, and platform settings layers (105B); Aspire local orchestration (106) |
+| [Epic 107 assessment](../../docs/03-operations/epic107-post-aspire-assessment.md) | Post-Aspire reassessment; Epic 108/109 recommendations |
 | [Platform settings registry](../../docs/01-architecture/platform-settings-registry.md) | Future steady-state settings direction (conceptual) |

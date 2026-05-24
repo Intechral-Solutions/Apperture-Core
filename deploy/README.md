@@ -86,11 +86,11 @@ This syncs User Secrets to `.env`, starts SQL Server (Docker), and launches the 
 
 - **User Secrets** stores `SqlServer:Password`. The .NET app reads it via Configuration.
 - **scripts/dev/Sync-EnvFromUserSecrets.ps1** copies the password to `.env` as `MSSQL_SA_PASSWORD` for Docker Compose.
-- **Start-Dev.ps1** runs the sync, starts `docker compose up -d`, then starts Management.Host and the UI Server.
+- **Start-Dev.ps1** runs the sync, starts `docker compose up -d`, then starts Management.Host, the UI Server, and WorkerHost.
 
 ### Stopping
 
-- `.\scripts\dev\down.ps1` stops the API and UI.
+- `.\scripts\dev\down.ps1` stops the API, UI, and worker processes on ports 9000 and 9001.
 - `docker compose down` stops SQL Server.
 
 ### Dev test user (local login)

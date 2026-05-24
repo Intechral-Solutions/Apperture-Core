@@ -70,6 +70,8 @@ The following are **stubbed** or **not yet implemented**:
 
 ## What to Build Next
 
+**Local dev orchestration** is handled by [`Apperture.AppHost`](../../src/Apperture.AppHost/) (Epic 106). Bootstrap CLI and PowerShell functions below target **production install, post-deploy update, and repair** — not day-to-day contributor startup. See [epic107-post-aspire-assessment.md](../03-operations/epic107-post-aspire-assessment.md).
+
 1. **Real `IBootstrapConfigurationStore`** — File or DB-backed; Cli.Bootstrap and Host need config path.
 2. **Environment implementations** — `Apperture.Bootstrap.Windows`, `Apperture.Bootstrap.Azure`.
 3. **Full `BootstrapCliService` logic** — Replace stub calls with real update/validation flow.

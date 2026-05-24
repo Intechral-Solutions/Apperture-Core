@@ -154,6 +154,8 @@ Each ASP.NET Core host uses the default configuration chain (simplified):
 
 **Mutual exclusion:** Do not run both paths simultaneously (ports 1433, 9000, 9001).
 
+**Epic 106 non-goals (unchanged):** platform-managed settings, bootstrap store, setup wizard, production orchestration, or writing settings back to appsettings.
+
 ## Deployed environment
 
 - **Baseline:** committed `Management.Host/appsettings.json` (safe production defaults).
@@ -184,7 +186,7 @@ See [deploy/config/README.md](../../deploy/config/README.md) for the index.
 
 ## Future work and post-Aspire revisit
 
-Epic 106 delivered Aspire local orchestration. The following remain deferred — see [ADR-0039 post-Aspire checklist](../02-decisions/ADR-0039-environment-startup-bootstrap-and-platform-settings.md#post-aspire-revisit-checklist) for:
+Epic 106 delivered Aspire local orchestration. Epic 107 assessed deferred work — see [epic107-post-aspire-assessment.md](epic107-post-aspire-assessment.md) for checklist disposition and recommended Epic 108/109. Summary from [ADR-0039 post-Aspire checklist](../02-decisions/ADR-0039-environment-startup-bootstrap-and-platform-settings.md#post-aspire-revisit-checklist):
 
 - Setup automation / installer scripts
 - Bootstrap store and CLI/PowerShell commands
