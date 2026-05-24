@@ -5,6 +5,9 @@ using Microsoft.AspNetCore.StaticFiles;
 using Microsoft.Extensions.Options;
 
 var builder = WebApplication.CreateBuilder(args);
+
+builder.AddServiceDefaults();
+
 builder.Services.AddRazorPages();
 
 // Register client services required for prerendering (NavRail, ControlPanel, etc.)
@@ -78,4 +81,7 @@ app.UseStaticFiles(new StaticFileOptions
 app.UseRouting();
 app.MapRazorPages();
 app.MapFallbackToPage("/_Host");
+
+app.MapDefaultEndpoints();
+
 app.Run();

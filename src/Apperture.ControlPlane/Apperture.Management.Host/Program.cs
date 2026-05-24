@@ -17,6 +17,8 @@ using Microsoft.Extensions.Options;
 
 var builder = WebApplication.CreateBuilder(args);
 
+builder.AddServiceDefaults();
+
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddHttpContextAccessor();
@@ -74,5 +76,7 @@ app.MapGet("/signin", async (HttpContext ctx, IOptions<EntraAuthOptions> entra) 
 });
 
 app.MapGet("/signout", (HttpContext ctx) => ctx.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme));
+
+app.MapDefaultEndpoints();
 
 app.Run();

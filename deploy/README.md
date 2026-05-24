@@ -11,9 +11,38 @@ Deployment configuration.
 
 Management platform configuration reference: [docs/03-operations/management-platform-configuration.md](../docs/03-operations/management-platform-configuration.md) (environment/startup layer). Configuration boundaries: [ADR-0039](../docs/02-decisions/ADR-0039-environment-startup-bootstrap-and-platform-settings.md).
 
-**Epic 106 (Aspire)** is expected to refine local orchestration and dev-time startup wiring. Setup automation and installer scripts are deferred until after Aspire — see [ADR-0039 post-Aspire checklist](../docs/02-decisions/ADR-0039-environment-startup-bootstrap-and-platform-settings.md#post-aspire-revisit-checklist).
+**Epic 106 (Aspire)** delivers local orchestration via [`Apperture.AppHost`](../../src/Apperture.AppHost/). Setup automation and installer scripts remain deferred — see [ADR-0039 post-Aspire checklist](../docs/02-decisions/ADR-0039-environment-startup-bootstrap-and-platform-settings.md#post-aspire-revisit-checklist).
 
-## Root Docker Compose shim
+## Local development: Aspire (preferred)
+
+From the repo root (requires Docker):
+
+```powershell
+dotnet run --project src/Apperture.AppHost/Apperture.AppHost.csproj
+```
+
+The AppHost orchestrates:
+
+| Resource | Port / detail |
+|----------|----------------|
+| SQL Server (Aspire container, `2022-latest`, volume `apperture-aspire-sql`) | `localhost:1433` |
+| Management API (`Apperture.Management.Host`) | `http://localhost:9000` |
+| Management UI (`Apperture.Management.Ui.Server` + Blazor WASM client) | `http://localhost:9001` |
+| Worker runtime (`Apperture.RuntimeHost.Windows.WorkerHost`) | background worker |
+
+**First-time (both Aspire and script paths):** copy the docker-dev appsettings template for Management.Host dev overlays (`DevTestUser`, bootstrap admin, etc.):
+
+```powershell
+copy deploy\config\examples\appsettings.docker-dev.json.example src\Apperture.ControlPlane\Apperture.Management.Host\appsettings.Development.json
+```
+
+Aspire injects `ConnectionStrings:DefaultConnection` for SQL; the appsettings overlay is still required for auth/bootstrap dev flags.
+
+**SQL password (Aspire path):** default in `src/Apperture.AppHost/appsettings.json` (`Parameters:sql-password`). Override via AppHost User Secrets if needed.
+
+**Mutual exclusion:** Do not run Aspire and `Start-Dev.ps1` at the same time — both bind ports 1433, 9000, and 9001. Aspire uses its own SQL container/volume (`apperture-aspire-sql`); the script path uses docker-compose (`apperture-sqlserver`).
+
+## Root Docker Compose shim (script path)
 
 From the **repo root** you can control all Compose-defined services with a single interface:
 
@@ -25,17 +54,17 @@ docker compose ps
 
 The root [docker-compose.yml](../docker-compose.yml) uses Compose `include` to pull in nested compose files under `deploy/docker/`. Add or remove entries in that `include` list as you add more compose files (e.g. `docker-compose.dev.yml`, `docker-compose.e2e.yml`).
 
-## Dev environment: SQL Server
+## Dev environment: SQL Server (script path)
 
-The dev stack includes SQL Server for EF Core. **User Secrets are the single source of truth** for the SQL password; `.env` is generated from User Secrets for Docker Compose.
+The script-based dev stack includes SQL Server for EF Core. **User Secrets are the single source of truth** for the SQL password on this path; `.env` is generated from User Secrets for Docker Compose.
 
-### Quick start
+### Quick start (script path)
 
 ```powershell
 .\scripts\Start-Dev.ps1
 ```
 
-This syncs User Secrets to `.env`, starts SQL Server (Docker), and launches the API (Management.Host) and UI.
+This syncs User Secrets to `.env`, starts SQL Server (Docker), and launches the API (Management.Host), UI, and WorkerHost.
 
 ### First-time setup
 

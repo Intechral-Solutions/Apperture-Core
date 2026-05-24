@@ -14,6 +14,7 @@
     <PackageReference Include="Microsoft.Kiota.Abstractions" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\..\Apperture.ServiceDefaults\Apperture.ServiceDefaults.csproj" />
     <ProjectReference Include="..\Apperture.ControlPlane.Security\Apperture.ControlPlane.Security.csproj" />
     <ProjectReference Include="..\..\Apperture.RuntimePlane\Apperture.RuntimePlane.Dispatch.SqlServer\Apperture.RuntimePlane.Dispatch.SqlServer.csproj" />
     <ProjectReference Include="..\Apperture.Management.Api\Apperture.Management.Api.csproj" />

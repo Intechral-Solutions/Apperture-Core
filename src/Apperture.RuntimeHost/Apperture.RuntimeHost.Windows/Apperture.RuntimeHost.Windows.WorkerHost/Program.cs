@@ -37,6 +37,8 @@ try
 
     var builder = Host.CreateApplicationBuilder(args);
 
+    builder.AddServiceDefaults();
+
 // In dev we pass bootstrap credentials via environment variables.
 // Explicitly register the env-var provider so BootstrapConnectionProfile can see SqlServer:* values.
     builder.Configuration.AddEnvironmentVariables();

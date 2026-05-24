@@ -180,7 +180,7 @@ See [platform-settings-registry.md](../01-architecture/platform-settings-registr
 - No platform settings registry persistence or API
 - No settings management UI
 - No runtime behavior changes
-- No Aspire AppHost (Epic 106)
+- ~~No Aspire AppHost (Epic 106)~~ — **delivered** in Epic 106 ([`Apperture.AppHost`](../../src/Apperture.AppHost/), [`Apperture.ServiceDefaults`](../../src/Apperture.ServiceDefaults/))
 
 **Until post-Aspire revisit:**
 
@@ -189,11 +189,12 @@ See [platform-settings-registry.md](../01-architecture/platform-settings-registr
 
 ## Relationship to Epic 106 Aspire integration
 
-Epic 106 is the **next expected refinement** of the **environment/startup layer** for local development and deployment orchestration:
+Epic 106 **delivered** the environment/startup layer refinement for local development:
 
-- AppHost-driven service startup and dependencies
-- Service discovery and dev-time endpoint wiring
-- Potential reduction of manual copy steps for dev overlays
+- [`Apperture.AppHost`](../../src/Apperture.AppHost/) — orchestrates SQL Server, Management.Host, Management.Ui.Server, and WorkerHost
+- [`Apperture.ServiceDefaults`](../../src/Apperture.ServiceDefaults/) — conventional health checks, OpenTelemetry, and service discovery on orchestrated hosts
+- AppHost injects `ConnectionStrings:DefaultConnection`; appsettings templates remain for dev auth/bootstrap flags
+- Existing dev scripts ([Start-Dev.ps1](../../scripts/Start-Dev.ps1)) and docker-compose SQL path preserved
 
 Aspire **does not replace**:
 
@@ -201,7 +202,7 @@ Aspire **does not replace**:
 - Bootstrap state semantics (first admin, SQL bootstrap)
 - Platform-managed settings (future DB/API/UI layer)
 
-After Epic 106, re-evaluate how environment values flow into hosts (files vs Aspire-provided configuration) using the post-Aspire checklist. Update [management-platform-configuration.md](../03-operations/management-platform-configuration.md) when Aspire shapes are known.
+Re-evaluate how environment values flow into hosts (files vs Aspire-provided configuration) using the post-Aspire checklist below. See [management-platform-configuration.md](../03-operations/management-platform-configuration.md) for the local orchestration inventory.
 
 ## Post-Aspire revisit checklist
 

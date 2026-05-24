@@ -1,4 +1,8 @@
 <Solution>
+  <Folder Name="/src/Apperture.AppHost/">
+    <Project Path="src/Apperture.AppHost/Apperture.AppHost.csproj" />
+    <Project Path="src/Apperture.ServiceDefaults/Apperture.ServiceDefaults.csproj" />
+  </Folder>
   <Folder Name="/src/" />
   <Folder Name="/src/Apperture.Cli/">
     <Project Path="src/Apperture.Cli/Apperture.Cli.Bootstrap/Apperture.Cli.Bootstrap.csproj" />

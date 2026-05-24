@@ -8,6 +8,7 @@
     <PackageReference Include="Microsoft.Extensions.Hosting" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\..\..\Apperture.ServiceDefaults\Apperture.ServiceDefaults.csproj" />
     <ProjectReference Include="..\..\..\Apperture.Core\Apperture.Core.Domain\Apperture.Core.Domain.csproj" />
     <ProjectReference Include="..\..\..\Apperture.Bootstrap\Apperture.Bootstrap\Apperture.Bootstrap.csproj" />
     <ProjectReference Include="..\..\..\Apperture.RuntimePlane\Apperture.RuntimePlane.Dispatch.SqlServer\Apperture.RuntimePlane.Dispatch.SqlServer.csproj" />

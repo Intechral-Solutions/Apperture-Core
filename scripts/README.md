@@ -12,9 +12,23 @@ From repo root:
 
 First time: set the SQL password with `dotnet user-secrets set "SqlServer:Password" "<password>" --project src/Apperture.ControlPlane/Apperture.Management.Host` and copy `deploy/config/examples/appsettings.docker-dev.json.example` to `appsettings.Development.json` in the Host folder. See [deploy/README.md](../deploy/README.md), [management-platform-configuration.md](../docs/03-operations/management-platform-configuration.md), and [ADR-0039](../docs/02-decisions/ADR-0039-environment-startup-bootstrap-and-platform-settings.md).
 
-Scripts under `dev/` are **development orchestration** (start SQL, hosts, workers) — not the long-term platform settings control plane.
+### Preferred: Aspire
 
-This starts **SQL Server** (Docker), the **Management API** (port 9000), and the **Management UI** (port 9001). Stop with `.\scripts\dev\down.ps1`; run `docker compose down` to stop SQL Server.
+```powershell
+dotnet run --project src/Apperture.AppHost/Apperture.AppHost.csproj
+```
+
+Starts SQL Server, Management API (:9000), Management UI (:9001), and WorkerHost. Requires Docker.
+
+### Alternate: PowerShell scripts
+
+```powershell
+.\scripts\Start-Dev.ps1
+```
+
+This starts **SQL Server** (Docker), the **Management API** (port 9000), the **Management UI** (port 9001), and the **WorkerHost**. Stop with `.\scripts\dev\down.ps1`; run `docker compose down` to stop SQL Server.
+
+Do not run Aspire and scripts simultaneously (port conflicts on 1433, 9000, 9001).
 
 ---
 

@@ -15,7 +15,7 @@ For notification cutover flags and staging values, see [epic77-expected-run-miss
 | **Bootstrap state** | Mentioned in dev templates | [ADR-0039](../02-decisions/ADR-0039-environment-startup-bootstrap-and-platform-settings.md) |
 | **Platform-managed settings** | No — future | [platform-settings-registry.md](../01-architecture/platform-settings-registry.md) |
 
-**Epic 105A** delivered this startup/template inventory. **Epic 106 (Aspire)** is expected to refine local orchestration and dev-time environment wiring; revisit this doc after Aspire lands.
+**Epic 105A** delivered this startup/template inventory. **Epic 106 (Aspire)** added [`Apperture.AppHost`](../../src/Apperture.AppHost/) and [`Apperture.ServiceDefaults`](../../src/Apperture.ServiceDefaults/) for local orchestration and conventional health/OTEL/service-discovery defaults.
 
 **Rule:** Edit `appsettings` and [deploy/config](../../deploy/config/) templates for **install, dev, and boot defaults** — not for steady-state operator changes. The platform must not write managed settings back to JSON files.
 
@@ -133,7 +133,26 @@ Each ASP.NET Core host uses the default configuration chain (simplified):
    copy deploy\config\worker\appsettings.Development.json.example src\Apperture.RuntimeHost\Apperture.RuntimeHost.Windows\Apperture.RuntimeHost.Windows.WorkerHost\appsettings.Development.json
    ```
 
-5. Start the stack: `.\scripts\Start-Dev.ps1` — see [deploy/README.md](../../deploy/README.md).
+5. Start the stack:
+   - **Preferred (Aspire):** `dotnet run --project src/Apperture.AppHost/Apperture.AppHost.csproj`
+   - **Alternate (scripts):** `.\scripts\Start-Dev.ps1` — see [deploy/README.md](../../deploy/README.md).
+
+## Local orchestration (Epic 106)
+
+| Path | Entry | SQL | Hosts started |
+|------|-------|-----|---------------|
+| **Aspire (preferred)** | `dotnet run --project src/Apperture.AppHost/Apperture.AppHost.csproj` | Aspire-managed container (`apperture-aspire-sql` volume) | Management.Host, Ui.Server, WorkerHost |
+| **Scripts (alternate)** | `.\scripts\Start-Dev.ps1` | docker-compose (`apperture-sqlserver`) | Management.Host, Ui.Server, WorkerHost |
+
+**What Aspire injects:** `ConnectionStrings:DefaultConnection` (SQL) via AppHost references. Hosts do **not** require Aspire to run — `AddServiceDefaults()` in [`Apperture.ServiceDefaults`](../../src/Apperture.ServiceDefaults/) registers passive health/OTEL/service-discovery that also works under direct `dotnet run`.
+
+**What still comes from appsettings templates:** `DevTestUser`, `BootstrapPlatformAdmin`, notification cutover flags, UI shell config. Copy [`appsettings.docker-dev.json.example`](../../deploy/config/examples/appsettings.docker-dev.json.example) once for Management.Host regardless of orchestration path.
+
+**Ui.Client:** Blazor WASM bundle served by Ui.Server — not a separate AppHost process. Split-host API routing uses [`ManagementUiDevApiRouting`](../../src/Apperture.ControlPlane/Apperture.Management.Ui.Shared/Options/ManagementUiDevApiRouting.cs) (:9001 → :9000).
+
+**WorkerHost:** `AddServiceDefaults()` only (no HTTP health endpoints); optional [`worker/appsettings.Development.json.example`](../../deploy/config/worker/appsettings.Development.json.example) for logging/SQL overlay when not using Aspire connection injection.
+
+**Mutual exclusion:** Do not run both paths simultaneously (ports 1433, 9000, 9001).
 
 ## Deployed environment
 
@@ -165,7 +184,7 @@ See [deploy/config/README.md](../../deploy/config/README.md) for the index.
 
 ## Future work and post-Aspire revisit
 
-Epic 105B defers implementation to **after Epic 106 Aspire**. See [ADR-0039 post-Aspire checklist](../02-decisions/ADR-0039-environment-startup-bootstrap-and-platform-settings.md#post-aspire-revisit-checklist) for:
+Epic 106 delivered Aspire local orchestration. The following remain deferred — see [ADR-0039 post-Aspire checklist](../02-decisions/ADR-0039-environment-startup-bootstrap-and-platform-settings.md#post-aspire-revisit-checklist) for:
 
 - Setup automation / installer scripts
 - Bootstrap store and CLI/PowerShell commands

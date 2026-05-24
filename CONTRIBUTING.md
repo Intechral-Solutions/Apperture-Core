@@ -20,11 +20,30 @@ Or use `dotnet build Apperture.slnx` and `dotnet test Apperture.slnx`. Use `.\sc
 
 Dev setup uses the **environment/startup configuration layer** only (appsettings templates, User Secrets, dev scripts). For the full four-layer model and what belongs where, see [ADR-0039](docs/02-decisions/ADR-0039-environment-startup-bootstrap-and-platform-settings.md).
 
-See [deploy/README.md](deploy/README.md) and [management platform configuration](docs/03-operations/management-platform-configuration.md). Quick setup:
+See [deploy/README.md](deploy/README.md) and [management platform configuration](docs/03-operations/management-platform-configuration.md).
+
+### Preferred: .NET Aspire (Epic 106)
+
+Requires [Docker](https://www.docker.com/) for the Aspire-managed SQL Server container.
+
+1. Copy `deploy/config/examples/appsettings.docker-dev.json.example` to `src/Apperture.ControlPlane/Apperture.Management.Host/appsettings.Development.json` (one-time; needed for `DevTestUser`, bootstrap admin, and dev feature flags).
+2. Run the AppHost:
+
+   ```powershell
+   dotnet run --project src/Apperture.AppHost/Apperture.AppHost.csproj
+   ```
+
+   This starts SQL Server, Management API (:9000), Management UI (:9001), and WorkerHost via the Aspire dashboard.
+
+   Optional: override the SQL password with User Secrets on the AppHost (`dotnet user-secrets set "Parameters:sql-password" "<password>" --project src/Apperture.AppHost`).
+
+### Alternate: PowerShell scripts
 
 1. `dotnet user-secrets set "SqlServer:Password" "<password>" --project src/Apperture.ControlPlane/Apperture.Management.Host`
 2. Copy `deploy/config/examples/appsettings.docker-dev.json.example` to `src/Apperture.ControlPlane/Apperture.Management.Host/appsettings.Development.json`
 3. `.\scripts\Start-Dev.ps1`
+
+Do not run Aspire and `Start-Dev.ps1` at the same time — both use ports 1433, 9000, and 9001.
 
 ## Architecture and decisions
 
