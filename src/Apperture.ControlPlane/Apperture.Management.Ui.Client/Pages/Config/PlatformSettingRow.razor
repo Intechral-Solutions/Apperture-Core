@@ -1,0 +1,153 @@
+@using Apperture.Management.Client
+@using Apperture.Management.Ui.Shared
+@using Apperture.Management.Ui.Client.Atoms
+@using Apperture.Management.Ui.Client.Organisms
+
+<section class="rounded border border-default bg-surface p-3">
+    <div class="flex flex-wrap items-start justify-between gap-3">
+        <div class="min-w-0 flex-1">
+            <div class="font-medium text-heading">@Row.DisplayName</div>
+            <div class="text-xs text-muted font-mono">@Row.Key</div>
+            <div class="text-xs text-body mt-1">@Row.Description</div>
+            @{
+                var safety = PlatformSettingUiHelpers.TryGetSafetyNote(Row.Key);
+            }
+            @if (!string.IsNullOrEmpty(safety))
+            {
+                <p class="text-xs text-muted mt-1">@safety</p>
+            }
+        </div>
+        <div class="flex flex-col items-end gap-1">
+            <StatusPill Label="@PlatformSettingUiHelpers.GetSourceLabel(Row.Source)"
+                        Title="@PlatformSettingUiHelpers.GetSourceTooltip(Row.Source)"
+                        Semantic="@PlatformSettingUiHelpers.GetSourceSemantic(Row.Source)" />
+            <span class="text-xs text-muted">Resolved: <code class="rounded bg-surface-muted px-1">@Row.CurrentValue</code></span>
+        </div>
+    </div>
+
+    @if (Row.RequiresRestart)
+    {
+        <PageMessage Kind="PageMessageKind.Warning"
+                     Class="mt-3"
+                     Message="Changing this setting may require restarting management or worker hosts before runtime behavior fully updates." />
+    }
+
+    @if (CanManage)
+    {
+        <div class="mt-3 space-y-2">
+            @if (string.Equals(Row.ValueType, "Boolean", StringComparison.OrdinalIgnoreCase))
+            {
+                <label class="flex items-center gap-2 text-sm">
+                    <input type="checkbox"
+                           checked="@IsBoolChecked(EditValue)"
+                           disabled="@IsSaving"
+                           @onchange="OnBoolChanged" />
+                    <span>@(IsBoolChecked(EditValue) ? "Enabled (true)" : "Disabled (false)")</span>
+                </label>
+            }
+            else if (string.Equals(Row.ValueType, "Integer", StringComparison.OrdinalIgnoreCase))
+            {
+                <div class="flex flex-wrap items-center gap-2">
+                    <input type="number"
+                           class="rounded border border-default px-2 py-1 text-sm w-32"
+                           value="@EditValue"
+                           min="@Row.MinInteger"
+                           disabled="@IsSaving"
+                           @onchange="OnTextInput" />
+                    @if (Row.MinInteger is not null)
+                    {
+                        <span class="text-xs text-muted">Minimum: @Row.MinInteger</span>
+                    }
+                </div>
+            }
+            else
+            {
+                <div class="space-y-1">
+                    <input class="rounded border border-default px-2 py-1 text-sm min-w-64 font-mono"
+                           value="@EditValue"
+                           disabled="@IsSaving"
+                           placeholder="00:05:00"
+                           @onchange="OnTextInput" />
+                    @if (!string.IsNullOrEmpty(Row.MinDurationIso))
+                    {
+                        <p class="text-xs text-muted">ISO 8601 duration; minimum @Row.MinDurationIso (e.g. 00:05:00).</p>
+                    }
+                </div>
+            }
+
+            @if (IsDirty)
+            {
+                <p class="text-xs text-muted">Unsaved changes</p>
+            }
+
+            @if (!string.IsNullOrEmpty(Error))
+            {
+                <PageMessage Kind="PageMessageKind.Error" Message="@Error" />
+            }
+
+            <div class="flex flex-wrap items-center gap-2 pt-1">
+                <button type="button"
+                        class="rounded bg-surface-muted px-3 py-1 text-sm font-medium text-heading disabled:opacity-50"
+                        disabled="@(!IsDirty || IsSaving)"
+                        title="@(IsDirty ? null : "Change the value to enable save.")"
+                        @onclick="OnSave">
+                    @(IsSaving ? "Saving…" : "Save")
+                </button>
+                <button type="button"
+                        class="rounded bg-surface-muted px-3 py-1 text-sm disabled:opacity-50"
+                        disabled="@(!CanReset || IsSaving)"
+                        title="@ResetTitle"
+                        @onclick="OnReset">
+                    Reset
+                </button>
+            </div>
+        </div>
+    }
+    else
+    {
+        <p class="mt-3 text-sm text-body">
+            Current value: <code class="rounded bg-surface-muted px-1">@Row.CurrentValue</code>
+        </p>
+        <p class="text-xs text-muted mt-1">Read-only — you do not have permission to change platform settings.</p>
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public PlatformSettingResolvedDto Row { get; set; } = default!;
+
+    [Parameter] public bool CanManage { get; set; }
+
+    [Parameter] public string EditValue { get; set; } = "";
+
+    [Parameter] public bool IsSaving { get; set; }
+
+    [Parameter] public string? Error { get; set; }
+
+    [Parameter] public EventCallback<string> EditValueChanged { get; set; }
+
+    [Parameter] public EventCallback OnSave { get; set; }
+
+    [Parameter] public EventCallback OnReset { get; set; }
+
+    private bool IsDirty => PlatformSettingUiHelpers.IsDirty(EditValue, Row.CurrentValue);
+
+    private bool CanReset => PlatformSettingUiHelpers.IsPlatformOverride(Row.Source);
+
+    private string ResetTitle => CanReset
+        ? "Remove the platform override and restore the inherited default."
+        : "No platform override to remove for this setting.";
+
+    private static bool IsBoolChecked(string? value) =>
+        bool.TryParse(value, out var b) && b;
+
+    private async Task OnBoolChanged(ChangeEventArgs e)
+    {
+        var enabled = e.Value is bool b && b;
+        await EditValueChanged.InvokeAsync(enabled ? "true" : "false");
+    }
+
+    private async Task OnTextInput(ChangeEventArgs e)
+    {
+        await EditValueChanged.InvokeAsync(e.Value?.ToString() ?? string.Empty);
+    }
+}

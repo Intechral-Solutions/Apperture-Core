@@ -126,7 +126,7 @@ Secret references are audited by **handle**, not plaintext.
 | Safe boot defaults in committed JSON | Yes |
 | Dev-only overlays (gitignored) | Yes |
 | [deploy/config](../../deploy/config/) install templates | Yes |
-| Steady-state operator edits | **No** — use registry (future) |
+| Steady-state operator edits | **No** — use registry API/UI at `/config/platform-settings` |
 | Platform writing operator changes back to disk | **No** |
 
 ## Generated UI and custom panels (direction)
@@ -138,6 +138,18 @@ Over time, setting **definitions** should drive management UI:
 - Custom panels for complex domains where generic controls are insufficient
 
 Epic 105B does **not** specify component technology, routing, or permission model — only that UI should consume **definitions + resolved values**, not raw `appsettings` files.
+
+## Operator UI (Epic 111)
+
+The Management UI at `/config/platform-settings` (Phase 1 polish):
+
+- **Source labels:** Platform override (database), configuration default, definition default — mapped from API `Source` values for operator clarity.
+- **Precedence:** Platform override → configuration default → definition default. Reset removes the database override only; values never write back to appsettings.
+- **Grouping:** Notifications, platform events, and attention observation categories.
+- **Safety:** Short context on operationally sensitive flags (notification delivery, platform events, observation).
+- **Audit:** Set/reset actions emit `platform.settings.set` / `platform.settings.reset` audit records (see audit timeline).
+
+Generated schema-driven forms and module-contributed definitions remain deferred.
 
 ## Deferred implementation details
 

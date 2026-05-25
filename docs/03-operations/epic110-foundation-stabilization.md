@@ -129,7 +129,7 @@ See [platform-settings-registry.md](../01-architecture/platform-settings-registr
 | Epic 108b — DPAPI credential binding | Windows on-prem; after file bootstrap store |
 | Azure Key Vault / Managed Identity binding | Cloud/production path |
 | First-run setup wizard | After bootstrap store + credential binding |
-| Platform settings UI polish | **Recommended as Epic 111** |
+| Platform settings UI polish | **Delivered in Epic 111** |
 | Expanded runtime overlays | WorkerHost coverage for remaining Phase 1 keys |
 | Integration-scoped settings | Out of Phase 1 |
 | Module-contributed setting definitions | Out of Phase 1 |
@@ -141,9 +141,20 @@ See [platform-settings-registry.md](../01-architecture/platform-settings-registr
 
 ---
 
-## Recommended next epic: Epic 111
+## Epic 111 (delivered): Platform settings operator polish
 
 **Title:** Epic 111 — Platform settings operator polish and UI hardening
+
+**Status:** Delivered. See [platform settings registry — Operator UI](../01-architecture/platform-settings-registry.md#operator-ui-epic-111).
+
+**Summary:** Grouped `/config/platform-settings` page, friendly source badges, typed editors, dirty/save/reset UX, validation errors, read-only capability mode. No registry scope expansion.
+
+## Recommended next epic (post-111)
+
+After Epic 111, consider **expanded WorkerHost runtime overlays** for remaining Phase 1 keys, **Epic 108b DPAPI** credential binding, or a broader **UI/design-system** sweep — per team priority.
+
+<details>
+<summary>Original Epic 111 recommendation (historical)</summary>
 
 **Rationale:**
 
@@ -170,6 +181,8 @@ See [platform-settings-registry.md](../01-architecture/platform-settings-registr
 | Integration/module settings | Out of Phase 1 |
 | Full UI/design-system stabilization | Broader than closing Epic 109 |
 | Production worker orchestration | Large design epic |
+
+</details>
 
 ---
 

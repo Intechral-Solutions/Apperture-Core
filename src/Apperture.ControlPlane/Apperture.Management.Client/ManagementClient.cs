@@ -1188,8 +1188,11 @@ public sealed class ManagementClient : IManagementClient
         using var response = await _http.PutAsJsonAsync($"config/platform-settings/{Uri.EscapeDataString(key)}", request, cancellationToken).ConfigureAwait(false);
         if (response.StatusCode is HttpStatusCode.BadRequest or HttpStatusCode.Conflict or HttpStatusCode.Forbidden)
         {
-            var detail = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-            throw new HttpRequestException(string.IsNullOrWhiteSpace(detail) ? response.ReasonPhrase : detail, null, response.StatusCode);
+            var detail = await TryReadManagementApiErrorAsync(response, cancellationToken).ConfigureAwait(false);
+            throw new HttpRequestException(
+                string.IsNullOrWhiteSpace(detail) ? response.ReasonPhrase : detail,
+                null,
+                response.StatusCode);
         }
 
         response.EnsureSuccessStatusCode();
@@ -2061,6 +2064,13 @@ public sealed class ManagementClient : IManagementClient
             if (TryGetPropertyIgnoreCase(root, "error", out var errEl) && errEl.ValueKind == JsonValueKind.String)
             {
                 var s = errEl.GetString();
+                if (!string.IsNullOrWhiteSpace(s))
+                    return s;
+            }
+
+            if (TryGetPropertyIgnoreCase(root, "message", out var messageEl) && messageEl.ValueKind == JsonValueKind.String)
+            {
+                var s = messageEl.GetString();
                 if (!string.IsNullOrWhiteSpace(s))
                     return s;
             }

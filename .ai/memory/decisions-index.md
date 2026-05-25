@@ -54,4 +54,5 @@ Architecture decision records (ADRs) live in [docs/02-decisions/](../../docs/02-
 | [Epic 107 assessment](../../docs/03-operations/epic107-post-aspire-assessment.md) | Post-Aspire reassessment (historical; superseded for next steps by Epic 110) |
 | [Epic 108](../../docs/01-architecture/bootstrap-cli-invocation.md) | File-backed bootstrap store, CLI persistence, dev init script |
 | [Platform settings registry](../../docs/01-architecture/platform-settings-registry.md) | Phase 1 delivered: SQL-backed instance settings, resolver precedence, API/UI overlays (Epic 109) |
-| [Epic 110](../../docs/03-operations/epic110-foundation-stabilization.md) | Foundation stabilization, smoke baseline, deferred roadmap; recommends Epic 111 |
+| [Epic 110](../../docs/03-operations/epic110-foundation-stabilization.md) | Foundation stabilization, smoke baseline, deferred roadmap |
+| [Epic 111](../../docs/01-architecture/platform-settings-registry.md#operator-ui-epic-111) | Platform settings operator UI polish (source labels, grouping, save/reset UX) |
