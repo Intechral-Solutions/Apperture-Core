@@ -2,8 +2,8 @@
 .SYNOPSIS
     Seeds the development database with sample data.
 .DESCRIPTION
-    Placeholder for database seeding. Implement when persistence (e.g. EF Core + SQL Server)
-    is added to the Management API or runtime.
+    Placeholder for optional sample-data seeding. EF persistence and dev identity bootstrap
+    already run on Management.Host startup (migrations + DevTestUser / BootstrapPlatformAdmin).
 .EXAMPLE
     .\seed.ps1
 #>
@@ -11,5 +11,5 @@
 param()
 
 $ErrorActionPreference = "Stop"
-Write-Host "Seed script: not yet implemented." -ForegroundColor Yellow
-Write-Host "Add seeding logic here once the Management API has a database (e.g. EF Core migrations + seed data)." -ForegroundColor Gray
+Write-Host "Seed script: not yet implemented (sample data only)." -ForegroundColor Yellow
+Write-Host "Identity and schema seeding use Management.Host startup (migrations + appsettings.Development.json bootstrap)." -ForegroundColor Gray

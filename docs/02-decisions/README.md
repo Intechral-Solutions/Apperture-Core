@@ -8,7 +8,8 @@
 | [ADR-0004](ADR-0004-instance-owned-scheduling.md) | Instance-owned scheduling (control-plane-managed, host-portable execution) |
 | [ADR-0037](ADR-0037-platform-signals-events-and-notification-system.md) | Platform signals and notification system (Epic 77) |
 | [ADR-0038](ADR-0038-platform-signals-sdk-conventions.md) | Module SDK signal conventions (Epic 103A) |
-| [ADR-0039](ADR-0039-environment-startup-bootstrap-and-platform-settings.md) | Environment, startup, bootstrap, and platform settings layers (Epic 105B) |
+| [ADR-0039](ADR-0039-environment-startup-bootstrap-and-platform-settings.md) | Environment, startup, bootstrap, and platform settings layers (105B; Phase 1 settings Epic 109) |
+| [Epic 110](../03-operations/epic110-foundation-stabilization.md) | Foundation stabilization, smoke baseline, deferred roadmap, Epic 111 recommendation |
 | [ADR-0005](ADR-0005-federated-external-instance-relationships.md) | Federated external instance relationships |
 | [ADR-0006](ADR-0006-entra-backed-platform-trust-for-instance-authentication.md) | Entra-backed platform trust for instance authentication |
 | [ADR-0007](ADR-0007-separation-of-human-auth-service-auth-and-relationship-authorization.md) | Separation of human auth, service auth, and relationship authorization |

@@ -42,7 +42,7 @@ Do not run Aspire and scripts simultaneously (port conflicts on 1433, 9000, 9001
 | **Sync-EnvFromUserSecrets.ps1** | Copy `SqlServer:Password` from User Secrets to `.env` for Docker Compose. Called automatically by up.ps1. |
 | **down.ps1** | Stop API, UI, and worker processes on ports 9000 and 9001. |
 | **logs.ps1** | Show which processes are listening on dev ports. |
-| **seed.ps1** | Placeholder: seed dev database (implement when persistence is added). |
+| **seed.ps1** | Placeholder only — EF persistence and dev bootstrap run on Management.Host startup; no sample-data seed script yet. |
 | **reset-db.ps1** | Drop/recreate the `Apperture` database and apply all EF migrations. |
 | **Initialize-AppertureEnvironment.ps1** | One-time dev setup: copy appsettings template, optional User Secrets, print Aspire vs script paths. |
 | **Fix-ScheduleTables.ps1** | Create schedule tables if missing (only needed if migrations were out of sync). **Management.Host** on startup also applies migration `EnsureScheduleTablesConditional`, which does the same idempotently. |

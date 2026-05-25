@@ -200,11 +200,11 @@ Aspire **does not replace**:
 
 - The secrets layer (still external to committed JSON)
 - Bootstrap state semantics (first admin, SQL bootstrap)
-- Platform-managed settings (future DB/API/UI layer)
+- Platform-managed settings registry (Phase 1 delivered in Epic 109 — API/UI; no appsettings writeback)
 
 Re-evaluate how environment values flow into hosts (files vs Aspire-provided configuration) using the post-Aspire checklist below. See [management-platform-configuration.md](../03-operations/management-platform-configuration.md) for the local orchestration inventory.
 
-**Epic 107 assessment:** [epic107-post-aspire-assessment.md](../03-operations/epic107-post-aspire-assessment.md) — disposition of checklist items and recommended next epics (108/109).
+**Epic 107 assessment (historical):** [epic107-post-aspire-assessment.md](../03-operations/epic107-post-aspire-assessment.md). **Current roadmap:** [epic110-foundation-stabilization.md](../03-operations/epic110-foundation-stabilization.md).
 
 **Epic 108 (implemented):** File-backed bootstrap store at `%ProgramData%\Apperture\bootstrap\configuration.json`; CLI profile/bind commands; thin `Initialize-AppertureEnvironment.ps1`. Password binding (DPAPI) deferred to 108b.
 
@@ -228,11 +228,11 @@ Epic 106 local orchestration is **delivered**. Revisit **before implementing** t
 - Clear mental model for contributors and operators: files vs secrets vs bootstrap vs platform settings
 - Epic 105A inventory doc has a decision anchor (this ADR)
 - Epic 106 scope is bounded (environment layer refinement, not full settings rewrite)
-- Platform settings direction documented without premature implementation
+- Platform settings Phase 1 delivered (Epic 109) with documented boundaries
 
 ### Negative
 
-- Temporary dual paths: some operator knobs still live in JSON/env until registry is built
+- Temporary dual paths: some operator knobs still resolve from appsettings until fully migrated to registry
 - Post-Aspire work list is intentionally deferred; onboarding may still require manual template copy in dev
 
 ### Neutral
@@ -243,7 +243,7 @@ Epic 106 local orchestration is **delivered**. Revisit **before implementing** t
 ## Related
 
 - [management-platform-configuration.md](../03-operations/management-platform-configuration.md) — Epic 105A startup file inventory
-- [platform-settings-registry.md](../01-architecture/platform-settings-registry.md) — Future steady-state settings (conceptual)
+- [platform-settings-registry.md](../01-architecture/platform-settings-registry.md) — Phase 1 registry (Epic 109); [epic110-foundation-stabilization.md](../03-operations/epic110-foundation-stabilization.md) — foundation baseline and roadmap
 - [bootstrap-and-secrets-boundary.md](../01-architecture/bootstrap-and-secrets-boundary.md)
 - [bootstrap-cli-invocation.md](../01-architecture/bootstrap-cli-invocation.md)
 - [epic77-expected-run-missing-notification-cutover-runbook.md](../03-operations/epic77-expected-run-missing-notification-cutover-runbook.md) — Example domain that will move toward platform settings

@@ -1,5 +1,7 @@
 # Epic 107: Post-Aspire setup, bootstrap, and settings reassessment
 
+> **Superseded for next-step recommendations** by [epic110-foundation-stabilization.md](epic110-foundation-stabilization.md) (Epics 108–109 are implemented). This document remains useful as historical context for what Aspire solved vs deferred.
+
 **Status:** Assessment complete (documentation only — no runtime changes).
 
 **Context:** Epic 105A cleaned up appsettings/templates; Epic 105B documented the four-layer configuration model ([ADR-0039](../02-decisions/ADR-0039-environment-startup-bootstrap-and-platform-settings.md)); Epic 106 delivered [`Apperture.AppHost`](../../src/Apperture.AppHost/) and [`Apperture.ServiceDefaults`](../../src/Apperture.ServiceDefaults/). This document records what Aspire solved, what remains, and recommended next steps.

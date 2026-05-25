@@ -13,7 +13,7 @@ For notification cutover flags and staging values, see [epic77-expected-run-miss
 | **Environment / startup** | **Yes** — file inventory below | This document |
 | **Secrets / credentials** | Partial — loading order only | [ADR-0039](../02-decisions/ADR-0039-environment-startup-bootstrap-and-platform-settings.md), [bootstrap-and-secrets-boundary.md](../01-architecture/bootstrap-and-secrets-boundary.md) |
 | **Bootstrap state** | Mentioned in dev templates | [ADR-0039](../02-decisions/ADR-0039-environment-startup-bootstrap-and-platform-settings.md) |
-| **Platform-managed settings** | No — future | [platform-settings-registry.md](../01-architecture/platform-settings-registry.md) |
+| **Platform-managed settings** | Phase 1 — API/UI (not appsettings) | [platform-settings-registry.md](../01-architecture/platform-settings-registry.md), [epic110-foundation-stabilization.md](epic110-foundation-stabilization.md) |
 
 **Epic 105A** delivered this startup/template inventory. **Epic 106 (Aspire)** added [`Apperture.AppHost`](../../src/Apperture.AppHost/) and [`Apperture.ServiceDefaults`](../../src/Apperture.ServiceDefaults/) for local orchestration and conventional health/OTEL/service-discovery defaults.
 
@@ -195,7 +195,7 @@ To verify the catalog at runtime (after Management.Host is up), call `GET /api/c
 
 **Thin dev setup:** [`scripts/Initialize-AppertureEnvironment.ps1`](../../scripts/Initialize-AppertureEnvironment.ps1) copies appsettings template and prints startup commands. Does not create bootstrap `configuration.json`.
 
-**Epic 108 non-goals (unchanged):** platform-managed settings registry (Epic 109), setup wizard, production installer, merging Aspire/docker-compose SQL volumes.
+**Epic 108 follow-on (unchanged):** DPAPI credential binding (Epic 108b), setup wizard, production installer — not merging Aspire/docker-compose SQL volumes. Platform settings registry Phase 1 was delivered in **Epic 109** (see [epic110-foundation-stabilization.md](epic110-foundation-stabilization.md)).
 
 ## Deployed environment
 
@@ -225,15 +225,16 @@ To verify the catalog at runtime (after Management.Host is up), call `GET /api/c
 
 See [deploy/config/README.md](../../deploy/config/README.md) for the index.
 
-## Future work and post-Aspire revisit
+## Deferred work and roadmap
 
-Epic 106 delivered Aspire local orchestration. Epic 107 assessed deferred work — see [epic107-post-aspire-assessment.md](epic107-post-aspire-assessment.md) for checklist disposition and recommended Epic 108/109. Summary from [ADR-0039 post-Aspire checklist](../02-decisions/ADR-0039-environment-startup-bootstrap-and-platform-settings.md#post-aspire-revisit-checklist):
+Foundation sequence **105A–109** is complete. Current smoke baseline, deferred items, and recommended next epic: **[epic110-foundation-stabilization.md](epic110-foundation-stabilization.md)**.
 
-- Setup automation / installer scripts
-- Platform settings registry and settings UI
+Historical post-Aspire assessment (pre-108/109): [epic107-post-aspire-assessment.md](epic107-post-aspire-assessment.md). Open items from [ADR-0039 post-Aspire checklist](../02-decisions/ADR-0039-environment-startup-bootstrap-and-platform-settings.md#post-aspire-revisit-checklist):
+
 - DPAPI / Key Vault credential binding (Epic 108b)
 - First-run setup wizard
-- Platform settings registry and settings management UI
+- Full migration of remaining `IOptions` flags to registry-backed settings
+- Platform settings UI polish and expanded runtime overlays (**Epic 111** recommended)
 
 **Cosmetic / tooling (still valid):**
 
@@ -246,4 +247,4 @@ Epic 106 delivered Aspire local orchestration. Epic 107 assessed deferred work �
   dotnet ef database update --project src/Apperture.Persistence/Apperture.Persistence.SqlServer --startup-project src/Apperture.ControlPlane/Apperture.Management.Host
   ```
 
-**Platform settings direction (conceptual):** [platform-settings-registry.md](../01-architecture/platform-settings-registry.md).
+**Platform settings (Phase 1 delivered):** [platform-settings-registry.md](../01-architecture/platform-settings-registry.md).

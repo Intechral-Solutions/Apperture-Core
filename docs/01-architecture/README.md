@@ -6,7 +6,7 @@
 | [foundational-layers.md](foundational-layers.md) | Shared Kernel, Core.Domain, Core.Application boundaries and dependency rules |
 | [persistence-foundation.md](persistence-foundation.md) | Shared SQL substrate, migrations, retry/resilience, schema conventions |
 | [bootstrap-and-secrets-boundary.md](bootstrap-and-secrets-boundary.md) | Bootstrap vs operational secrets, dependency direction, do-not-do list |
-| [platform-settings-registry.md](platform-settings-registry.md) | **Future** platform-managed settings registry (conceptual; Epic 105B) |
+| [platform-settings-registry.md](platform-settings-registry.md) | Platform-managed settings registry — **Phase 1 delivered (Epic 109)**; API/UI at `/config/platform-settings` |
 | [authorization-and-governance-foundation.md](authorization-and-governance-foundation.md) | Auth/governance scaffolding — principal, role, permission, IGovernedResource; RBAC + scope containment; Phase 4 readiness |
 | [connector-resource-family.md](connector-resource-family.md) | First governed resource family — connectors, connections, slots, bindings; auth participation |
 | [control-plane-connector-workflows.md](control-plane-connector-workflows.md) | Connection/binding application workflows; auth enforcement; eligibility |
