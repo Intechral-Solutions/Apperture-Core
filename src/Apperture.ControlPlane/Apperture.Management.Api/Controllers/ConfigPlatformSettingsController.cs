@@ -69,7 +69,11 @@ public sealed class ConfigPlatformSettingsController : ControllerBase
 
         try
         {
-            var updated = await _service.SetAsync(key, body.Value, body.RowVersionBase64, cancellationToken);
+            var updated = await _service.SetAsync(
+                key,
+                PlatformSettingsDtoMapper.ToPayload(body),
+                body.RowVersionBase64,
+                cancellationToken);
             return Ok(PlatformSettingsDtoMapper.ToDto(updated));
         }
         catch (ArgumentException ex)

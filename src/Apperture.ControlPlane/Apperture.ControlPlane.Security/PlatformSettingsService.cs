@@ -40,7 +40,7 @@ public sealed class PlatformSettingsService : IPlatformSettingsService
 
     public async Task<PlatformSettingResolvedValue> SetAsync(
         string key,
-        string value,
+        PlatformSettingUpdatePayload payload,
         string? rowVersionBase64,
         CancellationToken cancellationToken = default)
     {
@@ -50,7 +50,7 @@ public sealed class PlatformSettingsService : IPlatformSettingsService
         if (!def.Editable)
             throw new InvalidOperationException($"Setting '{key}' is not editable.");
 
-        var parsed = PlatformSettingsValueCodec.ParseFromInput(def, value);
+        var parsed = PlatformSettingsUpdateParser.Parse(def, payload);
         await ValidateNotificationSafetyAsync(key, parsed, cancellationToken).ConfigureAwait(false);
 
         var existing = await _repository.GetByKeyAsync(key, cancellationToken).ConfigureAwait(false);

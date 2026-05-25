@@ -50,9 +50,11 @@
                             <PlatformSettingRow Row="row"
                                                 CanManage="_canManage"
                                                 EditValue="@GetEditValue(row.Key)"
+                                                EditValues="@GetEditValues(row)"
                                                 IsSaving="@(string.Equals(_savingKey, row.Key, StringComparison.Ordinal))"
                                                 Error="@GetError(row.Key)"
                                                 EditValueChanged="@(v => SetEditValue(row.Key, v))"
+                                                EditValuesChanged="@(v => SetEditValues(row.Key, v))"
                                                 OnSave="@(() => SaveAsync(row))"
                                                 OnReset="@(() => ResetAsync(row))" />
                         }
@@ -75,6 +77,7 @@
     private string? _savingKey;
     private List<PlatformSettingResolvedDto> _rows = [];
     private readonly Dictionary<string, string> _editValues = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, List<string>> _editArrayValues = new(StringComparer.Ordinal);
     private readonly Dictionary<string, string?> _errors = new(StringComparer.Ordinal);
 
     private IEnumerable<IGrouping<string, PlatformSettingResolvedDto>> _categoryGroups =>
@@ -109,9 +112,10 @@
                 .ThenBy(x => x.DisplayName, StringComparer.Ordinal)
                 .ToList();
             _editValues.Clear();
+            _editArrayValues.Clear();
             _errors.Clear();
             foreach (var row in _rows)
-                _editValues[row.Key] = row.CurrentValue;
+                SyncEditState(row);
         }
         catch (Exception ex)
         {
@@ -122,9 +126,20 @@
     private string GetEditValue(string key) =>
         _editValues.TryGetValue(key, out var value) ? value : string.Empty;
 
+    private IReadOnlyList<string> GetEditValues(PlatformSettingResolvedDto row) =>
+        _editArrayValues.TryGetValue(row.Key, out var values)
+            ? values
+            : row.CurrentValues?.ToList() ?? [];
+
     private void SetEditValue(string key, string? value)
     {
         _editValues[key] = value ?? string.Empty;
+        _errors.Remove(key);
+    }
+
+    private void SetEditValues(string key, IReadOnlyList<string> values)
+    {
+        _editArrayValues[key] = values.ToList();
         _errors.Remove(key);
     }
 
@@ -137,10 +152,24 @@
         _savingKey = row.Key;
         try
         {
-            var value = GetEditValue(row.Key);
-            var updated = await Client.SetPlatformSettingAsync(
-                row.Key,
-                new UpdatePlatformSettingRequest(value, row.RowVersionBase64));
+            PlatformSettingResolvedDto updated;
+            if (PlatformSettingUiHelpers.IsMultiSelect(row.InputKind))
+            {
+                updated = await Client.SetPlatformSettingAsync(
+                    row.Key,
+                    new UpdatePlatformSettingRequest(
+                        Values: GetEditValues(row).ToList(),
+                        RowVersionBase64: row.RowVersionBase64));
+            }
+            else
+            {
+                updated = await Client.SetPlatformSettingAsync(
+                    row.Key,
+                    new UpdatePlatformSettingRequest(
+                        Value: GetEditValue(row.Key),
+                        RowVersionBase64: row.RowVersionBase64));
+            }
+
             ReplaceRow(updated);
             Toasts.Show(ToastSeverity.Success, $"Saved {row.DisplayName}.");
         }
@@ -194,7 +223,13 @@
         var index = _rows.FindIndex(x => string.Equals(x.Key, updated.Key, StringComparison.Ordinal));
         if (index >= 0)
             _rows[index] = updated;
-        _editValues[updated.Key] = updated.CurrentValue;
+        SyncEditState(updated);
         _errors.Remove(updated.Key);
+    }
+
+    private void SyncEditState(PlatformSettingResolvedDto row)
+    {
+        _editValues[row.Key] = row.CurrentValue;
+        _editArrayValues[row.Key] = row.CurrentValues?.ToList() ?? [];
     }
 }

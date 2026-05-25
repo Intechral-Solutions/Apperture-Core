@@ -28,7 +28,11 @@ public sealed class PlatformSettingsServiceValidationTests
         var audit = new Mock<IAuditService>();
         var sut = new PlatformSettingsService(registry, repo.Object, resolver.Object, principalContext.Object, audit.Object);
 
-        var act = () => sut.SetAsync(PlatformSettingKeys.NotificationsUsePlatformPipelineEnabled, "true", null, CancellationToken.None);
+        var act = () => sut.SetAsync(
+            PlatformSettingKeys.NotificationsUsePlatformPipelineEnabled,
+            new PlatformSettingUpdatePayload { ScalarValue = "true" },
+            null,
+            CancellationToken.None);
 
         await act.Should().ThrowAsync<InvalidOperationException>();
     }
@@ -40,6 +44,7 @@ public sealed class PlatformSettingsServiceValidationTests
         Description = key,
         Category = PlatformSettingCategory.Notifications,
         ValueType = PlatformSettingValueType.Boolean,
+        InputKind = PlatformSettingInputKind.Toggle,
         CurrentValue = currentValue,
         Source = PlatformSettingValueSource.DefinitionDefault
     };

@@ -58,7 +58,7 @@ public sealed class PlatformSettingsResolver : IPlatformSettingsResolver
             return ToResolved(def, fromConfig, PlatformSettingValueSource.ConfigurationDefault, null);
         }
 
-        return ToResolved(def, def.DefaultValue, PlatformSettingValueSource.DefinitionDefault, null);
+        return ToResolved(def, NormalizeDefaultValue(def), PlatformSettingValueSource.DefinitionDefault, null);
     }
 
     private object? TryGetFromConfiguration(PlatformSettingDefinition def)
@@ -72,9 +72,31 @@ public sealed class PlatformSettingsResolver : IPlatformSettingsResolver
             PlatformSettingValueType.Boolean => section.Get<bool>(),
             PlatformSettingValueType.Integer => section.Get<int>(),
             PlatformSettingValueType.Duration => section.Get<TimeSpan>(),
+            PlatformSettingValueType.StringArray => TryGetStringArrayFromConfiguration(section),
             _ => null
         };
     }
+
+    private static string[]? TryGetStringArrayFromConfiguration(IConfigurationSection section)
+    {
+        var direct = section.Get<string[]>();
+        if (direct is { Length: > 0 })
+            return direct;
+
+        var indexed = section.GetChildren()
+            .OrderBy(c => c.Key, StringComparer.Ordinal)
+            .Select(c => c.Value)
+            .Where(v => !string.IsNullOrEmpty(v))
+            .Select(v => v!)
+            .ToArray();
+
+        return indexed.Length > 0 ? indexed : null;
+    }
+
+    private static object NormalizeDefaultValue(PlatformSettingDefinition def) =>
+        def.ValueType == PlatformSettingValueType.StringArray
+            ? PlatformSettingsValueCodec.CoerceStringArray(def.DefaultValue)
+            : def.DefaultValue;
 
     private static PlatformSettingResolvedValue ToResolved(
         PlatformSettingDefinition def,
@@ -88,13 +110,19 @@ public sealed class PlatformSettingsResolver : IPlatformSettingsResolver
             Description = def.Description,
             Category = def.Category,
             ValueType = def.ValueType,
-            CurrentValue = currentValue,
+            InputKind = def.InputKind,
+            AllowedValues = def.AllowedValues ?? PlatformSettingResolvedValue.EmptyAllowedValues,
+            CurrentValue = def.ValueType == PlatformSettingValueType.StringArray
+                ? PlatformSettingsValueCodec.CoerceStringArray(currentValue)
+                : currentValue,
             Source = source,
             IsEditable = def.Editable,
             RequiresRestart = def.RequiresRestart,
             RowVersionBase64 = rowVersion is { Length: > 0 } ? Convert.ToBase64String(rowVersion) : null,
             MinInteger = def.MinInteger,
             MaxInteger = def.MaxInteger,
-            MinDurationIso = def.MinDuration?.ToString("c", System.Globalization.CultureInfo.InvariantCulture)
+            MinDurationIso = def.MinDuration?.ToString("c", System.Globalization.CultureInfo.InvariantCulture),
+            MinItems = def.MinItems,
+            MaxItems = def.MaxItems
         };
 }

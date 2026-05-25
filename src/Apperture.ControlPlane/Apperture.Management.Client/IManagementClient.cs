@@ -724,12 +724,18 @@ public sealed record OperatorCapabilitiesDto(
     [property: JsonPropertyName("canViewPlatformSettings")] bool CanViewPlatformSettings = false,
     [property: JsonPropertyName("canManagePlatformSettings")] bool CanManagePlatformSettings = false);
 
+public sealed record PlatformSettingAllowedValueDto(
+    string Value,
+    string Label,
+    string? Description = null);
+
 public sealed record PlatformSettingResolvedDto(
     string Key,
     string DisplayName,
     string Description,
     string Category,
     string ValueType,
+    string InputKind,
     string CurrentValue,
     string Source,
     bool IsEditable,
@@ -737,11 +743,16 @@ public sealed record PlatformSettingResolvedDto(
     string? RowVersionBase64,
     int? MinInteger,
     int? MaxInteger,
-    string? MinDurationIso);
+    string? MinDurationIso,
+    int? MinItems = null,
+    int? MaxItems = null,
+    IReadOnlyList<string>? CurrentValues = null,
+    IReadOnlyList<PlatformSettingAllowedValueDto>? AllowedValues = null);
 
 public sealed record UpdatePlatformSettingRequest(
-    string Value,
-    string? RowVersionBase64);
+    string? Value = null,
+    IReadOnlyList<string>? Values = null,
+    string? RowVersionBase64 = null);
 
 public sealed record ManagedContactSummaryDto(
     string Id,

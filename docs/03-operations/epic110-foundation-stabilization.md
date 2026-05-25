@@ -149,7 +149,15 @@ See [platform-settings-registry.md](../01-architecture/platform-settings-registr
 
 **Summary:** Grouped `/config/platform-settings` page, friendly source badges, typed editors, dirty/save/reset UX, validation errors, read-only capability mode. No registry scope expansion.
 
-## Recommended next epic (post-111)
+## Epic 112 (delivered): Settings foundation hardening
+
+**Title:** Epic 112 — Settings foundation hardening for multi-select and future option sources
+
+**Status:** Delivered. See [platform settings registry — StringArray and static multi-select](../01-architecture/platform-settings-registry.md#stringarray-and-static-multi-select-epic-112).
+
+**Summary:** `InputKind` and static `AllowedValues` metadata, `StringArray` value type (codec, validation, resolver, API, audit), MultiSelect UI renderer. No new production keys; future dynamic option providers documented only.
+
+## Recommended next epic (post-112)
 
 After Epic 111, consider **expanded WorkerHost runtime overlays** for remaining Phase 1 keys, **Epic 108b DPAPI** credential binding, or a broader **UI/design-system** sweep — per team priority.
 

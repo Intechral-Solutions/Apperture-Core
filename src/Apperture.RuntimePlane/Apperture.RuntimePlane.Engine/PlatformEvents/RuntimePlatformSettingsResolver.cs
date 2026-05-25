@@ -43,25 +43,61 @@ public sealed class RuntimePlatformSettingsResolver : IPlatformSettingsResolver
     private PlatformSettingResolvedValue Resolve(PlatformSettingDefinition def, PlatformSettingValue? db)
     {
         if (db is not null)
-            return ToResolved(def, PlatformSettingsValueCodec.ParseFromStoredJson(def, db.ValueJson), PlatformSettingValueSource.Database);
-
-        var section = _configuration.GetSection(def.ConfigurationPath);
-        if (!string.IsNullOrEmpty(section.Value) || section.GetChildren().Any())
         {
-            var configValue = def.ValueType switch
-            {
-                PlatformSettingValueType.Boolean => section.Get<bool>(),
-                PlatformSettingValueType.Integer => section.Get<int>(),
-                PlatformSettingValueType.Duration => section.Get<TimeSpan>(),
-                _ => def.DefaultValue
-            };
-            return ToResolved(def, configValue, PlatformSettingValueSource.ConfigurationDefault);
+            return ToResolved(
+                def,
+                PlatformSettingsValueCodec.ParseFromStoredJson(def, db.ValueJson),
+                PlatformSettingValueSource.Database);
         }
 
-        return ToResolved(def, def.DefaultValue, PlatformSettingValueSource.DefinitionDefault);
+        var fromConfig = TryGetFromConfiguration(def);
+        if (fromConfig is not null)
+            return ToResolved(def, fromConfig, PlatformSettingValueSource.ConfigurationDefault);
+
+        return ToResolved(def, NormalizeDefaultValue(def), PlatformSettingValueSource.DefinitionDefault);
     }
 
-    private static PlatformSettingResolvedValue ToResolved(PlatformSettingDefinition def, object currentValue, PlatformSettingValueSource source) =>
+    private object? TryGetFromConfiguration(PlatformSettingDefinition def)
+    {
+        var section = _configuration.GetSection(def.ConfigurationPath);
+        if (string.IsNullOrEmpty(section.Value) && !section.GetChildren().Any())
+            return null;
+
+        return def.ValueType switch
+        {
+            PlatformSettingValueType.Boolean => section.Get<bool>(),
+            PlatformSettingValueType.Integer => section.Get<int>(),
+            PlatformSettingValueType.Duration => section.Get<TimeSpan>(),
+            PlatformSettingValueType.StringArray => TryGetStringArrayFromConfiguration(section),
+            _ => null
+        };
+    }
+
+    private static string[]? TryGetStringArrayFromConfiguration(IConfigurationSection section)
+    {
+        var direct = section.Get<string[]>();
+        if (direct is { Length: > 0 })
+            return direct;
+
+        var indexed = section.GetChildren()
+            .OrderBy(c => c.Key, StringComparer.Ordinal)
+            .Select(c => c.Value)
+            .Where(v => !string.IsNullOrEmpty(v))
+            .Select(v => v!)
+            .ToArray();
+
+        return indexed.Length > 0 ? indexed : null;
+    }
+
+    private static object NormalizeDefaultValue(PlatformSettingDefinition def) =>
+        def.ValueType == PlatformSettingValueType.StringArray
+            ? PlatformSettingsValueCodec.CoerceStringArray(def.DefaultValue)
+            : def.DefaultValue;
+
+    private static PlatformSettingResolvedValue ToResolved(
+        PlatformSettingDefinition def,
+        object currentValue,
+        PlatformSettingValueSource source) =>
         new()
         {
             Key = def.Key,
@@ -69,12 +105,18 @@ public sealed class RuntimePlatformSettingsResolver : IPlatformSettingsResolver
             Description = def.Description,
             Category = def.Category,
             ValueType = def.ValueType,
-            CurrentValue = currentValue,
+            InputKind = def.InputKind,
+            AllowedValues = def.AllowedValues ?? PlatformSettingResolvedValue.EmptyAllowedValues,
+            CurrentValue = def.ValueType == PlatformSettingValueType.StringArray
+                ? PlatformSettingsValueCodec.CoerceStringArray(currentValue)
+                : currentValue,
             Source = source,
             IsEditable = def.Editable,
             RequiresRestart = def.RequiresRestart,
             MinInteger = def.MinInteger,
             MaxInteger = def.MaxInteger,
-            MinDurationIso = def.MinDuration?.ToString("c", System.Globalization.CultureInfo.InvariantCulture)
+            MinDurationIso = def.MinDuration?.ToString("c", System.Globalization.CultureInfo.InvariantCulture),
+            MinItems = def.MinItems,
+            MaxItems = def.MaxItems
         };
 }

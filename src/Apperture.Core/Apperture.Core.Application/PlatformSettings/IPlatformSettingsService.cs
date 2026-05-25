@@ -8,7 +8,7 @@ public interface IPlatformSettingsService
 
     Task<PlatformSettingResolvedValue> SetAsync(
         string key,
-        string value,
+        PlatformSettingUpdatePayload payload,
         string? rowVersionBase64,
         CancellationToken cancellationToken = default);
 

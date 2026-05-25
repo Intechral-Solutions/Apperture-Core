@@ -4,5 +4,6 @@ public enum PlatformSettingValueType
 {
     Boolean,
     Integer,
-    Duration
+    Duration,
+    StringArray
 }

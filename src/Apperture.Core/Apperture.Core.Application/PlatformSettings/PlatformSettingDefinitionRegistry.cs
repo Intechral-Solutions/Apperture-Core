@@ -33,6 +33,7 @@ public sealed class PlatformSettingDefinitionRegistry : IPlatformSettingDefiniti
             Description = description,
             Category = category,
             ValueType = PlatformSettingValueType.Boolean,
+            InputKind = PlatformSettingInputKind.Toggle,
             ConfigurationPath = configurationPath,
             DefaultValue = defaultValue
         };
@@ -47,6 +48,7 @@ public sealed class PlatformSettingDefinitionRegistry : IPlatformSettingDefiniti
             Description = description,
             Category = category,
             ValueType = PlatformSettingValueType.Integer,
+            InputKind = PlatformSettingInputKind.Number,
             ConfigurationPath = configurationPath,
             DefaultValue = defaultValue,
             MinInteger = min
@@ -62,6 +64,7 @@ public sealed class PlatformSettingDefinitionRegistry : IPlatformSettingDefiniti
             Description = description,
             Category = category,
             ValueType = PlatformSettingValueType.Duration,
+            InputKind = PlatformSettingInputKind.Duration,
             ConfigurationPath = configurationPath,
             DefaultValue = defaultValue,
             MinDuration = min

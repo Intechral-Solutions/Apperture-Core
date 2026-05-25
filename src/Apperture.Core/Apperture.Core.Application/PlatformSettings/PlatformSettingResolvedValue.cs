@@ -12,6 +12,12 @@ public sealed record PlatformSettingResolvedValue
 
     public required PlatformSettingValueType ValueType { get; init; }
 
+    public required PlatformSettingInputKind InputKind { get; init; }
+
+    public static readonly IReadOnlyList<PlatformSettingAllowedValue> EmptyAllowedValues = Array.Empty<PlatformSettingAllowedValue>();
+
+    public IReadOnlyList<PlatformSettingAllowedValue> AllowedValues { get; init; } = EmptyAllowedValues;
+
     public required object CurrentValue { get; init; }
 
     public required PlatformSettingValueSource Source { get; init; }
@@ -27,4 +33,8 @@ public sealed record PlatformSettingResolvedValue
     public int? MaxInteger { get; init; }
 
     public string? MinDurationIso { get; init; }
+
+    public int? MinItems { get; init; }
+
+    public int? MaxItems { get; init; }
 }

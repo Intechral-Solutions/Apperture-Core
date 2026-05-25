@@ -7,7 +7,7 @@ namespace Apperture.UnitTests.PlatformSettings;
 public sealed class PlatformSettingDefinitionRegistryTests
 {
     [Fact]
-    public void Registry_contains_phase1_nine_keys()
+    public void Registry_contains_phase1_nine_keys_with_input_kind_metadata()
     {
         var sut = new PlatformSettingDefinitionRegistry();
 
@@ -15,6 +15,8 @@ public sealed class PlatformSettingDefinitionRegistryTests
 
         defs.Should().HaveCount(9);
         defs.Select(x => x.Key).Should().OnlyHaveUniqueItems();
-        sut.TryGet(PlatformSettingKeys.PlatformEventsEnabled).Should().NotBeNull();
+        sut.TryGet(PlatformSettingKeys.PlatformEventsEnabled)!.InputKind.Should().Be(PlatformSettingInputKind.Toggle);
+        sut.TryGet(PlatformSettingKeys.NotificationsDeliveryPollIntervalSeconds)!.InputKind.Should().Be(PlatformSettingInputKind.Number);
+        sut.TryGet(PlatformSettingKeys.AttentionIncidentsObservationInterval)!.InputKind.Should().Be(PlatformSettingInputKind.Duration);
     }
 }

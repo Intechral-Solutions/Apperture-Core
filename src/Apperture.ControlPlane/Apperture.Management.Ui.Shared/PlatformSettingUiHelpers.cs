@@ -11,6 +11,11 @@ public static class PlatformSettingUiHelpers
     public const string CategoryPlatformEvents = "PlatformEvents";
     public const string CategoryAttentionIncidents = "AttentionIncidents";
 
+    public const string InputKindMultiSelect = "MultiSelect";
+    public const string InputKindToggle = "Toggle";
+    public const string InputKindNumber = "Number";
+    public const string InputKindDuration = "Duration";
+
     public static string GetSourceLabel(string? apiSource) => apiSource switch
     {
         SourceDatabase => "Platform override",
@@ -55,6 +60,23 @@ public static class PlatformSettingUiHelpers
     public static bool IsDirty(string? editValue, string savedValue) =>
         !string.Equals(Normalize(editValue), Normalize(savedValue), StringComparison.Ordinal);
 
+    public static bool IsDirtyArray(IReadOnlyList<string>? editValues, IReadOnlyList<string>? savedValues) =>
+        !string.Equals(
+            FormatArrayForCompare(editValues),
+            FormatArrayForCompare(savedValues),
+            StringComparison.Ordinal);
+
+    public static bool IsMultiSelect(string? inputKind) =>
+        string.Equals(inputKind, InputKindMultiSelect, StringComparison.OrdinalIgnoreCase);
+
+    public static string FormatArrayDisplay(IReadOnlyList<string>? values)
+    {
+        if (values is null || values.Count == 0)
+            return "[]";
+
+        return $"[{string.Join(", ", values)}]";
+    }
+
     public static string? TryGetSafetyNote(string? key)
     {
         if (string.IsNullOrEmpty(key))
@@ -83,4 +105,12 @@ public static class PlatformSettingUiHelpers
     }
 
     private static string Normalize(string? value) => value?.Trim() ?? string.Empty;
+
+    private static string FormatArrayForCompare(IReadOnlyList<string>? values)
+    {
+        if (values is null || values.Count == 0)
+            return string.Empty;
+
+        return string.Join("\u001f", values);
+    }
 }

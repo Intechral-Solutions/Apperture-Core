@@ -4,6 +4,8 @@
 
 **Phase 1 implemented (Epic 109).** Instance-scoped platform settings are now persisted in SQL (`PlatformSettingValues`), resolved with precedence `Database > Configuration > Definition default`, exposed through `api/config/platform-settings`, and editable in Management UI at `/config/platform-settings`.
 
+**Epic 112 (foundation hardening):** Adds formal input metadata (`InputKind`, static `AllowedValues`), `StringArray` value type support, static multi-select validation, and MultiSelect UI rendering. No new production keys in Phase 1; nine platform-owned keys remain.
+
 Phase 1 includes nine platform-owned keys for notification cutover, `PlatformEvents.Enabled`, and attention observation controls. Appsettings remains boot defaults only; runtime updates never write back to JSON files.
 
 **Decision anchor:** [ADR-0039: Environment, startup, bootstrap, and platform settings](../02-decisions/ADR-0039-environment-startup-bootstrap-and-platform-settings.md).
@@ -47,11 +49,13 @@ Metadata describing a configurable knob (not the live value).
 **Conceptual fields:**
 
 - **Key / path** — stable identifier (e.g. `Notifications.Delivery.Enabled`)
-- **Type** — bool, int, duration, enum, string, secret reference
+- **ValueType** — `Boolean`, `Integer`, `Duration`, `StringArray` (Phase 1 + Epic 112)
+- **InputKind** — UI/editor hint distinct from value type: `Toggle`, `Number`, `Text`, `Duration`, `Select`, `MultiSelect`
+- **AllowedValues** — static option list for Select/MultiSelect (`value`, `label`, optional `description`)
 - **Description** — operator-facing help text
-- **Default** — used when no scoped value exists
+- **Default** — used when no scoped value exists (scalar or string array)
 - **Scope applicability** — which scopes may hold a value
-- **Validation rules** — ranges, required combinations, dangerous-pair guards
+- **Validation rules** — ranges, `MinItems`/`MaxItems` for arrays, allowed-value checks, dangerous-pair guards
 - **UI hints** — control kind, grouping, read-only when derived
 
 Definitions may be **platform-owned** initially; modules and integrations may **contribute** definitions later (deferred).
@@ -68,6 +72,82 @@ Where a value applies. Illustrative hierarchy (not final schema):
 | **Integration** | Per-integration attention routing override |
 
 Resolution picks the **most specific applicable** value for the current context, then falls back to broader scopes.
+
+**Phase 1 scope (implemented):** Only **Instance** scope is active (`ScopeKind = Instance`, `ScopeId = instance`). Persistence rows already carry scope columns for future module/integration/user scopes; Epic 112 `StringArray` values use the same model. Broader scoped resolution behavior remains deferred.
+
+## StringArray and static multi-select (Epic 112)
+
+### Value type vs input kind
+
+| ValueType | InputKind | Example |
+|-----------|-----------|---------|
+| `Boolean` | `Toggle` | Notification evaluation enabled |
+| `Integer` | `Number` | Delivery poll interval seconds |
+| `Duration` | `Duration` | Observation interval |
+| `StringArray` | `MultiSelect` | Static allow-list (when a production key exists) |
+
+`ValueType` describes storage and validation semantics. `InputKind` describes how the Management UI should render the editor.
+
+### Array semantics
+
+| Topic | Behavior |
+|-------|----------|
+| Missing DB row | No platform override; resolver falls back to configuration or definition default |
+| Stored `[]` | Explicit empty selection (platform override) |
+| Duplicates | Rejected at validation |
+| Order | Preserved in storage, resolution, audit, and UI |
+| AllowedValues | When present, every submitted value must match an allowed `value` (ordinal) |
+| MinItems / MaxItems | Optional cardinality validation for `StringArray` |
+| Secrets | Not supported in settings values |
+
+### API write shape
+
+- Scalar settings: `PUT` body `{ "value": "..." }`
+- `StringArray` settings: `PUT` body `{ "values": ["a", "b"] }`
+- Sending both `value` and `values`, or neither, returns `400`
+- Reset (`DELETE`) removes the database override; precedence falls back unchanged
+- Values never write back to `appsettings`
+
+### Audit
+
+Array values are audited as readable bracketed lists (e.g. `newValue=[alpha, beta]`). No secrets are stored or logged.
+
+## Future dynamic option providers (design only)
+
+Epic 112 supports **static** `AllowedValues` only. Dynamic lookup is deferred but designed as follows:
+
+### StaticAllowedValues vs ProviderBackedOptions
+
+| Mode | Source | Epic 112 |
+|------|--------|----------|
+| **StaticAllowedValues** | Hardcoded in platform setting definition | Implemented |
+| **ProviderBackedOptions** | Runtime lookup via registered provider | Deferred |
+
+Future provider-backed settings would reference a **`providerKey`** (e.g. `platform.modules.installed`, `platform.connectors.definitions`, `platform.governance.teams`) rather than embedding platform resource catalogs in the settings tree.
+
+### Conceptual `ISettingOptionProvider`
+
+- Authorized, scoped lookup returning `{ value, label, description? }` options
+- Future search/paging for large catalogs
+- **Backend validation must not trust UI options** — every write re-validates against the provider or domain catalog
+- **Stale selections:** when a selected value is no longer available, prefer preserving the stored value with a UI warning; reject unknown values on write unless policy explicitly allows retention
+
+### Future provider candidates (not settings-tree metadata)
+
+- Installed modules
+- Connector definitions
+- Operational teams / roles / users
+
+These remain **domain resources and catalogs**. The settings registry stores operator *choices*, not the catalog itself.
+
+### Boundaries (deferred)
+
+- Module-contributed setting definitions
+- Integration/module/user scoped values
+- Custom Razor settings panels (broader module UI contribution system)
+- Wizard framework
+- Arbitrary platform-settings path access for modules
+- Setting-tree path querying as a metadata database
 
 ## Setting values
 
@@ -150,6 +230,12 @@ The Management UI at `/config/platform-settings` (Phase 1 polish):
 - **Audit:** Set/reset actions emit `platform.settings.set` / `platform.settings.reset` audit records (see audit timeline).
 
 Generated schema-driven forms and module-contributed definitions remain deferred.
+
+## Operator UI — MultiSelect (Epic 112)
+
+When a setting definition uses `InputKind = MultiSelect` with static `AllowedValues`, the platform settings page renders a checkbox list. Source badges, dirty state, save/reset, validation errors, and read-only mode behave the same as scalar editors. If `MultiSelect` is declared without `AllowedValues`, the UI shows an explicit unsupported state rather than failing.
+
+No production Phase 1 key uses MultiSelect yet; renderer coverage is validated through unit and component tests.
 
 ## Deferred implementation details
 

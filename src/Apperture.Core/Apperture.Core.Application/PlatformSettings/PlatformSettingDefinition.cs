@@ -13,16 +13,24 @@ public sealed record PlatformSettingDefinition
 
     public required PlatformSettingValueType ValueType { get; init; }
 
+    public required PlatformSettingInputKind InputKind { get; init; }
+
     /// <summary>IConfiguration path (colon-separated) for boot default resolution.</summary>
     public required string ConfigurationPath { get; init; }
 
     public required object DefaultValue { get; init; }
+
+    public IReadOnlyList<PlatformSettingAllowedValue>? AllowedValues { get; init; }
 
     public int? MinInteger { get; init; }
 
     public int? MaxInteger { get; init; }
 
     public TimeSpan? MinDuration { get; init; }
+
+    public int? MinItems { get; init; }
+
+    public int? MaxItems { get; init; }
 
     public bool Editable { get; init; } = true;
 
