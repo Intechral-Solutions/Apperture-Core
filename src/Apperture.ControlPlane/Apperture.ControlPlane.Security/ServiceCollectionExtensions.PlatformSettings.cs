@@ -19,6 +19,7 @@ public static class PlatformSettingsServiceCollectionExtensions
         services.AddScoped<IPlatformSettingsResolver, PlatformSettingsResolver>();
         services.AddScoped<IPlatformSettingOptionProviderRegistry, PlatformSettingOptionProviderRegistry>();
         services.AddScoped<IPlatformSettingOptionProvider, PlatformConnectorDefinitionsOptionProvider>();
+        services.AddScoped<IPlatformSettingOptionProvider, CampusNexusCampusesOptionProvider>();
         services.AddScoped<PlatformSettingOptionProviderAuthorization>();
         services.AddScoped<PlatformSettingOptionProviderCoordinator>();
         return services;

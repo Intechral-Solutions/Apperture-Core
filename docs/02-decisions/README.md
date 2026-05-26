@@ -10,7 +10,7 @@
 | [ADR-0038](ADR-0038-platform-signals-sdk-conventions.md) | Module SDK signal conventions (Epic 103A) |
 | [ADR-0039](ADR-0039-environment-startup-bootstrap-and-platform-settings.md) | Environment, startup, bootstrap, and platform settings layers (105B; Phase 1 settings Epic 109) |
 
-### Foundation sequence (Epics 105–115)
+### Foundation sequence (Epics 105–116)
 
 | Doc | Title |
 |-----|-------|
@@ -26,6 +26,7 @@
 | [Epic 113](Epic113-Platform-Settings-Option-Providers-Design.md) | Option providers and scoped settings (design spec only) |
 | [Epic 114](Epic114-Platform-Setting-Option-Provider-Prototype.md) | `platform.connectorDefinitions` option provider prototype |
 | [Epic 115](Epic115-Integration-Scoped-Option-Provider-Foundation.md) | Integration-scoped provider context foundation |
+| [Epic 116](Epic116-CampusNexus-Campuses-Option-Provider.md) | `campusnexus.campuses` same-integration option provider |
 | [ADR-0005](ADR-0005-federated-external-instance-relationships.md) | Federated external instance relationships |
 | [ADR-0006](ADR-0006-entra-backed-platform-trust-for-instance-authentication.md) | Entra-backed platform trust for instance authentication |
 | [ADR-0007](ADR-0007-separation-of-human-auth-service-auth-and-relationship-authorization.md) | Separation of human auth, service auth, and relationship authorization |

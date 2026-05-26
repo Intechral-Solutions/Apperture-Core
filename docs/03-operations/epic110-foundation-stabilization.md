@@ -141,9 +141,9 @@ See [platform-settings-registry.md](../01-architecture/platform-settings-registr
 
 ---
 
-## Epics 111–115 (delivered)
+## Epics 111–116 (delivered)
 
-Decision records: [Epic 111](../02-decisions/Epic111-Platform-Settings-Operator-UI-Polish.md), [Epic 112](../02-decisions/Epic112-Platform-Settings-MultiSelect-Foundation.md), [Epic 113](../02-decisions/Epic113-Platform-Settings-Option-Providers-Design.md), [Epic 114](../02-decisions/Epic114-Platform-Setting-Option-Provider-Prototype.md), [Epic 115](../02-decisions/Epic115-Integration-Scoped-Option-Provider-Foundation.md).
+Decision records: [Epic 111](../02-decisions/Epic111-Platform-Settings-Operator-UI-Polish.md) through [Epic 116](../02-decisions/Epic116-CampusNexus-Campuses-Option-Provider.md).
 
 | Epic | Summary |
 |------|---------|
@@ -151,11 +151,12 @@ Decision records: [Epic 111](../02-decisions/Epic111-Platform-Settings-Operator-
 | **112** | `StringArray`, `InputKind`, static MultiSelect; no new production keys |
 | **113** | Option providers and scoped settings — design spec only |
 | **114** | `platform.connectorDefinitions` provider, options endpoint, write validation, Select/MultiSelect UI |
-| **115** | Integration-scoped provider context (`OptionProviderContextKind`, `?integrationId=`, coordinator); test-only provider; no remote catalogs |
+| **115** | Integration-scoped provider context (`OptionProviderContextKind`, `?integrationId=`, coordinator); test-only provider |
+| **116** | `campusnexus.campuses` — Campus Nexus OData campuses via `CnsApi` slot; test-only setting definition |
 
-## Recommended next epic (post-115)
+## Recommended next epic (post-116)
 
-**Epic 116 (suggested):** First real same-integration option provider (e.g. `campusnexus.campuses`) using Epic 115 integration context.
+Integration settings UI for provider-backed fields; additional same-integration providers (`campusnexus.programs`, `sqlserver.tables`, etc.).
 
 Alternatively: expanded WorkerHost runtime overlays for Phase 1 keys, **Epic 108b DPAPI** credential binding, or a broader UI/design-system sweep — per team priority.
 

@@ -10,7 +10,9 @@
 
 **Epic 114 (platform option provider prototype):** First provider-backed option flow for `platform.connectorDefinitions` — `OptionProviderKey` on definitions, `GET api/config/platform-settings/{key}/options`, backend validation on write, Select/MultiSelect UI loading. No new production setting keys; test-only definitions validate the path.
 
-**Epic 115 (integration-scoped provider context foundation):** `OptionProviderContextKind`, `PlatformSettingOptionProviderContext`, optional `integrationId` on options GET and write validation, coordinator + integration authorization. Test-only `test.integration.options`. No production integration-context settings, no remote providers, no integration-scoped persistence. Real same-integration catalogs and cross-integration providers remain deferred.
+**Epic 115 (integration-scoped provider context foundation):** `OptionProviderContextKind`, `PlatformSettingOptionProviderContext`, optional `integrationId` on options GET and write validation, coordinator + integration authorization. Test-only `test.integration.options`. No production integration-context settings, no integration-scoped persistence.
+
+**Epic 116 (CampusNexus campuses provider):** `campusnexus.campuses` — real same-integration provider listing active campuses from Campus Nexus OData; `CnsApi` slot resolution. Test-only definition; no production setting key. Programs/SFTP/SQL providers and cross-integration bindings remain deferred.
 
 Phase 1 includes nine platform-owned keys for notification cutover, `PlatformEvents.Enabled`, and attention observation controls. Appsettings remains boot defaults only; runtime updates never write back to JSON files.
 

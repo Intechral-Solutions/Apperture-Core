@@ -40,7 +40,9 @@ Add **provider context** (distinct from setting value scope):
 
 ## Recommended next epic
 
-**Epic 116:** First real same-integration option provider (e.g. `campusnexus.campuses`) with integration settings UI and remote/catalog reads.
+**Epic 116 (delivered):** [`campusnexus.campuses`](./Epic116-CampusNexus-Campuses-Option-Provider.md) — first real same-integration provider.
+
+**Next:** Integration settings UI for provider-backed fields; additional providers (`campusnexus.programs`, etc.).
 
 ## References
 

@@ -6,14 +6,16 @@
 
 **Epic 114 — delivered:** Instance-scoped platform option provider prototype (`platform.connectorDefinitions`), options endpoint, write-time validation.
 
-**Epic 115 — delivered (integration-context foundation):** `PlatformSettingOptionProviderContext` (Instance vs Integration), `OptionProviderContextKind` on definitions, `GET .../options?integrationId=`, optional `integrationId` on write validation, coordinator + integration authorization. **No** real same-integration remote providers, **no** integration-scoped setting persistence, **no** production integration-context setting keys.
+**Epic 115 — delivered (integration-context foundation):** `PlatformSettingOptionProviderContext` (Instance vs Integration), `OptionProviderContextKind` on definitions, `GET .../options?integrationId=`, optional `integrationId` on write validation, coordinator + integration authorization. **No** integration-scoped setting persistence, **no** production integration-context setting keys.
+
+**Epic 116 — delivered (first real same-integration provider):** `campusnexus.campuses` — active Campus Nexus campuses via OData `Campuses` entity set; resolves `ICampusNexusApiClient` through `IRuntimeSlotResolver` (`CnsApi` slot). No production setting key; test-only definition validates the path.
 
 **Prerequisites (delivered):**
 
 - [platform-settings-registry.md](platform-settings-registry.md) — Phase 1 registry (Epic 109), operator UI (Epic 111), `StringArray` / static MultiSelect (Epic 112)
 - [ADR-0039: Environment, startup, bootstrap, and platform settings](../02-decisions/ADR-0039-environment-startup-bootstrap-and-platform-settings.md)
 
-**Recommended next implementation epic:** Epic 116 — first real same-integration option provider (e.g. `campusnexus.campuses`) using integration context from Epic 115.
+**Recommended next:** Integration settings UI for provider-backed fields; additional same-integration providers (`campusnexus.programs`, `sqlserver.tables`, etc.).
 
 ---
 
@@ -35,7 +37,18 @@ Authorization: `platform.settings.read` / `manage` on instance configuration plu
 
 Test-only provider: `test.integration.options` (unit tests only; not registered in production DI).
 
-Deferred: `campusnexus.campuses`, `sqlserver.tables`, `sftp.remoteDirectories`, cross-integration `ProviderBinding`, module-contributed providers, integration-scoped persistence/UI tab.
+Deferred: `sqlserver.tables`, `sftp.remoteDirectories`, cross-integration `ProviderBinding`, module-contributed providers, integration-scoped persistence/UI tab.
+
+---
+
+## Epic 116 — `campusnexus.campuses` (delivered)
+
+| Piece | Behavior |
+|-------|----------|
+| Provider | [`CampusNexusCampusesOptionProvider`](../../src/Apperture.ControlPlane/Apperture.ControlPlane.Security/CampusNexusCampusesOptionProvider.cs) |
+| OData | [`CampusNexusCampusQueries.ListActiveCampusesAsync`](../../src/Apperture.Connectors/Apperture.Connectors.CampusNexus/CampusNexusCampusQueries.cs) — active campuses, stable `Id` values |
+| Resolution | Integration `ModuleId` + slot `CnsApi` via [`IRuntimeSlotResolver`](../../src/Apperture.Core/Apperture.Core.Application/Services/IRuntimeSlotResolver.cs) (Management.Host registers [`AddConnectorResolution`](../../src/Apperture.ConnectorResolution/ServiceCollectionExtensions.cs)) |
+| Persistence | Provider context only — setting values remain instance-scoped when saved from platform settings API |
 
 ---
 

@@ -36,5 +36,7 @@
     <ProjectReference Include="..\..\Apperture.Persistence\Apperture.Persistence.SqlServer\Apperture.Persistence.SqlServer.csproj" />
     <ProjectReference Include="..\..\Apperture.RuntimePlane\Apperture.RuntimePlane.Abstractions\Apperture.RuntimePlane.Abstractions.csproj" />
     <ProjectReference Include="..\..\Apperture.RuntimePlane\Apperture.RuntimePlane.Dispatch.SqlServer\Apperture.RuntimePlane.Dispatch.SqlServer.csproj" />
+    <ProjectReference Include="..\..\Apperture.Connectors\Apperture.Connectors.CampusNexus\Apperture.Connectors.CampusNexus.csproj" />
+    <ProjectReference Include="..\..\Apperture.ConnectorResolution\Apperture.ConnectorResolution.csproj" />
   </ItemGroup>
 </Project>

@@ -50,6 +50,7 @@ builder.Services.AddRuntimeSchedulerDispatch();
 builder.Services.AddAppertureCampusNexusConnector();
 builder.Services.AddAppertureSftpConnector();
 builder.Services.AddPlatformSqlConnector();
+builder.Services.AddConnectorResolution();
 builder.Services.AddAppertureConnectorWorkflows();
 builder.Services.AddAppertureIntegrationWorkflows();
 builder.Services.AddApperturePlatformEvents(builder.Configuration);

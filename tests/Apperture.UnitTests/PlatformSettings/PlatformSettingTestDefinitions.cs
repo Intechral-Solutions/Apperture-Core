@@ -16,6 +16,10 @@ internal static class PlatformSettingTestDefinitions
 
     public const string IntegrationProviderBackedSelectKey = "Test.IntegrationProviderBacked.Select.Sample";
 
+    public const string CampusNexusProviderKey = "campusnexus.campuses";
+
+    public const string CampusNexusProviderBackedSelectKey = "Test.CampusNexus.Campuses.Select.Sample";
+
     public static PlatformSettingDefinition MultiSelectSample => new()
     {
         Key = MultiSelectKey,
@@ -76,5 +80,19 @@ internal static class PlatformSettingTestDefinitions
         OptionProviderContextKind = PlatformSettingOptionProviderContextKind.Integration,
         ConfigurationPath = "Test:IntegrationProviderBacked:Select:Sample",
         DefaultValue = "int-test:alpha"
+    };
+
+    public static PlatformSettingDefinition CampusNexusProviderBackedSelectSample => new()
+    {
+        Key = CampusNexusProviderBackedSelectKey,
+        DisplayName = "CampusNexus campuses select (test-only)",
+        Description = "Test-only Campus Nexus campus provider setting for Epic 116 validation.",
+        Category = PlatformSettingCategory.PlatformEvents,
+        ValueType = PlatformSettingValueType.String,
+        InputKind = PlatformSettingInputKind.Select,
+        OptionProviderKey = CampusNexusProviderKey,
+        OptionProviderContextKind = PlatformSettingOptionProviderContextKind.Integration,
+        ConfigurationPath = "Test:CampusNexus:Campuses:Select:Sample",
+        DefaultValue = "1"
     };
 }
