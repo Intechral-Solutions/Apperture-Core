@@ -25,6 +25,8 @@ public sealed record PlatformSettingResolvedDto
 
     public required string InputKind { get; init; }
 
+    public string? OptionProviderKey { get; init; }
+
     public required string CurrentValue { get; init; }
 
     public IReadOnlyList<string>? CurrentValues { get; init; }
@@ -70,6 +72,7 @@ public static class PlatformSettingsDtoMapper
             Category = value.Category.ToString(),
             ValueType = value.ValueType.ToString(),
             InputKind = value.InputKind.ToString(),
+            OptionProviderKey = value.OptionProviderKey,
             CurrentValue = PlatformSettingsValueCodec.ToDisplayString(value.CurrentValue),
             CurrentValues = value.ValueType == PlatformSettingValueType.StringArray
                 ? PlatformSettingsValueCodec.CoerceStringArray(value.CurrentValue)

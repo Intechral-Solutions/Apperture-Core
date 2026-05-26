@@ -6,7 +6,9 @@
 
 **Epic 112 (foundation hardening):** Adds formal input metadata (`InputKind`, static `AllowedValues`), `StringArray` value type support, static multi-select validation, and MultiSelect UI rendering. No new production keys in Phase 1; nine platform-owned keys remain.
 
-**Epic 113 (design spec):** Option providers and scoped settings architecture — see [platform-settings-option-providers-and-scopes.md](platform-settings-option-providers-and-scopes.md). Not implemented.
+**Epic 113 (design spec):** Option providers and scoped settings architecture — see [platform-settings-option-providers-and-scopes.md](platform-settings-option-providers-and-scopes.md).
+
+**Epic 114 (platform option provider prototype):** First provider-backed option flow for `platform.connectorDefinitions` — `OptionProviderKey` on definitions, `GET api/config/platform-settings/{key}/options`, backend validation on write, Select/MultiSelect UI loading. No new production setting keys; test-only definitions validate the path. Same-integration, cross-integration, and module-contributed providers remain deferred.
 
 Phase 1 includes nine platform-owned keys for notification cutover, `PlatformEvents.Enabled`, and attention observation controls. Appsettings remains boot defaults only; runtime updates never write back to JSON files.
 
@@ -51,7 +53,8 @@ Metadata describing a configurable knob (not the live value).
 **Conceptual fields:**
 
 - **Key / path** — stable identifier (e.g. `Notifications.Delivery.Enabled`)
-- **ValueType** — `Boolean`, `Integer`, `Duration`, `StringArray` (Phase 1 + Epic 112)
+- **ValueType** — `Boolean`, `Integer`, `Duration`, `String` (Epic 114 Select), `StringArray` (Epic 112 MultiSelect)
+- **OptionProviderKey** — when set, options are loaded from a registered platform provider and validated on write (Epic 114)
 - **InputKind** — UI/editor hint distinct from value type: `Toggle`, `Number`, `Text`, `Duration`, `Select`, `MultiSelect`
 - **AllowedValues** — static option list for Select/MultiSelect (`value`, `label`, optional `description`)
 - **Description** — operator-facing help text
@@ -86,7 +89,8 @@ Resolution picks the **most specific applicable** value for the current context,
 | `Boolean` | `Toggle` | Notification evaluation enabled |
 | `Integer` | `Number` | Delivery poll interval seconds |
 | `Duration` | `Duration` | Observation interval |
-| `StringArray` | `MultiSelect` | Static allow-list (when a production key exists) |
+| `String` | `Select` | Provider-backed or static single choice (Epic 114) |
+| `StringArray` | `MultiSelect` | Static or provider-backed multi choice |
 
 `ValueType` describes storage and validation semantics. `InputKind` describes how the Management UI should render the editor.
 
@@ -114,9 +118,18 @@ Resolution picks the **most specific applicable** value for the current context,
 
 Array values are audited as readable bracketed lists (e.g. `newValue=[alpha, beta]`). No secrets are stored or logged.
 
-## Option providers and scoped settings (Epic 113)
+## Option providers and scoped settings (Epic 113–114)
 
-Epic 112 implements **static** `AllowedValues` only. Dynamic option providers, scoped settings beyond Instance, module contributions, and cross-integration bindings are **not implemented** — they are specified in [platform-settings-option-providers-and-scopes.md](platform-settings-option-providers-and-scopes.md) (Epic 113 design). That document defines provider keys, backend validation rules, authorization, stale-value policies, and the phased implementation roadmap (recommended next: Epic 114 platform provider prototype).
+Epic 112 implements **static** `AllowedValues`. Epic 114 adds a narrow **platform provider** prototype:
+
+| Piece | Behavior |
+|-------|----------|
+| Provider key | `platform.connectorDefinitions` (connector definition catalog) |
+| Options API | `GET /api/config/platform-settings/{key}/options` (setting must define `OptionProviderKey`) |
+| Write validation | `SetAsync` re-fetches provider options and rejects values not in the allowed set |
+| UI | Select dropdown / MultiSelect checkboxes load provider options when `AllowedValues` is empty |
+
+Broader provider types (same-integration, cross-integration), scoped settings beyond Instance, module contributions, and custom panels remain specified in [platform-settings-option-providers-and-scopes.md](platform-settings-option-providers-and-scopes.md) and are **not** implemented beyond this prototype.
 
 ## Setting values
 

@@ -68,6 +68,7 @@ public sealed class RuntimePlatformSettingsResolver : IPlatformSettingsResolver
             PlatformSettingValueType.Boolean => section.Get<bool>(),
             PlatformSettingValueType.Integer => section.Get<int>(),
             PlatformSettingValueType.Duration => section.Get<TimeSpan>(),
+            PlatformSettingValueType.String => section.Get<string>(),
             PlatformSettingValueType.StringArray => TryGetStringArrayFromConfiguration(section),
             _ => null
         };
@@ -106,6 +107,7 @@ public sealed class RuntimePlatformSettingsResolver : IPlatformSettingsResolver
             Category = def.Category,
             ValueType = def.ValueType,
             InputKind = def.InputKind,
+            OptionProviderKey = def.OptionProviderKey,
             AllowedValues = def.AllowedValues ?? PlatformSettingResolvedValue.EmptyAllowedValues,
             CurrentValue = def.ValueType == PlatformSettingValueType.StringArray
                 ? PlatformSettingsValueCodec.CoerceStringArray(currentValue)

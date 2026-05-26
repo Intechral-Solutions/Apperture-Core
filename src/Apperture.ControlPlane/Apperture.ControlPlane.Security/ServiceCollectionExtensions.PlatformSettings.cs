@@ -17,6 +17,8 @@ public static class PlatformSettingsServiceCollectionExtensions
         services.AddSingleton<IPlatformSettingDefinitionRegistry, PlatformSettingDefinitionRegistry>();
         services.AddScoped<IPlatformSettingValueRepository, SqlPlatformSettingValueRepository>();
         services.AddScoped<IPlatformSettingsResolver, PlatformSettingsResolver>();
+        services.AddScoped<IPlatformSettingOptionProviderRegistry, PlatformSettingOptionProviderRegistry>();
+        services.AddScoped<IPlatformSettingOptionProvider, PlatformConnectorDefinitionsOptionProvider>();
         return services;
     }
 

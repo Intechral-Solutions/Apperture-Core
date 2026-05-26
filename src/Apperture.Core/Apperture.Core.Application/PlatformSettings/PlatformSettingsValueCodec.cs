@@ -18,6 +18,7 @@ public static class PlatformSettingsValueCodec
             PlatformSettingValueType.Boolean => ParseBool(rawValue),
             PlatformSettingValueType.Integer => ParseInt(rawValue, definition),
             PlatformSettingValueType.Duration => ParseDuration(rawValue, definition),
+            PlatformSettingValueType.String => rawValue.Trim(),
             _ => throw new InvalidOperationException($"Unsupported value type {definition.ValueType}.")
         };
     }
@@ -41,6 +42,7 @@ public static class PlatformSettingsValueCodec
                 PlatformSettingValueType.Duration => TimeSpan.Parse(
                     JsonSerializer.Deserialize<string>(valueJson) ?? string.Empty,
                     CultureInfo.InvariantCulture),
+                PlatformSettingValueType.String => ParseStoredString(valueJson),
                 PlatformSettingValueType.StringArray => ParseStoredStringArray(valueJson),
                 _ => throw new InvalidOperationException($"Unsupported value type {definition.ValueType}.")
             };
@@ -58,6 +60,7 @@ public static class PlatformSettingsValueCodec
             PlatformSettingValueType.Integer => JsonSerializer.Serialize((int)value),
             PlatformSettingValueType.Duration => JsonSerializer.Serialize(
                 ((TimeSpan)value).ToString("c", CultureInfo.InvariantCulture)),
+            PlatformSettingValueType.String => JsonSerializer.Serialize((string)value),
             PlatformSettingValueType.StringArray => JsonSerializer.Serialize(CoerceStringArray(value)),
             _ => throw new InvalidOperationException($"Unsupported value type {definition.ValueType}.")
         };
@@ -88,6 +91,15 @@ public static class PlatformSettingsValueCodec
         var parsed = JsonSerializer.Deserialize<string[]>(valueJson);
         if (parsed is null)
             throw new ArgumentException("Stored value must be a JSON string array.");
+
+        return parsed;
+    }
+
+    private static string ParseStoredString(string valueJson)
+    {
+        var parsed = JsonSerializer.Deserialize<string>(valueJson);
+        if (parsed is null)
+            throw new ArgumentException("Stored value must be a JSON string.");
 
         return parsed;
     }

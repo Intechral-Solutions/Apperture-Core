@@ -15,6 +15,7 @@ public sealed class PlatformSettingsService : IPlatformSettingsService
     private readonly IPlatformSettingDefinitionRegistry _registry;
     private readonly IPlatformSettingValueRepository _repository;
     private readonly IPlatformSettingsResolver _resolver;
+    private readonly IPlatformSettingOptionProviderRegistry _optionProviderRegistry;
     private readonly IPrincipalContext _principalContext;
     private readonly IAuditService _audit;
 
@@ -22,12 +23,14 @@ public sealed class PlatformSettingsService : IPlatformSettingsService
         IPlatformSettingDefinitionRegistry registry,
         IPlatformSettingValueRepository repository,
         IPlatformSettingsResolver resolver,
+        IPlatformSettingOptionProviderRegistry optionProviderRegistry,
         IPrincipalContext principalContext,
         IAuditService audit)
     {
         _registry = registry;
         _repository = repository;
         _resolver = resolver;
+        _optionProviderRegistry = optionProviderRegistry;
         _principalContext = principalContext;
         _audit = audit;
     }
@@ -51,6 +54,25 @@ public sealed class PlatformSettingsService : IPlatformSettingsService
             throw new InvalidOperationException($"Setting '{key}' is not editable.");
 
         var parsed = PlatformSettingsUpdateParser.Parse(def, payload);
+
+        if (!string.IsNullOrWhiteSpace(def.OptionProviderKey))
+        {
+            if (!_optionProviderRegistry.TryGet(def.OptionProviderKey, out var provider))
+                throw new ArgumentException($"No option provider registered for '{def.OptionProviderKey}'.");
+
+            IReadOnlyList<PlatformSettingAllowedValue> options;
+            try
+            {
+                options = await provider.GetOptionsAsync(def, cancellationToken).ConfigureAwait(false);
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                throw new InvalidOperationException(ex.Message);
+            }
+
+            ValidateProviderMembership(def, parsed, options, key);
+        }
+
         await ValidateNotificationSafetyAsync(key, parsed, cancellationToken).ConfigureAwait(false);
 
         var existing = await _repository.GetByKeyAsync(key, cancellationToken).ConfigureAwait(false);
@@ -177,5 +199,42 @@ public sealed class PlatformSettingsService : IPlatformSettingsService
             new CorrelationId(null),
             details);
         await _audit.AppendAsync(record, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static void ValidateProviderMembership(
+        PlatformSettingDefinition def,
+        object parsed,
+        IReadOnlyList<PlatformSettingAllowedValue> options,
+        string settingKey)
+    {
+        var allowed = options.Select(o => o.Value).ToHashSet(StringComparer.Ordinal);
+
+        switch (def.ValueType)
+        {
+            case PlatformSettingValueType.String:
+            {
+                if (parsed is not string s)
+                    throw new InvalidOperationException($"Parsed value type mismatch for setting '{settingKey}'.");
+
+                if (!allowed.Contains(s))
+                    throw new ArgumentException($"Value '{s}' is not an allowed option for '{settingKey}'.");
+
+                break;
+            }
+
+            case PlatformSettingValueType.StringArray:
+            {
+                var values = parsed is string[] arr ? arr : PlatformSettingsValueCodec.CoerceStringArray(parsed);
+                var invalid = values.Where(v => !allowed.Contains(v)).Distinct(StringComparer.Ordinal).ToArray();
+                if (invalid.Length > 0)
+                    throw new ArgumentException(
+                        $"Values [{string.Join(", ", invalid)}] are not allowed options for '{settingKey}'.");
+
+                break;
+            }
+
+            default:
+                throw new InvalidOperationException($"OptionProviderKey is only supported for Select settings in this epic. Setting '{settingKey}' has ValueType '{def.ValueType}'.");
+        }
     }
 }

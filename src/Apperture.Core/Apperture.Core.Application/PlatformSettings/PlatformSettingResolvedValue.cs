@@ -14,6 +14,8 @@ public sealed record PlatformSettingResolvedValue
 
     public required PlatformSettingInputKind InputKind { get; init; }
 
+    public string? OptionProviderKey { get; init; }
+
     public static readonly IReadOnlyList<PlatformSettingAllowedValue> EmptyAllowedValues = Array.Empty<PlatformSettingAllowedValue>();
 
     public IReadOnlyList<PlatformSettingAllowedValue> AllowedValues { get; init; } = EmptyAllowedValues;

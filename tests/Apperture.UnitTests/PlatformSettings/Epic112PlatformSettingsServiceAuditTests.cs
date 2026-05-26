@@ -39,6 +39,7 @@ public sealed class Epic112PlatformSettingsServiceAuditTests
             new SingleDefinitionRegistry(def),
             repo.Object,
             resolver.Object,
+            new Mock<IPlatformSettingOptionProviderRegistry>().Object,
             principalContext.Object,
             audit.Object);
 

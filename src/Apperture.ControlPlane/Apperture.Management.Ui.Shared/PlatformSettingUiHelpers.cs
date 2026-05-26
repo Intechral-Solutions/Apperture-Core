@@ -12,6 +12,7 @@ public static class PlatformSettingUiHelpers
     public const string CategoryAttentionIncidents = "AttentionIncidents";
 
     public const string InputKindMultiSelect = "MultiSelect";
+    public const string InputKindSelect = "Select";
     public const string InputKindToggle = "Toggle";
     public const string InputKindNumber = "Number";
     public const string InputKindDuration = "Duration";
@@ -68,6 +69,9 @@ public static class PlatformSettingUiHelpers
 
     public static bool IsMultiSelect(string? inputKind) =>
         string.Equals(inputKind, InputKindMultiSelect, StringComparison.OrdinalIgnoreCase);
+
+    public static bool IsSelect(string? inputKind) =>
+        string.Equals(inputKind, InputKindSelect, StringComparison.OrdinalIgnoreCase);
 
     public static string FormatArrayDisplay(IReadOnlyList<string>? values)
     {

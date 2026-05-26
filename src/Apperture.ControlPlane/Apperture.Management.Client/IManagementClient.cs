@@ -399,6 +399,12 @@ public interface IManagementClient
     /// <summary>Resets a platform setting DB override. Returns null on 404/401/403.</summary>
     Task<PlatformSettingResolvedDto?> ResetPlatformSettingAsync(string key, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Loads provider-backed platform setting options for a UI selector/editor.
+    /// Returns null when unauthorized/forbidden/not found; throws on other non-success responses.
+    /// </summary>
+    Task<IReadOnlyList<PlatformSettingAllowedValueDto>?> GetPlatformSettingOptionsAsync(string key, CancellationToken cancellationToken = default);
+
     /// <summary>Authentication overview for Config (Epic 44). Returns null on 401/403.</summary>
     Task<ConfigAuthOverviewDto?> GetConfigAuthOverviewAsync(CancellationToken cancellationToken = default);
 
@@ -736,6 +742,7 @@ public sealed record PlatformSettingResolvedDto(
     string Category,
     string ValueType,
     string InputKind,
+    string? OptionProviderKey,
     string CurrentValue,
     string Source,
     bool IsEditable,

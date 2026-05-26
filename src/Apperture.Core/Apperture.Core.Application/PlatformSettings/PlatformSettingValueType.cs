@@ -5,5 +5,6 @@ public enum PlatformSettingValueType
     Boolean,
     Integer,
     Duration,
+    String,
     StringArray
 }

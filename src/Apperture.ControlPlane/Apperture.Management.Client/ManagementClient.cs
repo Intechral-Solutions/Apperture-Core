@@ -1209,6 +1209,27 @@ public sealed class ManagementClient : IManagementClient
         return await response.Content.ReadFromJsonAsync<PlatformSettingResolvedDto>(cancellationToken).ConfigureAwait(false);
     }
 
+    public async Task<IReadOnlyList<PlatformSettingAllowedValueDto>?> GetPlatformSettingOptionsAsync(string key, CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.GetAsync(
+                $"config/platform-settings/{Uri.EscapeDataString(key)}/options",
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        if (response.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
+            return null;
+
+        if (response.StatusCode != HttpStatusCode.OK)
+        {
+            var detail = await TryReadManagementApiErrorAsync(response, cancellationToken).ConfigureAwait(false);
+            var message = string.IsNullOrWhiteSpace(detail) ? response.ReasonPhrase : detail;
+            throw new HttpRequestException(message, null, response.StatusCode);
+        }
+
+        var dtoList = await response.Content.ReadFromJsonAsync<PlatformSettingAllowedValueDto[]>(cancellationToken).ConfigureAwait(false);
+        return dtoList;
+    }
+
     public async Task<ConfigAuthOverviewDto?> GetConfigAuthOverviewAsync(CancellationToken cancellationToken = default)
     {
         using var response = await _http.GetAsync("config/auth-overview", cancellationToken).ConfigureAwait(false);

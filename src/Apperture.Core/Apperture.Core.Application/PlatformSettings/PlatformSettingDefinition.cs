@@ -15,6 +15,12 @@ public sealed record PlatformSettingDefinition
 
     public required PlatformSettingInputKind InputKind { get; init; }
 
+    /// <summary>
+    /// Optional provider key indicating that the UI should load options from a provider and that the backend must validate
+    /// submitted values against that provider.
+    /// </summary>
+    public string? OptionProviderKey { get; init; }
+
     /// <summary>IConfiguration path (colon-separated) for boot default resolution.</summary>
     public required string ConfigurationPath { get; init; }
 

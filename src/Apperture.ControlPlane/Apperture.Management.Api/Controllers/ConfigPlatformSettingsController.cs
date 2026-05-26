@@ -18,15 +18,21 @@ public sealed class ConfigPlatformSettingsController : ControllerBase
     private readonly IPlatformSettingsService _service;
     private readonly IPrincipalContext _principalContext;
     private readonly IAuthorizationEvaluationService _authorizationEvaluation;
+    private readonly IPlatformSettingDefinitionRegistry _definitionRegistry;
+    private readonly IPlatformSettingOptionProviderRegistry _optionProviderRegistry;
 
     public ConfigPlatformSettingsController(
         IPlatformSettingsService service,
         IPrincipalContext principalContext,
-        IAuthorizationEvaluationService authorizationEvaluation)
+        IAuthorizationEvaluationService authorizationEvaluation,
+        IPlatformSettingDefinitionRegistry definitionRegistry,
+        IPlatformSettingOptionProviderRegistry optionProviderRegistry)
     {
         _service = service;
         _principalContext = principalContext;
         _authorizationEvaluation = authorizationEvaluation;
+        _definitionRegistry = definitionRegistry;
+        _optionProviderRegistry = optionProviderRegistry;
     }
 
     [HttpGet]
@@ -101,6 +107,48 @@ public sealed class ConfigPlatformSettingsController : ControllerBase
 
         var updated = await _service.ResetAsync(key, cancellationToken);
         return updated is null ? NotFound() : Ok(PlatformSettingsDtoMapper.ToDto(updated));
+    }
+
+    [HttpGet("{key}/options")]
+    [ProducesResponseType(typeof(IReadOnlyList<PlatformSettingAllowedValueDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<IReadOnlyList<PlatformSettingAllowedValueDto>>> Options(
+        string key,
+        CancellationToken cancellationToken)
+    {
+        if (!await AuthorizeReadAsync(cancellationToken))
+            return Forbid();
+
+        var def = _definitionRegistry.TryGet(key);
+        if (def is null)
+            return NotFound();
+
+        if (string.IsNullOrWhiteSpace(def.OptionProviderKey))
+            return BadRequest(new { message = $"Setting '{key}' is not provider-backed." });
+
+        if (!_optionProviderRegistry.TryGet(def.OptionProviderKey, out var provider))
+            return BadRequest(new { message = $"No option provider registered for '{def.OptionProviderKey}'." });
+
+        try
+        {
+            var options = await provider.GetOptionsAsync(def, cancellationToken).ConfigureAwait(false);
+            return Ok(options.Select(o => new PlatformSettingAllowedValueDto
+            {
+                Value = o.Value,
+                Label = o.Label,
+                Description = o.Description
+            }).ToList());
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return Forbid();
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
     }
 
     private async Task<bool> AuthorizeReadAsync(CancellationToken cancellationToken)

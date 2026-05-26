@@ -26,7 +26,14 @@ public sealed class PlatformSettingsServiceValidationTests
             ]);
         var principalContext = new Mock<IPrincipalContext>();
         var audit = new Mock<IAuditService>();
-        var sut = new PlatformSettingsService(registry, repo.Object, resolver.Object, principalContext.Object, audit.Object);
+        var optionProviderRegistry = new Mock<IPlatformSettingOptionProviderRegistry>();
+        var sut = new PlatformSettingsService(
+            registry,
+            repo.Object,
+            resolver.Object,
+            optionProviderRegistry.Object,
+            principalContext.Object,
+            audit.Object);
 
         var act = () => sut.SetAsync(
             PlatformSettingKeys.NotificationsUsePlatformPipelineEnabled,

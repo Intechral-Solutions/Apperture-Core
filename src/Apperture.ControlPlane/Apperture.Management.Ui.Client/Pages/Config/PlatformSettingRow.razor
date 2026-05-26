@@ -3,6 +3,8 @@
 @using Apperture.Management.Ui.Client.Atoms
 @using Apperture.Management.Ui.Client.Organisms
 
+@inject IManagementClient Client
+
 <section class="rounded border border-default bg-surface p-3">
     <div class="flex flex-wrap items-start justify-between gap-3">
         <div class="min-w-0 flex-1">
@@ -40,15 +42,33 @@
         <div class="mt-3 space-y-2">
             @if (PlatformSettingUiHelpers.IsMultiSelect(Row.InputKind))
             {
-                @if (Row.AllowedValues is not { Count: > 0 })
+                @if (EditorOptions is not { Count: > 0 })
                 {
-                    <PageMessage Kind="PageMessageKind.Warning"
-                                 Message="Editor unavailable — no static options defined for this multi-select setting." />
+                    @if (_loadingProviderOptions)
+                    {
+                        <PageMessage Kind="PageMessageKind.Loading"
+                                     Message="Loading options…" />
+                    }
+                    else if (!string.IsNullOrWhiteSpace(_providerOptionsError))
+                    {
+                        <PageMessage Kind="PageMessageKind.Error"
+                                     Message="@_providerOptionsError" />
+                    }
+                    else if (string.IsNullOrWhiteSpace(Row.OptionProviderKey))
+                    {
+                        <PageMessage Kind="PageMessageKind.Warning"
+                                     Message="Editor unavailable — no static options defined for this multi-select setting." />
+                    }
+                    else
+                    {
+                        <PageMessage Kind="PageMessageKind.Warning"
+                                     Message="Editor unavailable — no options defined for this multi-select setting." />
+                    }
                 }
                 else
                 {
                     <div class="space-y-2">
-                        @foreach (var option in Row.AllowedValues)
+                        @foreach (var option in EditorOptions)
                         {
                             var isChecked = IsArrayOptionChecked(option.Value);
                             <label class="flex items-start gap-2 text-sm">
@@ -68,6 +88,70 @@
                             </label>
                         }
                     </div>
+
+                    @{
+                        var available = EditorOptions.Select(o => o.Value).ToHashSet(StringComparer.Ordinal);
+                        var unavailable = EditValues
+                            .Where(v => !available.Contains(v))
+                            .Distinct(StringComparer.Ordinal)
+                            .ToArray();
+                    }
+                    @if (unavailable.Length > 0)
+                    {
+                        <p class="text-xs text-muted mt-2">
+                            Unavailable selections: @string.Join(", ", unavailable)
+                        </p>
+                    }
+                }
+            }
+            else if (PlatformSettingUiHelpers.IsSelect(Row.InputKind))
+            {
+                @if (EditorOptions is not { Count: > 0 })
+                {
+                    @if (_loadingProviderOptions)
+                    {
+                        <PageMessage Kind="PageMessageKind.Loading"
+                                     Message="Loading options…" />
+                    }
+                    else if (!string.IsNullOrWhiteSpace(_providerOptionsError))
+                    {
+                        <PageMessage Kind="PageMessageKind.Error"
+                                     Message="@_providerOptionsError" />
+                    }
+                    else if (string.IsNullOrWhiteSpace(Row.OptionProviderKey))
+                    {
+                        <PageMessage Kind="PageMessageKind.Warning"
+                                     Message="Editor unavailable — no static options defined for this select setting." />
+                    }
+                    else
+                    {
+                        <PageMessage Kind="PageMessageKind.Warning"
+                                     Message="Editor unavailable — no options defined for this select setting." />
+                    }
+                }
+                else
+                {
+                    @{
+                        var optionValues = EditorOptions.Select(o => o.Value).ToHashSet(StringComparer.Ordinal);
+                        var includeUnavailableValue = !string.IsNullOrWhiteSpace(EditValue) && !optionValues.Contains(EditValue);
+                    }
+                    <select class="rounded border border-default px-2 py-1 text-sm min-w-64 font-mono"
+                            value="@EditValue"
+                            disabled="@IsSaving"
+                            @onchange="OnTextInput">
+                        @if (string.IsNullOrWhiteSpace(EditValue))
+                        {
+                            <option value="">(none)</option>
+                        }
+                        else if (includeUnavailableValue)
+                        {
+                            <option value="@EditValue">@EditValue (unavailable)</option>
+                        }
+                        @foreach (var option in EditorOptions)
+                        {
+                            <option value="@option.Value">@option.Label (@option.Value)</option>
+                        }
+                    </select>
                 }
             }
             else if (string.Equals(Row.InputKind, PlatformSettingUiHelpers.InputKindToggle, StringComparison.OrdinalIgnoreCase)
@@ -169,6 +253,62 @@
     [Parameter] public EventCallback OnSave { get; set; }
 
     [Parameter] public EventCallback OnReset { get; set; }
+
+    private IReadOnlyList<PlatformSettingAllowedValueDto>? _providerOptions;
+    private bool _loadingProviderOptions;
+    private string? _providerOptionsError;
+    private string? _loadedProviderKey;
+    private string? _loadedSettingKey;
+
+    private IReadOnlyList<PlatformSettingAllowedValueDto>? EditorOptions =>
+        Row.AllowedValues is { Count: > 0 } ? Row.AllowedValues : _providerOptions;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        // If static options exist, provider-backed options are not needed.
+        if (Row.AllowedValues is { Count: > 0 } || string.IsNullOrWhiteSpace(Row.OptionProviderKey) || !CanManage)
+        {
+            _providerOptions = null;
+            _loadingProviderOptions = false;
+            _providerOptionsError = null;
+            _loadedProviderKey = null;
+            _loadedSettingKey = null;
+            return;
+        }
+
+        var isSelectOrMulti = PlatformSettingUiHelpers.IsSelect(Row.InputKind) ||
+                             PlatformSettingUiHelpers.IsMultiSelect(Row.InputKind);
+        if (!isSelectOrMulti)
+            return;
+
+        if (_loadedProviderKey == Row.OptionProviderKey &&
+            _loadedSettingKey == Row.Key &&
+            _providerOptions is not null)
+            return;
+
+        _providerOptions = null;
+        _providerOptionsError = null;
+        _loadingProviderOptions = true;
+        _loadedProviderKey = Row.OptionProviderKey;
+        _loadedSettingKey = Row.Key;
+
+        try
+        {
+            var options = await Client.GetPlatformSettingOptionsAsync(Row.Key).ConfigureAwait(false);
+            if (options is null)
+                _providerOptionsError = "Editor unavailable — unable to load provider options (access or availability issue).";
+            else
+                _providerOptions = options;
+        }
+        catch (System.Net.Http.HttpRequestException ex)
+        {
+            _providerOptionsError = ex.Message;
+        }
+        finally
+        {
+            _loadingProviderOptions = false;
+        }
+    }
 
     private bool IsDirty => PlatformSettingUiHelpers.IsMultiSelect(Row.InputKind)
         ? PlatformSettingUiHelpers.IsDirtyArray(EditValues, Row.CurrentValues)
