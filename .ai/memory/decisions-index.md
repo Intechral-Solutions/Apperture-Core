@@ -64,3 +64,4 @@ Architecture decision records (ADRs) live in [docs/02-decisions/](../../docs/02-
 | [Epic 114](../../docs/02-decisions/Epic114-Platform-Setting-Option-Provider-Prototype.md) | `platform.connectorDefinitions` option provider prototype |
 | [Epic 115](../../docs/02-decisions/Epic115-Integration-Scoped-Option-Provider-Foundation.md) | Integration-scoped provider context foundation |
 | [Epic 116](../../docs/02-decisions/Epic116-CampusNexus-Campuses-Option-Provider.md) | `campusnexus.campuses` Campus Nexus campuses option provider |
+| [Epic 117](../../docs/02-decisions/Epic117-Integration-Scoped-Settings-Design.md) | Integration-scoped settings and Integration Detail settings UI design |

@@ -31,9 +31,9 @@
 
 ## Recommended next steps
 
-- Integration settings UI passing `integrationId` for provider-backed fields
-- Additional same-integration providers (`campusnexus.programs`, `sqlserver.tables`, etc.)
-- Production setting key only when product defines a domain-safe campus selector
+- Epic 117 design completed: [Epic117-Integration-Scoped-Settings-Design.md](./Epic117-Integration-Scoped-Settings-Design.md)
+- Epic 118 implementation target: integration-scoped persistence and explicit integration settings API
+- Integration Detail settings UI delivery after Epic 118 foundation
 
 ## References
 

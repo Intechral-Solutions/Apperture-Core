@@ -10,12 +10,14 @@
 
 **Epic 116 — delivered (first real same-integration provider):** `campusnexus.campuses` — active Campus Nexus campuses via OData `Campuses` entity set; resolves `ICampusNexusApiClient` through `IRuntimeSlotResolver` (`CnsApi` slot). No production setting key; test-only definition validates the path.
 
+**Epic 117 — delivered (design):** Integration-scoped value model and Integration Detail settings UI design documented in [integration-scoped-settings.md](integration-scoped-settings.md). No implementation changes in this epic.
+
 **Prerequisites (delivered):**
 
 - [platform-settings-registry.md](platform-settings-registry.md) — Phase 1 registry (Epic 109), operator UI (Epic 111), `StringArray` / static MultiSelect (Epic 112)
 - [ADR-0039: Environment, startup, bootstrap, and platform settings](../02-decisions/ADR-0039-environment-startup-bootstrap-and-platform-settings.md)
 
-**Recommended next:** Integration settings UI for provider-backed fields; additional same-integration providers (`campusnexus.programs`, `sqlserver.tables`, etc.).
+**Recommended next:** Epic 118 implementation of integration-scoped persistence and explicit integration settings API, followed by Integration Detail settings UI delivery.
 
 ---
 

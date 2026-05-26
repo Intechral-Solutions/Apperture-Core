@@ -14,6 +14,8 @@
 
 **Epic 116 (CampusNexus campuses provider):** `campusnexus.campuses` — real same-integration provider listing active campuses from Campus Nexus OData; `CnsApi` slot resolution. Test-only definition; no production setting key. Programs/SFTP/SQL providers and cross-integration bindings remain deferred.
 
+**Epic 117 (integration-scoped settings design):** Canonical design for integration-scoped value storage, integration settings API, Integration Detail settings surface, auth/audit model, runtime consumption boundaries, and phased implementation sequence. See [integration-scoped-settings.md](integration-scoped-settings.md).
+
 Phase 1 includes nine platform-owned keys for notification cutover, `PlatformEvents.Enabled`, and attention observation controls. Appsettings remains boot defaults only; runtime updates never write back to JSON files.
 
 **Decision anchor:** [ADR-0039: Environment, startup, bootstrap, and platform settings](../02-decisions/ADR-0039-environment-startup-bootstrap-and-platform-settings.md).
