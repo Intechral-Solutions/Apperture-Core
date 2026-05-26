@@ -64,6 +64,9 @@
         <ManagementSummaryCard Title="Schedule diagnostics"
                                Description="Expected-run and schedule evaluation troubleshooting."
                                Href="@ScheduleDiagnosticsHref" />
+        <ManagementSummaryCard Title="Settings"
+                               Description="Integration-scoped configuration overrides for this integration."
+                               Href="@SettingsHref" />
     </div>
 </ManagementSection>
 
@@ -76,6 +79,7 @@
     [Parameter] public string IntegrationId { get; set; } = "";
 
     private string ExecuteHref => $"/execute?integrationId={Uri.EscapeDataString(IntegrationId)}";
-    private string NotificationsHref => $"/integrations/{Uri.EscapeDataString(IntegrationId)}/notifications";
-    private string ScheduleDiagnosticsHref => $"/integrations/{Uri.EscapeDataString(IntegrationId)}/schedule-diagnostics";
+    private string NotificationsHref => IntegrationUiRoutes.Notifications(IntegrationId);
+    private string ScheduleDiagnosticsHref => IntegrationUiRoutes.ScheduleDiagnostics(IntegrationId);
+    private string SettingsHref => IntegrationUiRoutes.Settings(IntegrationId);
 }

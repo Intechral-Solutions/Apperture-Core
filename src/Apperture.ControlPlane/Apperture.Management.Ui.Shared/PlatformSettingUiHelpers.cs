@@ -1,6 +1,6 @@
 namespace Apperture.Management.Ui.Shared;
 
-/// <summary>Display helpers for platform settings UI (Epic 111). Maps API enum names to operator-friendly copy.</summary>
+/// <summary>Display helpers for platform and integration settings UI (Epic 111, Epic 119).</summary>
 public static class PlatformSettingUiHelpers
 {
     public const string SourceDatabase = "Database";
@@ -17,30 +17,58 @@ public static class PlatformSettingUiHelpers
     public const string InputKindNumber = "Number";
     public const string InputKindDuration = "Duration";
 
-    public static string GetSourceLabel(string? apiSource) => apiSource switch
+    public static string GetSourceLabel(string? apiSource) =>
+        GetSourceLabel(apiSource, integrationScope: false);
+
+    public static string GetSourceLabel(string? apiSource, bool integrationScope) => apiSource switch
     {
-        SourceDatabase => "Platform override",
+        SourceDatabase => integrationScope ? "Integration override" : "Platform override",
         SourceConfigurationDefault => "Configuration default",
         SourceDefinitionDefault => "Definition default",
         _ => apiSource ?? "—"
     };
 
-    public static string GetSourceTooltip(string? apiSource) => apiSource switch
+    public static string GetSourceTooltip(string? apiSource) =>
+        GetSourceTooltip(apiSource, integrationScope: false);
+
+    public static string GetSourceTooltip(string? apiSource, bool integrationScope) => apiSource switch
     {
+        SourceDatabase when integrationScope =>
+            "This value is stored for this integration and overrides the definition default.",
         SourceDatabase =>
             "This value is stored in the platform database and overrides configuration and definition defaults.",
+        SourceConfigurationDefault when integrationScope =>
+            "Inherited from configuration when supported for this integration-scoped setting.",
         SourceConfigurationDefault =>
             "Inherited from appsettings or environment configuration at startup. Save a change to create a platform override.",
+        SourceDefinitionDefault when integrationScope =>
+            "Using the built-in registry default for this integration. Save a change to create an integration override.",
         SourceDefinitionDefault =>
             "Using the built-in registry default. Save a change to create a platform override, or set a configuration default in deployment.",
         _ => "Resolved value source."
     };
 
     public static ManagementStatusSemantic GetSourceSemantic(string? apiSource) =>
-        IsPlatformOverride(apiSource) ? ManagementStatusSemantic.Warning : ManagementStatusSemantic.Neutral;
+        IsScopedOverride(apiSource) ? ManagementStatusSemantic.Warning : ManagementStatusSemantic.Neutral;
 
     public static bool IsPlatformOverride(string? apiSource) =>
+        IsScopedOverride(apiSource);
+
+    public static bool IsScopedOverride(string? apiSource) =>
         string.Equals(apiSource, SourceDatabase, StringComparison.Ordinal);
+
+    public static string GetResetTitle(bool integrationScope, bool canReset) => canReset
+        ? integrationScope
+            ? "Remove the integration override and restore the definition default."
+            : "Remove the platform override and restore the inherited default."
+        : integrationScope
+            ? "No integration override to remove for this setting."
+            : "No platform override to remove for this setting.";
+
+    public static string GetReadOnlyPermissionMessage(bool integrationScope) =>
+        integrationScope
+            ? "Read-only — you do not have permission to update integration settings."
+            : "Read-only — you do not have permission to change platform settings.";
 
     public static string GetCategoryTitle(string? category) => category switch
     {

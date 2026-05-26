@@ -24,9 +24,13 @@
                class="ui-toolbar-btn">
                 Execute
             </a>
-            <a href="@($"/integrations/{Uri.EscapeDataString(IntegrationId)}/notifications")"
+            <a href="@IntegrationUiRoutes.Notifications(IntegrationId)"
                class="ui-toolbar-btn">
                 Notifications
+            </a>
+            <a href="@IntegrationUiRoutes.Settings(IntegrationId)"
+               class="ui-toolbar-btn">
+                Settings
             </a>
             <button type="button"
                     class="ui-toolbar-btn"

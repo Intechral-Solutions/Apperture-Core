@@ -37,4 +37,4 @@ Platform `/api/config/platform-settings` behavior is unchanged. Epic 115/116 int
 
 ## Recommended next epic
 
-**Epic 119:** Integration Detail settings UI at `/integrations/{integrationId}/settings` using new client methods.
+**Epic 119:** Integration Detail settings UI — [delivered](Epic119-Integration-Detail-Settings-UI.md). **Epic 120:** first production integration setting key.

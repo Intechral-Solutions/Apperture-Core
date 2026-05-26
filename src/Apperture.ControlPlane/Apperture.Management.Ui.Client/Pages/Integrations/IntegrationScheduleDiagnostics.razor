@@ -17,6 +17,8 @@
             <div class="mt-1 font-mono text-xs text-muted break-all">@IntegrationId</div>
         </ChildContent>
         <Toolbar>
+            <a href="@IntegrationUiRoutes.Detail(IntegrationId)" class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface">Integration detail</a>
+            <a href="@IntegrationUiRoutes.Settings(IntegrationId)" class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface">Settings</a>
             <a href="/integrations" class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface">Back to fleet</a>
             <button type="button"
                     class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface disabled:opacity-50"

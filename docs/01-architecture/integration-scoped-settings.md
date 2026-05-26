@@ -6,9 +6,9 @@
 
 **Epic 118 — backend/API foundation (delivered).** Integration value scope is implemented: scoped repository, `IntegrationSettingsResolver` / `IntegrationSettingsService`, explicit routes under `/api/integrations/{integrationId}/settings`, integration-only authorization (`integration.read` / `integration.update`), audit actions `integration.settings.set` / `integration.settings.reset`, and management client methods. Production integration setting keys remain empty until Epic 120.
 
-**Epic 119 — deferred.** Integration Detail settings UI at `/integrations/{integrationId}/settings`.
+**Epic 119 — Integration Detail settings UI (delivered).** Management UI at `/integrations/{integrationId}/settings` reuses platform setting row editors, calls Epic 118 client APIs, and shows an empty state when no production integration definitions exist (current default).
 
-**Not implemented:** runtime WorkerHost consumption, module-contributed definitions, cross-integration `ProviderBinding`.
+**Not implemented:** runtime WorkerHost consumption, module-contributed definitions, cross-integration `ProviderBinding`, production integration setting keys (Epic 120).
 
 **Current baseline:**
 
@@ -274,11 +274,11 @@ Initial runtime behavior recommendation:
    - `/api/integrations/{integrationId}/settings` routes
    - `integration.settings.set` / `integration.settings.reset` audit
    - Empty production integration definition registry (test-only keys in unit tests)
-2. **Epic 119 — Integration Detail settings UI** (next)
+2. **Epic 119 — Integration Detail settings UI** (delivered)
    - `/integrations/{id}/settings`
-   - Reuse typed setting editors and source badges
-   - Provider-backed options with implicit integration context
-3. **Epic 120 — First module-owned integration setting (if product-approved)**
+   - Reuses typed setting editors; integration-scoped save/reset/options client methods
+   - Empty state when integration definition registry has no keys
+3. **Epic 120 — First module-owned integration setting (next, if product-approved)**
    - Example: included campuses via `campusnexus.campuses`
 4. **Later**
    - Module-contributed definitions

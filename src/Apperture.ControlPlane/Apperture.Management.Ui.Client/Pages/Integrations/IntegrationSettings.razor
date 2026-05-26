@@ -1,0 +1,303 @@
+@page "/integrations/{IntegrationId}/settings"
+@using System.Net.Http
+@using Apperture.Management.Client
+@using Apperture.Management.Ui.Client.Organisms
+@using Apperture.Management.Ui.Client.Pages.Config
+@using Apperture.Management.Ui.Client.Services
+@using Apperture.Management.Ui.Shared
+@inject IManagementClient Client
+@inject IOperatorCapabilitiesService Capabilities
+@inject IToastService Toasts
+@inject IJSRuntime JSRuntime
+
+<div class="p-4 ui-page-stack">
+    <PageHeader @key="@IntegrationId"
+                Eyebrow="Integrations"
+                Title="@EntityShellTitles.Detail(_integrationName, "Integration")"
+                Subtitle="Settings">
+        <ChildContent>
+            <div class="mt-1 font-mono text-xs text-muted break-all">@IntegrationId</div>
+        </ChildContent>
+        <Toolbar>
+            <a href="@IntegrationUiRoutes.Detail(IntegrationId)" class="ui-toolbar-btn">Integration detail</a>
+            <a href="@IntegrationUiRoutes.Notifications(IntegrationId)" class="ui-toolbar-btn">Notifications</a>
+            <a href="@IntegrationUiRoutes.ScheduleDiagnostics(IntegrationId)" class="ui-toolbar-btn">Schedule diagnostics</a>
+            <button type="button"
+                    class="ui-toolbar-btn"
+                    disabled="@_busy"
+                    @onclick="LoadAsync">
+                Refresh
+            </button>
+        </Toolbar>
+    </PageHeader>
+
+    @if (!_capabilitiesLoaded)
+    {
+        <LoadingState Message="Loading…" />
+    }
+    else if (!_canView)
+    {
+        <ForbiddenState Message="You do not have permission to view integration settings." />
+    }
+    else if (!string.IsNullOrEmpty(_loadError))
+    {
+        <ErrorState Message="@_loadError" />
+    }
+    else if (_integrationMissing)
+    {
+        <EmptyState Title="Integration not found"
+                    Message="The requested integration could not be loaded." />
+    }
+    else if (_settingsLoading)
+    {
+        <LoadingState Message="Loading integration settings…" />
+    }
+    else if (_rows.Count == 0)
+    {
+        <EmptyState Title="No settings available"
+                    Message="No settings are available for this integration yet. Module-specific and integration-scoped settings will appear here when installed modules define them." />
+        <PageMessage Kind="PageMessageKind.Info"
+                     Class="mt-4 max-w-3xl"
+                     Title="What to expect"
+                     Message="Integration settings are stored per integration in the platform database. When definitions are registered, you can view and edit them here with the same typed editors used for instance platform settings." />
+    }
+    else
+    {
+        <PageMessage Kind="PageMessageKind.Info"
+                     Class="mt-4 max-w-3xl"
+                     Title="How integration settings work"
+                     Message="Save creates an integration-scoped override in the database. Precedence is: integration override, then definition default. Reset removes the database override for this integration only. Values never write back to appsettings files." />
+
+        @if (!_canManage)
+        {
+            <p class="mt-3 text-xs text-muted max-w-3xl">You have read-only access. Users with integration update permission can save and reset overrides.</p>
+        }
+
+        <div class="mt-6 space-y-8">
+            @foreach (var group in _categoryGroups)
+            {
+                <ManagementSection Title="@PlatformSettingUiHelpers.GetCategoryTitle(group.Key)"
+                                   Layer="ManagementSection.UiLayer.Detail">
+                    <div class="space-y-4">
+                        @foreach (var row in group)
+                        {
+                            <PlatformSettingRow Row="row"
+                                                IntegrationId="@IntegrationId"
+                                                IntegrationScope="true"
+                                                CanManage="_canManage"
+                                                EditValue="@GetEditValue(row.Key)"
+                                                EditValues="@GetEditValues(row)"
+                                                IsSaving="@(string.Equals(_savingKey, row.Key, StringComparison.Ordinal))"
+                                                Error="@GetError(row.Key)"
+                                                EditValueChanged="@(v => SetEditValue(row.Key, v))"
+                                                EditValuesChanged="@(v => SetEditValues(row.Key, v))"
+                                                OnSave="@(() => SaveAsync(row))"
+                                                OnReset="@(() => ResetAsync(row))" />
+                        }
+                    </div>
+                </ManagementSection>
+            }
+        </div>
+
+        <p class="mt-6 text-xs text-muted max-w-3xl">
+            Audit: set and reset actions appear in the <a class="underline" href="/control/audit">audit timeline</a> with action names <code class="rounded bg-surface-muted px-1">integration.settings.set</code> and <code class="rounded bg-surface-muted px-1">integration.settings.reset</code>.
+        </p>
+    }
+</div>
+
+@code {
+  [Parameter] public string IntegrationId { get; set; } = "";
+
+  private bool _capabilitiesLoaded;
+  private bool _canView;
+  private bool _canManage;
+  private bool _busy;
+  private bool _settingsLoading = true;
+  private bool _integrationMissing;
+  private string? _loadError;
+  private string? _integrationName;
+  private string? _savingKey;
+  private List<PlatformSettingResolvedDto> _rows = [];
+  private readonly Dictionary<string, string> _editValues = new(StringComparer.Ordinal);
+  private readonly Dictionary<string, List<string>> _editArrayValues = new(StringComparer.Ordinal);
+  private readonly Dictionary<string, string?> _errors = new(StringComparer.Ordinal);
+
+  private IEnumerable<IGrouping<string, PlatformSettingResolvedDto>> _categoryGroups =>
+      _rows
+          .GroupBy(x => x.Category)
+          .OrderBy(g => PlatformSettingUiHelpers.GetCategoryOrder(g.Key));
+
+  protected override async Task OnInitializedAsync()
+  {
+    var caps = await Capabilities.GetCapabilitiesAsync();
+    _canView = caps.CanViewIntegrations;
+    _canManage = caps.CanUpdateIntegrations;
+    _capabilitiesLoaded = true;
+
+    if (_canView)
+      await LoadAsync();
+    else
+      _settingsLoading = false;
+  }
+
+  private async Task LoadAsync()
+  {
+    _busy = true;
+    _loadError = null;
+    _integrationMissing = false;
+    _settingsLoading = true;
+
+    try
+    {
+      var integration = await Client.GetIntegrationAsync(IntegrationId);
+      if (integration is null)
+      {
+        _integrationMissing = true;
+        _integrationName = null;
+        _rows = [];
+        return;
+      }
+
+      _integrationName = integration.DisplayName;
+
+      var rows = await Client.ListIntegrationSettingsAsync(IntegrationId);
+      if (rows is null)
+      {
+        _loadError = "Could not load integration settings.";
+        _rows = [];
+        return;
+      }
+
+      _rows = rows
+          .OrderBy(x => PlatformSettingUiHelpers.GetCategoryOrder(x.Category))
+          .ThenBy(x => x.DisplayName, StringComparer.Ordinal)
+          .ToList();
+      _editValues.Clear();
+      _editArrayValues.Clear();
+      _errors.Clear();
+      foreach (var row in _rows)
+        SyncEditState(row);
+    }
+    catch (Exception ex)
+    {
+      _loadError = ex.Message;
+    }
+    finally
+    {
+      _settingsLoading = false;
+      _busy = false;
+    }
+  }
+
+  private string GetEditValue(string key) =>
+      _editValues.TryGetValue(key, out var value) ? value : string.Empty;
+
+  private IReadOnlyList<string> GetEditValues(PlatformSettingResolvedDto row) =>
+      _editArrayValues.TryGetValue(row.Key, out var values)
+          ? values
+          : row.CurrentValues?.ToList() ?? [];
+
+  private void SetEditValue(string key, string? value)
+  {
+    _editValues[key] = value ?? string.Empty;
+    _errors.Remove(key);
+  }
+
+  private void SetEditValues(string key, IReadOnlyList<string> values)
+  {
+    _editArrayValues[key] = values.ToList();
+    _errors.Remove(key);
+  }
+
+  private string? GetError(string key) =>
+      _errors.TryGetValue(key, out var error) ? error : null;
+
+  private async Task SaveAsync(PlatformSettingResolvedDto row)
+  {
+    _errors.Remove(row.Key);
+    _savingKey = row.Key;
+    try
+    {
+      PlatformSettingResolvedDto updated;
+      if (PlatformSettingUiHelpers.IsMultiSelect(row.InputKind))
+      {
+        updated = await Client.SetIntegrationSettingAsync(
+            IntegrationId,
+            row.Key,
+            new UpdatePlatformSettingRequest(
+                Values: GetEditValues(row).ToList(),
+                RowVersionBase64: row.RowVersionBase64));
+      }
+      else
+      {
+        updated = await Client.SetIntegrationSettingAsync(
+            IntegrationId,
+            row.Key,
+            new UpdatePlatformSettingRequest(
+                Value: GetEditValue(row.Key),
+                RowVersionBase64: row.RowVersionBase64));
+      }
+
+      ReplaceRow(updated);
+      Toasts.Show(ToastSeverity.Success, $"Saved {row.DisplayName}.");
+    }
+    catch (HttpRequestException ex)
+    {
+      _errors[row.Key] = ex.Message;
+    }
+    finally
+    {
+      _savingKey = null;
+    }
+  }
+
+  private async Task ResetAsync(PlatformSettingResolvedDto row)
+  {
+    if (PlatformSettingUiHelpers.IsScopedOverride(row.Source))
+    {
+      var confirmed = await JSRuntime.InvokeAsync<bool>(
+          "confirm",
+          $"Reset \"{row.DisplayName}\"? This removes the integration override and restores the definition default.");
+      if (!confirmed)
+        return;
+    }
+
+    _errors.Remove(row.Key);
+    _savingKey = row.Key;
+    try
+    {
+      var updated = await Client.ResetIntegrationSettingAsync(IntegrationId, row.Key);
+      if (updated is null)
+      {
+        _errors[row.Key] = "Reset failed or setting was not found.";
+        return;
+      }
+
+      ReplaceRow(updated);
+      Toasts.Show(ToastSeverity.Success, $"Reset {row.DisplayName} to definition default.");
+    }
+    catch (HttpRequestException ex)
+    {
+      _errors[row.Key] = ex.Message;
+    }
+    finally
+    {
+      _savingKey = null;
+    }
+  }
+
+  private void ReplaceRow(PlatformSettingResolvedDto updated)
+  {
+    var index = _rows.FindIndex(x => string.Equals(x.Key, updated.Key, StringComparison.Ordinal));
+    if (index >= 0)
+      _rows[index] = updated;
+    SyncEditState(updated);
+    _errors.Remove(updated.Key);
+  }
+
+  private void SyncEditState(PlatformSettingResolvedDto row)
+  {
+    _editValues[row.Key] = row.CurrentValue;
+    _editArrayValues[row.Key] = row.CurrentValues?.ToList() ?? [];
+  }
+}
