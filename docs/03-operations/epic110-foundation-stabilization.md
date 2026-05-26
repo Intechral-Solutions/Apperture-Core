@@ -4,7 +4,7 @@
 
 **Context:** Epics 105A through 109 delivered appsettings rationalization, configuration-layer documentation, Aspire local orchestration, post-Aspire assessment, file-backed bootstrap store, and platform settings registry Phase 1. Epic 110 consolidates smoke-test expectations, fixes stale cross-references, and recommends the next implementation epic.
 
-**Related:** [management-platform-configuration.md](management-platform-configuration.md), [ADR-0039](../02-decisions/ADR-0039-environment-startup-bootstrap-and-platform-settings.md), [platform-settings-registry.md](../01-architecture/platform-settings-registry.md), [bootstrap-cli-invocation.md](../01-architecture/bootstrap-cli-invocation.md), [epic107-post-aspire-assessment.md](epic107-post-aspire-assessment.md) (historical).
+**Related:** [Epic 110 decision record](../02-decisions/Epic110-Foundation-Stabilization.md), [management-platform-configuration.md](management-platform-configuration.md), [ADR-0039](../02-decisions/ADR-0039-environment-startup-bootstrap-and-platform-settings.md), [platform-settings-registry.md](../01-architecture/platform-settings-registry.md), [bootstrap-cli-invocation.md](../01-architecture/bootstrap-cli-invocation.md), [epic107-post-aspire-assessment.md](epic107-post-aspire-assessment.md) (historical).
 
 ---
 
@@ -141,33 +141,20 @@ See [platform-settings-registry.md](../01-architecture/platform-settings-registr
 
 ---
 
-## Epic 111 (delivered): Platform settings operator polish
+## Epics 111–114 (delivered)
 
-**Title:** Epic 111 — Platform settings operator polish and UI hardening
+Decision records: [Epic 111](../02-decisions/Epic111-Platform-Settings-Operator-UI-Polish.md), [Epic 112](../02-decisions/Epic112-Platform-Settings-MultiSelect-Foundation.md), [Epic 113](../02-decisions/Epic113-Platform-Settings-Option-Providers-Design.md), [Epic 114](../02-decisions/Epic114-Platform-Setting-Option-Provider-Prototype.md).
 
-**Status:** Delivered. See [platform settings registry — Operator UI](../01-architecture/platform-settings-registry.md#operator-ui-epic-111).
+| Epic | Summary |
+|------|---------|
+| **111** | Operator UI polish for `/config/platform-settings` (grouping, source badges, typed editors, save/reset UX) |
+| **112** | `StringArray`, `InputKind`, static MultiSelect; no new production keys |
+| **113** | Option providers and scoped settings — design spec only |
+| **114** | `platform.connectorDefinitions` provider, options endpoint, write validation, Select/MultiSelect UI |
 
-**Summary:** Grouped `/config/platform-settings` page, friendly source badges, typed editors, dirty/save/reset UX, validation errors, read-only capability mode. No registry scope expansion.
+## Recommended next epic (post-114)
 
-## Epic 112 (delivered): Settings foundation hardening
-
-**Title:** Epic 112 — Settings foundation hardening for multi-select and future option sources
-
-**Status:** Delivered. See [platform settings registry — StringArray and static multi-select](../01-architecture/platform-settings-registry.md#stringarray-and-static-multi-select-epic-112).
-
-**Summary:** `InputKind` and static `AllowedValues` metadata, `StringArray` value type (codec, validation, resolver, API, audit), MultiSelect UI renderer. No new production keys; future dynamic option providers documented only.
-
-## Epic 113 (delivered): Option providers and scoped settings design
-
-**Title:** Epic 113 — Settings option providers and scoped settings (design spec)
-
-**Status:** Delivered. See [platform-settings-option-providers-and-scopes.md](../01-architecture/platform-settings-option-providers-and-scopes.md).
-
-**Summary:** Architecture spec for dynamic option providers, future scopes, module contribution boundaries, cross-integration bindings (deferred), and phased roadmap. Docs only; no runtime changes.
-
-## Recommended next epic (post-113)
-
-**Epic 114 — Platform setting option provider prototype** (phase 1 from Epic 113 roadmap): one `platform.*` provider, options endpoint, write-time validation, instance scope only.
+**Epic 115 (suggested):** Same-integration option provider prototype with integration-scoped context.
 
 Alternatively: expanded WorkerHost runtime overlays for Phase 1 keys, **Epic 108b DPAPI** credential binding, or a broader UI/design-system sweep — per team priority.
 

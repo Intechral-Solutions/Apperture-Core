@@ -51,10 +51,14 @@ Architecture decision records (ADRs) live in [docs/02-decisions/](../../docs/02-
 | [Epic 101](../../docs/02-decisions/Epic101-Top-Bar-Breadcrumbs-and-Parent-Context-Links.md) | Top-bar breadcrumbs and parent-context links (route resolver, no entity API) |
 | [Management platform configuration](../../docs/03-operations/management-platform-configuration.md) | Canonical appsettings inventory, dev/deploy setup, topology examples (`deploy/config/`) |
 | [ADR-0039](../../docs/02-decisions/ADR-0039-environment-startup-bootstrap-and-platform-settings.md) | Environment, startup, bootstrap, and platform settings layers (105B); Aspire local orchestration (106) |
-| [Epic 107 assessment](../../docs/03-operations/epic107-post-aspire-assessment.md) | Post-Aspire reassessment (historical; superseded for next steps by Epic 110) |
-| [Epic 108](../../docs/01-architecture/bootstrap-cli-invocation.md) | File-backed bootstrap store, CLI persistence, dev init script |
-| [Platform settings registry](../../docs/01-architecture/platform-settings-registry.md) | Phase 1 delivered: SQL-backed instance settings, resolver precedence, API/UI overlays (Epic 109) |
-| [Epic 110](../../docs/03-operations/epic110-foundation-stabilization.md) | Foundation stabilization, smoke baseline, deferred roadmap |
-| [Epic 111](../../docs/01-architecture/platform-settings-registry.md#operator-ui-epic-111) | Platform settings operator UI polish (source labels, grouping, save/reset UX) |
-| [Epic 112](../../docs/01-architecture/platform-settings-registry.md#stringarray-and-static-multi-select-epic-112) | Platform settings foundation hardening: StringArray, InputKind, static MultiSelect |
-| [Epic 113](../../docs/01-architecture/platform-settings-option-providers-and-scopes.md) | Platform settings option providers and scoped settings — architecture design spec (docs only) |
+| [Epic 105A](../../docs/02-decisions/Epic105A-Environment-Startup-Inventory.md) | Appsettings and deploy/config rationalization; startup inventory |
+| [Epic 105B](../../docs/02-decisions/Epic105B-Configuration-Layers.md) | Four-layer configuration model (ADR-0039) |
+| [Epic 106](../../docs/02-decisions/Epic106-Aspire-Local-Orchestration.md) | Aspire AppHost / ServiceDefaults local orchestration |
+| [Epic 107](../../docs/02-decisions/Epic107-Post-Aspire-Assessment.md) | Post-Aspire reassessment ([ops detail](../../docs/03-operations/epic107-post-aspire-assessment.md)) |
+| [Epic 108](../../docs/02-decisions/Epic108-File-Backed-Bootstrap-Store.md) | File-backed bootstrap store ([bootstrap CLI](../../docs/01-architecture/bootstrap-cli-invocation.md)) |
+| [Epic 109](../../docs/02-decisions/Epic109-Platform-Settings-Registry-Phase1.md) | Platform settings registry Phase 1 ([architecture](../../docs/01-architecture/platform-settings-registry.md)) |
+| [Epic 110](../../docs/02-decisions/Epic110-Foundation-Stabilization.md) | Foundation stabilization ([ops runbook](../../docs/03-operations/epic110-foundation-stabilization.md)) |
+| [Epic 111](../../docs/02-decisions/Epic111-Platform-Settings-Operator-UI-Polish.md) | Platform settings operator UI polish |
+| [Epic 112](../../docs/02-decisions/Epic112-Platform-Settings-MultiSelect-Foundation.md) | StringArray, InputKind, static MultiSelect |
+| [Epic 113](../../docs/02-decisions/Epic113-Platform-Settings-Option-Providers-Design.md) | Option providers and scoped settings design ([spec](../../docs/01-architecture/platform-settings-option-providers-and-scopes.md)) |
+| [Epic 114](../../docs/02-decisions/Epic114-Platform-Setting-Option-Provider-Prototype.md) | `platform.connectorDefinitions` option provider prototype |
