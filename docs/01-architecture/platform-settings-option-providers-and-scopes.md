@@ -2,14 +2,40 @@
 
 ## Status
 
-**Epic 113 — design specification only.** This document defines the architecture for dynamic setting option providers, resource-backed selections, future scoped settings, and related boundaries. **Nothing in this epic is implemented in runtime code.**
+**Epic 113 — design specification only.** This document defines the architecture for dynamic setting option providers, resource-backed selections, future scoped settings, and related boundaries.
+
+**Epic 114 — delivered:** Instance-scoped platform option provider prototype (`platform.connectorDefinitions`), options endpoint, write-time validation.
+
+**Epic 115 — delivered (integration-context foundation):** `PlatformSettingOptionProviderContext` (Instance vs Integration), `OptionProviderContextKind` on definitions, `GET .../options?integrationId=`, optional `integrationId` on write validation, coordinator + integration authorization. **No** real same-integration remote providers, **no** integration-scoped setting persistence, **no** production integration-context setting keys.
 
 **Prerequisites (delivered):**
 
 - [platform-settings-registry.md](platform-settings-registry.md) — Phase 1 registry (Epic 109), operator UI (Epic 111), `StringArray` / static MultiSelect (Epic 112)
 - [ADR-0039: Environment, startup, bootstrap, and platform settings](../02-decisions/ADR-0039-environment-startup-bootstrap-and-platform-settings.md)
 
-**Recommended next implementation epic:** Epic 114 — platform option provider prototype (single `platform.*` provider, options endpoint, write-time validation; instance scope only; no cross-integration).
+**Recommended next implementation epic:** Epic 116 — first real same-integration option provider (e.g. `campusnexus.campuses`) using integration context from Epic 115.
+
+---
+
+## Epic 115 — Provider context vs value scope (delivered)
+
+| Concept | Role | Epic 115 |
+|---------|------|----------|
+| **Provider context** | Where option values **come from** when loading/validating | `PlatformSettingOptionProviderContext` with `ContextKind` (`Instance` \| `Integration`) and optional `IntegrationId` |
+| **Setting value scope** | Where the setting value is **stored** | Unchanged — Phase 1 remains instance-scoped (`Instance` / `instance`) |
+
+Definition metadata: `OptionProviderContextKind` (default `Instance`) alongside `OptionProviderKey`.
+
+| API | Behavior |
+|-----|----------|
+| `GET /api/config/platform-settings/{key}/options?integrationId=` | Required when definition context is `Integration`; rejected when context is `Instance` and query param is present |
+| `PUT /api/config/platform-settings/{key}` body `integrationId` | Passed to provider validation only; does not change persistence scope |
+
+Authorization: `platform.settings.read` / `manage` on instance configuration plus `integration.read` on the target integration when integration context is used. Integration existence validated via `IIntegrationRepository`.
+
+Test-only provider: `test.integration.options` (unit tests only; not registered in production DI).
+
+Deferred: `campusnexus.campuses`, `sqlserver.tables`, `sftp.remoteDirectories`, cross-integration `ProviderBinding`, module-contributed providers, integration-scoped persistence/UI tab.
 
 ---
 

@@ -14,6 +14,7 @@ public interface IPlatformSettingOptionProvider
 
     Task<IReadOnlyList<PlatformSettingAllowedValue>> GetOptionsAsync(
         PlatformSettingDefinition definition,
+        PlatformSettingOptionProviderContext context,
         CancellationToken cancellationToken = default);
 }
 

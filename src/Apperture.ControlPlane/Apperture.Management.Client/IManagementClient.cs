@@ -403,7 +403,10 @@ public interface IManagementClient
     /// Loads provider-backed platform setting options for a UI selector/editor.
     /// Returns null when unauthorized/forbidden/not found; throws on other non-success responses.
     /// </summary>
-    Task<IReadOnlyList<PlatformSettingAllowedValueDto>?> GetPlatformSettingOptionsAsync(string key, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<PlatformSettingAllowedValueDto>?> GetPlatformSettingOptionsAsync(
+        string key,
+        string? integrationId = null,
+        CancellationToken cancellationToken = default);
 
     /// <summary>Authentication overview for Config (Epic 44). Returns null on 401/403.</summary>
     Task<ConfigAuthOverviewDto?> GetConfigAuthOverviewAsync(CancellationToken cancellationToken = default);
@@ -743,6 +746,7 @@ public sealed record PlatformSettingResolvedDto(
     string ValueType,
     string InputKind,
     string? OptionProviderKey,
+    string? OptionProviderContextKind,
     string CurrentValue,
     string Source,
     bool IsEditable,
@@ -759,7 +763,8 @@ public sealed record PlatformSettingResolvedDto(
 public sealed record UpdatePlatformSettingRequest(
     string? Value = null,
     IReadOnlyList<string>? Values = null,
-    string? RowVersionBase64 = null);
+    string? RowVersionBase64 = null,
+    string? IntegrationId = null);
 
 public sealed record ManagedContactSummaryDto(
     string Id,

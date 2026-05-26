@@ -22,10 +22,11 @@ public sealed class PlatformConnectorDefinitionsOptionProvider : IPlatformSettin
 
     public async Task<IReadOnlyList<PlatformSettingAllowedValue>> GetOptionsAsync(
         PlatformSettingDefinition definition,
+        PlatformSettingOptionProviderContext context,
         CancellationToken cancellationToken = default)
     {
-        // For this prototype we ignore definition-specific filters; membership validation happens on write.
-        _ = definition;
+        // Instance-scoped platform catalog; integration context is ignored for this provider.
+        _ = context;
 
         var defs = await _connectorDefinitions.ListAsync(cancellationToken).ConfigureAwait(false);
         return defs

@@ -19,20 +19,20 @@ public sealed class ConfigPlatformSettingsController : ControllerBase
     private readonly IPrincipalContext _principalContext;
     private readonly IAuthorizationEvaluationService _authorizationEvaluation;
     private readonly IPlatformSettingDefinitionRegistry _definitionRegistry;
-    private readonly IPlatformSettingOptionProviderRegistry _optionProviderRegistry;
+    private readonly PlatformSettingOptionProviderCoordinator _optionProviderCoordinator;
 
     public ConfigPlatformSettingsController(
         IPlatformSettingsService service,
         IPrincipalContext principalContext,
         IAuthorizationEvaluationService authorizationEvaluation,
         IPlatformSettingDefinitionRegistry definitionRegistry,
-        IPlatformSettingOptionProviderRegistry optionProviderRegistry)
+        PlatformSettingOptionProviderCoordinator optionProviderCoordinator)
     {
         _service = service;
         _principalContext = principalContext;
         _authorizationEvaluation = authorizationEvaluation;
         _definitionRegistry = definitionRegistry;
-        _optionProviderRegistry = optionProviderRegistry;
+        _optionProviderCoordinator = optionProviderCoordinator;
     }
 
     [HttpGet]
@@ -116,6 +116,7 @@ public sealed class ConfigPlatformSettingsController : ControllerBase
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<ActionResult<IReadOnlyList<PlatformSettingAllowedValueDto>>> Options(
         string key,
+        [FromQuery] string? integrationId,
         CancellationToken cancellationToken)
     {
         if (!await AuthorizeReadAsync(cancellationToken))
@@ -128,12 +129,12 @@ public sealed class ConfigPlatformSettingsController : ControllerBase
         if (string.IsNullOrWhiteSpace(def.OptionProviderKey))
             return BadRequest(new { message = $"Setting '{key}' is not provider-backed." });
 
-        if (!_optionProviderRegistry.TryGet(def.OptionProviderKey, out var provider))
-            return BadRequest(new { message = $"No option provider registered for '{def.OptionProviderKey}'." });
-
         try
         {
-            var options = await provider.GetOptionsAsync(def, cancellationToken).ConfigureAwait(false);
+            var options = await _optionProviderCoordinator
+                .GetOptionsForReadAsync(def, integrationId, cancellationToken)
+                .ConfigureAwait(false);
+
             return Ok(options.Select(o => new PlatformSettingAllowedValueDto
             {
                 Value = o.Value,
@@ -144,6 +145,10 @@ public sealed class ConfigPlatformSettingsController : ControllerBase
         catch (UnauthorizedAccessException)
         {
             return Forbid();
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(new { message = ex.Message });
         }
         catch (ArgumentException ex)
         {

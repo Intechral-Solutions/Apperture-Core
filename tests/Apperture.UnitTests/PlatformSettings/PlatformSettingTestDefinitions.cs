@@ -12,6 +12,10 @@ internal static class PlatformSettingTestDefinitions
 
     public const string ProviderBackedMultiSelectKey = "Test.ProviderBacked.MultiSelect.Sample";
 
+    public const string IntegrationProviderKey = "test.integration.options";
+
+    public const string IntegrationProviderBackedSelectKey = "Test.IntegrationProviderBacked.Select.Sample";
+
     public static PlatformSettingDefinition MultiSelectSample => new()
     {
         Key = MultiSelectKey,
@@ -58,5 +62,19 @@ internal static class PlatformSettingTestDefinitions
         DefaultValue = new[] { "alpha" },
         MinItems = 0,
         MaxItems = 2
+    };
+
+    public static PlatformSettingDefinition IntegrationProviderBackedSelectSample => new()
+    {
+        Key = IntegrationProviderBackedSelectKey,
+        DisplayName = "Integration provider-backed select (test-only)",
+        Description = "Test-only integration-context provider-backed select setting for Epic 115 validation.",
+        Category = PlatformSettingCategory.PlatformEvents,
+        ValueType = PlatformSettingValueType.String,
+        InputKind = PlatformSettingInputKind.Select,
+        OptionProviderKey = IntegrationProviderKey,
+        OptionProviderContextKind = PlatformSettingOptionProviderContextKind.Integration,
+        ConfigurationPath = "Test:IntegrationProviderBacked:Select:Sample",
+        DefaultValue = "int-test:alpha"
     };
 }

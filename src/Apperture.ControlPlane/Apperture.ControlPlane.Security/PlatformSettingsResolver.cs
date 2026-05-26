@@ -113,6 +113,7 @@ public sealed class PlatformSettingsResolver : IPlatformSettingsResolver
             ValueType = def.ValueType,
             InputKind = def.InputKind,
             OptionProviderKey = def.OptionProviderKey,
+            OptionProviderContextKind = def.OptionProviderContextKind,
             AllowedValues = def.AllowedValues ?? PlatformSettingResolvedValue.EmptyAllowedValues,
             CurrentValue = def.ValueType == PlatformSettingValueType.StringArray
                 ? PlatformSettingsValueCodec.CoerceStringArray(currentValue)

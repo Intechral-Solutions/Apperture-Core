@@ -1,4 +1,3 @@
-using System.Net;
 using Apperture.ControlPlane.Security;
 using Apperture.Core.Application.PlatformSettings;
 using Apperture.Core.Application.Services;
@@ -28,31 +27,23 @@ public sealed class Epic114PlatformSettingOptionProviderTests
 
         var provider = new Mock<IPlatformSettingOptionProvider>();
         provider.SetupGet(p => p.ProviderKey).Returns(PlatformSettingTestDefinitions.ProviderKey);
-        provider.Setup(p => p.GetOptionsAsync(It.IsAny<PlatformSettingDefinition>(), It.IsAny<CancellationToken>()))
+        provider.Setup(p => p.GetOptionsAsync(
+                It.IsAny<PlatformSettingDefinition>(),
+                It.IsAny<PlatformSettingOptionProviderContext>(),
+                It.IsAny<CancellationToken>()))
             .ReturnsAsync(providerOptions);
 
-        var definitionRegistry = new SingleDefinitionRegistry(def);
-        var optionProviderRegistry = new SingleOptionProviderRegistry(provider.Object);
-
-        var principalContext = new Mock<IPrincipalContext>();
-        var actor = new Mock<IActor>();
-        actor.Setup(x => x.Id).Returns(new ActorId("actor-1"));
-        actor.Setup(x => x.Kind).Returns(ActorKind.Human);
-        principalContext.Setup(x => x.GetCurrentActorAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(actor.Object);
-
-        var authorization = new Mock<IAuthorizationEvaluationService>();
-        authorization.Setup(x => x.EvaluateAsync(It.IsAny<AuthorizationEvaluationContext>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(true);
+        var (principalContext, _, authorization) = PlatformSettingOptionProviderTestHarness.CreateDefaultAuthMocks();
+        var coordinator = PlatformSettingOptionProviderTestHarness.CreateCoordinator(provider.Object);
 
         var controller = new ConfigPlatformSettingsController(
             new Mock<IPlatformSettingsService>().Object,
             principalContext.Object,
             authorization.Object,
-            definitionRegistry,
-            optionProviderRegistry);
+            new PlatformSettingOptionProviderTestHarness.SingleDefinitionRegistry(def),
+            coordinator);
 
-        var result = await controller.Options(def.Key, CancellationToken.None);
+        var result = await controller.Options(def.Key, null, CancellationToken.None);
 
         result.Result.Should().BeOfType<OkObjectResult>();
         var ok = (OkObjectResult)result.Result!;
@@ -69,29 +60,21 @@ public sealed class Epic114PlatformSettingOptionProviderTests
     {
         var def = PlatformSettingTestDefinitions.MultiSelectSample with
         {
-            // Explicitly clear provider metadata (test-only)
             OptionProviderKey = null
         };
 
-        var principalContext = new Mock<IPrincipalContext>();
-        var actor = new Mock<IActor>();
-        actor.Setup(x => x.Id).Returns(new ActorId("actor-1"));
-        actor.Setup(x => x.Kind).Returns(ActorKind.Human);
-        principalContext.Setup(x => x.GetCurrentActorAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(actor.Object);
-
-        var authorization = new Mock<IAuthorizationEvaluationService>();
-        authorization.Setup(x => x.EvaluateAsync(It.IsAny<AuthorizationEvaluationContext>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(true);
+        var (principalContext, _, authorization) = PlatformSettingOptionProviderTestHarness.CreateDefaultAuthMocks();
+        var coordinator = PlatformSettingOptionProviderTestHarness.CreateCoordinator(
+            new Mock<IPlatformSettingOptionProvider>().Object);
 
         var controller = new ConfigPlatformSettingsController(
             new Mock<IPlatformSettingsService>().Object,
             principalContext.Object,
             authorization.Object,
-            new SingleDefinitionRegistry(def),
-            new SingleOptionProviderRegistry(new Mock<IPlatformSettingOptionProvider>().Object));
+            new PlatformSettingOptionProviderTestHarness.SingleDefinitionRegistry(def),
+            coordinator);
 
-        var result = await controller.Options(def.Key, CancellationToken.None);
+        var result = await controller.Options(def.Key, null, CancellationToken.None);
 
         result.Result.Should().BeOfType<BadRequestObjectResult>();
     }
@@ -107,7 +90,10 @@ public sealed class Epic114PlatformSettingOptionProviderTests
 
         var provider = new Mock<IPlatformSettingOptionProvider>();
         provider.SetupGet(p => p.ProviderKey).Returns(PlatformSettingTestDefinitions.ProviderKey);
-        provider.Setup(p => p.GetOptionsAsync(def, It.IsAny<CancellationToken>()))
+        provider.Setup(p => p.GetOptionsAsync(
+                It.IsAny<PlatformSettingDefinition>(),
+                It.IsAny<PlatformSettingOptionProviderContext>(),
+                It.IsAny<CancellationToken>()))
             .ReturnsAsync(providerOptions);
 
         var resolver = new Mock<IPlatformSettingsResolver>();
@@ -122,17 +108,15 @@ public sealed class Epic114PlatformSettingOptionProviderTests
         repo.Setup(x => x.UpsertAsync(It.IsAny<PlatformSettingValue>(), null, It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
 
-        var principalContext = new Mock<IPrincipalContext>();
-        principalContext.Setup(x => x.GetCurrentActorAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync((IActor?)null);
-
+        var (principalContext, _, _) = PlatformSettingOptionProviderTestHarness.CreateDefaultAuthMocks();
         var audit = new Mock<IAuditService>();
+        var coordinator = PlatformSettingOptionProviderTestHarness.CreateCoordinator(provider.Object);
 
         var sut = new PlatformSettingsService(
-            new SingleDefinitionRegistry(def),
+            new PlatformSettingOptionProviderTestHarness.SingleDefinitionRegistry(def),
             repo.Object,
             resolver.Object,
-            new SingleOptionProviderRegistry(provider.Object),
+            coordinator,
             principalContext.Object,
             audit.Object);
 
@@ -154,7 +138,10 @@ public sealed class Epic114PlatformSettingOptionProviderTests
 
         var provider = new Mock<IPlatformSettingOptionProvider>();
         provider.SetupGet(p => p.ProviderKey).Returns(PlatformSettingTestDefinitions.ProviderKey);
-        provider.Setup(p => p.GetOptionsAsync(def, It.IsAny<CancellationToken>()))
+        provider.Setup(p => p.GetOptionsAsync(
+                It.IsAny<PlatformSettingDefinition>(),
+                It.IsAny<PlatformSettingOptionProviderContext>(),
+                It.IsAny<CancellationToken>()))
             .ReturnsAsync(providerOptions);
 
         var resolver = new Mock<IPlatformSettingsResolver>();
@@ -165,17 +152,15 @@ public sealed class Epic114PlatformSettingOptionProviderTests
         repo.Setup(x => x.GetByKeyAsync(def.Key, It.IsAny<CancellationToken>()))
             .ReturnsAsync((PlatformSettingValue?)null);
 
-        var principalContext = new Mock<IPrincipalContext>();
-        principalContext.Setup(x => x.GetCurrentActorAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync((IActor?)null);
-
+        var (principalContext, _, _) = PlatformSettingOptionProviderTestHarness.CreateDefaultAuthMocks();
         var audit = new Mock<IAuditService>();
+        var coordinator = PlatformSettingOptionProviderTestHarness.CreateCoordinator(provider.Object);
 
         var sut = new PlatformSettingsService(
-            new SingleDefinitionRegistry(def),
+            new PlatformSettingOptionProviderTestHarness.SingleDefinitionRegistry(def),
             repo.Object,
             resolver.Object,
-            new SingleOptionProviderRegistry(provider.Object),
+            coordinator,
             principalContext.Object,
             audit.Object);
 
@@ -201,7 +186,10 @@ public sealed class Epic114PlatformSettingOptionProviderTests
 
         var provider = new Mock<IPlatformSettingOptionProvider>();
         provider.SetupGet(p => p.ProviderKey).Returns(PlatformSettingTestDefinitions.ProviderKey);
-        provider.Setup(p => p.GetOptionsAsync(def, It.IsAny<CancellationToken>()))
+        provider.Setup(p => p.GetOptionsAsync(
+                It.IsAny<PlatformSettingDefinition>(),
+                It.IsAny<PlatformSettingOptionProviderContext>(),
+                It.IsAny<CancellationToken>()))
             .ReturnsAsync(providerOptions);
 
         var resolver = new Mock<IPlatformSettingsResolver>();
@@ -212,17 +200,15 @@ public sealed class Epic114PlatformSettingOptionProviderTests
         repo.Setup(x => x.GetByKeyAsync(def.Key, It.IsAny<CancellationToken>()))
             .ReturnsAsync((PlatformSettingValue?)null);
 
-        var principalContext = new Mock<IPrincipalContext>();
-        principalContext.Setup(x => x.GetCurrentActorAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync((IActor?)null);
-
+        var (principalContext, _, _) = PlatformSettingOptionProviderTestHarness.CreateDefaultAuthMocks();
         var audit = new Mock<IAuditService>();
+        var coordinator = PlatformSettingOptionProviderTestHarness.CreateCoordinator(provider.Object);
 
         var sut = new PlatformSettingsService(
-            new SingleDefinitionRegistry(def),
+            new PlatformSettingOptionProviderTestHarness.SingleDefinitionRegistry(def),
             repo.Object,
             resolver.Object,
-            new SingleOptionProviderRegistry(provider.Object),
+            coordinator,
             principalContext.Object,
             audit.Object);
 
@@ -249,7 +235,10 @@ public sealed class Epic114PlatformSettingOptionProviderTests
 
         var provider = new Mock<IPlatformSettingOptionProvider>();
         provider.SetupGet(p => p.ProviderKey).Returns(PlatformSettingTestDefinitions.ProviderKey);
-        provider.Setup(p => p.GetOptionsAsync(def, It.IsAny<CancellationToken>()))
+        provider.Setup(p => p.GetOptionsAsync(
+                It.IsAny<PlatformSettingDefinition>(),
+                It.IsAny<PlatformSettingOptionProviderContext>(),
+                It.IsAny<CancellationToken>()))
             .ReturnsAsync(providerOptions);
 
         var resolver = new Mock<IPlatformSettingsResolver>();
@@ -260,17 +249,15 @@ public sealed class Epic114PlatformSettingOptionProviderTests
         repo.Setup(x => x.GetByKeyAsync(def.Key, It.IsAny<CancellationToken>()))
             .ReturnsAsync((PlatformSettingValue?)null);
 
-        var principalContext = new Mock<IPrincipalContext>();
-        principalContext.Setup(x => x.GetCurrentActorAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync((IActor?)null);
-
+        var (principalContext, _, _) = PlatformSettingOptionProviderTestHarness.CreateDefaultAuthMocks();
         var audit = new Mock<IAuditService>();
+        var coordinator = PlatformSettingOptionProviderTestHarness.CreateCoordinator(provider.Object);
 
         var sut = new PlatformSettingsService(
-            new SingleDefinitionRegistry(def),
+            new PlatformSettingOptionProviderTestHarness.SingleDefinitionRegistry(def),
             repo.Object,
             resolver.Object,
-            new SingleOptionProviderRegistry(provider.Object),
+            coordinator,
             principalContext.Object,
             audit.Object);
 
@@ -304,28 +291,4 @@ public sealed class Epic114PlatformSettingOptionProviderTests
         CurrentValue = currentValue,
         Source = PlatformSettingValueSource.Database
     };
-
-    private sealed class SingleDefinitionRegistry(PlatformSettingDefinition definition) : IPlatformSettingDefinitionRegistry
-    {
-        public IReadOnlyList<PlatformSettingDefinition> GetAll() => [definition];
-
-        public PlatformSettingDefinition? TryGet(string key) =>
-            string.Equals(key, definition.Key, StringComparison.Ordinal) ? definition : null;
-    }
-
-    private sealed class SingleOptionProviderRegistry(IPlatformSettingOptionProvider provider) : IPlatformSettingOptionProviderRegistry
-    {
-        public bool TryGet(string providerKey, out IPlatformSettingOptionProvider providerOut)
-        {
-            if (string.Equals(providerKey, provider.ProviderKey, StringComparison.Ordinal))
-            {
-                providerOut = provider;
-                return true;
-            }
-
-            providerOut = null!;
-            return false;
-        }
-    }
 }
-

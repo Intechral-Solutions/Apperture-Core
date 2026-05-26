@@ -35,11 +35,14 @@ public sealed class Epic112PlatformSettingsServiceAuditTests
             .Callback<AuditRecord, CancellationToken>((record, _) => auditDetails = record.Details)
             .Returns(ValueTask.CompletedTask);
 
+        var coordinator = PlatformSettingOptionProviderTestHarness.CreateCoordinator(
+            new Mock<IPlatformSettingOptionProvider>().Object);
+
         var sut = new PlatformSettingsService(
             new SingleDefinitionRegistry(def),
             repo.Object,
             resolver.Object,
-            new Mock<IPlatformSettingOptionProviderRegistry>().Object,
+            coordinator,
             principalContext.Object,
             audit.Object);
 

@@ -15,7 +15,7 @@ public sealed class PlatformSettingsService : IPlatformSettingsService
     private readonly IPlatformSettingDefinitionRegistry _registry;
     private readonly IPlatformSettingValueRepository _repository;
     private readonly IPlatformSettingsResolver _resolver;
-    private readonly IPlatformSettingOptionProviderRegistry _optionProviderRegistry;
+    private readonly PlatformSettingOptionProviderCoordinator _optionProviderCoordinator;
     private readonly IPrincipalContext _principalContext;
     private readonly IAuditService _audit;
 
@@ -23,14 +23,14 @@ public sealed class PlatformSettingsService : IPlatformSettingsService
         IPlatformSettingDefinitionRegistry registry,
         IPlatformSettingValueRepository repository,
         IPlatformSettingsResolver resolver,
-        IPlatformSettingOptionProviderRegistry optionProviderRegistry,
+        PlatformSettingOptionProviderCoordinator optionProviderCoordinator,
         IPrincipalContext principalContext,
         IAuditService audit)
     {
         _registry = registry;
         _repository = repository;
         _resolver = resolver;
-        _optionProviderRegistry = optionProviderRegistry;
+        _optionProviderCoordinator = optionProviderCoordinator;
         _principalContext = principalContext;
         _audit = audit;
     }
@@ -57,17 +57,20 @@ public sealed class PlatformSettingsService : IPlatformSettingsService
 
         if (!string.IsNullOrWhiteSpace(def.OptionProviderKey))
         {
-            if (!_optionProviderRegistry.TryGet(def.OptionProviderKey, out var provider))
-                throw new ArgumentException($"No option provider registered for '{def.OptionProviderKey}'.");
-
             IReadOnlyList<PlatformSettingAllowedValue> options;
             try
             {
-                options = await provider.GetOptionsAsync(def, cancellationToken).ConfigureAwait(false);
+                options = await _optionProviderCoordinator
+                    .GetOptionsForValidationAsync(def, payload.IntegrationId, cancellationToken)
+                    .ConfigureAwait(false);
             }
             catch (UnauthorizedAccessException ex)
             {
                 throw new InvalidOperationException(ex.Message);
+            }
+            catch (KeyNotFoundException ex)
+            {
+                throw new ArgumentException(ex.Message);
             }
 
             ValidateProviderMembership(def, parsed, options, key);

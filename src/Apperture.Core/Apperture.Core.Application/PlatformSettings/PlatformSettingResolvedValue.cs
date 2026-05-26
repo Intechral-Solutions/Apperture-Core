@@ -16,6 +16,9 @@ public sealed record PlatformSettingResolvedValue
 
     public string? OptionProviderKey { get; init; }
 
+    public PlatformSettingOptionProviderContextKind OptionProviderContextKind { get; init; }
+        = PlatformSettingOptionProviderContextKind.Instance;
+
     public static readonly IReadOnlyList<PlatformSettingAllowedValue> EmptyAllowedValues = Array.Empty<PlatformSettingAllowedValue>();
 
     public IReadOnlyList<PlatformSettingAllowedValue> AllowedValues { get; init; } = EmptyAllowedValues;

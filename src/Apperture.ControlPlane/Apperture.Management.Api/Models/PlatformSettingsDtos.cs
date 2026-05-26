@@ -27,6 +27,8 @@ public sealed record PlatformSettingResolvedDto
 
     public string? OptionProviderKey { get; init; }
 
+    public string? OptionProviderContextKind { get; init; }
+
     public required string CurrentValue { get; init; }
 
     public IReadOnlyList<string>? CurrentValues { get; init; }
@@ -59,6 +61,8 @@ public sealed record UpdatePlatformSettingRequestBody
     public IReadOnlyList<string>? Values { get; init; }
 
     public string? RowVersionBase64 { get; init; }
+
+    public string? IntegrationId { get; init; }
 }
 
 public static class PlatformSettingsDtoMapper
@@ -73,6 +77,7 @@ public static class PlatformSettingsDtoMapper
             ValueType = value.ValueType.ToString(),
             InputKind = value.InputKind.ToString(),
             OptionProviderKey = value.OptionProviderKey,
+            OptionProviderContextKind = value.OptionProviderContextKind.ToString(),
             CurrentValue = PlatformSettingsValueCodec.ToDisplayString(value.CurrentValue),
             CurrentValues = value.ValueType == PlatformSettingValueType.StringArray
                 ? PlatformSettingsValueCodec.CoerceStringArray(value.CurrentValue)
@@ -102,6 +107,7 @@ public static class PlatformSettingsDtoMapper
         new()
         {
             ScalarValue = body.Value,
-            ArrayValues = body.Values
+            ArrayValues = body.Values,
+            IntegrationId = body.IntegrationId
         };
 }

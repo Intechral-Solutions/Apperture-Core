@@ -8,7 +8,9 @@
 
 **Epic 113 (design spec):** Option providers and scoped settings architecture — see [platform-settings-option-providers-and-scopes.md](platform-settings-option-providers-and-scopes.md).
 
-**Epic 114 (platform option provider prototype):** First provider-backed option flow for `platform.connectorDefinitions` — `OptionProviderKey` on definitions, `GET api/config/platform-settings/{key}/options`, backend validation on write, Select/MultiSelect UI loading. No new production setting keys; test-only definitions validate the path. Same-integration, cross-integration, and module-contributed providers remain deferred.
+**Epic 114 (platform option provider prototype):** First provider-backed option flow for `platform.connectorDefinitions` — `OptionProviderKey` on definitions, `GET api/config/platform-settings/{key}/options`, backend validation on write, Select/MultiSelect UI loading. No new production setting keys; test-only definitions validate the path.
+
+**Epic 115 (integration-scoped provider context foundation):** `OptionProviderContextKind`, `PlatformSettingOptionProviderContext`, optional `integrationId` on options GET and write validation, coordinator + integration authorization. Test-only `test.integration.options`. No production integration-context settings, no remote providers, no integration-scoped persistence. Real same-integration catalogs and cross-integration providers remain deferred.
 
 Phase 1 includes nine platform-owned keys for notification cutover, `PlatformEvents.Enabled`, and attention observation controls. Appsettings remains boot defaults only; runtime updates never write back to JSON files.
 
@@ -125,7 +127,7 @@ Epic 112 implements **static** `AllowedValues`. Epic 114 adds a narrow **platfor
 | Piece | Behavior |
 |-------|----------|
 | Provider key | `platform.connectorDefinitions` (connector definition catalog) |
-| Options API | `GET /api/config/platform-settings/{key}/options` (setting must define `OptionProviderKey`) |
+| Options API | `GET /api/config/platform-settings/{key}/options` (setting must define `OptionProviderKey`); Epic 115 adds optional `?integrationId=` when `OptionProviderContextKind` is `Integration` |
 | Write validation | `SetAsync` re-fetches provider options and rejects values not in the allowed set |
 | UI | Select dropdown / MultiSelect checkboxes load provider options when `AllowedValues` is empty |
 

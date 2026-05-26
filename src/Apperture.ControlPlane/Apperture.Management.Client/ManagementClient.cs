@@ -1209,11 +1209,16 @@ public sealed class ManagementClient : IManagementClient
         return await response.Content.ReadFromJsonAsync<PlatformSettingResolvedDto>(cancellationToken).ConfigureAwait(false);
     }
 
-    public async Task<IReadOnlyList<PlatformSettingAllowedValueDto>?> GetPlatformSettingOptionsAsync(string key, CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<PlatformSettingAllowedValueDto>?> GetPlatformSettingOptionsAsync(
+        string key,
+        string? integrationId = null,
+        CancellationToken cancellationToken = default)
     {
-        using var response = await _http.GetAsync(
-                $"config/platform-settings/{Uri.EscapeDataString(key)}/options",
-                cancellationToken)
+        var path = $"config/platform-settings/{Uri.EscapeDataString(key)}/options";
+        if (!string.IsNullOrWhiteSpace(integrationId))
+            path += $"?integrationId={Uri.EscapeDataString(integrationId)}";
+
+        using var response = await _http.GetAsync(path, cancellationToken)
             .ConfigureAwait(false);
 
         if (response.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)

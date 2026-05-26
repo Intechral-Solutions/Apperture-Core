@@ -21,6 +21,12 @@ public sealed record PlatformSettingDefinition
     /// </summary>
     public string? OptionProviderKey { get; init; }
 
+    /// <summary>
+    /// Required provider context for option lookup and write-time validation. Defaults to instance-wide catalogs.
+    /// </summary>
+    public PlatformSettingOptionProviderContextKind OptionProviderContextKind { get; init; }
+        = PlatformSettingOptionProviderContextKind.Instance;
+
     /// <summary>IConfiguration path (colon-separated) for boot default resolution.</summary>
     public required string ConfigurationPath { get; init; }
 

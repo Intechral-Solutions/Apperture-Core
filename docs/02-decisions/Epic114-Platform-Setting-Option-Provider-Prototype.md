@@ -38,7 +38,9 @@ Implement a narrow provider-backed path for platform settings:
 
 ## Recommended next epic
 
-**Epic 115 (suggested):** Same-integration provider prototype (e.g. `campusnexus.campuses`) with integration-scoped request context.
+**Epic 115 (delivered):** Integration-scoped provider context foundation — see [Epic115-Integration-Scoped-Option-Provider-Foundation.md](./Epic115-Integration-Scoped-Option-Provider-Foundation.md).
+
+**Epic 116 (suggested):** First real same-integration option provider (e.g. `campusnexus.campuses`) with integration context from Epic 115.
 
 ## References
 

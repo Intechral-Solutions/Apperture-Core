@@ -26,12 +26,13 @@ public sealed class PlatformSettingsServiceValidationTests
             ]);
         var principalContext = new Mock<IPrincipalContext>();
         var audit = new Mock<IAuditService>();
-        var optionProviderRegistry = new Mock<IPlatformSettingOptionProviderRegistry>();
+        var coordinator = PlatformSettingOptionProviderTestHarness.CreateCoordinator(
+            new Mock<IPlatformSettingOptionProvider>().Object);
         var sut = new PlatformSettingsService(
             registry,
             repo.Object,
             resolver.Object,
-            optionProviderRegistry.Object,
+            coordinator,
             principalContext.Object,
             audit.Object);
 
