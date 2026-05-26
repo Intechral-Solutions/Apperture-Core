@@ -107,6 +107,8 @@ public sealed class PlatformSettingsResolver : IPlatformSettingsResolver
         new()
         {
             Key = def.Key,
+            ValueScopeKind = PlatformSettingScopeConstants.InstanceKind,
+            ValueScopeId = PlatformSettingScopeConstants.InstanceId,
             DisplayName = def.DisplayName,
             Description = def.Description,
             Category = def.Category,

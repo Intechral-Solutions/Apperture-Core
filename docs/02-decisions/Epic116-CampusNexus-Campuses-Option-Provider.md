@@ -32,8 +32,8 @@
 ## Recommended next steps
 
 - Epic 117 design completed: [Epic117-Integration-Scoped-Settings-Design.md](./Epic117-Integration-Scoped-Settings-Design.md)
-- Epic 118 implementation target: integration-scoped persistence and explicit integration settings API
-- Integration Detail settings UI delivery after Epic 118 foundation
+- Epic 118 delivered: integration-scoped persistence and explicit integration settings API
+- Epic 119: Integration Detail settings UI
 
 ## References
 

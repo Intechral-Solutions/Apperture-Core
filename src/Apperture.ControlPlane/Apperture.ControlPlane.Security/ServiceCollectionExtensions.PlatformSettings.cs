@@ -21,6 +21,7 @@ public static class PlatformSettingsServiceCollectionExtensions
         services.AddScoped<IPlatformSettingOptionProvider, PlatformConnectorDefinitionsOptionProvider>();
         services.AddScoped<IPlatformSettingOptionProvider, CampusNexusCampusesOptionProvider>();
         services.AddScoped<PlatformSettingOptionProviderAuthorization>();
+        services.AddScoped<IntegrationSettingOptionProviderAuthorization>();
         services.AddScoped<PlatformSettingOptionProviderCoordinator>();
         return services;
     }
@@ -30,6 +31,10 @@ public static class PlatformSettingsServiceCollectionExtensions
         IConfiguration configuration)
     {
         services.AddApperturePlatformSettingsCore();
+        services.AddSingleton<IIntegrationSettingDefinitionRegistry, IntegrationSettingDefinitionRegistry>();
+        services.AddScoped<IIntegrationSettingsResolver, IntegrationSettingsResolver>();
+        services.AddScoped<IIntegrationSettingsService, IntegrationSettingsService>();
+        services.AddScoped<IntegrationSettingsAuthorization>();
         services.AddScoped<IPlatformSettingsService, PlatformSettingsService>();
 
         services.AddSingleton<IPostConfigureOptions<NotificationEvaluationOptions>, NotificationEvaluationOptionsPlatformSettingsPostConfigure>();

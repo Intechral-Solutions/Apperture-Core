@@ -15,6 +15,10 @@ public sealed record PlatformSettingResolvedDto
 {
     public required string Key { get; init; }
 
+    public string ValueScopeKind { get; init; } = PlatformSettingScopeConstants.InstanceKind;
+
+    public string? ValueScopeId { get; init; }
+
     public required string DisplayName { get; init; }
 
     public required string Description { get; init; }
@@ -71,6 +75,8 @@ public static class PlatformSettingsDtoMapper
         new()
         {
             Key = value.Key,
+            ValueScopeKind = value.ValueScopeKind,
+            ValueScopeId = value.ValueScopeId,
             DisplayName = value.DisplayName,
             Description = value.Description,
             Category = value.Category.ToString(),
@@ -109,5 +115,14 @@ public static class PlatformSettingsDtoMapper
             ScalarValue = body.Value,
             ArrayValues = body.Values,
             IntegrationId = body.IntegrationId
+        };
+
+    /// <summary>Integration settings route supplies integration context; body IntegrationId is ignored.</summary>
+    public static PlatformSettingUpdatePayload ToIntegrationPayload(UpdatePlatformSettingRequestBody body) =>
+        new()
+        {
+            ScalarValue = body.Value,
+            ArrayValues = body.Values,
+            IntegrationId = null
         };
 }

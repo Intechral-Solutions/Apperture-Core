@@ -51,15 +51,11 @@ public sealed class PlatformSettingsResolverTests
             config);
     }
 
-    private sealed class FakeRepo : IPlatformSettingValueRepository
+    private sealed class FakeRepo : PlatformSettingRepositoryFake
     {
-        private readonly PlatformSettingValue? _value;
-        public FakeRepo(PlatformSettingValue? value) => _value = value;
-        public Task<PlatformSettingValue?> GetByKeyAsync(string key, CancellationToken cancellationToken = default) =>
-            Task.FromResult(_value is not null && _value.Key == key ? _value : null);
-        public Task<IReadOnlyList<PlatformSettingValue>> ListInstanceAsync(CancellationToken cancellationToken = default) =>
-            Task.FromResult<IReadOnlyList<PlatformSettingValue>>(_value is null ? [] : [_value]);
-        public Task UpsertAsync(PlatformSettingValue value, byte[]? expectedRowVersion, CancellationToken cancellationToken = default) => Task.CompletedTask;
-        public Task<bool> DeleteAsync(string key, CancellationToken cancellationToken = default) => Task.FromResult(false);
+        public FakeRepo(PlatformSettingValue? value)
+            : base(value is null ? [] : [value])
+        {
+        }
     }
 }

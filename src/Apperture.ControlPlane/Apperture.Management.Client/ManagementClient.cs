@@ -1235,6 +1235,96 @@ public sealed class ManagementClient : IManagementClient
         return dtoList;
     }
 
+    public async Task<IReadOnlyList<PlatformSettingResolvedDto>?> ListIntegrationSettingsAsync(
+        string integrationId,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await _http
+            .GetAsync($"integrations/{Uri.EscapeDataString(integrationId)}/settings", cancellationToken)
+            .ConfigureAwait(false);
+        if (response.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
+            return null;
+        response.EnsureSuccessStatusCode();
+        var dto = await response.Content.ReadFromJsonAsync<PlatformSettingResolvedDto[]>(cancellationToken).ConfigureAwait(false);
+        return dto ?? Array.Empty<PlatformSettingResolvedDto>();
+    }
+
+    public async Task<PlatformSettingResolvedDto?> GetIntegrationSettingAsync(
+        string integrationId,
+        string key,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await _http
+            .GetAsync(
+                $"integrations/{Uri.EscapeDataString(integrationId)}/settings/{Uri.EscapeDataString(key)}",
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (response.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
+            return null;
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<PlatformSettingResolvedDto>(cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<PlatformSettingResolvedDto> SetIntegrationSettingAsync(
+        string integrationId,
+        string key,
+        UpdatePlatformSettingRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.PutAsJsonAsync(
+            $"integrations/{Uri.EscapeDataString(integrationId)}/settings/{Uri.EscapeDataString(key)}",
+            request,
+            cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode is HttpStatusCode.BadRequest or HttpStatusCode.Conflict or HttpStatusCode.Forbidden)
+        {
+            var detail = await TryReadManagementApiErrorAsync(response, cancellationToken).ConfigureAwait(false);
+            throw new HttpRequestException(
+                string.IsNullOrWhiteSpace(detail) ? response.ReasonPhrase : detail,
+                null,
+                response.StatusCode);
+        }
+
+        response.EnsureSuccessStatusCode();
+        var dto = await response.Content.ReadFromJsonAsync<PlatformSettingResolvedDto>(cancellationToken).ConfigureAwait(false);
+        return dto ?? throw new InvalidOperationException("integration-settings put response was empty.");
+    }
+
+    public async Task<PlatformSettingResolvedDto?> ResetIntegrationSettingAsync(
+        string integrationId,
+        string key,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.DeleteAsync(
+            $"integrations/{Uri.EscapeDataString(integrationId)}/settings/{Uri.EscapeDataString(key)}",
+            cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
+            return null;
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<PlatformSettingResolvedDto>(cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<IReadOnlyList<PlatformSettingAllowedValueDto>?> GetIntegrationSettingOptionsAsync(
+        string integrationId,
+        string key,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.GetAsync(
+            $"integrations/{Uri.EscapeDataString(integrationId)}/settings/{Uri.EscapeDataString(key)}/options",
+            cancellationToken).ConfigureAwait(false);
+
+        if (response.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
+            return null;
+
+        if (response.StatusCode != HttpStatusCode.OK)
+        {
+            var detail = await TryReadManagementApiErrorAsync(response, cancellationToken).ConfigureAwait(false);
+            var message = string.IsNullOrWhiteSpace(detail) ? response.ReasonPhrase : detail;
+            throw new HttpRequestException(message, null, response.StatusCode);
+        }
+
+        return await response.Content.ReadFromJsonAsync<PlatformSettingAllowedValueDto[]>(cancellationToken).ConfigureAwait(false);
+    }
+
     public async Task<ConfigAuthOverviewDto?> GetConfigAuthOverviewAsync(CancellationToken cancellationToken = default)
     {
         using var response = await _http.GetAsync("config/auth-overview", cancellationToken).ConfigureAwait(false);

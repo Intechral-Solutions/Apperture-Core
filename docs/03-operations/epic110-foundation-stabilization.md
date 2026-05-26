@@ -141,9 +141,9 @@ See [platform-settings-registry.md](../01-architecture/platform-settings-registr
 
 ---
 
-## Epics 111–117 (delivered)
+## Epics 111–118 (delivered)
 
-Decision records: [Epic 111](../02-decisions/Epic111-Platform-Settings-Operator-UI-Polish.md) through [Epic 117](../02-decisions/Epic117-Integration-Scoped-Settings-Design.md).
+Decision records: [Epic 111](../02-decisions/Epic111-Platform-Settings-Operator-UI-Polish.md) through [Epic 118](../02-decisions/Epic118-Integration-Settings-API-Foundation.md).
 
 | Epic | Summary |
 |------|---------|
@@ -154,10 +154,11 @@ Decision records: [Epic 111](../02-decisions/Epic111-Platform-Settings-Operator-
 | **115** | Integration-scoped provider context (`OptionProviderContextKind`, `?integrationId=`, coordinator); test-only provider |
 | **116** | `campusnexus.campuses` — Campus Nexus OData campuses via `CnsApi` slot; test-only setting definition |
 | **117** | Integration-scoped settings + Integration Detail settings UI design spec (docs-only) |
+| **118** | Integration-scoped persistence + `/api/integrations/{id}/settings` API; audit; client methods; no production integration keys |
 
-## Recommended next epic (post-117)
+## Recommended next epic (post-118)
 
-Epic 118 implementation: integration-scoped settings persistence and API foundation; then Integration Detail settings UI delivery.
+Epic 119: Integration Detail settings UI at `/integrations/{integrationId}/settings`. Then Epic 120 first production module-owned integration setting.
 
 Alternatively: expanded WorkerHost runtime overlays for Phase 1 keys, **Epic 108b DPAPI** credential binding, or a broader UI/design-system sweep — per team priority.
 

@@ -20,6 +20,13 @@ internal static class PlatformSettingTestDefinitions
 
     public const string CampusNexusProviderBackedSelectKey = "Test.CampusNexus.Campuses.Select.Sample";
 
+    public const string IntegrationScopedSelectKey = "Test.IntegrationScoped.Select.Sample";
+
+    public const string IntegrationScopedMultiSelectKey = "Test.IntegrationScoped.MultiSelect.Sample";
+
+    private static readonly PlatformSettingValueScopeKind[] IntegrationValueScopes =
+        [PlatformSettingValueScopeKind.Integration];
+
     public static PlatformSettingDefinition MultiSelectSample => new()
     {
         Key = MultiSelectKey,
@@ -94,5 +101,41 @@ internal static class PlatformSettingTestDefinitions
         OptionProviderContextKind = PlatformSettingOptionProviderContextKind.Integration,
         ConfigurationPath = "Test:CampusNexus:Campuses:Select:Sample",
         DefaultValue = "1"
+    };
+
+    public static PlatformSettingDefinition IntegrationScopedSelectSample => new()
+    {
+        Key = IntegrationScopedSelectKey,
+        DisplayName = "Integration-scoped select (test-only)",
+        Description = "Test-only integration value scope with integration-context provider for Epic 118.",
+        Category = PlatformSettingCategory.PlatformEvents,
+        ValueType = PlatformSettingValueType.String,
+        InputKind = PlatformSettingInputKind.Select,
+        OptionProviderKey = IntegrationProviderKey,
+        OptionProviderContextKind = PlatformSettingOptionProviderContextKind.Integration,
+        AllowedValueScopes = IntegrationValueScopes,
+        ConfigurationPath = "Test:IntegrationScoped:Select:Sample",
+        DefaultValue = "int-test:alpha"
+    };
+
+    public static PlatformSettingDefinition IntegrationScopedMultiSelectSample => new()
+    {
+        Key = IntegrationScopedMultiSelectKey,
+        DisplayName = "Integration-scoped multi-select (test-only)",
+        Description = "Test-only integration value scope multi-select for Epic 118.",
+        Category = PlatformSettingCategory.PlatformEvents,
+        ValueType = PlatformSettingValueType.StringArray,
+        InputKind = PlatformSettingInputKind.MultiSelect,
+        AllowedValueScopes = IntegrationValueScopes,
+        ConfigurationPath = "Test:IntegrationScoped:MultiSelect:Sample",
+        DefaultValue = new[] { "alpha" },
+        AllowedValues =
+        [
+            new PlatformSettingAllowedValue { Value = "alpha", Label = "Alpha" },
+            new PlatformSettingAllowedValue { Value = "beta", Label = "Beta" },
+            new PlatformSettingAllowedValue { Value = "gamma", Label = "Gamma" }
+        ],
+        MinItems = 0,
+        MaxItems = 2
     };
 }

@@ -16,6 +16,8 @@
 
 **Epic 117 (integration-scoped settings design):** Canonical design for integration-scoped value storage, integration settings API, Integration Detail settings surface, auth/audit model, runtime consumption boundaries, and phased implementation sequence. See [integration-scoped-settings.md](integration-scoped-settings.md).
 
+**Epic 118 (integration-scoped API foundation):** Integration value scope in `PlatformSettingValues` (`Integration` + `integrationId`); `IntegrationSettingsService` / resolver; `/api/integrations/{integrationId}/settings` routes; `AllowedValueScopes` on definitions; empty production integration registry. Instance platform settings unchanged. UI and runtime consumption deferred (Epics 119–120).
+
 Phase 1 includes nine platform-owned keys for notification cutover, `PlatformEvents.Enabled`, and attention observation controls. Appsettings remains boot defaults only; runtime updates never write back to JSON files.
 
 **Decision anchor:** [ADR-0039: Environment, startup, bootstrap, and platform settings](../02-decisions/ADR-0039-environment-startup-bootstrap-and-platform-settings.md).

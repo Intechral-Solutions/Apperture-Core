@@ -8,7 +8,7 @@
 | [bootstrap-and-secrets-boundary.md](bootstrap-and-secrets-boundary.md) | Bootstrap vs operational secrets, dependency direction, do-not-do list |
 | [platform-settings-registry.md](platform-settings-registry.md) | Platform-managed settings registry — **Phase 1 delivered (Epic 109)**; API/UI at `/config/platform-settings` |
 | [platform-settings-option-providers-and-scopes.md](platform-settings-option-providers-and-scopes.md) | **Epic 113 design** — dynamic option providers, scoped settings, module/cross-integration boundaries (spec only) |
-| [integration-scoped-settings.md](integration-scoped-settings.md) | **Epic 117 design** — integration-scoped setting value model, API/UI shape, audit/auth/runtime boundaries |
+| [integration-scoped-settings.md](integration-scoped-settings.md) | Integration-scoped settings — Epic 117 design; Epic 118 API foundation; Epic 119 UI deferred |
 | [authorization-and-governance-foundation.md](authorization-and-governance-foundation.md) | Auth/governance scaffolding — principal, role, permission, IGovernedResource; RBAC + scope containment; Phase 4 readiness |
 | [connector-resource-family.md](connector-resource-family.md) | First governed resource family — connectors, connections, slots, bindings; auth participation |
 | [control-plane-connector-workflows.md](control-plane-connector-workflows.md) | Connection/binding application workflows; auth enforcement; eligibility |

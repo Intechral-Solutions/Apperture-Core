@@ -27,6 +27,10 @@ public sealed record PlatformSettingDefinition
     public PlatformSettingOptionProviderContextKind OptionProviderContextKind { get; init; }
         = PlatformSettingOptionProviderContextKind.Instance;
 
+    /// <summary>Value scopes where this setting may be stored (instance, integration, etc.).</summary>
+    public IReadOnlyList<PlatformSettingValueScopeKind> AllowedValueScopes { get; init; }
+        = [PlatformSettingValueScopeKind.Instance];
+
     /// <summary>IConfiguration path (colon-separated) for boot default resolution.</summary>
     public required string ConfigurationPath { get; init; }
 

@@ -38,7 +38,7 @@ Docs-only epic. No build/tests run.
 
 ## Recommended next epic
 
-**Epic 118:** Integration-scoped settings persistence and API foundation.
+**Epic 118:** Integration-scoped settings persistence and API foundation — [delivered](Epic118-Integration-Settings-API-Foundation.md).
 
 ## References
 

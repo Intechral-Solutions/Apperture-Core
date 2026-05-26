@@ -38,14 +38,11 @@ internal static class PlatformSettingOptionProviderTestHarness
         var auth = authorization ?? defaultAuthorization;
         var integrationRepo = integrations ?? new Mock<IIntegrationRepository>();
 
-        var authService = new PlatformSettingOptionProviderAuthorization(
-            principal.Object,
-            auth.Object,
-            integrationRepo.Object);
-
-        return new PlatformSettingOptionProviderCoordinator(
+        return CreateCoordinator(
             new SingleOptionProviderRegistry(provider),
-            authService);
+            principal,
+            auth,
+            integrationRepo);
     }
 
     public static PlatformSettingOptionProviderCoordinator CreateCoordinator(
@@ -60,12 +57,26 @@ internal static class PlatformSettingOptionProviderTestHarness
         var auth = authorization ?? defaultAuthorization;
         var integrationRepo = integrations ?? new Mock<IIntegrationRepository>();
 
-        var authService = new PlatformSettingOptionProviderAuthorization(
+        return CreateCoordinator(registry, principal, auth, integrationRepo);
+    }
+
+    private static PlatformSettingOptionProviderCoordinator CreateCoordinator(
+        IPlatformSettingOptionProviderRegistry registry,
+        Mock<IPrincipalContext> principal,
+        Mock<IAuthorizationEvaluationService> auth,
+        Mock<IIntegrationRepository> integrationRepo)
+    {
+        var platformAuth = new PlatformSettingOptionProviderAuthorization(
             principal.Object,
             auth.Object,
             integrationRepo.Object);
 
-        return new PlatformSettingOptionProviderCoordinator(registry, authService);
+        var integrationAuth = new IntegrationSettingOptionProviderAuthorization(
+            principal.Object,
+            auth.Object,
+            integrationRepo.Object);
+
+        return new PlatformSettingOptionProviderCoordinator(registry, platformAuth, integrationAuth);
     }
 
     internal sealed class SingleOptionProviderRegistry(IPlatformSettingOptionProvider provider) : IPlatformSettingOptionProviderRegistry

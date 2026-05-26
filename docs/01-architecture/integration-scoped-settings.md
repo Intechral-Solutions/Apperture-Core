@@ -1,15 +1,22 @@
-# Integration-scoped settings and Integration Detail settings UI (Epic 117 design)
+# Integration-scoped settings and Integration Detail settings UI
 
 ## Status
 
-**Epic 117 — design specification only.** This document defines how integration-scoped settings should be modeled, stored, resolved, managed in API/UI, audited, and consumed by runtime services. It does not implement persistence/API/UI/runtime changes.
+**Epic 117 — design (delivered).** This document is the canonical model for integration-scoped settings.
+
+**Epic 118 — backend/API foundation (delivered).** Integration value scope is implemented: scoped repository, `IntegrationSettingsResolver` / `IntegrationSettingsService`, explicit routes under `/api/integrations/{integrationId}/settings`, integration-only authorization (`integration.read` / `integration.update`), audit actions `integration.settings.set` / `integration.settings.reset`, and management client methods. Production integration setting keys remain empty until Epic 120.
+
+**Epic 119 — deferred.** Integration Detail settings UI at `/integrations/{integrationId}/settings`.
+
+**Not implemented:** runtime WorkerHost consumption, module-contributed definitions, cross-integration `ProviderBinding`.
 
 **Current baseline:**
 
 - Instance-scoped platform settings registry (Epics 109, 111, 112)
 - Provider-backed options and write validation (Epic 114)
-- Integration provider context (`integrationId`) for options/validation (Epic 115)
+- Integration provider context (`integrationId`) for options/validation on platform route (Epic 115)
 - First real same-integration provider `campusnexus.campuses` (Epic 116)
+- Integration-scoped value persistence and API (Epic 118)
 
 ---
 
@@ -58,7 +65,7 @@ Recommended values:
 - Instance: `ScopeKind = "Instance"`, `ScopeId = "instance"` (match existing constant)
 - Integration: `ScopeKind = "Integration"`, `ScopeId = integrationId`
 
-No schema change is required for this first step; repository/service/resolver behavior must be expanded later.
+No schema change was required; Epic 118 expanded repository/service/resolver and API behavior for `Integration` scope.
 
 ---
 
@@ -262,12 +269,12 @@ Initial runtime behavior recommendation:
 
 ## O. Recommended implementation sequence
 
-1. **Epic 118 — Integration-scoped persistence and API foundation**
-   - Scoped repository/service/resolver behavior for `Integration`
-   - Integration settings API routes
-   - Audit actions
-   - One safe platform-owned integration setting
-2. **Epic 119 — Integration Detail settings UI**
+1. **Epic 118 — Integration-scoped persistence and API foundation** (delivered)
+   - Scoped repository/service/resolver for `Integration`
+   - `/api/integrations/{integrationId}/settings` routes
+   - `integration.settings.set` / `integration.settings.reset` audit
+   - Empty production integration definition registry (test-only keys in unit tests)
+2. **Epic 119 — Integration Detail settings UI** (next)
    - `/integrations/{id}/settings`
    - Reuse typed setting editors and source badges
    - Provider-backed options with implicit integration context

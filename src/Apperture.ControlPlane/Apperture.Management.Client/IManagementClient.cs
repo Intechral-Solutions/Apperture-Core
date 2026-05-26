@@ -408,6 +408,36 @@ public interface IManagementClient
         string? integrationId = null,
         CancellationToken cancellationToken = default);
 
+    /// <summary>Lists integration-scoped settings. Returns null on 401/403/404.</summary>
+    Task<IReadOnlyList<PlatformSettingResolvedDto>?> ListIntegrationSettingsAsync(
+        string integrationId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>Gets one integration-scoped setting. Returns null on 404/401/403.</summary>
+    Task<PlatformSettingResolvedDto?> GetIntegrationSettingAsync(
+        string integrationId,
+        string key,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>Updates an integration-scoped setting. Throws on 400/403/409.</summary>
+    Task<PlatformSettingResolvedDto> SetIntegrationSettingAsync(
+        string integrationId,
+        string key,
+        UpdatePlatformSettingRequest request,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>Resets an integration-scoped setting DB override. Returns null on 404/401/403.</summary>
+    Task<PlatformSettingResolvedDto?> ResetIntegrationSettingAsync(
+        string integrationId,
+        string key,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>Loads provider-backed options for an integration-scoped setting.</summary>
+    Task<IReadOnlyList<PlatformSettingAllowedValueDto>?> GetIntegrationSettingOptionsAsync(
+        string integrationId,
+        string key,
+        CancellationToken cancellationToken = default);
+
     /// <summary>Authentication overview for Config (Epic 44). Returns null on 401/403.</summary>
     Task<ConfigAuthOverviewDto?> GetConfigAuthOverviewAsync(CancellationToken cancellationToken = default);
 
@@ -758,7 +788,9 @@ public sealed record PlatformSettingResolvedDto(
     int? MinItems = null,
     int? MaxItems = null,
     IReadOnlyList<string>? CurrentValues = null,
-    IReadOnlyList<PlatformSettingAllowedValueDto>? AllowedValues = null);
+    IReadOnlyList<PlatformSettingAllowedValueDto>? AllowedValues = null,
+    string ValueScopeKind = "Instance",
+    string? ValueScopeId = null);
 
 public sealed record UpdatePlatformSettingRequest(
     string? Value = null,

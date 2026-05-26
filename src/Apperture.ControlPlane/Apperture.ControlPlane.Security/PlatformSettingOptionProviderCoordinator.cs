@@ -10,13 +10,16 @@ public sealed class PlatformSettingOptionProviderCoordinator
 {
     private readonly IPlatformSettingOptionProviderRegistry _optionProviderRegistry;
     private readonly PlatformSettingOptionProviderAuthorization _authorization;
+    private readonly IntegrationSettingOptionProviderAuthorization _integrationAuthorization;
 
     public PlatformSettingOptionProviderCoordinator(
         IPlatformSettingOptionProviderRegistry optionProviderRegistry,
-        PlatformSettingOptionProviderAuthorization authorization)
+        PlatformSettingOptionProviderAuthorization authorization,
+        IntegrationSettingOptionProviderAuthorization integrationAuthorization)
     {
         _optionProviderRegistry = optionProviderRegistry;
         _authorization = authorization;
+        _integrationAuthorization = integrationAuthorization;
     }
 
     public async Task<IReadOnlyList<PlatformSettingAllowedValue>> GetOptionsForReadAsync(
@@ -41,6 +44,30 @@ public sealed class PlatformSettingOptionProviderCoordinator
         var actor = await _authorization.RequireManageAsync(
                 ResolveIntegrationIdForAuthorization(definition, integrationId),
                 cancellationToken)
+            .ConfigureAwait(false);
+
+        var context = BuildContext(definition, integrationId, actor);
+        return await InvokeProviderAsync(definition, context, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<IReadOnlyList<PlatformSettingAllowedValue>> GetOptionsForIntegrationSettingsReadAsync(
+        PlatformSettingDefinition definition,
+        string integrationId,
+        CancellationToken cancellationToken)
+    {
+        var actor = await _integrationAuthorization.RequireReadAsync(integrationId, cancellationToken)
+            .ConfigureAwait(false);
+
+        var context = BuildContext(definition, integrationId, actor);
+        return await InvokeProviderAsync(definition, context, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<IReadOnlyList<PlatformSettingAllowedValue>> GetOptionsForIntegrationSettingsValidationAsync(
+        PlatformSettingDefinition definition,
+        string integrationId,
+        CancellationToken cancellationToken)
+    {
+        var actor = await _integrationAuthorization.RequireManageAsync(integrationId, cancellationToken)
             .ConfigureAwait(false);
 
         var context = BuildContext(definition, integrationId, actor);

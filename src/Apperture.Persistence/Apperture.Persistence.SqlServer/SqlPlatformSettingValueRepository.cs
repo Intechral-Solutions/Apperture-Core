@@ -10,29 +10,39 @@ public sealed class SqlPlatformSettingValueRepository : IPlatformSettingValueRep
 
     public SqlPlatformSettingValueRepository(AppertureDbContext db) => _db = db;
 
-    public async Task<PlatformSettingValue?> GetByKeyAsync(string key, CancellationToken cancellationToken = default)
+    public Task<PlatformSettingValue?> GetByKeyAsync(string key, CancellationToken cancellationToken = default) =>
+        GetScopedAsync(key, PlatformSettingScopeConstants.InstanceKind, PlatformSettingScopeConstants.InstanceId, cancellationToken);
+
+    public Task<IReadOnlyList<PlatformSettingValue>> ListInstanceAsync(CancellationToken cancellationToken = default) =>
+        ListScopedAsync(PlatformSettingScopeConstants.InstanceKind, PlatformSettingScopeConstants.InstanceId, cancellationToken);
+
+    public async Task<PlatformSettingValue?> GetScopedAsync(
+        string key,
+        string scopeKind,
+        string scopeId,
+        CancellationToken cancellationToken = default)
     {
         var entity = await _db.PlatformSettingValues.AsNoTracking()
             .FirstOrDefaultAsync(
-                x => x.Key == key &&
-                     x.ScopeKind == PlatformSettingScopeConstants.InstanceKind &&
-                     x.ScopeId == PlatformSettingScopeConstants.InstanceId,
+                x => x.Key == key && x.ScopeKind == scopeKind && x.ScopeId == scopeId,
                 cancellationToken);
         return entity is null ? null : ToDomain(entity);
     }
 
-    public async Task<IReadOnlyList<PlatformSettingValue>> ListInstanceAsync(CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<PlatformSettingValue>> ListScopedAsync(
+        string scopeKind,
+        string scopeId,
+        CancellationToken cancellationToken = default)
     {
         var list = await _db.PlatformSettingValues.AsNoTracking()
-            .Where(x => x.ScopeKind == PlatformSettingScopeConstants.InstanceKind &&
-                        x.ScopeId == PlatformSettingScopeConstants.InstanceId)
+            .Where(x => x.ScopeKind == scopeKind && x.ScopeId == scopeId)
             .ToListAsync(cancellationToken);
         return list.Select(ToDomain).ToList();
     }
 
     public async Task UpsertAsync(PlatformSettingValue value, byte[]? expectedRowVersion, CancellationToken cancellationToken = default)
     {
-        var id = BuildId(value.Key);
+        var id = BuildId(value.ScopeKind, value.ScopeId, value.Key);
         var entity = await _db.PlatformSettingValues
             .FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
 
@@ -68,9 +78,16 @@ public sealed class SqlPlatformSettingValueRepository : IPlatformSettingValueRep
         await _db.SaveChangesAsync(cancellationToken);
     }
 
-    public async Task<bool> DeleteAsync(string key, CancellationToken cancellationToken = default)
+    public Task<bool> DeleteAsync(string key, CancellationToken cancellationToken = default) =>
+        DeleteScopedAsync(key, PlatformSettingScopeConstants.InstanceKind, PlatformSettingScopeConstants.InstanceId, cancellationToken);
+
+    public async Task<bool> DeleteScopedAsync(
+        string key,
+        string scopeKind,
+        string scopeId,
+        CancellationToken cancellationToken = default)
     {
-        var id = BuildId(key);
+        var id = BuildId(scopeKind, scopeId, key);
         var entity = await _db.PlatformSettingValues.FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
         if (entity is null)
             return false;
@@ -80,8 +97,8 @@ public sealed class SqlPlatformSettingValueRepository : IPlatformSettingValueRep
         return true;
     }
 
-    internal static string BuildId(string key) =>
-        $"{PlatformSettingScopeConstants.InstanceKind}:{PlatformSettingScopeConstants.InstanceId}:{key}";
+    internal static string BuildId(string scopeKind, string scopeId, string key) =>
+        $"{scopeKind}:{scopeId}:{key}";
 
     private static PlatformSettingValue ToDomain(PlatformSettingValueEntity e) =>
         new()

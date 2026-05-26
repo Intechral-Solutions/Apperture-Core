@@ -4,6 +4,10 @@ public sealed record PlatformSettingResolvedValue
 {
     public required string Key { get; init; }
 
+    public string ValueScopeKind { get; init; } = PlatformSettingScopeConstants.InstanceKind;
+
+    public string? ValueScopeId { get; init; }
+
     public required string DisplayName { get; init; }
 
     public required string Description { get; init; }

@@ -10,23 +10,27 @@
 
 **Epic 116 — delivered (first real same-integration provider):** `campusnexus.campuses` — active Campus Nexus campuses via OData `Campuses` entity set; resolves `ICampusNexusApiClient` through `IRuntimeSlotResolver` (`CnsApi` slot). No production setting key; test-only definition validates the path.
 
-**Epic 117 — delivered (design):** Integration-scoped value model and Integration Detail settings UI design documented in [integration-scoped-settings.md](integration-scoped-settings.md). No implementation changes in this epic.
+**Epic 117 — delivered (design):** Integration-scoped value model and Integration Detail settings UI design documented in [integration-scoped-settings.md](integration-scoped-settings.md).
+
+**Epic 118 — delivered (integration value scope + API):** Integration-scoped persistence and `/api/integrations/{integrationId}/settings` routes. Route `integrationId` supplies both value scope and provider context (no `?integrationId=` query). Integration settings auth uses `integration.read` / `integration.update` only. Platform route `/api/config/platform-settings` unchanged (Epic 115/116 provider context still stores instance values).
 
 **Prerequisites (delivered):**
 
 - [platform-settings-registry.md](platform-settings-registry.md) — Phase 1 registry (Epic 109), operator UI (Epic 111), `StringArray` / static MultiSelect (Epic 112)
 - [ADR-0039: Environment, startup, bootstrap, and platform settings](../02-decisions/ADR-0039-environment-startup-bootstrap-and-platform-settings.md)
 
-**Recommended next:** Epic 118 implementation of integration-scoped persistence and explicit integration settings API, followed by Integration Detail settings UI delivery.
+**Recommended next:** Epic 119 Integration Detail settings UI at `/integrations/{integrationId}/settings`, then Epic 120 first production integration setting key.
 
 ---
 
-## Epic 115 — Provider context vs value scope (delivered)
+## Provider context vs value scope
 
-| Concept | Role | Epic 115 |
-|---------|------|----------|
-| **Provider context** | Where option values **come from** when loading/validating | `PlatformSettingOptionProviderContext` with `ContextKind` (`Instance` \| `Integration`) and optional `IntegrationId` |
-| **Setting value scope** | Where the setting value is **stored** | Unchanged — Phase 1 remains instance-scoped (`Instance` / `instance`) |
+| Concept | Role | Notes |
+|---------|------|-------|
+| **Provider context** | Where option values **come from** when loading/validating | `PlatformSettingOptionProviderContext` with `ContextKind` (`Instance` \| `Integration`) and `IntegrationId` when required |
+| **Setting value scope** | Where the setting value is **stored** | Instance: `/api/config/platform-settings` → `Instance` / `instance`. Integration: `/api/integrations/{integrationId}/settings` → `Integration` / `integrationId` (Epic 118) |
+
+On the **platform** route, integration-context providers (Epic 115/116) still persist **instance-scoped** values. On the **integration** route (Epic 118), integration-context providers persist **integration-scoped** values.
 
 Definition metadata: `OptionProviderContextKind` (default `Instance`) alongside `OptionProviderKey`.
 

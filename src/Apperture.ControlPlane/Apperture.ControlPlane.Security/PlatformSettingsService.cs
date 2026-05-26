@@ -50,6 +50,13 @@ public sealed class PlatformSettingsService : IPlatformSettingsService
         var def = _registry.TryGet(key)
             ?? throw new ArgumentException($"Unknown platform setting key '{key}'.", nameof(key));
 
+        if (!def.AllowedValueScopes.Contains(PlatformSettingValueScopeKind.Instance))
+        {
+            throw new ArgumentException(
+                $"Setting '{key}' is not applicable at instance value scope.",
+                nameof(key));
+        }
+
         if (!def.Editable)
             throw new InvalidOperationException($"Setting '{key}' is not editable.");
 
@@ -139,6 +146,9 @@ public sealed class PlatformSettingsService : IPlatformSettingsService
     {
         var def = _registry.TryGet(key);
         if (def is null)
+            return null;
+
+        if (!def.AllowedValueScopes.Contains(PlatformSettingValueScopeKind.Instance))
             return null;
 
         var existing = await _repository.GetByKeyAsync(key, cancellationToken).ConfigureAwait(false);

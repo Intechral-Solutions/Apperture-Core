@@ -28,6 +28,7 @@
 | [Epic 115](Epic115-Integration-Scoped-Option-Provider-Foundation.md) | Integration-scoped provider context foundation |
 | [Epic 116](Epic116-CampusNexus-Campuses-Option-Provider.md) | `campusnexus.campuses` same-integration option provider |
 | [Epic 117](Epic117-Integration-Scoped-Settings-Design.md) | Integration-scoped settings and Integration Detail settings UI design |
+| [Epic 118](Epic118-Integration-Settings-API-Foundation.md) | Integration-scoped settings persistence and API foundation |
 | [ADR-0005](ADR-0005-federated-external-instance-relationships.md) | Federated external instance relationships |
 | [ADR-0006](ADR-0006-entra-backed-platform-trust-for-instance-authentication.md) | Entra-backed platform trust for instance authentication |
 | [ADR-0007](ADR-0007-separation-of-human-auth-service-auth-and-relationship-authorization.md) | Separation of human auth, service auth, and relationship authorization |
