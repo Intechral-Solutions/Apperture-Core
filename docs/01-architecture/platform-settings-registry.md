@@ -6,6 +6,8 @@
 
 **Epic 112 (foundation hardening):** Adds formal input metadata (`InputKind`, static `AllowedValues`), `StringArray` value type support, static multi-select validation, and MultiSelect UI rendering. No new production keys in Phase 1; nine platform-owned keys remain.
 
+**Epic 113 (design spec):** Option providers and scoped settings architecture — see [platform-settings-option-providers-and-scopes.md](platform-settings-option-providers-and-scopes.md). Not implemented.
+
 Phase 1 includes nine platform-owned keys for notification cutover, `PlatformEvents.Enabled`, and attention observation controls. Appsettings remains boot defaults only; runtime updates never write back to JSON files.
 
 **Decision anchor:** [ADR-0039: Environment, startup, bootstrap, and platform settings](../02-decisions/ADR-0039-environment-startup-bootstrap-and-platform-settings.md).
@@ -112,42 +114,9 @@ Resolution picks the **most specific applicable** value for the current context,
 
 Array values are audited as readable bracketed lists (e.g. `newValue=[alpha, beta]`). No secrets are stored or logged.
 
-## Future dynamic option providers (design only)
+## Option providers and scoped settings (Epic 113)
 
-Epic 112 supports **static** `AllowedValues` only. Dynamic lookup is deferred but designed as follows:
-
-### StaticAllowedValues vs ProviderBackedOptions
-
-| Mode | Source | Epic 112 |
-|------|--------|----------|
-| **StaticAllowedValues** | Hardcoded in platform setting definition | Implemented |
-| **ProviderBackedOptions** | Runtime lookup via registered provider | Deferred |
-
-Future provider-backed settings would reference a **`providerKey`** (e.g. `platform.modules.installed`, `platform.connectors.definitions`, `platform.governance.teams`) rather than embedding platform resource catalogs in the settings tree.
-
-### Conceptual `ISettingOptionProvider`
-
-- Authorized, scoped lookup returning `{ value, label, description? }` options
-- Future search/paging for large catalogs
-- **Backend validation must not trust UI options** — every write re-validates against the provider or domain catalog
-- **Stale selections:** when a selected value is no longer available, prefer preserving the stored value with a UI warning; reject unknown values on write unless policy explicitly allows retention
-
-### Future provider candidates (not settings-tree metadata)
-
-- Installed modules
-- Connector definitions
-- Operational teams / roles / users
-
-These remain **domain resources and catalogs**. The settings registry stores operator *choices*, not the catalog itself.
-
-### Boundaries (deferred)
-
-- Module-contributed setting definitions
-- Integration/module/user scoped values
-- Custom Razor settings panels (broader module UI contribution system)
-- Wizard framework
-- Arbitrary platform-settings path access for modules
-- Setting-tree path querying as a metadata database
+Epic 112 implements **static** `AllowedValues` only. Dynamic option providers, scoped settings beyond Instance, module contributions, and cross-integration bindings are **not implemented** — they are specified in [platform-settings-option-providers-and-scopes.md](platform-settings-option-providers-and-scopes.md) (Epic 113 design). That document defines provider keys, backend validation rules, authorization, stale-value policies, and the phased implementation roadmap (recommended next: Epic 114 platform provider prototype).
 
 ## Setting values
 

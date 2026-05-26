@@ -247,4 +247,4 @@ Historical post-Aspire assessment (pre-108/109): [epic107-post-aspire-assessment
   dotnet ef database update --project src/Apperture.Persistence/Apperture.Persistence.SqlServer --startup-project src/Apperture.ControlPlane/Apperture.Management.Host
   ```
 
-**Platform settings (Phase 1 delivered):** [platform-settings-registry.md](../01-architecture/platform-settings-registry.md).
+**Platform settings (Phase 1 delivered):** [platform-settings-registry.md](../01-architecture/platform-settings-registry.md). Future dynamic option providers and scoped settings: [platform-settings-option-providers-and-scopes.md](../01-architecture/platform-settings-option-providers-and-scopes.md) (Epic 113 design; not implemented).

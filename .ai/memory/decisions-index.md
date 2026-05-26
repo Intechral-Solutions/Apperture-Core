@@ -56,4 +56,5 @@ Architecture decision records (ADRs) live in [docs/02-decisions/](../../docs/02-
 | [Platform settings registry](../../docs/01-architecture/platform-settings-registry.md) | Phase 1 delivered: SQL-backed instance settings, resolver precedence, API/UI overlays (Epic 109) |
 | [Epic 110](../../docs/03-operations/epic110-foundation-stabilization.md) | Foundation stabilization, smoke baseline, deferred roadmap |
 | [Epic 111](../../docs/01-architecture/platform-settings-registry.md#operator-ui-epic-111) | Platform settings operator UI polish (source labels, grouping, save/reset UX) |
-| [Epic 112](../../docs/01-architecture/platform-settings-registry.md#stringarray-and-static-multi-select-epic-112) | Platform settings foundation hardening: StringArray, InputKind, static MultiSelect, future option-provider design |
+| [Epic 112](../../docs/01-architecture/platform-settings-registry.md#stringarray-and-static-multi-select-epic-112) | Platform settings foundation hardening: StringArray, InputKind, static MultiSelect |
+| [Epic 113](../../docs/01-architecture/platform-settings-option-providers-and-scopes.md) | Platform settings option providers and scoped settings — architecture design spec (docs only) |

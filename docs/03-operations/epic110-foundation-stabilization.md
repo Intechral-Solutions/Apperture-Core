@@ -157,9 +157,19 @@ See [platform-settings-registry.md](../01-architecture/platform-settings-registr
 
 **Summary:** `InputKind` and static `AllowedValues` metadata, `StringArray` value type (codec, validation, resolver, API, audit), MultiSelect UI renderer. No new production keys; future dynamic option providers documented only.
 
-## Recommended next epic (post-112)
+## Epic 113 (delivered): Option providers and scoped settings design
 
-After Epic 111, consider **expanded WorkerHost runtime overlays** for remaining Phase 1 keys, **Epic 108b DPAPI** credential binding, or a broader **UI/design-system** sweep — per team priority.
+**Title:** Epic 113 — Settings option providers and scoped settings (design spec)
+
+**Status:** Delivered. See [platform-settings-option-providers-and-scopes.md](../01-architecture/platform-settings-option-providers-and-scopes.md).
+
+**Summary:** Architecture spec for dynamic option providers, future scopes, module contribution boundaries, cross-integration bindings (deferred), and phased roadmap. Docs only; no runtime changes.
+
+## Recommended next epic (post-113)
+
+**Epic 114 — Platform setting option provider prototype** (phase 1 from Epic 113 roadmap): one `platform.*` provider, options endpoint, write-time validation, instance scope only.
+
+Alternatively: expanded WorkerHost runtime overlays for Phase 1 keys, **Epic 108b DPAPI** credential binding, or a broader UI/design-system sweep — per team priority.
 
 <details>
 <summary>Original Epic 111 recommendation (historical)</summary>
