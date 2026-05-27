@@ -75,4 +75,68 @@ public sealed class SqlNotificationDefinitionStoreTests
         var disabled = await sut.SetEnabledAsync(builtin.Id, false, null);
         disabled!.IsEnabled.Should().BeFalse();
     }
+
+    [Fact]
+    public async Task List_for_integration_includes_module_scoped_definitions_for_matching_module()
+    {
+        await using var db = CreateDb();
+        var sut = new SqlNotificationDefinitionStore(db);
+
+        var moduleBuiltIn = HelloWorldDemoNotificationDefinitionSeed.BuiltIn(DateTimeOffset.UtcNow);
+        var otherModuleBuiltIn = moduleBuiltIn with
+        {
+            Id = NotificationDefinitionId.From("module.other.demo.completed"),
+            ModuleId = "Sample.OtherModule",
+            DisplayName = "Other module demo completed"
+        };
+
+        db.NotificationDefinitions.AddRange(
+            new NotificationDefinitionEntity
+            {
+                Id = moduleBuiltIn.Id.Value,
+                DisplayName = moduleBuiltIn.DisplayName,
+                Description = moduleBuiltIn.Description,
+                SourceKind = moduleBuiltIn.SourceKind,
+                Origin = moduleBuiltIn.Origin,
+                Scope = moduleBuiltIn.Scope,
+                Mutability = moduleBuiltIn.Mutability,
+                ModuleId = moduleBuiltIn.ModuleId,
+                IntegrationId = moduleBuiltIn.IntegrationId,
+                PrimaryEventType = moduleBuiltIn.PrimaryEventType,
+                IsEnabled = moduleBuiltIn.IsEnabled,
+                DefaultSeverity = moduleBuiltIn.DefaultSeverity,
+                RuleJson = moduleBuiltIn.RuleJson,
+                TemplateJson = moduleBuiltIn.TemplateJson,
+                CreatedAtUtc = moduleBuiltIn.CreatedAtUtc,
+                UpdatedAtUtc = moduleBuiltIn.UpdatedAtUtc,
+            },
+            new NotificationDefinitionEntity
+            {
+                Id = otherModuleBuiltIn.Id.Value,
+                DisplayName = otherModuleBuiltIn.DisplayName,
+                Description = otherModuleBuiltIn.Description,
+                SourceKind = otherModuleBuiltIn.SourceKind,
+                Origin = otherModuleBuiltIn.Origin,
+                Scope = otherModuleBuiltIn.Scope,
+                Mutability = otherModuleBuiltIn.Mutability,
+                ModuleId = otherModuleBuiltIn.ModuleId,
+                IntegrationId = otherModuleBuiltIn.IntegrationId,
+                PrimaryEventType = otherModuleBuiltIn.PrimaryEventType,
+                IsEnabled = otherModuleBuiltIn.IsEnabled,
+                DefaultSeverity = otherModuleBuiltIn.DefaultSeverity,
+                RuleJson = otherModuleBuiltIn.RuleJson,
+                TemplateJson = otherModuleBuiltIn.TemplateJson,
+                CreatedAtUtc = otherModuleBuiltIn.CreatedAtUtc,
+                UpdatedAtUtc = otherModuleBuiltIn.UpdatedAtUtc,
+            });
+        await db.SaveChangesAsync();
+
+        var rows = await sut.ListAsync(
+            new NotificationDefinitionListQuery(
+                IntegrationId: "int-1",
+                ApplicableModuleId: "Sample.HelloWorld"));
+
+        rows.Should().ContainSingle(x => x.Id == moduleBuiltIn.Id);
+        rows.Should().NotContain(x => x.Id == otherModuleBuiltIn.Id);
+    }
 }

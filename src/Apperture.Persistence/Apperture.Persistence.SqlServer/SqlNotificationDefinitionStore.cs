@@ -18,7 +18,20 @@ public sealed class SqlNotificationDefinitionStore : INotificationDefinitionStor
         var q = _db.NotificationDefinitions.AsNoTracking().AsQueryable();
 
         if (!string.IsNullOrWhiteSpace(query.IntegrationId))
-            q = q.Where(x => x.IntegrationId == query.IntegrationId);
+        {
+            if (!string.IsNullOrWhiteSpace(query.ApplicableModuleId))
+            {
+                var integrationId = query.IntegrationId;
+                var moduleId = query.ApplicableModuleId;
+                q = q.Where(x =>
+                    x.IntegrationId == integrationId
+                    || (x.Scope == NotificationDefinitionScopes.Module && x.ModuleId == moduleId));
+            }
+            else
+            {
+                q = q.Where(x => x.IntegrationId == query.IntegrationId);
+            }
+        }
         if (!string.IsNullOrWhiteSpace(query.EventType))
             q = q.Where(x => x.PrimaryEventType == query.EventType);
         if (query.IsEnabled is { } enabled)

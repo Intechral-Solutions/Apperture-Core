@@ -4,6 +4,7 @@ namespace Apperture.Core.Application.Notifications;
 
 public sealed record NotificationDefinitionListQuery(
     string? IntegrationId = null,
+    string? ApplicableModuleId = null,
     string? EventType = null,
     bool? IsEnabled = null,
     string? Origin = null,

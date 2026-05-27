@@ -1,5 +1,6 @@
 using Apperture.Core.Application.Notifications;
 using Apperture.Core.Application.Services;
+using Apperture.Core.Domain.Integration;
 using Apperture.Core.Domain.Notifications;
 using Apperture.Shared.Kernel;
 
@@ -14,6 +15,7 @@ public sealed class NotificationDefinitionService : INotificationDefinitionServi
     private readonly INotificationRenderContextFactory _contextFactory;
     private readonly NotificationDefinitionAuthorization _authorization;
     private readonly IPrincipalContext _principalContext;
+    private readonly IIntegrationRepository _integrations;
 
     public NotificationDefinitionService(
         INotificationDefinitionStore store,
@@ -22,7 +24,8 @@ public sealed class NotificationDefinitionService : INotificationDefinitionServi
         INotificationTemplateRenderer renderer,
         INotificationRenderContextFactory contextFactory,
         NotificationDefinitionAuthorization authorization,
-        IPrincipalContext principalContext)
+        IPrincipalContext principalContext,
+        IIntegrationRepository integrations)
     {
         _store = store;
         _ruleValidator = ruleValidator;
@@ -31,19 +34,27 @@ public sealed class NotificationDefinitionService : INotificationDefinitionServi
         _contextFactory = contextFactory;
         _authorization = authorization;
         _principalContext = principalContext;
+        _integrations = integrations;
     }
 
     public async ValueTask<IReadOnlyList<NotificationDefinition>> ListAsync(
         NotificationDefinitionListQuery query,
         CancellationToken cancellationToken = default)
     {
+        var effectiveQuery = query;
         if (!string.IsNullOrWhiteSpace(query.IntegrationId))
+        {
             await _authorization.RequireIntegrationReadAsync(query.IntegrationId, cancellationToken)
                 .ConfigureAwait(false);
+            var integration = await _integrations.GetByIdAsync(new IntegrationId(query.IntegrationId), cancellationToken)
+                .ConfigureAwait(false)
+                ?? throw new InvalidOperationException($"Integration {query.IntegrationId} not found.");
+            effectiveQuery = query with { ApplicableModuleId = integration.ModuleId };
+        }
         else
             await _authorization.RequirePlatformReadAsync(cancellationToken).ConfigureAwait(false);
 
-        return await _store.ListAsync(query, cancellationToken).ConfigureAwait(false);
+        return await _store.ListAsync(effectiveQuery, cancellationToken).ConfigureAwait(false);
     }
 
     public async ValueTask<NotificationDefinition?> GetAsync(string id, CancellationToken cancellationToken = default)
