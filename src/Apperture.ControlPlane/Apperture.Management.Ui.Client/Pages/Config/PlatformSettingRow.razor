@@ -5,229 +5,170 @@
 
 @inject IManagementClient Client
 
-<section class="rounded border border-default bg-surface p-3">
-    <div class="flex flex-wrap items-start justify-between gap-3">
-        <div class="min-w-0 flex-1">
-            <div class="font-medium text-heading">@Row.DisplayName</div>
-            <div class="text-xs text-muted font-mono">@Row.Key</div>
-            <div class="text-xs text-body mt-1">@Row.Description</div>
-            @{
-                var safety = PlatformSettingUiHelpers.TryGetSafetyNote(Row.Key);
-            }
-            @if (!string.IsNullOrEmpty(safety))
+@{
+    var helpTooltip = PlatformSettingUiHelpers.BuildHelpTooltip(Row);
+    var sourceTooltip = $"{PlatformSettingUiHelpers.GetSourceTooltip(Row.Source, IntegrationScope)} Resolved: {GetResolvedDisplay()}";
+}
+
+<div class="border-b border-default py-2 last:border-b-0">
+    <div class="flex flex-wrap items-center gap-2 gap-y-1">
+        <div class="flex min-w-0 flex-1 items-center gap-1.5">
+            <span class="font-medium text-heading text-sm truncate" title="@Row.DisplayName">@Row.DisplayName</span>
+            <SettingInfoAffordance Tooltip="@helpTooltip" />
+            @if (Row.RequiresRestart)
             {
-                <p class="text-xs text-muted mt-1">@safety</p>
+                <span class="text-xs text-warning shrink-0"
+                      title="@PlatformSettingUiHelpers.GetRequiresRestartHint()"
+                      aria-label="Requires restart">⚠</span>
             }
-        </div>
-        <div class="flex flex-col items-end gap-1">
             <StatusPill Label="@PlatformSettingUiHelpers.GetSourceLabel(Row.Source, IntegrationScope)"
-                        Title="@PlatformSettingUiHelpers.GetSourceTooltip(Row.Source, IntegrationScope)"
+                        Title="@sourceTooltip"
                         Semantic="@PlatformSettingUiHelpers.GetSourceSemantic(Row.Source)" />
-            <span class="text-xs text-muted">
-                Resolved:
-                <code class="rounded bg-surface-muted px-1">@GetResolvedDisplay()</code>
-            </span>
+            @if (IsDirty)
+            {
+                <span class="text-xs text-muted shrink-0">Unsaved</span>
+            }
         </div>
-    </div>
 
-    @if (Row.RequiresRestart)
-    {
-        <PageMessage Kind="PageMessageKind.Warning"
-                     Class="mt-3"
-                     Message="Changing this setting may require restarting management or worker hosts before runtime behavior fully updates." />
-    }
-
-    @if (CanManage)
-    {
-        <div class="mt-3 space-y-2">
-            @if (PlatformSettingUiHelpers.IsMultiSelect(Row.InputKind))
-            {
-                @if (EditorOptions is not { Count: > 0 })
+        @if (CanEdit)
+        {
+            <div class="flex flex-wrap items-center gap-2 min-w-0">
+                @if (PlatformSettingUiHelpers.IsMultiSelect(Row.InputKind))
                 {
-                    @if (_loadingProviderOptions)
+                    <span class="text-sm text-body">@EditValues.Count selected</span>
+                }
+                else if (PlatformSettingUiHelpers.IsSelect(Row.InputKind))
+                {
+                    @if (EditorOptions is not { Count: > 0 })
                     {
-                        <PageMessage Kind="PageMessageKind.Loading"
-                                     Message="Loading options…" />
-                    }
-                    else if (!string.IsNullOrWhiteSpace(_providerOptionsError))
-                    {
-                        <PageMessage Kind="PageMessageKind.Error"
-                                     Message="@_providerOptionsError" />
-                    }
-                    else if (string.IsNullOrWhiteSpace(Row.OptionProviderKey))
-                    {
-                        <PageMessage Kind="PageMessageKind.Warning"
-                                     Message="Editor unavailable — no static options defined for this multi-select setting." />
+                        <PageMessage Kind="@(_loadingProviderOptions ? PageMessageKind.Loading : PageMessageKind.Warning)"
+                                     Message="@GetSelectUnavailableMessage()" />
                     }
                     else
                     {
-                        <PageMessage Kind="PageMessageKind.Warning"
-                                     Message="Editor unavailable — no options defined for this multi-select setting." />
+                        var optionValues = EditorOptions.Select(o => o.Value).ToHashSet(StringComparer.Ordinal);
+                        var includeUnavailableValue = !string.IsNullOrWhiteSpace(EditValue) && !optionValues.Contains(EditValue);
+                        <select class="rounded border border-default px-2 py-1 text-sm min-w-48 font-mono"
+                                value="@EditValue"
+                                disabled="@IsSaving"
+                                @onchange="OnTextInput">
+                            @if (string.IsNullOrWhiteSpace(EditValue))
+                            {
+                                <option value="">(none)</option>
+                            }
+                            else if (includeUnavailableValue)
+                            {
+                                <option value="@EditValue">@EditValue (unavailable)</option>
+                            }
+                            @foreach (var option in EditorOptions)
+                            {
+                                <option value="@option.Value">@option.Label (@option.Value)</option>
+                            }
+                        </select>
                     }
                 }
-                else
+                else if (string.Equals(Row.InputKind, PlatformSettingUiHelpers.InputKindToggle, StringComparison.OrdinalIgnoreCase)
+                         || string.Equals(Row.ValueType, "Boolean", StringComparison.OrdinalIgnoreCase))
                 {
-                    <div class="space-y-2">
-                        @foreach (var option in EditorOptions)
-                        {
-                            var isChecked = IsArrayOptionChecked(option.Value);
-                            <label class="flex items-start gap-2 text-sm">
-                                <input type="checkbox"
-                                       class="mt-0.5"
-                                       checked="@isChecked"
-                                       disabled="@IsSaving"
-                                       @onchange="e => OnMultiSelectChanged(option.Value, e)" />
-                                <span>
-                                    <span class="font-medium">@option.Label</span>
-                                    <span class="text-xs text-muted font-mono ml-1">(@option.Value)</span>
-                                    @if (!string.IsNullOrEmpty(option.Description))
-                                    {
-                                        <span class="block text-xs text-muted mt-0.5">@option.Description</span>
-                                    }
-                                </span>
-                            </label>
-                        }
-                    </div>
-
-                    var available = EditorOptions.Select(o => o.Value).ToHashSet(StringComparer.Ordinal);
-                    var unavailable = EditValues
-                        .Where(v => !available.Contains(v))
-                        .Distinct(StringComparer.Ordinal)
-                        .ToArray();
-                    @if (unavailable.Length > 0)
-                    {
-                        <p class="text-xs text-muted mt-2">
-                            Unavailable selections: @string.Join(", ", unavailable)
-                        </p>
-                    }
+                    <label class="flex items-center gap-2 text-sm">
+                        <input type="checkbox"
+                               checked="@IsBoolChecked(EditValue)"
+                               disabled="@IsSaving"
+                               @onchange="OnBoolChanged" />
+                        <span>@(IsBoolChecked(EditValue) ? "On" : "Off")</span>
+                    </label>
                 }
-            }
-            else if (PlatformSettingUiHelpers.IsSelect(Row.InputKind))
-            {
-                @if (EditorOptions is not { Count: > 0 })
+                else if (string.Equals(Row.InputKind, PlatformSettingUiHelpers.InputKindNumber, StringComparison.OrdinalIgnoreCase)
+                         || string.Equals(Row.ValueType, "Integer", StringComparison.OrdinalIgnoreCase))
                 {
-                    @if (_loadingProviderOptions)
-                    {
-                        <PageMessage Kind="PageMessageKind.Loading"
-                                     Message="Loading options…" />
-                    }
-                    else if (!string.IsNullOrWhiteSpace(_providerOptionsError))
-                    {
-                        <PageMessage Kind="PageMessageKind.Error"
-                                     Message="@_providerOptionsError" />
-                    }
-                    else if (string.IsNullOrWhiteSpace(Row.OptionProviderKey))
-                    {
-                        <PageMessage Kind="PageMessageKind.Warning"
-                                     Message="Editor unavailable — no static options defined for this select setting." />
-                    }
-                    else
-                    {
-                        <PageMessage Kind="PageMessageKind.Warning"
-                                     Message="Editor unavailable — no options defined for this select setting." />
-                    }
-                }
-                else
-                {
-                    var optionValues = EditorOptions.Select(o => o.Value).ToHashSet(StringComparer.Ordinal);
-                    var includeUnavailableValue = !string.IsNullOrWhiteSpace(EditValue) && !optionValues.Contains(EditValue);
-                    <select class="rounded border border-default px-2 py-1 text-sm min-w-64 font-mono"
-                            value="@EditValue"
-                            disabled="@IsSaving"
-                            @onchange="OnTextInput">
-                        @if (string.IsNullOrWhiteSpace(EditValue))
-                        {
-                            <option value="">(none)</option>
-                        }
-                        else if (includeUnavailableValue)
-                        {
-                            <option value="@EditValue">@EditValue (unavailable)</option>
-                        }
-                        @foreach (var option in EditorOptions)
-                        {
-                            <option value="@option.Value">@option.Label (@option.Value)</option>
-                        }
-                    </select>
-                }
-            }
-            else if (string.Equals(Row.InputKind, PlatformSettingUiHelpers.InputKindToggle, StringComparison.OrdinalIgnoreCase)
-                     || string.Equals(Row.ValueType, "Boolean", StringComparison.OrdinalIgnoreCase))
-            {
-                <label class="flex items-center gap-2 text-sm">
-                    <input type="checkbox"
-                           checked="@IsBoolChecked(EditValue)"
-                           disabled="@IsSaving"
-                           @onchange="OnBoolChanged" />
-                    <span>@(IsBoolChecked(EditValue) ? "Enabled (true)" : "Disabled (false)")</span>
-                </label>
-            }
-            else if (string.Equals(Row.InputKind, PlatformSettingUiHelpers.InputKindNumber, StringComparison.OrdinalIgnoreCase)
-                     || string.Equals(Row.ValueType, "Integer", StringComparison.OrdinalIgnoreCase))
-            {
-                <div class="flex flex-wrap items-center gap-2">
                     <input type="number"
-                           class="rounded border border-default px-2 py-1 text-sm w-32"
+                           class="rounded border border-default px-2 py-1 text-sm w-28"
                            value="@EditValue"
                            min="@Row.MinInteger"
                            disabled="@IsSaving"
                            @onchange="OnTextInput" />
-                    @if (Row.MinInteger is not null)
-                    {
-                        <span class="text-xs text-muted">Minimum: @Row.MinInteger</span>
-                    }
-                </div>
-            }
-            else
-            {
-                <div class="space-y-1">
-                    <input class="rounded border border-default px-2 py-1 text-sm min-w-64 font-mono"
+                }
+                else
+                {
+                    <input class="rounded border border-default px-2 py-1 text-sm min-w-48 font-mono"
                            value="@EditValue"
                            disabled="@IsSaving"
-                           placeholder="00:05:00"
+                           placeholder="@(string.Equals(Row.InputKind, PlatformSettingUiHelpers.InputKindDuration, StringComparison.OrdinalIgnoreCase) ? "00:05:00" : null)"
+                           title="@(Row.MinDurationIso is not null ? $"ISO 8601; min {Row.MinDurationIso}" : null)"
                            @onchange="OnTextInput" />
-                    @if (!string.IsNullOrEmpty(Row.MinDurationIso))
-                    {
-                        <p class="text-xs text-muted">ISO 8601 duration; minimum @Row.MinDurationIso (e.g. 00:05:00).</p>
-                    }
-                </div>
-            }
-
-            @if (IsDirty)
-            {
-                <p class="text-xs text-muted">Unsaved changes</p>
-            }
-
-            @if (!string.IsNullOrEmpty(Error))
-            {
-                <PageMessage Kind="PageMessageKind.Error" Message="@Error" />
-            }
-
-            <div class="flex flex-wrap items-center gap-2 pt-1">
+                }
+            </div>
+            <div class="flex shrink-0 items-center gap-1">
                 <button type="button"
-                        class="rounded bg-surface-muted px-3 py-1 text-sm font-medium text-heading disabled:opacity-50"
+                        class="rounded bg-surface-muted px-2 py-1 text-xs font-medium text-heading disabled:opacity-50"
                         disabled="@(!IsDirty || IsSaving)"
                         title="@(IsDirty ? null : "Change the value to enable save.")"
                         @onclick="OnSave">
                     @(IsSaving ? "Saving…" : "Save")
                 </button>
                 <button type="button"
-                        class="rounded bg-surface-muted px-3 py-1 text-sm disabled:opacity-50"
+                        class="rounded bg-surface-muted px-2 py-1 text-xs disabled:opacity-50"
                         disabled="@(!CanReset || IsSaving)"
                         title="@ResetTitle"
                         @onclick="OnReset">
                     Reset
                 </button>
             </div>
+        }
+        else
+        {
+            <code class="text-xs rounded bg-surface-muted px-1 max-w-xs truncate" title="@GetResolvedDisplay()">@GetResolvedDisplay()</code>
+        }
+    </div>
+
+    @if (CanEdit && PlatformSettingUiHelpers.IsMultiSelect(Row.InputKind))
+    {
+        <div class="mt-2 space-y-2">
+            @if (EditorOptions is not { Count: > 0 })
+            {
+                <PageMessage Kind="@(_loadingProviderOptions ? PageMessageKind.Loading : (string.IsNullOrWhiteSpace(_providerOptionsError) ? PageMessageKind.Warning : PageMessageKind.Error))"
+                             Message="@GetSelectUnavailableMessage()" />
+            }
+            else
+            {
+                @foreach (var option in EditorOptions)
+                {
+                    var isChecked = IsArrayOptionChecked(option.Value);
+                    <label class="flex items-start gap-2 text-sm">
+                        <input type="checkbox"
+                               class="mt-0.5"
+                               checked="@isChecked"
+                               disabled="@IsSaving"
+                               @onchange="e => OnMultiSelectChanged(option.Value, e)" />
+                        <span>
+                            <span class="font-medium">@option.Label</span>
+                            <span class="text-xs text-muted font-mono ml-1">(@option.Value)</span>
+                        </span>
+                    </label>
+                }
+
+                var available = EditorOptions.Select(o => o.Value).ToHashSet(StringComparer.Ordinal);
+                var unavailable = EditValues
+                    .Where(v => !available.Contains(v))
+                    .Distinct(StringComparer.Ordinal)
+                    .ToArray();
+                @if (unavailable.Length > 0)
+                {
+                    <p class="text-xs text-muted">Unavailable selections: @string.Join(", ", unavailable)</p>
+                }
+            }
         </div>
     }
-    else
+
+    @if (!string.IsNullOrEmpty(Error))
     {
-        <p class="mt-3 text-sm text-body">
-            Current value: <code class="rounded bg-surface-muted px-1">@GetResolvedDisplay()</code>
-        </p>
-        <p class="text-xs text-muted mt-1">@PlatformSettingUiHelpers.GetReadOnlyPermissionMessage(IntegrationScope)</p>
+        <PageMessage Kind="PageMessageKind.Error" Class="mt-2" Message="@Error" />
     }
-</section>
+    else if (!CanEdit)
+    {
+        <p class="text-xs text-muted mt-1">@ReadOnlyMessage</p>
+    }
+</div>
 
 @code {
     [Parameter, EditorRequired] public PlatformSettingResolvedDto Row { get; set; } = default!;
@@ -260,13 +201,18 @@
     private string? _loadedProviderKey;
     private string? _loadedSettingKey;
 
+    private bool CanEdit => CanManage && Row.IsEditable;
+
     private IReadOnlyList<PlatformSettingAllowedValueDto>? EditorOptions =>
         Row.AllowedValues is { Count: > 0 } ? Row.AllowedValues : _providerOptions;
 
+    private string ReadOnlyMessage => !Row.IsEditable
+        ? PlatformSettingUiHelpers.GetDefinitionReadOnlyMessage()
+        : PlatformSettingUiHelpers.GetReadOnlyPermissionMessage(IntegrationScope);
+
     protected override async Task OnParametersSetAsync()
     {
-        // If static options exist, provider-backed options are not needed.
-        if (Row.AllowedValues is { Count: > 0 } || string.IsNullOrWhiteSpace(Row.OptionProviderKey) || !CanManage)
+        if (Row.AllowedValues is { Count: > 0 } || string.IsNullOrWhiteSpace(Row.OptionProviderKey) || !CanEdit)
         {
             _providerOptions = null;
             _loadingProviderOptions = false;
@@ -319,6 +265,17 @@
         {
             _loadingProviderOptions = false;
         }
+    }
+
+    private string GetSelectUnavailableMessage()
+    {
+        if (_loadingProviderOptions)
+            return "Loading options…";
+        if (!string.IsNullOrWhiteSpace(_providerOptionsError))
+            return _providerOptionsError;
+        if (string.IsNullOrWhiteSpace(Row.OptionProviderKey))
+            return "Editor unavailable — no static options defined.";
+        return "Editor unavailable — no options defined.";
     }
 
     private bool IsDirty => PlatformSettingUiHelpers.IsMultiSelect(Row.InputKind)

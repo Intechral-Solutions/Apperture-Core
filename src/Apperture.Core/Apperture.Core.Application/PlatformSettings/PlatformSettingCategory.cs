@@ -4,5 +4,8 @@ public enum PlatformSettingCategory
 {
     Notifications,
     PlatformEvents,
-    AttentionIncidents
+    AttentionIncidents,
+
+    /// <summary>Development-gated demo/gallery settings (Epic 120). Not production controls.</summary>
+    Demo
 }

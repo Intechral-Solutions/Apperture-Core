@@ -1,3 +1,5 @@
+using Apperture.Management.Client;
+
 namespace Apperture.Management.Ui.Shared;
 
 /// <summary>Display helpers for platform and integration settings UI (Epic 111, Epic 119).</summary>
@@ -10,6 +12,7 @@ public static class PlatformSettingUiHelpers
     public const string CategoryNotifications = "Notifications";
     public const string CategoryPlatformEvents = "PlatformEvents";
     public const string CategoryAttentionIncidents = "AttentionIncidents";
+    public const string CategoryDemo = "Demo";
 
     public const string InputKindMultiSelect = "MultiSelect";
     public const string InputKindSelect = "Select";
@@ -70,12 +73,25 @@ public static class PlatformSettingUiHelpers
             ? "Read-only — you do not have permission to update integration settings."
             : "Read-only — you do not have permission to change platform settings.";
 
+    public static string GetDefinitionReadOnlyMessage() =>
+        "Read-only — this setting is not editable in the registry.";
+
+    public static string GetRequiresRestartHint() =>
+        "Changing this setting may require restarting management or worker hosts before runtime behavior fully updates.";
+
     public static string GetCategoryTitle(string? category) => category switch
     {
         CategoryNotifications => "Notifications",
         CategoryPlatformEvents => "Platform events",
         CategoryAttentionIncidents => "Attention observation",
+        CategoryDemo => "Settings gallery",
         _ => category ?? "Settings"
+    };
+
+    public static string GetCategoryTabTooltip(string? category) => category switch
+    {
+        CategoryDemo => "Demo only — exercises input controls. Not production behavior.",
+        _ => GetCategoryTitle(category)
     };
 
     public static int GetCategoryOrder(string? category) => category switch
@@ -83,8 +99,39 @@ public static class PlatformSettingUiHelpers
         CategoryNotifications => 0,
         CategoryPlatformEvents => 1,
         CategoryAttentionIncidents => 2,
-        _ => 99
+        CategoryDemo => 99,
+        _ => 98
     };
+
+    public static bool IsDemoCategory(string? category) =>
+        string.Equals(category, CategoryDemo, StringComparison.Ordinal);
+
+    public static bool IsDemoSettingKey(string? key) =>
+        !string.IsNullOrEmpty(key)
+        && key.StartsWith("demo.settings.", StringComparison.Ordinal);
+
+    public static string BuildHelpTooltip(PlatformSettingResolvedDto row)
+    {
+        var parts = new List<string>();
+        if (!string.IsNullOrWhiteSpace(row.Description))
+            parts.Add(row.Description.Trim());
+
+        var safety = TryGetSafetyNote(row.Key);
+        if (!string.IsNullOrWhiteSpace(safety))
+            parts.Add(safety);
+
+        parts.Add($"Key: {row.Key}");
+        return string.Join(" ", parts);
+    }
+
+    public static IReadOnlyList<string> GetOrderedCategories(IEnumerable<string?> categories) =>
+        categories
+            .Where(c => !string.IsNullOrWhiteSpace(c))
+            .Select(c => c!)
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(GetCategoryOrder)
+            .ThenBy(c => c, StringComparer.Ordinal)
+            .ToList();
 
     public static bool IsDirty(string? editValue, string savedValue) =>
         !string.Equals(Normalize(editValue), Normalize(savedValue), StringComparison.Ordinal);
@@ -132,6 +179,8 @@ public static class PlatformSettingUiHelpers
                 "Affects periodic background observation of schedule expectations.",
             "AttentionIncidents.Observation.Interval" =>
                 "Delay between attention observation cycles in the worker.",
+            _ when IsDemoSettingKey(key) =>
+                "Demo only — no runtime effect. For UI/input gallery refinement.",
             _ => null
         };
     }

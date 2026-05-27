@@ -39,28 +39,19 @@
             <p class="mt-3 text-xs text-muted max-w-3xl">You have read-only access. Users with platform settings manage permission can save and reset overrides.</p>
         }
 
-        <div class="mt-6 space-y-8">
-            @foreach (var group in _categoryGroups)
-            {
-                <ManagementSection Title="@PlatformSettingUiHelpers.GetCategoryTitle(group.Key)"
-                                   Layer="ManagementSection.UiLayer.Detail">
-                    <div class="space-y-4">
-                        @foreach (var row in group)
-                        {
-                            <PlatformSettingRow Row="row"
-                                                CanManage="_canManage"
-                                                EditValue="@GetEditValue(row.Key)"
-                                                EditValues="@GetEditValues(row)"
-                                                IsSaving="@(string.Equals(_savingKey, row.Key, StringComparison.Ordinal))"
-                                                Error="@GetError(row.Key)"
-                                                EditValueChanged="@(v => SetEditValue(row.Key, v))"
-                                                EditValuesChanged="@(v => SetEditValues(row.Key, v))"
-                                                OnSave="@(() => SaveAsync(row))"
-                                                OnReset="@(() => ResetAsync(row))" />
-                        }
-                    </div>
-                </ManagementSection>
-            }
+        <div class="mt-6">
+            <PlatformSettingsEditor Rows="_rows"
+                                    ActiveCategory="@_activeCategory"
+                                    ActiveCategoryChanged="OnActiveCategoryChanged"
+                                    CanManage="_canManage"
+                                    SavingKey="_savingKey"
+                                    GetEditValue="GetEditValue"
+                                    GetEditValues="GetEditValues"
+                                    GetError="GetError"
+                                    EditValueChanged="OnEditValueChanged"
+                                    EditValuesChanged="OnEditValuesChanged"
+                                    OnSave="SaveAsync"
+                                    OnReset="ResetAsync" />
         </div>
 
         <p class="mt-6 text-xs text-muted max-w-3xl">
@@ -75,15 +66,11 @@
     private bool _canManage;
     private string? _loadError;
     private string? _savingKey;
+    private string _activeCategory = PlatformSettingUiHelpers.CategoryNotifications;
     private List<PlatformSettingResolvedDto> _rows = [];
     private readonly Dictionary<string, string> _editValues = new(StringComparer.Ordinal);
     private readonly Dictionary<string, List<string>> _editArrayValues = new(StringComparer.Ordinal);
     private readonly Dictionary<string, string?> _errors = new(StringComparer.Ordinal);
-
-    private IEnumerable<IGrouping<string, PlatformSettingResolvedDto>> _categoryGroups =>
-        _rows
-            .GroupBy(x => x.Category)
-            .OrderBy(g => PlatformSettingUiHelpers.GetCategoryOrder(g.Key));
 
     protected override async Task OnInitializedAsync()
     {
@@ -116,11 +103,32 @@
             _errors.Clear();
             foreach (var row in _rows)
                 SyncEditState(row);
+
+            EnsureActiveCategory();
         }
         catch (Exception ex)
         {
             _loadError = ex.Message;
         }
+    }
+
+    private void EnsureActiveCategory()
+    {
+        var categories = PlatformSettingUiHelpers.GetOrderedCategories(_rows.Select(r => r.Category));
+        if (categories.Count == 0)
+        {
+            _activeCategory = string.Empty;
+            return;
+        }
+
+        if (!categories.Contains(_activeCategory, StringComparer.Ordinal))
+            _activeCategory = categories[0];
+    }
+
+    private Task OnActiveCategoryChanged(string category)
+    {
+        _activeCategory = category;
+        return Task.CompletedTask;
     }
 
     private string GetEditValue(string key) =>
@@ -131,16 +139,18 @@
             ? values
             : row.CurrentValues?.ToList() ?? [];
 
-    private void SetEditValue(string key, string? value)
+    private Task OnEditValueChanged((string Key, string Value) change)
     {
-        _editValues[key] = value ?? string.Empty;
-        _errors.Remove(key);
+        _editValues[change.Key] = change.Value ?? string.Empty;
+        _errors.Remove(change.Key);
+        return Task.CompletedTask;
     }
 
-    private void SetEditValues(string key, IReadOnlyList<string> values)
+    private Task OnEditValuesChanged((string Key, IReadOnlyList<string> Values) change)
     {
-        _editArrayValues[key] = values.ToList();
-        _errors.Remove(key);
+        _editArrayValues[change.Key] = change.Values.ToList();
+        _errors.Remove(change.Key);
+        return Task.CompletedTask;
     }
 
     private string? GetError(string key) =>

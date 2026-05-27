@@ -1,0 +1,28 @@
+@using Apperture.Management.Ui.Shared
+
+@if (Categories.Count > 1)
+{
+    <div class="flex flex-wrap gap-2 border-b border-default">
+        @foreach (var category in Categories)
+        {
+            var isActive = string.Equals(category, ActiveCategory, StringComparison.Ordinal);
+            <button type="button"
+                    class="px-3 py-2 text-sm font-medium @(isActive ? "text-heading border-b-2 border-body -mb-px" : "text-muted hover:text-body")"
+                    title="@PlatformSettingUiHelpers.GetCategoryTabTooltip(category)"
+                    @onclick="() => OnSelectCategory(category)">
+                @PlatformSettingUiHelpers.GetCategoryTitle(category)
+            </button>
+        }
+    </div>
+}
+
+@code {
+    [Parameter] public IReadOnlyList<string> Categories { get; set; } = Array.Empty<string>();
+
+    [Parameter] public string ActiveCategory { get; set; } = "";
+
+    [Parameter] public EventCallback<string> ActiveCategoryChanged { get; set; }
+
+    private Task OnSelectCategory(string category) =>
+        ActiveCategoryChanged.InvokeAsync(category);
+}

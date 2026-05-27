@@ -18,7 +18,9 @@
 
 **Epic 118 (integration-scoped API foundation):** Integration value scope in `PlatformSettingValues` (`Integration` + `integrationId`); `IntegrationSettingsService` / resolver; `/api/integrations/{integrationId}/settings` routes; `AllowedValueScopes` on definitions; empty production integration registry. Instance platform settings unchanged.
 
-**Epic 119 (Integration Detail settings UI):** `/integrations/{integrationId}/settings` reuses platform setting row editors and Epic 118 client methods. Production integrations typically see an empty state until Epic 120 adds definition keys. Runtime consumption still deferred.
+**Epic 119 (Integration Detail settings UI):** `/integrations/{integrationId}/settings` reuses platform setting row editors and Epic 118 client methods. Production integrations typically see an empty state until Epic 121 adds the first production integration definition key. Runtime consumption still deferred.
+
+**Epic 120 (settings presentation + demo gallery):** Compact setting rows, category tabs on `/config/platform-settings`, and Development-gated demo definitions (`demo.settings.*`) under the **Settings gallery** tab. Demo settings exercise all `InputKind` values (including provider-backed select/multi-select via `platform.connectorDefinitions`). They persist like normal settings for UI/audit exercise only — **no runtime `IOptions` consumption**, no new production keys. Gating: `IHostEnvironment.IsDevelopment()` or `PlatformSettings:DemoGallery:Enabled`. See [Epic120-Settings-Presentation-Demo-Gallery.md](../02-decisions/Epic120-Settings-Presentation-Demo-Gallery.md).
 
 Phase 1 includes nine platform-owned keys for notification cutover, `PlatformEvents.Enabled`, and attention observation controls. Appsettings remains boot defaults only; runtime updates never write back to JSON files.
 

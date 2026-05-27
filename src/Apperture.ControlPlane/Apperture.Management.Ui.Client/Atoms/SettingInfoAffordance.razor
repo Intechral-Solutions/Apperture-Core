@@ -1,0 +1,10 @@
+<button type="button"
+        class="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-default text-xs text-muted hover:text-body"
+        aria-label="More information"
+        title="@Tooltip">
+    ?
+</button>
+
+@code {
+    [Parameter] public string Tooltip { get; set; } = "";
+}

@@ -1,0 +1,111 @@
+@using Apperture.Management.Client
+@using Apperture.Management.Ui.Shared
+@using Apperture.Management.Ui.Client.Molecules
+@using Apperture.Management.Ui.Client.Pages.Config
+@using Apperture.Management.Ui.Client.Organisms
+
+@if (Rows.Count == 0 && string.IsNullOrEmpty(ActiveCategory))
+{
+    @ChildContent
+}
+else
+{
+    @if (ShowCategoryTabs)
+    {
+        <PlatformSettingsCategoryTabs Categories="@_categories"
+                                      ActiveCategory="@ActiveCategory"
+                                      ActiveCategoryChanged="OnActiveCategoryChanged" />
+    }
+
+    @if (ShowDemoBanner)
+    {
+        <PageMessage Kind="PageMessageKind.Info"
+                     Class="mt-4 max-w-3xl"
+                     Title="Settings input gallery (demo)"
+                     Message="These controls exercise supported input types for UI refinement. They are not production operational settings and have no runtime effect." />
+    }
+
+    @if (_visibleRows.Count == 0)
+    {
+        <EmptyState Title="No settings in this category"
+                    Message="There are no settings in this tab for the current scope." />
+    }
+    else
+    {
+        <div class="mt-4 rounded border border-default bg-surface px-3">
+            @foreach (var row in _visibleRows)
+            {
+                <PlatformSettingRow Row="row"
+                                    IntegrationId="@IntegrationId"
+                                    IntegrationScope="@IntegrationScope"
+                                    CanManage="CanManage"
+                                    EditValue="@GetEditValue(row.Key)"
+                                    EditValues="@GetEditValues(row)"
+                                    IsSaving="@(string.Equals(SavingKey, row.Key, StringComparison.Ordinal))"
+                                    Error="@GetError(row.Key)"
+                                    EditValueChanged="@(v => EditValueChanged.InvokeAsync((row.Key, v)))"
+                                    EditValuesChanged="@(v => EditValuesChanged.InvokeAsync((row.Key, v)))"
+                                    OnSave="@(() => OnSave.InvokeAsync(row))"
+                                    OnReset="@(() => OnReset.InvokeAsync(row))" />
+            }
+        </div>
+    }
+}
+
+@code {
+    [Parameter] public IReadOnlyList<PlatformSettingResolvedDto> Rows { get; set; } = Array.Empty<PlatformSettingResolvedDto>();
+
+    [Parameter] public string ActiveCategory { get; set; } = "";
+
+    [Parameter] public EventCallback<string> ActiveCategoryChanged { get; set; }
+
+    [Parameter] public bool CanManage { get; set; }
+
+    [Parameter] public string? SavingKey { get; set; }
+
+    [Parameter] public Func<string, string> GetEditValue { get; set; } = _ => string.Empty;
+
+    [Parameter] public Func<PlatformSettingResolvedDto, IReadOnlyList<string>> GetEditValues { get; set; } = _ => Array.Empty<string>();
+
+    [Parameter] public Func<string, string?> GetError { get; set; } = _ => null;
+
+    [Parameter] public EventCallback<(string Key, string Value)> EditValueChanged { get; set; }
+
+    [Parameter] public EventCallback<(string Key, IReadOnlyList<string> Values)> EditValuesChanged { get; set; }
+
+    [Parameter] public EventCallback<PlatformSettingResolvedDto> OnSave { get; set; }
+
+    [Parameter] public EventCallback<PlatformSettingResolvedDto> OnReset { get; set; }
+
+    [Parameter] public string? IntegrationId { get; set; }
+
+    [Parameter] public bool IntegrationScope { get; set; }
+
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    private IReadOnlyList<string> _categories = Array.Empty<string>();
+
+    private IReadOnlyList<PlatformSettingResolvedDto> _visibleRows = Array.Empty<PlatformSettingResolvedDto>();
+
+    private bool ShowCategoryTabs => _categories.Count > 1;
+
+    private bool ShowDemoBanner =>
+        PlatformSettingUiHelpers.IsDemoCategory(ActiveCategory);
+
+    protected override void OnParametersSet()
+    {
+        _categories = PlatformSettingUiHelpers.GetOrderedCategories(Rows.Select(r => r.Category));
+        _visibleRows = string.IsNullOrEmpty(ActiveCategory)
+            ? Rows
+                .OrderBy(r => PlatformSettingUiHelpers.GetCategoryOrder(r.Category))
+                .ThenBy(r => r.DisplayName, StringComparer.Ordinal)
+                .ToList()
+            : Rows
+                .Where(r => string.Equals(r.Category, ActiveCategory, StringComparison.Ordinal))
+                .OrderBy(r => r.DisplayName, StringComparer.Ordinal)
+                .ToList();
+    }
+
+    private Task OnActiveCategoryChanged(string category) =>
+        ActiveCategoryChanged.InvokeAsync(category);
+}

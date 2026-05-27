@@ -33,9 +33,8 @@ public sealed class Epic111PlatformSettingsPageTests
     {
         var content = ReadRepoFile(
             "src/Apperture.ControlPlane/Apperture.Management.Ui.Client/Pages/Config/PlatformSettings.razor");
-        content.Should().Contain("ManagementSection");
-        content.Should().Contain("PlatformSettingUiHelpers.GetCategoryTitle");
-        content.Should().Contain("<PlatformSettingRow");
+        content.Should().Contain("PlatformSettingsEditor");
+        content.Should().Contain("ActiveCategory");
     }
 
     [Fact]

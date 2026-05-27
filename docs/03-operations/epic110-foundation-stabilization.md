@@ -159,7 +159,9 @@ Decision records: [Epic 111](../02-decisions/Epic111-Platform-Settings-Operator-
 
 ## Recommended next epic (post-119)
 
-Epic 120: first production module-owned integration setting key. Runtime WorkerHost consumption remains deferred.
+Epic 120: settings UI presentation refinement and Development-gated demo input gallery (`demo.settings.*`). No new production keys.
+
+Epic 121 (recommended next): first production module-owned integration setting key. Runtime WorkerHost consumption remains deferred.
 
 Alternatively: expanded WorkerHost runtime overlays for Phase 1 keys, **Epic 108b DPAPI** credential binding, or a broader UI/design-system sweep — per team priority.
 

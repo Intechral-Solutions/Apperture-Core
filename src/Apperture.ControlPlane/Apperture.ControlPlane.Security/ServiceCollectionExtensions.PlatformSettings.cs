@@ -6,6 +6,7 @@ using Apperture.Core.Application.Services;
 using Apperture.Persistence.SqlServer;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 
 namespace Apperture.ControlPlane.Security;
@@ -14,7 +15,8 @@ public static class PlatformSettingsServiceCollectionExtensions
 {
     public static IServiceCollection AddApperturePlatformSettingsCore(this IServiceCollection services)
     {
-        services.AddSingleton<IPlatformSettingDefinitionRegistry, PlatformSettingDefinitionRegistry>();
+        // Production registry; Management host replaces with GatedPlatformSettingDefinitionRegistry.
+        services.TryAddSingleton<IPlatformSettingDefinitionRegistry, PlatformSettingDefinitionRegistry>();
         services.AddScoped<IPlatformSettingValueRepository, SqlPlatformSettingValueRepository>();
         services.AddScoped<IPlatformSettingsResolver, PlatformSettingsResolver>();
         services.AddScoped<IPlatformSettingOptionProviderRegistry, PlatformSettingOptionProviderRegistry>();
@@ -31,6 +33,7 @@ public static class PlatformSettingsServiceCollectionExtensions
         IConfiguration configuration)
     {
         services.AddApperturePlatformSettingsCore();
+        services.AddSingleton<IPlatformSettingDefinitionRegistry, GatedPlatformSettingDefinitionRegistry>();
         services.AddSingleton<IIntegrationSettingDefinitionRegistry, IntegrationSettingDefinitionRegistry>();
         services.AddScoped<IIntegrationSettingsResolver, IntegrationSettingsResolver>();
         services.AddScoped<IIntegrationSettingsService, IntegrationSettingsService>();

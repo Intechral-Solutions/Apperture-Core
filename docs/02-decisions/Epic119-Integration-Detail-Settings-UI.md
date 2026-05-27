@@ -31,4 +31,4 @@ Epic 118 delivered integration-scoped settings persistence and API routes. Opera
 
 ## Recommended next epic
 
-**Epic 120:** First real module-owned integration setting key in the integration definition registry.
+**Epic 121 (recommended):** First real module-owned integration setting key in the integration definition registry. (Epic 120 delivered settings UI presentation and demo gallery instead.)

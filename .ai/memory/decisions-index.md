@@ -67,3 +67,4 @@ Architecture decision records (ADRs) live in [docs/02-decisions/](../../docs/02-
 | [Epic 117](../../docs/02-decisions/Epic117-Integration-Scoped-Settings-Design.md) | Integration-scoped settings and Integration Detail settings UI design |
 | [Epic 118](../../docs/02-decisions/Epic118-Integration-Settings-API-Foundation.md) | Integration-scoped settings persistence and API foundation |
 | [Epic 119](../../docs/02-decisions/Epic119-Integration-Detail-Settings-UI.md) | Integration Detail settings UI |
+| [Epic 120](../../docs/02-decisions/Epic120-Settings-Presentation-Demo-Gallery.md) | Settings presentation refinement and Development-gated demo input gallery |
