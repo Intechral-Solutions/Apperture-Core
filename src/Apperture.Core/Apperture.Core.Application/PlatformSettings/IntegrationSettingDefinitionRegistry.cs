@@ -1,6 +1,6 @@
 namespace Apperture.Core.Application.PlatformSettings;
 
-/// <summary>Platform-owned integration-scoped setting definitions. Empty until Epic 120+ adds production keys.</summary>
+/// <summary>Platform-owned integration-scoped setting definitions. Module demos merge via <see cref="CompositeIntegrationSettingDefinitionRegistry"/>.</summary>
 public sealed class IntegrationSettingDefinitionRegistry : IIntegrationSettingDefinitionRegistry
 {
     private static readonly IReadOnlyList<PlatformSettingDefinition> Definitions = [];

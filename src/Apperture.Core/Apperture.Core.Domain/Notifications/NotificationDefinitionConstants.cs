@@ -3,6 +3,8 @@ namespace Apperture.Core.Domain.Notifications;
 public static class NotificationDefinitionIds
 {
     public const string PlatformScheduleExpectedRunMissing = "platform.schedule.expected_run_missing";
+
+    public const string ModuleSampleHelloWorldDemoCompleted = "module.sample.helloworld.demo.completed";
 }
 
 public static class NotificationSourceKinds

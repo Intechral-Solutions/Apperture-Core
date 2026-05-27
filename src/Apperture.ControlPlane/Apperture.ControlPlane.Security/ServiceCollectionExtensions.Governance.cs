@@ -1,6 +1,7 @@
 using Apperture.Bootstrap;
 using Apperture.ControlPlane.Dashboard;
 using Apperture.ControlPlane.Security.Audit;
+using Apperture.Core.Application.PlatformSettings;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Governance;
 using Apperture.ModuleSdk.Abstractions;
@@ -156,6 +157,12 @@ public static class ServiceCollectionExtensions
     {
         var list = modules?.ToList() ?? [];
         services.AddSingleton<IEnumerable<IModule>>(list);
+        foreach (var module in list)
+        {
+            if (module is IModuleIntegrationSettingDefinitionContributor contributor)
+                services.AddSingleton<IModuleIntegrationSettingDefinitionContributor>(contributor);
+        }
+
         services.AddSingleton<IModuleManifestProvider, KnownModuleManifestProvider>();
         return services;
     }

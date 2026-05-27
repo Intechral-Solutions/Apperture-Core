@@ -99,7 +99,7 @@ public sealed class SqlNotificationDefinitionStore : INotificationDefinitionStor
 
         if (command.RuleJson is not null)
         {
-            if (entity.Origin == NotificationDefinitionOrigins.PlatformBuiltIn)
+            if (entity.Origin is NotificationDefinitionOrigins.PlatformBuiltIn or NotificationDefinitionOrigins.ModuleBuiltIn)
                 throw new InvalidOperationException("Built-in rule JSON is immutable.");
             entity.RuleJson = command.RuleJson;
             entity.PrimaryEventType = ExtractPrimaryEventType(command.RuleJson);
@@ -107,7 +107,7 @@ public sealed class SqlNotificationDefinitionStore : INotificationDefinitionStor
 
         if (command.TemplateJson is not null)
         {
-            if (entity.Origin == NotificationDefinitionOrigins.PlatformBuiltIn)
+            if (entity.Origin is NotificationDefinitionOrigins.PlatformBuiltIn or NotificationDefinitionOrigins.ModuleBuiltIn)
                 throw new InvalidOperationException("Built-in template JSON is immutable.");
             entity.TemplateJson = command.TemplateJson;
         }

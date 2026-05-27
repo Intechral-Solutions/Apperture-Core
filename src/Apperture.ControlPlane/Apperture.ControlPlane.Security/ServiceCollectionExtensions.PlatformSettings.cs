@@ -34,7 +34,11 @@ public static class PlatformSettingsServiceCollectionExtensions
     {
         services.AddApperturePlatformSettingsCore();
         services.AddSingleton<IPlatformSettingDefinitionRegistry, GatedPlatformSettingDefinitionRegistry>();
-        services.AddSingleton<IIntegrationSettingDefinitionRegistry, IntegrationSettingDefinitionRegistry>();
+        services.AddSingleton<IntegrationSettingDefinitionRegistry>();
+        services.AddSingleton<IIntegrationSettingDefinitionRegistry>(sp =>
+            new CompositeIntegrationSettingDefinitionRegistry(
+                sp.GetRequiredService<IntegrationSettingDefinitionRegistry>(),
+                sp.GetServices<IModuleIntegrationSettingDefinitionContributor>()));
         services.AddScoped<IIntegrationSettingsResolver, IntegrationSettingsResolver>();
         services.AddScoped<IIntegrationSettingsService, IntegrationSettingsService>();
         services.AddScoped<IntegrationSettingsAuthorization>();

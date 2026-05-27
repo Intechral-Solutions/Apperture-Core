@@ -9,6 +9,40 @@ namespace Apperture.UnitTests.Sample;
 public sealed class HelloWorldSignalsAdoptionTests
 {
     [Fact]
+    public async Task Complete_emits_demo_completed_by_default()
+    {
+        var harness = ModuleTestHarness.ForModule(new HelloWorldModule())
+            .WithIntegrationId("int-hw")
+            .WithRunId("run-hw-default")
+            .WithSlotResolver(slot =>
+                string.Equals(slot, "Db", StringComparison.Ordinal) ? new HarnessStubDbConnection() : null)
+            .Build();
+
+        var context = harness.CreateStepContext("Complete");
+        await new HelloWorldCompleteStepHandler().ExecuteAsync(context, new Dictionary<string, object?>());
+
+        harness.PlatformEvents.ShouldContain("demo.completed");
+    }
+
+    [Fact]
+    public async Task Complete_skips_emit_when_flag_explicitly_false()
+    {
+        var harness = ModuleTestHarness.ForModule(new HelloWorldModule())
+            .WithIntegrationId("int-hw")
+            .WithRunId("run-hw-off")
+            .WithSlotResolver(slot =>
+                string.Equals(slot, "Db", StringComparison.Ordinal) ? new HarnessStubDbConnection() : null)
+            .Build();
+
+        var context = harness.CreateStepContext("Complete");
+        await new HelloWorldCompleteStepHandler().ExecuteAsync(
+            context,
+            new Dictionary<string, object?> { ["emitDemoPlatformEvent"] = false });
+
+        harness.PlatformEvents.EmittedEvents.Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task Complete_uses_Signals_Events_and_Logs_when_emit_flag_set()
     {
         var harness = ModuleTestHarness.ForModule(new HelloWorldModule())

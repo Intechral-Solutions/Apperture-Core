@@ -1,3 +1,5 @@
+using Apperture.Core.Application.Execution;
+using Apperture.Core.Application.PlatformSettings;
 using Apperture.ModuleSdk.Abstractions;
 using Apperture.ModuleSdk.Abstractions.Signals;
 using Apperture.RuntimePlane.Abstractions;
@@ -5,11 +7,10 @@ using Apperture.Core.Domain.Governance;
 using Apperture.Core.Domain.Operations;
 using Apperture.Core.Domain.Procedures;
 using Apperture.Shared.Kernel;
-using Apperture.Core.Application.Execution;
 
 namespace Sample.HelloWorld;
 
-public sealed class HelloWorldModule : IModule, IModuleStepHandlerRegistrar, IOperationDefinitionProvider
+public sealed class HelloWorldModule : IModule, IModuleStepHandlerRegistrar, IOperationDefinitionProvider, IModuleIntegrationSettingDefinitionContributor
 {
     private static readonly WorkflowDefinitionId DefinitionId = new("Sample.HelloWorld.HelloWorld");
     private static readonly OperationId OperationDefId = new("Sample.HelloWorld.DoWork");
@@ -29,7 +30,7 @@ public sealed class HelloWorldModule : IModule, IModuleStepHandlerRegistrar, IOp
             new ModuleSignalDeclaration(
                 "demo.completed",
                 "Demo completed",
-                "Emitted when the HelloWorld Complete step runs with emitDemoPlatformEvent=true.",
+                "Emitted when the HelloWorld Complete step runs (disable per-run with emitDemoPlatformEvent=false).",
                 "info",
                 RequiredDataProperties: ["message"])
         ],
@@ -96,4 +97,7 @@ public sealed class HelloWorldModule : IModule, IModuleStepHandlerRegistrar, IOp
         registry.Register(ModuleId, "DoWork", new HelloWorldDoWorkStepHandler());
         registry.Register(ModuleId, "Complete", new HelloWorldCompleteStepHandler());
     }
+
+    public IReadOnlyList<PlatformSettingDefinition> GetIntegrationSettingDefinitions() =>
+        HelloWorldDemoIntegrationSettingDefinitions.All;
 }

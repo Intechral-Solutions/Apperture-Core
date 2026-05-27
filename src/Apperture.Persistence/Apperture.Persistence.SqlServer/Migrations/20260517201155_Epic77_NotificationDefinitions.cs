@@ -78,35 +78,30 @@ namespace Apperture.Persistence.SqlServer.Migrations
                 columns: new[] { "SourceKind", "IsEnabled" });
 
             var seededAt = new DateTimeOffset(2026, 5, 17, 0, 0, 0, TimeSpan.Zero);
-            migrationBuilder.InsertData(
-                table: "NotificationDefinitions",
-                columns:
-                [
-                    "Id", "DisplayName", "Description", "SourceKind", "Origin", "Scope", "Mutability",
-                    "ModuleId", "IntegrationId", "PrimaryEventType", "IsEnabled", "DefaultSeverity",
-                    "RuleJson", "TemplateJson", "CreatedAtUtc", "UpdatedAtUtc", "CreatedByActorId", "UpdatedByActorId",
-                ],
-                values: new object[]
-                {
-                    NotificationDefinitionIds.PlatformScheduleExpectedRunMissing,
-                    "Expected run missing",
-                    "Platform built-in for schedule expectation attention (Epic 69 parity).",
-                    NotificationSourceKinds.PlatformEvent,
-                    NotificationDefinitionOrigins.PlatformBuiltIn,
-                    NotificationDefinitionScopes.Platform,
-                    NotificationDefinitionMutabilities.StaticRuleMutableSubscription,
-                    null,
-                    null,
-                    PlatformEventTypes.ScheduleExpectedRunMissing,
-                    true,
-                    "warning",
-                    ExpectedRunMissingNotificationDefinitionSeed.RuleJson,
-                    ExpectedRunMissingNotificationDefinitionSeed.TemplateJson,
-                    seededAt,
-                    seededAt,
-                    null,
-                    null,
-                });
+            var seed = ExpectedRunMissingNotificationDefinitionSeed.BuiltIn(seededAt);
+
+            static string N(object value) =>
+                value is null ? "NULL" : $"N'{((string)value).Replace("'", "''")}'";
+
+            static string DT(DateTimeOffset value) =>
+                $"'{value.ToUniversalTime():yyyy-MM-ddTHH:mm:ss.fffffffZ}'";
+
+            var sql = $@"
+IF NOT EXISTS (SELECT 1 FROM [NotificationDefinitions] WHERE [Id] = {N(seed.Id.Value)})
+BEGIN
+    INSERT INTO [NotificationDefinitions]
+        ([Id],[DisplayName],[Description],[SourceKind],[Origin],[Scope],[Mutability],
+         [ModuleId],[IntegrationId],[PrimaryEventType],[IsEnabled],[DefaultSeverity],
+         [RuleJson],[TemplateJson],[CreatedAtUtc],[UpdatedAtUtc],[CreatedByActorId],[UpdatedByActorId])
+    VALUES
+        ({N(seed.Id.Value)},{N(seed.DisplayName)},{N(seed.Description)},{N(seed.SourceKind)},{N(seed.Origin)},
+         {N(seed.Scope)},{N(seed.Mutability)},{N(seed.ModuleId)},{N(seed.IntegrationId)},
+         {N(seed.PrimaryEventType)},{(seed.IsEnabled ? 1 : 0)},{N(seed.DefaultSeverity)},
+         {N(seed.RuleJson)},{N(seed.TemplateJson)},{DT(seed.CreatedAtUtc)},{DT(seed.UpdatedAtUtc)},
+         {N(seed.CreatedByActorId)},{N(seed.UpdatedByActorId)});
+END";
+
+            migrationBuilder.Sql(sql);
         }
 
         /// <inheritdoc />

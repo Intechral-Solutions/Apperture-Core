@@ -29,13 +29,18 @@ public sealed class HelloWorldCompleteStepHandler : IStepHandler
                     "helloworld.complete.started",
                     "HelloWorld Complete step executing.");
 
-                var emitDemo = parameters.TryGetValue("emitDemoPlatformEvent", out var flag) && IsTruthy(flag);
-                if (emitDemo)
+                if (ShouldEmitDemoCompleted(parameters))
                 {
+                    parameters.TryGetValue("name", out var nameObj);
+                    var name = nameObj as string;
+                    var message = string.IsNullOrWhiteSpace(name)
+                        ? "HelloWorld demo platform event completed."
+                        : $"HelloWorld demo completed for {name}.";
+
                     _ = await context.Signals.Events.EmitAsync(
                         context.Signals.Correlation,
                         "demo.completed",
-                        new Dictionary<string, object?> { ["message"] = "HelloWorld demo platform event completed." },
+                        new Dictionary<string, object?> { ["message"] = message },
                         cancellationToken: cancellationToken).ConfigureAwait(false);
 
                     context.Signals.Logs.LogOperational(
@@ -58,11 +63,20 @@ public sealed class HelloWorldCompleteStepHandler : IStepHandler
         }
     }
 
-    private static bool IsTruthy(object? value) =>
+    private static bool ShouldEmitDemoCompleted(IReadOnlyDictionary<string, object?> parameters)
+    {
+        if (!parameters.TryGetValue("emitDemoPlatformEvent", out var flag))
+            return true;
+
+        return !IsExplicitlyFalse(flag);
+    }
+
+    private static bool IsExplicitlyFalse(object? value) =>
         value switch
         {
-            true => true,
-            JsonElement je when je.ValueKind == JsonValueKind.True => true,
+            false => true,
+            JsonElement je when je.ValueKind == JsonValueKind.False => true,
+            string s when string.Equals(s, "false", StringComparison.OrdinalIgnoreCase) => true,
             _ => false,
         };
 }

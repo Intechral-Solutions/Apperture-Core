@@ -27,6 +27,10 @@ public static class NotificationKindMapper
             return NotificationKinds.Activation;
         if (envelope.Type == PlatformEventTypes.ScheduleExpectedRunCleared)
             return NotificationKinds.Resolved;
+
+        if (envelope.Type.StartsWith("apperture.module.", StringComparison.Ordinal))
+            return NotificationKinds.Activation;
+
         return null;
     }
 
