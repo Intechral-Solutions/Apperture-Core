@@ -56,7 +56,7 @@ Aspire injects `ConnectionStrings:DefaultConnection` for SQL; that connection **
 
 **Separate SQL volumes:** Aspire (`apperture-aspire-sql`) and docker-compose (`apperture-sqlserver`) are independent. Dev users/passwords created on one path do not exist on the other. After switching to Aspire, sign in with the credentials from `DevTestUser` in your `appsettings.Development.json` (template default username/password). To wipe the Aspire database, remove the `apperture-aspire-sql` Docker volume and restart AppHost (migrations and dev bootstrap run again on Management.Host startup).
 
-**Mutual exclusion:** Do not run Aspire and `Start-Dev.ps1` at the same time — both bind ports 1433, 9000, and 9001. Aspire uses its own SQL container/volume (`apperture-aspire-sql`); the script path uses docker-compose (`apperture-sqlserver`).
+**Mutual exclusion:** Do not run Aspire and native script dev at the same time — both bind ports 1433, 9000, and 9001. Aspire uses its own SQL container/volume (`apperture-aspire-sql`); the script path uses docker-compose (`apperture-sqlserver`).
 
 ## Root Docker Compose shim (script path)
 
@@ -77,10 +77,10 @@ The script-based dev stack includes SQL Server for EF Core. **User Secrets are t
 ### Quick start (script path)
 
 ```powershell
-.\scripts\Start-Dev.ps1
+.\scripts\Manage.ps1 -Area dev -Command start
 ```
 
-This syncs User Secrets to `.env`, starts SQL Server (Docker), and launches the API (Management.Host), UI, and WorkerHost.
+This syncs User Secrets to `.env`, starts SQL Server (Docker), and launches the API (Management.Host), UI, and WorkerHost. Use `-Build` to build before start. Use `-Mode aspire` for AppHost orchestration instead.
 
 ### First-time setup
 
@@ -96,17 +96,16 @@ This syncs User Secrets to `.env`, starts SQL Server (Docker), and launches the 
    copy deploy\config\examples\appsettings.docker-dev.json.example src\Apperture.ControlPlane\Apperture.Management.Host\appsettings.Development.json
    ```
 
-3. Run `.\scripts\Start-Dev.ps1`
+3. Run `.\scripts\Manage.ps1 -Area dev -Command start` (or `.\scripts\Interactive.ps1`)
 
 ### How it works
 
 - **User Secrets** stores `SqlServer:Password`. The .NET app reads it via Configuration.
-- **scripts/dev/Sync-EnvFromUserSecrets.ps1** copies the password to `.env` as `MSSQL_SA_PASSWORD` for Docker Compose.
-- **Start-Dev.ps1** runs the sync, starts `docker compose up -d`, then starts Management.Host, the UI Server, and WorkerHost.
+- **Manage.ps1** native start syncs secrets to `.env`, runs `docker compose up -d`, then starts Management.Host, the UI Server, and WorkerHost.
 
 ### Stopping
 
-- `.\scripts\dev\down.ps1` stops the API, UI, and worker processes on ports 9000 and 9001.
+- `.\scripts\Manage.ps1 -Area dev -Command stop` stops the API, UI, and worker processes on ports 9000 and 9001.
 - `docker compose down` stops SQL Server.
 
 ### Dev test user (local login)

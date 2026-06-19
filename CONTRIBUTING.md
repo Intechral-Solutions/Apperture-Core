@@ -45,7 +45,7 @@ Requires Docker for the Aspire-managed SQL Server container.
    - Management API: `http://localhost:9000`
    - Aspire dashboard: use the **login URL printed in the AppHost console** (for example `https://localhost:17173/login?t=...`). The bare dashboard origin may redirect or fail in the browser if the dev certificate is untrusted; prefer the tokenized login link. HTTP fallback is often `http://localhost:15235`.
 
-   Stop any prior AppHost session before restarting (Ctrl+C, or `scripts/dev/down.ps1` plus stop lingering `dcp.exe` / WorkerHost processes) to avoid port conflicts and file-lock build errors.
+   Stop any prior AppHost session before restarting (Ctrl+C, or `.\scripts\Manage.ps1 -Area dev -Command stop` plus stop lingering `dcp.exe` / WorkerHost processes) to avoid port conflicts and file-lock build errors.
 
    **SQL and login (Aspire vs scripts):** AppHost uses a **separate** persistent SQL volume (`apperture-aspire-sql`), not the docker-compose `apperture-sqlserver` volume. Users and passwords from the script path are **not** shared. Under AppHost, `ConnectionStrings:DefaultConnection` from Aspire wins over `SqlServer:` in `appsettings.Development.json` for Management.Host and WorkerHost. Copy `appsettings.Development.json` for `DevTestUser` / `BootstrapPlatformAdmin` only — local login uses the password from that file (template default `dev`) against the **Aspire** database after Management.Host migrations run. To reset, delete the Aspire SQL volume in Docker and restart AppHost.
 
@@ -57,9 +57,15 @@ Requires Docker for the Aspire-managed SQL Server container.
 
 1. `dotnet user-secrets set "SqlServer:Password" "<password>" --project src/Apperture.ControlPlane/Apperture.Management.Host`
 2. Copy `deploy/config/examples/appsettings.docker-dev.json.example` to `src/Apperture.ControlPlane/Apperture.Management.Host/appsettings.Development.json`
-3. `.\scripts\Start-Dev.ps1`
+3. Native dev (default mode):
 
-Do not run Aspire and `Start-Dev.ps1` at the same time — both use ports 1433, 9000, and 9001.
+   ```powershell
+   .\scripts\Manage.ps1 -Area dev -Command start
+   ```
+
+   Or use the interactive menu: `.\scripts\Interactive.ps1`
+
+Do not run Aspire and native script dev at the same time — both use ports 1433, 9000, and 9001.
 
 ## Architecture and decisions
 

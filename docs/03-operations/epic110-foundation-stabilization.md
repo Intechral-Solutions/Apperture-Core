@@ -24,7 +24,7 @@
 ## Current stable baseline
 
 - **Aspire (preferred)** — AppHost orchestrates SQL (`apperture-aspire-sql` volume), Management API (:9000), Management UI (:9001), WorkerHost; API health gated on SQL/migrations; UI and Worker wait for API readiness.
-- **Scripts (alternate)** — [`Start-Dev.ps1`](../../scripts/Start-Dev.ps1) / docker-compose SQL (`apperture-sqlserver` volume); selective restart via `scripts/dev/`; **not deprecated**.
+- **Scripts (alternate)** — [`Manage.ps1`](../../scripts/Manage.ps1) (`-Area dev -Command start`, native default) / docker-compose SQL (`apperture-sqlserver` volume); service restart via `-Command restart-service`; **not deprecated**.
 - **Separate SQL volumes** — Aspire and script paths do not share users, passwords, or data. Do not run both paths simultaneously (ports 1433, 9000, 9001).
 - **appsettings** — Startup/default/template layer only; platform settings do not write back to JSON.
 - **Bootstrap store** — Non-secret SQL profile + credential references in JSON; no plaintext passwords; not the platform settings registry.
@@ -68,13 +68,13 @@ flowchart LR
 
 **One-time setup:** Copy [`appsettings.docker-dev.json.example`](../../deploy/config/examples/appsettings.docker-dev.json.example) to `Management.Host/appsettings.Development.json`, or run [`Initialize-AppertureEnvironment.ps1`](../../scripts/Initialize-AppertureEnvironment.ps1).
 
-**Clean restart:** Stop prior AppHost (Ctrl+C); optional `scripts/dev/down.ps1` if script-path processes linger. Avoid port conflicts and file-lock build errors.
+**Clean restart:** Stop prior AppHost (Ctrl+C); optional `.\scripts\Manage.ps1 -Area dev -Command stop` if script-path processes linger. Avoid port conflicts and file-lock build errors.
 
 ### Script / docker-compose path (alternate)
 
 | Step | Expected result |
 |------|-----------------|
-| Start | `.\scripts\Start-Dev.ps1` (after User Secrets SQL password + appsettings template) |
+| Start | `.\scripts\Manage.ps1 -Area dev -Command start` (after User Secrets SQL password + appsettings template) |
 | SQL volume | `apperture-sqlserver` (not `apperture-aspire-sql`) |
 | Endpoints | Same ports 9000/9001; credentials from **this** path's DB seed only |
 | Mutual exclusion | Do not run with Aspire simultaneously |

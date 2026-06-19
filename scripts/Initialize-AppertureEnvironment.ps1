@@ -5,7 +5,7 @@
     Copies the docker-dev appsettings template when missing, optionally initializes
     User Secrets for the docker-compose SQL path, and prints preferred startup commands.
 
-    Does not replace AppHost or Start-Dev.ps1. Does not create production bootstrap
+    Does not replace AppHost or Manage.ps1. Does not create production bootstrap
     configuration.json (Windows/on-prem bootstrap store is separate from local dev).
 .EXAMPLE
     .\scripts\Initialize-AppertureEnvironment.ps1
@@ -48,7 +48,7 @@ if (-not $SkipUserSecrets) {
           Write-Host "User Secrets already contains SqlServer:Password; left unchanged." -ForegroundColor Yellow
       } else {
           Write-Host ''
-          Write-Host 'Optional: set SqlServer:Password for the docker-compose / Start-Dev.ps1 path only.' -ForegroundColor DarkYellow
+          Write-Host 'Optional: set SqlServer:Password for the docker-compose / native Manage.ps1 path only.' -ForegroundColor DarkYellow
           Write-Host 'Aspire AppHost injects ConnectionStrings:DefaultConnection and does not require this for SQL.' -ForegroundColor DarkYellow
           $response = Read-Host 'Set SqlServer:Password in User Secrets now? [y/N]'
           if ($response -match '^[yY]') {
@@ -75,8 +75,9 @@ Write-Host '    Management UI:  http://localhost:9001'
 Write-Host '    Management API: http://localhost:9000'
 Write-Host '    Dashboard:      use tokenized login URL printed by AppHost'
 Write-Host ''
-Write-Host '  Alternate (scripts / docker-compose SQL):' -ForegroundColor Green
-Write-Host '    .\scripts\Start-Dev.ps1'
+Write-Host '  Alternate (scripts / docker-compose SQL, native mode default):' -ForegroundColor Green
+Write-Host '    .\scripts\Manage.ps1 -Area dev -Command start'
+Write-Host '    .\scripts\Interactive.ps1'
 Write-Host ''
 Write-Host 'SQL volumes are intentionally separate:' -ForegroundColor DarkYellow
 Write-Host '  - Aspire:          apperture-aspire-sql (dynamic port under AppHost)'

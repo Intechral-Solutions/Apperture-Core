@@ -1,77 +1,122 @@
 # Scripts
 
-PowerShell scripts for development, CI, and tooling. Run from the repo root or from within `scripts/`; paths are resolved via `$PSScriptRoot`. You can set `APPERTURE_REPO_ROOT` to override the repo root.
+PowerShell scripts for development, deployment scaffolding, CI, and tooling. Run from the repo root. Set `APPERTURE_REPO_ROOT` to override repo root detection.
 
-## Quick start (dev)
+## Quick start
 
-**First-time setup (optional helper):**
+**First-time setup (optional):**
 
 ```powershell
 .\scripts\Initialize-AppertureEnvironment.ps1
 ```
 
-Copies the docker-dev appsettings template when missing, optionally prompts for User Secrets SQL password (docker-compose path only), and prints Aspire vs script startup commands. Does not create production bootstrap `configuration.json`.
+Copies the docker-dev appsettings template when missing, optionally prompts for User Secrets SQL password (native/docker-compose path), and prints startup commands.
 
-**Preferred — Aspire** (requires Docker):
-
-```powershell
-dotnet run --project src/Apperture.AppHost/Apperture.AppHost.csproj
-```
-
-Starts SQL Server, Management API (:9000), Management UI (:9001), and WorkerHost. See [deploy/README.md](../deploy/README.md) for first-time appsettings copy and SQL password options.
-
-**Alternate — PowerShell scripts:**
+**Primary entry points:**
 
 ```powershell
-.\scripts\Start-Dev.ps1
+# Direct commands
+.\scripts\Manage.ps1 -Area dev -Command start
+.\scripts\Manage.ps1 -Area dev -Command start -Mode aspire
+.\scripts\Manage.ps1 -Area dev -Command start -Build
+
+# Interactive menu (delegates to Manage.ps1)
+.\scripts\Interactive.ps1
 ```
 
-First time on the script path: set the SQL password with `dotnet user-secrets set "SqlServer:Password" "<password>" --project src/Apperture.ControlPlane/Apperture.Management.Host` and copy `deploy/config/examples/appsettings.docker-dev.json.example` to `appsettings.Development.json` in the Host folder. See [deploy/README.md](../deploy/README.md), [management-platform-configuration.md](../docs/03-operations/management-platform-configuration.md), and [ADR-0039](../docs/02-decisions/ADR-0039-environment-startup-bootstrap-and-platform-settings.md).
+Saved defaults (`Area`, `Mode`, `Target`, `Service`, `Configuration`) persist in `scripts/.runtime/script-settings.ini` after successful commands. Resolution order: explicit CLI → saved INI → built-in default (`Mode` = **native** when unset).
 
-Stop script-started processes with `.\scripts\dev\down.ps1`; run `docker compose down` to stop SQL Server on the script path.
+```powershell
+.\scripts\Manage.ps1 -Command defaults
+.\scripts\Manage.ps1 -Command reset-defaults
+```
 
-Do not run Aspire and scripts simultaneously (port conflicts on 1433, 9000, 9001). They also use **different SQL volumes** — dev users/passwords from the script path are not present in the Aspire database and vice versa.
+## Manage.ps1 command surface
 
----
+### Dev (`-Area dev`)
 
-## Dev (`dev/`)
+| Command | Description |
+|---------|-------------|
+| `start` | Start native (default) or Aspire dev environment. Use `-Build` to build before start. |
+| `stop` | Stop dev environment (native leaves SQL container running). |
+| `restart` | Stop then start. |
+| `restart-service` | Restart `api`, `ui`, `worker`, `db`, or `all` (native only for per-service). |
+| `status` | Ports, PIDs, runtime mode, SQL container, worker state. |
+| `restore`, `build`, `clean`, `rebuild` | Solution-wide .NET commands. |
+| `build-ui`, `watch-ui` | UI asset scaffold (npm pipeline TODO). |
+
+Examples:
+
+```powershell
+.\scripts\Manage.ps1 -Area dev -Command start
+.\scripts\Manage.ps1 -Area dev -Command stop
+.\scripts\Manage.ps1 -Area dev -Command restart-service -Service api -Build
+.\scripts\Manage.ps1 -Area dev -Command status
+.\scripts\Manage.ps1 -Area dev -Command rebuild
+```
+
+### Deployment (`-Area deployment`, scaffolded)
+
+| Command | Description |
+|---------|-------------|
+| `status`, `restore`, `build`, `publish`, `deploy`, `build-ui` | Placeholder workflows for future packaging/deploy targets. |
+
+```powershell
+.\scripts\Manage.ps1 -Area deployment -Command status
+.\scripts\Manage.ps1 -Area deployment -Command deploy -Target windows-service
+```
+
+## Dev modes
+
+| Mode | Behavior |
+|------|----------|
+| **native** (default) | docker-compose SQL + local dotnet Management.Host (:9000), Ui.Server (:9001), WorkerHost |
+| **aspire** | `Apperture.AppHost` orchestration (requires Docker) |
+
+Do not run native and Aspire simultaneously (port conflicts on 1433, 9000, 9001). SQL volumes differ (`apperture-sqlserver` vs `apperture-aspire-sql`).
+
+## Layout
+
+```
+scripts/
+  Manage.ps1              # CLI entry point
+  Interactive.ps1         # Menu entry point
+  lib/                    # Shared helpers (paths, SDK, INI settings, dotnet, UI assets)
+  dev/
+    Invoke-Dev.ps1
+    commands/             # Dev command implementations
+    lib/                  # Dev runtime helpers
+    maintenance/          # reset-db, seed, backup, smoke scripts (not routed via Manage.ps1)
+  deployment/
+    Invoke-Deployment.ps1
+    commands/             # Deployment scaffolds
+  ci/                     # CI build/test/pack (unchanged)
+  tools/                  # OpenAPI/module scaffolds (unchanged)
+  .runtime/               # Local state (gitignored): script-settings.ini, dev PIDs
+```
+
+## Maintenance scripts (`dev/maintenance/`)
 
 | Script | Description |
 |--------|-------------|
-| **up.ps1** | Start the platform (syncs User Secrets to .env, starts SQL Server, API, UI, WorkerHost). Use `-NoBrowser` to avoid launching the browser. |
-| **Sync-EnvFromUserSecrets.ps1** | Copy `SqlServer:Password` from User Secrets to `.env` for Docker Compose. Called automatically by up.ps1. |
-| **down.ps1** | Stop API, UI, and worker processes on ports 9000 and 9001. |
-| **logs.ps1** | Show which processes are listening on dev ports. |
-| **seed.ps1** | Placeholder only — EF persistence and dev bootstrap run on Management.Host startup; no sample-data seed script yet. |
-| **reset-db.ps1** | Drop/recreate the `Apperture` database and apply all EF migrations. |
-| **Initialize-AppertureEnvironment.ps1** | One-time dev setup: copy appsettings template, optional User Secrets, print Aspire vs script paths. |
-| **Fix-ScheduleTables.ps1** | Create schedule tables if missing (only needed if migrations were out of sync). **Management.Host** on startup also applies migration `EnsureScheduleTablesConditional`, which does the same idempotently. |
+| **reset-db.ps1** | Drop/recreate `Apperture` database and apply EF migrations. |
+| **seed.ps1** | Placeholder — no sample-data seed script yet. |
+| **backup-databases.ps1** | Database backup utility. |
+| **Fix-ScheduleTables.ps1** | Create schedule tables if migrations were out of sync. |
+| **epic102-api-smoke.ps1** | API smoke test helper. |
 
-**`/api/runs` 500 — invalid `OperationRuns` columns (`CapturedOutputJson`, …):** Your database is missing columns the model expects (often migration history vs. schema drift). **Management.Host** runs `MigrateAsync` on startup; rebuild and restart the API so migration `20260322220000_EnsureOperationRunsExtendedColumns` applies (idempotent `ALTER TABLE`). Or run `dotnet ef database update --project src/Apperture.Persistence/Apperture.Persistence.SqlServer --startup-project src/Apperture.ControlPlane/Apperture.Management.Host`, or **`scripts/dev/reset-db.ps1`** for a clean DB.
-
----
+**`/api/runs` 500 — invalid `OperationRuns` columns:** Rebuild/restart the API so migrations apply, run `dotnet ef database update`, or **`scripts/dev/maintenance/reset-db.ps1`** for a clean DB.
 
 ## CI (`ci/`)
 
-| Script        | Description |
-|---------------|-------------|
-| **build.ps1** | Restore and build the solution. Use `-Configuration Release` and optional `-NoRestore`. |
-| **test.ps1**  | Run tests. Use `-Filter "UnitTests"` to run a subset, `-NoBuild` to skip build. |
-| **pack.ps1**  | Pack NuGet packages (`-Configuration Release`, optional `-OutputPath`, `-NoBuild`). |
-
----
-
-## Tools (`tools/`)
-
-| Script                  | Description |
-|-------------------------|-------------|
-| **generate-openapi.ps1**| Placeholder: generate OpenAPI spec/client from the Management API. |
-| **scaffold-module.ps1** | Placeholder: scaffold a new module (e.g. `-Name MyDomain`). |
-
----
+| Script | Description |
+|--------|-------------|
+| **build.ps1** | Restore and build the solution. |
+| **test.ps1** | Run tests (`-Filter`, `-NoBuild`). |
+| **pack.ps1** | Pack NuGet packages. |
 
 ## Requirements
 
 - **.NET SDK 10** (see `global.json`)
-- **Docker** (SQL Server in dev — Aspire or script path)
-- **PowerShell** 5.1 or PowerShell Core (script path only)
+- **Docker** (SQL Server in dev — native or Aspire)
+- **PowerShell** 5.1 or PowerShell Core

@@ -93,3 +93,6 @@ secrets.json
 coverage/
 .nyc_output/
 poc/
+
+# Local script runtime state (Manage.ps1 defaults, dev PIDs)
+scripts/.runtime/
