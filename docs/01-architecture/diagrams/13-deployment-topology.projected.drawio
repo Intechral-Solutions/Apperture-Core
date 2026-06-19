@@ -1,0 +1,100 @@
+<mxfile host="app.diagrams.net" agent="Apperture" version="24.0.0" type="device">
+  <diagram name="13 Deployment Topology (Projected)" id="13-deploy-projected">
+    <mxGraphModel dx="1400" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1400" pageHeight="1000" math="0" shadow="0" adaptiveColors="auto">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="title" value="&lt;b&gt;13 — Deployment Topology (Projected)&lt;/b&gt;&lt;br&gt;On-prem Windows services + cloud Azure per-module Function Apps" style="text;html=1;fontSize=16;align=center;" vertex="1" parent="1">
+          <mxGeometry x="200" y="15" width="1000" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="legend" value="&lt;font style=&quot;font-size: 10px;&quot;&gt;■ Existing patterns  ■ New / production target (#d5e8d4)&lt;/font&gt;" style="text;html=1;align=right;" vertex="1" parent="1">
+          <mxGeometry x="950" y="25" width="400" height="30" as="geometry"/>
+        </mxCell>
+        <mxCell id="onprem" value="On-Prem — Windows services (one module per process)" style="swimlane;startSize=28;fillColor=#d5e8d4;strokeColor=#82b366;fontStyle=1;pointerEvents=0;" vertex="1" parent="1">
+          <mxGeometry x="40" y="80" width="640" height="420" as="geometry"/>
+        </mxCell>
+        <mxCell id="mgmt" value="Management.Host + Ui.Server&lt;br&gt;(Control Plane — IIS or Windows service)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="onprem">
+          <mxGeometry x="30" y="45" width="280" height="65" as="geometry"/>
+        </mxCell>
+        <mxCell id="worker-svc" value="Worker Windows Service&lt;br&gt;StartRequestWorker • dispatch consumers" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="onprem">
+          <mxGeometry x="30" y="130" width="260" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="scheduler-svc" value="Scheduler Windows Service&lt;br&gt;schedule evaluation + durable enqueue" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="onprem">
+          <mxGeometry x="310" y="130" width="280" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="module-svc" value="Module Windows Service (×N)&lt;br&gt;one module per process" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontStyle=1" vertex="1" parent="onprem">
+          <mxGeometry x="30" y="210" width="280" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="agent-svc" value="InstanceAgent Windows Service&lt;br&gt;enrollment • heartbeat • remote control" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="onprem">
+          <mxGeometry x="330" y="210" width="260" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="sql-onprem" value="SQL Server&lt;br&gt;platform DB + dispatch" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=15;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="onprem">
+          <mxGeometry x="30" y="300" width="180" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="bootstrap" value="Bootstrap config&lt;br&gt;%ProgramData%\Apperture\bootstrap\" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="onprem">
+          <mxGeometry x="240" y="310" width="260" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="dtfx" value="DTFx task hub (on-prem adapter)" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=15;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="onprem">
+          <mxGeometry x="520" y="300" width="100" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="cloud" value="Cloud — Azure (one Function App per module)" style="swimlane;startSize=28;fillColor=#d5e8d4;strokeColor=#82b366;fontStyle=1;pointerEvents=0;" vertex="1" parent="1">
+          <mxGeometry x="720" y="80" width="640" height="420" as="geometry"/>
+        </mxCell>
+        <mxCell id="mgmt-cloud" value="Management API / UI&lt;br&gt;(App Service or container)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="cloud">
+          <mxGeometry x="30" y="45" width="240" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="func-mod-a" value="Azure Function App&lt;br&gt;Module A" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="cloud">
+          <mxGeometry x="30" y="130" width="170" height="55" as="geometry"/>
+        </mxCell>
+        <mxCell id="func-mod-b" value="Azure Function App&lt;br&gt;Module B" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="cloud">
+          <mxGeometry x="220" y="130" width="170" height="55" as="geometry"/>
+        </mxCell>
+        <mxCell id="func-mod-n" value="Function App ×N&lt;br&gt;(one module per app)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontStyle=2" vertex="1" parent="cloud">
+          <mxGeometry x="410" y="130" width="170" height="55" as="geometry"/>
+        </mxCell>
+        <mxCell id="durable" value="Durable Functions adapter&lt;br&gt;orchestrator + activities" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="cloud">
+          <mxGeometry x="30" y="210" width="260" height="55" as="geometry"/>
+        </mxCell>
+        <mxCell id="azure-storage" value="Azure Storage&lt;br&gt;Durable Functions task hub" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=15;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="cloud">
+          <mxGeometry x="320" y="200" width="200" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="kv" value="Azure Key Vault&lt;br&gt;secrets + connection strings" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=15;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="cloud">
+          <mxGeometry x="30" y="300" width="180" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="mi" value="Managed Identity&lt;br&gt;Function App → Key Vault / Storage / SQL" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="cloud">
+          <mxGeometry x="240" y="310" width="280" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="sql-cloud" value="Azure SQL / SQL Server&lt;br&gt;platform DB" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=15;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="cloud">
+          <mxGeometry x="540" y="300" width="80" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="shared" value="Portable workflow model — same definitions; backend adapter selected at deployment (ADR runtime portability)" style="text;html=1;align=center;fontSize=11;fontStyle=2" vertex="1" parent="1">
+          <mxGeometry x="40" y="520" width="1320" height="30" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-worker-sql" edge="1" parent="1" source="worker-svc" target="sql-onprem" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" value="SQL">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-scheduler-sql" edge="1" parent="1" source="scheduler-svc" target="sql-onprem" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" value="enqueue">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-module-dtfx" edge="1" parent="1" source="module-svc" target="dtfx" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#82b366;" value="DTFx adapter">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-func-storage" edge="1" parent="1" source="func-mod-a" target="azure-storage" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#82b366;">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-func-kv" edge="1" parent="1" source="func-mod-a" target="kv" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#82b366;" value="Managed Identity">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-durable-storage" edge="1" parent="1" source="durable" target="azure-storage" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#82b366;">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-mi-kv" edge="1" parent="1" source="mi" target="kv" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;dashed=1;strokeColor=#82b366;">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-mgmt-sql-cloud" edge="1" parent="1" source="mgmt-cloud" target="sql-cloud" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

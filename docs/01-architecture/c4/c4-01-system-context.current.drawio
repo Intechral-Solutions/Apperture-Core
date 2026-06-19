@@ -1,0 +1,68 @@
+<mxfile host="app.diagrams.net" agent="Apperture" version="24.0.0" type="device">
+  <diagram name="C4-01 System Context (Current)" id="c4-01-system-context-current">
+    <mxGraphModel dx="1400" dy="1000" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1400" pageHeight="1000" math="0" shadow="0" adaptiveColors="auto">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="title" value="&lt;b&gt;C4-01 System Context — Current&lt;/b&gt;" style="text;html=1;fontSize=16;align=center;" vertex="1" parent="1">
+          <mxGeometry x="400" y="20" width="600" height="30" as="geometry"/>
+        </mxCell>
+        <mxCell id="sys-boundary" value="Apperture Instance" style="swimlane;html=1;startSize=30;fillColor=#e1d5e7;strokeColor=#9673a6;pointerEvents=0;fontStyle=1" vertex="1" parent="1">
+          <mxGeometry x="480" y="320" width="440" height="200" as="geometry"/>
+        </mxCell>
+        <mxCell id="sys-desc" value="Single-tenant workflow orchestration platform&lt;br&gt;Control plane + instance plane + runtime" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;align=center;" vertex="1" parent="sys-boundary">
+          <mxGeometry x="60" y="60" width="320" height="100" as="geometry"/>
+        </mxCell>
+        <mxCell id="operator" value="Operator / Admin" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;outlineConnect=0;fillColor=#f5f5f5;strokeColor=#666666;" vertex="1" parent="1">
+          <mxGeometry x="120" y="360" width="40" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="module-authors" value="Module Authors" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;outlineConnect=0;fillColor=#f5f5f5;strokeColor=#666666;" vertex="1" parent="1">
+          <mxGeometry x="120" y="520" width="40" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="sql-server" value="SQL Server" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=12;fillColor=#f5f5f5;strokeColor=#666666;" vertex="1" parent="1">
+          <mxGeometry x="1020" y="340" width="100" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="key-vault" value="Azure Key Vault" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;" vertex="1" parent="1">
+          <mxGeometry x="1020" y="460" width="140" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="entra" value="Microsoft Entra OIDC" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;" vertex="1" parent="1">
+          <mxGeometry x="640" y="120" width="160" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="sftp" value="SFTP Endpoints" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;" vertex="1" parent="1">
+          <mxGeometry x="480" y="600" width="140" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="campus-nexus" value="Campus Nexus API" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;" vertex="1" parent="1">
+          <mxGeometry x="780" y="600" width="140" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-op-sys" edge="1" parent="1" source="operator" target="sys-boundary" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" value="Manages via HTTP / OIDC">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-ma-sys" edge="1" parent="1" source="module-authors" target="sys-boundary" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;entryX=0;entryY=0.75;entryDx=0;entryDy=0;" value="Publishes modules">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-sys-sql" edge="1" parent="1" source="sys-boundary" target="sql-server" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;exitX=1;exitY=0.35;exitDx=0;exitDy=0;" value="SQL">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-sys-kv" edge="1" parent="1" source="sys-boundary" target="key-vault" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;exitX=1;exitY=0.65;exitDx=0;exitDy=0;" value="Secrets (partial)">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-sys-entra" edge="1" parent="1" source="sys-boundary" target="entra" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;exitX=0.5;exitY=0;exitDx=0;exitDy=0;" value="OIDC">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-sys-sftp" edge="1" parent="1" source="sys-boundary" target="sftp" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;exitX=0.25;exitY=1;exitDx=0;exitDy=0;" value="SFTP">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-sys-cns" edge="1" parent="1" source="sys-boundary" target="campus-nexus" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;exitX=0.75;exitY=1;exitDx=0;exitDy=0;" value="HTTP / OData">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-op-entra" edge="1" parent="1" source="operator" target="entra" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;dashed=1;" value="Sign-in">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="200" y="145"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

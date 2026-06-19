@@ -1,0 +1,142 @@
+<mxfile host="app.diagrams.net" agent="Apperture" version="24.0.0" type="device">
+  <diagram name="12 Persistence ER (Projected)" id="12-persistence-er-projected">
+    <mxGraphModel dx="1600" dy="1200" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1800" pageHeight="1400" math="0" shadow="0" adaptiveColors="auto">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="title" value="&lt;b&gt;12 — Persistence Entity Relationships (Projected)&lt;/b&gt;&lt;br&gt;TenantId on key entities + federation tables (ADR-0005)" style="text;html=1;fontSize=16;align=center;" vertex="1" parent="1">
+          <mxGeometry x="350" y="15" width="1100" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="legend" value="&lt;font style=&quot;font-size: 10px;&quot;&gt;■ Existing  ■ New / changed (#d5e8d4) — TenantId annotations in green&lt;/font&gt;" style="text;html=1;align=right;" vertex="1" parent="1">
+          <mxGeometry x="1180" y="25" width="580" height="30" as="geometry"/>
+        </mxCell>
+        <mxCell id="tenant-note" value="+ TenantId on key entities&lt;br&gt;(WorkflowInstances, OperationRuns, Integrations, Connections, PlatformEvents, NotificationInstances, ScheduleDefinitions…)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontStyle=2;align=left;" vertex="1" parent="1">
+          <mxGeometry x="40" y="75" width="520" height="55" as="geometry"/>
+        </mxCell>
+        <mxCell id="wf-lane" value="Workflow &amp;amp; execution (existing + TenantId)" style="swimlane;startSize=24;fillColor=#dae8fc;strokeColor=#6c8ebf;fontStyle=1;pointerEvents=0;" vertex="1" parent="1">
+          <mxGeometry x="40" y="150" width="1100" height="280" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-wi" value="WorkflowInstances&lt;br&gt;+ TenantId" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontStyle=1" vertex="1" parent="wf-lane">
+          <mxGeometry x="200" y="50" width="170" height="55" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-or" value="OperationRuns&lt;br&gt;+ TenantId" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontStyle=1" vertex="1" parent="wf-lane">
+          <mxGeometry x="420" y="50" width="170" height="55" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-wsi" value="WorkflowStepInstances" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="wf-lane">
+          <mxGeometry x="200" y="150" width="200" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-wsr" value="WorkflowStartRequests" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="wf-lane">
+          <mxGeometry x="40" y="50" width="140" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-wle" value="WorkflowLifecycleEvents" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="wf-lane">
+          <mxGeometry x="630" y="50" width="190" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-wcr" value="WorkflowCancelRequests" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="wf-lane">
+          <mxGeometry x="420" y="150" width="170" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-wecr" value="WorkflowExternalControlRequests" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="wf-lane">
+          <mxGeometry x="630" y="150" width="210" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="int-lane" value="Integrations &amp;amp; connectors (+ TenantId)" style="swimlane;startSize=24;fillColor=#dae8fc;strokeColor=#6c8ebf;fontStyle=1;pointerEvents=0;" vertex="1" parent="1">
+          <mxGeometry x="40" y="450" width="700" height="160" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-int" value="Integrations&lt;br&gt;+ TenantId" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="int-lane">
+          <mxGeometry x="40" y="50" width="150" height="55" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-bind" value="Bindings" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="int-lane">
+          <mxGeometry x="230" y="50" width="150" height="55" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-conn" value="Connections&lt;br&gt;+ TenantId" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="int-lane">
+          <mxGeometry x="420" y="50" width="150" height="55" as="geometry"/>
+        </mxCell>
+        <mxCell id="sch-lane" value="Scheduling (+ TenantId)" style="swimlane;startSize=24;fillColor=#fff2cc;strokeColor=#d6b656;fontStyle=1;pointerEvents=0;" vertex="1" parent="1">
+          <mxGeometry x="780" y="450" width="560" height="160" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-sd" value="ScheduleDefinitions&lt;br&gt;+ TenantId" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="sch-lane">
+          <mxGeometry x="40" y="50" width="180" height="55" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-sa" value="ScheduleAssignments" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="sch-lane">
+          <mxGeometry x="260" y="50" width="170" height="55" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-sr" value="ScheduleRuns" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="sch-lane">
+          <mxGeometry x="470" y="50" width="150" height="55" as="geometry"/>
+        </mxCell>
+        <mxCell id="sig-lane" value="Signals &amp;amp; notifications (+ TenantId)" style="swimlane;startSize=24;fillColor=#e1d5e7;strokeColor=#9673a6;fontStyle=1;pointerEvents=0;" vertex="1" parent="1">
+          <mxGeometry x="40" y="640" width="700" height="160" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-pe" value="PlatformEvents&lt;br&gt;+ TenantId" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="sig-lane">
+          <mxGeometry x="40" y="50" width="150" height="55" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-ni" value="NotificationInstances&lt;br&gt;+ TenantId" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="sig-lane">
+          <mxGeometry x="230" y="50" width="190" height="55" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-al" value="AuditLogs" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="sig-lane">
+          <mxGeometry x="460" y="50" width="130" height="55" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-te" value="TelemetryEvents" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="sig-lane">
+          <mxGeometry x="610" y="50" width="70" height="55" as="geometry"/>
+        </mxCell>
+        <mxCell id="sec-lane" value="Secrets &amp;amp; runtime trust (existing)" style="swimlane;startSize=24;fillColor=#fff2cc;strokeColor=#d6b656;fontStyle=1;pointerEvents=0;" vertex="1" parent="1">
+          <mxGeometry x="780" y="640" width="560" height="160" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-sdsc" value="SecretDescriptors" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="sec-lane">
+          <mxGeometry x="40" y="50" width="140" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-sv" value="SecretVersions" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="sec-lane">
+          <mxGeometry x="210" y="50" width="130" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-et" value="EnrollmentTokens" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="sec-lane">
+          <mxGeometry x="370" y="50" width="140" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-ri" value="RuntimeIdentities" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="sec-lane">
+          <mxGeometry x="530" y="50" width="120" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="fed-lane" value="Federation domain (new tables — ADR-0005)" style="swimlane;startSize=28;fillColor=#d5e8d4;strokeColor=#82b366;fontStyle=1;pointerEvents=0;" vertex="1" parent="1">
+          <mxGeometry x="40" y="830" width="1300" height="200" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-ei" value="ExternalInstance&lt;br&gt;PK ExternalInstanceId&lt;br&gt;InstancePublicId • Status" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontStyle=1" vertex="1" parent="fed-lane">
+          <mxGeometry x="40" y="50" width="200" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-ir" value="InstanceRelationship&lt;br&gt;LocalInstanceId • ExternalInstanceId&lt;br&gt;RelationshipType • State • Direction" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontStyle=1" vertex="1" parent="fed-lane">
+          <mxGeometry x="300" y="45" width="280" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-gc" value="GrantedCapability&lt;br&gt;RelationshipId • Capability • Scope" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontStyle=1" vertex="1" parent="fed-lane">
+          <mxGeometry x="640" y="50" width="240" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="fed-note" value="Parent-child is first scenario on generalized relationship model; RemoteInstancePrincipal auth uses GrantedCapability (ADR-0012 projected)" style="text;html=1;align=left;fontSize=11;" vertex="1" parent="fed-lane">
+          <mxGeometry x="920" y="60" width="360" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="r-wi-wsi" edge="1" parent="1" source="e-wi" target="e-wsi" style="edgeStyle=entityRelationEdgeStyle;endArrow=ERzeroToMany;startArrow=ERone;html=1;rounded=0;">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="r-wi-or" edge="1" parent="1" source="e-wi" target="e-or" style="edgeStyle=entityRelationEdgeStyle;endArrow=ERzeroToMany;startArrow=ERone;html=1;rounded=0;">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="r-int-bind" edge="1" parent="1" source="e-int" target="e-bind" style="edgeStyle=entityRelationEdgeStyle;endArrow=ERzeroToMany;startArrow=ERone;html=1;rounded=0;">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="r-conn-bind" edge="1" parent="1" source="e-conn" target="e-bind" style="edgeStyle=entityRelationEdgeStyle;endArrow=ERzeroToMany;startArrow=ERone;html=1;rounded=0;">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="r-sd-sa" edge="1" parent="1" source="e-sd" target="e-sa" style="edgeStyle=entityRelationEdgeStyle;endArrow=ERzeroToMany;startArrow=ERone;html=1;rounded=0;">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="r-pe-ni" edge="1" parent="1" source="e-pe" target="e-ni" style="edgeStyle=entityRelationEdgeStyle;endArrow=ERzeroToMany;startArrow=ERone;html=1;rounded=0;">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="r-sdsc-sv" edge="1" parent="1" source="e-sdsc" target="e-sv" style="edgeStyle=entityRelationEdgeStyle;endArrow=ERzeroToMany;startArrow=ERone;html=1;rounded=0;">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="r-ei-ir" edge="1" parent="1" source="e-ei" target="e-ir" style="edgeStyle=entityRelationEdgeStyle;endArrow=ERzeroToMany;startArrow=ERone;html=1;rounded=0;strokeColor=#82b366;" value="ExternalInstanceId">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="r-ir-gc" edge="1" parent="1" source="e-ir" target="e-gc" style="edgeStyle=entityRelationEdgeStyle;endArrow=ERzeroToMany;startArrow=ERone;html=1;rounded=0;strokeColor=#82b366;" value="RelationshipId">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="r-pe-fed" edge="1" parent="1" source="e-pe" target="e-ir" style="edgeStyle=entityRelationEdgeStyle;endArrow=ERzeroToMany;startArrow=ERone;html=1;rounded=0;dashed=1;strokeColor=#82b366;" value="federation outbox filter">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

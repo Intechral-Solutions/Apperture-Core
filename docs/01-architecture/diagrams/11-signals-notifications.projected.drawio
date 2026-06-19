@@ -1,0 +1,109 @@
+<mxfile host="app.diagrams.net" agent="Apperture" version="24.0.0" type="device">
+  <diagram name="11 Signals Notifications (Projected)" id="11-signals-projected">
+    <mxGraphModel dx="1400" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1400" pageHeight="1050" math="0" shadow="0" adaptiveColors="auto">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="title" value="&lt;b&gt;11 — Platform Signals &amp;amp; Notifications (Projected)&lt;/b&gt;&lt;br&gt;Multi-channel delivery, OTel adapter, derived rules, federation (ADR-0010)" style="text;html=1;fontSize=16;align=center;" vertex="1" parent="1">
+          <mxGeometry x="200" y="15" width="1000" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="legend" value="&lt;font style=&quot;font-size: 10px;&quot;&gt;■ Existing today  ■ New / changed (#d5e8d4)&lt;/font&gt;" style="text;html=1;align=right;" vertex="1" parent="1">
+          <mxGeometry x="950" y="25" width="400" height="30" as="geometry"/>
+        </mxCell>
+        <mxCell id="rt" value="Runtime Plane — signal surfaces (existing + projected)" style="swimlane;startSize=28;fillColor=#ffe6cc;strokeColor=#d79b00;fontStyle=1;pointerEvents=0;" vertex="1" parent="1">
+          <mxGeometry x="40" y="80" width="420" height="300" as="geometry"/>
+        </mxCell>
+        <mxCell id="signals" value="IStepExecutionSignals&lt;br&gt;Events • Logs • Telemetry" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="rt">
+          <mxGeometry x="30" y="45" width="360" height="55" as="geometry"/>
+        </mxCell>
+        <mxCell id="events" value="Signals.Events → PlatformEvents" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="rt">
+          <mxGeometry x="30" y="120" width="170" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="logs" value="Signals.Logs → ILogger" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="rt">
+          <mxGeometry x="220" y="120" width="170" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="otel" value="OpenTelemetry adapter&lt;br&gt;IModuleTelemetry → OTel exporter" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="rt">
+          <mxGeometry x="30" y="190" width="360" height="55" as="geometry"/>
+        </mxCell>
+        <mxCell id="derived" value="Log / telemetry-derived rules&lt;br&gt;elevation with redaction + size limits" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="rt">
+          <mxGeometry x="30" y="260" width="360" height="30" as="geometry"/>
+        </mxCell>
+        <mxCell id="cp" value="Control Plane — notification platform (projected channels)" style="swimlane;startSize=28;fillColor=#dae8fc;strokeColor=#6c8ebf;fontStyle=1;pointerEvents=0;" vertex="1" parent="1">
+          <mxGeometry x="500" y="80" width="860" height="420" as="geometry"/>
+        </mxCell>
+        <mxCell id="pe" value="PlatformEvents&lt;br&gt;(canonical rule input)" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=15;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="cp">
+          <mxGeometry x="30" y="45" width="160" height="65" as="geometry"/>
+        </mxCell>
+        <mxCell id="rules" value="NotificationDefinitions&lt;br&gt;event + derived rules" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="cp">
+          <mxGeometry x="220" y="45" width="200" height="65" as="geometry"/>
+        </mxCell>
+        <mxCell id="subs" value="Subscriptions + preferences" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="cp">
+          <mxGeometry x="450" y="45" width="180" height="65" as="geometry"/>
+        </mxCell>
+        <mxCell id="coord" value="NotificationInstanceCoordinator&lt;br&gt;render + outbox staging" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="cp">
+          <mxGeometry x="30" y="140" width="280" height="55" as="geometry"/>
+        </mxCell>
+        <mxCell id="dispatch" value="NotificationDeliveryHostedService" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="cp">
+          <mxGeometry x="340" y="140" width="290" height="55" as="geometry"/>
+        </mxCell>
+        <mxCell id="channels" value="Delivery channels" style="swimlane;startSize=22;fillColor=#d5e8d4;strokeColor=#82b366;pointerEvents=0;" vertex="1" parent="cp">
+          <mxGeometry x="30" y="220" width="800" height="90" as="geometry"/>
+        </mxCell>
+        <mxCell id="email" value="Email (SMTP)&lt;br&gt;v1 — existing" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="channels">
+          <mxGeometry x="20" y="35" width="140" height="45" as="geometry"/>
+        </mxCell>
+        <mxCell id="digest" value="Digest channel&lt;br&gt;batched rollup" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="channels">
+          <mxGeometry x="180" y="35" width="140" height="45" as="geometry"/>
+        </mxCell>
+        <mxCell id="inapp" value="In-app channel&lt;br&gt;NotificationUserInboxItems" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="channels">
+          <mxGeometry x="340" y="35" width="180" height="45" as="geometry"/>
+        </mxCell>
+        <mxCell id="journal" value="Journal channel&lt;br&gt;operator timeline feed" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="channels">
+          <mxGeometry x="540" y="35" width="160" height="45" as="geometry"/>
+        </mxCell>
+        <mxCell id="fed" value="Federation adapters (ADR-0010)&lt;br&gt;filter PlatformEvents → signed child→parent envelopes" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontStyle=1" vertex="1" parent="cp">
+          <mxGeometry x="30" y="330" width="600" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="parent" value="Parent instance&lt;br&gt;reconciliation API" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="cp">
+          <mxGeometry x="660" y="330" width="170" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="note" value="Within-instance rules remain single source of truth; federation projects filtered events — no duplicate rule engines (ADR-0037 §12)" style="text;html=1;align=left;fontSize=11;fontStyle=2" vertex="1" parent="1">
+          <mxGeometry x="40" y="520" width="1200" height="30" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-signals-otel" edge="1" parent="1" source="signals" target="otel" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;dashed=1;strokeColor=#82b366;" value="wired adapter">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-logs-derived" edge="1" parent="1" source="logs" target="derived" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;dashed=1;strokeColor=#82b366;" value="optional elevation">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-otel-derived" edge="1" parent="1" source="otel" target="derived" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;dashed=1;strokeColor=#82b366;">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-events-pe" edge="1" parent="1" source="events" target="pe" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-derived-pe" edge="1" parent="1" source="derived" target="pe" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;dashed=1;strokeColor=#82b366;" value="derived events">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-pe-rules" edge="1" parent="1" source="pe" target="rules" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-rules-coord" edge="1" parent="1" source="rules" target="coord" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-coord-dispatch" edge="1" parent="1" source="coord" target="dispatch" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-dispatch-ch" edge="1" parent="1" source="dispatch" target="channels" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" value="multi-channel">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-pe-fed" edge="1" parent="1" source="pe" target="fed" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;dashed=1;strokeColor=#82b366;" value="filtered subscribe">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-fed-parent" edge="1" parent="1" source="fed" target="parent" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#82b366;" value="signed HTTP">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

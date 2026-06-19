@@ -1,0 +1,111 @@
+<mxfile host="app.diagrams.net" agent="Apperture" version="24.0.0" type="device">
+  <diagram name="07 Runtime Portability (Current)" id="07-runtime-portability-current">
+    <mxGraphModel dx="1400" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1400" pageHeight="900" math="0" shadow="0" adaptiveColors="auto">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="title" value="&lt;b&gt;07 — Runtime Portability (Current)&lt;/b&gt;&lt;br&gt;Portable model + SQL inline hot path; adapters stubbed" style="text;html=1;fontSize=16;align=center;" vertex="1" parent="1">
+          <mxGeometry x="300" y="10" width="800" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="rtLane" value="Runtime Plane" style="swimlane;startSize=30;fillColor=#ffe6cc;strokeColor=#d79b00;pointerEvents=0;" vertex="1" parent="1">
+          <mxGeometry x="40" y="80" width="900" height="320" as="geometry"/>
+        </mxCell>
+        <mxCell id="abstractions" value="RuntimePlane.Abstractions&lt;br&gt;• IWorkflowRuntime&lt;br&gt;• StartWorkflowRequest&lt;br&gt;• WorkflowDefinitionId&lt;br&gt;• OrchestrationSafeValidator" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;align=left;" vertex="1" parent="rtLane">
+          <mxGeometry x="30" y="50" width="240" height="110" as="geometry"/>
+        </mxCell>
+        <mxCell id="engine" value="RuntimePlane.Engine&lt;br&gt;• DefaultWorkflowExecutor&lt;br&gt;• WorkflowStartRequestProcessor&lt;br&gt;backend-agnostic logic" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;align=left;" vertex="1" parent="rtLane">
+          <mxGeometry x="310" y="50" width="240" height="110" as="geometry"/>
+        </mxCell>
+        <mxCell id="dispatch" value="Dispatch.SqlServer&lt;br&gt;IWorkflowStartDispatchService&lt;br&gt;IOperationStartDispatchService" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;align=left;" vertex="1" parent="rtLane">
+          <mxGeometry x="590" y="50" width="240" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="dtfxStub" value="RuntimePlane.DTFx&lt;br&gt;DurableTaskRuntimeAdapterStub&lt;br&gt;(empty stub)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;dashed=1;align=left;" vertex="1" parent="rtLane">
+          <mxGeometry x="30" y="200" width="240" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="dfStub" value="RuntimePlane.DurableFunctions&lt;br&gt;DurableFunctionsRuntimeStub&lt;br&gt;(all methods throw)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;dashed=1;align=left;" vertex="1" parent="rtLane">
+          <mxGeometry x="310" y="200" width="260" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="iwrNote" value="IWorkflowRuntime → DF stub (registered); DTFx not wired" style="text;html=1;align=left;fontSize=11;" vertex="1" parent="rtLane">
+          <mxGeometry x="590" y="210" width="280" height="30" as="geometry"/>
+        </mxCell>
+        <mxCell id="hotPathLane" value="Active Hot Path (today)" style="swimlane;startSize=30;fillColor=#d5e8d4;strokeColor=#82b366;pointerEvents=0;" vertex="1" parent="1">
+          <mxGeometry x="40" y="440" width="900" height="160" as="geometry"/>
+        </mxCell>
+        <mxCell id="worker" value="WorkerHost&lt;br&gt;StartRequestWorker" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="hotPathLane">
+          <mxGeometry x="30" y="50" width="160" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="processor" value="WorkflowStartRequestProcessor" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="hotPathLane">
+          <mxGeometry x="220" y="50" width="200" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="executor" value="DefaultWorkflowExecutor&lt;br&gt;(inline SQL step loop)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="hotPathLane">
+          <mxGeometry x="450" y="50" width="200" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="sqlPersist" value="Persistence.SqlServer&lt;br&gt;WorkflowInstances • StepInstances • Runs" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="hotPathLane">
+          <mxGeometry x="680" y="50" width="200" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="foundLane" value="Foundation" style="swimlane;startSize=30;fillColor=#fff2cc;strokeColor=#d6b656;pointerEvents=0;" vertex="1" parent="1">
+          <mxGeometry x="40" y="640" width="400" height="100" as="geometry"/>
+        </mxCell>
+        <mxCell id="sql" value="SQL Server&lt;br&gt;(AppertureDbContext)" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=15;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="foundLane">
+          <mxGeometry x="30" y="40" width="120" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="legend" value="&lt;b&gt;Legend&lt;/b&gt;  Implemented #dae8fc  |  Stubbed dashed #f5f5f5  |  Hot path = solid green container" style="text;html=1;align=left;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="480" y="660" width="460" height="30" as="geometry"/>
+        </mxCell>
+        <mxCell id="e1" edge="1" parent="1" source="abstractions" target="engine" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" value="contracts">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e2" edge="1" parent="1" source="abstractions" target="dtfxStub" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;dashed=1;" value="not wired">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e3" edge="1" parent="1" source="abstractions" target="dfStub" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;dashed=1;" value="registered stub">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e4" edge="1" parent="1" source="dispatch" target="sqlPersist" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" value="enqueue">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="710" y="400"/>
+              <mxPoint x="820" y="400"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e5" edge="1" parent="1" source="worker" target="processor" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" value="claim">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e6" edge="1" parent="1" source="processor" target="executor" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" value="step loop">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e7" edge="1" parent="1" source="executor" target="sqlPersist" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" value="SQL read/write">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e8" edge="1" parent="1" source="sqlPersist" target="sql" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" value="persist">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e9" edge="1" parent="1" source="engine" target="executor" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;dashed=1;" value="implements">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="420" y="420"/>
+              <mxPoint x="550" y="420"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e10" edge="1" parent="1" source="dtfxStub" target="executor" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;dashed=1;" value="future">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="150" y="400"/>
+              <mxPoint x="550" y="400"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e11" edge="1" parent="1" source="dfStub" target="executor" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;dashed=1;" value="future">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="440" y="410"/>
+              <mxPoint x="550" y="410"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

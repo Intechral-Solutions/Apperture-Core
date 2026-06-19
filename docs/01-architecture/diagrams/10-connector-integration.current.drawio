@@ -1,0 +1,139 @@
+<mxfile host="app.diagrams.net" agent="Apperture" version="24.0.0" type="device">
+  <diagram name="10 Connector Integration (Current)" id="10-connector-current">
+    <mxGraphModel dx="1400" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1400" pageHeight="1050" math="0" shadow="0" adaptiveColors="auto">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="title" value="&lt;b&gt;10 — Connector &amp;amp; Integration Model (Current)&lt;/b&gt;&lt;br&gt;Integration = canonical deployment unit" style="text;html=1;fontSize=16;align=center;" vertex="1" parent="1">
+          <mxGeometry x="280" y="20" width="640" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="cp" value="Control Plane — governed resource model" style="swimlane;startSize=28;fillColor=#dae8fc;strokeColor=#6c8ebf;fontStyle=1;pointerEvents=0;" vertex="1" parent="1">
+          <mxGeometry x="40" y="90" width="1320" height="280" as="geometry"/>
+        </mxCell>
+        <mxCell id="registry" value="IConnectorDefinitionRegistry&lt;br&gt;(in-process catalog at startup)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="cp">
+          <mxGeometry x="40" y="50" width="260" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="cd" value="ConnectorDefinition&lt;br&gt;(registry identity)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="cp">
+          <mxGeometry x="40" y="150" width="200" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="conn" value="Connection&lt;br&gt;config + SecretRefs&lt;br&gt;(SQL persisted)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="cp">
+          <mxGeometry x="280" y="150" width="200" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="integration" value="Integration&lt;br&gt;(canonical deployment unit)&lt;br&gt;ADR-0028" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontStyle=1" vertex="1" parent="cp">
+          <mxGeometry x="520" y="45" width="220" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="binding" value="Binding&lt;br&gt;slot → ConnectionId&lt;br&gt;integration-scoped API" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="cp">
+          <mxGeometry x="520" y="150" width="220" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="slot" value="CapabilitySlot&lt;br&gt;module:{id}:slot:{name}" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="cp">
+          <mxGeometry x="780" y="150" width="220" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="module" value="Module manifest&lt;br&gt;declares slots" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="cp">
+          <mxGeometry x="1040" y="150" width="200" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="apis" value="APIs: /api/connector-definitions | /connections | /api/integrations/{id}/bindings" style="text;html=1;align=left;fontSize=11;" vertex="1" parent="cp">
+          <mxGeometry x="40" y="235" width="700" height="30" as="geometry"/>
+        </mxCell>
+        <mxCell id="auth-note" value="Auth: connection.*, binding.*, connector.definition.read" style="text;html=1;align=right;fontSize=11;" vertex="1" parent="cp">
+          <mxGeometry x="800" y="235" width="440" height="30" as="geometry"/>
+        </mxCell>
+        <mxCell id="rt" value="Runtime Plane — slot-bound resolution" style="swimlane;startSize=28;fillColor=#ffe6cc;strokeColor=#d79b00;fontStyle=1;pointerEvents=0;" vertex="1" parent="1">
+          <mxGeometry x="40" y="400" width="1320" height="340" as="geometry"/>
+        </mxCell>
+        <mxCell id="entry" value="Resolve request&lt;br&gt;(integrationId, moduleId, slotName)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="rt">
+          <mxGeometry x="40" y="50" width="240" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="resolver" value="IRuntimeSlotResolver&lt;br&gt;SlotBoundResolver" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="rt">
+          <mxGeometry x="320" y="50" width="220" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="bind-lookup" value="IBindingRepository&lt;br&gt;GetBySlotAsync" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="rt">
+          <mxGeometry x="580" y="50" width="200" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="conn-lookup" value="IConnectionRepository&lt;br&gt;Active connection only" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="rt">
+          <mxGeometry x="820" y="50" width="200" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="material" value="ResolvedConnectionMaterialBuilder&lt;br&gt;ISecretResolver → merged config" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="rt">
+          <mxGeometry x="40" y="150" width="280" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="def-lookup" value="IConnectorDefinitionRegistry&lt;br&gt;validate ConnectorDefinitionId" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="rt">
+          <mxGeometry x="360" y="150" width="280" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="factory-reg" value="IConnectorClientFactoryRegistry&lt;br&gt;GetFactory&lt;T&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="rt">
+          <mxGeometry x="680" y="150" width="260" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="factory" value="IConnectorClientFactory&lt;T&gt;&lt;br&gt;Create(connection, material)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="rt">
+          <mxGeometry x="980" y="150" width="260" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="clients" value="Platform connector clients" style="swimlane;startSize=22;fillColor=#ffe6cc;strokeColor=#d79b00;pointerEvents=0;" vertex="1" parent="rt">
+          <mxGeometry x="40" y="250" width="1200" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="sql" value="Platform SQL&lt;br&gt;IDbConnection" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="clients">
+          <mxGeometry x="30" y="30" width="160" height="35" as="geometry"/>
+        </mxCell>
+        <mxCell id="cns" value="Campus Nexus&lt;br&gt;ICampusNexusApiClient" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="clients">
+          <mxGeometry x="220" y="30" width="180" height="35" as="geometry"/>
+        </mxCell>
+        <mxCell id="sftp" value="SFTP&lt;br&gt;ISftpFileClient" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="clients">
+          <mxGeometry x="430" y="30" width="150" height="35" as="geometry"/>
+        </mxCell>
+        <mxCell id="no-auth" value="No capability.consume at resolution (deferred)&lt;br&gt;Binding is the sole gate" style="text;html=1;align=left;fontStyle=2;fontSize=11;" vertex="1" parent="rt">
+          <mxGeometry x="650" y="260" width="350" height="40" as="geometry"/>
+        </mxCell>
+        <mxCell id="persist" value="Persistence (SQL)" style="swimlane;startSize=24;fillColor=#e1d5e7;strokeColor=#9673a6;pointerEvents=0;" vertex="1" parent="1">
+          <mxGeometry x="40" y="770" width="1320" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="tables" value="Connections, Bindings (ConnectorDefinitionId references registry — no SQL definition catalog)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="persist">
+          <mxGeometry x="300" y="30" width="720" height="40" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-reg-cd" edge="1" parent="1" source="registry" target="cd" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" value="registers">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-cd-conn" edge="1" parent="1" source="cd" target="conn" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" value="ConnectorDefinitionId">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-int-bind" edge="1" parent="1" source="integration" target="binding" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" value="owns bindings">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-conn-bind" edge="1" parent="1" source="conn" target="binding" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" value="ConnectionId">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-bind-slot" edge="1" parent="1" source="binding" target="slot" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" value="delegates">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-mod-slot" edge="1" parent="1" source="module" target="slot" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" value="declares">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-entry-resolver" edge="1" parent="1" source="entry" target="resolver" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-res-bind" edge="1" parent="1" source="resolver" target="bind-lookup" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" value="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-bind-conn" edge="1" parent="1" source="bind-lookup" target="conn-lookup" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" value="2">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-conn-mat" edge="1" parent="1" source="conn-lookup" target="material" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" value="3">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-mat-factory" edge="1" parent="1" source="material" target="factory" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" value="4–5">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-factory-sql" edge="1" parent="1" source="factory" target="sql" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" value="live client">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-factory-cns" edge="1" parent="1" source="factory" target="cns" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-factory-sftp" edge="1" parent="1" source="factory" target="sftp" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-conn-persist" edge="1" parent="1" source="conn" target="tables" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" value="SQL">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-bind-persist" edge="1" parent="1" source="binding" target="tables" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" value="SQL">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

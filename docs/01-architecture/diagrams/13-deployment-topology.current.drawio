@@ -1,0 +1,70 @@
+<mxfile host="app.diagrams.net" agent="Apperture" version="24.0.0" type="device">
+  <diagram name="13 Deployment Topology (Current)" id="13-deploy-current">
+    <mxGraphModel dx="1400" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1400" pageHeight="900" math="0" shadow="0" adaptiveColors="auto">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="title" value="&lt;b&gt;13 — Deployment Topology (Current)&lt;/b&gt;&lt;br&gt;Aspire local dev orchestration (Epic 106)" style="text;html=1;fontSize=16;align=center;" vertex="1" parent="1">
+          <mxGeometry x="280" y="20" width="840" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="aspire" value="Apperture.AppHost&lt;br&gt;dotnet run — DistributedApplication" style="swimlane;startSize=28;fillColor=#e1d5e7;strokeColor=#9673a6;fontStyle=1;pointerEvents=0;" vertex="1" parent="1">
+          <mxGeometry x="40" y="90" width="1320" height="520" as="geometry"/>
+        </mxCell>
+        <mxCell id="dashboard" value="Aspire Dashboard&lt;br&gt;:17173 (HTTPS) / :15235 (HTTP)&lt;br&gt;tokenized login URL" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="aspire">
+          <mxGeometry x="30" y="45" width="240" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="sql" value="SQL Server 2022&lt;br&gt;container • volume apperture-aspire-sql&lt;br&gt;:1433" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=15;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="aspire">
+          <mxGeometry x="320" y="40" width="220" height="90" as="geometry"/>
+        </mxCell>
+        <mxCell id="cp-lane" value="Control Plane hosts" style="swimlane;startSize=24;fillColor=#dae8fc;strokeColor=#6c8ebf;pointerEvents=0;" vertex="1" parent="aspire">
+          <mxGeometry x="30" y="150" width="600" height="200" as="geometry"/>
+        </mxCell>
+        <mxCell id="mgmt-api" value="Apperture.Management.Host&lt;br&gt;management-api • HTTP :9000&lt;br&gt;migrations on startup" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontStyle=1" vertex="1" parent="cp-lane">
+          <mxGeometry x="30" y="40" width="260" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="mgmt-ui" value="Apperture.Management.Ui.Server&lt;br&gt;management-ui • HTTP :9001&lt;br&gt;Blazor WASM client (bundled)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontStyle=1" vertex="1" parent="cp-lane">
+          <mxGeometry x="320" y="40" width="260" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="ui-note" value="Ui.Server proxies API → :9000 (ManagementUiDevApiRouting)" style="text;html=1;align=left;fontSize=11;" vertex="1" parent="cp-lane">
+          <mxGeometry x="30" y="135" width="400" height="25" as="geometry"/>
+        </mxCell>
+        <mxCell id="rt-lane" value="Runtime Plane host" style="swimlane;startSize=24;fillColor=#ffe6cc;strokeColor=#d79b00;pointerEvents=0;" vertex="1" parent="aspire">
+          <mxGeometry x="680" y="150" width="600" height="200" as="geometry"/>
+        </mxCell>
+        <mxCell id="worker" value="Apperture.RuntimeHost.Windows.WorkerHost&lt;br&gt;worker • background process&lt;br&gt;APERTURE_RUNTIME_ID=worker-local" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontStyle=1" vertex="1" parent="rt-lane">
+          <mxGeometry x="30" y="40" width="320" height="90" as="geometry"/>
+        </mxCell>
+        <mxCell id="worker-fns" value="StartRequestWorker&lt;br&gt;ScheduleDispatchRunner&lt;br&gt;module execution (in-process today)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="rt-lane">
+          <mxGeometry x="370" y="40" width="200" height="90" as="geometry"/>
+        </mxCell>
+        <mxCell id="intent" value="&lt;b&gt;One-module-per-process intent&lt;/b&gt;&lt;br&gt;Production target: separate ModuleHost per module. Dev Aspire collapses to WorkerHost for convenience — ModuleHostStub / SchedulerHostStub exist but are not orchestrated here." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;align=left;" vertex="1" parent="aspire">
+          <mxGeometry x="30" y="380" width="1260" height="55" as="geometry"/>
+        </mxCell>
+        <mxCell id="svcdef" value="Apperture.ServiceDefaults&lt;br&gt;health • OpenTelemetry • service discovery" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="40" y="640" width="320" height="55" as="geometry"/>
+        </mxCell>
+        <mxCell id="alt" value="Alternate path: scripts/Start-Dev.ps1 + docker-compose SQL&lt;br&gt;(mutually exclusive — same ports 1433, 9000, 9001)" style="text;html=1;align=left;fontSize=11;fontStyle=2" vertex="1" parent="1">
+          <mxGeometry x="400" y="650" width="600" height="40" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-aspire-sql" edge="1" parent="1" source="sql" target="mgmt-api" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" value="DefaultConnection">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-sql-worker" edge="1" parent="1" source="sql" target="worker" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" value="DefaultConnection">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-api-ui" edge="1" parent="1" source="mgmt-api" target="mgmt-ui" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" value="WaitFor • HTTP proxy">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-api-worker" edge="1" parent="1" source="mgmt-api" target="worker" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" value="WaitFor">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-svcdef-api" edge="1" parent="1" source="svcdef" target="mgmt-api" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;dashed=1;" value="AddServiceDefaults">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-svcdef-worker" edge="1" parent="1" source="svcdef" target="worker" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;dashed=1;">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

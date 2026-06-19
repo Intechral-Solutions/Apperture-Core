@@ -1,0 +1,142 @@
+<mxfile host="app.diagrams.net" agent="Apperture" version="24.0.0" type="device">
+  <diagram name="05 Workflow Hot Path (Projected)" id="05-workflow-hot-path-projected">
+    <mxGraphModel dx="1400" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1400" pageHeight="1100" math="0" shadow="0" adaptiveColors="auto">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="title" value="&lt;b&gt;05 — Workflow Hot Path (Projected)&lt;/b&gt;&lt;br&gt;SQL enqueue + durable orchestration via IWorkflowRuntime adapters" style="text;html=1;fontSize=16;align=center;" vertex="1" parent="1">
+          <mxGeometry x="300" y="10" width="800" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="cpLane" value="Control Plane" style="swimlane;startSize=30;fillColor=#dae8fc;strokeColor=#6c8ebf;pointerEvents=0;" vertex="1" parent="1">
+          <mxGeometry x="40" y="80" width="320" height="200" as="geometry"/>
+        </mxCell>
+        <mxCell id="api" value="Management API&lt;br&gt;POST /workflows/{id}/start&lt;br&gt;POST /runs/{id}/cancel|retry|park|resume" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="cpLane">
+          <mxGeometry x="20" y="50" width="280" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="scheduleTrig" value="ScheduleDispatchRunner" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="cpLane">
+          <mxGeometry x="20" y="140" width="280" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="sharedLane" value="Shared / Core" style="swimlane;startSize=30;fillColor=#e1d5e7;strokeColor=#9673a6;pointerEvents=0;" vertex="1" parent="1">
+          <mxGeometry x="400" y="80" width="300" height="200" as="geometry"/>
+        </mxCell>
+        <mxCell id="dispatchSvc" value="IWorkflowStartDispatchService&lt;br&gt;(durable handoff — existing)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="sharedLane">
+          <mxGeometry x="20" y="50" width="260" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="extCtrl" value="Cancel / park / resume intent&lt;br&gt;(existing persistence)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="sharedLane">
+          <mxGeometry x="20" y="130" width="260" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="foundLane" value="Foundation — Persistence" style="swimlane;startSize=30;fillColor=#fff2cc;strokeColor=#d6b656;pointerEvents=0;" vertex="1" parent="1">
+          <mxGeometry x="740" y="80" width="300" height="200" as="geometry"/>
+        </mxCell>
+        <mxCell id="persistTriple" value="WorkflowStartRequests&lt;br&gt;OperationRuns + WorkflowInstances&lt;br&gt;WorkflowLifecycleEvents" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="foundLane">
+          <mxGeometry x="20" y="50" width="260" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="rtLane" value="Runtime Plane — Durable Orchestration (new)" style="swimlane;startSize=30;fillColor=#ffe6cc;strokeColor=#d79b00;pointerEvents=0;" vertex="1" parent="1">
+          <mxGeometry x="40" y="320" width="1000" height="200" as="geometry"/>
+        </mxCell>
+        <mxCell id="iwr" value="IWorkflowRuntime&lt;br&gt;(portable contract)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="rtLane">
+          <mxGeometry x="20" y="50" width="180" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="dtfx" value="DTFx Adapter&lt;br&gt;(on-prem)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="rtLane">
+          <mxGeometry x="240" y="50" width="160" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="df" value="Durable Functions Adapter&lt;br&gt;(cloud)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="rtLane">
+          <mxGeometry x="440" y="50" width="180" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="engine" value="RuntimePlane.Engine&lt;br&gt;(backend-agnostic logic)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="rtLane">
+          <mxGeometry x="660" y="50" width="180" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="orchNote" value="Orchestration executes durable step graph; platform state synced to SQL" style="text;html=1;align=left;fontSize=11;" vertex="1" parent="rtLane">
+          <mxGeometry x="20" y="140" width="400" height="30" as="geometry"/>
+        </mxCell>
+        <mxCell id="ipLane" value="Instance Plane — WorkerHost (existing inline path)" style="swimlane;startSize=30;fillColor=#d5e8d4;strokeColor=#82b366;pointerEvents=0;" vertex="1" parent="1">
+          <mxGeometry x="40" y="560" width="1000" height="220" as="geometry"/>
+        </mxCell>
+        <mxCell id="worker" value="StartRequestWorker&lt;br&gt;claim / lease" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="ipLane">
+          <mxGeometry x="20" y="50" width="150" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="processor" value="WorkflowStartRequestProcessor&lt;br&gt;cancel / park / resume" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="ipLane">
+          <mxGeometry x="200" y="50" width="200" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="executor" value="DefaultWorkflowExecutor&lt;br&gt;(inline fallback / dev)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="ipLane">
+          <mxGeometry x="430" y="50" width="180" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="history" value="WorkflowLifecycleEvents&lt;br&gt;WorkflowStepInstances" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="ipLane">
+          <mxGeometry x="650" y="50" width="200" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="pathNote" value="Projected: worker delegates to IWorkflowRuntime for durable orchestration; inline executor remains for constrained scenarios" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;align=left;" vertex="1" parent="ipLane">
+          <mxGeometry x="20" y="140" width="830" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="legend" value="&lt;b&gt;Legend&lt;/b&gt;  Existing #dae8fc  |  New/changed #d5e8d4 (green)  |  Partial #fff2cc  |  Dashed = not yet wired" style="text;html=1;align=left;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="40" y="820" width="700" height="30" as="geometry"/>
+        </mxCell>
+        <mxCell id="e1" edge="1" parent="1" source="api" target="dispatchSvc" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" value="HTTP 202">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e2" edge="1" parent="1" source="scheduleTrig" target="dispatchSvc" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" value="enqueue">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e3" edge="1" parent="1" source="dispatchSvc" target="persistTriple" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" value="SQL txn">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e4" edge="1" parent="1" source="persistTriple" target="worker" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" value="requested">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e5" edge="1" parent="1" source="worker" target="processor" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" value="claim">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e6" edge="1" parent="1" source="processor" target="iwr" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#82b366;" value="start orchestration">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="350" y="520"/>
+              <mxPoint x="130" y="520"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e7" edge="1" parent="1" source="iwr" target="dtfx" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#82b366;" value="on-prem">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e8" edge="1" parent="1" source="iwr" target="df" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#82b366;" value="cloud">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e9" edge="1" parent="1" source="dtfx" target="engine" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#82b366;" value="step graph">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e10" edge="1" parent="1" source="df" target="engine" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#82b366;" value="step graph">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e11" edge="1" parent="1" source="engine" target="history" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#82b366;" value="sync state">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="840" y="385"/>
+              <mxPoint x="840" y="650"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e12" edge="1" parent="1" source="processor" target="executor" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;dashed=1;" value="inline fallback">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e13" edge="1" parent="1" source="executor" target="history" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;dashed=1;" value="events + steps">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e14" edge="1" parent="1" source="api" target="extCtrl" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" value="persist intent">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="180" y="300"/>
+              <mxPoint x="550" y="300"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e15" edge="1" parent="1" source="extCtrl" target="processor" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" value="safe boundaries">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="550" y="310"/>
+              <mxPoint x="300" y="310"/>
+              <mxPoint x="300" y="610"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

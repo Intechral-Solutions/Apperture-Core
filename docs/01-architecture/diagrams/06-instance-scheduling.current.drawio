@@ -1,0 +1,89 @@
+<mxfile host="app.diagrams.net" agent="Apperture" version="24.0.0" type="device">
+  <diagram name="06 Instance Scheduling (Current)" id="06-instance-scheduling-current">
+    <mxGraphModel dx="1400" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1400" pageHeight="900" math="0" shadow="0" adaptiveColors="auto">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="title" value="&lt;b&gt;06 — Instance Scheduling (Current)&lt;/b&gt;&lt;br&gt;Control plane governs definitions; WorkerHost evaluates and dispatches" style="text;html=1;fontSize=16;align=center;" vertex="1" parent="1">
+          <mxGeometry x="300" y="10" width="800" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="cpLane" value="Control Plane" style="swimlane;startSize=30;fillColor=#dae8fc;strokeColor=#6c8ebf;pointerEvents=0;" vertex="1" parent="1">
+          <mxGeometry x="40" y="80" width="400" height="280" as="geometry"/>
+        </mxCell>
+        <mxCell id="operator" value="Operator / Admin" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;outlineConnect=0;fillColor=#f5f5f5;strokeColor=#666666;" vertex="1" parent="cpLane">
+          <mxGeometry x="30" y="50" width="40" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="ui" value="Management UI&lt;br&gt;(schedule config via data layer)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="cpLane">
+          <mxGeometry x="100" y="50" width="200" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="schedDefs" value="Schedule Definitions&lt;br&gt;+ Assignments (SQL)&lt;br&gt;governed by Control Plane" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="cpLane">
+          <mxGeometry x="100" y="140" width="280" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="noApi" value="Schedule management API&lt;br&gt;(not implemented)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;dashed=1;" vertex="1" parent="cpLane">
+          <mxGeometry x="100" y="230" width="280" height="40" as="geometry"/>
+        </mxCell>
+        <mxCell id="foundLane" value="Foundation — Persistence (SQL Server)" style="swimlane;startSize=30;fillColor=#fff2cc;strokeColor=#d6b656;pointerEvents=0;" vertex="1" parent="1">
+          <mxGeometry x="480" y="80" width="360" height="280" as="geometry"/>
+        </mxCell>
+        <mxCell id="schedTables" value="Schedules&lt;br&gt;ScheduleAssignments&lt;br&gt;ScheduleRuns (lease row per fire)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="foundLane">
+          <mxGeometry x="30" y="50" width="300" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="dispatchTables" value="WorkflowStartRequests&lt;br&gt;OperationRuns&lt;br&gt;(idempotency key enforced)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="foundLane">
+          <mxGeometry x="30" y="160" width="300" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="idempNote" value="Idempotency: schedule:{scheduleId}:{fireTimeUtc:O}" style="text;html=1;align=left;fontSize=11;fontStyle=1" vertex="1" parent="foundLane">
+          <mxGeometry x="30" y="250" width="300" height="20" as="geometry"/>
+        </mxCell>
+        <mxCell id="ipLane" value="Instance Plane — RuntimeHost.Windows" style="swimlane;startSize=30;fillColor=#d5e8d4;strokeColor=#82b366;pointerEvents=0;" vertex="1" parent="1">
+          <mxGeometry x="40" y="400" width="800" height="280" as="geometry"/>
+        </mxCell>
+        <mxCell id="workerHost" value="WorkerHost (live)&lt;br&gt;ScheduleDispatchRunner&lt;br&gt;• GetDueAsync (evaluate)&lt;br&gt;• TryClaimFireAsync (lease)&lt;br&gt;• IWorkflowStartDispatchService" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;align=left;" vertex="1" parent="ipLane">
+          <mxGeometry x="30" y="50" width="280" height="110" as="geometry"/>
+        </mxCell>
+        <mxCell id="schedulerStub" value="SchedulerHost&lt;br&gt;(stub process — not live dispatch)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;dashed=1;" vertex="1" parent="ipLane">
+          <mxGeometry x="360" y="60" width="220" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="startWorker" value="StartRequestWorker&lt;br&gt;(consumes dispatched starts)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="ipLane">
+          <mxGeometry x="30" y="190" width="220" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="flowNote" value="Schedule fire → claim ScheduleRuns row → dispatch workflow/operation start → complete ScheduleRuns outcome" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;align=left;" vertex="1" parent="ipLane">
+          <mxGeometry x="280" y="190" width="480" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="legend" value="&lt;b&gt;Legend&lt;/b&gt;  Implemented #dae8fc  |  Partial #fff2cc  |  Stubbed dashed #f5f5f5" style="text;html=1;align=left;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="40" y="720" width="560" height="30" as="geometry"/>
+        </mxCell>
+        <mxCell id="e1" edge="1" parent="1" source="operator" target="ui" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" value="configure">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e2" edge="1" parent="1" source="ui" target="schedDefs" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" value="SQL">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e3" edge="1" parent="1" source="schedDefs" target="schedTables" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" value="persist">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e4" edge="1" parent="1" source="workerHost" target="schedTables" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" value="read due + claim lease">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e5" edge="1" parent="1" source="workerHost" target="dispatchTables" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" value="SQL enqueue">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="660" y="500"/>
+              <mxPoint x="660" y="280"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e6" edge="1" parent="1" source="dispatchTables" target="startWorker" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" value="requested">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="660" y="380"/>
+              <mxPoint x="150" y="380"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e7" edge="1" parent="1" source="schedulerStub" target="workerHost" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;dashed=1;" value="not used">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
