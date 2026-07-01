@@ -29,4 +29,7 @@
     <ProjectReference Include="..\..\Apperture.Modules\Unisa.CampusNexus.PaymentPlans\Unisa.CampusNexus.PaymentPlans.csproj" />
     <ProjectReference Include="..\..\Apperture.Modules\Proof.CampusNexus.StudentReview\Proof.CampusNexus.StudentReview.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Apperture.UnitTests" />
+  </ItemGroup>
 </Project>

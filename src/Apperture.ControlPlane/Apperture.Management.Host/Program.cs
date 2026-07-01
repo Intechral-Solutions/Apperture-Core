@@ -1,3 +1,4 @@
+using Apperture.Management.Host.ExceptionHandling;
 using Apperture.Bootstrap;
 using Apperture.Connectors.CampusNexus;
 using Apperture.Connectors.Sftp;
@@ -20,6 +21,7 @@ var builder = WebApplication.CreateBuilder(args);
 builder.AddServiceDefaults();
 
 builder.Services.AddControllers();
+builder.Services.AddManagementHostExceptionHandling();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddCors(options =>
@@ -63,6 +65,7 @@ builder.Services.AddAppertureAuthentication(builder.Configuration);
 builder.Services.AddAuthorization();
 
 var app = builder.Build();
+app.UseManagementHostExceptionHandling();
 app.UseCors("UiDev");
 app.UseAuthentication();
 app.UseAuthorization();
