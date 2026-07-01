@@ -28,7 +28,7 @@ public sealed class Epic96IntegrationActionFeedbackTests
     public void IntegrationDetail_preserves_action_feedback_across_reload()
     {
         var content = ReadIntegrationDetailSource();
-        content.Should().Contain("LoadAsync(bool preserveActionFeedback = false)");
+        content.Should().Contain("LoadAsync(int generation, string integrationId, bool preserveActionFeedback = false)");
         content.Should().Contain("preserveActionFeedback: true");
         content.Should().Contain("if (!preserveActionFeedback)");
     }

@@ -46,6 +46,27 @@ public sealed class Epic92UiStabilizationTests
     }
 
     [Fact]
+    public void IntegrationDetail_guards_stale_navigation_loads()
+    {
+        var content = ReadRepoFile(
+            "src/Apperture.ControlPlane/Apperture.Management.Ui.Client/Pages/Integrations/IntegrationDetail.razor");
+        content.Should().Contain("NavigationLoadGuard");
+        content.Should().Contain("TryLoadForRouteAsync");
+        content.Should().Contain("_loadGuard.IsCurrent(generation)");
+        content.Should().Contain("LoadAsync(int generation, string integrationId");
+    }
+
+    [Fact]
+    public void ControlCenter_isolates_health_errors_from_center_payload()
+    {
+        var content = ReadRepoFile(
+            "src/Apperture.ControlPlane/Apperture.Management.Ui.Client/Pages/Control/ControlCenter.razor");
+        content.Should().Contain("NavigationLoadGuard");
+        content.Should().Contain("_healthError");
+        content.Should().Contain("Health snapshot unavailable");
+    }
+
+    [Fact]
     public void ScheduleCreate_waits_for_capabilities_before_forbidden()
     {
         var content = ReadRepoFile(

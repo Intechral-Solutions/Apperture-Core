@@ -126,6 +126,14 @@
                 }
             </ManagementSection>
         }
+        else if (_capabilities?.CanViewRuntimeHealth == true && !string.IsNullOrEmpty(_healthError))
+        {
+            <ManagementSection Title="Platform health"
+                               Layer="ManagementSection.UiLayer.Detail"
+                               Help="Runtime health snapshot (Epic 30).">
+                <ErrorState Title="Health snapshot unavailable" Message="@_healthError" />
+            </ManagementSection>
+        }
         else if (_capabilities?.CanViewRuntimeHealth == false || _healthForbidden)
         {
             <ManagementSection Title="Platform health"
@@ -367,8 +375,10 @@
     private RuntimeHealthSnapshotDto? _health;
     private OperatorCapabilitiesDto? _capabilities;
     private bool _healthForbidden;
+    private string? _healthError;
     private bool _loading;
     private string? _error;
+    private readonly NavigationLoadGuard _loadGuard = new();
 
     protected override async Task OnInitializedAsync()
     {
@@ -390,14 +400,21 @@
 
     private async Task LoadAsync()
     {
+        var generation = _loadGuard.Begin();
         _loading = true;
         _error = null;
         _dto = null;
         _health = null;
         _healthForbidden = false;
+        _healthError = null;
         try
         {
-            _dto = await Client.GetControlCenterAsync();
+            var center = await Client.GetControlCenterAsync();
+            if (!_loadGuard.IsCurrent(generation))
+                return;
+
+            _dto = center;
+
             if (_capabilities?.CanViewRuntimeHealth == true)
             {
                 try
@@ -406,17 +423,25 @@
                 }
                 catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Forbidden)
                 {
-                    _healthForbidden = true;
+                    if (_loadGuard.IsCurrent(generation))
+                        _healthForbidden = true;
+                }
+                catch (HttpRequestException ex)
+                {
+                    if (_loadGuard.IsCurrent(generation))
+                        _healthError = ex.Message;
                 }
             }
         }
         catch (HttpRequestException ex)
         {
-            _error = ex.Message;
+            if (_loadGuard.IsCurrent(generation))
+                _error = ex.Message;
         }
         finally
         {
-            _loading = false;
+            if (_loadGuard.IsCurrent(generation))
+                _loading = false;
         }
     }
 

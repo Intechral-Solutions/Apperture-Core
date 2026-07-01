@@ -23,6 +23,9 @@ public sealed class IntegrationProceduresController : ControllerBase
     [HttpGet]
     public async Task<ActionResult<IntegrationProcedureListResponse>> List(string integrationId, CancellationToken cancellationToken)
     {
+        if (string.IsNullOrWhiteSpace(integrationId))
+            return BadRequest(new { error = "integrationId is required." });
+
         try
         {
             var result = await _procedures.ListAvailableAsync(integrationId, cancellationToken);
@@ -39,6 +42,9 @@ public sealed class IntegrationProceduresController : ControllerBase
     [HttpGet("{procedureId}")]
     public async Task<ActionResult<IntegrationProcedureDetailDto>> Get(string integrationId, string procedureId, CancellationToken cancellationToken)
     {
+        if (string.IsNullOrWhiteSpace(integrationId))
+            return BadRequest(new { error = "integrationId is required." });
+
         try
         {
             var result = await _procedures.GetProcedureAsync(integrationId, procedureId, cancellationToken);
