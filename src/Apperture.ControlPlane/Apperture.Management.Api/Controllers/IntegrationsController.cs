@@ -130,6 +130,9 @@ public sealed class IntegrationsController : ControllerBase
     [HttpGet("{id}/detail")]
     public async Task<ActionResult<IntegrationOperatorDetailProjection>> GetDetail(string id, CancellationToken cancellationToken)
     {
+        if (string.IsNullOrWhiteSpace(id))
+            return BadRequest(new { error = "Integration id is required." });
+
         try
         {
             var detail = await _readinessService.GetOperatorDetailAsync(new IntegrationId(id), cancellationToken);

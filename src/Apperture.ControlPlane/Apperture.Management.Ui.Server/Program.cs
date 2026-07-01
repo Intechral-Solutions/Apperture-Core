@@ -1,4 +1,5 @@
 using Apperture.Management.Ui.Client.Services;
+using Apperture.Management.Ui.Client.Services;
 using Apperture.Management.Ui.Shared.Options;
 using Apperture.Management.Client;
 using Microsoft.AspNetCore.StaticFiles;
@@ -31,7 +32,14 @@ if (!Uri.TryCreate(apiBaseUrl, UriKind.Absolute, out var apiUri))
     apiUri = new Uri(uiBase, apiBaseUrl);
 }
 
-builder.Services.AddScoped(_ => new HttpClient { BaseAddress = apiUri });
+builder.Services.AddScoped<IncludeCredentialsHandler>();
+
+builder.Services.AddScoped(sp =>
+{
+    var handler = sp.GetRequiredService<IncludeCredentialsHandler>();
+    handler.InnerHandler = new HttpClientHandler();
+    return new HttpClient(handler) { BaseAddress = apiUri };
+});
 builder.Services.AddScoped<IManagementClient>(sp => new ManagementClient(sp.GetRequiredService<HttpClient>()));
 
 builder.Services.AddScoped<DomainMenuService>(sp =>

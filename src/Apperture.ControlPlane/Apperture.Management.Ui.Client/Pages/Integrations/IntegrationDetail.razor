@@ -12,6 +12,7 @@
 @inject ShellOrientationService ShellOrientation
 @inject IJSRuntime JSRuntime
 @inject IToastService Toasts
+@implements IDisposable
 
 <div class="p-4 ui-page-stack">
     <PageHeader @key="@IntegrationId"
@@ -724,7 +725,9 @@
         };
 
     private string? _dataLoadKey;
+    private string? _inFlightLoadKey;
     private readonly NavigationLoadGuard _loadGuard = new();
+    private CancellationTokenSource? _loadCts;
 
     protected override async Task OnInitializedAsync()
     {
@@ -752,13 +755,27 @@
         }
         _capabilitiesLoaded = true;
         RecomputeWizardStates();
-        await TryLoadForRouteAsync();
     }
 
     protected override async Task OnParametersSetAsync()
     {
         await base.OnParametersSetAsync();
         await TryLoadForRouteAsync();
+    }
+
+    public void Dispose()
+    {
+        _loadCts?.Cancel();
+        _loadCts?.Dispose();
+    }
+
+    private int BeginLoad(string integrationId, out CancellationToken cancellationToken)
+    {
+        _loadCts?.Cancel();
+        _loadCts?.Dispose();
+        _loadCts = new CancellationTokenSource();
+        cancellationToken = _loadCts.Token;
+        return _loadGuard.Begin();
     }
 
     private async Task TryLoadForRouteAsync()
@@ -770,21 +787,43 @@
             return;
 
         var key = IntegrationId;
-        if (key == _dataLoadKey)
+        if (string.Equals(key, _dataLoadKey, StringComparison.Ordinal)
+            || string.Equals(key, _inFlightLoadKey, StringComparison.Ordinal))
+        {
             return;
+        }
 
+        _inFlightLoadKey = key;
         _integration = null;
         _bindings = null;
         _schedules = null;
         _readiness = null;
         _error = null;
-        _loading = true;
 
-        if (_capabilities?.CanViewIntegrations == true)
-            await LoadAsync(_loadGuard.Begin(), key);
+        try
+        {
+            var generation = BeginLoad(key, out var cancellationToken);
+            if (_capabilities?.CanViewIntegrations == true)
+                await LoadAsync(generation, key, cancellationToken);
+        }
+        finally
+        {
+            if (string.Equals(_inFlightLoadKey, key, StringComparison.Ordinal))
+                _inFlightLoadKey = null;
+        }
     }
 
-    private Task RefreshAsync() => LoadAsync(_loadGuard.Begin(), IntegrationId);
+    private Task RefreshAsync()
+    {
+        _dataLoadKey = null;
+        return TryLoadForRouteAsync();
+    }
+
+    private Task ReloadAfterActionAsync()
+    {
+        var generation = BeginLoad(IntegrationId, out var cancellationToken);
+        return LoadAsync(generation, IntegrationId, cancellationToken, preserveActionFeedback: true);
+    }
 
     private void SetActionFeedback(string message, PageMessageKind kind = PageMessageKind.Info)
     {
@@ -792,12 +831,9 @@
         _actionFeedbackKind = kind;
     }
 
-    private async Task LoadAsync(int generation, string integrationId, bool preserveActionFeedback = false)
+    private async Task LoadAsync(int generation, string integrationId, CancellationToken cancellationToken, bool preserveActionFeedback = false)
     {
         if (_capabilities?.CanViewIntegrations != true || string.IsNullOrWhiteSpace(integrationId))
-            return;
-
-        if (!_loadGuard.IsCurrent(generation))
             return;
 
         _loading = true;
@@ -806,7 +842,10 @@
             _actionMessage = null;
         try
         {
-            var detail = await Client.GetIntegrationOperatorDetailAsync(integrationId);
+            if (!_loadGuard.IsCurrent(generation))
+                return;
+
+            var detail = await Client.GetIntegrationOperatorDetailAsync(integrationId, cancellationToken);
             if (!_loadGuard.IsCurrent(generation))
                 return;
 
@@ -873,12 +912,17 @@
                 _procedureLoading = true;
                 try
                 {
-                    _procedureList = await Client.GetIntegrationProceduresAsync(integrationId);
+                    if (_loadGuard.IsCurrent(generation))
+                        _procedureList = await Client.GetIntegrationProceduresAsync(integrationId, cancellationToken);
                 }
                 catch (HttpRequestException ex)
                 {
                     if (_loadGuard.IsCurrent(generation))
                         _procedureError = ex.Message;
+                }
+                catch (OperationCanceledException)
+                {
+                    // Superseded navigation; ignore.
                 }
                 finally
                 {
@@ -887,8 +931,12 @@
                 }
 
                 if (_loadGuard.IsCurrent(generation))
-                    await LoadRecentActivityAsync(generation, integrationId, detail.ModuleId);
+                    await LoadRecentActivityAsync(generation, integrationId, detail.ModuleId, cancellationToken);
             }
+        }
+        catch (OperationCanceledException)
+        {
+            // Superseded navigation; ignore.
         }
         catch (HttpRequestException ex)
         {
@@ -913,7 +961,7 @@
             EntityShellTitles.Detail(_integration?.DisplayName, "Integration"),
             SummarySubtitle);
 
-    private async Task LoadRecentActivityAsync(int generation, string integrationId, string moduleId)
+    private async Task LoadRecentActivityAsync(int generation, string integrationId, string moduleId, CancellationToken cancellationToken)
     {
         if (!_loadGuard.IsCurrent(generation))
             return;
@@ -932,9 +980,13 @@
                 var runs = await Client.GetRunsAsync(new RunQueryFilter(
                     IntegrationId: integrationId,
                     CreatedFrom: fromUtc,
-                    Take: take));
+                    Take: take), cancellationToken);
                 if (_loadGuard.IsCurrent(generation))
                     rows.AddRange(runs.Select(EntityRecentActivityComposer.FromRun));
+            }
+            catch (OperationCanceledException)
+            {
+                return;
             }
             catch (HttpRequestException ex)
             {
@@ -949,9 +1001,14 @@
                     var auditPage = await Client.GetAuditTimelineAsync(
                         fromUtc: fromUtc,
                         moduleId: moduleId.Trim(),
-                        pageSize: take);
+                        pageSize: take,
+                        cancellationToken: cancellationToken);
                     if (_loadGuard.IsCurrent(generation))
                         rows.AddRange(auditPage.Items.Select(e => EntityRecentActivityComposer.FromAudit(e, moduleId)));
+                }
+                catch (OperationCanceledException)
+                {
+                    return;
                 }
                 catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.Forbidden)
                 {
@@ -973,9 +1030,14 @@
                 {
                     var instances = await Client.ListNotificationInstancesAsync(
                         integrationId: integrationId,
-                        take: take);
+                        take: take,
+                        cancellationToken: cancellationToken);
                     if (_loadGuard.IsCurrent(generation))
                         rows.AddRange(instances.Select(EntityRecentActivityComposer.FromNotification));
+                }
+                catch (OperationCanceledException)
+                {
+                    return;
                 }
                 catch (HttpRequestException ex) when (_loadGuard.IsCurrent(generation) && _activityError is null)
                 {
@@ -1129,7 +1191,7 @@
             SetActionFeedback("Settings saved.");
             Toasts.Show(ToastSeverity.Success, "Settings saved.");
             _editingSettings = false;
-            await LoadAsync(_loadGuard.Begin(), IntegrationId, preserveActionFeedback: true);
+            await ReloadAfterActionAsync();
         }
         catch (HttpRequestException ex)
         {
@@ -1155,7 +1217,7 @@
             var stateMsg = $"Integration state set to {state}.";
             SetActionFeedback(stateMsg);
             Toasts.Show(ToastSeverity.Success, stateMsg);
-            await LoadAsync(_loadGuard.Begin(), IntegrationId, preserveActionFeedback: true);
+            await ReloadAfterActionAsync();
         }
         catch (HttpRequestException ex)
         {
@@ -1173,7 +1235,7 @@
             _integration = await Client.ActivateIntegrationAsync(IntegrationId);
             SetActionFeedback("Integration activated.");
             Toasts.Show(ToastSeverity.Success, "Integration activated.");
-            await LoadAsync(_loadGuard.Begin(), IntegrationId, preserveActionFeedback: true);
+            await ReloadAfterActionAsync();
         }
         catch (HttpRequestException ex)
         {
@@ -1191,7 +1253,7 @@
             _integration = await Client.DeactivateIntegrationAsync(IntegrationId);
             SetActionFeedback("Integration deactivated.");
             Toasts.Show(ToastSeverity.Success, "Integration deactivated.");
-            await LoadAsync(_loadGuard.Begin(), IntegrationId, preserveActionFeedback: true);
+            await ReloadAfterActionAsync();
         }
         catch (HttpRequestException ex)
         {
@@ -1262,7 +1324,7 @@
             SetActionFeedback("Binding added.");
             Toasts.Show(ToastSeverity.Success, "Binding added.");
             _addingBinding = false;
-            await LoadAsync(_loadGuard.Begin(), IntegrationId, preserveActionFeedback: true);
+            await ReloadAfterActionAsync();
         }
         catch (HttpRequestException ex)
         {
@@ -1403,7 +1465,7 @@
             await Client.DeleteIntegrationBindingAsync(IntegrationId, b.Id);
             SetActionFeedback("Binding removed.");
             Toasts.Show(ToastSeverity.Success, "Binding removed.");
-            await LoadAsync(_loadGuard.Begin(), IntegrationId, preserveActionFeedback: true);
+            await ReloadAfterActionAsync();
         }
         catch (HttpRequestException ex)
         {
@@ -1446,7 +1508,7 @@
             SetActionFeedback("Schedule created.");
             Toasts.Show(ToastSeverity.Success, "Schedule created.");
             _addingSchedule = false;
-            await LoadAsync(_loadGuard.Begin(), IntegrationId, preserveActionFeedback: true);
+            await ReloadAfterActionAsync();
         }
         catch (HttpRequestException ex)
         {

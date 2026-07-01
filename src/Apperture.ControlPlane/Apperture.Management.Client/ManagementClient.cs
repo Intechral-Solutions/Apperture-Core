@@ -157,7 +157,9 @@ public sealed class ManagementClient : IManagementClient
 
     public async Task<ControlCenterDto> GetControlCenterAsync(CancellationToken cancellationToken = default)
     {
-        var dto = await _http.GetFromJsonAsync<ControlCenterDto>("control/center", cancellationToken).ConfigureAwait(false);
+        using var response = await _http.GetAsync("control/center", cancellationToken).ConfigureAwait(false);
+        await EnsureSuccessOrThrowAsync(response, cancellationToken).ConfigureAwait(false);
+        var dto = await response.Content.ReadFromJsonAsync<ControlCenterDto>(cancellationToken: cancellationToken).ConfigureAwait(false);
         return dto ?? new ControlCenterDto([], [], []);
     }
 
@@ -239,9 +241,9 @@ public sealed class ManagementClient : IManagementClient
         CancellationToken cancellationToken = default)
     {
         var query = $"?runtimePlaneId={Uri.EscapeDataString(runtimePlaneId ?? "local")}&blockedDeferredWindowHours={blockedDeferredWindowHours}&scheduleFailureWindowHours={scheduleFailureWindowHours}";
-        return await _http.GetFromJsonAsync<RuntimeHealthSnapshotDto>(
-            $"control/runtime-health{query}",
-            cancellationToken).ConfigureAwait(false);
+        using var response = await _http.GetAsync($"control/runtime-health{query}", cancellationToken).ConfigureAwait(false);
+        await EnsureSuccessOrThrowAsync(response, cancellationToken).ConfigureAwait(false);
+        return await response.Content.ReadFromJsonAsync<RuntimeHealthSnapshotDto>(cancellationToken: cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<IReadOnlyList<ConnectionDto>> GetConnectionsAsync(CancellationToken cancellationToken = default)
@@ -604,10 +606,13 @@ public sealed class ManagementClient : IManagementClient
 
     public async Task<IntegrationOperatorDetailDto?> GetIntegrationOperatorDetailAsync(string id, CancellationToken cancellationToken = default)
     {
-        return await _http.GetFromJsonAsync<IntegrationOperatorDetailDto>(
+        using var response = await _http.GetAsync(
             $"integrations/{Uri.EscapeDataString(id)}/detail",
-            ApiJsonReadOptions,
             cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode == HttpStatusCode.NotFound)
+            return null;
+        await EnsureSuccessOrThrowAsync(response, cancellationToken).ConfigureAwait(false);
+        return await response.Content.ReadFromJsonAsync<IntegrationOperatorDetailDto>(ApiJsonReadOptions, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<IntegrationProcedureListDto?> GetIntegrationProceduresAsync(string integrationId, CancellationToken cancellationToken = default)

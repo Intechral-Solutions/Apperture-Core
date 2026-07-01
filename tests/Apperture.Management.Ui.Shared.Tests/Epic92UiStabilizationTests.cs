@@ -53,7 +53,9 @@ public sealed class Epic92UiStabilizationTests
         content.Should().Contain("NavigationLoadGuard");
         content.Should().Contain("TryLoadForRouteAsync");
         content.Should().Contain("_loadGuard.IsCurrent(generation)");
-        content.Should().Contain("LoadAsync(int generation, string integrationId");
+        content.Should().Contain("LoadAsync(int generation, string integrationId, CancellationToken cancellationToken");
+        content.Should().Contain("_inFlightLoadKey");
+        content.Should().Contain("implements IDisposable");
     }
 
     [Fact]

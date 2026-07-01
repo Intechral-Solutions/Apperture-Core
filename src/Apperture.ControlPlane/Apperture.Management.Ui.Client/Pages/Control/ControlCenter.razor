@@ -5,6 +5,7 @@
 @inject IManagementClient Client
 @inject IOperatorCapabilitiesService Capabilities
 @inject NavigationManager Nav
+@implements IDisposable
 
 <div class="p-4 ui-page-stack">
     <PageHeader Eyebrow="Operations"
@@ -379,11 +380,27 @@
     private bool _loading;
     private string? _error;
     private readonly NavigationLoadGuard _loadGuard = new();
+    private CancellationTokenSource? _loadCts;
 
     protected override async Task OnInitializedAsync()
     {
         await LoadCapabilitiesAsync();
         await LoadAsync();
+    }
+
+    public void Dispose()
+    {
+        _loadCts?.Cancel();
+        _loadCts?.Dispose();
+    }
+
+    private CancellationToken BeginLoad(out int generation)
+    {
+        _loadCts?.Cancel();
+        _loadCts?.Dispose();
+        _loadCts = new CancellationTokenSource();
+        generation = _loadGuard.Begin();
+        return _loadCts.Token;
     }
 
     private async Task LoadCapabilitiesAsync()
@@ -400,16 +417,17 @@
 
     private async Task LoadAsync()
     {
-        var generation = _loadGuard.Begin();
+        var cancellationToken = BeginLoad(out var generation);
         _loading = true;
         _error = null;
-        _dto = null;
-        _health = null;
         _healthForbidden = false;
         _healthError = null;
         try
         {
-            var center = await Client.GetControlCenterAsync();
+            if (!_loadGuard.IsCurrent(generation))
+                return;
+
+            var center = await Client.GetControlCenterAsync(cancellationToken);
             if (!_loadGuard.IsCurrent(generation))
                 return;
 
@@ -419,7 +437,7 @@
             {
                 try
                 {
-                    _health = await Client.GetRuntimeHealthAsync();
+                    _health = await Client.GetRuntimeHealthAsync(cancellationToken: cancellationToken);
                 }
                 catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Forbidden)
                 {
@@ -431,12 +449,23 @@
                     if (_loadGuard.IsCurrent(generation))
                         _healthError = ex.Message;
                 }
+                catch (OperationCanceledException)
+                {
+                    // Superseded navigation; ignore.
+                }
             }
+        }
+        catch (OperationCanceledException)
+        {
+            // Superseded navigation; ignore.
         }
         catch (HttpRequestException ex)
         {
             if (_loadGuard.IsCurrent(generation))
+            {
                 _error = ex.Message;
+                _dto = null;
+            }
         }
         finally
         {
