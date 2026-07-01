@@ -29,7 +29,12 @@ public sealed class NotificationDefinitionsController : ControllerBase
         {
             var rows = await _definitions
                 .ListAsync(
-                    new NotificationDefinitionListQuery(integrationId, eventType, enabled, origin, take),
+                    new NotificationDefinitionListQuery(
+                        IntegrationId: integrationId,
+                        EventType: eventType,
+                        IsEnabled: enabled,
+                        Origin: origin,
+                        Take: take),
                     cancellationToken)
                 .ConfigureAwait(false);
             return Ok(rows.Select(ToSummaryDto).ToList());
