@@ -36,14 +36,17 @@ public sealed class SqlPrincipalToUserResolver : IPrincipalToUserResolver
             return user?.Id;
         }
 
-        // Fallback: try Entra first, then Local (legacy when identity_source claim not set).
-        user = await _userRepository.GetByIdentityLinkAsync(IdentitySource.Entra, externalId, cancellationToken)
-            ?? await _userRepository.GetByIdentityLinkAsync(IdentitySource.Local, externalId, cancellationToken);
+        user = await _userRepository.GetByIdentityLinkAsync(IdentitySource.Entra, externalId, cancellationToken);
         if (user is not null)
         {
             await _userRepository.UpdateLastAuthenticatedAtAsync(IdentitySource.Entra, externalId, DateTimeOffset.UtcNow, cancellationToken);
-            await _userRepository.UpdateLastAuthenticatedAtAsync(IdentitySource.Local, externalId, DateTimeOffset.UtcNow, cancellationToken);
+            return user.Id;
         }
+
+        user = await _userRepository.GetByIdentityLinkAsync(IdentitySource.Local, externalId, cancellationToken);
+        if (user is not null)
+            await _userRepository.UpdateLastAuthenticatedAtAsync(IdentitySource.Local, externalId, DateTimeOffset.UtcNow, cancellationToken);
+
         return user?.Id;
     }
 }

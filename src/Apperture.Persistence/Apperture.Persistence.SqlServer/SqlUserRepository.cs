@@ -1,6 +1,7 @@
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Identity;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace Apperture.Persistence.SqlServer;
 
@@ -9,9 +10,19 @@ namespace Apperture.Persistence.SqlServer;
 /// </summary>
 public sealed class SqlUserRepository : IUserRepository
 {
-    private readonly AppertureDbContext _db;
+    /// <summary>
+    /// Avoid rewriting <see cref="IdentityLinkEntity.LastAuthenticatedAt"/> on every auth check during concurrent page loads.
+    /// </summary>
+    internal static readonly TimeSpan LastAuthenticatedAtWriteInterval = TimeSpan.FromMinutes(1);
 
-    public SqlUserRepository(AppertureDbContext db) => _db = db;
+    private readonly AppertureDbContext _db;
+    private readonly ILogger<SqlUserRepository> _logger;
+
+    public SqlUserRepository(AppertureDbContext db, ILogger<SqlUserRepository> logger)
+    {
+        _db = db;
+        _logger = logger;
+    }
 
     /// <inheritdoc />
     public async ValueTask<int> GetUserCountAsync(CancellationToken cancellationToken = default) =>
@@ -96,12 +107,25 @@ public sealed class SqlUserRepository : IUserRepository
     /// <inheritdoc />
     public async ValueTask UpdateLastAuthenticatedAtAsync(IdentitySource source, string externalId, DateTimeOffset at, CancellationToken cancellationToken = default)
     {
-        var link = await _db.IdentityLinks
-            .FirstOrDefaultAsync(l => l.Source == (int)source && l.ExternalId == externalId, cancellationToken);
-        if (link is not null)
+        try
         {
-            link.LastAuthenticatedAt = at;
-            await _db.SaveChangesAsync(cancellationToken);
+            var writeOnlyIfOlderThan = at - LastAuthenticatedAtWriteInterval;
+
+            await _db.IdentityLinks
+                .Where(l => l.Source == (int)source && l.ExternalId == externalId)
+                .Where(l => l.LastAuthenticatedAt == null || l.LastAuthenticatedAt < writeOnlyIfOlderThan)
+                .ExecuteUpdateAsync(
+                    setters => setters.SetProperty(l => l.LastAuthenticatedAt, at),
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (DbUpdateConcurrencyException ex)
+        {
+            _logger.LogDebug(
+                ex,
+                "Ignored optimistic concurrency while updating LastAuthenticatedAt for {IdentitySource}/{ExternalId}.",
+                source,
+                externalId);
         }
     }
 
