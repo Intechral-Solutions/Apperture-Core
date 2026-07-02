@@ -25,6 +25,7 @@ public sealed class AuthController : ControllerBase
     private const string AuthActionUnlinkedPrincipal = "auth.unlinked_principal";
     private const string AuthActionBreakGlassLoginSuccess = "auth.break_glass.login.success";
     private const string AuthActionBreakGlassLoginFailed = "auth.break_glass.login.failed";
+    private const string AuthActionBreakGlassRejectedDisabled = "auth.break_glass.rejected_disabled";
 
     private readonly IUserRepository _userRepository;
     private readonly ILocalCredentialRepository _localCredentialRepository;
@@ -34,6 +35,7 @@ public sealed class AuthController : ControllerBase
     private readonly IRoleProvider _roleProvider;
     private readonly IAuditService _audit;
     private readonly LocalAuthOptions _localOptions;
+    private readonly BreakGlassAuthOptions _breakGlassOptions;
     private readonly EntraAuthOptions _entraOptions;
     private readonly IInstanceAuthUiPolicyRepository _authUiPolicyRepository;
 
@@ -46,6 +48,7 @@ public sealed class AuthController : ControllerBase
         IRoleProvider roleProvider,
         IAuditService audit,
         IOptions<LocalAuthOptions> localOptions,
+        IOptions<BreakGlassAuthOptions> breakGlassOptions,
         IOptions<EntraAuthOptions> entraOptions,
         IInstanceAuthUiPolicyRepository authUiPolicyRepository)
     {
@@ -57,6 +60,7 @@ public sealed class AuthController : ControllerBase
         _roleProvider = roleProvider;
         _audit = audit;
         _localOptions = localOptions.Value;
+        _breakGlassOptions = breakGlassOptions.Value;
         _entraOptions = entraOptions.Value;
         _authUiPolicyRepository = authUiPolicyRepository;
     }
@@ -177,17 +181,30 @@ public sealed class AuthController : ControllerBase
     }
 
     /// <summary>
-    /// Break-glass login: local-auth-only recovery path. Same credentials as local login but requires the user to be break-glass eligible.
-    /// On success, the session is granted all permission checks. Do not reveal whether the username exists or why login failed.
+    /// Break-glass login: local-auth-only recovery path. Disabled by default for v1 (<see cref="BreakGlassAuthOptions.Enabled"/>).
+    /// When enabled, requires <see cref="User.IsBreakGlassEligible"/> and grants all permission checks for the session.
     /// </summary>
     [HttpPost("break-glass")]
     [AllowAnonymous]
     [ProducesResponseType(typeof(LocalLoginResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(BreakGlassAuthErrorResponse), StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     public async Task<ActionResult<LocalLoginResponse>> BreakGlassLogin(
         [FromBody] LocalLoginRequest request,
         CancellationToken cancellationToken)
     {
+        if (!_breakGlassOptions.Enabled)
+        {
+            await AppendAuthAuditAsync(
+                AuthActionBreakGlassRejectedDisabled,
+                new ActorId("anonymous"),
+                "Break-glass login is not available.",
+                cancellationToken);
+            return NotFound(new BreakGlassAuthErrorResponse(
+                "Break-glass login is not available in this release.",
+                BreakGlassAuthErrorCodes.Disabled));
+        }
+
         if (!_localOptions.Enabled)
         {
             await AppendAuthAuditAsync(AuthActionBreakGlassLoginFailed, new ActorId("anonymous"), null, cancellationToken);
@@ -288,3 +305,12 @@ public sealed record LocalLoginRequest(string Username, string? Password);
 public sealed record LocalLoginResponse(string UserId, string DisplayName);
 
 public sealed record MeResponse(string UserId, string DisplayName, string[] Roles, string? UserPrincipal);
+
+/// <summary>Stable break-glass error codes for clients and automation.</summary>
+public static class BreakGlassAuthErrorCodes
+{
+    public const string Disabled = "auth.break_glass.disabled";
+}
+
+/// <summary>Structured break-glass error payload.</summary>
+public sealed record BreakGlassAuthErrorResponse(string Message, string Code);

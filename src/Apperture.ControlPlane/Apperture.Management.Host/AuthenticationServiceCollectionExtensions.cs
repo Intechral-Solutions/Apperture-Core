@@ -20,6 +20,7 @@ public static class AuthenticationServiceCollectionExtensions
     {
         services.Configure<EntraAuthOptions>(configuration.GetSection(EntraAuthOptions.SectionName));
         services.Configure<LocalAuthOptions>(configuration.GetSection(LocalAuthOptions.SectionName));
+        services.Configure<BreakGlassAuthOptions>(configuration.GetSection(BreakGlassAuthOptions.SectionName));
         services.AddSingleton<IValidateOptions<EntraAuthOptions>, EntraAuthOptionsValidator>();
         services.AddSingleton<IValidateOptions<LocalAuthOptions>, LocalAuthOptionsValidator>();
 

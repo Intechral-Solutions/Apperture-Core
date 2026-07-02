@@ -25,6 +25,9 @@
   "LocalAuth": {
     "Enabled": true
   },
+  "BreakGlassAuth": {
+    "Enabled": false
+  },
   "PlatformEvents": {
     "Enabled": true
   },

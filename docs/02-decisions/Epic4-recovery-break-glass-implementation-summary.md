@@ -1,5 +1,9 @@
 # Epic 4: Recovery, Break-Glass, and Security Hardening — Implementation Summary
 
+## v1 status (Epic S2B)
+
+Break-glass **operator login** (`POST /api/auth/break-glass`) is **disabled by default** (`BreakGlassAuth:Enabled = false`). The endpoint returns **404** with `auth.break_glass.disabled`. No users are break-glass eligible by default. SQL/bootstrap recovery (`RestorePlatformAccess`, CLI recovery-unlock) remains available and is **separate** from break-glass login.
+
 ## Status
 
 Implemented (Epic 4). Idempotent platform-admin permission seed repair at startup, lockout-prevention guards for last platform administrator, real break-glass sign-in path, recovery authorization and RestorePlatformAccess execution, hardened audit for blocked operations and break-glass/recovery, and narrow Entra external-id validation.

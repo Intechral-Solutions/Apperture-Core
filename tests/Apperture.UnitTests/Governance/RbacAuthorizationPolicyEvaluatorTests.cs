@@ -164,6 +164,24 @@ public sealed class RbacAuthorizationPolicyEvaluatorTests
     }
 
     [Fact]
+    public async Task EvaluateAsync_grants_all_permissions_for_break_glass_session_when_endpoint_would_create_one()
+    {
+        var actor = new HumanActor(new ActorId("break-glass-user"), "Break Glass", IdentitySource.Local, isBreakGlassSession: true);
+        var evaluator = new RbacAuthorizationPolicyEvaluator(
+            new StubPrincipalToUserResolver(),
+            new StubRoleProvider(),
+            new ScopeContainmentEvaluator());
+
+        var result = await evaluator.EvaluateAsync(
+            actor,
+            new PermissionDescriptor(ActionConstants.ConnectionRead),
+            null,
+            null);
+
+        result.Should().BeTrue("break-glass evaluator path is preserved for a future recovery epic");
+    }
+
+    [Fact]
     public async Task DelegatingAuthorizationService_forwards_to_policy_evaluator()
     {
         var policyEvaluator = new Mock<IAuthorizationPolicyEvaluator>();

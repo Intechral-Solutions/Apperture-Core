@@ -18,6 +18,16 @@ Well-known recovery actions (see `BootstrapRecoveryAction`):
 | `ReplaceLocalCredential` | Replace a locally protected bootstrap credential (e.g. DPAPI-stored). |
 | `RestorePlatformAccess` | Restore platform access when primary auth is unavailable (generic recovery). |
 
+## Break-glass operator login (v1 status — Epic S2B)
+
+**Not available in v1.** `POST /api/auth/break-glass` is disabled by default via `BreakGlassAuth:Enabled` (`false`). Disabled requests return **404 Not Found** with code `auth.break_glass.disabled` and audit `auth.break_glass.rejected_disabled`.
+
+- No users are created with `IsBreakGlassEligible = true` on default bootstrap paths.
+- RBAC grant-all for `IsBreakGlassSession` remains in code for a future recovery epic but is **not reachable** through the default disabled endpoint.
+- **SQL/bootstrap recovery** (`IBootstrapRecoveryService`, CLI recovery-unlock) is separate from break-glass operator login.
+
+Future break-glass support requires a dedicated epic: eligibility management, audit/runbook, rate limits, and explicit enablement of `BreakGlassAuth:Enabled`.
+
 ## Flow
 
 1. **Authorize** — All recovery flows go through `IBootstrapRecoveryAuthorizer.AuthorizeAsync(BootstrapRecoveryRequest)`.
