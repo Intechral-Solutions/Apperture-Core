@@ -125,9 +125,9 @@ public static class ManagementBreadcrumbResolver
             p = "/";
 
         if (NavPathMatching.IsPathUnder(p, "/control/center"))
-            return "Live operational console for targets, activity, and attention.";
+            return "What needs attention — blocked work, failures, and recent outcomes.";
         if (p.Equals("/dashboard", StringComparison.OrdinalIgnoreCase))
-            return "Platform summary and drill-ins.";
+            return "Operator summary: health, attention, runs, and quick links.";
         if (p.Equals("/runs", StringComparison.OrdinalIgnoreCase))
             return "Automation run history.";
         if (p.Equals("/schedules", StringComparison.OrdinalIgnoreCase))

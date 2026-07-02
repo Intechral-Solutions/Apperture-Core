@@ -10,7 +10,7 @@
 <div class="p-4 ui-page-stack">
     <PageHeader Eyebrow="Operations"
                 Title="Control Center"
-                Subtitle="Live operational console: control targets, recent activity, attention, and health. For a cross-domain summary, use Dashboard.">
+                Subtitle="What needs attention now — blocked work, failures, and recent outcomes. Use Dashboard for a cross-domain summary.">
         <Toolbar>
             <button type="button"
                     class="ui-toolbar-btn"
@@ -51,7 +51,11 @@
             <div class="ui-summary-card-grid">
                 <ManagementSummaryCard Title="Blocked work"
                                        Description="Inspect deferred and retry-eligible work."
-                                       Href="/control/blocked-work" />
+                                       Href="/control/blocked-work"
+                                       Attention="@(BlockedWorkCount > 0 ? "Warning" : null)" />
+                <ManagementSummaryCard Title="Integrations"
+                                       Description="Fleet health and remediation."
+                                       Href="/integrations" />
                 <ManagementSummaryCard Title="Runs"
                                        Description="Review execution history and statuses."
                                        Href="/runs" />
@@ -61,17 +65,82 @@
                 <ManagementSummaryCard Title="Audit"
                                        Description="Trace operational events."
                                        Href="/control/audit" />
-                <ManagementSummaryCard Title="Integrations"
-                                       Description="Open deployment and lifecycle details."
-                                       Href="/integrations" />
             </div>
         </ManagementSection>
+
+        <ManagementSection Title="Action needed"
+                           Layer="ManagementSection.UiLayer.Summary"
+                           Help="Cross-domain attention items ranked for immediate triage.">
+            @if (_dto.AttentionItems.Count == 0)
+            {
+                <PageMessage Kind="PageMessageKind.Info" Message="Nothing needs attention right now." />
+            }
+            else
+            {
+                <div class="space-y-2">
+                    @foreach (var it in _dto.AttentionItems)
+                    {
+                        <div class="rounded border border-default bg-surface-muted p-3">
+                            <div class="flex items-start justify-between gap-3">
+                                <div class="min-w-0">
+                                    <div class="text-sm font-semibold">@OperatorAttentionUiHelpers.FormatAttentionSummaryForDisplay(it.Summary)</div>
+                                    <div class="mt-1 flex flex-wrap items-center gap-2">
+                                        <AttentionPill Label="@it.Severity" DashboardAttention="@it.Severity" />
+                                        <span class="text-xs text-muted">@FmtWhen(it.CreatedAtIso)</span>
+                                    </div>
+                                    <details class="mt-2 text-xs text-muted">
+                                        <summary class="cursor-pointer">Technical details</summary>
+                                        <div class="mt-1 font-mono">@it.AttentionKind · @it.TargetKind / @it.TargetId</div>
+                                    </details>
+                                </div>
+                                @{
+                                    var attentionHref = OperatorAttentionUiHelpers.GetControlCenterAttentionHref(it);
+                                }
+                                @if (!string.IsNullOrWhiteSpace(attentionHref))
+                                {
+                                    <DrillInLink Href="@attentionHref">Open</DrillInLink>
+                                }
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+        </ManagementSection>
+
+        @if (ProblematicActivities.Count > 0)
+        {
+            <ManagementSection Title="Recent problems"
+                               Layer="ManagementSection.UiLayer.Summary"
+                               Help="Failed or rejected activity in the last 24 hours.">
+                <div class="space-y-2">
+                    @foreach (var a in ProblematicActivities.Take(5))
+                    {
+                        <div class="rounded border border-default bg-surface-muted p-3 flex items-start justify-between gap-3">
+                            <div class="min-w-0">
+                                <div class="text-sm font-semibold">@a.OutcomeSummary</div>
+                                <div class="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted">
+                                    <StatusPill Label="@a.CurrentNormalizedStatus" Semantic="@MapActivityStatus(a.CurrentNormalizedStatus)" />
+                                    <span>@FmtWhen(a.RequestedAtIso)</span>
+                                </div>
+                            </div>
+                            <DrillInLink Href="@a.DetailLink">Open</DrillInLink>
+                        </div>
+                    }
+                </div>
+                @if (ProblematicActivities.Count > 5)
+                {
+                    <div class="mt-2">
+                        <DrillInLink Href="/runs?status=Failed">View all failed runs</DrillInLink>
+                    </div>
+                }
+            </ManagementSection>
+        }
 
         @if (_capabilities?.CanViewRuntimeHealth == true && _health is not null)
         {
             <ManagementSection Title="Platform health"
-                               Layer="ManagementSection.UiLayer.Detail"
-                               Help="Runtime health snapshot (Epic 30).">
+                               Layer="ManagementSection.UiLayer.Summary"
+                               Help="Runtime health snapshot — expand diagnostics below for anomalies and degradation reasons.">
                 <div class="flex flex-wrap items-center gap-3">
                     <div>
                         <span class="text-xs text-muted">Status</span>
@@ -99,32 +168,6 @@
                     }
                     <DrillInLink Href="/control/audit">Audit</DrillInLink>
                 </div>
-                @if (_health.Anomalies.Count > 0)
-                {
-                    <div class="mt-3">
-                        <div class="text-xs text-muted">Recent anomalies:</div>
-                        <div class="mt-1 space-y-1">
-                            @foreach (var a in _health.Anomalies.Take(5))
-                            {
-                                <div class="text-xs">
-                                    <span class="font-mono">@a.AnomalyKind</span> / @a.Summary
-                                    @if (!string.IsNullOrEmpty(a.RunId))
-                                    {
-                                        <DrillInLink Href="@($"/runs/{a.RunId}")">Run</DrillInLink>
-                                    }
-                                    @if (!string.IsNullOrEmpty(a.ScheduleId))
-                                    {
-                                        <DrillInLink Href="@($"/schedules/{a.ScheduleId}")">Schedule</DrillInLink>
-                                    }
-                                    @if (!string.IsNullOrEmpty(a.ModuleId))
-                                    {
-                                        <DrillInLink Href="@($"/modules/{a.ModuleId}")">Module</DrillInLink>
-                                    }
-                                </div>
-                            }
-                        </div>
-                    </div>
-                }
             </ManagementSection>
         }
         else if (_capabilities?.CanViewRuntimeHealth == true && !string.IsNullOrEmpty(_healthError))
@@ -143,103 +186,14 @@
                                 Message="You do not have permission to view runtime health." />
             </ManagementSection>
         }
-        <ManagementSection Title="Operational concerns"
+        <ManagementSection Title="Recent activity"
                            Layer="ManagementSection.UiLayer.Detail"
-                           Help="Cross-domain attention items for immediate triage.">
-            @if (_dto.AttentionItems.Count == 0)
+                           Help="Executions and durable runtime control requests."
+                           Class="mt-4">
+            @if (_dto.RecentActivity.Count == 0)
             {
-                <EmptyState Message="Nothing needs attention." />
+                <EmptyState Message="No activity in the last 24 hours. Runs and control requests will appear here after workflows execute." />
             }
-            else
-            {
-                <div class="space-y-2">
-                    @foreach (var it in _dto.AttentionItems)
-                    {
-                        <div class="rounded border border-default bg-surface-muted p-3">
-                            <div class="flex items-start justify-between gap-3">
-                                <div class="min-w-0">
-                                    <div class="text-sm font-semibold">@it.Summary</div>
-                                    <div class="mt-1 flex flex-wrap items-center gap-2">
-                                        <AttentionPill Label="@it.Severity" DashboardAttention="@it.Severity" />
-                                        <span class="text-xs text-muted font-mono">@it.AttentionKind</span>
-                                    </div>
-                                    <div class="text-xs text-muted mt-1">
-                                        Target: <span class="font-mono">@it.TargetKind</span> / <span class="font-mono">@it.TargetId</span>
-                                    </div>
-                                </div>
-                                @if (!string.IsNullOrWhiteSpace(GetAttentionLink(it)))
-                                {
-                                    var attentionHref = GetAttentionLink(it);
-                                    <DrillInLink Href="@attentionHref">Open</DrillInLink>
-                                }
-                            </div>
-                        </div>
-                    }
-                </div>
-            }
-        </ManagementSection>
-
-        <div class="grid gap-4 lg:grid-cols-3">
-            <ManagementSection Title="Targets"
-                               Layer="ManagementSection.UiLayer.Detail"
-                               Help="Server-projected action availability."
-                               Class="lg:col-span-1">
-                <div class="space-y-3">
-                    @foreach (var t in _dto.Targets)
-                    {
-                        <div class="rounded border border-default bg-surface-muted p-3">
-                            <div class="flex items-start justify-between gap-2">
-                                <div class="min-w-0">
-                                    <div class="text-sm font-semibold">@t.DisplayName</div>
-                                    <div class="text-xs text-muted">
-                                        <span class="font-mono">@t.TargetKind</span> / <span class="font-mono">@t.TargetId</span>
-                                    </div>
-                                    @if (!string.IsNullOrWhiteSpace(t.GroupKey))
-                                    {
-                                        <div class="text-xs text-muted">Group: <span class="font-mono">@t.GroupKey</span></div>
-                                    }
-                                </div>
-                        @if (!string.IsNullOrWhiteSpace(t.DetailLink))
-                        {
-                            <DrillInLink Href="@t.DetailLink">Open</DrillInLink>
-                        }
-                            </div>
-
-                            <div class="mt-2">
-                                @if (t.AvailableActions.Count == 0)
-                                {
-                                    <div class="text-xs text-muted">No actions.</div>
-                                }
-                                else
-                                {
-                                    <div class="space-y-1">
-                                        @foreach (var a in t.AvailableActions)
-                                        {
-                                            <div class="text-xs">
-                                                <span class="font-mono">@a.ActionKind</span>:
-                                                <span class="font-semibold">@a.AvailabilityState</span>
-                                                @if (!string.IsNullOrWhiteSpace(a.ReasonCode))
-                                                {
-                                                    <span class="text-muted">(<span class="font-mono">@a.ReasonCode</span>)</span>
-                                                }
-                                            </div>
-                                        }
-                                    </div>
-                                }
-                            </div>
-                        </div>
-                    }
-                </div>
-            </ManagementSection>
-
-            <ManagementSection Title="Recent activity"
-                               Layer="ManagementSection.UiLayer.Detail"
-                               Help="Executions and durable runtime control requests."
-                               Class="lg:col-span-2">
-                @if (_dto.RecentActivity.Count == 0)
-                {
-                    <EmptyState Message="No activity found." />
-                }
                 else
                 {
                     <div class="ui-data-table">
@@ -308,15 +262,98 @@
                         </table>
                     </div>
                 }
-            </ManagementSection>
-        </div>
+        </ManagementSection>
 
-        <ManagementAdvancedSection Title="Diagnostics and evidence"
-                                   Subtitle="Low-level diagnostic records and verbose platform details."
+        <ManagementAdvancedSection Title="Control targets and diagnostics"
+                                   Subtitle="Action availability per target, runtime anomalies, and verbose platform details."
                                    InitiallyOpen="false">
+            <ManagementSection Title="Targets"
+                               Layer="ManagementSection.UiLayer.Detail"
+                               Help="Server-projected action availability for operations, workflows, and runtimes.">
+                @if (_dto.Targets.Count == 0)
+                {
+                    <EmptyState Message="No control targets are visible to your account." />
+                }
+                else
+                {
+                    <div class="space-y-3">
+                        @foreach (var t in _dto.Targets)
+                        {
+                            <div class="rounded border border-default bg-surface-muted p-3">
+                                <div class="flex items-start justify-between gap-2">
+                                    <div class="min-w-0">
+                                        <div class="text-sm font-semibold">@t.DisplayName</div>
+                                        <div class="text-xs text-muted">
+                                            <span class="font-mono">@t.TargetKind</span> / <span class="font-mono">@t.TargetId</span>
+                                        </div>
+                                        @if (!string.IsNullOrWhiteSpace(t.GroupKey))
+                                        {
+                                            <div class="text-xs text-muted">Group: <span class="font-mono">@t.GroupKey</span></div>
+                                        }
+                                    </div>
+                                    @if (!string.IsNullOrWhiteSpace(t.DetailLink))
+                                    {
+                                        <DrillInLink Href="@t.DetailLink">Open</DrillInLink>
+                                    }
+                                </div>
+                                <div class="mt-2">
+                                    @if (t.AvailableActions.Count == 0)
+                                    {
+                                        <div class="text-xs text-muted">No actions.</div>
+                                    }
+                                    else
+                                    {
+                                        <div class="space-y-1">
+                                            @foreach (var a in t.AvailableActions)
+                                            {
+                                                <div class="text-xs">
+                                                    <span class="font-mono">@a.ActionKind</span>:
+                                                    <span class="font-semibold">@a.AvailabilityState</span>
+                                                    @if (!string.IsNullOrWhiteSpace(a.ReasonCode))
+                                                    {
+                                                        <span class="text-muted">(<span class="font-mono">@a.ReasonCode</span>)</span>
+                                                    }
+                                                </div>
+                                            }
+                                        </div>
+                                    }
+                                </div>
+                            </div>
+                        }
+                    </div>
+                }
+            </ManagementSection>
+
+            @if (_capabilities?.CanViewRuntimeHealth == true && _health is not null && _health.Anomalies.Count > 0)
+            {
+                <div class="mt-4">
+                    <div class="text-xs font-semibold text-heading">Recent anomalies</div>
+                    <div class="mt-1 space-y-1">
+                        @foreach (var a in _health.Anomalies.Take(10))
+                        {
+                            <div class="text-xs">
+                                <span class="font-mono">@a.AnomalyKind</span> / @a.Summary
+                                @if (!string.IsNullOrEmpty(a.RunId))
+                                {
+                                    <DrillInLink Href="@($"/runs/{a.RunId}")">Run</DrillInLink>
+                                }
+                                @if (!string.IsNullOrEmpty(a.ScheduleId))
+                                {
+                                    <DrillInLink Href="@($"/schedules/{a.ScheduleId}")">Schedule</DrillInLink>
+                                }
+                                @if (!string.IsNullOrEmpty(a.ModuleId))
+                                {
+                                    <DrillInLink Href="@($"/modules/{a.ModuleId}")">Module</DrillInLink>
+                                }
+                            </div>
+                        }
+                    </div>
+                </div>
+            }
+
             @if (_capabilities?.CanViewRuntimeHealth == true && _health is not null)
             {
-                <div class="space-y-3">
+                <div class="mt-4 space-y-3">
                     <div>
                         <div class="text-xs font-semibold text-heading">Degradation reasons</div>
                         @if (_health.DegradationReasons.Count == 0)
@@ -363,9 +400,9 @@
                     </div>
                 </div>
             }
-            else
+            else if (_capabilities?.CanViewRuntimeHealth == false || _healthForbidden)
             {
-                <div class="text-xs text-muted">Diagnostics are unavailable without runtime health access.</div>
+                <div class="mt-4 text-xs text-muted">Diagnostics are unavailable without runtime health access.</div>
             }
         </ManagementAdvancedSection>
     }
@@ -484,6 +521,10 @@
 
     private int RecentActivityCount => _dto?.RecentActivity.Count ?? 0;
 
+    private IReadOnlyList<ControlActivitySummaryDto> ProblematicActivities =>
+        _dto?.RecentActivity.Where(OperatorAttentionUiHelpers.IsProblematicActivity).ToList()
+        ?? [];
+
     private static ManagementStatusSemantic MapActivityStatus(string? status)
     {
         if (string.IsNullOrWhiteSpace(status))
@@ -498,27 +539,6 @@
             "cancelled" or "canceled" => ManagementStatusSemantic.Warning,
             _ => ManagementStatusSemantic.Neutral
         };
-    }
-
-    private string? GetAttentionLink(ControlAttentionItemDto it)
-    {
-        if (string.IsNullOrWhiteSpace(it.RelatedActivityId))
-            return null;
-
-        if (string.Equals(it.AttentionKind, "executionFailed", StringComparison.Ordinal))
-            return $"/runs/{it.RelatedActivityId}";
-
-        if (string.Equals(it.AttentionKind, "runtimeShutdownQueuedStuck", StringComparison.Ordinal))
-        {
-            return $"/runtimes/{it.TargetId}/controls/shutdown/requests/{it.RelatedActivityId}";
-        }
-
-        if (string.Equals(it.AttentionKind, "workflowControlRejected", StringComparison.Ordinal))
-        {
-            return $"/runs/{it.RelatedActivityId}";
-        }
-
-        return null;
     }
 }
 

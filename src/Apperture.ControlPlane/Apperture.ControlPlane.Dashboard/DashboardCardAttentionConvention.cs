@@ -119,4 +119,18 @@ public static class DashboardCardAttentionConvention
     /// <summary>Blocked deferred work awaiting remediation.</summary>
     public static DashboardCardAttention FromBlockedWorkCount(int blockedCount) =>
         blockedCount > 0 ? DashboardCardAttention.Warning : DashboardCardAttention.None;
+
+    /// <summary>Integration fleet: blocking readiness or operational silence warrant operator review.</summary>
+    public static DashboardCardAttention FromIntegrationFleetSignals(
+        int blockingCount,
+        int operationalFailureCount,
+        int unexpectedSilenceCount,
+        int notRunnableCount)
+    {
+        if (blockingCount > 0 || unexpectedSilenceCount > 0)
+            return DashboardCardAttention.Critical;
+        if (operationalFailureCount > 0 || notRunnableCount > 0)
+            return DashboardCardAttention.Warning;
+        return DashboardCardAttention.None;
+    }
 }

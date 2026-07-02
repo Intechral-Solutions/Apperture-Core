@@ -55,6 +55,8 @@ public sealed class ManagementHostReliabilitySmokeTests
         $"/api/integrations/{ManagementGovernanceTestConstants.SeededIntegrationId}/procedures",
         "/api/notification-definitions",
         "/api/modules",
+        "/api/dashboard/default",
+        "/api/integrations/fleet",
     };
 
     public static TheoryData<string> IntegrationReaderApiRoutes { get; } = new()
@@ -74,6 +76,8 @@ public sealed class ManagementHostReliabilitySmokeTests
         "/api/notification-definitions",
         "/api/modules",
         "/api/integrations",
+        "/api/integrations/fleet",
+        "/api/dashboard/default",
     };
 
     [Fact]
