@@ -71,6 +71,13 @@ public sealed class FirstAdminBootstrapService : IFirstAdminBootstrapService
 
         return FirstAdminBootstrapResult.Success(userId);
     }
+
+    /// <inheritdoc />
+    public async Task<BootstrapSetupStatus> GetSetupStatusAsync(CancellationToken cancellationToken = default)
+    {
+        var count = await _userRepository.GetUserCountAsync(cancellationToken);
+        return BootstrapSetupStatus.FromUserCount(count);
+    }
 }
 
 /// <summary>

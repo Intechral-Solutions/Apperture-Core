@@ -1,40 +1,80 @@
 using Apperture.Core.Application;
 using Apperture.Core.Application.Services;
+using Apperture.Core.Domain.Audit;
 using Apperture.Core.Domain.Identity;
+using Apperture.Shared.Kernel;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Apperture.Management.Api.Controllers;
 
 /// <summary>
-/// First-admin bootstrap endpoint. Succeeds only when no platform users exist. No auth required; call once after deploy before enabling real auth.
+/// First-admin bootstrap endpoints. Succeed only when no platform users exist. No auth required for v1 bootstrap APIs.
 /// </summary>
 [ApiController]
 [Route("api/[controller]")]
 [AllowAnonymous]
 public sealed class BootstrapController : ControllerBase
 {
-    private readonly IFirstAdminBootstrapService _bootstrap;
+    private const string AuditOutcomeBootstrap = "bootstrap";
+    private const string AuditActionFirstAdminCreated = "bootstrap.first_admin.created";
+    private const string AuditActionFirstAdminRejectedInitialized = "bootstrap.first_admin.rejected_already_initialized";
+    private const string AuditActionFirstAdminRejectedInvalidRequest = "bootstrap.first_admin.rejected_invalid_request";
 
-    public BootstrapController(IFirstAdminBootstrapService bootstrap)
+    private readonly IFirstAdminBootstrapService _bootstrap;
+    private readonly IAuditService _audit;
+
+    public BootstrapController(IFirstAdminBootstrapService bootstrap, IAuditService audit)
     {
         _bootstrap = bootstrap;
+        _audit = audit;
     }
 
     /// <summary>
-    /// Creates the first platform administrator. Idempotent in the sense that once any user exists, the endpoint returns 409.
+    /// Returns whether the platform has completed first-admin setup. v1 gate: at least one platform user exists.
+    /// </summary>
+    [HttpGet("status")]
+    [ProducesResponseType(typeof(BootstrapStatusResponse), StatusCodes.Status200OK)]
+    public async Task<ActionResult<BootstrapStatusResponse>> GetStatus(CancellationToken cancellationToken)
+    {
+        var status = await _bootstrap.GetSetupStatusAsync(cancellationToken);
+        return Ok(ToStatusResponse(status));
+    }
+
+    /// <summary>
+    /// Creates the first platform administrator. After setup, returns 409 with a stable error code.
     /// </summary>
     [HttpPost("first-admin")]
     public async Task<ActionResult<FirstAdminResponse>> CreateFirstAdmin(
         [FromBody] FirstAdminRequest request,
         CancellationToken cancellationToken)
     {
+        var setupStatus = await _bootstrap.GetSetupStatusAsync(cancellationToken);
+
         if (string.IsNullOrWhiteSpace(request.DisplayName) || string.IsNullOrWhiteSpace(request.ExternalId))
-            return BadRequest(new { message = "DisplayName and ExternalId are required." });
+        {
+            await AppendBootstrapAuditAsync(
+                AuditActionFirstAdminRejectedInvalidRequest,
+                "DisplayName and ExternalId are required.",
+                cancellationToken);
+            return BadRequest(new BootstrapErrorResponse(
+                "DisplayName and ExternalId are required.",
+                BootstrapErrorCodes.InvalidRequest,
+                setupStatus.Initialized));
+        }
 
         if (!Enum.TryParse<IdentitySource>(request.IdentitySource, ignoreCase: true, out var source) ||
             (source != IdentitySource.Entra && source != IdentitySource.Local))
-            return BadRequest(new { message = "IdentitySource must be 'Entra' or 'Local'." });
+        {
+            await AppendBootstrapAuditAsync(
+                AuditActionFirstAdminRejectedInvalidRequest,
+                "IdentitySource must be 'Entra' or 'Local'.",
+                cancellationToken);
+            return BadRequest(new BootstrapErrorResponse(
+                "IdentitySource must be 'Entra' or 'Local'.",
+                BootstrapErrorCodes.InvalidRequest,
+                setupStatus.Initialized));
+        }
 
         var result = await _bootstrap.TryCreateFirstAdminAsync(
             request.DisplayName.Trim(),
@@ -45,15 +85,76 @@ public sealed class BootstrapController : ControllerBase
 
         return result.Kind switch
         {
-            FirstAdminBootstrapResultKind.Success => Created(
-                $"/api/bootstrap/first-admin",
-                new FirstAdminResponse(result.UserId!.Value)),
-            FirstAdminBootstrapResultKind.AlreadyExists => Conflict(new { message = "First admin already exists; at least one platform user is present." }),
-            FirstAdminBootstrapResultKind.RoleNotFound => StatusCode(503, new { message = "Platform administrator role not found; ensure migrations have been applied." }),
-            FirstAdminBootstrapResultKind.DuplicateIdentityLink => Conflict(new { message = "An identity link with this source and external id already exists." }),
-            _ => StatusCode(500, new { message = "Unexpected bootstrap result." })
+            FirstAdminBootstrapResultKind.Success => await CreatedFirstAdminAsync(result.UserId!.Value, cancellationToken),
+            FirstAdminBootstrapResultKind.AlreadyExists => await RejectAlreadyInitializedAsync(cancellationToken),
+            FirstAdminBootstrapResultKind.RoleNotFound => StatusCode(
+                StatusCodes.Status503ServiceUnavailable,
+                new BootstrapErrorResponse(
+                    "Platform administrator role not found; ensure migrations have been applied.",
+                    BootstrapErrorCodes.RoleNotFound,
+                    Initialized: true)),
+            FirstAdminBootstrapResultKind.DuplicateIdentityLink => Conflict(new BootstrapErrorResponse(
+                "An identity link with this source and external id already exists.",
+                BootstrapErrorCodes.DuplicateIdentityLink,
+                setupStatus.Initialized)),
+            _ => StatusCode(
+                StatusCodes.Status500InternalServerError,
+                new BootstrapErrorResponse(
+                    "Unexpected bootstrap result.",
+                    BootstrapErrorCodes.Unexpected,
+                    setupStatus.Initialized))
         };
     }
+
+    private async Task<ActionResult<FirstAdminResponse>> CreatedFirstAdminAsync(string userId, CancellationToken cancellationToken)
+    {
+        await AppendBootstrapAuditAsync(
+            AuditActionFirstAdminCreated,
+            $"Created first platform administrator userId={userId}",
+            cancellationToken);
+        return Created("/api/bootstrap/first-admin", new FirstAdminResponse(userId));
+    }
+
+    private async Task<ActionResult<FirstAdminResponse>> RejectAlreadyInitializedAsync(CancellationToken cancellationToken)
+    {
+        await AppendBootstrapAuditAsync(
+            AuditActionFirstAdminRejectedInitialized,
+            "First-admin bootstrap rejected because the platform is already initialized.",
+            cancellationToken);
+        return Conflict(new BootstrapErrorResponse(
+            "Platform is already initialized. First-admin bootstrap is not available.",
+            BootstrapErrorCodes.AlreadyInitialized,
+            Initialized: true));
+    }
+
+    private async Task AppendBootstrapAuditAsync(string action, string? details, CancellationToken cancellationToken)
+    {
+        var record = new AuditRecord(
+            new AuditRecordId(Guid.NewGuid().ToString("N")),
+            new ActorId("anonymous"),
+            action,
+            Resource: null,
+            Outcome: AuditOutcomeBootstrap,
+            DateTimeOffset.UtcNow,
+            new CorrelationId(null),
+            details);
+        await _audit.AppendAsync(record, cancellationToken);
+    }
+
+    private static BootstrapStatusResponse ToStatusResponse(BootstrapSetupStatus status) =>
+        new(status.Initialized, status.AllowsFirstAdmin);
+}
+
+/// <summary>
+/// Stable bootstrap error codes for UI and automation.
+/// </summary>
+public static class BootstrapErrorCodes
+{
+    public const string AlreadyInitialized = "bootstrap.already_initialized";
+    public const string InvalidRequest = "bootstrap.invalid_request";
+    public const string DuplicateIdentityLink = "bootstrap.duplicate_identity_link";
+    public const string RoleNotFound = "bootstrap.role_not_found";
+    public const string Unexpected = "bootstrap.unexpected";
 }
 
 /// <summary>
@@ -65,3 +166,13 @@ public sealed record FirstAdminRequest(string DisplayName, string IdentitySource
 /// Response when first admin is created (userId only; no secrets).
 /// </summary>
 public sealed record FirstAdminResponse(string UserId);
+
+/// <summary>
+/// Anonymous-safe bootstrap setup status.
+/// </summary>
+public sealed record BootstrapStatusResponse(bool Initialized, bool AllowsFirstAdmin);
+
+/// <summary>
+/// Structured bootstrap error payload for scripts and UI.
+/// </summary>
+public sealed record BootstrapErrorResponse(string Message, string Code, bool Initialized);

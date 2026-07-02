@@ -76,6 +76,17 @@ public sealed class ManagementHostReliabilitySmokeTests
         "/api/integrations",
     };
 
+    [Fact]
+    public async Task Anonymous_bootstrap_status_returns_200_not_500()
+    {
+        AssertSqlAvailable();
+        var client = _fixture.CreateClient();
+        var response = await client.GetAsync("/api/bootstrap/status");
+        AssertNoServerError(response, "bootstrap status");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        AssertCorrelationHeader(response);
+    }
+
     [Theory]
     [MemberData(nameof(AnonymousApiRoutes))]
     public async Task Anonymous_linked_api_routes_return_401_not_500(string path)
