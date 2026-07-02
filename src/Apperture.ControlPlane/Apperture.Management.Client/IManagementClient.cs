@@ -678,6 +678,9 @@ public interface IManagementClient
 
     /// <summary>Removes a role from a user. Requires role.assign. Throws on 403/404.</summary>
     Task RemoveRoleAsync(string userId, string roleId, CancellationToken cancellationToken = default);
+
+    /// <summary>Adds an identity link to a user. Requires user.manage. Returns on 204; throws on 400/403/404/409.</summary>
+    Task AddIdentityLinkAsync(string userId, AddIdentityLinkRequest request, CancellationToken cancellationToken = default);
 }
 
 public sealed record GovernanceDescriptorResponse(
@@ -733,6 +736,14 @@ public sealed record IdentityLinkDto(
     [property: JsonPropertyName("externalId")] string ExternalId,
     [property: JsonPropertyName("lastAuthenticatedAt")] DateTimeOffset? LastAuthenticatedAt);
 
+public sealed record AddIdentityLinkRequest(
+    [property: JsonPropertyName("identitySource")] string IdentitySource,
+    [property: JsonPropertyName("externalId")] string ExternalId);
+
+public sealed record IdentityLinkErrorResponse(
+    [property: JsonPropertyName("message")] string Message,
+    [property: JsonPropertyName("code")] string Code);
+
 public sealed record PrincipalEffectiveAccessDto(
     string UserId,
     IReadOnlyList<string> RoleIds,
@@ -764,7 +775,8 @@ public sealed record OperatorCapabilitiesDto(
     [property: JsonPropertyName("canManageNotificationDefinitions")] bool CanManageNotificationDefinitions = false,
     [property: JsonPropertyName("canUpdateIntegrations")] bool CanUpdateIntegrations = false,
     [property: JsonPropertyName("canViewPlatformSettings")] bool CanViewPlatformSettings = false,
-    [property: JsonPropertyName("canManagePlatformSettings")] bool CanManagePlatformSettings = false);
+    [property: JsonPropertyName("canManagePlatformSettings")] bool CanManagePlatformSettings = false,
+    [property: JsonPropertyName("canManageUsers")] bool CanManageUsers = false);
 
 public sealed record PlatformSettingAllowedValueDto(
     string Value,

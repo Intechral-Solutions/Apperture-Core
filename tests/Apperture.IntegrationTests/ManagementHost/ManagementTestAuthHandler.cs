@@ -15,6 +15,7 @@ internal sealed class ManagementTestAuthHandler : AuthenticationHandler<Authenti
 {
     public const string SchemeName = "ManagementTest";
     public const string HeaderName = "X-Test-External-Id";
+    public const string IdentitySourceHeaderName = "X-Test-Identity-Source";
 
     public ManagementTestAuthHandler(
         IOptionsMonitor<AuthenticationSchemeOptions> options,
@@ -33,10 +34,18 @@ internal sealed class ManagementTestAuthHandler : AuthenticationHandler<Authenti
         if (string.IsNullOrWhiteSpace(externalId))
             return Task.FromResult(AuthenticateResult.NoResult());
 
+        var identitySource = "Local";
+        if (Request.Headers.TryGetValue(IdentitySourceHeaderName, out var sourceValues))
+        {
+            var raw = sourceValues.FirstOrDefault();
+            if (!string.IsNullOrWhiteSpace(raw))
+                identitySource = raw.Trim();
+        }
+
         var claims = new[]
         {
             new Claim(ClaimTypes.NameIdentifier, externalId!),
-            new Claim(ClaimsPrincipalToActorMapper.IdentitySourceClaimType, "Local")
+            new Claim(ClaimsPrincipalToActorMapper.IdentitySourceClaimType, identitySource)
         };
         var identity = new ClaimsIdentity(claims, SchemeName);
         var principal = new ClaimsPrincipal(identity);

@@ -37,4 +37,5 @@ public sealed record OperatorCapabilitiesDto(
     bool CanManageNotificationDefinitions = false,
     bool CanUpdateIntegrations = false,
     bool CanViewPlatformSettings = false,
-    bool CanManagePlatformSettings = false);
+    bool CanManagePlatformSettings = false,
+    bool CanManageUsers = false);

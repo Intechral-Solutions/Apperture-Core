@@ -2,10 +2,12 @@
 @layout ConfigLayout
 @using System.Net.Http
 @using Apperture.Management.Client
+@using Microsoft.JSInterop
 @using Apperture.Management.Ui.Client.Organisms
 @using Apperture.Management.Ui.Shared
 @inject IManagementClient Client
 @inject IOperatorCapabilitiesService Capabilities
+@inject IJSRuntime JS
 
 <div class="p-4">
     <div class="text-xs text-muted mb-1">Config — Authentication — Entra directory</div>
@@ -34,7 +36,7 @@
     {
         <div class="mt-4 space-y-4 text-sm">
             <PageMessage Kind="PageMessageKind.Info"
-                         Message="Import creates or updates managed contacts by Entra object id using server-side Graph refresh. Missing mail remains visible as MissingEmail on the contact." />
+                         Message="Import creates or updates managed contacts by Entra object id using server-side Graph refresh. To link an Entra sign-in to a platform user, copy an object id below and paste it on Config → Governance → Users → user detail → Add Entra link." />
 
             <p class="text-xs"><a class="underline" href="/config/auth/tenants">← Entra tenant setup</a> · <a class="underline" href="/config/contacts">Managed contacts</a></p>
 
@@ -69,6 +71,11 @@
                 <PageMessage Kind="PageMessageKind.Info" Message="@_importMessage" />
             }
 
+            @if (!string.IsNullOrEmpty(_copyMessage))
+            {
+                <PageMessage Kind="PageMessageKind.Info" Message="@_copyMessage" />
+            }
+
             <div class="overflow-x-auto rounded border border-default">
                 <table class="min-w-full text-left text-xs">
                     <thead class="bg-surface-muted text-heading">
@@ -96,7 +103,15 @@
                                 <td class="p-2 font-medium text-heading">@u.DisplayName</td>
                                 <td class="p-2 text-muted break-all">@(u.UserPrincipalName ?? "—")</td>
                                 <td class="p-2 text-muted break-all">@(u.Mail ?? "—")</td>
-                                <td class="p-2 font-mono text-muted break-all text-[11px]">@u.ObjectId</td>
+                                <td class="p-2 font-mono text-muted break-all text-[11px]">
+                                    <span>@u.ObjectId</span>
+                                    <button type="button"
+                                            class="ms-2 rounded px-1.5 py-0.5 text-[10px] text-body hover:bg-surface-muted"
+                                            title="Copy object id"
+                                            @onclick="() => CopyOidAsync(u.ObjectId)">
+                                        Copy
+                                    </button>
+                                </td>
                             </tr>
                         }
                     </tbody>
@@ -119,6 +134,7 @@
     private string _search = "";
     private readonly HashSet<string> _selected = new(StringComparer.OrdinalIgnoreCase);
     private string? _importMessage;
+    private string? _copyMessage;
 
     protected override async Task OnInitializedAsync()
     {
@@ -213,6 +229,19 @@
         finally
         {
             _busy = false;
+        }
+    }
+
+    private async Task CopyOidAsync(string objectId)
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("navigator.clipboard.writeText", objectId);
+            _copyMessage = "Object id copied. Open a platform user under Config → Governance → Users to add an Entra link.";
+        }
+        catch
+        {
+            _copyMessage = "Could not copy automatically. Select and copy the object id manually.";
         }
     }
 }

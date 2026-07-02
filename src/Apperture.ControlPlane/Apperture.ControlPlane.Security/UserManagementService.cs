@@ -168,6 +168,21 @@ public sealed class UserManagementService : IUserManagementService
             ? LocalAuthHelpers.NormalizeUsername(externalId)
             : externalId.Trim();
 
+        var user = await _userRepository.GetByIdAsync(userId, cancellationToken);
+        if (user is null)
+            throw new IdentityLinkException(IdentityLinkErrorCodes.UserNotFound, $"User {userId.Value} not found.");
+
+        if (user.IdentityLinks.Any(l => l.Source == source && l.ExternalId == linkExternalId))
+            return;
+
+        var existing = await _userRepository.GetByIdentityLinkAsync(source, linkExternalId, cancellationToken);
+        if (existing is not null)
+        {
+            throw new IdentityLinkException(
+                IdentityLinkErrorCodes.ExternalIdInUse,
+                "An identity link with this source and external id is already attached to another user.");
+        }
+
         await _userRepository.AddIdentityLinkAsync(userId, source, linkExternalId, cancellationToken);
         await AppendAuditAsync("identity_link.added", actorId, userId.Value, $"userId={userId.Value} source={source} externalId={linkExternalId}", cancellationToken);
     }
@@ -353,9 +368,13 @@ public sealed class UserManagementService : IUserManagementService
         if (source != IdentitySource.Entra)
             return;
         if (string.IsNullOrWhiteSpace(externalId))
-            throw new InvalidOperationException("Entra external id must not be null or empty. Use the stable subject (oid or sub) from the token.");
+            throw new IdentityLinkException(
+                IdentityLinkErrorCodes.InvalidEntraExternalId,
+                "Entra external id must not be null or empty. Use the stable subject (oid or sub) from the token.");
         if (externalId.Contains('@'))
-            throw new InvalidOperationException("Entra external id must be the stable subject (oid or sub), not an email or UPN.");
+            throw new IdentityLinkException(
+                IdentityLinkErrorCodes.InvalidEntraExternalId,
+                "Entra external id must be the stable subject (oid or sub), not an email or UPN.");
     }
 
     /// <summary>

@@ -1,3 +1,4 @@
+using Apperture.ControlPlane.Security;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Identity;
 using Apperture.Management.Api.Models;
@@ -172,10 +173,14 @@ public sealed class UsersController : ControllerBase
         CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(request.ExternalId))
-            return BadRequest(new { message = "ExternalId is required." });
+            return BadRequest(new IdentityLinkErrorResponse(
+                "ExternalId is required.",
+                IdentityLinkErrorCodes.MissingExternalId));
         if (!Enum.TryParse<IdentitySource>(request.IdentitySource, ignoreCase: true, out var source) ||
             (source != IdentitySource.Entra && source != IdentitySource.Local))
-            return BadRequest(new { message = "IdentitySource must be 'Entra' or 'Local'." });
+            return BadRequest(new IdentityLinkErrorResponse(
+                "IdentitySource must be 'Entra' or 'Local'.",
+                IdentityLinkErrorCodes.InvalidSource));
 
         try
         {
@@ -186,13 +191,23 @@ public sealed class UsersController : ControllerBase
         {
             return Forbid();
         }
-        catch (InvalidOperationException ex) when (ex.Message.Contains("not found"))
+        catch (IdentityLinkException ex) when (ex.Code == IdentityLinkErrorCodes.UserNotFound)
         {
-            return NotFound(new { message = ex.Message });
+            return NotFound(new IdentityLinkErrorResponse(ex.Message, ex.Code));
+        }
+        catch (IdentityLinkException ex) when (ex.Code == IdentityLinkErrorCodes.ExternalIdInUse)
+        {
+            return Conflict(new IdentityLinkErrorResponse(ex.Message, ex.Code));
+        }
+        catch (IdentityLinkException ex)
+        {
+            return BadRequest(new IdentityLinkErrorResponse(ex.Message, ex.Code));
         }
         catch (InvalidOperationException ex) when (ex.Message.Contains("already exists"))
         {
-            return Conflict(new { message = ex.Message });
+            return Conflict(new IdentityLinkErrorResponse(
+                "An identity link with this source and external id is already attached to another user.",
+                IdentityLinkErrorCodes.ExternalIdInUse));
         }
     }
 
@@ -401,6 +416,8 @@ public sealed record CreateUserRequest(string DisplayName, string IdentitySource
 public sealed record CreateUserResponse(string UserId);
 
 public sealed record AddIdentityLinkRequest(string IdentitySource, string ExternalId);
+
+public sealed record IdentityLinkErrorResponse(string Message, string Code);
 
 public sealed record AssignRoleRequest(string RoleId);
 

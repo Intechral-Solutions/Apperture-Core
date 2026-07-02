@@ -33,7 +33,7 @@
     </PageHeader>
 
     <div class="mt-2 rounded border border-callout-info bg-callout-info px-3 py-2 text-xs text-body">
-        This page manages <strong>role assignments only</strong>. User identity and credentials are not editable here. To edit role definitions, go to the role detail page.
+        This page shows linked sign-in methods and role assignments. Administrators with <strong>user.manage</strong> can add an Entra identity link (object id) to an existing platform user.
     </div>
 
     @if (!_capabilitiesLoaded)
@@ -86,6 +86,56 @@
                         <div class="text-sm text-body">@_user.DisplayName</div>
                     </div>
                 </div>
+            </div>
+
+            <div class="rounded border border-default bg-surface p-3">
+                <div class="text-sm font-semibold text-heading">Linked sign-in methods</div>
+                @if (_user.IdentityLinks.Count == 0)
+                {
+                    <div class="mt-2 text-xs text-muted">No linked identities.</div>
+                }
+                else
+                {
+                    <ul class="mt-2 divide-y divide-default text-sm">
+                        @foreach (var link in _user.IdentityLinks)
+                        {
+                            <li class="flex flex-wrap items-baseline justify-between gap-2 py-2">
+                                <span class="font-mono text-xs text-body break-all">@FormatLinkLabel(link)</span>
+                                <span class="text-xs text-muted">@link.Source</span>
+                            </li>
+                        }
+                    </ul>
+                }
+
+                @if (_capabilities?.CanManageUsers == true)
+                {
+                    <div class="mt-4 border-t border-default pt-3">
+                        <div class="text-xs font-medium text-heading">Add Entra link</div>
+                        <p class="mt-1 text-xs text-muted">
+                            Paste the Entra object id (oid) from directory browse or your IdP. This does not verify the OIDC session; it only links the oid to this platform user.
+                        </p>
+                        @if (!string.IsNullOrEmpty(_identityLinkError))
+                        {
+                            <div class="mt-2">
+                                <PageMessage Kind="PageMessageKind.Error" Message="@_identityLinkError" />
+                            </div>
+                        }
+                        <div class="mt-2 flex flex-wrap items-end gap-2">
+                            <label class="min-w-[16rem] flex-1 text-xs">
+                                Entra object id
+                                <input class="mt-1 w-full rounded border border-default bg-surface px-3 py-2 font-mono text-xs"
+                                       @bind="_entraOidToLink"
+                                       disabled="@_mutating"
+                                       placeholder="00000000-0000-0000-0000-000000000000" />
+                            </label>
+                            <button class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface disabled:opacity-50"
+                                    disabled="@(_mutating || string.IsNullOrWhiteSpace(_entraOidToLink))"
+                                    @onclick="AddEntraLinkAsync">
+                                Add Entra link
+                            </button>
+                        </div>
+                    </div>
+                }
             </div>
 
             <div class="rounded border border-default bg-surface p-3">
@@ -169,6 +219,8 @@
     private bool _forbidden;
     private bool _mutating;
     private string? _error;
+    private string? _identityLinkError;
+    private string _entraOidToLink = "";
     private OperatorCapabilitiesDto? _capabilities;
     private bool _capabilitiesLoaded;
     private string? _dataLoadKey;
@@ -198,6 +250,7 @@
 
         _loading = true;
         _error = null;
+        _identityLinkError = null;
         _forbidden = false;
         try
         {
@@ -286,5 +339,51 @@
         {
             _mutating = false;
         }
+    }
+
+    private async Task AddEntraLinkAsync()
+    {
+        if (_user is null || string.IsNullOrWhiteSpace(_entraOidToLink))
+            return;
+
+        _mutating = true;
+        _identityLinkError = null;
+        try
+        {
+            await Client.AddIdentityLinkAsync(
+                UserId,
+                new AddIdentityLinkRequest("Entra", _entraOidToLink.Trim()));
+            Toasts.Show(ToastSeverity.Success, "Entra identity linked.", "Governance");
+            _entraOidToLink = "";
+            await LoadAsync();
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.Forbidden)
+        {
+            _identityLinkError = "Not authorized to manage users.";
+        }
+        catch (HttpRequestException ex)
+        {
+            _identityLinkError = ex.Message;
+        }
+        catch (Exception ex)
+        {
+            _identityLinkError = ex.Message;
+        }
+        finally
+        {
+            _mutating = false;
+        }
+    }
+
+    private static string FormatLinkLabel(IdentityLinkDto link)
+    {
+        if (string.Equals(link.Source, "Entra", StringComparison.OrdinalIgnoreCase))
+        {
+            var id = link.ExternalId;
+            var suffix = id.Length >= 4 ? id[^4..] : id;
+            return $"Entra · …{suffix}";
+        }
+
+        return link.ExternalId;
     }
 }

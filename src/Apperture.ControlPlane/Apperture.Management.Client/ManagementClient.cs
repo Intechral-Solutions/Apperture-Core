@@ -1013,6 +1013,29 @@ public sealed class ManagementClient : IManagementClient
         response.EnsureSuccessStatusCode();
     }
 
+    public async Task AddIdentityLinkAsync(string userId, AddIdentityLinkRequest request, CancellationToken cancellationToken = default)
+    {
+        var response = await _http.PostAsJsonAsync(
+            $"users/{Uri.EscapeDataString(userId)}/identity-links",
+            request,
+            cancellationToken).ConfigureAwait(false);
+        if (response.IsSuccessStatusCode)
+            return;
+
+        IdentityLinkErrorResponse? error = null;
+        try
+        {
+            error = await response.Content.ReadFromJsonAsync<IdentityLinkErrorResponse>(cancellationToken).ConfigureAwait(false);
+        }
+        catch (JsonException)
+        {
+            /* fall through */
+        }
+
+        var message = error?.Message ?? "Could not add identity link.";
+        throw new HttpRequestException(message, null, response.StatusCode);
+    }
+
     private static async Task<string?> TryGetMessageFromResponseAsync(HttpResponseMessage response, CancellationToken cancellationToken)
     {
         try
