@@ -12,10 +12,12 @@ using Xunit;
 namespace Apperture.IntegrationTests;
 
 /// <summary>
-/// Integration tests for park/resume external control against a real SQL Server (e.g. Docker on port 1433).
-/// Require MSSQL_SA_PASSWORD (from environment or repo-root .env). Tests fail with a clear message when SQL is not configured or reachable.
+/// Integration tests for park/resume external control against a real SQL Server.
+/// Configure SQL via <see cref="SqlServerTestConfiguration"/> (see tests/README.md).
+/// Tests fail with a clear message when SQL is not configured or reachable.
 /// These tests validate the unique-index race path and idempotent handling that in-memory cannot enforce.
 /// </summary>
+[Collection(SqlServerIntegrationCollection.Name)]
 public sealed class WorkflowExternalControlSqlServerTests
 {
     [Fact]
@@ -23,10 +25,7 @@ public sealed class WorkflowExternalControlSqlServerTests
     {
         var connectionString = SqlServerTestConfiguration.GetConnectionString();
         if (connectionString is null)
-        {
-            throw new InvalidOperationException(
-                "SQL Server not configured for integration tests. Set MSSQL_SA_PASSWORD (e.g. in repo-root .env) and ensure SQL Server is running on localhost:1433.");
-        }
+            throw new InvalidOperationException(SqlServerTestConfiguration.DescribeActiveConfiguration());
 
         var services = new ServiceCollection();
         services.AddApperturePersistence(connectionString);
@@ -40,10 +39,7 @@ public sealed class WorkflowExternalControlSqlServerTests
             var db = scope.ServiceProvider.GetRequiredService<AppertureDbContext>();
             var canConnect = await db.Database.CanConnectAsync();
             if (!canConnect)
-            {
-                throw new InvalidOperationException(
-                    "SQL Server not reachable at localhost:1433. Is the server running and is MSSQL_SA_PASSWORD correct?");
-            }
+                throw new InvalidOperationException(SqlServerTestConfiguration.DescribeConnectionFailure());
 
             await db.Database.MigrateAsync();
             db.WorkflowInstances.Add(new WorkflowInstanceEntity

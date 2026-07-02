@@ -20,6 +20,7 @@ namespace Apperture.IntegrationTests;
 /// Integration tests proving blocked deferred work surfaces in runtime health diagnostics.
 /// Requires SQL Server (e.g. Docker on port 1433). Epic 30 corrective pass.
 /// </summary>
+[Collection(SqlServerIntegrationCollection.Name)]
 public sealed class RuntimeHealthBlockedDeferredSqlServerTests
 {
     [Fact]
@@ -29,7 +30,7 @@ public sealed class RuntimeHealthBlockedDeferredSqlServerTests
         if (connectionString is null)
         {
             throw new InvalidOperationException(
-                "SQL Server not configured. Set MSSQL_SA_PASSWORD (e.g. in repo-root .env) and ensure SQL Server is running on localhost:1433.");
+                SqlServerTestConfiguration.DescribeActiveConfiguration());
         }
 
         var services = new ServiceCollection();
@@ -45,7 +46,7 @@ public sealed class RuntimeHealthBlockedDeferredSqlServerTests
             if (!await db.Database.CanConnectAsync())
             {
                 throw new InvalidOperationException(
-                    "SQL Server not reachable. Is the server running and is MSSQL_SA_PASSWORD correct?");
+                    SqlServerTestConfiguration.DescribeConnectionFailure());
             }
 
             await db.Database.MigrateAsync();

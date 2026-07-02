@@ -23,6 +23,7 @@ namespace Apperture.IntegrationTests;
 /// Requires SQL Server (e.g. Docker on port 1433). Epic 31 corrective pass.
 /// </summary>
 [Trait("Category", "SqlServer")]
+[Collection(SqlServerIntegrationCollection.Name)]
 public sealed class RecoveryWorkflowRemediationSqlServerTests
 {
     private const string WorkflowId = "Sample.HelloWorld.HelloWorld";
@@ -36,7 +37,7 @@ public sealed class RecoveryWorkflowRemediationSqlServerTests
         if (connectionString is null)
         {
             throw new InvalidOperationException(
-                "SQL Server not configured. Set MSSQL_SA_PASSWORD (e.g. in repo-root .env) and ensure SQL Server is running on localhost:1433.");
+                SqlServerTestConfiguration.DescribeActiveConfiguration());
         }
 
         var services = new ServiceCollection();
@@ -52,7 +53,7 @@ public sealed class RecoveryWorkflowRemediationSqlServerTests
             if (!await db.Database.CanConnectAsync())
             {
                 throw new InvalidOperationException(
-                    "SQL Server not reachable. Is the server running and is MSSQL_SA_PASSWORD correct?");
+                    SqlServerTestConfiguration.DescribeConnectionFailure());
             }
 
             await db.Database.MigrateAsync();

@@ -29,7 +29,7 @@ namespace Apperture.IntegrationTests;
 /// Epic 73 / Epic 74: SQL-backed evidence for platform + module migrations (including Proof StudentReview), connector factory registration,
 /// and schedule-dispatch DI against a migrated database. Requires the same SQL setup as other integration tests.
 /// </summary>
-[Collection("SqlServerEpic73Seams")]
+[Collection(SqlServerIntegrationCollection.Name)]
 public sealed class Epic73SqlSeamsIntegrationTests
 {
     private static string RequireConnectionString()
@@ -37,8 +37,7 @@ public sealed class Epic73SqlSeamsIntegrationTests
         var cs = SqlServerTestConfiguration.GetConnectionString();
         if (cs is null)
         {
-            throw new InvalidOperationException(
-                "SQL Server not configured. Set MSSQL_SA_PASSWORD (e.g. in repo-root .env) and ensure SQL Server is reachable (see tests/Apperture.IntegrationTests/README-ManagementHostGovernance.md).");
+            throw new InvalidOperationException(SqlServerTestConfiguration.DescribeActiveConfiguration());
         }
 
         return cs;

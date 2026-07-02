@@ -38,7 +38,7 @@ public sealed class ManagementHostGovernanceFixture : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
-        ConnectionString = Environment.GetEnvironmentVariable(ManagementGovernanceTestConstants.ConnectionStringEnvironmentVariable)
+        ConnectionString = SqlServerTestConfiguration.GetGovernanceConnectionString()
             ?? ManagementGovernanceTestConstants.DefaultLocalDbConnectionString;
 
         try
