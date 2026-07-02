@@ -137,7 +137,7 @@ public static class ManagementBreadcrumbResolver
         if (p.Equals("/connections", StringComparison.OrdinalIgnoreCase))
             return "Connection instances and connector definitions.";
         if (p.Equals("/config", StringComparison.OrdinalIgnoreCase))
-            return "Authentication, governance, notifications, attention, contacts, and modules.";
+            return "Authentication, governance, notifications, attention, and platform maintenance.";
         if (p.Equals("/execute", StringComparison.OrdinalIgnoreCase))
             return "Start operations and workflows.";
         return null;

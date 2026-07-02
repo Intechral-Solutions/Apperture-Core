@@ -50,10 +50,8 @@ public sealed class ShellSectionOwnerTests
         var dashboard = menus[SectionOwnerConstants.Dashboard];
         dashboard.Items.Should().Contain(i => i.Href == ShellSectionRoutes.DashboardHome && i.Text == "Dashboard home");
         dashboard.Items.Should().NotContain(i => i.Href == "/control/center");
-        dashboard.Items.Should().Contain(i => i.Text == "Manage dashboards (deferred)");
-        dashboard.Items.Should().Contain(i => i.Text == "Add dashboard page (deferred)");
-        dashboard.Items.Should().Contain(i => i.Text == "Delete dashboard page (deferred)");
-        dashboard.Items.Should().Contain(i => i.Text == "Edit dashboard layout (deferred)");
+        foreach (var route in DeveloperTaskRoutes.DeferredDashboardRoutes)
+            dashboard.Items.Should().NotContain(i => i.Href == route);
     }
 
     [Fact]
@@ -66,14 +64,13 @@ public sealed class ShellSectionOwnerTests
     }
 
     [Fact]
-    public void DashboardMenu_ManageAddDeleteLayout_LinkToDashboardRoutes()
+    public void DashboardMenu_DeferredRoutes_StillResolveToDashboardSection()
     {
         var menus = ControlPanelMenuDefinitions.GetDefaultMenus();
-        var dashboard = menus[SectionOwnerConstants.Dashboard];
-        dashboard.Items.Should().Contain(i => i.Href == "/dashboard/manage" && i.Text == "Manage dashboards (deferred)");
-        dashboard.Items.Should().Contain(i => i.Href == "/dashboard/add" && i.Text == "Add dashboard page (deferred)");
-        dashboard.Items.Should().Contain(i => i.Href == "/dashboard/delete" && i.Text == "Delete dashboard page (deferred)");
-        dashboard.Items.Should().Contain(i => i.Href == "/dashboard/layout" && i.Text == "Edit dashboard layout (deferred)");
+        RouteToSectionResolver.Resolve("/dashboard/manage", menus.GetValueOrDefault, menus.Keys)
+            .Should().Be(SectionOwnerConstants.Dashboard);
+        RouteToSectionResolver.Resolve("/dashboard/add", menus.GetValueOrDefault, menus.Keys)
+            .Should().Be(SectionOwnerConstants.Dashboard);
     }
 
     [Fact]

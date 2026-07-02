@@ -707,10 +707,24 @@
             ? "Recent runs (integrationId), module-scoped audit (not integration-scoped), and notification instances from existing APIs."
             : $"Runs filtered by this integration. Audit filtered by module {_integration.ModuleId} only — the audit API has no integrationId filter, so audit rows may include other integrations using the same module. Notifications are integration-scoped. Last {EntityRecentActivityComposer.DefaultLookback.Days} days, up to {EntityRecentActivityComposer.DefaultMaxItems} items.";
 
-    private string SummarySubtitle =>
-        _integration is null
-            ? "Integration detail"
-            : $"{_integration.ModuleId} · {_integration.State}";
+    private string SummarySubtitle
+    {
+        get
+        {
+            if (_integration is null)
+                return "Integration detail";
+
+            var parts = new List<string> { _integration.State };
+            if (_readiness is not null)
+            {
+                parts.Add(_readiness.IsRunnable ? "Runnable" : "Not runnable");
+                if (_readiness.BlockingIssueCount > 0)
+                    parts.Add($"{_readiness.BlockingIssueCount} blocking issue(s)");
+            }
+
+            return string.Join(" · ", parts);
+        }
+    }
 
     private int EnabledScheduleCount =>
         _schedules?.Count(s => s.Enabled) ?? 0;

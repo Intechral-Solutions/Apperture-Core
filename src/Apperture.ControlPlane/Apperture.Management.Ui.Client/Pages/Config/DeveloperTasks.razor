@@ -1,0 +1,42 @@
+@page "/config/developer"
+@layout ConfigLayout
+
+<div class="p-4 ui-page-stack">
+    <PageHeader Title="Developer & internal tasks"
+                Eyebrow="Config"
+                Subtitle="Stabilization utilities, deferred features, and diagnostics. Not part of the primary operator workflow." />
+
+    <PageMessage Kind="PageMessageKind.Info"
+                 Message="These pages are useful during platform development and cutover. Day-to-day operations use Dashboard, Control Center, Integrations, Runs, and Schedules." />
+
+    <ManagementSection Title="Deferred dashboard management" Layer="@ManagementSection.UiLayer.Summary">
+        <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <ManagementSummaryCard Title="Manage dashboards"
+                                   Description="Deferred — customize dashboard pages and layouts."
+                                   Href="@DeveloperTaskRoutes.ManageDashboards" />
+            <ManagementSummaryCard Title="Add dashboard page"
+                                   Description="Deferred — add a new dashboard page."
+                                   Href="@DeveloperTaskRoutes.AddDashboardPage" />
+            <ManagementSummaryCard Title="Delete dashboard page"
+                                   Description="Deferred — remove a dashboard page."
+                                   Href="@DeveloperTaskRoutes.DeleteDashboardPage" />
+            <ManagementSummaryCard Title="Edit dashboard layout"
+                                   Description="Deferred — rearrange dashboard widgets."
+                                   Href="@DeveloperTaskRoutes.EditDashboardLayout" />
+        </div>
+    </ManagementSection>
+
+    <ManagementSection Title="Diagnostics & demos" Layer="@ManagementSection.UiLayer.Summary">
+        <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <ManagementSummaryCard Title="Notification diagnostics"
+                                   Description="Cutover parity checks for expected-run-missing (read-only)."
+                                   Href="@DeveloperTaskRoutes.NotificationDiagnostics" />
+            <ManagementSummaryCard Title="Nested navigation demo"
+                                   Description="Internal shell navigation depth demo."
+                                   Href="@DeveloperTaskRoutes.NestedNavDemo" />
+            <ManagementSummaryCard Title="Preferences (deferred)"
+                                   Description="Theme and profile preferences stub."
+                                   Href="@DeveloperTaskRoutes.Preferences" />
+        </div>
+    </ManagementSection>
+</div>

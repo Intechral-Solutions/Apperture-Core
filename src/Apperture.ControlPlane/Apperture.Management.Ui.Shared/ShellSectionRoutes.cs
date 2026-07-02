@@ -10,4 +10,7 @@ public static class ShellSectionRoutes
 
     /// <summary>Configuration section landing; bottom gear navigates here.</summary>
     public const string ConfigHome = "/config";
+
+    /// <summary>Developer and internal stabilization utilities (Config gear zone).</summary>
+    public const string DeveloperTasks = "/config/developer";
 }

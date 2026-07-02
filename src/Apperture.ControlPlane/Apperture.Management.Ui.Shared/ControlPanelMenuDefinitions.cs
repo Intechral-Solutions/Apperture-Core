@@ -19,11 +19,7 @@ public static class ControlPanelMenuDefinitions
                 Title = null,
                 Items =
                 {
-                    new DomainMenuItem { Text = "Dashboard home", Href = ShellSectionRoutes.DashboardHome },
-                    new DomainMenuItem { Text = "Manage dashboards (deferred)", Href = "/dashboard/manage" },
-                    new DomainMenuItem { Text = "Add dashboard page (deferred)", Href = "/dashboard/add" },
-                    new DomainMenuItem { Text = "Delete dashboard page (deferred)", Href = "/dashboard/delete" },
-                    new DomainMenuItem { Text = "Edit dashboard layout (deferred)", Href = "/dashboard/layout" }
+                    new DomainMenuItem { Text = "Dashboard home", Href = ShellSectionRoutes.DashboardHome }
                 }
             },
             ["Operations"] = new DomainMenu
@@ -97,14 +93,8 @@ public static class ControlPanelMenuDefinitions
                         {
                             new DomainMenuItem { Text = "Definitions", Href = "/config/notifications/definitions" },
                             new DomainMenuItem { Text = "Instances", Href = "/config/notifications/instances" },
-                            new DomainMenuItem { Text = "Delivery", Href = "/config/notifications/delivery" },
-                            new DomainMenuItem { Text = "Diagnostics", Href = "/config/notifications/diagnostics" }
+                            new DomainMenuItem { Text = "Delivery", Href = "/config/notifications/delivery" }
                         }
-                    },
-                    new DomainMenuItem
-                    {
-                        Text = "Platform settings",
-                        Href = "/config/platform-settings"
                     },
                     new DomainMenuItem
                     {
@@ -118,7 +108,23 @@ public static class ControlPanelMenuDefinitions
                             new DomainMenuItem { Text = "Managed contacts", Href = "/config/contacts" }
                         }
                     },
-                    new DomainMenuItem { Text = "Modules", Href = "/modules" }
+                    new DomainMenuItem
+                    {
+                        Id = "config-platform-maintenance",
+                        Text = "Platform maintenance",
+                        Href = "/config/platform-settings",
+                        Children = new List<DomainMenuItem>
+                        {
+                            new DomainMenuItem { Text = "Platform settings", Href = "/config/platform-settings" },
+                            new DomainMenuItem { Text = "Modules", Href = "/modules" }
+                        }
+                    },
+                    new DomainMenuItem
+                    {
+                        Id = "config-developer",
+                        Text = "Developer & internal",
+                        Href = ShellSectionRoutes.DeveloperTasks
+                    }
                 }
             }
         };

@@ -9,7 +9,7 @@
 @inject NavigationManager Nav
 
 <div class="p-4">
-    <PageHeader Title="Integrations" Subtitle="Fleet overview: configuration/readiness and verification; Ops (7d) for failed runs; Expected runs flags active scheduled integrations with no schedule-fired authorized run in the window—manual/procedure runs do not clear that signal (not paused/blocked/unscheduled). Open a row for remediation; use links for runs and schedules.">
+    <PageHeader Title="Integrations" Subtitle="Status and health across your integrations. Open a row for issues, schedules, recent outcomes, and next actions.">
         <Toolbar>
             @if (_capabilities?.CanManageIntegrations == true)
             {

@@ -20,6 +20,6 @@ public sealed class Epic77NotificationUiMenuTests
         hrefs.Should().Contain("/config/notifications/definitions");
         hrefs.Should().Contain("/config/notifications/instances");
         hrefs.Should().Contain("/config/notifications/delivery");
-        hrefs.Should().Contain("/config/notifications/diagnostics");
+        hrefs.Should().NotContain(DeveloperTaskRoutes.NotificationDiagnostics);
     }
 }

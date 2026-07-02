@@ -32,9 +32,9 @@ public sealed class Epic33CrossNavigationTests
 
         menus["Automation"].Items.Select(i => i.Href).Should().Contain("/schedules");
         var config = menus[SectionOwnerConstants.Config];
-        var modules = config.Items.FirstOrDefault(i => i.Text == "Modules");
-        modules.Should().NotBeNull();
-        modules!.Href.Should().Be("/modules");
+        var maintenance = config.Items.FirstOrDefault(i => i.Text == "Platform maintenance");
+        maintenance.Should().NotBeNull();
+        maintenance!.Children!.Should().Contain(i => i.Text == "Modules" && i.Href == "/modules");
     }
 
     [Fact]
@@ -47,7 +47,8 @@ public sealed class Epic33CrossNavigationTests
         operationsHrefs.Should().Contain("/control/blocked-work");
         operationsHrefs.Should().Contain("/control/audit");
         var config = menus[SectionOwnerConstants.Config];
-        config.Items.Should().Contain(i => i.Href == "/modules");
+        var maintenance = config.Items.First(i => i.Text == "Platform maintenance");
+        maintenance.Children!.Should().Contain(i => i.Href == "/modules");
 
         var automationHrefs = menus["Automation"].Items.Select(i => i.Href).ToHashSet();
         automationHrefs.Should().Contain("/runs");

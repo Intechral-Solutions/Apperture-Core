@@ -41,11 +41,13 @@ public sealed class Epic99RouteMenuTruthCleanupTests
     }
 
     [Fact]
-    public void Config_modules_is_single_entry_without_duplicate_child()
+    public void Config_modules_is_grouped_under_platform_maintenance()
     {
         var menus = ControlPanelMenuDefinitions.GetDefaultMenus();
-        var modules = menus[SectionOwnerConstants.Config].Items
-            .FirstOrDefault(i => i.Text == "Modules");
+        var maintenance = menus[SectionOwnerConstants.Config].Items
+            .FirstOrDefault(i => i.Text == "Platform maintenance");
+        maintenance.Should().NotBeNull();
+        var modules = maintenance!.Children!.FirstOrDefault(c => c.Text == "Modules");
         modules.Should().NotBeNull();
         modules!.Href.Should().Be("/modules");
         modules.Children.Should().BeNullOrEmpty();
