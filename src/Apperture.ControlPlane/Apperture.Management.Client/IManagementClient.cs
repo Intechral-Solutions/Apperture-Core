@@ -378,6 +378,9 @@ public interface IManagementClient
     /// <summary>Clears auth cookie (204).</summary>
     Task LocalLogoutAsync(CancellationToken cancellationToken = default);
 
+    /// <summary>Self-service local password change (204). Throws <see cref="HttpRequestException"/> on failure.</summary>
+    Task ChangeLocalPasswordAsync(ChangeLocalPasswordRequest request, CancellationToken cancellationToken = default);
+
     /// <summary>Merged sign-in capabilities and chooser policy (anonymous).</summary>
     Task<AuthSignInOptionsDto> GetAuthSignInOptionsAsync(CancellationToken cancellationToken = default);
 
@@ -1239,7 +1242,32 @@ public sealed record MeResponse(
     [property: JsonPropertyName("userId")] string UserId,
     [property: JsonPropertyName("displayName")] string DisplayName,
     [property: JsonPropertyName("roles")] IReadOnlyList<string> Roles,
-    [property: JsonPropertyName("userPrincipal")] string? UserPrincipal);
+    [property: JsonPropertyName("userPrincipal")] string? UserPrincipal,
+    [property: JsonPropertyName("signInSource")] string SignInSource,
+    [property: JsonPropertyName("identityLinks")] IReadOnlyList<AccountIdentityLinkDto> IdentityLinks,
+    [property: JsonPropertyName("localCredentialStatus")] string LocalCredentialStatus,
+    [property: JsonPropertyName("roleNames")] IReadOnlyList<string> RoleNames,
+    [property: JsonPropertyName("canChangeLocalPassword")] bool CanChangeLocalPassword,
+    [property: JsonPropertyName("deferred")] AccountDeferredFeaturesDto Deferred);
+
+public sealed record AccountIdentityLinkDto(
+    [property: JsonPropertyName("source")] string Source,
+    [property: JsonPropertyName("displayLabel")] string DisplayLabel,
+    [property: JsonPropertyName("lastAuthenticatedAtUtc")] DateTimeOffset? LastAuthenticatedAtUtc);
+
+public sealed record AccountDeferredFeaturesDto(
+    [property: JsonPropertyName("avatarManagementDeferred")] bool AvatarManagementDeferred,
+    [property: JsonPropertyName("profileEditDeferred")] bool ProfileEditDeferred,
+    [property: JsonPropertyName("notificationSubscriptionsDeferred")] bool NotificationSubscriptionsDeferred,
+    [property: JsonPropertyName("message")] string Message);
+
+public sealed record ChangeLocalPasswordRequest(
+    [property: JsonPropertyName("currentPassword")] string? CurrentPassword,
+    [property: JsonPropertyName("newPassword")] string? NewPassword);
+
+public sealed record LocalPasswordChangeErrorResponse(
+    [property: JsonPropertyName("message")] string Message,
+    [property: JsonPropertyName("code")] string Code);
 
 public sealed record LocalLoginRequest(
     [property: JsonPropertyName("username")] string Username,

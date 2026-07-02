@@ -1,3 +1,4 @@
+using Apperture.Management.Host;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.Options;
 
@@ -8,10 +9,12 @@ namespace Apperture.IntegrationTests.ManagementHost;
 /// </summary>
 internal sealed class ManagementTestAuthenticationPostConfigure : IPostConfigureOptions<AuthenticationOptions>
 {
+    public const string DefaultScheme = "TestOrCookie";
+
     public void PostConfigure(string? name, AuthenticationOptions options)
     {
-        options.DefaultAuthenticateScheme = ManagementTestAuthHandler.SchemeName;
-        options.DefaultChallengeScheme = ManagementTestAuthHandler.SchemeName;
-        options.DefaultSignInScheme = ManagementTestAuthHandler.SchemeName;
+        options.DefaultAuthenticateScheme = DefaultScheme;
+        options.DefaultChallengeScheme = DefaultScheme;
+        options.DefaultSignInScheme = Apperture.Management.Host.AuthenticationServiceCollectionExtensions.CookieScheme;
     }
 }

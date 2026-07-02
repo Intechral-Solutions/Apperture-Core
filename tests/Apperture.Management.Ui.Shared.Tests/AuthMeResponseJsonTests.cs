@@ -10,12 +10,31 @@ public sealed class AuthMeResponseJsonTests
     [Fact]
     public void MeResponse_deserializes_from_api_json_shape()
     {
-        const string json = """{"userId":"usr_1","displayName":"Ada","roles":["platform-admin","operator"]}""";
+        const string json = """
+            {
+              "userId":"usr_1",
+              "displayName":"Ada",
+              "roles":["platform-admin"],
+              "userPrincipal":"ada@contoso.com",
+              "signInSource":"Local",
+              "identityLinks":[{"source":"Local","displayLabel":"ada","lastAuthenticatedAtUtc":null}],
+              "localCredentialStatus":"active",
+              "roleNames":["Platform administrator"],
+              "canChangeLocalPassword":true,
+              "deferred":{"avatarManagementDeferred":true,"profileEditDeferred":true,"notificationSubscriptionsDeferred":true,"message":"Deferred."}
+            }
+            """;
         var me = JsonSerializer.Deserialize<MeResponse>(json, ClientJsonOptions());
         me.Should().NotBeNull();
         me!.UserId.Should().Be("usr_1");
         me.DisplayName.Should().Be("Ada");
-        me.Roles.Should().Equal("platform-admin", "operator");
+        me.Roles.Should().Equal("platform-admin");
+        me.SignInSource.Should().Be("Local");
+        me.LocalCredentialStatus.Should().Be("active");
+        me.CanChangeLocalPassword.Should().BeTrue();
+        me.RoleNames.Should().Equal("Platform administrator");
+        me.IdentityLinks.Should().ContainSingle(l => l.DisplayLabel == "ada");
+        me.Deferred.Message.Should().Be("Deferred.");
     }
 
     private static JsonSerializerOptions ClientJsonOptions() =>

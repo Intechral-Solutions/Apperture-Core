@@ -26,6 +26,8 @@ public sealed class AuthController : ControllerBase
     private const string AuthActionBreakGlassLoginSuccess = "auth.break_glass.login.success";
     private const string AuthActionBreakGlassLoginFailed = "auth.break_glass.login.failed";
     private const string AuthActionBreakGlassRejectedDisabled = "auth.break_glass.rejected_disabled";
+    private const string AuthActionLocalPasswordChangeSuccess = "auth.local.password_change.success";
+    private const string AuthActionLocalPasswordChangeFailed = "auth.local.password_change.failed";
 
     private readonly IUserRepository _userRepository;
     private readonly ILocalCredentialRepository _localCredentialRepository;
@@ -114,8 +116,171 @@ public sealed class AuthController : ControllerBase
             return Forbid();
 
         var roles = await _roleProvider.GetRolesForUserAsync(uid, cancellationToken);
+        var credential = await _localCredentialRepository.GetByUserIdAsync(uid, cancellationToken);
         var userPrincipal = ResolveUserPrincipal(User);
-        return Ok(new MeResponse(user.Id.Value, user.DisplayName, roles.Select(r => r.Id.Value).ToArray(), userPrincipal));
+        var localStatus = AccountMeSnapshotBuilder.ResolveLocalCredentialStatus(user, credential);
+        var identityLinks = user.IdentityLinks
+            .Select(l => new AccountIdentityLinkDto(
+                l.Source.ToString(),
+                AccountMeSnapshotBuilder.FormatIdentityLinkLabel(l.Source, l.ExternalId),
+                l.LastAuthenticatedAt))
+            .ToArray();
+        var deferred = AccountMeSnapshotBuilder.BuildDeferredFeatures();
+        return Ok(new MeResponse(
+            user.Id.Value,
+            user.DisplayName,
+            roles.Select(r => r.Id.Value).ToArray(),
+            userPrincipal,
+            AccountMeSnapshotBuilder.ResolveSignInSource(User),
+            identityLinks,
+            localStatus,
+            roles.Select(r => r.Name).ToArray(),
+            AccountMeSnapshotBuilder.CanChangeLocalPassword(_localOptions.Enabled, localStatus),
+            new AccountDeferredFeaturesDto(
+                deferred.AvatarManagementDeferred,
+                deferred.ProfileEditDeferred,
+                deferred.NotificationSubscriptionsDeferred,
+                deferred.Message)));
+    }
+
+    /// <summary>
+    /// Self-service local password change for the signed-in user when an active local credential exists.
+    /// </summary>
+    [HttpPost("local/change-password")]
+    [Authorize]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(typeof(LocalPasswordChangeErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(LocalPasswordChangeErrorResponse), StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> ChangeLocalPassword(
+        [FromBody] ChangeLocalPasswordRequest request,
+        CancellationToken cancellationToken)
+    {
+        var actor = await _principalContext.GetCurrentActorAsync(cancellationToken);
+        if (actor is null)
+            return Unauthorized();
+
+        var userId = await _principalToUserResolver.ResolveUserIdAsync(actor, cancellationToken);
+        if (userId is null)
+        {
+            await AppendAuthAuditAsync(
+                AuthActionLocalPasswordChangeFailed,
+                new ActorId(actor.Id.Value),
+                "Authenticated principal not linked to platform user",
+                cancellationToken);
+            return Forbid();
+        }
+
+        if (!_localOptions.Enabled)
+        {
+            await AppendAuthAuditAsync(
+                AuthActionLocalPasswordChangeFailed,
+                new ActorId(userId.Value),
+                "Local auth disabled",
+                cancellationToken);
+            return BadRequest(new LocalPasswordChangeErrorResponse(
+                "Local sign-in is disabled for this deployment.",
+                LocalPasswordChangeErrorCodes.LocalAuthDisabled));
+        }
+
+        if (request.CurrentPassword is null || request.NewPassword is null)
+        {
+            await AppendAuthAuditAsync(
+                AuthActionLocalPasswordChangeFailed,
+                new ActorId(userId.Value),
+                "Missing password fields",
+                cancellationToken);
+            return BadRequest(new LocalPasswordChangeErrorResponse(
+                "Current and new password are required.",
+                LocalPasswordChangeErrorCodes.InvalidNewPassword));
+        }
+
+        if (_localOptions.MinPasswordLength > 0 && request.NewPassword.Length < _localOptions.MinPasswordLength)
+        {
+            await AppendAuthAuditAsync(
+                AuthActionLocalPasswordChangeFailed,
+                new ActorId(userId.Value),
+                $"New password shorter than minimum ({_localOptions.MinPasswordLength})",
+                cancellationToken);
+            return BadRequest(new LocalPasswordChangeErrorResponse(
+                $"Password must be at least {_localOptions.MinPasswordLength} characters.",
+                LocalPasswordChangeErrorCodes.InvalidNewPassword));
+        }
+
+        var user = await _userRepository.GetByIdAsync(userId, cancellationToken);
+        if (user is null)
+        {
+            await AppendAuthAuditAsync(
+                AuthActionLocalPasswordChangeFailed,
+                new ActorId(userId.Value),
+                "Platform user not found",
+                cancellationToken);
+            return Forbid();
+        }
+
+        if (!user.IdentityLinks.Any(l => l.Source == IdentitySource.Local))
+        {
+            await AppendAuthAuditAsync(
+                AuthActionLocalPasswordChangeFailed,
+                new ActorId(userId.Value),
+                "No local identity link",
+                cancellationToken);
+            return BadRequest(new LocalPasswordChangeErrorResponse(
+                "This account does not have a local sign-in credential.",
+                LocalPasswordChangeErrorCodes.NoCredential));
+        }
+
+        var credential = await _localCredentialRepository.GetByUserIdAsync(userId, cancellationToken);
+        if (credential is null)
+        {
+            await AppendAuthAuditAsync(
+                AuthActionLocalPasswordChangeFailed,
+                new ActorId(userId.Value),
+                "No local credential row",
+                cancellationToken);
+            return BadRequest(new LocalPasswordChangeErrorResponse(
+                "This account does not have a local sign-in credential.",
+                LocalPasswordChangeErrorCodes.NoCredential));
+        }
+
+        if (credential.IsDisabled)
+        {
+            await AppendAuthAuditAsync(
+                AuthActionLocalPasswordChangeFailed,
+                new ActorId(userId.Value),
+                "Local credential disabled",
+                cancellationToken);
+            return Conflict(new LocalPasswordChangeErrorResponse(
+                "Local sign-in is disabled for this account. Contact an administrator.",
+                LocalPasswordChangeErrorCodes.CredentialDisabled));
+        }
+
+        if (!_passwordHasher.VerifyPassword(request.CurrentPassword, credential.PasswordHash, credential.Salt))
+        {
+            await AppendAuthAuditAsync(
+                AuthActionLocalPasswordChangeFailed,
+                new ActorId(userId.Value),
+                "Current password verification failed",
+                cancellationToken);
+            return BadRequest(new LocalPasswordChangeErrorResponse(
+                "Current password is incorrect.",
+                LocalPasswordChangeErrorCodes.WrongCurrentPassword));
+        }
+
+        var (hash, salt) = _passwordHasher.HashPassword(request.NewPassword);
+        await _localCredentialRepository.SetPasswordAsync(
+            userId,
+            hash,
+            salt,
+            _passwordHasher.AlgorithmName,
+            cancellationToken);
+        await AppendAuthAuditAsync(
+            AuthActionLocalPasswordChangeSuccess,
+            new ActorId(userId.Value),
+            null,
+            cancellationToken);
+        return NoContent();
     }
 
     /// <summary>
@@ -304,7 +469,42 @@ public sealed record LocalLoginRequest(string Username, string? Password);
 
 public sealed record LocalLoginResponse(string UserId, string DisplayName);
 
-public sealed record MeResponse(string UserId, string DisplayName, string[] Roles, string? UserPrincipal);
+public sealed record MeResponse(
+    string UserId,
+    string DisplayName,
+    string[] Roles,
+    string? UserPrincipal,
+    string SignInSource,
+    IReadOnlyList<AccountIdentityLinkDto> IdentityLinks,
+    string LocalCredentialStatus,
+    string[] RoleNames,
+    bool CanChangeLocalPassword,
+    AccountDeferredFeaturesDto Deferred);
+
+public sealed record AccountIdentityLinkDto(
+    string Source,
+    string DisplayLabel,
+    DateTimeOffset? LastAuthenticatedAtUtc);
+
+public sealed record AccountDeferredFeaturesDto(
+    bool AvatarManagementDeferred,
+    bool ProfileEditDeferred,
+    bool NotificationSubscriptionsDeferred,
+    string Message);
+
+public sealed record ChangeLocalPasswordRequest(string? CurrentPassword, string? NewPassword);
+
+/// <summary>Stable self-service password change error codes for clients.</summary>
+public static class LocalPasswordChangeErrorCodes
+{
+    public const string WrongCurrentPassword = "auth.local_password.wrong_current";
+    public const string NoCredential = "auth.local_password.no_credential";
+    public const string CredentialDisabled = "auth.local_password.credential_disabled";
+    public const string InvalidNewPassword = "auth.local_password.invalid_new";
+    public const string LocalAuthDisabled = "auth.local_password.local_auth_disabled";
+}
+
+public sealed record LocalPasswordChangeErrorResponse(string Message, string Code);
 
 /// <summary>Stable break-glass error codes for clients and automation.</summary>
 public static class BreakGlassAuthErrorCodes

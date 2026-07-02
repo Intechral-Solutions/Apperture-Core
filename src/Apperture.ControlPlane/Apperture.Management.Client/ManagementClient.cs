@@ -1135,6 +1135,26 @@ public sealed class ManagementClient : IManagementClient
         response.EnsureSuccessStatusCode();
     }
 
+    public async Task ChangeLocalPasswordAsync(ChangeLocalPasswordRequest request, CancellationToken cancellationToken = default)
+    {
+        var response = await _http.PostAsJsonAsync("auth/local/change-password", request, cancellationToken).ConfigureAwait(false);
+        if (response.IsSuccessStatusCode)
+            return;
+
+        LocalPasswordChangeErrorResponse? error = null;
+        try
+        {
+            error = await response.Content.ReadFromJsonAsync<LocalPasswordChangeErrorResponse>(cancellationToken).ConfigureAwait(false);
+        }
+        catch (JsonException)
+        {
+            /* fall through */
+        }
+
+        var message = error?.Message ?? "Password change failed.";
+        throw new HttpRequestException(message, null, response.StatusCode);
+    }
+
     public async Task<AuthSignInOptionsDto> GetAuthSignInOptionsAsync(CancellationToken cancellationToken = default)
     {
         using var response = await _http.GetAsync("auth/sign-in-options", cancellationToken).ConfigureAwait(false);

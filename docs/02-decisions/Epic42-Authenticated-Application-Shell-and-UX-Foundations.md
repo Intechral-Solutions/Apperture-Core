@@ -50,9 +50,9 @@ Establish a truthful, reusable authenticated shell: current user presence from t
 - `PageMessage` + `PageMessageKind` for loading / empty / error / forbidden / info.
 - Applied on **Audit timeline**, **User detail (governance)**, **Role detail**, and **Login** / placeholder pages.
 
-### 7. Placeholder routes (honest)
+### 7. Account and preferences
 
-- **`/account`**: explains limited functionality; links to governance users when relevant.
+- **`/account`**: identity summary, sign-in method, linked identities, role names, local credential status, self-service password change when an active local credential exists, and deferred-feature messaging. See [S2C minimum account page](S2C-minimum-account-page-and-password-change.md).
 - **`/preferences`**: explains that only header theme is implemented; no fake settings forms.
 
 ### 8. Prerender host (`Apperture.Management.Ui.Server`)

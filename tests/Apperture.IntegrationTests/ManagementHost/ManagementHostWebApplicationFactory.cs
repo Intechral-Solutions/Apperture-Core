@@ -1,8 +1,10 @@
 using Apperture.Bootstrap;
+using Apperture.ControlPlane.Security;
 using Apperture.Management.Host;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
@@ -21,6 +23,14 @@ public sealed class ManagementHostWebApplicationFactory : WebApplicationFactory<
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment("Testing");
+        builder.ConfigureAppConfiguration((_, config) =>
+        {
+            config.AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                [$"{LocalAuthOptions.SectionName}:Enabled"] = "true",
+                [$"{LocalAuthOptions.SectionName}:MinPasswordLength"] = "8",
+            });
+        });
         builder.ConfigureServices(services =>
         {
             var toRemove = services.Where(d => d.ServiceType == typeof(IBootstrapConnectionProfile)).ToList();
@@ -29,11 +39,22 @@ public sealed class ManagementHostWebApplicationFactory : WebApplicationFactory<
 
             services.AddSingleton<IBootstrapConnectionProfile>(new FixedBootstrapConnectionProfile(_connectionString));
 
-            services.AddSingleton<IPostConfigureOptions<AuthenticationOptions>, ManagementTestAuthenticationPostConfigure>();
             services.AddAuthentication()
+                .AddPolicyScheme(
+                    ManagementTestAuthenticationPostConfigure.DefaultScheme,
+                    "Test header or auth cookie",
+                    options =>
+                    {
+                        options.ForwardDefaultSelector = context =>
+                            context.Request.Headers.ContainsKey(ManagementTestAuthHandler.HeaderName)
+                                ? ManagementTestAuthHandler.SchemeName
+                                : Apperture.Management.Host.AuthenticationServiceCollectionExtensions.CookieScheme;
+                    })
                 .AddScheme<AuthenticationSchemeOptions, ManagementTestAuthHandler>(
                     ManagementTestAuthHandler.SchemeName,
                     _ => { });
+
+            services.AddSingleton<IPostConfigureOptions<AuthenticationOptions>, ManagementTestAuthenticationPostConfigure>();
         });
     }
 }
