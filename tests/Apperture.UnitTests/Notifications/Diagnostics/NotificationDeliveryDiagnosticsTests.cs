@@ -81,6 +81,63 @@ public sealed class NotificationDeliveryDiagnosticsTests
     }
 
     [Fact]
+    public async Task GetByIntegrationAsync_returns_outbox_rows_ordered_by_updated_at()
+    {
+        await using var db = CreateDb();
+        var now = DateTimeOffset.UtcNow;
+        const string integrationId = "int-notifications";
+        db.NotificationInstances.Add(new NotificationInstanceEntity
+        {
+            Id = "n1",
+            NotificationDefinitionId = NotificationDefinitionIds.PlatformScheduleExpectedRunMissing,
+            NotificationKind = NotificationKinds.Activation,
+            Status = NotificationInstanceStatuses.Pending,
+            IntegrationId = integrationId,
+            InstanceDedupeKey = "d1",
+            RenderedSubject = "s",
+            RenderedSummary = "s",
+            RenderedBodyText = "b",
+            TemplateVersionHash = "h",
+            RenderContextJson = "{}",
+            CreatedAtUtc = now,
+            UpdatedAtUtc = now,
+        });
+        db.NotificationDeliveryOutbox.Add(new NotificationDeliveryOutboxEntity
+        {
+            Id = "o1",
+            NotificationInstanceId = "n1",
+            RecipientEmail = "a@test.com",
+            Channel = NotificationChannels.Email,
+            Status = NotificationOutboxStatuses.Failed,
+            AttemptCount = 1,
+            LastError = "smtp",
+            CreatedAtUtc = now,
+            UpdatedAtUtc = now.AddMinutes(-5),
+        });
+        db.NotificationDeliveryOutbox.Add(new NotificationDeliveryOutboxEntity
+        {
+            Id = "o2",
+            NotificationInstanceId = "n1",
+            RecipientEmail = "b@test.com",
+            Channel = NotificationChannels.Email,
+            Status = NotificationOutboxStatuses.Pending,
+            AttemptCount = 0,
+            CreatedAtUtc = now,
+            UpdatedAtUtc = now,
+        });
+        await db.SaveChangesAsync();
+
+        var store = new SqlNotificationDeliveryDiagnosticsStore(db, TimeProvider.System);
+        var act = () => store.GetByIntegrationAsync(integrationId, null, 10).AsTask();
+
+        await act.Should().NotThrowAsync();
+        var diagnostics = await store.GetByIntegrationAsync(integrationId, null, 10);
+        diagnostics.RecentOutboxRows.Should().HaveCount(2);
+        diagnostics.RecentOutboxRows[0].Id.Should().Be("o2");
+        diagnostics.RecentOutboxRows[1].Id.Should().Be("o1");
+    }
+
+    [Fact]
     public async Task Parity_query_marks_missing_platform_recipient()
     {
         var epic69 = new List<Epic69NotificationDiagnosticRow>

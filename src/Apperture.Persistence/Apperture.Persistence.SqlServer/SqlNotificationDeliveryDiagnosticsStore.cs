@@ -99,10 +99,12 @@ public sealed class SqlNotificationDeliveryDiagnosticsStore : INotificationDeliv
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
 
-        var outbox = await ListOutboxQuery(integrationId, null, notificationDefinitionId)
-            .OrderByDescending(x => x.UpdatedAtUtc)
-            .Take(clampedTake)
-            .ToListAsync(cancellationToken)
+        var outbox = await ListOutboxDiagnosticsAsync(
+                integrationId,
+                null,
+                notificationDefinitionId,
+                clampedTake,
+                cancellationToken)
             .ConfigureAwait(false);
 
         var suppressed = instances
@@ -234,10 +236,12 @@ public sealed class SqlNotificationDeliveryDiagnosticsStore : INotificationDeliv
         CancellationToken cancellationToken = default)
     {
         var clampedTake = Math.Clamp(take, 1, 200);
-        return await ListOutboxQuery(null, attentionIncidentId, notificationDefinitionId)
-            .OrderByDescending(x => x.UpdatedAtUtc)
-            .Take(clampedTake)
-            .ToListAsync(cancellationToken)
+        return await ListOutboxDiagnosticsAsync(
+                null,
+                attentionIncidentId,
+                notificationDefinitionId,
+                clampedTake,
+                cancellationToken)
             .ConfigureAwait(false);
     }
 
@@ -248,7 +252,7 @@ public sealed class SqlNotificationDeliveryDiagnosticsStore : INotificationDeliv
         CancellationToken cancellationToken)
     {
         var instances = ListInstancesQuery(null, attentionIncidentId, notificationDefinitionId);
-        var outbox = ListOutboxQuery(null, attentionIncidentId, notificationDefinitionId);
+        var outbox = ListFilteredOutboxEntitiesQuery(null, attentionIncidentId, notificationDefinitionId);
 
         var instanceCounts = await instances
             .GroupBy(x => x.Status)
@@ -297,7 +301,47 @@ public sealed class SqlNotificationDeliveryDiagnosticsStore : INotificationDeliv
         return q;
     }
 
-    private IQueryable<NotificationOutboxDiagnosticRow> ListOutboxQuery(
+    private async Task<IReadOnlyList<NotificationOutboxDiagnosticRow>> ListOutboxDiagnosticsAsync(
+        string? integrationId,
+        string? attentionIncidentId,
+        string? notificationDefinitionId,
+        int take,
+        CancellationToken cancellationToken)
+    {
+        var query =
+            from o in _db.NotificationDeliveryOutbox.AsNoTracking()
+            join i in _db.NotificationInstances.AsNoTracking() on o.NotificationInstanceId equals i.Id
+            where (integrationId == null || i.IntegrationId == integrationId)
+                  && (attentionIncidentId == null || i.AttentionIncidentId == attentionIncidentId)
+                  && (notificationDefinitionId == null || i.NotificationDefinitionId == notificationDefinitionId)
+            orderby o.UpdatedAtUtc descending
+            select new NotificationOutboxDiagnosticRow(
+                o.Id,
+                o.NotificationInstanceId,
+                i.NotificationDefinitionId,
+                i.NotificationKind,
+                i.IntegrationId,
+                i.AttentionIncidentId,
+                o.RecipientEmail,
+                o.RecipientDisplayName,
+                o.RecipientKind,
+                o.RecipientSource,
+                o.Channel,
+                o.Status,
+                o.AttemptCount,
+                o.NextAttemptAtUtc,
+                o.LastError,
+                o.SentAtUtc,
+                o.CreatedAtUtc,
+                o.UpdatedAtUtc);
+
+        return await query
+            .Take(take)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private IQueryable<NotificationDeliveryOutboxEntity> ListFilteredOutboxEntitiesQuery(
         string? integrationId,
         string? attentionIncidentId,
         string? notificationDefinitionId) =>
@@ -306,23 +350,5 @@ public sealed class SqlNotificationDeliveryDiagnosticsStore : INotificationDeliv
         where (integrationId == null || i.IntegrationId == integrationId)
               && (attentionIncidentId == null || i.AttentionIncidentId == attentionIncidentId)
               && (notificationDefinitionId == null || i.NotificationDefinitionId == notificationDefinitionId)
-        select new NotificationOutboxDiagnosticRow(
-            o.Id,
-            o.NotificationInstanceId,
-            i.NotificationDefinitionId,
-            i.NotificationKind,
-            i.IntegrationId,
-            i.AttentionIncidentId,
-            o.RecipientEmail,
-            o.RecipientDisplayName,
-            o.RecipientKind,
-            o.RecipientSource,
-            o.Channel,
-            o.Status,
-            o.AttemptCount,
-            o.NextAttemptAtUtc,
-            o.LastError,
-            o.SentAtUtc,
-            o.CreatedAtUtc,
-            o.UpdatedAtUtc);
+        select o;
 }
