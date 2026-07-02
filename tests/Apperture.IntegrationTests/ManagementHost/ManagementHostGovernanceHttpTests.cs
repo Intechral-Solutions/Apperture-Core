@@ -132,7 +132,7 @@ public sealed class ManagementHostGovernanceHttpTests
             connectorDefinitionId = "Apperture.Platform.Sql",
             name = $"Epic59 verify perm {Guid.NewGuid():N}"[..24],
             config = new Dictionary<string, string> { ["Server"] = "localhost", ["Database"] = "db", ["UserId"] = "sa" },
-            secretRefs = new Dictionary<string, string> { ["Password"] = "local:test/password" },
+            secretValues = new Dictionary<string, string> { ["Password"] = "TestPassword123!" },
             scopeKey = "instance"
         });
         create.StatusCode.Should().Be(HttpStatusCode.Created);
@@ -152,15 +152,17 @@ public sealed class ManagementHostGovernanceHttpTests
         using var client = _fixture.CreateAuthenticatedClient(ManagementGovernanceTestConstants.ExternalIntegrationAuthoringOperator);
 
         var csb = new SqlConnectionStringBuilder(_fixture.ConnectionString);
-        Assert.True(
-            csb.IntegratedSecurity,
-            "This test expects APPERTURE_TEST_SQL with Integrated Security (Trusted_Connection). SQL authentication requires a governed Password secret ref.");
-
         var config = new Dictionary<string, string>
         {
             ["Server"] = csb.DataSource,
             ["Database"] = csb.InitialCatalog,
         };
+        IReadOnlyDictionary<string, string>? secretValues = null;
+        if (!csb.IntegratedSecurity)
+        {
+            config["UserId"] = csb.UserID;
+            secretValues = new Dictionary<string, string> { ["Password"] = csb.Password };
+        }
 
         var create = await client.PostAsJsonAsync("/api/connections", new
         {
@@ -168,6 +170,7 @@ public sealed class ManagementHostGovernanceHttpTests
             name = $"Epic59 verify sql {Guid.NewGuid():N}"[..24],
             config,
             secretRefs = new Dictionary<string, string>(),
+            secretValues,
             scopeKey = "instance"
         });
         create.StatusCode.Should().Be(HttpStatusCode.Created);
@@ -305,9 +308,9 @@ public sealed class ManagementHostGovernanceHttpTests
                     ["Database"] = "TestDb",
                     ["UserId"] = "sa"
                 },
-                secretRefs = new Dictionary<string, string>
+                secretValues = new Dictionary<string, string>
                 {
-                    ["Password"] = "local:test/password"
+                    ["Password"] = "TestPassword123!"
                 },
                 scopeKey = "instance"
             });
@@ -558,7 +561,7 @@ public sealed class ManagementHostGovernanceHttpTests
                 ["Port"] = sftpPort,
                 ["Username"] = sftpUser
             },
-            secretRefs = new Dictionary<string, string>
+            secretValues = new Dictionary<string, string>
             {
                 ["Password"] = sftpPassword
             },
@@ -618,7 +621,7 @@ public sealed class ManagementHostGovernanceHttpTests
         {
             Content = JsonContent.Create(new
             {
-                secretRefs = new Dictionary<string, string>
+                secretValues = new Dictionary<string, string>
                 {
                     ["Password"] = "wrong-password-epic59a"
                 }

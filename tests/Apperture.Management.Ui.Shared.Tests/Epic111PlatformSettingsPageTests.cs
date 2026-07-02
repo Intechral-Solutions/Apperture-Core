@@ -58,6 +58,8 @@ public sealed class Epic111PlatformSettingsPageTests
         content.Should().Contain("PlatformSettingUiHelpers.GetSourceLabel");
         content.Should().Contain("disabled=\"@(!IsDirty || IsSaving)\"");
         content.Should().Contain("type=\"checkbox\"");
-        content.Should().Contain("Read-only");
+        content.Should().Contain("@ReadOnlyMessage");
+        content.Should().Contain("PlatformSettingUiHelpers.GetReadOnlyPermissionMessage");
+        content.Should().Contain("PlatformSettingUiHelpers.GetDefinitionReadOnlyMessage");
     }
 }

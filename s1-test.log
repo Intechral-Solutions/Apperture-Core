@@ -11,413 +11,25 @@ A total of 1 test files matched the specified pattern.
 A total of 1 test files matched the specified pattern.
 A total of 1 test files matched the specified pattern.
 
-Passed!  - Failed:     0, Passed:     6, Skipped:     0, Total:     6, Duration: 237 ms - Apperture.ModuleSdk.Testing.dll (net10.0)
-[xUnit.net 00:00:00.85]     Apperture.Management.Ui.Shared.Tests.Epic111PlatformSettingsPageTests.PlatformSettingRow_uses_status_pill_and_dirty_save_guard [FAIL]
-  Failed Apperture.Management.Ui.Shared.Tests.Epic111PlatformSettingsPageTests.PlatformSettingRow_uses_status_pill_and_dirty_save_guard [147 ms]
+Passed!  - Failed:     0, Passed:     6, Skipped:     0, Total:     6, Duration: 313 ms - Apperture.ModuleSdk.Testing.dll (net10.0)
+
+Passed!  - Failed:     0, Passed:     1, Skipped:     0, Total:     1, Duration: 43 ms - Apperture.EndToEndTests.dll (net10.0)
+
+Passed!  - Failed:     0, Passed:   241, Skipped:     0, Total:   241, Duration: 430 ms - Apperture.Management.Ui.Shared.Tests.dll (net10.0)
+[xUnit.net 00:00:02.24]     Apperture.IntegrationTests.AuditTimelineSqlServerTests.Query_WithOutcomeFilter_ReturnsMatching_DBBacked [FAIL]
+[xUnit.net 00:00:02.27]     Apperture.IntegrationTests.Epic73SqlSeamsIntegrationTests.Connector_contributors_register_platform_factories_end_to_end [FAIL]
+[xUnit.net 00:00:02.27]     Apperture.IntegrationTests.AuditTimelineSqlServerTests.GetById_ReturnsDetailWithRefs [FAIL]
+[xUnit.net 00:00:02.28]     Apperture.IntegrationTests.Epic73SqlSeamsIntegrationTests.Platform_Unisa_and_Proof_module_migrations_apply_with_separate_history_tables [FAIL]
+[xUnit.net 00:00:02.28]     Apperture.IntegrationTests.AuditTimelineSqlServerTests.Query_WithRunIdFilter_ReturnsMatching [FAIL]
+[xUnit.net 00:00:02.28]     Apperture.IntegrationTests.AuditTimelineSqlServerTests.Query_WithModuleIdFilter_ReturnsMatching_DBBacked [FAIL]
+[xUnit.net 00:00:02.29]     Apperture.IntegrationTests.Epic73SqlSeamsIntegrationTests.Schedule_dispatch_runner_resolves_against_migrated_sql_database [FAIL]
+[xUnit.net 00:00:02.30]     Apperture.IntegrationTests.AuditTimelineSqlServerTests.Query_WithActionPrefix_ReturnsFiltered [FAIL]
+[xUnit.net 00:00:02.30]     Apperture.IntegrationTests.AuditTimelineSqlServerTests.Migration_Backfill_PopulatesFirstClassFieldsFromDetails [FAIL]
+  Failed Apperture.IntegrationTests.Epic73SqlSeamsIntegrationTests.Connector_contributors_register_platform_factories_end_to_end [1 s]
   Error Message:
-   Expected content "@using Apperture.Management.Client
-@using Apperture.Management.Ui.Shared
-@using Apperture.Management.Ui.Client.Atoms
-@using Apperture.Management.Ui.Client.Organisms
-
-@inject IManagementClient Client
-
-@{
-    var helpTooltip = PlatformSettingUiHelpers.BuildHelpTooltip(Row);
-    var sourceTooltip = $"{PlatformSettingUiHelpers.GetSourceTooltip(Row.Source, IntegrationScope)} Resolved: {GetResolvedDisplay()}";
-}
-
-<div class="border-b border-default py-2 last:border-b-0">
-    <div class="flex flex-wrap items-center gap-2 gap-y-1">
-        <div class="flex min-w-0 flex-1 items-center gap-1.5">
-            <span class="font-medium text-heading text-sm truncate" title="@Row.DisplayName">@Row.DisplayName</span>
-            <SettingInfoAffordance Tooltip="@helpTooltip" />
-            @if (Row.RequiresRestart)
-            {
-                <span class="text-xs text-warning shrink-0"
-                      title="@PlatformSettingUiHelpers.GetRequiresRestartHint()"
-                      aria-label="Requires restart">ΓÜá</span>
-            }
-            <StatusPill Label="@PlatformSettingUiHelpers.GetSourceLabel(Row.Source, IntegrationScope)"
-                        Title="@sourceTooltip"
-                        Semantic="@PlatformSettingUiHelpers.GetSourceSemantic(Row.Source)" />
-            @if (IsDirty)
-            {
-                <span class="text-xs text-muted shrink-0">Unsaved</span>
-            }
-        </div>
-
-        @if (CanEdit)
-        {
-            <div class="flex flex-wrap items-center gap-2 min-w-0">
-                @if (PlatformSettingUiHelpers.IsMultiSelect(Row.InputKind))
-                {
-                    <span class="text-sm text-body">@EditValues.Count selected</span>
-                }
-                else if (PlatformSettingUiHelpers.IsSelect(Row.InputKind))
-                {
-                    @if (EditorOptions is not { Count: > 0 })
-                    {
-                        <PageMessage Kind="@(_loadingProviderOptions ? PageMessageKind.Loading : PageMessageKind.Warning)"
-                                     Message="@GetSelectUnavailableMessage()" />
-                    }
-                    else
-                    {
-                        var optionValues = EditorOptions.Select(o => o.Value).ToHashSet(StringComparer.Ordinal);
-                        var includeUnavailableValue = !string.IsNullOrWhiteSpace(EditValue) && !optionValues.Contains(EditValue);
-                        <select class="rounded border border-default px-2 py-1 text-sm min-w-48 font-mono"
-                                value="@EditValue"
-                                disabled="@IsSaving"
-                                @onchange="OnTextInput">
-                            @if (string.IsNullOrWhiteSpace(EditValue))
-                            {
-                                <option value="">(none)</option>
-                            }
-                            else if (includeUnavailableValue)
-                            {
-                                <option value="@EditValue">@EditValue (unavailable)</option>
-                            }
-                            @foreach (var option in EditorOptions)
-                            {
-                                <option value="@option.Value">@option.Label (@option.Value)</option>
-                            }
-                        </select>
-                    }
-                }
-                else if (string.Equals(Row.InputKind, PlatformSettingUiHelpers.InputKindToggle, StringComparison.OrdinalIgnoreCase)
-                         || string.Equals(Row.ValueType, "Boolean", StringComparison.OrdinalIgnoreCase))
-                {
-                    <label class="flex items-center gap-2 text-sm">
-                        <input type="checkbox"
-                               checked="@IsBoolChecked(EditValue)"
-                               disabled="@IsSaving"
-                               @onchange="OnBoolChanged" />
-                        <span>@(IsBoolChecked(EditValue) ? "On" : "Off")</span>
-                    </label>
-                }
-                else if (string.Equals(Row.InputKind, PlatformSettingUiHelpers.InputKindNumber, StringComparison.OrdinalIgnoreCase)
-                         || string.Equals(Row.ValueType, "Integer", StringComparison.OrdinalIgnoreCase))
-                {
-                    <input type="number"
-                           class="rounded border border-default px-2 py-1 text-sm w-28"
-                           value="@EditValue"
-                           min="@Row.MinInteger"
-                           disabled="@IsSaving"
-                           @onchange="OnTextInput" />
-                }
-                else
-                {
-                    <input class="rounded border border-default px-2 py-1 text-sm min-w-48 font-mono"
-                           value="@EditValue"
-                           disabled="@IsSaving"
-                           placeholder="@(string.Equals(Row.InputKind, PlatformSettingUiHelpers.InputKindDuration, StringComparison.OrdinalIgnoreCase) ? "00:05:00" : null)"
-                           title="@(Row.MinDurationIso is not null ? $"ISO 8601; min {Row.MinDurationIso}" : null)"
-                           @onchange="OnTextInput" />
-                }
-            </div>
-            <div class="flex shrink-0 items-center gap-1">
-                <button type="button"
-                        class="rounded bg-surface-muted px-2 py-1 text-xs font-medium text-heading disabled:opacity-50"
-                        disabled="@(!IsDirty || IsSaving)"
-                        title="@(IsDirty ? null : "Change the value to enable save.")"
-                        @onclick="OnSave">
-                    @(IsSaving ? "SavingΓÇª" : "Save")
-                </button>
-                <button type="button"
-                        class="rounded bg-surface-muted px-2 py-1 text-xs disabled:opacity-50"
-                        disabled="@(!CanReset || IsSaving)"
-                        title="@ResetTitle"
-                        @onclick="OnReset">
-                    Reset
-                </button>
-            </div>
-        }
-        else
-        {
-            <code class="text-xs rounded bg-surface-muted px-1 max-w-xs truncate" title="@GetResolvedDisplay()">@GetResolvedDisplay()</code>
-        }
-    </div>
-
-    @if (CanEdit && PlatformSettingUiHelpers.IsMultiSelect(Row.InputKind))
-    {
-        <div class="mt-2 space-y-2">
-            @if (EditorOptions is not { Count: > 0 })
-            {
-                <PageMessage Kind="@(_loadingProviderOptions ? PageMessageKind.Loading : (string.IsNullOrWhiteSpace(_providerOptionsError) ? PageMessageKind.Warning : PageMessageKind.Error))"
-                             Message="@GetSelectUnavailableMessage()" />
-            }
-            else
-            {
-                @foreach (var option in EditorOptions)
-                {
-                    var isChecked = IsArrayOptionChecked(option.Value);
-                    <label class="flex items-start gap-2 text-sm">
-                        <input type="checkbox"
-                               class="mt-0.5"
-                               checked="@isChecked"
-                               disabled="@IsSaving"
-                               @onchange="e => OnMultiSelectChanged(option.Value, e)" />
-                        <span>
-                            <span class="font-medium">@option.Label</span>
-                            <span class="text-xs text-muted font-mono ml-1">(@option.Value)</span>
-                        </span>
-                    </label>
-                }
-
-                var available = EditorOptions.Select(o => o.Value).ToHashSet(StringComparer.Ordinal);
-                var unavailable = EditValues
-                    .Where(v => !available.Contains(v))
-                    .Distinct(StringComparer.Ordinal)
-                    .ToArray();
-                @if (unavailable.Length > 0)
-                {
-                    <p class="text-xs text-muted">Unavailable selections: @string.Join(", ", unavailable)</p>
-                }
-            }
-        </div>
-    }
-
-    @if (!string.IsNullOrEmpty(Error))
-    {
-        <PageMessage Kind="PageMessageKind.Error" Class="mt-2" Message="@Error" />
-    }
-    else if (!CanEdit)
-    {
-        <p class="text-xs text-muted mt-1">@ReadOnlyMessage</p>
-    }
-</div>
-
-@code {
-    [Parameter, EditorRequired] public PlatformSettingResolvedDto Row { get; set; } = default!;
-
-    [Parameter] public bool CanManage { get; set; }
-
-    [Parameter] public string EditValue { get; set; } = "";
-
-    [Parameter] public IReadOnlyList<string> EditValues { get; set; } = Array.Empty<string>();
-
-    [Parameter] public bool IsSaving { get; set; }
-
-    [Parameter] public string? Error { get; set; }
-
-    [Parameter] public EventCallback<string> EditValueChanged { get; set; }
-
-    [Parameter] public EventCallback<IReadOnlyList<string>> EditValuesChanged { get; set; }
-
-    [Parameter] public EventCallback OnSave { get; set; }
-
-    [Parameter] public EventCallback OnReset { get; set; }
-
-    [Parameter] public string? IntegrationId { get; set; }
-
-    [Parameter] public bool IntegrationScope { get; set; }
-
-    private IReadOnlyList<PlatformSettingAllowedValueDto>? _providerOptions;
-    private bool _loadingProviderOptions;
-    private string? _providerOptionsError;
-    private string? _loadedProviderKey;
-    private string? _loadedSettingKey;
-
-    private bool CanEdit => CanManage && Row.IsEditable;
-
-    private IReadOnlyList<PlatformSettingAllowedValueDto>? EditorOptions =>
-        Row.AllowedValues is { Count: > 0 } ? Row.AllowedValues : _providerOptions;
-
-    private string ReadOnlyMessage => !Row.IsEditable
-        ? PlatformSettingUiHelpers.GetDefinitionReadOnlyMessage()
-        : PlatformSettingUiHelpers.GetReadOnlyPermissionMessage(IntegrationScope);
-
-    protected override async Task OnParametersSetAsync()
-    {
-        if (Row.AllowedValues is { Count: > 0 } || string.IsNullOrWhiteSpace(Row.OptionProviderKey) || !CanEdit)
-        {
-            _providerOptions = null;
-            _loadingProviderOptions = false;
-            _providerOptionsError = null;
-            _loadedProviderKey = null;
-            _loadedSettingKey = null;
-            return;
-        }
-
-        var isSelectOrMulti = PlatformSettingUiHelpers.IsSelect(Row.InputKind) ||
-                             PlatformSettingUiHelpers.IsMultiSelect(Row.InputKind);
-        if (!isSelectOrMulti)
-            return;
-
-        if (_loadedProviderKey == Row.OptionProviderKey &&
-            _loadedSettingKey == Row.Key &&
-            _providerOptions is not null)
-            return;
-
-        _providerOptions = null;
-        _providerOptionsError = null;
-        _loadingProviderOptions = true;
-        _loadedProviderKey = Row.OptionProviderKey;
-        _loadedSettingKey = Row.Key;
-
-        try
-        {
-            IReadOnlyList<PlatformSettingAllowedValueDto>? options;
-            if (IntegrationScope && !string.IsNullOrWhiteSpace(IntegrationId))
-            {
-                options = await Client
-                    .GetIntegrationSettingOptionsAsync(IntegrationId, Row.Key)
-                    .ConfigureAwait(false);
-            }
-            else
-            {
-                options = await Client.GetPlatformSettingOptionsAsync(Row.Key).ConfigureAwait(false);
-            }
-
-            if (options is null)
-                _providerOptionsError = "Editor unavailable ΓÇö unable to load provider options (access or availability issue).";
-            else
-                _providerOptions = options;
-        }
-        catch (System.Net.Http.HttpRequestException ex)
-        {
-            _providerOptionsError = ex.Message;
-        }
-        finally
-        {
-            _loadingProviderOptions = false;
-        }
-    }
-
-    private string GetSelectUnavailableMessage()
-    {
-        if (_loadingProviderOptions)
-            return "Loading optionsΓÇª";
-        if (!string.IsNullOrWhiteSpace(_providerOptionsError))
-            return _providerOptionsError;
-        if (string.IsNullOrWhiteSpace(Row.OptionProviderKey))
-            return "Editor unavailable ΓÇö no static options defined.";
-        return "Editor unavailable ΓÇö no options defined.";
-    }
-
-    private bool IsDirty => PlatformSettingUiHelpers.IsMultiSelect(Row.InputKind)
-        ? PlatformSettingUiHelpers.IsDirtyArray(EditValues, Row.CurrentValues)
-        : PlatformSettingUiHelpers.IsDirty(EditValue, Row.CurrentValue);
-
-    private bool CanReset => PlatformSettingUiHelpers.IsScopedOverride(Row.Source);
-
-    private string ResetTitle => PlatformSettingUiHelpers.GetResetTitle(IntegrationScope, CanReset);
-
-    private string GetResolvedDisplay() =>
-        PlatformSettingUiHelpers.IsMultiSelect(Row.InputKind)
-            ? PlatformSettingUiHelpers.FormatArrayDisplay(Row.CurrentValues)
-            : Row.CurrentValue;
-
-    private static bool IsBoolChecked(string? value) =>
-        bool.TryParse(value, out var b) && b;
-
-    private bool IsArrayOptionChecked(string optionValue) =>
-        EditValues.Any(v => string.Equals(v, optionValue, StringComparison.Ordinal));
-
-    private async Task OnBoolChanged(ChangeEventArgs e)
-    {
-        var enabled = e.Value is bool b && b;
-        await EditValueChanged.InvokeAsync(enabled ? "true" : "false");
-    }
-
-    private async Task OnTextInput(ChangeEventArgs e)
-    {
-        await EditValueChanged.InvokeAsync(e.Value?.ToString() ?? string.Empty);
-    }
-
-    private async Task OnMultiSelectChanged(string optionValue, ChangeEventArgs e)
-    {
-        var selected = e.Value is bool b && b;
-        var next = EditValues.ToList();
-        if (selected)
-        {
-            if (!next.Any(v => string.Equals(v, optionValue, StringComparison.Ordinal)))
-                next.Add(optionValue);
-        }
-        else
-        {
-            next.RemoveAll(v => string.Equals(v, optionValue, StringComparison.Ordinal));
-        }
-
-        await EditValuesChanged.InvokeAsync(next);
-    }
-}
-" to contain "Read-only".
+   Microsoft.Data.SqlClient.SqlException : Login failed for user 'sa'.
   Stack Trace:
-     at FluentAssertions.Primitives.StringAssertions`1.Contain(String expected, String because, Object[] becauseArgs)
-   at Apperture.Management.Ui.Shared.Tests.Epic111PlatformSettingsPageTests.PlatformSettingRow_uses_status_pill_and_dirty_save_guard() in F:\Code\Apperture\Apperture-Core\tests\Apperture.Management.Ui.Shared.Tests\Epic111PlatformSettingsPageTests.cs:line 61
-   at System.Reflection.MethodBaseInvoker.InterpretedInvoke_Method(Object obj, IntPtr* args)
-   at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
-
-Failed!  - Failed:     1, Passed:   240, Skipped:     0, Total:   241, Duration: 329 ms - Apperture.Management.Ui.Shared.Tests.dll (net10.0)
-
-Passed!  - Failed:     0, Passed:    15, Skipped:     0, Total:    15, Duration: 2 s - Apperture.ArchTests.dll (net10.0)
-No test is available in F:\Code\Apperture\Apperture-Core\tests\Apperture.EndToEndTests\bin\Debug\net10.0\Apperture.EndToEndTests.dll. Make sure that test discoverer & executors are registered and platform & framework version settings are appropriate and try again.
-
-Additionally, path to test adapters can be specified using /TestAdapterPath command. Example  /TestAdapterPath:<pathToCustomAdapters>.
-
-Passed!  - Failed:     0, Passed:  1005, Skipped:     0, Total:  1005, Duration: 3 s - Apperture.UnitTests.dll (net10.0)
-[xUnit.net 00:00:08.01]     Apperture.IntegrationTests.ManagementHost.ManagementHostGovernanceHttpTests.Post_sftp_test_connect_persists_and_updates_readiness_across_unverified_success_failed [FAIL]
-  Failed Apperture.IntegrationTests.ManagementHost.ManagementHostGovernanceHttpTests.Post_sftp_test_connect_persists_and_updates_readiness_across_unverified_success_failed [2 s]
-  Error Message:
-   Expected reachable to be True because Epic 59A requires controlled SFTP endpoint at 127.0.0.1:2222. Set APPERTURE_TEST_SFTP_HOST/APPERTURE_TEST_SFTP_PORT and start the test SFTP container., but found False.
-  Stack Trace:
-     at FluentAssertions.Primitives.BooleanAssertions`1.BeTrue(String because, Object[] becauseArgs)
-   at Apperture.IntegrationTests.ManagementHost.ManagementHostGovernanceHttpTests.Post_sftp_test_connect_persists_and_updates_readiness_across_unverified_success_failed() in F:\Code\Apperture\Apperture-Core\tests\Apperture.IntegrationTests\ManagementHost\ManagementHostGovernanceHttpTests.cs:line 521
---- End of stack trace from previous location ---
-[xUnit.net 00:00:11.10]     Apperture.IntegrationTests.ManagementHost.ManagementHostGovernanceHttpTests.Post_connection_test_connect_without_permission_returns_403 [FAIL]
-  Failed Apperture.IntegrationTests.ManagementHost.ManagementHostGovernanceHttpTests.Post_connection_test_connect_without_permission_returns_403 [64 ms]
-  Error Message:
-   Expected create.StatusCode to be HttpStatusCode.Created {value: 201}, but found HttpStatusCode.BadRequest {value: 400}.
-  Stack Trace:
-     at FluentAssertions.Primitives.EnumAssertions`2.Be(TEnum expected, String because, Object[] becauseArgs)
-   at Apperture.IntegrationTests.ManagementHost.ManagementHostGovernanceHttpTests.Post_connection_test_connect_without_permission_returns_403() in F:\Code\Apperture\Apperture-Core\tests\Apperture.IntegrationTests\ManagementHost\ManagementHostGovernanceHttpTests.cs:line 138
---- End of stack trace from previous location ---
-[xUnit.net 00:00:12.73]     Apperture.IntegrationTests.ManagementHost.ManagementHostGovernanceHttpTests.Post_integration_create_connection_then_bind_improves_missing_slot_binding_readiness [FAIL]
-  Failed Apperture.IntegrationTests.ManagementHost.ManagementHostGovernanceHttpTests.Post_integration_create_connection_then_bind_improves_missing_slot_binding_readiness [83 ms]
-  Error Message:
-   Expected createConnectionResponse.StatusCode to be HttpStatusCode.Created {value: 201}, but found HttpStatusCode.BadRequest {value: 400}.
-  Stack Trace:
-     at FluentAssertions.Primitives.EnumAssertions`2.Be(TEnum expected, String because, Object[] becauseArgs)
-   at Apperture.IntegrationTests.ManagementHost.ManagementHostGovernanceHttpTests.Post_integration_create_connection_then_bind_improves_missing_slot_binding_readiness() in F:\Code\Apperture\Apperture-Core\tests\Apperture.IntegrationTests\ManagementHost\ManagementHostGovernanceHttpTests.cs:line 314
---- End of stack trace from previous location ---
-[xUnit.net 00:00:15.72]     Apperture.IntegrationTests.AuditTimelineSqlServerTests.Query_WithOutcomeFilter_ReturnsMatching_DBBacked [FAIL]
-  Failed Apperture.IntegrationTests.AuditTimelineSqlServerTests.Query_WithOutcomeFilter_ReturnsMatching_DBBacked [15 s]
-  Error Message:
-   System.InvalidOperationException : Timeout expired.  The timeout period elapsed prior to obtaining a connection from the pool.  This may have occurred because all pooled connections were in use and max pool size was reached.
-  Stack Trace:
-     at Microsoft.Data.SqlClient.SqlConnectionFactory.TryGetConnection(DbConnection owningConnection, TaskCompletionSource`1 retry, DbConnectionOptions userOptions, DbConnectionInternal oldConnection, DbConnectionInternal& connection)
-   at Microsoft.Data.ProviderBase.DbConnectionInternal.TryOpenConnectionInternal(DbConnection outerConnection, SqlConnectionFactory connectionFactory, TaskCompletionSource`1 retry, DbConnectionOptions userOptions)
-   at Microsoft.Data.ProviderBase.DbConnectionClosed.TryOpenConnection(DbConnection outerConnection, SqlConnectionFactory connectionFactory, TaskCompletionSource`1 retry, DbConnectionOptions userOptions)
-   at Microsoft.Data.SqlClient.SqlConnection.TryOpenInner(TaskCompletionSource`1 retry)
-   at Microsoft.Data.SqlClient.SqlConnection.TryOpen(TaskCompletionSource`1 retry, SqlConnectionOverrides overrides)
-   at Microsoft.Data.SqlClient.SqlConnection.Open(SqlConnectionOverrides overrides)
-   at Microsoft.Data.SqlClient.SqlConnection.Open()
-   at Apperture.IntegrationTests.SqlServerTestConfiguration.EnsureTestDatabaseExists(String connectionString) in F:\Code\Apperture\Apperture-Core\tests\Apperture.IntegrationTests\SqlServerTestConfiguration.cs:line 28
-   at Apperture.IntegrationTests.AuditTimelineSqlServerTests.Query_WithOutcomeFilter_ReturnsMatching_DBBacked() in F:\Code\Apperture\Apperture-Core\tests\Apperture.IntegrationTests\AuditTimelineSqlServerTests.cs:line 223
---- End of stack trace from previous location ---
-[xUnit.net 00:00:15.75]     Apperture.IntegrationTests.AuditTimelineSqlServerTests.GetById_ReturnsDetailWithRefs [FAIL]
-[xUnit.net 00:00:15.75]     Apperture.IntegrationTests.Epic73SqlSeamsIntegrationTests.Connector_contributors_register_platform_factories_end_to_end [FAIL]
-[xUnit.net 00:00:15.75]     Apperture.IntegrationTests.AuditTimelineSqlServerTests.Query_WithRunIdFilter_ReturnsMatching [FAIL]
-[xUnit.net 00:00:15.76]     Apperture.IntegrationTests.Epic73SqlSeamsIntegrationTests.Platform_Unisa_and_Proof_module_migrations_apply_with_separate_history_tables [FAIL]
-[xUnit.net 00:00:15.76]     Apperture.IntegrationTests.AuditTimelineSqlServerTests.Query_WithModuleIdFilter_ReturnsMatching_DBBacked [FAIL]
-  Failed Apperture.IntegrationTests.Epic73SqlSeamsIntegrationTests.Connector_contributors_register_platform_factories_end_to_end [15 s]
-  Error Message:
-   Microsoft.Data.SqlClient.SqlException : A network-related or instance-specific error occurred while establishing a connection to SQL Server. The server was not found or was not accessible. Verify that the instance name is correct and that SQL Server is configured to allow remote connections. (provider: TCP Provider, error: 0 - The wait operation timed out.)
----- System.ComponentModel.Win32Exception : The wait operation timed out.
-  Stack Trace:
-     at Microsoft.Data.SqlClient.Connection.SqlConnectionInternal.OnError(SqlException exception, Boolean breakConnection, Action`1 wrapCloseInAction)
-   at Microsoft.Data.SqlClient.TdsParser.ThrowExceptionAndWarning(TdsParserStateObject stateObj, SqlCommand command, Boolean callerHasConnectionLock, Boolean asyncClose)
-   at Microsoft.Data.SqlClient.TdsParser.Connect(ServerInfo serverInfo, SqlConnectionInternal connHandler, TimeoutTimer timeout, SqlConnectionString connectionOptions, Boolean withFailover)
-   at Microsoft.Data.SqlClient.Connection.SqlConnectionInternal.AttemptOneLogin(ServerInfo serverInfo, String newPassword, SecureString newSecurePassword, TimeoutTimer timeout, Boolean withFailover)
-   at Microsoft.Data.SqlClient.Connection.SqlConnectionInternal.LoginNoFailover(ServerInfo serverInfo, String newPassword, SecureString newSecurePassword, Boolean redirectedUserInstance, SqlConnectionString connectionOptions, SqlCredential credential, TimeoutTimer timeout)
-   at Microsoft.Data.SqlClient.Connection.SqlConnectionInternal.OpenLoginEnlist(TimeoutTimer timeout, SqlConnectionString connectionOptions, SqlCredential credential, String newPassword, SecureString newSecurePassword, Boolean redirectedUserInstance)
-   at Microsoft.Data.SqlClient.Connection.SqlConnectionInternal..ctor(DbConnectionPoolIdentity identity, SqlConnectionString connectionOptions, SqlCredential credential, DbConnectionPoolGroupProviderInfo providerInfo, String newPassword, SecureString newSecurePassword, Boolean redirectedUserInstance, SqlConnectionString userConnectionOptions, SessionData reconnectSessionData, Boolean applyTransientFaultHandling, String accessToken, IDbConnectionPool pool, Func`3 accessTokenCallback, SspiContextProvider sspiContextProvider)
-   at Microsoft.Data.SqlClient.SqlConnectionFactory.CreateConnection(DbConnectionOptions options, DbConnectionPoolKey poolKey, DbConnectionPoolGroupProviderInfo poolGroupProviderInfo, IDbConnectionPool pool, DbConnection owningConnection, DbConnectionOptions userOptions)
-   at Microsoft.Data.SqlClient.SqlConnectionFactory.CreatePooledConnection(DbConnection owningConnection, IDbConnectionPool pool, DbConnectionPoolKey poolKey, DbConnectionOptions options, DbConnectionOptions userOptions)
-   at Microsoft.Data.SqlClient.ConnectionPool.WaitHandleDbConnectionPool.CreateObject(DbConnection owningObject, DbConnectionOptions userOptions, DbConnectionInternal oldConnection)
-   at Microsoft.Data.SqlClient.ConnectionPool.WaitHandleDbConnectionPool.UserCreateRequest(DbConnection owningObject, DbConnectionOptions userOptions, DbConnectionInternal oldConnection)
-   at Microsoft.Data.SqlClient.ConnectionPool.WaitHandleDbConnectionPool.TryGetConnection(DbConnection owningObject, UInt32 waitForMultipleObjectsTimeout, Boolean allowCreate, Boolean onlyOneCheckConnection, DbConnectionOptions userOptions, DbConnectionInternal& connection)
+     at Microsoft.Data.SqlClient.ConnectionPool.WaitHandleDbConnectionPool.TryGetConnection(DbConnection owningObject, UInt32 waitForMultipleObjectsTimeout, Boolean allowCreate, Boolean onlyOneCheckConnection, DbConnectionOptions userOptions, DbConnectionInternal& connection)
    at Microsoft.Data.SqlClient.ConnectionPool.WaitHandleDbConnectionPool.TryGetConnection(DbConnection owningObject, TaskCompletionSource`1 taskCompletionSource, DbConnectionOptions userOptions, DbConnectionInternal& connection)
    at Microsoft.Data.SqlClient.SqlConnectionFactory.TryGetConnection(DbConnection owningConnection, TaskCompletionSource`1 retry, DbConnectionOptions userOptions, DbConnectionInternal oldConnection, DbConnectionInternal& connection)
    at Microsoft.Data.ProviderBase.DbConnectionInternal.TryOpenConnectionInternal(DbConnection outerConnection, SqlConnectionFactory connectionFactory, TaskCompletionSource`1 retry, DbConnectionOptions userOptions)
@@ -429,16 +41,31 @@ Passed!  - Failed:     0, Passed:  1005, Skipped:     0, Total:  1005, Duration:
    at Apperture.IntegrationTests.SqlServerTestConfiguration.EnsureTestDatabaseExists(String connectionString) in F:\Code\Apperture\Apperture-Core\tests\Apperture.IntegrationTests\SqlServerTestConfiguration.cs:line 28
    at Apperture.IntegrationTests.Epic73SqlSeamsIntegrationTests.Connector_contributors_register_platform_factories_end_to_end() in F:\Code\Apperture\Apperture-Core\tests\Apperture.IntegrationTests\Epic73SqlSeamsIntegrationTests.cs:line 90
 --- End of stack trace from previous location ---
------ Inner Stack Trace -----
-
-  Failed Apperture.IntegrationTests.AuditTimelineSqlServerTests.GetById_ReturnsDetailWithRefs [23 ms]
+  Failed Apperture.IntegrationTests.AuditTimelineSqlServerTests.Query_WithOutcomeFilter_ReturnsMatching_DBBacked [1 s]
   Error Message:
-   Microsoft.Data.SqlClient.SqlException : A network-related or instance-specific error occurred while establishing a connection to SQL Server. The server was not found or was not accessible. Verify that the instance name is correct and that SQL Server is configured to allow remote connections. (provider: TCP Provider, error: 0 - The wait operation timed out.)
----- System.ComponentModel.Win32Exception : The wait operation timed out.
+   Microsoft.Data.SqlClient.SqlException : Login failed for user 'sa'.
   Stack Trace:
      at Microsoft.Data.SqlClient.ConnectionPool.WaitHandleDbConnectionPool.TryGetConnection(DbConnection owningObject, UInt32 waitForMultipleObjectsTimeout, Boolean allowCreate, Boolean onlyOneCheckConnection, DbConnectionOptions userOptions, DbConnectionInternal& connection)
+   at Microsoft.Data.SqlClient.ConnectionPool.WaitHandleDbConnectionPool.TryGetConnection(DbConnection owningObject, TaskCompletionSource`1 taskCompletionSource, DbConnectionOptions userOptions, DbConnectionInternal& connection)
    at Microsoft.Data.SqlClient.SqlConnectionFactory.TryGetConnection(DbConnection owningConnection, TaskCompletionSource`1 retry, DbConnectionOptions userOptions, DbConnectionInternal oldConnection, DbConnectionInternal& connection)
    at Microsoft.Data.ProviderBase.DbConnectionInternal.TryOpenConnectionInternal(DbConnection outerConnection, SqlConnectionFactory connectionFactory, TaskCompletionSource`1 retry, DbConnectionOptions userOptions)
+   at Microsoft.Data.ProviderBase.DbConnectionClosed.TryOpenConnection(DbConnection outerConnection, SqlConnectionFactory connectionFactory, TaskCompletionSource`1 retry, DbConnectionOptions userOptions)
+   at Microsoft.Data.SqlClient.SqlConnection.TryOpenInner(TaskCompletionSource`1 retry)
+   at Microsoft.Data.SqlClient.SqlConnection.TryOpen(TaskCompletionSource`1 retry, SqlConnectionOverrides overrides)
+   at Microsoft.Data.SqlClient.SqlConnection.Open(SqlConnectionOverrides overrides)
+   at Microsoft.Data.SqlClient.SqlConnection.Open()
+   at Apperture.IntegrationTests.SqlServerTestConfiguration.EnsureTestDatabaseExists(String connectionString) in F:\Code\Apperture\Apperture-Core\tests\Apperture.IntegrationTests\SqlServerTestConfiguration.cs:line 28
+   at Apperture.IntegrationTests.AuditTimelineSqlServerTests.Query_WithOutcomeFilter_ReturnsMatching_DBBacked() in F:\Code\Apperture\Apperture-Core\tests\Apperture.IntegrationTests\AuditTimelineSqlServerTests.cs:line 223
+--- End of stack trace from previous location ---
+  Failed Apperture.IntegrationTests.AuditTimelineSqlServerTests.GetById_ReturnsDetailWithRefs [5 ms]
+  Error Message:
+   Microsoft.Data.SqlClient.SqlException : Login failed for user 'sa'.
+  Stack Trace:
+     at Microsoft.Data.SqlClient.ConnectionPool.WaitHandleDbConnectionPool.TryGetConnection(DbConnection owningObject, UInt32 waitForMultipleObjectsTimeout, Boolean allowCreate, Boolean onlyOneCheckConnection, DbConnectionOptions userOptions, DbConnectionInternal& connection)
+   at Microsoft.Data.SqlClient.ConnectionPool.WaitHandleDbConnectionPool.TryGetConnection(DbConnection owningObject, TaskCompletionSource`1 taskCompletionSource, DbConnectionOptions userOptions, DbConnectionInternal& connection)
+   at Microsoft.Data.SqlClient.SqlConnectionFactory.TryGetConnection(DbConnection owningConnection, TaskCompletionSource`1 retry, DbConnectionOptions userOptions, DbConnectionInternal oldConnection, DbConnectionInternal& connection)
+   at Microsoft.Data.ProviderBase.DbConnectionInternal.TryOpenConnectionInternal(DbConnection outerConnection, SqlConnectionFactory connectionFactory, TaskCompletionSource`1 retry, DbConnectionOptions userOptions)
+   at Microsoft.Data.ProviderBase.DbConnectionClosed.TryOpenConnection(DbConnection outerConnection, SqlConnectionFactory connectionFactory, TaskCompletionSource`1 retry, DbConnectionOptions userOptions)
    at Microsoft.Data.SqlClient.SqlConnection.TryOpenInner(TaskCompletionSource`1 retry)
    at Microsoft.Data.SqlClient.SqlConnection.TryOpen(TaskCompletionSource`1 retry, SqlConnectionOverrides overrides)
    at Microsoft.Data.SqlClient.SqlConnection.Open(SqlConnectionOverrides overrides)
@@ -446,33 +73,15 @@ Passed!  - Failed:     0, Passed:  1005, Skipped:     0, Total:  1005, Duration:
    at Apperture.IntegrationTests.SqlServerTestConfiguration.EnsureTestDatabaseExists(String connectionString) in F:\Code\Apperture\Apperture-Core\tests\Apperture.IntegrationTests\SqlServerTestConfiguration.cs:line 28
    at Apperture.IntegrationTests.AuditTimelineSqlServerTests.GetById_ReturnsDetailWithRefs() in F:\Code\Apperture\Apperture-Core\tests\Apperture.IntegrationTests\AuditTimelineSqlServerTests.cs:line 172
 --- End of stack trace from previous location ---
------ Inner Stack Trace -----
-
-  Failed Apperture.IntegrationTests.AuditTimelineSqlServerTests.Query_WithRunIdFilter_ReturnsMatching [3 ms]
+  Failed Apperture.IntegrationTests.Epic73SqlSeamsIntegrationTests.Platform_Unisa_and_Proof_module_migrations_apply_with_separate_history_tables [9 ms]
   Error Message:
-   Microsoft.Data.SqlClient.SqlException : A network-related or instance-specific error occurred while establishing a connection to SQL Server. The server was not found or was not accessible. Verify that the instance name is correct and that SQL Server is configured to allow remote connections. (provider: TCP Provider, error: 0 - The wait operation timed out.)
----- System.ComponentModel.Win32Exception : The wait operation timed out.
+   Microsoft.Data.SqlClient.SqlException : Login failed for user 'sa'.
   Stack Trace:
      at Microsoft.Data.SqlClient.ConnectionPool.WaitHandleDbConnectionPool.TryGetConnection(DbConnection owningObject, UInt32 waitForMultipleObjectsTimeout, Boolean allowCreate, Boolean onlyOneCheckConnection, DbConnectionOptions userOptions, DbConnectionInternal& connection)
+   at Microsoft.Data.SqlClient.ConnectionPool.WaitHandleDbConnectionPool.TryGetConnection(DbConnection owningObject, TaskCompletionSource`1 taskCompletionSource, DbConnectionOptions userOptions, DbConnectionInternal& connection)
    at Microsoft.Data.SqlClient.SqlConnectionFactory.TryGetConnection(DbConnection owningConnection, TaskCompletionSource`1 retry, DbConnectionOptions userOptions, DbConnectionInternal oldConnection, DbConnectionInternal& connection)
    at Microsoft.Data.ProviderBase.DbConnectionInternal.TryOpenConnectionInternal(DbConnection outerConnection, SqlConnectionFactory connectionFactory, TaskCompletionSource`1 retry, DbConnectionOptions userOptions)
-   at Microsoft.Data.SqlClient.SqlConnection.TryOpenInner(TaskCompletionSource`1 retry)
-   at Microsoft.Data.SqlClient.SqlConnection.TryOpen(TaskCompletionSource`1 retry, SqlConnectionOverrides overrides)
-   at Microsoft.Data.SqlClient.SqlConnection.Open(SqlConnectionOverrides overrides)
-   at Microsoft.Data.SqlClient.SqlConnection.Open()
-   at Apperture.IntegrationTests.SqlServerTestConfiguration.EnsureTestDatabaseExists(String connectionString) in F:\Code\Apperture\Apperture-Core\tests\Apperture.IntegrationTests\SqlServerTestConfiguration.cs:line 28
-   at Apperture.IntegrationTests.AuditTimelineSqlServerTests.Query_WithRunIdFilter_ReturnsMatching() in F:\Code\Apperture\Apperture-Core\tests\Apperture.IntegrationTests\AuditTimelineSqlServerTests.cs:line 127
---- End of stack trace from previous location ---
------ Inner Stack Trace -----
-
-  Failed Apperture.IntegrationTests.Epic73SqlSeamsIntegrationTests.Platform_Unisa_and_Proof_module_migrations_apply_with_separate_history_tables [6 ms]
-  Error Message:
-   Microsoft.Data.SqlClient.SqlException : A network-related or instance-specific error occurred while establishing a connection to SQL Server. The server was not found or was not accessible. Verify that the instance name is correct and that SQL Server is configured to allow remote connections. (provider: TCP Provider, error: 0 - The wait operation timed out.)
----- System.ComponentModel.Win32Exception : The wait operation timed out.
-  Stack Trace:
-     at Microsoft.Data.SqlClient.ConnectionPool.WaitHandleDbConnectionPool.TryGetConnection(DbConnection owningObject, UInt32 waitForMultipleObjectsTimeout, Boolean allowCreate, Boolean onlyOneCheckConnection, DbConnectionOptions userOptions, DbConnectionInternal& connection)
-   at Microsoft.Data.SqlClient.SqlConnectionFactory.TryGetConnection(DbConnection owningConnection, TaskCompletionSource`1 retry, DbConnectionOptions userOptions, DbConnectionInternal oldConnection, DbConnectionInternal& connection)
-   at Microsoft.Data.ProviderBase.DbConnectionInternal.TryOpenConnectionInternal(DbConnection outerConnection, SqlConnectionFactory connectionFactory, TaskCompletionSource`1 retry, DbConnectionOptions userOptions)
+   at Microsoft.Data.ProviderBase.DbConnectionClosed.TryOpenConnection(DbConnection outerConnection, SqlConnectionFactory connectionFactory, TaskCompletionSource`1 retry, DbConnectionOptions userOptions)
    at Microsoft.Data.SqlClient.SqlConnection.TryOpenInner(TaskCompletionSource`1 retry)
    at Microsoft.Data.SqlClient.SqlConnection.TryOpen(TaskCompletionSource`1 retry, SqlConnectionOverrides overrides)
    at Microsoft.Data.SqlClient.SqlConnection.Open(SqlConnectionOverrides overrides)
@@ -480,16 +89,31 @@ Passed!  - Failed:     0, Passed:  1005, Skipped:     0, Total:  1005, Duration:
    at Apperture.IntegrationTests.SqlServerTestConfiguration.EnsureTestDatabaseExists(String connectionString) in F:\Code\Apperture\Apperture-Core\tests\Apperture.IntegrationTests\SqlServerTestConfiguration.cs:line 28
    at Apperture.IntegrationTests.Epic73SqlSeamsIntegrationTests.Platform_Unisa_and_Proof_module_migrations_apply_with_separate_history_tables() in F:\Code\Apperture\Apperture-Core\tests\Apperture.IntegrationTests\Epic73SqlSeamsIntegrationTests.cs:line 51
 --- End of stack trace from previous location ---
------ Inner Stack Trace -----
-
-  Failed Apperture.IntegrationTests.AuditTimelineSqlServerTests.Query_WithModuleIdFilter_ReturnsMatching_DBBacked [3 ms]
+  Failed Apperture.IntegrationTests.AuditTimelineSqlServerTests.Query_WithRunIdFilter_ReturnsMatching [4 ms]
   Error Message:
-   Microsoft.Data.SqlClient.SqlException : A network-related or instance-specific error occurred while establishing a connection to SQL Server. The server was not found or was not accessible. Verify that the instance name is correct and that SQL Server is configured to allow remote connections. (provider: TCP Provider, error: 0 - The wait operation timed out.)
----- System.ComponentModel.Win32Exception : The wait operation timed out.
+   Microsoft.Data.SqlClient.SqlException : Login failed for user 'sa'.
   Stack Trace:
      at Microsoft.Data.SqlClient.ConnectionPool.WaitHandleDbConnectionPool.TryGetConnection(DbConnection owningObject, UInt32 waitForMultipleObjectsTimeout, Boolean allowCreate, Boolean onlyOneCheckConnection, DbConnectionOptions userOptions, DbConnectionInternal& connection)
+   at Microsoft.Data.SqlClient.ConnectionPool.WaitHandleDbConnectionPool.TryGetConnection(DbConnection owningObject, TaskCompletionSource`1 taskCompletionSource, DbConnectionOptions userOptions, DbConnectionInternal& connection)
    at Microsoft.Data.SqlClient.SqlConnectionFactory.TryGetConnection(DbConnection owningConnection, TaskCompletionSource`1 retry, DbConnectionOptions userOptions, DbConnectionInternal oldConnection, DbConnectionInternal& connection)
    at Microsoft.Data.ProviderBase.DbConnectionInternal.TryOpenConnectionInternal(DbConnection outerConnection, SqlConnectionFactory connectionFactory, TaskCompletionSource`1 retry, DbConnectionOptions userOptions)
+   at Microsoft.Data.ProviderBase.DbConnectionClosed.TryOpenConnection(DbConnection outerConnection, SqlConnectionFactory connectionFactory, TaskCompletionSource`1 retry, DbConnectionOptions userOptions)
+   at Microsoft.Data.SqlClient.SqlConnection.TryOpenInner(TaskCompletionSource`1 retry)
+   at Microsoft.Data.SqlClient.SqlConnection.TryOpen(TaskCompletionSource`1 retry, SqlConnectionOverrides overrides)
+   at Microsoft.Data.SqlClient.SqlConnection.Open(SqlConnectionOverrides overrides)
+   at Microsoft.Data.SqlClient.SqlConnection.Open()
+   at Apperture.IntegrationTests.SqlServerTestConfiguration.EnsureTestDatabaseExists(String connectionString) in F:\Code\Apperture\Apperture-Core\tests\Apperture.IntegrationTests\SqlServerTestConfiguration.cs:line 28
+   at Apperture.IntegrationTests.AuditTimelineSqlServerTests.Query_WithRunIdFilter_ReturnsMatching() in F:\Code\Apperture\Apperture-Core\tests\Apperture.IntegrationTests\AuditTimelineSqlServerTests.cs:line 127
+--- End of stack trace from previous location ---
+  Failed Apperture.IntegrationTests.AuditTimelineSqlServerTests.Query_WithModuleIdFilter_ReturnsMatching_DBBacked [4 ms]
+  Error Message:
+   Microsoft.Data.SqlClient.SqlException : Login failed for user 'sa'.
+  Stack Trace:
+     at Microsoft.Data.SqlClient.ConnectionPool.WaitHandleDbConnectionPool.TryGetConnection(DbConnection owningObject, UInt32 waitForMultipleObjectsTimeout, Boolean allowCreate, Boolean onlyOneCheckConnection, DbConnectionOptions userOptions, DbConnectionInternal& connection)
+   at Microsoft.Data.SqlClient.ConnectionPool.WaitHandleDbConnectionPool.TryGetConnection(DbConnection owningObject, TaskCompletionSource`1 taskCompletionSource, DbConnectionOptions userOptions, DbConnectionInternal& connection)
+   at Microsoft.Data.SqlClient.SqlConnectionFactory.TryGetConnection(DbConnection owningConnection, TaskCompletionSource`1 retry, DbConnectionOptions userOptions, DbConnectionInternal oldConnection, DbConnectionInternal& connection)
+   at Microsoft.Data.ProviderBase.DbConnectionInternal.TryOpenConnectionInternal(DbConnection outerConnection, SqlConnectionFactory connectionFactory, TaskCompletionSource`1 retry, DbConnectionOptions userOptions)
+   at Microsoft.Data.ProviderBase.DbConnectionClosed.TryOpenConnection(DbConnection outerConnection, SqlConnectionFactory connectionFactory, TaskCompletionSource`1 retry, DbConnectionOptions userOptions)
    at Microsoft.Data.SqlClient.SqlConnection.TryOpenInner(TaskCompletionSource`1 retry)
    at Microsoft.Data.SqlClient.SqlConnection.TryOpen(TaskCompletionSource`1 retry, SqlConnectionOverrides overrides)
    at Microsoft.Data.SqlClient.SqlConnection.Open(SqlConnectionOverrides overrides)
@@ -497,42 +121,15 @@ Passed!  - Failed:     0, Passed:  1005, Skipped:     0, Total:  1005, Duration:
    at Apperture.IntegrationTests.SqlServerTestConfiguration.EnsureTestDatabaseExists(String connectionString) in F:\Code\Apperture\Apperture-Core\tests\Apperture.IntegrationTests\SqlServerTestConfiguration.cs:line 28
    at Apperture.IntegrationTests.AuditTimelineSqlServerTests.Query_WithModuleIdFilter_ReturnsMatching_DBBacked() in F:\Code\Apperture\Apperture-Core\tests\Apperture.IntegrationTests\AuditTimelineSqlServerTests.cs:line 307
 --- End of stack trace from previous location ---
------ Inner Stack Trace -----
-
-[xUnit.net 00:00:15.76]     Apperture.IntegrationTests.AuditTimelineSqlServerTests.Query_WithActionPrefix_ReturnsFiltered [FAIL]
-[xUnit.net 00:00:15.76]     Apperture.IntegrationTests.Epic73SqlSeamsIntegrationTests.Schedule_dispatch_runner_resolves_against_migrated_sql_database [FAIL]
-[xUnit.net 00:00:15.77]     Apperture.IntegrationTests.AuditTimelineSqlServerTests.Migration_Backfill_PopulatesFirstClassFieldsFromDetails [FAIL]
-[xUnit.net 00:00:15.77]     Apperture.IntegrationTests.AuditTimelineSqlServerTests.Query_WithScheduleIdFilter_ReturnsMatching_DBBacked [FAIL]
-[xUnit.net 00:00:15.77]     Apperture.IntegrationTests.AuditTimelineSqlServerTests.Query_ReturnsOrderedEntries_NewestFirst [FAIL]
-[xUnit.net 00:00:15.78]     Apperture.IntegrationTests.AuditTimelineSqlServerTests.Query_WithOutcomeFilter_ExcludesNullOutcomeRows [FAIL]
-[xUnit.net 00:00:17.17]     Apperture.IntegrationTests.RuntimeHealthBlockedDeferredSqlServerTests.GetSnapshotAsync_WhenBlockedDeferredWorkSeeded_SurfacesInDiagnostics [FAIL]
-[xUnit.net 00:00:17.17]     Apperture.IntegrationTests.RecoveryWorkflowRemediationSqlServerTests.BlockedWorkflow_BecomesRetryableAfterModuleEnabled_DispatchesThroughTrustedPath [FAIL]
-[xUnit.net 00:00:17.18]     Apperture.IntegrationTests.WorkflowExternalControlSqlServerTests.RequestParkAsync_ConcurrentCalls_OneInsertOneIdempotent_NoException [FAIL]
-  Failed Apperture.IntegrationTests.AuditTimelineSqlServerTests.Query_WithActionPrefix_ReturnsFiltered [2 ms]
+  Failed Apperture.IntegrationTests.Epic73SqlSeamsIntegrationTests.Schedule_dispatch_runner_resolves_against_migrated_sql_database [9 ms]
   Error Message:
-   Microsoft.Data.SqlClient.SqlException : A network-related or instance-specific error occurred while establishing a connection to SQL Server. The server was not found or was not accessible. Verify that the instance name is correct and that SQL Server is configured to allow remote connections. (provider: TCP Provider, error: 0 - The wait operation timed out.)
----- System.ComponentModel.Win32Exception : The wait operation timed out.
+   Microsoft.Data.SqlClient.SqlException : Login failed for user 'sa'.
   Stack Trace:
      at Microsoft.Data.SqlClient.ConnectionPool.WaitHandleDbConnectionPool.TryGetConnection(DbConnection owningObject, UInt32 waitForMultipleObjectsTimeout, Boolean allowCreate, Boolean onlyOneCheckConnection, DbConnectionOptions userOptions, DbConnectionInternal& connection)
+   at Microsoft.Data.SqlClient.ConnectionPool.WaitHandleDbConnectionPool.TryGetConnection(DbConnection owningObject, TaskCompletionSource`1 taskCompletionSource, DbConnectionOptions userOptions, DbConnectionInternal& connection)
    at Microsoft.Data.SqlClient.SqlConnectionFactory.TryGetConnection(DbConnection owningConnection, TaskCompletionSource`1 retry, DbConnectionOptions userOptions, DbConnectionInternal oldConnection, DbConnectionInternal& connection)
    at Microsoft.Data.ProviderBase.DbConnectionInternal.TryOpenConnectionInternal(DbConnection outerConnection, SqlConnectionFactory connectionFactory, TaskCompletionSource`1 retry, DbConnectionOptions userOptions)
-   at Microsoft.Data.SqlClient.SqlConnection.TryOpenInner(TaskCompletionSource`1 retry)
-   at Microsoft.Data.SqlClient.SqlConnection.TryOpen(TaskCompletionSource`1 retry, SqlConnectionOverrides overrides)
-   at Microsoft.Data.SqlClient.SqlConnection.Open(SqlConnectionOverrides overrides)
-   at Microsoft.Data.SqlClient.SqlConnection.Open()
-   at Apperture.IntegrationTests.SqlServerTestConfiguration.EnsureTestDatabaseExists(String connectionString) in F:\Code\Apperture\Apperture-Core\tests\Apperture.IntegrationTests\SqlServerTestConfiguration.cs:line 28
-   at Apperture.IntegrationTests.AuditTimelineSqlServerTests.Query_WithActionPrefix_ReturnsFiltered() in F:\Code\Apperture\Apperture-Core\tests\Apperture.IntegrationTests\AuditTimelineSqlServerTests.cs:line 81
---- End of stack trace from previous location ---
------ Inner Stack Trace -----
-
-  Failed Apperture.IntegrationTests.Epic73SqlSeamsIntegrationTests.Schedule_dispatch_runner_resolves_against_migrated_sql_database [4 ms]
-  Error Message:
-   Microsoft.Data.SqlClient.SqlException : A network-related or instance-specific error occurred while establishing a connection to SQL Server. The server was not found or was not accessible. Verify that the instance name is correct and that SQL Server is configured to allow remote connections. (provider: TCP Provider, error: 0 - The wait operation timed out.)
----- System.ComponentModel.Win32Exception : The wait operation timed out.
-  Stack Trace:
-     at Microsoft.Data.SqlClient.ConnectionPool.WaitHandleDbConnectionPool.TryGetConnection(DbConnection owningObject, UInt32 waitForMultipleObjectsTimeout, Boolean allowCreate, Boolean onlyOneCheckConnection, DbConnectionOptions userOptions, DbConnectionInternal& connection)
-   at Microsoft.Data.SqlClient.SqlConnectionFactory.TryGetConnection(DbConnection owningConnection, TaskCompletionSource`1 retry, DbConnectionOptions userOptions, DbConnectionInternal oldConnection, DbConnectionInternal& connection)
-   at Microsoft.Data.ProviderBase.DbConnectionInternal.TryOpenConnectionInternal(DbConnection outerConnection, SqlConnectionFactory connectionFactory, TaskCompletionSource`1 retry, DbConnectionOptions userOptions)
+   at Microsoft.Data.ProviderBase.DbConnectionClosed.TryOpenConnection(DbConnection outerConnection, SqlConnectionFactory connectionFactory, TaskCompletionSource`1 retry, DbConnectionOptions userOptions)
    at Microsoft.Data.SqlClient.SqlConnection.TryOpenInner(TaskCompletionSource`1 retry)
    at Microsoft.Data.SqlClient.SqlConnection.TryOpen(TaskCompletionSource`1 retry, SqlConnectionOverrides overrides)
    at Microsoft.Data.SqlClient.SqlConnection.Open(SqlConnectionOverrides overrides)
@@ -540,16 +137,31 @@ Passed!  - Failed:     0, Passed:  1005, Skipped:     0, Total:  1005, Duration:
    at Apperture.IntegrationTests.SqlServerTestConfiguration.EnsureTestDatabaseExists(String connectionString) in F:\Code\Apperture\Apperture-Core\tests\Apperture.IntegrationTests\SqlServerTestConfiguration.cs:line 28
    at Apperture.IntegrationTests.Epic73SqlSeamsIntegrationTests.Schedule_dispatch_runner_resolves_against_migrated_sql_database() in F:\Code\Apperture\Apperture-Core\tests\Apperture.IntegrationTests\Epic73SqlSeamsIntegrationTests.cs:line 114
 --- End of stack trace from previous location ---
------ Inner Stack Trace -----
-
-  Failed Apperture.IntegrationTests.AuditTimelineSqlServerTests.Migration_Backfill_PopulatesFirstClassFieldsFromDetails [4 ms]
+  Failed Apperture.IntegrationTests.AuditTimelineSqlServerTests.Query_WithActionPrefix_ReturnsFiltered [16 ms]
   Error Message:
-   Microsoft.Data.SqlClient.SqlException : A network-related or instance-specific error occurred while establishing a connection to SQL Server. The server was not found or was not accessible. Verify that the instance name is correct and that SQL Server is configured to allow remote connections. (provider: TCP Provider, error: 0 - The wait operation timed out.)
----- System.ComponentModel.Win32Exception : The wait operation timed out.
+   Microsoft.Data.SqlClient.SqlException : Login failed for user 'sa'.
   Stack Trace:
      at Microsoft.Data.SqlClient.ConnectionPool.WaitHandleDbConnectionPool.TryGetConnection(DbConnection owningObject, UInt32 waitForMultipleObjectsTimeout, Boolean allowCreate, Boolean onlyOneCheckConnection, DbConnectionOptions userOptions, DbConnectionInternal& connection)
+   at Microsoft.Data.SqlClient.ConnectionPool.WaitHandleDbConnectionPool.TryGetConnection(DbConnection owningObject, TaskCompletionSource`1 taskCompletionSource, DbConnectionOptions userOptions, DbConnectionInternal& connection)
    at Microsoft.Data.SqlClient.SqlConnectionFactory.TryGetConnection(DbConnection owningConnection, TaskCompletionSource`1 retry, DbConnectionOptions userOptions, DbConnectionInternal oldConnection, DbConnectionInternal& connection)
    at Microsoft.Data.ProviderBase.DbConnectionInternal.TryOpenConnectionInternal(DbConnection outerConnection, SqlConnectionFactory connectionFactory, TaskCompletionSource`1 retry, DbConnectionOptions userOptions)
+   at Microsoft.Data.ProviderBase.DbConnectionClosed.TryOpenConnection(DbConnection outerConnection, SqlConnectionFactory connectionFactory, TaskCompletionSource`1 retry, DbConnectionOptions userOptions)
+   at Microsoft.Data.SqlClient.SqlConnection.TryOpenInner(TaskCompletionSource`1 retry)
+   at Microsoft.Data.SqlClient.SqlConnection.TryOpen(TaskCompletionSource`1 retry, SqlConnectionOverrides overrides)
+   at Microsoft.Data.SqlClient.SqlConnection.Open(SqlConnectionOverrides overrides)
+   at Microsoft.Data.SqlClient.SqlConnection.Open()
+   at Apperture.IntegrationTests.SqlServerTestConfiguration.EnsureTestDatabaseExists(String connectionString) in F:\Code\Apperture\Apperture-Core\tests\Apperture.IntegrationTests\SqlServerTestConfiguration.cs:line 28
+   at Apperture.IntegrationTests.AuditTimelineSqlServerTests.Query_WithActionPrefix_ReturnsFiltered() in F:\Code\Apperture\Apperture-Core\tests\Apperture.IntegrationTests\AuditTimelineSqlServerTests.cs:line 81
+--- End of stack trace from previous location ---
+  Failed Apperture.IntegrationTests.AuditTimelineSqlServerTests.Migration_Backfill_PopulatesFirstClassFieldsFromDetails [7 ms]
+  Error Message:
+   Microsoft.Data.SqlClient.SqlException : Login failed for user 'sa'.
+  Stack Trace:
+     at Microsoft.Data.SqlClient.ConnectionPool.WaitHandleDbConnectionPool.TryGetConnection(DbConnection owningObject, UInt32 waitForMultipleObjectsTimeout, Boolean allowCreate, Boolean onlyOneCheckConnection, DbConnectionOptions userOptions, DbConnectionInternal& connection)
+   at Microsoft.Data.SqlClient.ConnectionPool.WaitHandleDbConnectionPool.TryGetConnection(DbConnection owningObject, TaskCompletionSource`1 taskCompletionSource, DbConnectionOptions userOptions, DbConnectionInternal& connection)
+   at Microsoft.Data.SqlClient.SqlConnectionFactory.TryGetConnection(DbConnection owningConnection, TaskCompletionSource`1 retry, DbConnectionOptions userOptions, DbConnectionInternal oldConnection, DbConnectionInternal& connection)
+   at Microsoft.Data.ProviderBase.DbConnectionInternal.TryOpenConnectionInternal(DbConnection outerConnection, SqlConnectionFactory connectionFactory, TaskCompletionSource`1 retry, DbConnectionOptions userOptions)
+   at Microsoft.Data.ProviderBase.DbConnectionClosed.TryOpenConnection(DbConnection outerConnection, SqlConnectionFactory connectionFactory, TaskCompletionSource`1 retry, DbConnectionOptions userOptions)
    at Microsoft.Data.SqlClient.SqlConnection.TryOpenInner(TaskCompletionSource`1 retry)
    at Microsoft.Data.SqlClient.SqlConnection.TryOpen(TaskCompletionSource`1 retry, SqlConnectionOverrides overrides)
    at Microsoft.Data.SqlClient.SqlConnection.Open(SqlConnectionOverrides overrides)
@@ -557,16 +169,18 @@ Passed!  - Failed:     0, Passed:  1005, Skipped:     0, Total:  1005, Duration:
    at Apperture.IntegrationTests.SqlServerTestConfiguration.EnsureTestDatabaseExists(String connectionString) in F:\Code\Apperture\Apperture-Core\tests\Apperture.IntegrationTests\SqlServerTestConfiguration.cs:line 28
    at Apperture.IntegrationTests.AuditTimelineSqlServerTests.Migration_Backfill_PopulatesFirstClassFieldsFromDetails() in F:\Code\Apperture\Apperture-Core\tests\Apperture.IntegrationTests\AuditTimelineSqlServerTests.cs:line 393
 --- End of stack trace from previous location ---
------ Inner Stack Trace -----
-
-  Failed Apperture.IntegrationTests.AuditTimelineSqlServerTests.Query_WithScheduleIdFilter_ReturnsMatching_DBBacked [3 ms]
+[xUnit.net 00:00:02.31]     Apperture.IntegrationTests.AuditTimelineSqlServerTests.Query_WithScheduleIdFilter_ReturnsMatching_DBBacked [FAIL]
+[xUnit.net 00:00:02.31]     Apperture.IntegrationTests.AuditTimelineSqlServerTests.Query_ReturnsOrderedEntries_NewestFirst [FAIL]
+[xUnit.net 00:00:02.31]     Apperture.IntegrationTests.AuditTimelineSqlServerTests.Query_WithOutcomeFilter_ExcludesNullOutcomeRows [FAIL]
+  Failed Apperture.IntegrationTests.AuditTimelineSqlServerTests.Query_WithScheduleIdFilter_ReturnsMatching_DBBacked [4 ms]
   Error Message:
-   Microsoft.Data.SqlClient.SqlException : A network-related or instance-specific error occurred while establishing a connection to SQL Server. The server was not found or was not accessible. Verify that the instance name is correct and that SQL Server is configured to allow remote connections. (provider: TCP Provider, error: 0 - The wait operation timed out.)
----- System.ComponentModel.Win32Exception : The wait operation timed out.
+   Microsoft.Data.SqlClient.SqlException : Login failed for user 'sa'.
   Stack Trace:
      at Microsoft.Data.SqlClient.ConnectionPool.WaitHandleDbConnectionPool.TryGetConnection(DbConnection owningObject, UInt32 waitForMultipleObjectsTimeout, Boolean allowCreate, Boolean onlyOneCheckConnection, DbConnectionOptions userOptions, DbConnectionInternal& connection)
+   at Microsoft.Data.SqlClient.ConnectionPool.WaitHandleDbConnectionPool.TryGetConnection(DbConnection owningObject, TaskCompletionSource`1 taskCompletionSource, DbConnectionOptions userOptions, DbConnectionInternal& connection)
    at Microsoft.Data.SqlClient.SqlConnectionFactory.TryGetConnection(DbConnection owningConnection, TaskCompletionSource`1 retry, DbConnectionOptions userOptions, DbConnectionInternal oldConnection, DbConnectionInternal& connection)
    at Microsoft.Data.ProviderBase.DbConnectionInternal.TryOpenConnectionInternal(DbConnection outerConnection, SqlConnectionFactory connectionFactory, TaskCompletionSource`1 retry, DbConnectionOptions userOptions)
+   at Microsoft.Data.ProviderBase.DbConnectionClosed.TryOpenConnection(DbConnection outerConnection, SqlConnectionFactory connectionFactory, TaskCompletionSource`1 retry, DbConnectionOptions userOptions)
    at Microsoft.Data.SqlClient.SqlConnection.TryOpenInner(TaskCompletionSource`1 retry)
    at Microsoft.Data.SqlClient.SqlConnection.TryOpen(TaskCompletionSource`1 retry, SqlConnectionOverrides overrides)
    at Microsoft.Data.SqlClient.SqlConnection.Open(SqlConnectionOverrides overrides)
@@ -574,16 +188,15 @@ Passed!  - Failed:     0, Passed:  1005, Skipped:     0, Total:  1005, Duration:
    at Apperture.IntegrationTests.SqlServerTestConfiguration.EnsureTestDatabaseExists(String connectionString) in F:\Code\Apperture\Apperture-Core\tests\Apperture.IntegrationTests\SqlServerTestConfiguration.cs:line 28
    at Apperture.IntegrationTests.AuditTimelineSqlServerTests.Query_WithScheduleIdFilter_ReturnsMatching_DBBacked() in F:\Code\Apperture\Apperture-Core\tests\Apperture.IntegrationTests\AuditTimelineSqlServerTests.cs:line 348
 --- End of stack trace from previous location ---
------ Inner Stack Trace -----
-
   Failed Apperture.IntegrationTests.AuditTimelineSqlServerTests.Query_ReturnsOrderedEntries_NewestFirst [4 ms]
   Error Message:
-   Microsoft.Data.SqlClient.SqlException : A network-related or instance-specific error occurred while establishing a connection to SQL Server. The server was not found or was not accessible. Verify that the instance name is correct and that SQL Server is configured to allow remote connections. (provider: TCP Provider, error: 0 - The wait operation timed out.)
----- System.ComponentModel.Win32Exception : The wait operation timed out.
+   Microsoft.Data.SqlClient.SqlException : Login failed for user 'sa'.
   Stack Trace:
      at Microsoft.Data.SqlClient.ConnectionPool.WaitHandleDbConnectionPool.TryGetConnection(DbConnection owningObject, UInt32 waitForMultipleObjectsTimeout, Boolean allowCreate, Boolean onlyOneCheckConnection, DbConnectionOptions userOptions, DbConnectionInternal& connection)
+   at Microsoft.Data.SqlClient.ConnectionPool.WaitHandleDbConnectionPool.TryGetConnection(DbConnection owningObject, TaskCompletionSource`1 taskCompletionSource, DbConnectionOptions userOptions, DbConnectionInternal& connection)
    at Microsoft.Data.SqlClient.SqlConnectionFactory.TryGetConnection(DbConnection owningConnection, TaskCompletionSource`1 retry, DbConnectionOptions userOptions, DbConnectionInternal oldConnection, DbConnectionInternal& connection)
    at Microsoft.Data.ProviderBase.DbConnectionInternal.TryOpenConnectionInternal(DbConnection outerConnection, SqlConnectionFactory connectionFactory, TaskCompletionSource`1 retry, DbConnectionOptions userOptions)
+   at Microsoft.Data.ProviderBase.DbConnectionClosed.TryOpenConnection(DbConnection outerConnection, SqlConnectionFactory connectionFactory, TaskCompletionSource`1 retry, DbConnectionOptions userOptions)
    at Microsoft.Data.SqlClient.SqlConnection.TryOpenInner(TaskCompletionSource`1 retry)
    at Microsoft.Data.SqlClient.SqlConnection.TryOpen(TaskCompletionSource`1 retry, SqlConnectionOverrides overrides)
    at Microsoft.Data.SqlClient.SqlConnection.Open(SqlConnectionOverrides overrides)
@@ -591,16 +204,15 @@ Passed!  - Failed:     0, Passed:  1005, Skipped:     0, Total:  1005, Duration:
    at Apperture.IntegrationTests.SqlServerTestConfiguration.EnsureTestDatabaseExists(String connectionString) in F:\Code\Apperture\Apperture-Core\tests\Apperture.IntegrationTests\SqlServerTestConfiguration.cs:line 28
    at Apperture.IntegrationTests.AuditTimelineSqlServerTests.Query_ReturnsOrderedEntries_NewestFirst() in F:\Code\Apperture\Apperture-Core\tests\Apperture.IntegrationTests\AuditTimelineSqlServerTests.cs:line 32
 --- End of stack trace from previous location ---
------ Inner Stack Trace -----
-
-  Failed Apperture.IntegrationTests.AuditTimelineSqlServerTests.Query_WithOutcomeFilter_ExcludesNullOutcomeRows [3 ms]
+  Failed Apperture.IntegrationTests.AuditTimelineSqlServerTests.Query_WithOutcomeFilter_ExcludesNullOutcomeRows [4 ms]
   Error Message:
-   Microsoft.Data.SqlClient.SqlException : A network-related or instance-specific error occurred while establishing a connection to SQL Server. The server was not found or was not accessible. Verify that the instance name is correct and that SQL Server is configured to allow remote connections. (provider: TCP Provider, error: 0 - The wait operation timed out.)
----- System.ComponentModel.Win32Exception : The wait operation timed out.
+   Microsoft.Data.SqlClient.SqlException : Login failed for user 'sa'.
   Stack Trace:
      at Microsoft.Data.SqlClient.ConnectionPool.WaitHandleDbConnectionPool.TryGetConnection(DbConnection owningObject, UInt32 waitForMultipleObjectsTimeout, Boolean allowCreate, Boolean onlyOneCheckConnection, DbConnectionOptions userOptions, DbConnectionInternal& connection)
+   at Microsoft.Data.SqlClient.ConnectionPool.WaitHandleDbConnectionPool.TryGetConnection(DbConnection owningObject, TaskCompletionSource`1 taskCompletionSource, DbConnectionOptions userOptions, DbConnectionInternal& connection)
    at Microsoft.Data.SqlClient.SqlConnectionFactory.TryGetConnection(DbConnection owningConnection, TaskCompletionSource`1 retry, DbConnectionOptions userOptions, DbConnectionInternal oldConnection, DbConnectionInternal& connection)
    at Microsoft.Data.ProviderBase.DbConnectionInternal.TryOpenConnectionInternal(DbConnection outerConnection, SqlConnectionFactory connectionFactory, TaskCompletionSource`1 retry, DbConnectionOptions userOptions)
+   at Microsoft.Data.ProviderBase.DbConnectionClosed.TryOpenConnection(DbConnection outerConnection, SqlConnectionFactory connectionFactory, TaskCompletionSource`1 retry, DbConnectionOptions userOptions)
    at Microsoft.Data.SqlClient.SqlConnection.TryOpenInner(TaskCompletionSource`1 retry)
    at Microsoft.Data.SqlClient.SqlConnection.TryOpen(TaskCompletionSource`1 retry, SqlConnectionOverrides overrides)
    at Microsoft.Data.SqlClient.SqlConnection.Open(SqlConnectionOverrides overrides)
@@ -608,17 +220,22 @@ Passed!  - Failed:     0, Passed:  1005, Skipped:     0, Total:  1005, Duration:
    at Apperture.IntegrationTests.SqlServerTestConfiguration.EnsureTestDatabaseExists(String connectionString) in F:\Code\Apperture\Apperture-Core\tests\Apperture.IntegrationTests\SqlServerTestConfiguration.cs:line 28
    at Apperture.IntegrationTests.AuditTimelineSqlServerTests.Query_WithOutcomeFilter_ExcludesNullOutcomeRows() in F:\Code\Apperture\Apperture-Core\tests\Apperture.IntegrationTests\AuditTimelineSqlServerTests.cs:line 266
 --- End of stack trace from previous location ---
------ Inner Stack Trace -----
 
-  Failed Apperture.IntegrationTests.RuntimeHealthBlockedDeferredSqlServerTests.GetSnapshotAsync_WhenBlockedDeferredWorkSeeded_SurfacesInDiagnostics [16 s]
+Passed!  - Failed:     0, Passed:    15, Skipped:     0, Total:    15, Duration: 3 s - Apperture.ArchTests.dll (net10.0)
+
+Passed!  - Failed:     0, Passed:  1005, Skipped:     0, Total:  1005, Duration: 4 s - Apperture.UnitTests.dll (net10.0)
+[xUnit.net 00:00:11.55]     Apperture.IntegrationTests.ManagementHost.ManagementHostGovernanceHttpTests.Post_sftp_test_connect_persists_and_updates_readiness_across_unverified_success_failed [FAIL]
+  Failed Apperture.IntegrationTests.ManagementHost.ManagementHostGovernanceHttpTests.Post_sftp_test_connect_persists_and_updates_readiness_across_unverified_success_failed [1 s]
   Error Message:
-   System.InvalidOperationException : SQL Server not reachable. Is the server running and is MSSQL_SA_PASSWORD correct?
+   Expected successDoc.RootElement.GetProperty("lastVerificationStatus").GetString() to be "Success" with a length of 7, but "Failed" has a length of 6, differs near "Fai" (index 0).
   Stack Trace:
-     at Apperture.IntegrationTests.RuntimeHealthBlockedDeferredSqlServerTests.GetSnapshotAsync_WhenBlockedDeferredWorkSeeded_SurfacesInDiagnostics() in F:\Code\Apperture\Apperture-Core\tests\Apperture.IntegrationTests\RuntimeHealthBlockedDeferredSqlServerTests.cs:line 47
-   at Apperture.IntegrationTests.RuntimeHealthBlockedDeferredSqlServerTests.GetSnapshotAsync_WhenBlockedDeferredWorkSeeded_SurfacesInDiagnostics() in F:\Code\Apperture\Apperture-Core\tests\Apperture.IntegrationTests\RuntimeHealthBlockedDeferredSqlServerTests.cs:line 82
-   at Apperture.IntegrationTests.RuntimeHealthBlockedDeferredSqlServerTests.GetSnapshotAsync_WhenBlockedDeferredWorkSeeded_SurfacesInDiagnostics() in F:\Code\Apperture\Apperture-Core\tests\Apperture.IntegrationTests\RuntimeHealthBlockedDeferredSqlServerTests.cs:line 110
+     at FluentAssertions.Primitives.StringAssertions`1.Be(String expected, String because, Object[] becauseArgs)
+   at Apperture.IntegrationTests.ManagementHost.ManagementHostGovernanceHttpTests.Post_sftp_test_connect_persists_and_updates_readiness_across_unverified_success_failed() in F:\Code\Apperture\Apperture-Core\tests\Apperture.IntegrationTests\ManagementHost\ManagementHostGovernanceHttpTests.cs:line 599
 --- End of stack trace from previous location ---
-  Failed Apperture.IntegrationTests.RecoveryWorkflowRemediationSqlServerTests.BlockedWorkflow_BecomesRetryableAfterModuleEnabled_DispatchesThroughTrustedPath [16 s]
+[xUnit.net 00:01:03.97]     Apperture.IntegrationTests.RecoveryWorkflowRemediationSqlServerTests.BlockedWorkflow_BecomesRetryableAfterModuleEnabled_DispatchesThroughTrustedPath [FAIL]
+[xUnit.net 00:01:03.97]     Apperture.IntegrationTests.RuntimeHealthBlockedDeferredSqlServerTests.GetSnapshotAsync_WhenBlockedDeferredWorkSeeded_SurfacesInDiagnostics [FAIL]
+[xUnit.net 00:01:03.97]     Apperture.IntegrationTests.WorkflowExternalControlSqlServerTests.RequestParkAsync_ConcurrentCalls_OneInsertOneIdempotent_NoException [FAIL]
+  Failed Apperture.IntegrationTests.RecoveryWorkflowRemediationSqlServerTests.BlockedWorkflow_BecomesRetryableAfterModuleEnabled_DispatchesThroughTrustedPath [1 m 3 s]
   Error Message:
    System.InvalidOperationException : SQL Server not reachable. Is the server running and is MSSQL_SA_PASSWORD correct?
   Stack Trace:
@@ -626,7 +243,15 @@ Passed!  - Failed:     0, Passed:  1005, Skipped:     0, Total:  1005, Duration:
    at Apperture.IntegrationTests.RecoveryWorkflowRemediationSqlServerTests.BlockedWorkflow_BecomesRetryableAfterModuleEnabled_DispatchesThroughTrustedPath() in F:\Code\Apperture\Apperture-Core\tests\Apperture.IntegrationTests\RecoveryWorkflowRemediationSqlServerTests.cs:line 91
    at Apperture.IntegrationTests.RecoveryWorkflowRemediationSqlServerTests.BlockedWorkflow_BecomesRetryableAfterModuleEnabled_DispatchesThroughTrustedPath() in F:\Code\Apperture\Apperture-Core\tests\Apperture.IntegrationTests\RecoveryWorkflowRemediationSqlServerTests.cs:line 189
 --- End of stack trace from previous location ---
-  Failed Apperture.IntegrationTests.WorkflowExternalControlSqlServerTests.RequestParkAsync_ConcurrentCalls_OneInsertOneIdempotent_NoException [16 s]
+  Failed Apperture.IntegrationTests.RuntimeHealthBlockedDeferredSqlServerTests.GetSnapshotAsync_WhenBlockedDeferredWorkSeeded_SurfacesInDiagnostics [1 m 3 s]
+  Error Message:
+   System.InvalidOperationException : SQL Server not reachable. Is the server running and is MSSQL_SA_PASSWORD correct?
+  Stack Trace:
+     at Apperture.IntegrationTests.RuntimeHealthBlockedDeferredSqlServerTests.GetSnapshotAsync_WhenBlockedDeferredWorkSeeded_SurfacesInDiagnostics() in F:\Code\Apperture\Apperture-Core\tests\Apperture.IntegrationTests\RuntimeHealthBlockedDeferredSqlServerTests.cs:line 47
+   at Apperture.IntegrationTests.RuntimeHealthBlockedDeferredSqlServerTests.GetSnapshotAsync_WhenBlockedDeferredWorkSeeded_SurfacesInDiagnostics() in F:\Code\Apperture\Apperture-Core\tests\Apperture.IntegrationTests\RuntimeHealthBlockedDeferredSqlServerTests.cs:line 82
+   at Apperture.IntegrationTests.RuntimeHealthBlockedDeferredSqlServerTests.GetSnapshotAsync_WhenBlockedDeferredWorkSeeded_SurfacesInDiagnostics() in F:\Code\Apperture\Apperture-Core\tests\Apperture.IntegrationTests\RuntimeHealthBlockedDeferredSqlServerTests.cs:line 110
+--- End of stack trace from previous location ---
+  Failed Apperture.IntegrationTests.WorkflowExternalControlSqlServerTests.RequestParkAsync_ConcurrentCalls_OneInsertOneIdempotent_NoException [1 m 3 s]
   Error Message:
    System.InvalidOperationException : SQL Server not reachable at localhost:1433. Is the server running and is MSSQL_SA_PASSWORD correct?
   Stack Trace:
@@ -635,4 +260,4 @@ Passed!  - Failed:     0, Passed:  1005, Skipped:     0, Total:  1005, Duration:
    at Apperture.IntegrationTests.WorkflowExternalControlSqlServerTests.RequestParkAsync_ConcurrentCalls_OneInsertOneIdempotent_NoException() in F:\Code\Apperture\Apperture-Core\tests\Apperture.IntegrationTests\WorkflowExternalControlSqlServerTests.cs:line 91
 --- End of stack trace from previous location ---
 
-Failed!  - Failed:    18, Passed:    84, Skipped:     0, Total:   102, Duration: 16 s - Apperture.IntegrationTests.dll (net10.0)
+Failed!  - Failed:    16, Passed:    86, Skipped:     0, Total:   102, Duration: 1 m 3 s - Apperture.IntegrationTests.dll (net10.0)

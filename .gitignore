@@ -96,3 +96,5 @@ poc/
 
 # Local script runtime state (Manage.ps1 defaults, dev PIDs)
 scripts/.runtime/
+
+s1-test.log
