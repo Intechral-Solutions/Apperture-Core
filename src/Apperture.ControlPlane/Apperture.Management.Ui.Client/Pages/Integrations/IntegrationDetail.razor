@@ -100,11 +100,41 @@
                                 IntegrationId="@IntegrationId"
                                 ScheduleCount="@(_schedules?.Count ?? 0)"
                                 EnabledScheduleCount="@EnabledScheduleCount"
-                                BindingCount="@(_bindings?.Count ?? 0)" />
+                                BindingCount="@(_bindings?.Count ?? 0)"
+                                RecentOutcomeSummary="@RecentOutcomeSummary"
+                                NextScheduleSummary="@NextScheduleSummary"
+                                ConnectionsSummary="@ConnectionsSummary" />
 
         @if (!string.IsNullOrEmpty(_actionMessage))
         {
             <ActionFeedback Kind="@_actionFeedbackKind" Message="@_actionMessage" />
+        }
+
+        @if (ProblematicActivity.Count > 0)
+        {
+            <ManagementSection Title="Needs attention"
+                               Layer="ManagementSection.UiLayer.Summary"
+                               Help="Failed runs or denied outcomes from recent activity.">
+                <div class="space-y-2">
+                    @foreach (var item in ProblematicActivity.Take(5))
+                    {
+                        <div class="rounded border border-default bg-surface-muted p-3 flex items-start justify-between gap-3">
+                            <div class="min-w-0">
+                                <div class="text-sm font-semibold">@item.Summary</div>
+                                <div class="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted">
+                                    <StatusPill Label="@(item.StatusOrOutcome ?? item.TypeLabel)"
+                                                Semantic="@EntityRecentActivityComposer.MapStatusSemantic(item.StatusOrOutcome)" />
+                                    <span>@item.SourceKind · @item.TimestampUtc.ToLocalTime().ToString("g")</span>
+                                </div>
+                            </div>
+                            @if (!string.IsNullOrWhiteSpace(item.DrillInHref))
+                            {
+                                <DrillInLink Href="@item.DrillInHref">@item.DrillInLabel</DrillInLink>
+                            }
+                        </div>
+                    }
+                </div>
+            </ManagementSection>
         }
 
         <ManagementSection Title="Recent activity"
@@ -113,7 +143,7 @@
             <EntityRecentActivityPanel Items="@_recentActivity"
                                        Loading="@_activityLoading"
                                        Error="@_activityError"
-                                       EmptyMessage="No runs, audit events, or notification instances for this integration in the last 7 days (or none visible to you).">
+                                       EmptyMessage="No runs or notifications for this integration in the last 7 days. Activity appears after workflows execute or notifications are delivered.">
                 <FooterLinks>
                     <DrillInLink Href="@Epic33UiDisplayHelpers.GetRunsListIntegrationFilterHref(IntegrationId)">View runs for integration</DrillInLink>
                     @if (_capabilities?.CanViewAudit == true && !string.IsNullOrWhiteSpace(_integration.ModuleId))
@@ -133,6 +163,78 @@
             <PageMessage Kind="PageMessageKind.Warning"
                          Message="Integration is inactive. Configuration is preserved, but schedules and launches are operationally paused until re-activated." />
         }
+
+        <div id="schedules">
+        <ManagementSection Title="Schedules"
+                           Layer="ManagementSection.UiLayer.Detail"
+                           Help="Recurring workflow triggers owned by this integration.">
+            @if (_schedules is { Count: > 0 })
+            {
+                <ul class="space-y-1">
+                    @foreach (var s in _schedules)
+                    {
+                        <li class="flex items-center justify-between gap-2">
+                            <DrillInLink Href="@("/schedules/" + Uri.EscapeDataString(s.Id))">@s.Name</DrillInLink>
+                            <span class="text-muted text-xs">@(s.Enabled ? "Enabled" : "Disabled")</span>
+                        </li>
+                    }
+                </ul>
+                <div class="mt-2">
+                    <DrillInLink Href="@IntegrationUiRoutes.ScheduleDiagnostics(IntegrationId)">Schedule diagnostics</DrillInLink>
+                </div>
+            }
+            else
+            {
+                <EmptyState Message="No schedules yet. Add a schedule to run workflows on a recurring basis.">
+                    @if (_capabilities?.CanManageIntegrations == true)
+                    {
+                        <button type="button" class="mt-3 ui-toolbar-btn" @onclick="StartAddSchedule">Add schedule</button>
+                    }
+                </EmptyState>
+            }
+            @if (_capabilities?.CanManageIntegrations == true && _schedules is { Count: > 0 })
+            {
+                @if (_addingSchedule)
+                {
+                    <div class="mt-3 rounded border border-default bg-surface-muted p-3 space-y-3">
+                        <div>
+                            <label class="block text-xs text-muted">Name</label>
+                            <input class="mt-1 w-full rounded border border-default bg-surface px-2 py-1 text-sm" @bind="_scheduleName" placeholder="e.g. Daily sync" />
+                        </div>
+                        <div>
+                            <label class="block text-xs text-muted">Cron expression</label>
+                            <input class="mt-1 w-full rounded border border-default bg-surface px-2 py-1 text-sm font-mono" @bind="_scheduleCron" placeholder="0 0 * * *" />
+                        </div>
+                        <div>
+                            <label class="block text-xs text-muted">Time zone</label>
+                            <input class="mt-1 w-full rounded border border-default bg-surface px-2 py-1 text-sm" @bind="_scheduleTimeZone" placeholder="UTC" />
+                        </div>
+                        <div>
+                            <label class="block text-xs text-muted">Workflow</label>
+                            <select class="mt-1 w-full rounded border border-default bg-surface px-2 py-1 text-sm" @bind="_scheduleWorkflowId">
+                                <option value="">Select…</option>
+                                @if (_workflows is not null)
+                                {
+                                    @foreach (var w in _workflows)
+                                    {
+                                        <option value="@w.Id">@w.Name</option>
+                                    }
+                                }
+                            </select>
+                        </div>
+                        <div class="flex gap-2">
+                            <button type="button" class="rounded bg-body px-2 py-1 text-sm text-surface hover:bg-body/90" @onclick="CreateScheduleAsync" disabled="@(_scheduleSaving || string.IsNullOrWhiteSpace(_scheduleName) || string.IsNullOrWhiteSpace(_scheduleCron) || string.IsNullOrWhiteSpace(_scheduleWorkflowId))">Create</button>
+                            <button type="button" class="rounded bg-surface-muted px-2 py-1 text-sm text-body hover:bg-surface" @onclick="CancelAddSchedule">Cancel</button>
+                        </div>
+                    </div>
+                }
+                else
+                {
+                    <button type="button" class="mt-2 rounded bg-surface-muted px-2 py-1 text-sm text-body hover:bg-surface" @onclick="StartAddSchedule">Add schedule</button>
+                }
+            }
+        </ManagementSection>
+        </div>
 
         @if (_wizardMode)
         {
@@ -164,51 +266,6 @@
                             </button>
                         </div>
                     </div>
-                }
-            </ManagementSection>
-        }
-
-        @if (_readiness is not null)
-        {
-            <ManagementSection Title="Readiness"
-                               Layer="ManagementSection.UiLayer.Detail"
-                               Help="Derived from declared module slots, integration bindings, connections, and schedules.">
-                <div class="mb-3 flex flex-wrap items-center gap-2">
-                    <StatusPill Label="@(_readiness.IsRunnable ? "Runnable" : "Not runnable")"
-                                Semantic="@(_readiness.IsRunnable ? ManagementStatusSemantic.Success : ManagementStatusSemantic.Warning)" />
-                    <span class="text-xs text-muted">
-                        Blocking: @_readiness.BlockingIssueCount · Advisory: @_readiness.AdvisoryIssueCount
-                    </span>
-                </div>
-                @if (_readiness.Issues.Length > 0)
-                {
-                    <ul class="space-y-2 text-sm text-body">
-                        @foreach (var issue in _readiness.Issues)
-                        {
-                            <li class="rounded border border-default bg-surface-muted/30 p-2">
-                                <div>
-                                    <span class="font-mono text-xs text-muted">@issue.Code</span>
-                                    <AttentionPill Label="@issue.Severity" Semantic="@MapIssueSeverity(issue.Severity)" />
-                                    <span class="ml-1">@issue.Message</span>
-                                </div>
-                                <div class="mt-1 text-xs text-muted">@ReadinessRemediationCue(issue)</div>
-                                @if (_capabilities?.CanManageIntegrations == true)
-                                {
-                                    <div class="mt-2">
-                                        <button type="button"
-                                                class="rounded bg-surface-muted px-2 py-0.5 text-xs text-body hover:bg-surface"
-                                                @onclick="() => RemediateReadinessIssueAsync(issue)">
-                                            Fix now
-                                        </button>
-                                    </div>
-                                }
-                            </li>
-                        }
-                    </ul>
-                }
-                else
-                {
-                    <EmptyState Message="No blocking issues detected." />
                 }
             </ManagementSection>
         }
@@ -261,7 +318,10 @@
                         {
                             <div class="text-xs text-muted mt-1">@_selectedProcedureDetail.Description</div>
                         }
-                        <div class="text-xs text-muted mt-1 font-mono">@_selectedProcedureDetail.Id · @_selectedProcedureDetail.LaunchKind → @_selectedProcedureDetail.TargetDefinitionId</div>
+                        <details class="mt-1 text-xs text-muted">
+                            <summary class="cursor-pointer">Technical identifiers</summary>
+                            <div class="font-mono">@_selectedProcedureDetail.Id · @_selectedProcedureDetail.LaunchKind → @_selectedProcedureDetail.TargetDefinitionId</div>
+                        </details>
                         @if (!_selectedProcedureDetail.Launchable && _selectedProcedureDetail.BlockedReasonCodes.Count > 0)
                         {
                             <ul class="mt-2 list-disc pl-5 text-xs text-warning">
@@ -283,6 +343,50 @@
             }
         </ManagementSection>
 
+        @if (_readiness is not null && (!_readiness.IsRunnable || _readiness.Issues.Length > 0))
+        {
+            <ManagementSection Title="Readiness issues"
+                               Layer="ManagementSection.UiLayer.Detail"
+                               Help="Blocking and advisory issues derived from slots, bindings, connections, and schedules.">
+                <div class="mb-3 flex flex-wrap items-center gap-2">
+                    <StatusPill Label="@(_readiness.IsRunnable ? "Runnable" : "Not runnable")"
+                                Semantic="@(_readiness.IsRunnable ? ManagementStatusSemantic.Success : ManagementStatusSemantic.Warning)" />
+                    <span class="text-xs text-muted">
+                        Blocking: @_readiness.BlockingIssueCount · Advisory: @_readiness.AdvisoryIssueCount
+                    </span>
+                </div>
+                <ul class="space-y-2 text-sm text-body">
+                    @foreach (var issue in _readiness.Issues)
+                    {
+                        <li class="rounded border border-default bg-surface-muted/30 p-2">
+                            <div>
+                                <AttentionPill Label="@issue.Severity" Semantic="@MapIssueSeverity(issue.Severity)" />
+                                <span class="ml-1">@issue.Message</span>
+                            </div>
+                            <details class="mt-1 text-xs text-muted">
+                                <summary class="cursor-pointer">Technical code</summary>
+                                <span class="font-mono">@issue.Code</span>
+                            </details>
+                            <div class="mt-1 text-xs text-muted">@ReadinessRemediationCue(issue)</div>
+                            @if (_capabilities?.CanManageIntegrations == true)
+                            {
+                                <div class="mt-2">
+                                    <button type="button"
+                                            class="rounded bg-surface-muted px-2 py-0.5 text-xs text-body hover:bg-surface"
+                                            @onclick="() => RemediateReadinessIssueAsync(issue)">
+                                        Fix now
+                                    </button>
+                                </div>
+                            }
+                        </li>
+                    }
+                </ul>
+            </ManagementSection>
+        }
+
+        <ManagementAdvancedSection Title="Advanced configuration and diagnostics"
+                                   Subtitle="Bindings, settings, identity, and troubleshooting links."
+                                   InitiallyOpen="false">
         <ManagementSection Title="Configuration"
                            Layer="ManagementSection.UiLayer.Detail"
                            Help="Module slots, instance settings, and connection bindings for this integration.">
@@ -497,73 +601,7 @@
             </div>
         </ManagementSection>
 
-        <div id="schedules">
-        <ManagementSection Title="Schedules"
-                           Layer="ManagementSection.UiLayer.Detail"
-                           Help="Schedules associated with this integration.">
-            @if (_schedules is { Count: > 0 })
-            {
-                <ul class="space-y-1">
-                    @foreach (var s in _schedules)
-                    {
-                        <li class="flex items-center justify-between gap-2">
-                            <DrillInLink Href="@("/schedules/" + Uri.EscapeDataString(s.Id))">@s.Name</DrillInLink>
-                            <span class="text-muted text-xs">@s.RecurrenceExpression · @(s.Enabled ? "Enabled" : "Disabled")</span>
-                        </li>
-                    }
-                </ul>
-            }
-            else
-            {
-                <EmptyState Message="No schedules." />
-            }
-            @if (_capabilities?.CanManageIntegrations == true)
-            {
-                @if (_addingSchedule)
-                {
-                    <div class="mt-3 rounded border border-default bg-surface-muted p-3 space-y-3">
-                        <div>
-                            <label class="block text-xs text-muted">Name</label>
-                            <input class="mt-1 w-full rounded border border-default bg-surface px-2 py-1 text-sm" @bind="_scheduleName" placeholder="e.g. Daily sync" />
-                        </div>
-                        <div>
-                            <label class="block text-xs text-muted">Cron expression</label>
-                            <input class="mt-1 w-full rounded border border-default bg-surface px-2 py-1 text-sm font-mono" @bind="_scheduleCron" placeholder="0 0 * * *" />
-                        </div>
-                        <div>
-                            <label class="block text-xs text-muted">Time zone</label>
-                            <input class="mt-1 w-full rounded border border-default bg-surface px-2 py-1 text-sm" @bind="_scheduleTimeZone" placeholder="UTC" />
-                        </div>
-                        <div>
-                            <label class="block text-xs text-muted">Workflow</label>
-                            <select class="mt-1 w-full rounded border border-default bg-surface px-2 py-1 text-sm" @bind="_scheduleWorkflowId">
-                                <option value="">Select…</option>
-                                @if (_workflows is not null)
-                                {
-                                    @foreach (var w in _workflows)
-                                    {
-                                        <option value="@w.Id">@w.Name</option>
-                                    }
-                                }
-                            </select>
-                        </div>
-                        <div class="flex gap-2">
-                            <button type="button" class="rounded bg-body px-2 py-1 text-sm text-surface hover:bg-body/90" @onclick="CreateScheduleAsync" disabled="@(_scheduleSaving || string.IsNullOrWhiteSpace(_scheduleName) || string.IsNullOrWhiteSpace(_scheduleCron) || string.IsNullOrWhiteSpace(_scheduleWorkflowId))">Create</button>
-                            <button type="button" class="rounded bg-surface-muted px-2 py-1 text-sm text-body hover:bg-surface" @onclick="CancelAddSchedule">Cancel</button>
-                        </div>
-                    </div>
-                }
-                else
-                {
-                    <button type="button" class="mt-2 rounded bg-surface-muted px-2 py-1 text-sm text-body hover:bg-surface" @onclick="StartAddSchedule">Add schedule</button>
-                }
-            }
-        </ManagementSection>
-        </div>
-
-        <ManagementAdvancedSection Title="Identity, lineage, and diagnostics"
-                                   Subtitle="Technical metadata and low-frequency troubleshooting context.">
-            <div class="space-y-4">
+        <div class="space-y-4 mt-4">
                 <div>
                     <h3 class="text-xs font-semibold text-heading mb-2">Identity</h3>
                     <div class="grid grid-cols-1 gap-2 md:grid-cols-2 text-sm">
@@ -728,6 +766,31 @@
 
     private int EnabledScheduleCount =>
         _schedules?.Count(s => s.Enabled) ?? 0;
+
+    private IReadOnlyList<EntityRecentActivityItem> ProblematicActivity =>
+        IntegrationOperatorUiHelpers.GetProblematicActivities(_recentActivity);
+
+    private string? RecentOutcomeSummary =>
+        IntegrationOperatorUiHelpers.BuildRecentOutcomeSummary(_recentActivity);
+
+    private string? NextScheduleSummary =>
+        IntegrationOperatorUiHelpers.BuildNextScheduleSummary(_schedules);
+
+    private string ConnectionsSummary =>
+        IntegrationOperatorUiHelpers.BuildConnectionsSummary(
+            _bindings?.Count ?? 0,
+            UnboundRequiredSlotCount,
+            FailedVerificationCount);
+
+    private int UnboundRequiredSlotCount =>
+        _requiredSlots?.Count(s =>
+            _bindings?.Any(b =>
+                string.Equals(b.SlotName, s.SlotName, StringComparison.Ordinal)
+                && string.Equals(b.State, "Active", StringComparison.OrdinalIgnoreCase)) != true) ?? 0;
+
+    private int FailedVerificationCount =>
+        _bindingVerificationByConnectionId.Values.Count(v =>
+            string.Equals(v, "Failed", StringComparison.OrdinalIgnoreCase));
 
     private static ManagementAttentionSemantic MapIssueSeverity(string? severity) =>
         severity?.Trim().ToLowerInvariant() switch

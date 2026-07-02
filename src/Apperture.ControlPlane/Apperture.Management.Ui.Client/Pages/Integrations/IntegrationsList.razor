@@ -42,11 +42,61 @@
     }
     else if (_fleet.Count == 0)
     {
-        <EmptyState Message="No integrations match the current filters." />
+        @if (FiltersActive)
+        {
+            <EmptyState Title="No matches"
+                        Message="No integrations match the current filters. Clear filters or adjust criteria.">
+                <button type="button" class="mt-3 ui-toolbar-btn" @onclick="ClearFiltersAsync">Clear filters</button>
+            </EmptyState>
+        }
+        else
+        {
+            <PageMessage Kind="PageMessageKind.Info"
+                         Message="No integrations are configured yet. Create an integration to connect modules, schedules, and workflows." />
+            <EmptyState Title="Get started"
+                        Message="Integrations group module configuration, connections, and schedules for one operational unit.">
+                @if (_capabilities?.CanManageIntegrations == true)
+                {
+                    <a href="/integrations/new" class="mt-3 inline-block ui-toolbar-btn">Create integration</a>
+                }
+            </EmptyState>
+        }
+    }
+    else if (!DisplayFleet.Any())
+    {
+        <EmptyState Title="Nothing needs attention"
+                    Message="All visible integrations look healthy under the current filter.">
+            <button type="button" class="mt-3 ui-toolbar-btn" @onclick="ClearFiltersAsync">Show all integrations</button>
+        </EmptyState>
     }
     else
     {
-        <div class="mt-4 flex flex-wrap items-end gap-3 rounded border border-default bg-surface-muted/40 p-3 text-sm">
+        <ManagementSection Title="Fleet summary" Layer="@ManagementSection.UiLayer.Summary">
+            <div class="flex flex-wrap items-center gap-2">
+                <StatusPill Label="@($"{_fleet.Count} integration(s)")" Semantic="ManagementStatusSemantic.Neutral" />
+                @{
+                    var needsAttention = _fleet.Count(IntegrationOperatorUiHelpers.FleetNeedsAttention);
+                }
+                @if (needsAttention > 0)
+                {
+                    <StatusPill Label="@($"{needsAttention} need attention")" Semantic="ManagementStatusSemantic.Warning" />
+                }
+                else
+                {
+                    <StatusPill Label="All healthy" Semantic="ManagementStatusSemantic.Success" />
+                }
+                <button type="button"
+                        class="ui-toolbar-btn text-sm"
+                        @onclick="ShowNeedsAttentionAsync">
+                    Show needs attention
+                </button>
+            </div>
+        </ManagementSection>
+
+        <ManagementAdvancedSection Title="Fleet filters"
+                                   Subtitle="Narrow the list by state, readiness, verification, and operational signals."
+                                   InitiallyOpen="false">
+        <div class="flex flex-wrap items-end gap-3 rounded border border-default bg-surface-muted/40 p-3 text-sm">
             <label class="flex flex-col gap-1">
                 <span class="text-xs text-muted">State</span>
                 <select class="rounded border border-default bg-surface px-2 py-1.5 text-body" @bind="_filterState" @bind:after="LoadAsync">
@@ -116,43 +166,43 @@
                 </select>
             </label>
         </div>
+        </ManagementAdvancedSection>
 
         <div class="mt-4 overflow-x-auto rounded border border-default bg-surface">
             <table class="min-w-full text-left text-sm text-body">
                 <thead class="border-b border-default text-xs text-muted">
                     <tr>
-                        <th class="px-3 py-2">Display name</th>
-                        <th class="px-3 py-2">Module</th>
-                        <th class="px-3 py-2">State</th>
-                        <th class="px-3 py-2">Runnable</th>
-                        <th class="px-3 py-2">Block</th>
-                        <th class="px-3 py-2">Advisory</th>
-                        <th class="px-3 py-2">Verify</th>
-                        <th class="px-3 py-2">Ops (7d)</th>
-                        <th class="px-3 py-2">Expected runs</th>
+                        <th class="px-3 py-2">Integration</th>
+                        <th class="px-3 py-2">Health</th>
+                        <th class="px-3 py-2">Recent outcomes (7d)</th>
+                        <th class="px-3 py-2">Schedules</th>
                         <th class="px-3 py-2">Attention</th>
                         <th class="px-3 py-2"></th>
                     </tr>
                 </thead>
                 <tbody>
-                    @foreach (var row in _fleet)
+                    @foreach (var row in DisplayFleet)
                     {
                         <tr class="border-b border-default hover:bg-surface-muted cursor-pointer"
                             @onclick="@(() => Nav.NavigateTo("/integrations/" + Uri.EscapeDataString(row.Id)))">
-                            <td class="px-3 py-2 font-medium">@row.DisplayName</td>
-                            <td class="px-3 py-2 font-mono text-xs">@row.ModuleId</td>
-                            <td class="px-3 py-2">@row.OperationalState</td>
-                            <td class="px-3 py-2">@(row.Readiness.IsRunnable ? "Yes" : "No")</td>
-                            <td class="px-3 py-2">@row.Readiness.BlockingIssueCount</td>
-                            <td class="px-3 py-2">@row.Readiness.AdvisoryIssueCount</td>
-                            <td class="px-3 py-2 text-muted">@VerificationLabel(row.Attention)</td>
+                            <td class="px-3 py-2">
+                                <div class="font-medium">@row.DisplayName</div>
+                                <div class="text-xs text-muted">@row.OperationalState</div>
+                            </td>
+                            <td class="px-3 py-2">
+                                <div class="flex flex-wrap gap-1">
+                                    <StatusPill Label="@(row.Readiness.IsRunnable ? "Runnable" : "Not runnable")"
+                                                Semantic="@(row.Readiness.IsRunnable ? ManagementStatusSemantic.Success : ManagementStatusSemantic.Warning)" />
+                                </div>
+                                <div class="mt-1 text-xs text-muted">@IntegrationOperatorUiHelpers.FleetOperatorSummaryLine(row)</div>
+                            </td>
                             <td class="px-3 py-2 text-sm" @onclick:stopPropagation="true">
                                 @if (string.Equals(row.OperationalState, "Active", StringComparison.OrdinalIgnoreCase))
                                 {
                                     <div class="space-y-1">
                                         <div>
                                             <span class="text-muted">Failed:</span>
-                                            <span class="ml-1 font-mono">@row.OperationalRuns.RecentFailedRunCount</span>
+                                            <span class="ml-1">@row.OperationalRuns.RecentFailedRunCount</span>
                                             @if (row.OperationalRuns.MostRecentAuthorizedRunFailed)
                                             {
                                                 <span class="ml-1 text-xs text-muted">(latest run failed)</span>
@@ -197,8 +247,6 @@
                                     }
 
                                     <div class="mt-1">
-                                        <a class="text-xs underline" href="@($"/integrations/{Uri.EscapeDataString(row.Id)}/schedule-diagnostics")">Schedule diagnostics</a>
-                                        <span class="text-muted"> · </span>
                                         <a class="text-xs underline" href="@($"/integrations/{Uri.EscapeDataString(row.Id)}/notifications")">Notifications</a>
                                     </div>
                                     @if (row.HasActiveExpectedRunMissingIncident)
@@ -235,11 +283,16 @@
                             </td>
                             <td class="px-3 py-2">
                                 <div class="flex flex-wrap gap-1">
-                                    @foreach (var t in row.AttentionTokens)
+                                    @foreach (var t in row.AttentionTokens.Take(3))
                                     {
-                                        <span class="rounded bg-surface-muted px-1.5 py-0.5 text-xs font-mono text-muted">@t</span>
+                                        <AttentionPill Label="@IntegrationOperatorUiHelpers.FormatAttentionToken(t)"
+                                                       Semantic="@ManagementAttentionSemantic.Warning" />
                                     }
                                 </div>
+                                <details class="mt-1 text-xs text-muted">
+                                    <summary class="cursor-pointer">Technical tokens</summary>
+                                    <div class="font-mono">@string.Join(", ", row.AttentionTokens)</div>
+                                </details>
                             </td>
                             <td class="px-3 py-2 whitespace-nowrap" @onclick:stopPropagation="true">
                                 <a href="@("/integrations/" + Uri.EscapeDataString(row.Id))" class="mr-2 underline text-sm">Open</a>
@@ -290,6 +343,37 @@
     private string _filterHasOperationalFailure = "";
     private string _filterHasUnexpectedSilence = "";
     private string _sort = "";
+
+    private bool FiltersActive =>
+        !string.IsNullOrWhiteSpace(_filterState)
+        || !string.IsNullOrWhiteSpace(_filterRunnable)
+        || !string.IsNullOrWhiteSpace(_filterHasBlocking)
+        || !string.IsNullOrWhiteSpace(_filterHasAdvisory)
+        || !string.IsNullOrWhiteSpace(_filterVerificationConcern)
+        || !string.IsNullOrWhiteSpace(_filterHasOperationalFailure)
+        || !string.IsNullOrWhiteSpace(_filterHasUnexpectedSilence)
+        || !string.IsNullOrWhiteSpace(_sort)
+        || _showNeedsAttentionOnly;
+
+    private bool _showNeedsAttentionOnly;
+
+    private IEnumerable<IntegrationFleetRowDto> DisplayFleet
+    {
+        get
+        {
+            if (_fleet is null)
+                return [];
+
+            var rows = string.IsNullOrWhiteSpace(_sort)
+                ? _fleet.OrderBy(IntegrationOperatorUiHelpers.FleetAttentionRank).ThenBy(r => r.DisplayName, StringComparer.OrdinalIgnoreCase)
+                : _fleet;
+
+            if (_showNeedsAttentionOnly)
+                rows = rows.Where(IntegrationOperatorUiHelpers.FleetNeedsAttention);
+
+            return rows;
+        }
+    }
 
     protected override async Task OnInitializedAsync()
     {
@@ -353,6 +437,26 @@
         if (f.HasVerificationUnavailable) return "Unavailable";
         if (f.HasVerificationUnverified) return "Unverified";
         return "OK";
+    }
+
+    private async Task ClearFiltersAsync()
+    {
+        _filterState = "";
+        _filterRunnable = "";
+        _filterHasBlocking = "";
+        _filterHasAdvisory = "";
+        _filterVerificationConcern = "";
+        _filterHasOperationalFailure = "";
+        _filterHasUnexpectedSilence = "";
+        _sort = "";
+        _showNeedsAttentionOnly = false;
+        await LoadAsync();
+    }
+
+    private Task ShowNeedsAttentionAsync()
+    {
+        _showNeedsAttentionOnly = true;
+        return Task.CompletedTask;
     }
 
     private async Task ActivateRowAsync(string id)
