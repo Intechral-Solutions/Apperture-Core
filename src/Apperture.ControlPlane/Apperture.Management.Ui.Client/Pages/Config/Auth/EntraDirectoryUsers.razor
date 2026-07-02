@@ -1,5 +1,6 @@
 @page "/config/auth/entra/{RegistrationId}/users"
 @layout ConfigLayout
+@using System.Net.Http
 @using Apperture.Management.Client
 @using Apperture.Management.Ui.Client.Organisms
 @using Apperture.Management.Ui.Shared
@@ -26,7 +27,7 @@
     else if (_result is null)
     {
         <div class="mt-4">
-            <ErrorState Message="Could not load directory users." />
+            <ErrorState Message="@(_loadError ?? "Could not load directory users.")" />
         </div>
     }
     else
@@ -48,6 +49,11 @@
                     <button type="button" class="rounded bg-surface-muted px-3 py-2 text-xs font-medium disabled:opacity-50" disabled="@(_busy || _selected.Count == 0)" @onclick="ImportSelectedAsync">Import selected as managed contacts</button>
                 }
             </div>
+
+            @if (!string.IsNullOrEmpty(_searchError))
+            {
+                <PageMessage Kind="PageMessageKind.Error" Message="@_searchError" />
+            }
 
             @if (!_result.Success)
             {
@@ -108,6 +114,8 @@
     private bool _loading = true;
     private bool _busy;
     private EntraDirectoryUsersApiDto? _result;
+    private string? _loadError;
+    private string? _searchError;
     private string _search = "";
     private readonly HashSet<string> _selected = new(StringComparer.OrdinalIgnoreCase);
     private string? _importMessage;
@@ -136,6 +144,9 @@
     private async Task SearchAsync()
     {
         _busy = true;
+        _searchError = null;
+        if (_loading)
+            _loadError = null;
         try
         {
             _result = await Client.GetEntraDirectoryUsersAsync(
@@ -144,6 +155,31 @@
                 50);
             _selected.Clear();
             _importMessage = null;
+        }
+        catch (HttpRequestException ex)
+        {
+            if (_loading || _result is null)
+            {
+                _loadError = ex.Message;
+                _result = null;
+            }
+            else
+            {
+                _searchError = ex.Message;
+            }
+        }
+        catch (Exception)
+        {
+            const string message = "Could not load directory users.";
+            if (_loading || _result is null)
+            {
+                _loadError = message;
+                _result = null;
+            }
+            else
+            {
+                _searchError = message;
+            }
         }
         finally
         {

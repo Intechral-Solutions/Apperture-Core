@@ -4,7 +4,7 @@ Apperture Core is an open-core automation and integration platform built around 
 
 ## Status
 
-**Current phase:** Documentation and repository foundation. Ready for initial commit. No source code yet.
+**Current phase:** Stabilization toward a narrow v1. The repository contains a working control plane (Management Host/API, Blazor UI), worker/runtime path, settings registry, auth/RBAC, integrations and connections, notifications, and automated tests. Documentation and ADRs continue alongside implementation.
 
 ## Prerequisites
 
@@ -17,8 +17,8 @@ Apperture Core is an open-core automation and integration platform built around 
 Apperture-Core/
 ├─ .ai/                 # AI guidance (playbooks, memory, prompts, agents)
 ├─ docs/                # Human-facing documentation
-├─ src/                 # Source projects (next phase)
-├─ tests/               # Test projects (next phase)
+├─ src/                 # Source projects (control plane, runtime, modules, shared)
+├─ tests/               # Unit, integration, architecture, and e2e tests
 ├─ deploy/              # Docker, K8s, Azure config (future)
 ├─ scripts/             # Dev and CI scripts (with implementation)
 └─ tools/               # Internal dev/build utilities

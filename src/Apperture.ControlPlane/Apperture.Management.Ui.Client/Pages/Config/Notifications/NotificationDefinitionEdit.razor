@@ -1,5 +1,6 @@
 @page "/config/notifications/definitions/{DefinitionId}/edit"
 @layout ConfigLayout
+@using System.Net.Http
 @using Apperture.Management.Client
 @using Apperture.Management.Ui.Client.Organisms
 @using Apperture.Management.Ui.Client.Molecules
@@ -37,6 +38,11 @@
     else if (_loading)
     {
         <LoadingState />
+    }
+    else if (!string.IsNullOrEmpty(_loadError))
+    {
+        <ErrorState Title="Could not load definition"
+                    Message="@_loadError" />
     }
     else if (_detail is null)
     {
@@ -79,6 +85,7 @@
     private bool _capabilitiesLoaded;
     private bool _canSave;
     private bool _loading = true;
+    private string? _loadError;
     private NotificationDefinitionDetailDto? _detail;
 
     private string DetailHref => NotificationUiRoutes.DefinitionDetail(DefinitionId);
@@ -112,10 +119,21 @@
 
         _dataLoadKey = key;
         _detail = null;
+        _loadError = null;
         _loading = true;
         try
         {
             _detail = await Client.GetNotificationDefinitionAsync(DefinitionId);
+        }
+        catch (HttpRequestException ex)
+        {
+            _loadError = ex.Message;
+            _detail = null;
+        }
+        catch (Exception)
+        {
+            _loadError = "Could not load notification definition.";
+            _detail = null;
         }
         finally
         {

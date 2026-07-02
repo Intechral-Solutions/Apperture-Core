@@ -1,5 +1,6 @@
 @page "/me/notifications"
 @layout MainLayout
+@using System.Net.Http
 @using Apperture.Management.Client
 @using Apperture.Management.Ui.Client.Organisms
 @using Apperture.Management.Ui.Shared
@@ -36,9 +37,22 @@
         }
     </div>
 
+    @if (!string.IsNullOrEmpty(_actionError))
+    {
+        <div class="mt-4">
+            <PageMessage Kind="PageMessageKind.Error" Message="@_actionError" />
+        </div>
+    }
+
     @if (_loading)
     {
         <p class="mt-6 text-sm text-muted">Loading…</p>
+    }
+    else if (!string.IsNullOrEmpty(_loadError))
+    {
+        <div class="mt-6">
+            <ErrorState Message="@_loadError" />
+        </div>
     }
     else if (_items.Count == 0)
     {
@@ -116,6 +130,8 @@
     private bool _busy;
     private int _unreadCount;
     private bool _canOpenAdmin;
+    private string? _loadError;
+    private string? _actionError;
     private List<PersonalNotificationInboxItemDto> _items = [];
 
     private string EmptyTitle => _filter switch
@@ -156,6 +172,7 @@
     private async Task LoadAsync()
     {
         _loading = true;
+        _loadError = null;
         try
         {
             _items = (await Client.GetMyNotificationsAsync(readFilter: _filter, take: 100).ConfigureAwait(false)).ToList();
@@ -163,9 +180,17 @@
             if (_items.Count > 0)
                 await Client.RecordMyNotificationsPageViewedAsync(_items.Select(x => x.Id).ToList()).ConfigureAwait(false);
         }
-        catch
+        catch (HttpRequestException ex)
         {
+            _loadError = ex.Message;
             _items = [];
+            _unreadCount = 0;
+        }
+        catch (Exception)
+        {
+            _loadError = "Could not load notifications.";
+            _items = [];
+            _unreadCount = 0;
         }
         finally
         {
@@ -183,10 +208,19 @@
     private async Task MarkReadAsync(PersonalNotificationInboxItemDto item)
     {
         _busy = true;
+        _actionError = null;
         try
         {
             await Client.MarkMyNotificationReadAsync(item.Id).ConfigureAwait(false);
             await LoadAsync();
+        }
+        catch (HttpRequestException ex)
+        {
+            _actionError = ex.Message;
+        }
+        catch (Exception)
+        {
+            _actionError = "Could not mark notification as read.";
         }
         finally
         {
@@ -197,10 +231,19 @@
     private async Task MarkUnreadAsync(PersonalNotificationInboxItemDto item)
     {
         _busy = true;
+        _actionError = null;
         try
         {
             await Client.MarkMyNotificationUnreadAsync(item.Id).ConfigureAwait(false);
             await LoadAsync();
+        }
+        catch (HttpRequestException ex)
+        {
+            _actionError = ex.Message;
+        }
+        catch (Exception)
+        {
+            _actionError = "Could not mark notification as unread.";
         }
         finally
         {
@@ -211,10 +254,19 @@
     private async Task MarkAllReadAsync()
     {
         _busy = true;
+        _actionError = null;
         try
         {
             await Client.MarkAllMyNotificationsReadAsync().ConfigureAwait(false);
             await LoadAsync();
+        }
+        catch (HttpRequestException ex)
+        {
+            _actionError = ex.Message;
+        }
+        catch (Exception)
+        {
+            _actionError = "Could not mark all notifications as read.";
         }
         finally
         {

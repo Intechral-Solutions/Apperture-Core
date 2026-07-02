@@ -1,5 +1,6 @@
 @page "/config/contacts"
 @layout ConfigLayout
+@using System.Net.Http
 @using Apperture.Management.Client
 @using Apperture.Management.Ui.Shared
 @using Apperture.Management.Ui.Client.Organisms
@@ -21,6 +22,12 @@
     else if (_loading)
     {
         <LoadingState Message="Loading…" />
+    }
+    else if (!string.IsNullOrEmpty(_loadError))
+    {
+        <div class="mt-4">
+            <ErrorState Message="@_loadError" />
+        </div>
     }
     else
     {
@@ -81,6 +88,7 @@
     private bool _loading = true;
     private bool _busy;
     private string _query = "";
+    private string? _loadError;
     private IReadOnlyList<ManagedContactSummaryDto>? _items;
 
     protected override async Task OnInitializedAsync()
@@ -100,9 +108,20 @@
     private async Task SearchAsync()
     {
         _busy = true;
+        _loadError = null;
         try
         {
             _items = await Client.ListManagedContactsAsync(string.IsNullOrWhiteSpace(_query) ? null : _query.Trim(), 100);
+        }
+        catch (HttpRequestException ex)
+        {
+            _loadError = ex.Message;
+            _items = null;
+        }
+        catch (Exception)
+        {
+            _loadError = "Could not load managed contacts.";
+            _items = null;
         }
         finally
         {

@@ -6,10 +6,10 @@
 
 ## Phases
 
-1. **Documentation and repo foundation** — Current. Docs, AI guidance, git config.
-2. **Solution skeleton** — Projects, boundaries, dependency rules. Compilable. Enforce clean interfaces for runtime, persistence, and scheduling.
-3. **Golden path (on-prem)** — Hello Workflow module, DTFx adapter, Worker, Management API, minimal UI. Windows/on-prem must be working end-to-end before cloud work begins.
-4. **Scheduling** — Quartz backend, schedule management, trigger integration. Implemented behind `IScheduleTriggerBackend` for future cloud variants.
-5. **CLI** — PowerShell module, doctor, module new, workflow, schedule commands.
-6. **Cloud (Azure)** — Durable Functions adapter, Function App template. Only after on-prem runtime is stable. Depends on clean encapsulation in runtime abstractions.
-7. **UI import** — Reproduce Integration Center Blazor WASM patterns and features.
+1. **Documentation and repo foundation** — Complete. Docs, AI guidance, git config.
+2. **Solution skeleton** — Largely complete. Projects, boundaries, dependency rules; compilable solution with arch tests.
+3. **Golden path (on-prem)** — In progress / largely delivered. Hello Workflow module, DTFx adapter, Worker, Management API, Management UI. Stabilization (reliability floor, auth, integrations) continues before declaring v1.
+4. **Scheduling** — Partially delivered. Quartz backend, schedule management, trigger integration behind `IScheduleTriggerBackend`.
+5. **CLI** — Partial. PowerShell module and operational commands exist; expansion continues.
+6. **Cloud (Azure)** — Not started for production path. Depends on stable on-prem runtime abstractions.
+7. **UI import** — Ongoing. Integration Center and Control Panel Blazor patterns are implemented; visual polish and deferred features remain.
