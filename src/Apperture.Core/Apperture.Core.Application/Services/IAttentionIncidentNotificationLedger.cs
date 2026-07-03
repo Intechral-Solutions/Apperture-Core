@@ -46,7 +46,11 @@ public interface IAttentionIncidentNotificationLedger
         CancellationToken cancellationToken = default);
 }
 
-public sealed record AttentionNotificationSendRequest(string Recipient, string Subject, string PlainTextBody);
+public sealed record AttentionNotificationSendRequest(
+    string Recipient,
+    string Subject,
+    string PlainTextBody,
+    string? HtmlBody = null);
 
 public sealed record AttentionNotificationSendResult(bool Succeeded, string? ProviderMessageId, string? FailureSummary);
 

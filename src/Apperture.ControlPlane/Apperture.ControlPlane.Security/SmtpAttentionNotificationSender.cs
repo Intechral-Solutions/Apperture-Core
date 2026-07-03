@@ -30,7 +30,11 @@ public sealed class SmtpAttentionNotificationSender : IAttentionNotificationSend
             .SendAsync(
                 _emailOptions.Value,
                 password,
-                new EmailNotificationSendRequest(request.Recipient, request.Subject, request.PlainTextBody),
+                new EmailNotificationSendRequest(
+                    request.Recipient,
+                    request.Subject,
+                    request.PlainTextBody,
+                    request.HtmlBody),
                 _logger,
                 cancellationToken)
             .ConfigureAwait(false);

@@ -3,7 +3,8 @@ namespace Apperture.Core.Application.Notifications.Delivery;
 public sealed record EmailNotificationSendRequest(
     string Recipient,
     string Subject,
-    string PlainTextBody);
+    string PlainTextBody,
+    string? HtmlBody = null);
 
 public sealed record EmailNotificationSendResult(
     bool Succeeded,

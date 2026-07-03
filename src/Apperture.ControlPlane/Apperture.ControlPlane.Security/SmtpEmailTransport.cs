@@ -33,8 +33,8 @@ internal static class SmtpEmailTransport
             {
                 From = from,
                 Subject = request.Subject,
-                Body = request.PlainTextBody,
             };
+            NotificationSmtpMessageBuilder.ApplyBodies(message, request.PlainTextBody, request.HtmlBody);
             message.To.Add(new MailAddress(request.Recipient));
             using var client = new SmtpClient(options.SmtpHost, options.SmtpPort)
             {

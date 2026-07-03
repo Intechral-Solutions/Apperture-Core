@@ -110,12 +110,14 @@ public sealed class NotificationDispatchProcessor
         }
 
         var attemptNumber = row.AttemptCount + 1;
+        var emailMessage = ComposeEmailMessage(instance);
         var sendResult = await _emailChannel
             .SendAsync(
                 new EmailNotificationSendRequest(
                     row.RecipientEmail,
                     instance.RenderedSubject,
-                    instance.RenderedBodyText),
+                    emailMessage.PlainTextBody,
+                    emailMessage.HtmlBody),
                 cancellationToken)
             .ConfigureAwait(false);
 
@@ -175,5 +177,23 @@ public sealed class NotificationDispatchProcessor
         var seconds = opts.InitialBackoffSeconds * Math.Pow(2, exponent);
         var capped = Math.Min(seconds, opts.MaxBackoffSeconds);
         return TimeSpan.FromSeconds(Math.Max(1, capped));
+    }
+
+    internal static NotificationEmailMessage ComposeEmailMessage(NotificationInstance instance)
+    {
+        var renderContext = instance.RenderContextJson;
+        return NotificationEmailMessageComposer.Compose(
+            new NotificationEmailComposeInput(
+                instance.RenderedSubject,
+                instance.RenderedSummary,
+                instance.RenderedBodyText,
+                instance.RenderedBodyHtml,
+                instance.RenderedActionText,
+                instance.RenderedActionUrl,
+                NotificationRenderContextReader.TryGetValue(renderContext, "instance.baseUrl"),
+                NotificationRenderContextReader.TryGetValue(renderContext, "integration.displayName"),
+                instance.IntegrationId
+                    ?? NotificationRenderContextReader.TryGetValue(renderContext, "integration.id"),
+                NotificationRenderContextReader.TryGetValue(renderContext, "event.time")));
     }
 }

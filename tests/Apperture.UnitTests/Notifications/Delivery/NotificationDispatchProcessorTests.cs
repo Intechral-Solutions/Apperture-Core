@@ -123,6 +123,75 @@ public sealed class NotificationDispatchProcessorTests
         row.AttemptCount.Should().Be(5);
     }
 
+    [Fact]
+    public async Task Live_send_includes_absolute_action_link_and_html_body()
+    {
+        await using var db = CreateDb();
+        var (_, outboxId) = await SeedPendingOutboxAsync(
+            db,
+            actionUrl: "/integrations/int-1/schedule-diagnostics",
+            renderContextJson: """{"instance.baseUrl":"https://mgmt.example.com","integration.displayName":"Campus Nexus"}""");
+        EmailNotificationSendRequest? captured = null;
+        var channel = new Mock<IEmailNotificationChannel>();
+        channel
+            .Setup(x => x.SendAsync(It.IsAny<EmailNotificationSendRequest>(), It.IsAny<CancellationToken>()))
+            .Callback<EmailNotificationSendRequest, CancellationToken>((req, _) => captured = req)
+            .ReturnsAsync(new EmailNotificationSendResult(true, null, null));
+        var sut = CreateProcessor(db, channel.Object, deliveryEnabled: true);
+
+        await sut.ProcessBatchAsync();
+
+        captured.Should().NotBeNull();
+        captured!.PlainTextBody.Should().Contain("https://mgmt.example.com/integrations/int-1/schedule-diagnostics");
+        captured.HtmlBody.Should().NotBeNullOrWhiteSpace();
+        captured.HtmlBody.Should().Contain("https://mgmt.example.com/integrations/int-1/schedule-diagnostics");
+        var row = await db.NotificationDeliveryOutbox.SingleAsync(x => x.Id == outboxId);
+        row.Status.Should().Be(NotificationOutboxStatuses.Succeeded);
+    }
+
+    [Fact]
+    public void ComposeEmailMessage_preserves_personal_inbox_relative_action_url_on_instance()
+    {
+        var instance = new NotificationInstance(
+            NotificationInstanceId.From("inst-1"),
+            NotificationDefinitionIds.PlatformScheduleExpectedRunMissing,
+            NotificationKinds.Activation,
+            NotificationInstanceStatuses.Pending,
+            null,
+            "inc-1",
+            "int-1",
+            null,
+            null,
+            null,
+            "dedupe",
+            "Subject",
+            "Summary",
+            "Body",
+            null,
+            "Review schedule diagnostics",
+            "/integrations/int-1/schedule-diagnostics",
+            null,
+            "hash",
+            """{"instance.baseUrl":"https://mgmt.example.com"}""",
+            null,
+            null,
+            DateTimeOffset.UtcNow,
+            DateTimeOffset.UtcNow);
+
+        instance.RenderedActionUrl.Should().Be("/integrations/int-1/schedule-diagnostics");
+
+        var email = NotificationEmailMessageComposer.Compose(
+            new NotificationEmailComposeInput(
+                instance.RenderedSubject,
+                instance.RenderedSummary,
+                instance.RenderedBodyText,
+                instance.RenderedBodyHtml,
+                instance.RenderedActionText,
+                instance.RenderedActionUrl,
+                NotificationRenderContextReader.TryGetValue(instance.RenderContextJson, "instance.baseUrl")));
+        email.AbsoluteActionUrl.Should().Be("https://mgmt.example.com/integrations/int-1/schedule-diagnostics");
+    }
+
     [Theory]
     [InlineData(1, 60)]
     [InlineData(2, 120)]
@@ -159,7 +228,10 @@ public sealed class NotificationDispatchProcessorTests
             TimeProvider.System,
             NullLogger<NotificationDispatchProcessor>.Instance);
 
-    private static async Task<(string instanceId, string outboxId)> SeedPendingOutboxAsync(AppertureDbContext db)
+    private static async Task<(string instanceId, string outboxId)> SeedPendingOutboxAsync(
+        AppertureDbContext db,
+        string? actionUrl = null,
+        string renderContextJson = "{}")
     {
         var now = DateTimeOffset.UtcNow;
         var instanceId = NotificationInstanceId.New().Value;
@@ -173,8 +245,10 @@ public sealed class NotificationDispatchProcessorTests
             RenderedSubject = "Subject",
             RenderedSummary = "Summary",
             RenderedBodyText = "Body",
+            RenderedActionText = actionUrl is null ? null : "Review schedule diagnostics",
+            RenderedActionUrl = actionUrl,
             TemplateVersionHash = "hash",
-            RenderContextJson = "{}",
+            RenderContextJson = renderContextJson,
             InstanceDedupeKey = "dedupe",
             CreatedAtUtc = now,
             UpdatedAtUtc = now,

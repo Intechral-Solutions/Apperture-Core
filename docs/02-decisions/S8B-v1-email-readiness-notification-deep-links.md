@@ -59,6 +59,8 @@ Template includes:
 
 `PersonalNotificationUiRoutes.ResolveOpenTarget` prefers `RenderedActionUrl` over admin instance detail.
 
+In-app routes remain relative. Email delivery (S8C) composes absolute links at send time using `instance.baseUrl` from render context. See [S8C-html-email-absolute-operator-links.md](S8C-html-email-absolute-operator-links.md).
+
 ## Deferred
 
 - Provider plugin architecture
