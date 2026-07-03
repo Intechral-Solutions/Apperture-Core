@@ -166,6 +166,10 @@ public sealed class ExpectedRunMissingCutoverSignOffServiceTests
             CancellationToken cancellationToken = default) =>
             ValueTask.FromResult(new NotificationConfigurationDiagnostics(false, false, false, false, false, [], DateTimeOffset.UtcNow));
 
+        public ValueTask<NotificationPipelineCutoverStatus> GetCutoverStatusAsync(
+            CancellationToken cancellationToken = default) =>
+            throw new NotImplementedException();
+
         public ValueTask<ExpectedRunMissingParityAcceptanceSummary?> GetExpectedRunMissingParityAcceptanceAsync(
             string integrationId,
             string? attentionIncidentId,

@@ -640,6 +640,9 @@ public interface IManagementClient
     Task<NotificationConfigurationDiagnosticsDto> GetNotificationConfigurationDiagnosticsAsync(
         CancellationToken cancellationToken = default);
 
+    Task<NotificationPipelineCutoverStatusDto> GetNotificationPipelineCutoverStatusAsync(
+        CancellationToken cancellationToken = default);
+
     Task<ExpectedRunMissingCutoverSignOffDto?> GetExpectedRunMissingCutoverSignOffAsync(
         string integrationId,
         CancellationToken cancellationToken = default);

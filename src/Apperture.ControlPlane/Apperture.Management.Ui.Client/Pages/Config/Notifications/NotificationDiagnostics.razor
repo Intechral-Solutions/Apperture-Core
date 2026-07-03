@@ -26,6 +26,13 @@
     }
     else
     {
+        @if (_cutoverStatus is not null)
+        {
+            <div class="mt-4">
+                <NotificationPipelineCutoverStatusCard Status="_cutoverStatus" />
+            </div>
+        }
+
         <section class="mt-4 rounded border border-default bg-surface p-3 text-xs">
             <h2 class="text-sm font-semibold text-heading mb-2">Expected-run-missing cutover (instance)</h2>
             <p class="text-muted mb-3">Read-only health and flag guidance. Per-integration readiness is on the integration notifications page.</p>
@@ -166,6 +173,7 @@
     private NotificationDeliveryHealthSummaryDto? _health;
     private NotificationIntegrationDiagnosticsDto? _integrationDiag;
     private NotificationConfigurationDiagnosticsDto? _configDiagnostics;
+    private NotificationPipelineCutoverStatusDto? _cutoverStatus;
     private ExpectedRunMissingParityAcceptanceSummaryDto? _acceptance;
     private ExpectedRunMissingParityDiagnosticsDto? _fullParity;
     private ExpectedRunMissingCutoverSignOffDto? _cutoverSignOff;
@@ -204,6 +212,7 @@
         {
             _health = await Client.GetNotificationDeliveryHealthAsync();
             _configDiagnostics = await Client.GetNotificationConfigurationDiagnosticsAsync();
+            _cutoverStatus = await Client.GetNotificationPipelineCutoverStatusAsync();
         }
         catch (Exception ex) { _error = ex.Message; }
 

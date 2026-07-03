@@ -1,5 +1,7 @@
 namespace Apperture.Core.Application.Notifications.Diagnostics;
 
+using Apperture.Core.Application.Notifications.Cutover;
+
 public interface INotificationDeliveryDiagnosticsService
 {
     ValueTask<NotificationDeliveryHealthSummary> GetHealthSummaryAsync(
@@ -33,5 +35,8 @@ public interface INotificationDeliveryDiagnosticsService
         CancellationToken cancellationToken = default);
 
     ValueTask<NotificationConfigurationDiagnostics> GetConfigurationDiagnosticsAsync(
+        CancellationToken cancellationToken = default);
+
+    ValueTask<NotificationPipelineCutoverStatus> GetCutoverStatusAsync(
         CancellationToken cancellationToken = default);
 }

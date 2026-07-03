@@ -1,4 +1,5 @@
 using Apperture.ControlPlane.Security;
+using Apperture.Core.Application.Notifications.Cutover;
 using Apperture.Core.Application.Notifications.Diagnostics;
 using Apperture.Management.Client;
 using Microsoft.AspNetCore.Authorization;
@@ -27,6 +28,22 @@ public sealed class NotificationDiagnosticsController : ControllerBase
                 .GetConfigurationDiagnosticsAsync(cancellationToken)
                 .ConfigureAwait(false);
             return Ok(ToConfigurationDto(row));
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return Forbid();
+        }
+    }
+
+    [HttpGet("cutover-status")]
+    [ProducesResponseType(typeof(NotificationPipelineCutoverStatusDto), StatusCodes.Status200OK)]
+    public async Task<ActionResult<NotificationPipelineCutoverStatusDto>> GetCutoverStatus(
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var row = await _diagnostics.GetCutoverStatusAsync(cancellationToken).ConfigureAwait(false);
+            return Ok(ToCutoverStatusDto(row));
         }
         catch (UnauthorizedAccessException)
         {
@@ -156,6 +173,29 @@ public sealed class NotificationDiagnosticsController : ControllerBase
             c.UsePlatformPipelineEnabled,
             c.Warnings.Select(w => new NotificationConfigurationSafetyWarningDto(w.Code, w.Message)).ToList(),
             c.GeneratedAtUtc);
+
+    private static NotificationPipelineCutoverStatusDto ToCutoverStatusDto(NotificationPipelineCutoverStatus s) =>
+        new(
+            s.UsePlatformPipelineEnabled,
+            s.LegacyEpic69PathActive,
+            s.ActiveDeliveryPath,
+            s.ActiveDeliveryPathLabel,
+            s.OperatingModeLabels,
+            s.ExpectedRunMissingDefinitionExists,
+            s.ExpectedRunMissingDefinitionEnabled,
+            s.EmailTransportEnabled,
+            s.EmailSmtpHostConfigured,
+            s.EmailFromAddressConfigured,
+            s.EmailCredentialReferenceConfigured,
+            s.ManagementHostUrlConfigured,
+            s.PlatformEventsEnabled,
+            s.EvaluationEnabled,
+            s.InstancesEnabled,
+            s.DeliveryEnabled,
+            s.ConfigurationWarnings.Select(w => new NotificationConfigurationSafetyWarningDto(w.Code, w.Message)).ToList(),
+            s.PreflightChecks.Select(c => new NotificationPipelineCutoverPreflightCheckDto(c.Code, c.Label, c.Passed, c.Guidance)).ToList(),
+            s.CriticalPreflightPassed,
+            s.GeneratedAtUtc);
 
     private static NotificationDeliveryHealthSummaryDto ToHealthDto(NotificationDeliveryHealthSummary s) =>
         new(

@@ -1,8 +1,11 @@
 using Apperture.Core.Application.Notifications;
+using Apperture.Core.Application.Notifications.Cutover;
 using Apperture.Core.Application.Notifications.Diagnostics;
+using Apperture.Core.Application.Notifications.Delivery;
 using Apperture.Core.Application.Notifications.Instances;
 using Apperture.Core.Application.PlatformEvents;
 using Apperture.Core.Domain.Notifications;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Options;
 
 namespace Apperture.ControlPlane.Security;
@@ -17,6 +20,9 @@ public sealed class NotificationDeliveryDiagnosticsService : INotificationDelive
     private readonly IOptions<NotificationInstanceOptions> _instances;
     private readonly IOptions<NotificationDeliveryOptions> _delivery;
     private readonly IOptions<NotificationPipelineOptions> _pipeline;
+    private readonly IOptions<EmailNotificationOptions> _email;
+    private readonly INotificationDefinitionStore _definitions;
+    private readonly string _managementHostBaseUrl;
 
     public NotificationDeliveryDiagnosticsService(
         INotificationDeliveryDiagnosticsStore store,
@@ -26,7 +32,10 @@ public sealed class NotificationDeliveryDiagnosticsService : INotificationDelive
         IOptions<NotificationEvaluationOptions> evaluation,
         IOptions<NotificationInstanceOptions> instances,
         IOptions<NotificationDeliveryOptions> delivery,
-        IOptions<NotificationPipelineOptions> pipeline)
+        IOptions<NotificationPipelineOptions> pipeline,
+        IOptions<EmailNotificationOptions> email,
+        INotificationDefinitionStore definitions,
+        IConfiguration configuration)
     {
         _store = store;
         _authorization = authorization;
@@ -36,6 +45,10 @@ public sealed class NotificationDeliveryDiagnosticsService : INotificationDelive
         _instances = instances;
         _delivery = delivery;
         _pipeline = pipeline;
+        _email = email;
+        _definitions = definitions;
+        var raw = configuration["ShellUi:ManagementHostUrl"];
+        _managementHostBaseUrl = string.IsNullOrWhiteSpace(raw) ? "" : raw.Trim().TrimEnd('/');
     }
 
     public async ValueTask<NotificationDeliveryHealthSummary> GetHealthSummaryAsync(
@@ -206,6 +219,23 @@ public sealed class NotificationDeliveryDiagnosticsService : INotificationDelive
             snapshot.DeliveryEnabled,
             snapshot.UsePlatformPipelineEnabled,
             NotificationConfigurationSafetyValidator.Validate(snapshot),
+            _time.GetUtcNow());
+    }
+
+    public async ValueTask<NotificationPipelineCutoverStatus> GetCutoverStatusAsync(
+        CancellationToken cancellationToken = default)
+    {
+        var configuration = await GetConfigurationDiagnosticsAsync(cancellationToken).ConfigureAwait(false);
+        var definition = await _definitions
+            .GetAsync(NotificationDefinitionId.From(NotificationDefinitionIds.PlatformScheduleExpectedRunMissing), cancellationToken)
+            .ConfigureAwait(false);
+
+        return NotificationPipelineCutoverPreflight.Evaluate(
+            configuration,
+            _email.Value,
+            string.IsNullOrWhiteSpace(_managementHostBaseUrl) ? null : _managementHostBaseUrl,
+            definition is not null,
+            definition?.IsEnabled == true,
             _time.GetUtcNow());
     }
 

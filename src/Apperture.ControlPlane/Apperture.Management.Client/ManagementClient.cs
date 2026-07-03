@@ -2144,6 +2144,18 @@ public sealed class ManagementClient : IManagementClient
                 cancellationToken).ConfigureAwait(false))!;
     }
 
+    public async Task<NotificationPipelineCutoverStatusDto> GetNotificationPipelineCutoverStatusAsync(
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.GetAsync(
+            "notification-diagnostics/cutover-status",
+            cancellationToken).ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+        return (await response.Content.ReadFromJsonAsync<NotificationPipelineCutoverStatusDto>(
+                ApiJsonReadOptions,
+                cancellationToken).ConfigureAwait(false))!;
+    }
+
     public async Task<ExpectedRunMissingCutoverSignOffDto?> GetExpectedRunMissingCutoverSignOffAsync(
         string integrationId,
         CancellationToken cancellationToken = default)

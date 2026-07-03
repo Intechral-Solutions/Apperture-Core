@@ -154,3 +154,31 @@ public sealed record PlatformNotificationOutboxDiagnosticDto(
     string? LastError,
     DateTimeOffset? SentAtUtc,
     DateTimeOffset UpdatedAtUtc);
+
+public sealed record NotificationPipelineCutoverPreflightCheckDto(
+    string Code,
+    string Label,
+    bool Passed,
+    string? Guidance);
+
+public sealed record NotificationPipelineCutoverStatusDto(
+    bool UsePlatformPipelineEnabled,
+    bool LegacyEpic69PathActive,
+    string ActiveDeliveryPath,
+    string ActiveDeliveryPathLabel,
+    IReadOnlyList<string> OperatingModeLabels,
+    bool ExpectedRunMissingDefinitionExists,
+    bool ExpectedRunMissingDefinitionEnabled,
+    bool EmailTransportEnabled,
+    bool EmailSmtpHostConfigured,
+    bool EmailFromAddressConfigured,
+    bool EmailCredentialReferenceConfigured,
+    bool ManagementHostUrlConfigured,
+    bool PlatformEventsEnabled,
+    bool EvaluationEnabled,
+    bool InstancesEnabled,
+    bool DeliveryEnabled,
+    IReadOnlyList<NotificationConfigurationSafetyWarningDto> ConfigurationWarnings,
+    IReadOnlyList<NotificationPipelineCutoverPreflightCheckDto> PreflightChecks,
+    bool CriticalPreflightPassed,
+    DateTimeOffset GeneratedAtUtc);

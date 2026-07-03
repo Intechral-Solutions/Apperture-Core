@@ -1,6 +1,7 @@
 @page "/config/notifications/delivery"
 @layout ConfigLayout
 @using Apperture.Management.Client
+@using Apperture.Management.Ui.Client.Molecules
 @using Apperture.Management.Ui.Client.Organisms
 @using Apperture.Management.Ui.Client.Services
 @using Apperture.Management.Ui.Shared
@@ -24,6 +25,13 @@
     }
     else
     {
+        @if (_cutoverStatus is not null)
+        {
+            <div class="mt-4">
+                <NotificationPipelineCutoverStatusCard Status="_cutoverStatus" />
+            </div>
+        }
+
         @if (_configDiagnostics is not null)
         {
             <section class="mt-4 rounded border border-default bg-surface p-3 text-xs">
@@ -112,6 +120,7 @@
     private string _selectedIntegrationId = "";
     private NotificationDeliveryHealthSummaryDto? _globalHealth;
     private NotificationConfigurationDiagnosticsDto? _configDiagnostics;
+    private NotificationPipelineCutoverStatusDto? _cutoverStatus;
     private NotificationIntegrationDiagnosticsDto? _integrationDiag;
     private IReadOnlyList<IntegrationDto> _integrations = [];
 
@@ -132,6 +141,15 @@
             catch
             {
                 _configDiagnostics = null;
+            }
+
+            try
+            {
+                _cutoverStatus = await Client.GetNotificationPipelineCutoverStatusAsync();
+            }
+            catch
+            {
+                _cutoverStatus = null;
             }
 
             if (caps.CanViewIntegrations)

@@ -89,11 +89,49 @@ Epic 69 ledger history is unchanged. Platform instances/outbox are audit-only af
 | `GET /api/notification-diagnostics/expected-run-missing/parity` | Side-by-side Epic 69 ledger vs platform (by kind/recipient). |
 | `GET /api/notification-diagnostics/expected-run-missing/parity-acceptance` | Aggregated acceptance summary for cutover decision. |
 | `GET /api/notification-diagnostics/configuration` | Instance notification flag state and dangerous-combination warnings. |
+| `GET /api/notification-diagnostics/cutover-status` | Pipeline cutover preflight (active path, email readiness, definition, management host URL). |
 | `GET /api/integrations/{id}/expected-run-missing/cutover-sign-off` | Latest operator sign-off for the integration. |
 | `POST /api/integrations/{id}/expected-run-missing/cutover-sign-off` | Create/replace sign-off (`readyForCutover` or `notReady`). Requires integration update + notification manage. |
 | `POST /api/integrations/{id}/expected-run-missing/cutover-sign-off/revoke` | Revoke the latest active sign-off. |
 | `GET /api/integrations/{id}/schedule-diagnostics` | Schedule view + Epic 69 ledger + platform instances/outbox. |
 | `GET /api/integrations/{id}/expected-run-missing/cutover-validation` | Read-only staging validation (modes, sign-off, parity, blockers). |
+
+---
+
+## Cutover preflight (Epic 77C)
+
+Use `GET /api/notification-diagnostics/cutover-status` or **Config → Notifications → Delivery/Diagnostics** cutover status card before enabling `UsePlatformPipeline`.
+
+| Check | Meaning |
+|-------|---------|
+| Active delivery path | `legacy`, `dual`, `platform`, or `platform_no_delivery` |
+| Legacy Epic 69 path | Whether observation cycle still invokes the legacy orchestrator |
+| Expected-run-missing definition | Built-in `platform.schedule.expected_run_missing` exists and is enabled |
+| SMTP host / from / credentials | `Notifications:Email` readiness (secrets never returned) |
+| Management host URL | `ShellUi:ManagementHostUrl` for absolute email links (S8C/S8D) |
+| Platform events / evaluation / instances | Required before platform instances, outbox, and inbox materialization |
+| Critical preflight | All core platform flags + email transport fields present |
+
+Preflight does **not** connect to SMTP. Parity acceptance and per-integration sign-off remain required before production cutover.
+
+### Post-cutover verification
+
+After `Notifications:UsePlatformPipeline:Enabled=true`:
+
+1. Trigger or wait for `expected_run_missing` on a test integration.
+2. Confirm **platform** `NotificationInstances` and outbox rows (not only Epic 69 ledger).
+3. Confirm personal inbox items for principal recipients (in-app visibility).
+4. Confirm email delivery when `Notifications:Delivery:Enabled=true` (check outbox `succeeded` and S10 diagnostics).
+5. Confirm operators can manage email opt-in under **My notifications** (S9) for subscribable platform definitions.
+6. Confirm Epic 69 orchestrator is **not** sending duplicate mail (ledger may still record suppressed/skipped rows from prior cycles only).
+
+### S9 subscription behavior after cutover
+
+Platform email respects admin subscriptions, implicit attention routing, and operator self-service email preferences (`/me/notifications`). Users without email enabled for a definition may be skipped with `userOptOut` or `noEmailSubscription` in instance recipient snapshots (S10). Admin/team routing is unchanged.
+
+### Rollback (quick reference)
+
+Set `Notifications:UsePlatformPipeline:Enabled=false` first — Epic 69 orchestrator resumes on the next observation cycle. See [Rollback steps](#rollback-steps) for full flag sequence.
 
 ---
 
