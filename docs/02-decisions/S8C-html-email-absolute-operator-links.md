@@ -20,7 +20,7 @@ Personal inbox navigation (S8B) continues to use relative `RenderedActionUrl` va
 - **HTML:** simple v1 layout (title, summary, body, action button, integration context, timestamp, footer)
 - **SMTP:** `NotificationSmtpMessageBuilder` sends `multipart/alternative` when HTML is available; plain-text-only when not
 
-Epic 69 (`AttentionIncidentNotificationOrchestrator`) remains plain-text unless migrated to the platform pipeline. Prefer `Notifications:UsePlatformPipeline` for built-in expected-run-missing delivery.
+Epic 69 (`AttentionIncidentNotificationOrchestrator`) uses the same `NotificationEmailMessageComposer` and `Notifications:Email` SMTP path when the legacy orchestrator is active (`Notifications:UsePlatformPipeline:Enabled=false`). Prefer `Notifications:UsePlatformPipeline:Enabled=true` for cutover to the full platform pipeline. See [S8D-epic69-email-parity-legacy-attention-alignment.md](S8D-epic69-email-parity-legacy-attention-alignment.md).
 
 ## Link normalization
 

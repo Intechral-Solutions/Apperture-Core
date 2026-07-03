@@ -30,7 +30,7 @@ The diagnostics UI remains **read-only** for flags. Use `/config/platform-settin
 
 - SQL migrations applied through `Epic77_NotificationInstances` and `Epic77_NotificationDeliverySentAtUtc` (and `Epic77_NotificationOutboxRowVersion` when present).
 - Management Host running with persistence and `AttentionIncidents:Observation:Enabled=true` (incident observation drives both paths today).
-- SMTP configured under `AttentionNotifications` if you will enable live delivery.
+- SMTP configured under `Notifications:Email` (legacy `AttentionNotifications:ExpectedRunMissing` SMTP fields merge when empty). Set `ShellUi:ManagementHostUrl` for absolute email action links.
 - Operator access to Management API diagnostics endpoints (see [Diagnostics APIs](#diagnostics-apis)).
 - Understanding that **cutover is manual** — no flag flips automatically.
 

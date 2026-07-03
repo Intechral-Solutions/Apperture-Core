@@ -2,7 +2,7 @@ using Apperture.Core.Application.Integration;
 using Apperture.Core.Application.Scheduling;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Integration;
-using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Configuration;
 
 namespace Apperture.ControlPlane.Security;
 
@@ -12,7 +12,7 @@ public sealed class AttentionIncidentNotificationOrchestrator
     private readonly IAttentionNotificationSender _sender;
     private readonly IAttentionIncidentTracker _tracker;
     private readonly IAttentionRecipientResolver _recipientResolver;
-    private readonly IOptions<AttentionNotificationOptions> _smtpOptions;
+    private readonly string _managementHostBaseUrl;
     private readonly TimeProvider _time;
 
     public AttentionIncidentNotificationOrchestrator(
@@ -20,14 +20,15 @@ public sealed class AttentionIncidentNotificationOrchestrator
         IAttentionNotificationSender sender,
         IAttentionIncidentTracker tracker,
         IAttentionRecipientResolver recipientResolver,
-        IOptions<AttentionNotificationOptions> smtpOptions,
+        IConfiguration configuration,
         TimeProvider time)
     {
         _ledger = ledger;
         _sender = sender;
         _tracker = tracker;
         _recipientResolver = recipientResolver;
-        _smtpOptions = smtpOptions;
+        var raw = configuration["ShellUi:ManagementHostUrl"];
+        _managementHostBaseUrl = string.IsNullOrWhiteSpace(raw) ? "" : raw.Trim().TrimEnd('/');
         _time = time;
     }
 
@@ -296,10 +297,18 @@ public sealed class AttentionIncidentNotificationOrchestrator
         string? contactGroupNameSnapshot,
         CancellationToken cancellationToken)
     {
-        _ = _smtpOptions;
+        var email = AttentionIncidentNotificationEmailComposer.Compose(
+            subject,
+            body,
+            integrationIdValue,
+            incidentId,
+            _managementHostBaseUrl,
+            now);
         var attemptedAt = now;
         var result = await _sender
-            .SendEmailAsync(new AttentionNotificationSendRequest(recipient, subject, body), cancellationToken)
+            .SendEmailAsync(
+                new AttentionNotificationSendRequest(recipient, subject, email.PlainTextBody, email.HtmlBody),
+                cancellationToken)
             .ConfigureAwait(false);
 
         var status = result.Succeeded ? AttentionNotificationStatuses.Succeeded : AttentionNotificationStatuses.Failed;

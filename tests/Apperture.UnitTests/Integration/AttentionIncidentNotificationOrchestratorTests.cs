@@ -3,7 +3,7 @@ using Apperture.Core.Application.Integration;
 using Apperture.Core.Application.Scheduling;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Integration;
-using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Configuration;
 using Moq;
 using Xunit;
 
@@ -12,6 +12,14 @@ namespace Apperture.UnitTests.Integration;
 public sealed class AttentionIncidentNotificationOrchestratorTests
 {
     private static readonly IntegrationId IntId = new("int-e69");
+
+    private static IConfiguration Config(string? managementHostUrl = null)
+    {
+        var data = new Dictionary<string, string?>();
+        if (managementHostUrl is not null)
+            data["ShellUi:ManagementHostUrl"] = managementHostUrl;
+        return new ConfigurationBuilder().AddInMemoryCollection(data).Build();
+    }
 
     private sealed class MutableUtcTimeProvider : TimeProvider
     {
@@ -35,14 +43,6 @@ public sealed class AttentionIncidentNotificationOrchestratorTests
             ReferenceScheduleId: "sch1",
             LatestScheduleOriginAuthorizedRun: null,
             EvidenceWindowStartUtc: DateTimeOffset.Parse("2025-01-01T00:00:00Z"));
-
-    private static AttentionNotificationOptions SmtpOptionsStub() =>
-        new()
-        {
-            Enabled = true,
-            SmtpHost = "smtp.example",
-            FromAddress = "from@example.com",
-        };
 
     private static Mock<IAttentionRecipientResolver> Resolver(
         IReadOnlyList<string> primary,
@@ -99,6 +99,44 @@ public sealed class AttentionIncidentNotificationOrchestratorTests
     }
 
     [Fact]
+    public async Task Opened_composes_html_and_absolute_schedule_diagnostics_link_when_base_url_configured()
+    {
+        var t0 = DateTimeOffset.Parse("2025-03-01T10:00:00Z");
+        var clock = new MutableUtcTimeProvider { UtcNowValue = t0 };
+        var ledger = new Mock<IAttentionIncidentNotificationLedger>();
+        DefaultLedgerEscalation(ledger);
+        ledger.Setup(x => x.HasNonSuppressedActivationAttemptAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+        var sender = new Mock<IAttentionNotificationSender>();
+        sender.Setup(x => x.SendEmailAsync(It.IsAny<AttentionNotificationSendRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AttentionNotificationSendResult(true, null, null));
+        var tracker = new Mock<IAttentionIncidentTracker>();
+        var resolver = Resolver(new[] { "a@test.com" });
+
+        var sut = new AttentionIncidentNotificationOrchestrator(
+            ledger.Object,
+            sender.Object,
+            tracker.Object,
+            resolver.Object,
+            Config("https://mgmt.example.com"),
+            clock);
+
+        await sut.HandleObserveResultAsync(
+            IntId,
+            new AttentionIncidentObserveResult(AttentionIncidentObserveTransition.Opened, "inc1"),
+            Snapshot(ScheduleExpectationEvaluationStatus.MissingExpectedRun),
+            CancellationToken.None);
+
+        sender.Verify(
+            x => x.SendEmailAsync(
+                It.Is<AttentionNotificationSendRequest>(r =>
+                    r.HtmlBody != null
+                    && r.PlainTextBody.Contains("https://mgmt.example.com/integrations/int-e69/schedule-diagnostics?incidentId=inc1", StringComparison.Ordinal)),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
     public async Task Opened_sends_activation_per_recipient_on_success()
     {
         var t0 = DateTimeOffset.Parse("2025-03-01T10:00:00Z");
@@ -118,7 +156,7 @@ public sealed class AttentionIncidentNotificationOrchestratorTests
             sender.Object,
             tracker.Object,
             resolver.Object,
-            Options.Create(SmtpOptionsStub()),
+            Config(),
             clock);
 
         await sut.HandleObserveResultAsync(
@@ -154,7 +192,7 @@ public sealed class AttentionIncidentNotificationOrchestratorTests
             sender.Object,
             tracker.Object,
             resolver.Object,
-            Options.Create(SmtpOptionsStub()),
+            Config(),
             clock);
 
         var snap = Snapshot(ScheduleExpectationEvaluationStatus.MissingExpectedRun);
@@ -197,7 +235,7 @@ public sealed class AttentionIncidentNotificationOrchestratorTests
             sender.Object,
             tracker.Object,
             resolver.Object,
-            Options.Create(SmtpOptionsStub()),
+            Config(),
             clock);
 
         await sut.HandleObserveResultAsync(
@@ -240,7 +278,7 @@ public sealed class AttentionIncidentNotificationOrchestratorTests
             sender.Object,
             tracker.Object,
             resolver.Object,
-            Options.Create(SmtpOptionsStub()),
+            Config(),
             clock);
 
         await sut.HandleObserveResultAsync(
@@ -294,7 +332,7 @@ public sealed class AttentionIncidentNotificationOrchestratorTests
             sender.Object,
             tracker.Object,
             resolver.Object,
-            Options.Create(SmtpOptionsStub()),
+            Config(),
             clock);
 
         clock.UtcNowValue = t0.AddHours(2);
@@ -343,7 +381,7 @@ public sealed class AttentionIncidentNotificationOrchestratorTests
             sender.Object,
             tracker.Object,
             resolver.Object,
-            Options.Create(SmtpOptionsStub()),
+            Config(),
             clock);
 
         await sut.HandleObserveResultAsync(
@@ -377,7 +415,7 @@ public sealed class AttentionIncidentNotificationOrchestratorTests
             sender.Object,
             tracker.Object,
             resolver.Object,
-            Options.Create(SmtpOptionsStub()),
+            Config(),
             clock);
 
         await sut.HandleObserveResultAsync(
@@ -433,7 +471,7 @@ public sealed class AttentionIncidentNotificationOrchestratorTests
             sender.Object,
             tracker.Object,
             resolver.Object,
-            Options.Create(SmtpOptionsStub()),
+            Config(),
             clock);
 
         await sut.HandleObserveResultAsync(
@@ -493,7 +531,7 @@ public sealed class AttentionIncidentNotificationOrchestratorTests
             sender.Object,
             tracker.Object,
             resolver.Object,
-            Options.Create(SmtpOptionsStub()),
+            Config(),
             clock);
 
         await sut.HandleObserveResultAsync(
