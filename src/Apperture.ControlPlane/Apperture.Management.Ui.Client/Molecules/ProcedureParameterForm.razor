@@ -55,6 +55,9 @@
     [Parameter, EditorRequired]
     public Dictionary<string, object?> Values { get; set; } = new(StringComparer.Ordinal);
 
+    [Parameter]
+    public EventCallback OnChanged { get; set; }
+
     private string? GetStringValue(string key) =>
         Values.TryGetValue(key, out var v) ? v?.ToString() : null;
 
@@ -89,6 +92,13 @@
             Values[f.Key] = d;
         else
             Values[f.Key] = text;
+        _ = NotifyChangedAsync();
+    }
+
+    private async Task NotifyChangedAsync()
+    {
+        if (OnChanged.HasDelegate)
+            await OnChanged.InvokeAsync();
     }
 
     private void SetValue(string key, object? value)
@@ -97,12 +107,17 @@
             Values.Remove(key);
         else
             Values[key] = value;
+        _ = NotifyChangedAsync();
     }
 
     private bool GetBool(string key) =>
         Values.TryGetValue(key, out var v) && v is true;
 
-    private void SetBool(string key, bool value) => Values[key] = value;
+    private void SetBool(string key, bool value)
+    {
+        Values[key] = value;
+        _ = NotifyChangedAsync();
+    }
 
     private void OnBoolChanged(string key, ChangeEventArgs e)
     {

@@ -287,7 +287,8 @@
             }
             else if (_procedureList.Procedures.Count == 0)
             {
-                <EmptyState Message="This module declares no procedures." />
+                <EmptyState Title="No procedures"
+                            Message="This module declares no operator procedures. Workflows and operations may still be available from Execute." />
             }
             else
             {
@@ -300,10 +301,15 @@
                     @foreach (var p in _procedureList.Procedures)
                     {
                         <button type="button"
-                                class="rounded px-2 py-1 text-xs font-mono @(string.Equals(_selectedProcedureId, p.Id, StringComparison.Ordinal) ? "bg-body text-surface" : "bg-surface-muted text-body hover:bg-surface")"
+                                class="rounded px-2 py-1 text-sm @(string.Equals(_selectedProcedureId, p.Id, StringComparison.Ordinal) ? "bg-body text-surface" : "bg-surface-muted text-body hover:bg-surface")"
+                                title="@(p.Launchable ? "Runnable" : ProcedureLaunchOperatorUiHelpers.DescribeBlockedReason(p.BlockedReasonCodes.FirstOrDefault() ?? "integration_not_ready"))"
                                 @onclick="() => SelectProcedureAsync(p.Id)">
                             @p.DisplayName
-                            @if (!p.Launchable)
+                            @if (p.Launchable)
+                            {
+                                <span class="ml-1 text-xs text-muted">· ready</span>
+                            }
+                            else
                             {
                                 <span class="ml-1 text-warning" title="Blocked">●</span>
                             }
@@ -324,20 +330,44 @@
                         </details>
                         @if (!_selectedProcedureDetail.Launchable && _selectedProcedureDetail.BlockedReasonCodes.Count > 0)
                         {
-                            <ul class="mt-2 list-disc pl-5 text-xs text-warning">
+                            <ul class="mt-2 list-disc pl-5 text-xs text-body">
                                 @foreach (var blockedCode in _selectedProcedureDetail.BlockedReasonCodes)
                                 {
-                                    <li><span class="font-mono">@blockedCode</span> — @DescribeBlockedReason(blockedCode)</li>
+                                    <li>@ProcedureLaunchOperatorUiHelpers.DescribeBlockedReason(blockedCode)</li>
                                 }
                             </ul>
                         }
-                        <ProcedureParameterForm Fields="@_selectedProcedureDetail.ParameterFields" Values="@_procedureParamValues" />
-                        <button type="button"
-                                class="mt-3 rounded bg-body px-3 py-2 text-sm text-surface hover:bg-body/90 disabled:opacity-50"
-                                disabled="@(_procedureLaunching || !_selectedProcedureDetail.Launchable)"
-                                @onclick="LaunchSelectedProcedureAsync">
-                            Launch
-                        </button>
+                        <ProcedureParameterForm Fields="@_selectedProcedureDetail.ParameterFields"
+                                                  Values="@_procedureParamValues"
+                                                  OnChanged="RefreshProcedureValidation" />
+                        @{
+                            var launchDisabledReason = ProcedureLaunchOperatorUiHelpers.BuildLaunchDisabledReason(
+                                _procedureLaunching,
+                                _selectedProcedureDetail.Launchable,
+                                _procedureList.IntegrationReady,
+                                _selectedProcedureDetail.BlockedReasonCodes,
+                                _procedureValidationErrors);
+                        }
+                        @if (_procedureValidationErrors.Count > 0)
+                        {
+                            <PageMessage Kind="PageMessageKind.Warning" Message="@_procedureValidationErrors[0]" />
+                        }
+                        <div class="mt-3 flex flex-wrap items-center gap-2">
+                            <button type="button"
+                                    class="rounded bg-body px-3 py-2 text-sm text-surface hover:bg-body/90 disabled:opacity-50"
+                                    disabled="@(_procedureLaunching || launchDisabledReason is not null)"
+                                    title="@launchDisabledReason"
+                                    @onclick="LaunchSelectedProcedureAsync">
+                                Launch
+                            </button>
+                            <DrillInLink Href="@ProcedureLaunchOperatorUiHelpers.BuildExecuteHref(IntegrationId, "procedure", _selectedProcedureDetail.Id)">
+                                Open launch page
+                            </DrillInLink>
+                        </div>
+                        @if (!string.IsNullOrWhiteSpace(launchDisabledReason))
+                        {
+                            <div class="mt-1 text-xs text-muted">@launchDisabledReason</div>
+                        }
                     </div>
                 }
             }
@@ -1154,7 +1184,10 @@
 
             _selectedProcedureDetail = detail;
             if (_selectedProcedureDetail is not null)
+            {
                 ProcedureParameterForm.SeedValues(_selectedProcedureDetail.ParameterFields, _procedureParamValues);
+                RefreshProcedureValidation();
+            }
         }
         catch (HttpRequestException ex)
         {
@@ -1167,6 +1200,11 @@
     {
         if (string.IsNullOrEmpty(_selectedProcedureId) || _selectedProcedureDetail is null)
             return;
+
+        RefreshProcedureValidation();
+        if (_procedureValidationErrors.Count > 0)
+            return;
+
         _procedureLaunching = true;
         _procedureError = null;
         try
@@ -1179,17 +1217,15 @@
                 null);
             if (!outcome.Succeeded || outcome.Result is null)
             {
-                var detail = string.IsNullOrEmpty(outcome.ErrorMessage)
-                    ? $"HTTP {outcome.StatusCode}"
-                    : $"{outcome.ErrorCode ?? "error"}: {outcome.ErrorMessage}";
-                var launchMsg = $"Launch failed ({detail}).";
+                var launchMsg = ProcedureLaunchOperatorUiHelpers.FormatLaunchError(outcome.ErrorCode, outcome.ErrorMessage);
                 SetActionFeedback(launchMsg, PageMessageKind.Error);
                 Toasts.Show(ToastSeverity.Error, launchMsg);
                 return;
             }
 
-            Toasts.Show(ToastSeverity.Success, "Run requested.");
-            Nav.NavigateTo($"/runs/{outcome.Result.RunId}");
+            var successMsg = ProcedureLaunchOperatorUiHelpers.FormatLaunchSuccessMessage(outcome.Result.RunId, outcome.Result.Status);
+            Toasts.Show(ToastSeverity.Success, successMsg);
+            Nav.NavigateTo(ProcedureLaunchOperatorUiHelpers.GetRunDetailHref(outcome.Result.RunId));
         }
         catch (HttpRequestException ex)
         {
@@ -1202,18 +1238,18 @@
         }
     }
 
-    private static string DescribeBlockedReason(string code) =>
-        code switch
-        {
-            "integration_not_ready" => "Resolve readiness issues for this integration.",
-            "integration_inactive" => "Activate the integration to allow launches.",
-            "integration_hard_blocked" => "Resolve blocking readiness issues before launch.",
-            "target_not_executable" => "Workflow or operation target is missing or not registered for this module.",
-            "insufficient_procedure_permission" => "Your role does not satisfy this procedure's required permissions.",
-            "insufficient_workflow_permission" => "You cannot start this workflow (e.g. missing workflow.execute for the module).",
-            "insufficient_operation_permission" => "You cannot start this operation (e.g. missing operation.execute).",
-            _ => "See platform documentation or contact an administrator."
-        };
+    private readonly List<string> _procedureValidationErrors = [];
+
+    private void RefreshProcedureValidation()
+    {
+        _procedureValidationErrors.Clear();
+        if (_selectedProcedureDetail is null)
+            return;
+        _procedureValidationErrors.AddRange(
+            ProcedureLaunchOperatorUiHelpers.ValidateProcedureParameters(
+                _selectedProcedureDetail.ParameterFields,
+                _procedureParamValues));
+    }
 
     private void StartSettingsEdit()
     {

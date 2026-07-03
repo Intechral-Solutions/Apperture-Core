@@ -3,83 +3,228 @@
 @using System.Text.Json
 @using Apperture.Management.Client
 @using Apperture.Management.Ui.Client.Execution
+@using Apperture.Management.Ui.Client.Organisms
+@using Apperture.Management.Ui.Client.Molecules
+@using Apperture.Management.Ui.Shared
 @inject IManagementClient Client
+@inject NavigationManager Nav
 
-<div class="p-4">
-    <h1 class="text-xl font-semibold text-heading">Execute</h1>
-    <div class="mt-1 text-xs text-muted max-w-2xl">
-        Start workflows, operations, or procedures for an integration. Operational console and run history live under Control Center and Runs.
-    </div>
+<div class="p-4 ui-page-stack">
+    <PageHeader Eyebrow="Operations"
+                Title="@PageTitle"
+                Subtitle="@PageSubtitle">
+        <Toolbar>
+            @if (!string.IsNullOrWhiteSpace(_selectedIntegrationId))
+            {
+                <a href="@($"/integrations/{Uri.EscapeDataString(_selectedIntegrationId)}")" class="ui-toolbar-btn">Integration</a>
+            }
+            <a href="/runs" class="ui-toolbar-btn">Run history</a>
+        </Toolbar>
+    </PageHeader>
 
     @if (!string.IsNullOrWhiteSpace(_error))
     {
-        <div class="mt-4 rounded border border-default bg-surface px-3 py-2 text-sm text-body">
-            <div class="font-semibold">Error</div>
-            <div class="text-muted">@_error</div>
-        </div>
+        <ErrorState Title="Launch failed" Message="@_error" />
     }
 
-    <div class="mt-4 grid gap-4 md:grid-cols-2">
-        <div class="rounded border border-default bg-surface p-3">
-            <div class="text-sm font-semibold text-heading">Target</div>
-            <div class="mt-3">
-                <label class="text-xs text-muted">Integration</label>
-                <select class="mt-1 w-full rounded border border-default bg-surface px-2 py-2 text-sm"
-                        value="@(_selectedIntegrationId ?? "")"
-                        @onchange="OnIntegrationChanged">
-                    <option value="">Select…</option>
-                    @foreach (var integration in _integrations)
-                    {
-                        <option value="@integration.Id">@integration.DisplayName (@integration.Id)</option>
-                    }
-                </select>
+    @if (!string.IsNullOrWhiteSpace(_successMessage) && !string.IsNullOrWhiteSpace(_runId))
+    {
+        <ActionFeedback Kind="@PageMessageKind.Info" Message="@_successMessage">
+            <div class="mt-2 flex flex-wrap gap-2">
+                <DrillInLink Href="@ProcedureLaunchOperatorUiHelpers.GetRunDetailHref(_runId)">Open run</DrillInLink>
+                <button type="button" class="ui-toolbar-btn" @onclick="() => Nav.NavigateTo(ProcedureLaunchOperatorUiHelpers.GetRunDetailHref(_runId!))">
+                    Go to run detail
+                </button>
             </div>
-            <div class="mt-3">
-                <label class="text-xs text-muted">Launch type</label>
-                <select class="mt-1 w-full rounded border border-default bg-surface px-2 py-2 text-sm"
-                        disabled="@string.IsNullOrWhiteSpace(_selectedIntegrationId)"
-                        value="@_selectedKind"
-                        @onchange="OnKindChanged">
-                    <option value="@ExecutionTargetKinds.Workflow">Workflow</option>
-                    <option value="@ExecutionTargetKinds.Operation">Operation</option>
-                    <option value="@ExecutionTargetKinds.Procedure">Procedure</option>
-                </select>
-            </div>
-            <div class="mt-3">
-                <label class="text-xs text-muted">Target executable</label>
-                <select class="mt-1 w-full rounded border border-default bg-surface px-2 py-2 text-sm"
-                        disabled="@(!_targetIds.Any())"
-                        value="@(_selectedTargetId ?? "")"
-                        @onchange="OnTargetChanged">
-                    <option value="">Select…</option>
-                    @foreach (var target in _targetIds)
-                    {
-                        <option value="@target.Id">@target.Name (@target.Id)</option>
-                    }
-                </select>
-            </div>
-            @if (_descriptor is not null && !_descriptor.Launchable && _descriptor.BlockedReasonCodes.Count > 0)
-            {
-                <ul class="mt-3 list-disc pl-5 text-xs text-warning">
-                    @foreach (var blocked in _descriptor.BlockedReasonCodes)
-                    {
-                        <li><span class="font-mono">@blocked</span></li>
-                    }
-                </ul>
-            }
-        </div>
+        </ActionFeedback>
+    }
 
-        <div class="rounded border border-default bg-surface p-3">
-            <div class="text-sm font-semibold text-heading">Launch</div>
-            <div class="text-xs text-muted">Renderer: <span class="font-mono">@(_descriptor?.RendererKey ?? "none")</span></div>
+    @if (_loading && _integrations.Count == 0)
+    {
+        <LoadingState />
+    }
+    else if (_integrations.Count == 0)
+    {
+        <EmptyState Title="No integrations"
+                    Message="Create an integration before launching workflows, operations, or procedures.">
+            <a href="/integrations/new" class="mt-3 inline-block ui-toolbar-btn">Create integration</a>
+        </EmptyState>
+    }
+    else
+    {
+        <ManagementSection Title="Launch target"
+                           Layer="ManagementSection.UiLayer.Summary"
+                           Help="Choose integration, launch type, and executable. Readiness and blocked reasons are evaluated before launch.">
+            <div class="grid gap-4 md:grid-cols-2">
+                <div>
+                    <label class="text-xs text-muted">Integration</label>
+                    <select class="mt-1 w-full rounded border border-default bg-surface px-2 py-2 text-sm"
+                            value="@(_selectedIntegrationId ?? "")"
+                            @onchange="OnIntegrationChanged">
+                        <option value="">Select integration…</option>
+                        @foreach (var integration in _integrations)
+                        {
+                            <option value="@integration.Id">@integration.DisplayName</option>
+                        }
+                    </select>
+                    @if (!string.IsNullOrWhiteSpace(_selectedIntegrationId))
+                    {
+                        <div class="mt-1 text-xs text-muted">
+                            <DrillInLink Href="@($"/integrations/{Uri.EscapeDataString(_selectedIntegrationId)}")">View integration</DrillInLink>
+                        </div>
+                    }
+                </div>
+                <div>
+                    <label class="text-xs text-muted">Launch type</label>
+                    <select class="mt-1 w-full rounded border border-default bg-surface px-2 py-2 text-sm"
+                            disabled="@string.IsNullOrWhiteSpace(_selectedIntegrationId)"
+                            value="@_selectedKind"
+                            @onchange="OnKindChanged">
+                        <option value="@ExecutionTargetKinds.Procedure">Procedure</option>
+                        <option value="@ExecutionTargetKinds.Workflow">Workflow</option>
+                        <option value="@ExecutionTargetKinds.Operation">Operation</option>
+                    </select>
+                </div>
+                <div class="md:col-span-2">
+                    <label class="text-xs text-muted">@TargetExecutableLabel</label>
+                    <select class="mt-1 w-full rounded border border-default bg-surface px-2 py-2 text-sm"
+                            disabled="@(!_targetIds.Any())"
+                            value="@(_selectedTargetId ?? "")"
+                            @onchange="OnTargetChanged">
+                        <option value="">Select…</option>
+                        @foreach (var target in _targetIds)
+                        {
+                            <option value="@target.Id" disabled="@target.Blocked">@target.Name@(target.Blocked ? " (blocked)" : "")</option>
+                        }
+                    </select>
+                    @if (_targetIds.Count == 0 && !string.IsNullOrWhiteSpace(_selectedIntegrationId))
+                    {
+                        <div class="mt-2 text-xs text-muted">No @TargetExecutableLabel.ToLowerInvariant() available for this integration.</div>
+                    }
+                </div>
+            </div>
 
-            @if (_descriptor is null)
+            @if (_operatorDetail?.Readiness is { } readiness)
             {
-                <div class="mt-3 text-sm text-muted">Choose integration, launch type, and target.</div>
+                <div class="mt-4 flex flex-wrap items-center gap-2">
+                    <StatusPill Label="@(readiness.IsRunnable ? "Integration runnable" : "Integration not runnable")"
+                                Semantic="@(readiness.IsRunnable ? ManagementStatusSemantic.Success : ManagementStatusSemantic.Warning)" />
+                    @if (readiness.BlockingIssueCount > 0)
+                    {
+                        <AttentionPill Label="@($"{readiness.BlockingIssueCount} blocking issue(s)")"
+                                         Semantic="@ManagementAttentionSemantic.Critical" />
+                    }
+                </div>
+                @if (!readiness.IsRunnable)
+                {
+                    <PageMessage Kind="PageMessageKind.Warning"
+                                 Message="Resolve readiness on the integration page before launching procedures." />
+                }
             }
-            else
+
+            @if (_descriptor is not null)
             {
-                <div class="mt-3 grid gap-3">
+                <div class="mt-4 rounded border border-default bg-surface-muted/40 p-3">
+                    <div class="text-sm font-semibold text-heading">@_descriptor.DisplayName</div>
+                    @if (!string.IsNullOrWhiteSpace(_descriptorDescription))
+                    {
+                        <div class="text-xs text-muted mt-1">@_descriptorDescription</div>
+                    }
+                    @if (!_descriptor.Launchable && _descriptor.BlockedReasonCodes.Count > 0)
+                    {
+                        <ul class="mt-2 list-disc pl-5 text-xs text-body">
+                            @foreach (var blocked in _descriptor.BlockedReasonCodes)
+                            {
+                                <li>@ProcedureLaunchOperatorUiHelpers.DescribeBlockedReason(blocked)</li>
+                            }
+                        </ul>
+                    }
+                </div>
+            }
+        </ManagementSection>
+
+        @if (_descriptor is null && !string.IsNullOrWhiteSpace(_selectedIntegrationId))
+        {
+            <EmptyState Title="Choose what to run"
+                        Message="Select a launch type and executable to configure parameters and launch." />
+        }
+        else if (_descriptor is not null)
+        {
+            <ManagementSection Title="Parameters and launch"
+                               Layer="ManagementSection.UiLayer.Detail"
+                               Help="Required fields are marked with *. Validation runs before the server accepts the launch.">
+                @if (_validationErrors.Count > 0)
+                {
+                    <PageMessage Kind="PageMessageKind.Warning" Message="@_validationErrors[0]" />
+                }
+
+                @if (_descriptor.RendererKey == ExecutionRendererKeys.MetadataForm && _descriptor.ProcedureDetail is not null)
+                {
+                    <ProcedureParameterForm Fields="@_descriptor.ProcedureDetail.ParameterFields"
+                                              Values="@_procedureValues"
+                                              OnChanged="RefreshValidation" />
+                }
+                else if (_descriptor.RendererKey == ExecutionRendererKeys.MetadataForm && _descriptor.Fields is { Count: > 0 } fields)
+                {
+                    @foreach (var field in fields)
+                    {
+                        <div class="mt-3">
+                            <label class="text-xs text-muted">@field.Label@(field.Required ? " *" : "")</label>
+                            @if (!string.IsNullOrWhiteSpace(field.HelpText))
+                            {
+                                <div class="text-xs text-muted mb-1">@field.HelpText</div>
+                            }
+                            @if (field.AllowedValues is { Count: > 0 } options)
+                            {
+                                <select class="mt-1 w-full rounded border border-default bg-surface px-2 py-2 text-sm"
+                                        value="@GetStringValue(field.Key)"
+                                        @onchange="e => SetStringValue(field.Key, e.Value?.ToString())">
+                                    <option value="">@(field.Required ? "(select)" : "(optional)")</option>
+                                    @foreach (var option in options)
+                                    {
+                                        <option value="@option">@option</option>
+                                    }
+                                </select>
+                            }
+                            else
+                            {
+                                <input class="mt-1 w-full rounded border border-default bg-surface px-2 py-2 text-sm"
+                                       value="@GetStringValue(field.Key, field.DefaultValue)"
+                                       @onchange="e => SetStringValue(field.Key, e.Value?.ToString())" />
+                            }
+                        </div>
+                    }
+                }
+                else
+                {
+                    <div class="mt-3">
+                        <label class="text-xs text-muted">Parameters (JSON object)</label>
+                        <textarea class="mt-1 w-full rounded border border-default bg-surface px-2 py-2 text-sm font-mono"
+                                  rows="8"
+                                  @bind="_jsonParameters"></textarea>
+                    </div>
+                }
+
+                @{
+                    var disabledReason = LaunchDisabledReason;
+                }
+                <button type="button"
+                        class="mt-4 ui-toolbar-btn"
+                        disabled="@(!CanLaunch)"
+                        title="@disabledReason"
+                        @onclick="LaunchAsync">
+                    Launch
+                </button>
+                @if (!string.IsNullOrWhiteSpace(disabledReason) && !CanLaunch)
+                {
+                    <div class="mt-2 text-xs text-muted">@disabledReason</div>
+                }
+            </ManagementSection>
+
+            <ManagementAdvancedSection Title="Advanced launch options"
+                                       Subtitle="Optional idempotency and correlation; technical target identifiers."
+                                       InitiallyOpen="false">
+                <div class="grid gap-3 md:grid-cols-2">
                     <div>
                         <label class="text-xs text-muted">Idempotency key (optional)</label>
                         <input class="mt-1 w-full rounded border border-default bg-surface px-2 py-2 text-sm font-mono" @bind="_idempotencyKey" />
@@ -88,76 +233,33 @@
                         <label class="text-xs text-muted">Correlation ID (optional)</label>
                         <input class="mt-1 w-full rounded border border-default bg-surface px-2 py-2 text-sm font-mono" @bind="_correlationId" />
                     </div>
-
-                    @if (_descriptor.RendererKey == ExecutionRendererKeys.MetadataForm && _descriptor.ProcedureDetail is not null)
-                    {
-                        <ProcedureParameterForm Fields="@_descriptor.ProcedureDetail.ParameterFields" Values="@_procedureValues" />
-                    }
-                    else if (_descriptor.RendererKey == ExecutionRendererKeys.MetadataForm && _descriptor.Fields is { Count: > 0 } fields)
-                    {
-                        @foreach (var field in fields)
-                        {
-                            <div>
-                                <label class="text-xs text-muted">@field.Label (@field.Type)</label>
-                                @if (field.AllowedValues is { Count: > 0 } options)
-                                {
-                                    <select class="mt-1 w-full rounded border border-default bg-surface px-2 py-2 text-sm"
-                                            value="@GetStringValue(field.Key)"
-                                            @onchange="e => SetStringValue(field.Key, e.Value?.ToString())">
-                                        <option value="">@(field.Required ? "(select)" : "(optional)")</option>
-                                        @foreach (var option in options)
-                                        {
-                                            <option value="@option">@option</option>
-                                        }
-                                    </select>
-                                }
-                                else
-                                {
-                                    <input class="mt-1 w-full rounded border border-default bg-surface px-2 py-2 text-sm"
-                                           value="@GetStringValue(field.Key, field.DefaultValue)"
-                                           @onchange="e => SetStringValue(field.Key, e.Value?.ToString())" />
-                                }
-                            </div>
-                        }
-                    }
-                    else
-                    {
-                        <div>
-                            <label class="text-xs text-muted">Parameters (JSON object)</label>
-                            <textarea class="mt-1 w-full rounded border border-default bg-surface px-2 py-2 text-sm font-mono"
-                                      rows="8"
-                                      @bind="_jsonParameters"></textarea>
-                        </div>
-                    }
-
-                    <button class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface"
-                            disabled="@(_loading || !_descriptor.Launchable)"
-                            @onclick="LaunchAsync">
-                        Start
-                    </button>
-
-                    @if (!string.IsNullOrWhiteSpace(_resultMessage))
-                    {
-                        <div class="rounded border border-default bg-surface px-3 py-2 text-sm text-body">
-                            <div class="font-semibold">Result</div>
-                            <div class="text-muted">@_resultMessage</div>
-                            @if (!string.IsNullOrWhiteSpace(_runId))
-                            {
-                                <a class="underline font-mono text-xs" href="@($"/runs/{_runId}")">Open run: @_runId</a>
-                            }
-                        </div>
-                    }
                 </div>
-            }
-        </div>
-    </div>
+                <details class="mt-3">
+                    <summary class="cursor-pointer text-xs text-muted">Technical identifiers</summary>
+                    <div class="mt-2 space-y-1 text-xs font-mono text-muted">
+                        <div>Kind: @_descriptor.Kind</div>
+                        <div>Target: @_descriptor.TargetId</div>
+                        <div>Integration: @_descriptor.IntegrationId</div>
+                        <div>Renderer: @_descriptor.RendererKey</div>
+                    </div>
+                </details>
+            </ManagementAdvancedSection>
+        }
+    }
 </div>
 
 @code {
     [SupplyParameterFromQuery(Name = "kind")]
     public string? KindFromQuery { get; set; }
+
     [SupplyParameterFromQuery(Name = "integrationId")]
     public string? IntegrationIdFromQuery { get; set; }
+
+    [SupplyParameterFromQuery(Name = "procedureId")]
+    public string? ProcedureIdFromQuery { get; set; }
+
+    [SupplyParameterFromQuery(Name = "targetId")]
+    public string? TargetIdFromQuery { get; set; }
 
     private readonly List<IExecutionLaunchAdapter> _adapters =
     [
@@ -170,22 +272,70 @@
     private IReadOnlyList<OperationDefinitionDto> _operations = Array.Empty<OperationDefinitionDto>();
     private IReadOnlyList<WorkflowDto> _workflows = Array.Empty<WorkflowDto>();
     private IReadOnlyList<IntegrationProcedureItemDto> _procedures = Array.Empty<IntegrationProcedureItemDto>();
-    private List<(string Id, string Name)> _targetIds = [];
+    private List<(string Id, string Name, bool Blocked)> _targetIds = [];
+    private IntegrationOperatorDetailDto? _operatorDetail;
 
     private string? _selectedIntegrationId;
-    private string _selectedKind = ExecutionTargetKinds.Workflow;
+    private string _selectedKind = ExecutionTargetKinds.Procedure;
     private string? _selectedTargetId;
+    private string? _descriptorDescription;
 
     private ExecutionDescriptor? _descriptor;
     private readonly Dictionary<string, object?> _fieldValues = new(StringComparer.Ordinal);
     private readonly Dictionary<string, object?> _procedureValues = new(StringComparer.Ordinal);
+    private readonly List<string> _validationErrors = [];
     private string _jsonParameters = "{}";
     private string? _idempotencyKey;
     private string? _correlationId;
     private string? _error;
-    private string? _resultMessage;
+    private string? _successMessage;
     private string? _runId;
     private bool _loading;
+
+    private string PageTitle => _descriptor?.DisplayName ?? "Execute";
+
+    private string PageSubtitle
+    {
+        get
+        {
+            if (_descriptor is not null && SelectedIntegration is not null)
+                return ProcedureLaunchOperatorUiHelpers.BuildLaunchContextSubtitle(
+                    SelectedIntegration.DisplayName,
+                    _descriptor.DisplayName,
+                    _descriptor.ProcedureDetail?.LaunchKind ?? _descriptor.Kind);
+            if (SelectedIntegration is not null)
+                return $"Launch workflows, operations, or procedures for {SelectedIntegration.DisplayName}.";
+            return "Start a workflow, operation, or procedure for an integration.";
+        }
+    }
+
+    private IntegrationDto? SelectedIntegration =>
+        _integrations.FirstOrDefault(i => string.Equals(i.Id, _selectedIntegrationId, StringComparison.Ordinal));
+
+    private string TargetExecutableLabel =>
+        string.Equals(_selectedKind, ExecutionTargetKinds.Procedure, StringComparison.Ordinal) ? "Procedure"
+        : string.Equals(_selectedKind, ExecutionTargetKinds.Operation, StringComparison.Ordinal) ? "Operation"
+        : "Workflow";
+
+    private bool IntegrationReady => _operatorDetail?.Readiness.IsRunnable ?? _procedureIntegrationReady;
+
+    private bool _procedureIntegrationReady = true;
+
+    private bool CanLaunch =>
+        _descriptor is { Launchable: true }
+        && IntegrationReady
+        && !_loading
+        && _validationErrors.Count == 0;
+
+    private string? LaunchDisabledReason =>
+        _descriptor is null
+            ? "Select a target executable."
+            : ProcedureLaunchOperatorUiHelpers.BuildLaunchDisabledReason(
+                _loading,
+                _descriptor.Launchable,
+                IntegrationReady,
+                _descriptor.BlockedReasonCodes,
+                _validationErrors);
 
     protected override async Task OnInitializedAsync()
     {
@@ -193,6 +343,16 @@
         _selectedIntegrationId = string.IsNullOrWhiteSpace(IntegrationIdFromQuery) ? null : IntegrationIdFromQuery;
         await LoadBaseAsync();
         await ReloadTargetsAsync();
+
+        var preselect = !string.IsNullOrWhiteSpace(ProcedureIdFromQuery)
+            ? ProcedureIdFromQuery
+            : TargetIdFromQuery;
+        if (!string.IsNullOrWhiteSpace(preselect) && _targetIds.Any(t => string.Equals(t.Id, preselect, StringComparison.Ordinal)))
+        {
+            _selectedTargetId = preselect;
+            _descriptor = await BuildDescriptorAsync(_selectedKind, _selectedIntegrationId!, _selectedTargetId);
+            RefreshValidation();
+        }
     }
 
     private async Task LoadBaseAsync()
@@ -219,8 +379,9 @@
         _selectedIntegrationId = e.Value?.ToString();
         _selectedTargetId = null;
         _descriptor = null;
-        _resultMessage = null;
-        _runId = null;
+        _descriptorDescription = null;
+        _operatorDetail = null;
+        ClearLaunchFeedback();
         await ReloadTargetsAsync();
     }
 
@@ -229,8 +390,8 @@
         _selectedKind = NormalizeKind(e.Value?.ToString());
         _selectedTargetId = null;
         _descriptor = null;
-        _resultMessage = null;
-        _runId = null;
+        _descriptorDescription = null;
+        ClearLaunchFeedback();
         await ReloadTargetsAsync();
     }
 
@@ -239,30 +400,43 @@
         _targetIds.Clear();
         _workflows = Array.Empty<WorkflowDto>();
         _procedures = Array.Empty<IntegrationProcedureItemDto>();
+        _procedureIntegrationReady = true;
+        _operatorDetail = null;
+
         if (string.IsNullOrWhiteSpace(_selectedIntegrationId))
             return;
 
-        var integration = _integrations.FirstOrDefault(i => string.Equals(i.Id, _selectedIntegrationId, StringComparison.Ordinal));
+        try
+        {
+            _operatorDetail = await Client.GetIntegrationOperatorDetailAsync(_selectedIntegrationId);
+        }
+        catch
+        {
+            _operatorDetail = null;
+        }
+
+        var integration = SelectedIntegration;
         if (integration is null)
             return;
 
         if (string.Equals(_selectedKind, ExecutionTargetKinds.Workflow, StringComparison.Ordinal))
         {
             _workflows = await Client.GetWorkflowsAsync(integration.ModuleId);
-            _targetIds = _workflows.Select(w => (w.Id, w.Name)).ToList();
+            _targetIds = _workflows.Select(w => (w.Id, w.Name, Blocked: false)).ToList();
         }
         else if (string.Equals(_selectedKind, ExecutionTargetKinds.Operation, StringComparison.Ordinal))
         {
             _targetIds = _operations
                 .Where(o => string.Equals(o.ModuleId, integration.ModuleId, StringComparison.Ordinal))
-                .Select(o => (o.OperationDefinitionId, o.DisplayName))
+                .Select(o => (o.OperationDefinitionId, o.DisplayName, Blocked: !o.CanStart))
                 .ToList();
         }
         else
         {
             var procedureList = await Client.GetIntegrationProceduresAsync(_selectedIntegrationId);
+            _procedureIntegrationReady = procedureList?.IntegrationReady ?? false;
             _procedures = procedureList?.Procedures ?? Array.Empty<IntegrationProcedureItemDto>();
-            _targetIds = _procedures.Select(p => (p.Id, p.DisplayName)).ToList();
+            _targetIds = _procedures.Select(p => (p.Id, p.DisplayName, Blocked: !p.Launchable)).ToList();
         }
     }
 
@@ -270,14 +444,15 @@
     {
         _selectedTargetId = e.Value?.ToString();
         _descriptor = null;
+        _descriptorDescription = null;
         _fieldValues.Clear();
         _procedureValues.Clear();
-        _resultMessage = null;
-        _runId = null;
+        ClearLaunchFeedback();
         if (string.IsNullOrWhiteSpace(_selectedTargetId) || string.IsNullOrWhiteSpace(_selectedIntegrationId))
             return;
 
         _descriptor = await BuildDescriptorAsync(_selectedKind, _selectedIntegrationId, _selectedTargetId);
+        RefreshValidation();
     }
 
     private async Task<ExecutionDescriptor?> BuildDescriptorAsync(string kind, string integrationId, string targetId)
@@ -285,17 +460,21 @@
         if (string.Equals(kind, ExecutionTargetKinds.Workflow, StringComparison.Ordinal))
         {
             var workflow = _workflows.FirstOrDefault(w => string.Equals(w.Id, targetId, StringComparison.Ordinal));
-            return workflow is null
-                ? null
-                : new ExecutionDescriptor(
-                    kind,
-                    integrationId,
-                    workflow.Id,
-                    workflow.Name,
-                    true,
-                    Array.Empty<string>(),
-                    ExecutionRendererKeys.RawJson,
-                    WizardDefinitionRef: null);
+            if (workflow is null)
+                return null;
+
+            var launchable = IntegrationReady;
+            var blockedReasons = launchable ? Array.Empty<string>() : new[] { "integration_not_ready" };
+            _descriptorDescription = null;
+            return new ExecutionDescriptor(
+                kind,
+                integrationId,
+                workflow.Id,
+                workflow.Name,
+                launchable,
+                blockedReasons,
+                ExecutionRendererKeys.RawJson,
+                WizardDefinitionRef: null);
         }
 
         if (string.Equals(kind, ExecutionTargetKinds.Operation, StringComparison.Ordinal))
@@ -320,13 +499,20 @@
                     _fieldValues[field.Key] = field.DefaultValue;
             }
 
+            var blockedReasons = new List<string>();
+            if (!IntegrationReady)
+                blockedReasons.Add("integration_not_ready");
+            if (!operation.CanStart)
+                blockedReasons.Add("target_not_executable");
+
+            _descriptorDescription = null;
             return new ExecutionDescriptor(
                 kind,
                 integrationId,
                 operation.OperationDefinitionId,
                 operation.DisplayName,
-                operation.CanStart,
-                Array.Empty<string>(),
+                IntegrationReady && operation.CanStart,
+                blockedReasons,
                 fields is { Length: > 0 } ? ExecutionRendererKeys.MetadataForm : ExecutionRendererKeys.RawJson,
                 WizardDefinitionRef: null,
                 Fields: fields);
@@ -337,31 +523,69 @@
             return null;
 
         ProcedureParameterForm.SeedValues(detail.ParameterFields, _procedureValues);
+        _descriptorDescription = detail.Description;
+        var procedureBlockedReasons = detail.BlockedReasonCodes.ToList();
+        if (!IntegrationReady && !procedureBlockedReasons.Contains("integration_not_ready", StringComparer.Ordinal))
+            procedureBlockedReasons.Insert(0, "integration_not_ready");
+
         return new ExecutionDescriptor(
             kind,
             integrationId,
             detail.Id,
             detail.DisplayName,
-            detail.Launchable,
-            detail.BlockedReasonCodes,
+            detail.Launchable && IntegrationReady,
+            procedureBlockedReasons,
             ExecutionRendererKeys.MetadataForm,
             WizardDefinitionRef: null,
             ProcedureDetail: detail);
     }
 
+    private void RefreshValidation()
+    {
+        _validationErrors.Clear();
+        if (_descriptor?.ProcedureDetail is { } procedure)
+        {
+            _validationErrors.AddRange(
+                ProcedureLaunchOperatorUiHelpers.ValidateProcedureParameters(procedure.ParameterFields, _procedureValues));
+        }
+        else if (_descriptor?.Fields is { Count: > 0 } fields)
+        {
+            _validationErrors.AddRange(
+                ProcedureLaunchOperatorUiHelpers.ValidateOperationFields(
+                    fields.Select(f => new ExecutionInputFieldLike(f.Key, f.Label, f.Required)).ToList(),
+                    _fieldValues));
+        }
+    }
+
     private string? GetStringValue(string key, string? fallback = null) =>
         _fieldValues.TryGetValue(key, out var value) ? value?.ToString() ?? fallback : fallback;
 
-    private void SetStringValue(string key, string? value) => _fieldValues[key] = value;
+    private void SetStringValue(string key, string? value)
+    {
+        _fieldValues[key] = value;
+        RefreshValidation();
+    }
+
+    private void ClearLaunchFeedback()
+    {
+        _error = null;
+        _successMessage = null;
+        _runId = null;
+        _validationErrors.Clear();
+    }
 
     private async Task LaunchAsync()
     {
         if (_descriptor is null)
             return;
 
+        RefreshValidation();
+        if (_validationErrors.Count > 0)
+            return;
+
         _loading = true;
         _error = null;
-        _resultMessage = null;
+        _successMessage = null;
         _runId = null;
         try
         {
@@ -376,14 +600,12 @@
 
             if (!outcome.Succeeded)
             {
-                _error = string.IsNullOrWhiteSpace(outcome.ErrorCode)
-                    ? (outcome.ErrorMessage ?? "Launch failed.")
-                    : $"{outcome.ErrorCode}: {outcome.ErrorMessage}";
+                _error = ProcedureLaunchOperatorUiHelpers.FormatLaunchError(outcome.ErrorCode, outcome.ErrorMessage);
                 return;
             }
 
             _runId = outcome.RunId;
-            _resultMessage = $"Accepted. Run {_runId} is {outcome.Status}.";
+            _successMessage = ProcedureLaunchOperatorUiHelpers.FormatLaunchSuccessMessage(_runId!, outcome.Status);
         }
         catch (JsonException ex)
         {
@@ -463,6 +685,6 @@
 
     private static string NormalizeKind(string? kind) =>
         string.Equals(kind, ExecutionTargetKinds.Operation, StringComparison.OrdinalIgnoreCase) ? ExecutionTargetKinds.Operation :
-        string.Equals(kind, ExecutionTargetKinds.Procedure, StringComparison.OrdinalIgnoreCase) ? ExecutionTargetKinds.Procedure :
-        ExecutionTargetKinds.Workflow;
+        string.Equals(kind, ExecutionTargetKinds.Workflow, StringComparison.OrdinalIgnoreCase) ? ExecutionTargetKinds.Workflow :
+        ExecutionTargetKinds.Procedure;
 }
