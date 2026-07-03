@@ -170,7 +170,7 @@
         builder.AddAttribute(1, "class", "min-w-full text-left text-xs");
         builder.OpenElement(2, "thead");
         builder.OpenElement(3, "tr");
-        foreach (var h in new[] { "Recipient", "Kind", "Status", "Attempts", "Error", "Instance" })
+        foreach (var h in new[] { "Recipient", "Kind", "Status", "Attempts", "Error", "Guidance", "Instance" })
         {
             builder.OpenElement(4, "th");
             builder.AddAttribute(5, "class", "p-1");
@@ -204,6 +204,10 @@
             builder.OpenElement(seq++, "td");
             builder.AddAttribute(seq++, "class", "p-1 break-all");
             builder.AddContent(seq++, r.LastError ?? "—");
+            builder.CloseElement();
+            builder.OpenElement(seq++, "td");
+            builder.AddAttribute(seq++, "class", "p-1 text-muted");
+            builder.AddContent(seq++, NotificationDeliveryErrorGuidance.Summarize(r.LastError, r.Status) ?? "—");
             builder.CloseElement();
             builder.OpenElement(seq++, "td");
             builder.AddAttribute(seq++, "class", "p-1");

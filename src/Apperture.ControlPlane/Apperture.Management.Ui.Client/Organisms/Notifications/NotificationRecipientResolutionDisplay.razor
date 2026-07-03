@@ -39,10 +39,21 @@
             }
             else
             {
-                <ul class="mt-1 space-y-1 max-h-40 overflow-y-auto">
+                <ul class="mt-1 space-y-2 max-h-48 overflow-y-auto">
                     @foreach (var r in Resolution.Skipped)
                     {
-                        <li>@(r.Email ?? r.UserId ?? r.ManagedContactId ?? "—") <span class="text-muted">@r.Reason</span></li>
+                        <li>
+                            <div>@(r.Email ?? r.UserId ?? r.ManagedContactId ?? "—")</div>
+                            <div class="text-muted">@NotificationRecipientSkipReasonLabels.Label(r.Reason)</div>
+                            @if (NotificationRecipientSkipReasonLabels.HelpText(r.Reason) is { } help)
+                            {
+                                <div class="text-muted">@help</div>
+                            }
+                            @if (NotificationRecipientSkipReasonLabels.ActionGuidance(r.Reason) is { } action)
+                            {
+                                <div class="text-muted italic">@action</div>
+                            }
+                        </li>
                     }
                 </ul>
             }

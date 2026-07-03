@@ -6,6 +6,15 @@
 }
 else
 {
+  var considered = _snapshot.Deliverable.Count + _snapshot.Skipped.Count;
+  var sentCount = DeliveredEmailCount ?? 0;
+    <p class="text-xs text-muted mb-2">
+        @considered recipient(s) considered · @_snapshot.Deliverable.Count deliverable · @_snapshot.Skipped.Count skipped
+        @if (DeliveredEmailCount is not null)
+        {
+            <span> · @sentCount email delivery row(s)</span>
+        }
+    </p>
     <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
         <div>
             <div class="font-semibold text-heading">Deliverable (@_snapshot.Deliverable.Count)</div>
@@ -42,10 +51,21 @@ else
             }
             else
             {
-                <ul class="mt-1 space-y-1 max-h-40 overflow-y-auto">
+                <ul class="mt-1 space-y-2 max-h-48 overflow-y-auto">
                     @foreach (var r in _snapshot.Skipped)
                     {
-                        <li>@FormatEntry(r) <span class="text-muted">@(r.Reason ?? "—")</span></li>
+                        <li>
+                            <div>@FormatEntry(r)</div>
+                            <div class="text-muted">@NotificationRecipientSkipReasonLabels.Label(r.Reason)</div>
+                            @if (NotificationRecipientSkipReasonLabels.HelpText(r.Reason) is { } help)
+                            {
+                                <div class="text-muted">@help</div>
+                            }
+                            @if (NotificationRecipientSkipReasonLabels.ActionGuidance(r.Reason) is { } action)
+                            {
+                                <div class="text-muted italic">@action</div>
+                            }
+                        </li>
                     }
                 </ul>
             }
@@ -55,6 +75,7 @@ else
 
 @code {
     [Parameter] public string? RecipientSnapshotJson { get; set; }
+    [Parameter] public int? DeliveredEmailCount { get; set; }
 
     private NotificationRecipientSnapshotModel? _snapshot;
 
