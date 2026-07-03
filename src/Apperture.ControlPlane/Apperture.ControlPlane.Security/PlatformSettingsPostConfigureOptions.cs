@@ -1,4 +1,5 @@
 using Apperture.Core.Application.Notifications;
+using Apperture.Core.Application.Notifications.Delivery;
 using Apperture.Core.Application.Notifications.Instances;
 using Apperture.Core.Application.PlatformEvents;
 using Apperture.Core.Application.PlatformSettings;
@@ -7,6 +8,38 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace Apperture.ControlPlane.Security;
+
+public sealed class EmailNotificationOptionsPlatformSettingsPostConfigure : IPostConfigureOptions<EmailNotificationOptions>
+{
+    private readonly IServiceScopeFactory _scopeFactory;
+    private readonly ILogger<EmailNotificationOptionsPlatformSettingsPostConfigure> _logger;
+
+    public EmailNotificationOptionsPlatformSettingsPostConfigure(
+        IServiceScopeFactory scopeFactory,
+        ILogger<EmailNotificationOptionsPlatformSettingsPostConfigure> logger)
+    {
+        _scopeFactory = scopeFactory;
+        _logger = logger;
+    }
+
+    public void PostConfigure(string? name, EmailNotificationOptions options)
+    {
+        PlatformSettingsOptionsOverlay.ApplyString(
+            _scopeFactory, _logger, PlatformSettingKeys.NotificationsEmailSmtpHost, value => options.SmtpHost = value);
+        PlatformSettingsOptionsOverlay.ApplyInt(
+            _scopeFactory, _logger, PlatformSettingKeys.NotificationsEmailSmtpPort, value => options.SmtpPort = value);
+        PlatformSettingsOptionsOverlay.ApplyBool(
+            _scopeFactory, _logger, PlatformSettingKeys.NotificationsEmailSmtpUseSsl, value => options.SmtpUseSsl = value);
+        PlatformSettingsOptionsOverlay.ApplyString(
+            _scopeFactory, _logger, PlatformSettingKeys.NotificationsEmailSmtpUser, value => options.SmtpUser = value);
+        PlatformSettingsOptionsOverlay.ApplyString(
+            _scopeFactory, _logger, PlatformSettingKeys.NotificationsEmailFromAddress, value => options.FromAddress = value);
+        PlatformSettingsOptionsOverlay.ApplyString(
+            _scopeFactory, _logger, PlatformSettingKeys.NotificationsEmailFromDisplayName, value => options.FromDisplayName = value);
+        PlatformSettingsOptionsOverlay.ApplyString(
+            _scopeFactory, _logger, PlatformSettingKeys.NotificationsEmailSmtpPasswordRef, value => options.SmtpPasswordRef = value);
+    }
+}
 
 public sealed class NotificationEvaluationOptionsPlatformSettingsPostConfigure : IPostConfigureOptions<NotificationEvaluationOptions>
 {

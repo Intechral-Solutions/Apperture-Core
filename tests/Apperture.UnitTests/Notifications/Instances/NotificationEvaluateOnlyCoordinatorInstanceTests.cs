@@ -45,6 +45,7 @@ public sealed class NotificationEvaluateOnlyCoordinatorInstanceTests
         var instanceCoordinator = new NotificationInstanceCoordinator(
             new SqlNotificationDefinitionStore(db),
             new NotificationRenderContextBuilder(),
+            new NotificationInstanceCoordinatorTests.StubLiveRenderContextResolver(),
             new NotificationTemplateRenderer(),
             new SqlNotificationRecipientResolver(
                 db,

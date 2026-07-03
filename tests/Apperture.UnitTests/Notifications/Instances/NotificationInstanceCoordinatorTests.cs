@@ -55,7 +55,8 @@ public sealed class NotificationInstanceCoordinatorTests
     private static NotificationInstanceCoordinator CreateCoordinator(
         AppertureDbContext db,
         IAttentionRecipientResolver? attentionResolver = null,
-        IAttentionIncidentTracker? incidentTracker = null)
+        IAttentionIncidentTracker? incidentTracker = null,
+        NotificationLiveRenderHints? liveRenderHints = null)
     {
         var instanceStore = new SqlNotificationInstanceStore(db);
         var deliveryOutbox = new SqlNotificationDeliveryOutboxStore(db);
@@ -71,6 +72,7 @@ public sealed class NotificationInstanceCoordinatorTests
         return new NotificationInstanceCoordinator(
             definitionStore,
             new NotificationRenderContextBuilder(),
+            new StubLiveRenderContextResolver(liveRenderHints),
             new NotificationTemplateRenderer(),
             recipientResolver,
             instanceStore,
@@ -81,6 +83,17 @@ public sealed class NotificationInstanceCoordinatorTests
             new NoOpUserInboxService(),
             Options.Create(new NotificationInstanceOptions { Enabled = true }),
             NullLogger<NotificationInstanceCoordinator>.Instance);
+    }
+
+    internal sealed class StubLiveRenderContextResolver : INotificationLiveRenderContextResolver
+    {
+        private readonly NotificationLiveRenderHints _hints;
+
+        public StubLiveRenderContextResolver(NotificationLiveRenderHints? hints = null) =>
+            _hints = hints ?? new NotificationLiveRenderHints(null, "");
+
+        public ValueTask<NotificationLiveRenderHints> ResolveAsync(string? integrationId, CancellationToken cancellationToken = default) =>
+            new(_hints);
     }
 
     internal sealed class NoOpUserInboxService : INotificationUserInboxService
@@ -118,6 +131,31 @@ public sealed class NotificationInstanceCoordinatorTests
 
         db.NotificationInstances.Count().Should().Be(1);
         db.NotificationDeliveryOutbox.Count().Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Activation_renders_schedule_diagnostics_action_url_and_live_render_context()
+    {
+        await using var db = CreateDb();
+        await SeedBuiltInDefinitionAsync(db);
+        var hints = new NotificationLiveRenderHints("Campus Nexus Prod", "https://mgmt.example.com");
+        var sut = CreateCoordinator(db, liveRenderHints: hints);
+        var defId = NotificationDefinitionIds.PlatformScheduleExpectedRunMissing;
+        var envelope = NotificationEvaluationTestHelpers.SampleMissingEvent("int-1", "inc-1");
+        var context = new NotificationRuleEvaluationContext(
+            NotificationEvaluationSourceKind.PlatformEvent,
+            envelope,
+            null,
+            envelope.RecordedAtUtc);
+
+        await sut.TryCreateFromMatchAsync(Matched(defId, NotificationKinds.Activation), context);
+
+        var instance = db.NotificationInstances.Single();
+        instance.RenderedActionUrl.Should().Be("/integrations/int-1/schedule-diagnostics");
+        instance.RenderedActionText.Should().Be("Review schedule diagnostics");
+        instance.RenderedSummary.Should().Contain("Campus Nexus Prod");
+        instance.RenderContextJson.Should().Contain("https://mgmt.example.com");
+        instance.RenderContextJson.Should().Contain("Campus Nexus Prod");
     }
 
     [Fact]

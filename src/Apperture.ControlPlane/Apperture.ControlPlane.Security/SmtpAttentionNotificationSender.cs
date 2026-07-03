@@ -7,14 +7,17 @@ namespace Apperture.ControlPlane.Security;
 
 public sealed class SmtpAttentionNotificationSender : IAttentionNotificationSender
 {
-    private readonly IOptions<AttentionNotificationOptions> _options;
+    private readonly IOptions<EmailNotificationOptions> _emailOptions;
+    private readonly IEmailSmtpCredentialResolver _credentials;
     private readonly ILogger<SmtpAttentionNotificationSender> _logger;
 
     public SmtpAttentionNotificationSender(
-        IOptions<AttentionNotificationOptions> options,
+        IOptions<EmailNotificationOptions> emailOptions,
+        IEmailSmtpCredentialResolver credentials,
         ILogger<SmtpAttentionNotificationSender> logger)
     {
-        _options = options;
+        _emailOptions = emailOptions;
+        _credentials = credentials;
         _logger = logger;
     }
 
@@ -22,9 +25,11 @@ public sealed class SmtpAttentionNotificationSender : IAttentionNotificationSend
         AttentionNotificationSendRequest request,
         CancellationToken cancellationToken = default)
     {
+        var password = await _credentials.ResolvePasswordAsync(_emailOptions.Value, cancellationToken).ConfigureAwait(false);
         var result = await SmtpEmailTransport
             .SendAsync(
-                _options,
+                _emailOptions.Value,
+                password,
                 new EmailNotificationSendRequest(request.Recipient, request.Subject, request.PlainTextBody),
                 _logger,
                 cancellationToken)

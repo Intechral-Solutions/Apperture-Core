@@ -201,8 +201,9 @@
     private async Task OpenItemAsync(PersonalNotificationInboxItemDto item)
     {
         await MarkReadAsync(item);
-        if (item.CanOpenAdminInstanceDetail && _canOpenAdmin)
-            Nav.NavigateTo(PersonalNotificationUiRoutes.AdminInstanceDetail(item.NotificationInstanceId));
+        var target = PersonalNotificationUiRoutes.ResolveOpenTarget(item, _canOpenAdmin);
+        if (!string.IsNullOrWhiteSpace(target))
+            Nav.NavigateTo(target);
     }
 
     private async Task MarkReadAsync(PersonalNotificationInboxItemDto item)

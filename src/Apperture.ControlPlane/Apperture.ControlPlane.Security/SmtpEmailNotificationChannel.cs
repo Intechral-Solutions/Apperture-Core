@@ -7,19 +7,26 @@ namespace Apperture.ControlPlane.Security;
 
 public sealed class SmtpEmailNotificationChannel : IEmailNotificationChannel
 {
-    private readonly IOptions<AttentionNotificationOptions> _options;
+    private readonly IOptions<EmailNotificationOptions> _options;
+    private readonly IEmailSmtpCredentialResolver _credentials;
     private readonly ILogger<SmtpEmailNotificationChannel> _logger;
 
     public SmtpEmailNotificationChannel(
-        IOptions<AttentionNotificationOptions> options,
+        IOptions<EmailNotificationOptions> options,
+        IEmailSmtpCredentialResolver credentials,
         ILogger<SmtpEmailNotificationChannel> logger)
     {
         _options = options;
+        _credentials = credentials;
         _logger = logger;
     }
 
-    public ValueTask<EmailNotificationSendResult> SendAsync(
+    public async ValueTask<EmailNotificationSendResult> SendAsync(
         EmailNotificationSendRequest request,
-        CancellationToken cancellationToken = default) =>
-        SmtpEmailTransport.SendAsync(_options, request, _logger, cancellationToken);
+        CancellationToken cancellationToken = default)
+    {
+        var password = await _credentials.ResolvePasswordAsync(_options.Value, cancellationToken).ConfigureAwait(false);
+        return await SmtpEmailTransport.SendAsync(_options.Value, password, request, _logger, cancellationToken)
+            .ConfigureAwait(false);
+    }
 }

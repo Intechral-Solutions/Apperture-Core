@@ -43,7 +43,18 @@
       "InitialBackoffSeconds": 60,
       "MaxBackoffSeconds": 3600
     },
-    "UsePlatformPipeline": { "Enabled": false }
+    "UsePlatformPipeline": { "Enabled": false },
+    "Email": {
+      "_Comment": "Primary SMTP config (S8B). Legacy AttentionNotifications:ExpectedRunMissing SMTP fields merge when SmtpHost is empty.",
+      "SmtpHost": "",
+      "SmtpPort": 587,
+      "SmtpUseSsl": true,
+      "SmtpUser": "",
+      "SmtpPassword": "",
+      "SmtpPasswordRef": "",
+      "FromAddress": "",
+      "FromDisplayName": "Apperture"
+    }
   },
   "AttentionIncidents": {
     "Observation": {

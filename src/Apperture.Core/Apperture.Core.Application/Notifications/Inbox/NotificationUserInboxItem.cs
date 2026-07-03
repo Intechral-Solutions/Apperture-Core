@@ -17,7 +17,9 @@ public sealed record NotificationUserInboxItem(
     string NotificationKind,
     string InstanceStatus,
     string? IntegrationId,
-    DateTimeOffset InstanceCreatedAtUtc);
+    DateTimeOffset InstanceCreatedAtUtc,
+    string? RenderedActionUrl = null,
+    string? RenderedActionText = null);
 
 public enum PersonalNotificationReadFilter
 {

@@ -22,4 +22,13 @@ public sealed class ExpectedRunMissingSeedTests
         rule.IsValid.Should().BeTrue(rule.Issues.FirstOrDefault()?.Message);
         template.IsValid.Should().BeTrue(template.Issues.FirstOrDefault()?.Message);
     }
+
+    [Fact]
+    public void Built_in_template_includes_schedule_diagnostics_action_url()
+    {
+        ExpectedRunMissingNotificationDefinitionSeed.TemplateJson
+            .Should().Contain("/integrations/{{integration.id}}/schedule-diagnostics");
+        ExpectedRunMissingNotificationDefinitionSeed.TemplateJson
+            .Should().Contain("actionUrl");
+    }
 }

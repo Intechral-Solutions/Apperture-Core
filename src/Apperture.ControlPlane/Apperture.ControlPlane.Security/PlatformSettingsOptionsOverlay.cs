@@ -74,4 +74,27 @@ internal static class PlatformSettingsOptionsOverlay
             logger.LogWarning(ex, "Could not apply platform setting overlay for {Key}; using configuration default.", key);
         }
     }
+
+    public static void ApplyString(
+        IServiceScopeFactory scopeFactory,
+        ILogger logger,
+        string key,
+        Action<string> apply)
+    {
+        try
+        {
+            using var scope = scopeFactory.CreateScope();
+            var resolver = scope.ServiceProvider.GetService<IPlatformSettingsResolver>();
+            if (resolver is null)
+                return;
+
+            var value = resolver.ResolveRawValueAsync(key).GetAwaiter().GetResult();
+            if (value is string s && !string.IsNullOrWhiteSpace(s))
+                apply(s);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Could not apply platform setting overlay for {Key}; using configuration default.", key);
+        }
+    }
 }

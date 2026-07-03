@@ -20,6 +20,7 @@ public sealed class NotificationInstanceCoordinator : INotificationInstanceCoord
 
     private readonly INotificationDefinitionStore _definitions;
     private readonly INotificationRenderContextBuilder _renderContextBuilder;
+    private readonly INotificationLiveRenderContextResolver _liveRender;
     private readonly INotificationTemplateRenderer _renderer;
     private readonly INotificationRecipientResolver _recipientResolver;
     private readonly INotificationInstanceStore _instances;
@@ -34,6 +35,7 @@ public sealed class NotificationInstanceCoordinator : INotificationInstanceCoord
     public NotificationInstanceCoordinator(
         INotificationDefinitionStore definitions,
         INotificationRenderContextBuilder renderContextBuilder,
+        INotificationLiveRenderContextResolver liveRender,
         INotificationTemplateRenderer renderer,
         INotificationRecipientResolver recipientResolver,
         INotificationInstanceStore instances,
@@ -47,6 +49,7 @@ public sealed class NotificationInstanceCoordinator : INotificationInstanceCoord
     {
         _definitions = definitions;
         _renderContextBuilder = renderContextBuilder;
+        _liveRender = liveRender;
         _renderer = renderer;
         _recipientResolver = recipientResolver;
         _instances = instances;
@@ -173,11 +176,12 @@ public sealed class NotificationInstanceCoordinator : INotificationInstanceCoord
                 .ConfigureAwait(false);
         }
 
-        var renderContext = _renderContextBuilder.Build(
+        var renderContext = await BuildRenderContextAsync(
             envelope,
             kind,
-            templateVariantKey: kind,
-            incident: incidentProjection);
+            integrationId,
+            incidentProjection,
+            cancellationToken).ConfigureAwait(false);
 
         var rendered = _renderer.Render(template!, renderContext, kind);
         if (!_redaction.AllowHtmlBody(template!))
@@ -287,7 +291,8 @@ public sealed class NotificationInstanceCoordinator : INotificationInstanceCoord
         var bodyHtml = rendered?.BodyHtml;
         var templateHash = rendered?.TemplateVersionHash ?? "suppressed";
         var renderContextJson = rendered is not null
-            ? SerializeRenderContext(_renderContextBuilder.Build(envelope, match.NotificationKind!, match.NotificationKind!))
+            ? SerializeRenderContext(await BuildRenderContextAsync(
+                envelope, match.NotificationKind!, integrationId, incidentProjection: null, cancellationToken).ConfigureAwait(false))
             : "{}";
         var recipientSnapshotJson = recipientPreview is not null
             ? SerializeRecipientSnapshot(recipientPreview)
@@ -504,6 +509,23 @@ public sealed class NotificationInstanceCoordinator : INotificationInstanceCoord
             SubscriptionId = r.SubscriptionId,
             RecipientKind = r.RecipientKind,
         };
+
+    private async ValueTask<NotificationRenderContext> BuildRenderContextAsync(
+        PlatformEventEnvelope envelope,
+        string kind,
+        string? integrationId,
+        AttentionIncidentProjection? incidentProjection,
+        CancellationToken cancellationToken)
+    {
+        var hints = await _liveRender.ResolveAsync(integrationId, cancellationToken).ConfigureAwait(false);
+        return _renderContextBuilder.Build(
+            envelope,
+            kind,
+            templateVariantKey: kind,
+            incident: incidentProjection,
+            integrationDisplayName: hints.IntegrationDisplayName,
+            instanceBaseUrl: hints.InstanceBaseUrl);
+    }
 
     private static string SerializeRenderContext(NotificationRenderContext context)
     {

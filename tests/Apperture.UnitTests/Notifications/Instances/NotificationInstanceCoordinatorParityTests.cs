@@ -379,6 +379,7 @@ internal static class NotificationInstanceCoordinatorTestsHelper
         return new NotificationInstanceCoordinator(
             definitionStore,
             new NotificationRenderContextBuilder(),
+            new NotificationInstanceCoordinatorTests.StubLiveRenderContextResolver(),
             new NotificationTemplateRenderer(),
             recipientResolver,
             instanceStore,

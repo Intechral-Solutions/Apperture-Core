@@ -147,10 +147,8 @@
             await Client.MarkMyNotificationReadAsync(item.Id).ConfigureAwait(false);
             _open = false;
             await RefreshCountAsync();
-            if (item.CanOpenAdminInstanceDetail)
-                Nav.NavigateTo(PersonalNotificationUiRoutes.AdminInstanceDetail(item.NotificationInstanceId));
-            else
-                Nav.NavigateTo(PersonalNotificationUiRoutes.Inbox());
+            var target = PersonalNotificationUiRoutes.ResolveOpenTarget(item, item.CanOpenAdminInstanceDetail);
+            Nav.NavigateTo(!string.IsNullOrWhiteSpace(target) ? target : PersonalNotificationUiRoutes.Inbox());
         }
         catch
         {

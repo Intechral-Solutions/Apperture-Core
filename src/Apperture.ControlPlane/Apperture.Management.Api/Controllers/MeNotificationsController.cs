@@ -174,5 +174,7 @@ public sealed class MeNotificationsController : ControllerBase
             IntegrationId = item.IntegrationId,
             InstanceCreatedAtUtc = item.InstanceCreatedAtUtc,
             CanOpenAdminInstanceDetail = canOpenAdminInstanceDetail,
+            RenderedActionUrl = item.RenderedActionUrl,
+            RenderedActionText = item.RenderedActionText,
         };
 }

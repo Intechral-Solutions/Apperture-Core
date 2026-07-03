@@ -10,6 +10,13 @@ public sealed class PlatformSettingDefinitionRegistry : IPlatformSettingDefiniti
         Bool(PlatformSettingKeys.NotificationsUsePlatformPipelineEnabled, "Use platform pipeline", "When enabled, bypasses Epic 69 orchestrator for attention notifications.", PlatformSettingCategory.Notifications, "Notifications:UsePlatformPipeline:Enabled", false),
         Int(PlatformSettingKeys.NotificationsDeliveryPollIntervalSeconds, "Delivery poll interval (seconds)", "How often the delivery worker polls the outbox.", PlatformSettingCategory.Notifications, "Notifications:Delivery:PollIntervalSeconds", 30, min: 5),
         Int(PlatformSettingKeys.NotificationsDeliveryBatchSize, "Delivery batch size", "Maximum outbox rows claimed per poll.", PlatformSettingCategory.Notifications, "Notifications:Delivery:BatchSize", 20, min: 1),
+        String(PlatformSettingKeys.NotificationsEmailSmtpHost, "SMTP host", "SMTP server hostname for notification email delivery.", PlatformSettingCategory.Notifications, "Notifications:Email:SmtpHost", ""),
+        Int(PlatformSettingKeys.NotificationsEmailSmtpPort, "SMTP port", "SMTP server port (typically 587).", PlatformSettingCategory.Notifications, "Notifications:Email:SmtpPort", 587, min: 1, max: 65535),
+        Bool(PlatformSettingKeys.NotificationsEmailSmtpUseSsl, "SMTP use SSL/TLS", "Enable SSL/TLS for SMTP connections.", PlatformSettingCategory.Notifications, "Notifications:Email:SmtpUseSsl", true),
+        String(PlatformSettingKeys.NotificationsEmailSmtpUser, "SMTP username", "SMTP authentication username (optional).", PlatformSettingCategory.Notifications, "Notifications:Email:SmtpUser", ""),
+        String(PlatformSettingKeys.NotificationsEmailFromAddress, "From address", "Sender email address for notification messages.", PlatformSettingCategory.Notifications, "Notifications:Email:FromAddress", ""),
+        String(PlatformSettingKeys.NotificationsEmailFromDisplayName, "From display name", "Optional sender display name for notification email.", PlatformSettingCategory.Notifications, "Notifications:Email:FromDisplayName", ""),
+        String(PlatformSettingKeys.NotificationsEmailSmtpPasswordRef, "SMTP password secret ref", "GUID reference to a secret in the SQL secret store. Password is never stored as a platform setting value.", PlatformSettingCategory.Notifications, "Notifications:Email:SmtpPasswordRef", ""),
         Bool(PlatformSettingKeys.PlatformEventsEnabled, "Platform events", "Enables platform event emission and consumption.", PlatformSettingCategory.PlatformEvents, "PlatformEvents:Enabled", true),
         Bool(PlatformSettingKeys.AttentionIncidentsObservationEnabled, "Attention observation", "Runs periodic schedule-expectation observation cycles.", PlatformSettingCategory.AttentionIncidents, "AttentionIncidents:Observation:Enabled", true),
         Duration(PlatformSettingKeys.AttentionIncidentsObservationInterval, "Observation interval", "Delay between attention observation cycles (ISO 8601 duration).", PlatformSettingCategory.AttentionIncidents, "AttentionIncidents:Observation:Interval", TimeSpan.FromMinutes(5), min: TimeSpan.FromMinutes(1))
@@ -40,7 +47,7 @@ public sealed class PlatformSettingDefinitionRegistry : IPlatformSettingDefiniti
 
     private static PlatformSettingDefinition Int(
         string key, string displayName, string description, PlatformSettingCategory category,
-        string configurationPath, int defaultValue, int min) =>
+        string configurationPath, int defaultValue, int min, int? max = null) =>
         new()
         {
             Key = key,
@@ -51,7 +58,8 @@ public sealed class PlatformSettingDefinitionRegistry : IPlatformSettingDefiniti
             InputKind = PlatformSettingInputKind.Number,
             ConfigurationPath = configurationPath,
             DefaultValue = defaultValue,
-            MinInteger = min
+            MinInteger = min,
+            MaxInteger = max,
         };
 
     private static PlatformSettingDefinition Duration(
@@ -68,5 +76,21 @@ public sealed class PlatformSettingDefinitionRegistry : IPlatformSettingDefiniti
             ConfigurationPath = configurationPath,
             DefaultValue = defaultValue,
             MinDuration = min
+        };
+
+    private static PlatformSettingDefinition String(
+        string key, string displayName, string description, PlatformSettingCategory category,
+        string configurationPath, string defaultValue) =>
+        new()
+        {
+            Key = key,
+            DisplayName = displayName,
+            Description = description,
+            Category = category,
+            ValueType = PlatformSettingValueType.String,
+            InputKind = PlatformSettingInputKind.Text,
+            ConfigurationPath = configurationPath,
+            DefaultValue = defaultValue,
+            RequiresRestart = true
         };
 }

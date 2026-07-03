@@ -16,6 +16,8 @@ public sealed class PersonalNotificationInboxItemDto
     public string? IntegrationId { get; init; }
     public DateTimeOffset InstanceCreatedAtUtc { get; init; }
     public bool CanOpenAdminInstanceDetail { get; init; }
+    public string? RenderedActionUrl { get; init; }
+    public string? RenderedActionText { get; init; }
 }
 
 public sealed class PersonalNotificationUnreadCountDto

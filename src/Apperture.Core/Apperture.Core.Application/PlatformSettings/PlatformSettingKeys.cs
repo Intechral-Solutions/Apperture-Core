@@ -9,6 +9,13 @@ public static class PlatformSettingKeys
     public const string NotificationsUsePlatformPipelineEnabled = "Notifications.UsePlatformPipeline.Enabled";
     public const string NotificationsDeliveryPollIntervalSeconds = "Notifications.Delivery.PollIntervalSeconds";
     public const string NotificationsDeliveryBatchSize = "Notifications.Delivery.BatchSize";
+    public const string NotificationsEmailSmtpHost = "Notifications.Email.SmtpHost";
+    public const string NotificationsEmailSmtpPort = "Notifications.Email.SmtpPort";
+    public const string NotificationsEmailSmtpUseSsl = "Notifications.Email.SmtpUseSsl";
+    public const string NotificationsEmailSmtpUser = "Notifications.Email.SmtpUser";
+    public const string NotificationsEmailFromAddress = "Notifications.Email.FromAddress";
+    public const string NotificationsEmailFromDisplayName = "Notifications.Email.FromDisplayName";
+    public const string NotificationsEmailSmtpPasswordRef = "Notifications.Email.SmtpPasswordRef";
     public const string PlatformEventsEnabled = "PlatformEvents.Enabled";
     public const string AttentionIncidentsObservationEnabled = "AttentionIncidents.Observation.Enabled";
     public const string AttentionIncidentsObservationInterval = "AttentionIncidents.Observation.Interval";

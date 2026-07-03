@@ -43,15 +43,21 @@ public static class ExpectedRunMissingNotificationDefinitionSeed
           "schemaVersion": "apperture.notification.template/v1",
           "subject": "[Apperture] Attention: expected_run_missing ({{integration.id}})",
           "summary": "Expected run missing for {{integration.displayName}}",
-          "bodyText": "Integration: {{integration.id}}\nCondition: expected_run_missing\nEvaluation status: {{event.data.evaluationStatus}}\nMost recent expected fire (UTC): {{event.data.mostRecentExpectedFireUtc}}\nOperator summary: {{event.data.operatorSummaryLine}}\n",
+          "bodyText": "Integration: {{integration.displayName}} ({{integration.id}})\nCondition: expected_run_missing\nEvaluation status: {{event.data.evaluationStatus}}\nMost recent expected fire (UTC): {{event.data.mostRecentExpectedFireUtc}}\nOperator summary: {{event.data.operatorSummaryLine}}\n",
+          "actionText": "Review schedule diagnostics",
+          "actionUrl": "/integrations/{{integration.id}}/schedule-diagnostics",
           "variants": {
             "activation": {
               "subject": "[Apperture] Attention: expected_run_missing ({{integration.id}})",
-              "bodyText": "Integration: {{integration.id}}\nCondition: expected_run_missing\nEvaluation status: {{event.data.evaluationStatus}}\nMost recent expected fire (UTC): {{event.data.mostRecentExpectedFireUtc}}\nOperator summary: {{event.data.operatorSummaryLine}}\n"
+              "bodyText": "Integration: {{integration.displayName}} ({{integration.id}})\nCondition: expected_run_missing\nEvaluation status: {{event.data.evaluationStatus}}\nMost recent expected fire (UTC): {{event.data.mostRecentExpectedFireUtc}}\nOperator summary: {{event.data.operatorSummaryLine}}\n",
+              "actionText": "Review schedule diagnostics",
+              "actionUrl": "/integrations/{{integration.id}}/schedule-diagnostics"
             },
             "reminder": {
               "subject": "[Apperture] Reminder: expected_run_missing ({{integration.id}})",
-              "bodyText": "This incident is still active.\n\nIntegration: {{integration.id}}\nCondition: expected_run_missing\nEvaluation status: {{event.data.evaluationStatus}}\nMost recent expected fire (UTC): {{event.data.mostRecentExpectedFireUtc}}\nOperator summary: {{event.data.operatorSummaryLine}}\n"
+              "bodyText": "This incident is still active.\n\nIntegration: {{integration.displayName}} ({{integration.id}})\nCondition: expected_run_missing\nEvaluation status: {{event.data.evaluationStatus}}\nMost recent expected fire (UTC): {{event.data.mostRecentExpectedFireUtc}}\nOperator summary: {{event.data.operatorSummaryLine}}\n",
+              "actionText": "Review schedule diagnostics",
+              "actionUrl": "/integrations/{{integration.id}}/schedule-diagnostics"
             },
             "resolved": {
               "subject": "[Apperture] Resolved: expected_run_missing ({{integration.id}})",

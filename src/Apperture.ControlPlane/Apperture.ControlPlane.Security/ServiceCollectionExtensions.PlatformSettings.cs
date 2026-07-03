@@ -1,4 +1,5 @@
 using Apperture.Core.Application.Notifications;
+using Apperture.Core.Application.Notifications.Delivery;
 using Apperture.Core.Application.Notifications.Instances;
 using Apperture.Core.Application.PlatformEvents;
 using Apperture.Core.Application.PlatformSettings;
@@ -50,6 +51,8 @@ public static class PlatformSettingsServiceCollectionExtensions
         services.AddSingleton<IPostConfigureOptions<NotificationPipelineOptions>, NotificationPipelineOptionsPlatformSettingsPostConfigure>();
         services.AddSingleton<IPostConfigureOptions<PlatformEventsOptions>, PlatformEventsOptionsPlatformSettingsPostConfigure>();
         services.AddSingleton<IPostConfigureOptions<AttentionIncidentObservationOptions>, AttentionIncidentObservationOptionsPlatformSettingsPostConfigure>();
+        services.AddSingleton<IPostConfigureOptions<EmailNotificationOptions>, EmailNotificationOptionsLegacyMergePostConfigure>();
+        services.AddSingleton<IPostConfigureOptions<EmailNotificationOptions>, EmailNotificationOptionsPlatformSettingsPostConfigure>();
 
         _ = configuration;
         return services;

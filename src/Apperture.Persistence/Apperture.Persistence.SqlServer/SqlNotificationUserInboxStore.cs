@@ -216,5 +216,7 @@ public sealed class SqlNotificationUserInboxStore : INotificationUserInboxStore
             inst.NotificationKind,
             inst.Status,
             inst.IntegrationId,
-            inst.CreatedAtUtc);
+            inst.CreatedAtUtc,
+            inst.RenderedActionUrl,
+            inst.RenderedActionText);
 }

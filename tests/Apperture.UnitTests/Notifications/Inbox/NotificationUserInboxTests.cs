@@ -271,6 +271,50 @@ public sealed class NotificationUserInboxTests
         row.FirstViewedAtUtc.Should().Be(now);
     }
 
+    [Fact]
+    public async Task ListForUser_includes_rendered_action_url_from_instance()
+    {
+        await using var db = CreateDb();
+        var now = DateTimeOffset.Parse("2026-05-18T12:00:00Z");
+        db.NotificationInstances.Add(new NotificationInstanceEntity
+        {
+            Id = "ninst-action",
+            NotificationDefinitionId = "def-1",
+            NotificationKind = NotificationKinds.Activation,
+            Status = NotificationInstanceStatuses.Pending,
+            InstanceDedupeKey = "dedupe",
+            RenderedSubject = "Subject",
+            RenderedSummary = "Summary",
+            RenderedBodyText = "Body",
+            RenderedActionUrl = "/integrations/int-1/schedule-diagnostics",
+            RenderedActionText = "Review schedule diagnostics",
+            TemplateVersionHash = "h",
+            RenderContextJson = "{}",
+            CreatedAtUtc = now,
+            UpdatedAtUtc = now,
+        });
+        db.NotificationUserInboxItems.Add(new NotificationUserInboxItemEntity
+        {
+            Id = "inbox-action",
+            NotificationInstanceId = "ninst-action",
+            PrincipalUserId = "user-a",
+            SourceRecipientKind = NotificationRecipientKinds.Principal,
+            SourceRecipientRef = "user-a",
+            IsRead = false,
+            CreatedAtUtc = now,
+        });
+        await db.SaveChangesAsync();
+
+        var store = new SqlNotificationUserInboxStore(db);
+        var clock = new FixedUtcTimeProvider(now);
+        var sut = new NotificationUserInboxService(store, db, clock, NullLogger<NotificationUserInboxService>.Instance);
+
+        var items = await sut.ListForUserAsync("user-a", new PersonalNotificationListQuery(), CancellationToken.None);
+        items.Should().ContainSingle();
+        items[0].RenderedActionUrl.Should().Be("/integrations/int-1/schedule-diagnostics");
+        items[0].RenderedActionText.Should().Be("Review schedule diagnostics");
+    }
+
     private static void SeedInstance(AppertureDbContext db, string id, DateTimeOffset now)
     {
         db.NotificationInstances.Add(new NotificationInstanceEntity

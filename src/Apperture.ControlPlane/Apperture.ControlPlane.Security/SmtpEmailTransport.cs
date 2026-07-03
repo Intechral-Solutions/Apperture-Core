@@ -3,34 +3,45 @@ using System.Net.Mail;
 using Apperture.Core.Application.Integration;
 using Apperture.Core.Application.Notifications.Delivery;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 
 namespace Apperture.ControlPlane.Security;
 
 internal static class SmtpEmailTransport
 {
     public static async ValueTask<EmailNotificationSendResult> SendAsync(
-        IOptions<AttentionNotificationOptions> options,
+        EmailNotificationOptions options,
+        string? smtpPassword,
         EmailNotificationSendRequest request,
         ILogger logger,
         CancellationToken cancellationToken)
     {
-        var o = options.Value;
-        if (string.IsNullOrWhiteSpace(o.SmtpHost))
+        if (!options.Enabled)
             return new EmailNotificationSendResult(false, null, AttentionNotificationSuppressionReasons.SmtpNotConfigured);
 
-        if (string.IsNullOrWhiteSpace(o.FromAddress))
+        if (string.IsNullOrWhiteSpace(options.SmtpHost))
+            return new EmailNotificationSendResult(false, null, AttentionNotificationSuppressionReasons.SmtpNotConfigured);
+
+        if (string.IsNullOrWhiteSpace(options.FromAddress))
             return new EmailNotificationSendResult(false, null, AttentionNotificationSuppressionReasons.SmtpFromNotConfigured);
 
         try
         {
-            using var message = new MailMessage(o.FromAddress, request.Recipient, request.Subject, request.PlainTextBody);
-            using var client = new SmtpClient(o.SmtpHost, o.SmtpPort)
+            var from = string.IsNullOrWhiteSpace(options.FromDisplayName)
+                ? new MailAddress(options.FromAddress)
+                : new MailAddress(options.FromAddress, options.FromDisplayName);
+            using var message = new MailMessage
             {
-                EnableSsl = o.SmtpUseSsl,
-                Credentials = string.IsNullOrEmpty(o.SmtpUser)
+                From = from,
+                Subject = request.Subject,
+                Body = request.PlainTextBody,
+            };
+            message.To.Add(new MailAddress(request.Recipient));
+            using var client = new SmtpClient(options.SmtpHost, options.SmtpPort)
+            {
+                EnableSsl = options.SmtpUseSsl,
+                Credentials = string.IsNullOrEmpty(options.SmtpUser)
                     ? null
-                    : new NetworkCredential(o.SmtpUser, o.SmtpPassword),
+                    : new NetworkCredential(options.SmtpUser, smtpPassword ?? string.Empty),
             };
             await client.SendMailAsync(message, cancellationToken).ConfigureAwait(false);
             return new EmailNotificationSendResult(true, null, null);

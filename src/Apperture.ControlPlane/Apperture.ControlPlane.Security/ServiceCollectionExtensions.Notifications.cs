@@ -25,8 +25,11 @@ public static class NotificationsServiceCollectionExtensions
             services.Configure<NotificationInstanceOptions>(configuration.GetSection(NotificationInstanceOptions.SectionName));
             services.Configure<NotificationDeliveryOptions>(configuration.GetSection(NotificationDeliveryOptions.SectionName));
             services.Configure<NotificationPipelineOptions>(configuration.GetSection(NotificationPipelineOptions.SectionName));
+            services.Configure<EmailNotificationOptions>(configuration.GetSection(EmailNotificationOptions.SectionName));
         }
 
+        services.AddScoped<INotificationLiveRenderContextResolver, NotificationLiveRenderContextResolver>();
+        services.AddScoped<IEmailSmtpCredentialResolver, EmailSmtpCredentialResolver>();
         services.AddSingleton<INotificationTemplateVariableCatalog, NotificationTemplateVariableCatalog>();
         services.AddSingleton<IRedactionPolicy, NoOpRedactionPolicy>();
         services.AddSingleton<INotificationThrottleStore, InMemoryNotificationThrottleStore>();
