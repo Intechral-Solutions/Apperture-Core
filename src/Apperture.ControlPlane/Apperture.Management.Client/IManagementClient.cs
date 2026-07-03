@@ -643,6 +643,14 @@ public interface IManagementClient
     Task<NotificationPipelineCutoverStatusDto> GetNotificationPipelineCutoverStatusAsync(
         CancellationToken cancellationToken = default);
 
+    Task<NotificationSmtpTestResultDto> SendNotificationSmtpTestAsync(
+        NotificationSmtpTestRequestDto request,
+        CancellationToken cancellationToken = default);
+
+    Task<PlatformNotificationPipelineTestResultDto> RunPlatformNotificationPipelineTestAsync(
+        PlatformNotificationPipelineTestRequestDto request,
+        CancellationToken cancellationToken = default);
+
     Task<ExpectedRunMissingCutoverSignOffDto?> GetExpectedRunMissingCutoverSignOffAsync(
         string integrationId,
         CancellationToken cancellationToken = default);

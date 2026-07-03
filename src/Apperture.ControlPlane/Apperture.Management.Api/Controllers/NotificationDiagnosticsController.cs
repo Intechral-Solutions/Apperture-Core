@@ -13,9 +13,65 @@ namespace Apperture.Management.Api.Controllers;
 public sealed class NotificationDiagnosticsController : ControllerBase
 {
     private readonly INotificationDeliveryDiagnosticsService _diagnostics;
+    private readonly INotificationPipelineTestService _pipelineTests;
 
-    public NotificationDiagnosticsController(INotificationDeliveryDiagnosticsService diagnostics) =>
+    public NotificationDiagnosticsController(
+        INotificationDeliveryDiagnosticsService diagnostics,
+        INotificationPipelineTestService pipelineTests)
+    {
         _diagnostics = diagnostics;
+        _pipelineTests = pipelineTests;
+    }
+
+    [HttpPost("smtp-test")]
+    [ProducesResponseType(typeof(NotificationSmtpTestResultDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<NotificationSmtpTestResultDto>> PostSmtpTest(
+        [FromBody] NotificationSmtpTestRequestDto body,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var row = await _pipelineTests
+                .SendSmtpTestEmailAsync(new NotificationSmtpTestRequest(body.RecipientEmail), cancellationToken)
+                .ConfigureAwait(false);
+            return Ok(ToSmtpTestDto(row));
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return Forbid();
+        }
+    }
+
+    [HttpPost("platform-pipeline-test")]
+    [ProducesResponseType(typeof(PlatformNotificationPipelineTestResultDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<PlatformNotificationPipelineTestResultDto>> PostPlatformPipelineTest(
+        [FromBody] PlatformNotificationPipelineTestRequestDto body,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var row = await _pipelineTests
+                .RunPlatformPipelineTestAsync(
+                    new PlatformNotificationPipelineTestRequest(
+                        body.IntegrationId,
+                        body.DefinitionId,
+                        body.DryRun,
+                        body.DispatchImmediately),
+                    cancellationToken)
+                .ConfigureAwait(false);
+            return Ok(ToPipelineTestDto(row));
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return Forbid();
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(ex.Message);
+        }
+    }
 
     [HttpGet("configuration")]
     [ProducesResponseType(typeof(NotificationConfigurationDiagnosticsDto), StatusCodes.Status200OK)]
@@ -322,4 +378,37 @@ public sealed class NotificationDiagnosticsController : ControllerBase
             n.CreatedAtUtc,
             n.SentAtUtc,
             n.RecipientResolvedFrom);
+
+    private static NotificationSmtpTestResultDto ToSmtpTestDto(NotificationSmtpTestResult r) =>
+        new(
+            r.Succeeded,
+            r.FailureSummary,
+            r.EmailTransportEnabled,
+            r.SmtpHostConfigured,
+            r.FromAddressConfigured,
+            r.CredentialReferenceConfigured,
+            r.GeneratedAtUtc);
+
+    private static PlatformNotificationPipelineTestResultDto ToPipelineTestDto(PlatformNotificationPipelineTestResult r) =>
+        new(
+            r.DryRun,
+            r.IntegrationId,
+            r.DefinitionId,
+            r.TestIncidentId,
+            r.PlatformEventId,
+            r.NotificationInstanceId,
+            r.NotificationInstanceStatus,
+            r.SuppressionReason,
+            r.Stages.Select(s => new NotificationPipelineTestStageResultDto(s.Stage, s.Status, s.Detail)).ToList(),
+            r.DeliverableRecipients.Select(ToRecipientDto).ToList(),
+            r.SkippedRecipients.Select(ToRecipientDto).ToList(),
+            r.OutboxRowsCreated,
+            r.OutboxRowsSent,
+            r.OutboxRowsFailed,
+            r.OutboxRowsPending,
+            r.DispatchNote,
+            r.GeneratedAtUtc);
+
+    private static NotificationPipelineTestRecipientEntryDto ToRecipientDto(NotificationPipelineTestRecipientEntry r) =>
+        new(r.Email, r.DisplayName, r.Source, r.Reason);
 }

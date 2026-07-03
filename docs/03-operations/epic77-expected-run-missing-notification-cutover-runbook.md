@@ -95,6 +95,43 @@ Epic 69 ledger history is unchanged. Platform instances/outbox are audit-only af
 | `POST /api/integrations/{id}/expected-run-missing/cutover-sign-off/revoke` | Revoke the latest active sign-off. |
 | `GET /api/integrations/{id}/schedule-diagnostics` | Schedule view + Epic 69 ledger + platform instances/outbox. |
 | `GET /api/integrations/{id}/expected-run-missing/cutover-validation` | Read-only staging validation (modes, sign-off, parity, blockers). |
+| `POST /api/notification-diagnostics/smtp-test` | **S12:** Admin SMTP test (multipart HTML/plain). Body: `{ "recipientEmail": "you@example.com" }`. |
+| `POST /api/notification-diagnostics/platform-pipeline-test` | **S12:** Synthetic platform pipeline test. Body: `{ "integrationId": "...", "dryRun": true, "dispatchImmediately": false }`. |
+
+---
+
+## Deterministic verification (S12)
+
+Use **Config → Notifications → Diagnostics → Pipeline verification** (requires notification definition manage permission).
+
+### 1. SMTP test
+
+Verifies `Notifications:Email` only — no definition, incident, or subscription required.
+
+1. Enter recipient email → **Send SMTP test**.
+2. If failed, fix SMTP host/from/credentials before pipeline testing.
+3. Preflight card should show SMTP checks passing.
+
+### 2. Platform pipeline test (dry-run default)
+
+Exercises rule evaluation and recipient resolution **without** persisting events or sending mail.
+
+1. Enter an integration id with subscriptions or attention routing configured.
+2. Run with **Dry-run** checked.
+3. Confirm `rule_evaluation` passed and `recipient_resolution` shows deliverable recipients.
+4. If blocked: add subscription on `platform.schedule.expected_run_missing` or configure attention routing → operational team; check S9 email preferences on `/me/notifications`.
+
+### 3. Platform pipeline test (live)
+
+Uncheck dry-run; optionally enable **Dispatch immediately** (otherwise wait for dispatch poll, default 30s).
+
+1. Confirm `platform_event_emit`, `instance_creation`, `outbox_creation` stages.
+2. With `Notifications:Delivery:Enabled=true`, confirm `smtp_dispatch` passed or inspect outbox `LastError` in diagnostics.
+3. With delivery disabled, dispatch logs dry-run and rows stay pending.
+
+**Note:** Legacy `AttentionNotifications:ExpectedRunMissing:Recipients` does **not** feed the platform path when `UsePlatformPipeline=true`.
+
+See [S12 ADR](../02-decisions/S12-notification-pipeline-verification-legacy-removal-plan.md) for manual-test failure analysis and legacy removal plan.
 
 ---
 

@@ -2156,6 +2156,36 @@ public sealed class ManagementClient : IManagementClient
                 cancellationToken).ConfigureAwait(false))!;
     }
 
+    public async Task<NotificationSmtpTestResultDto> SendNotificationSmtpTestAsync(
+        NotificationSmtpTestRequestDto request,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.PostAsJsonAsync(
+            "notification-diagnostics/smtp-test",
+            request,
+            ApiJsonWriteOptions,
+            cancellationToken).ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+        return (await response.Content.ReadFromJsonAsync<NotificationSmtpTestResultDto>(
+                ApiJsonReadOptions,
+                cancellationToken).ConfigureAwait(false))!;
+    }
+
+    public async Task<PlatformNotificationPipelineTestResultDto> RunPlatformNotificationPipelineTestAsync(
+        PlatformNotificationPipelineTestRequestDto request,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.PostAsJsonAsync(
+            "notification-diagnostics/platform-pipeline-test",
+            request,
+            ApiJsonWriteOptions,
+            cancellationToken).ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+        return (await response.Content.ReadFromJsonAsync<PlatformNotificationPipelineTestResultDto>(
+                ApiJsonReadOptions,
+                cancellationToken).ConfigureAwait(false))!;
+    }
+
     public async Task<ExpectedRunMissingCutoverSignOffDto?> GetExpectedRunMissingCutoverSignOffAsync(
         string integrationId,
         CancellationToken cancellationToken = default)

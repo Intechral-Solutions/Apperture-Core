@@ -182,3 +182,50 @@ public sealed record NotificationPipelineCutoverStatusDto(
     IReadOnlyList<NotificationPipelineCutoverPreflightCheckDto> PreflightChecks,
     bool CriticalPreflightPassed,
     DateTimeOffset GeneratedAtUtc);
+
+public sealed record NotificationSmtpTestRequestDto(string RecipientEmail);
+
+public sealed record NotificationSmtpTestResultDto(
+    bool Succeeded,
+    string? FailureSummary,
+    bool EmailTransportEnabled,
+    bool SmtpHostConfigured,
+    bool FromAddressConfigured,
+    bool CredentialReferenceConfigured,
+    DateTimeOffset GeneratedAtUtc);
+
+public sealed record PlatformNotificationPipelineTestRequestDto(
+    string IntegrationId,
+    string? DefinitionId,
+    bool DryRun = true,
+    bool DispatchImmediately = false);
+
+public sealed record NotificationPipelineTestStageResultDto(
+    string Stage,
+    string Status,
+    string? Detail);
+
+public sealed record NotificationPipelineTestRecipientEntryDto(
+    string? Email,
+    string? DisplayName,
+    string? Source,
+    string? Reason);
+
+public sealed record PlatformNotificationPipelineTestResultDto(
+    bool DryRun,
+    string IntegrationId,
+    string DefinitionId,
+    string TestIncidentId,
+    string? PlatformEventId,
+    string? NotificationInstanceId,
+    string? NotificationInstanceStatus,
+    string? SuppressionReason,
+    IReadOnlyList<NotificationPipelineTestStageResultDto> Stages,
+    IReadOnlyList<NotificationPipelineTestRecipientEntryDto> DeliverableRecipients,
+    IReadOnlyList<NotificationPipelineTestRecipientEntryDto> SkippedRecipients,
+    int OutboxRowsCreated,
+    int OutboxRowsSent,
+    int OutboxRowsFailed,
+    int OutboxRowsPending,
+    string? DispatchNote,
+    DateTimeOffset GeneratedAtUtc);
