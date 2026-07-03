@@ -81,4 +81,30 @@ public sealed class SqlNotificationSubscriptionStoreTests
         var withIntegration = await sut.ListEnabledForResolutionAsync(defId, "int-a");
         withIntegration.Should().HaveCount(2);
     }
+
+    [Fact]
+    public async Task Find_user_self_subscription_and_global_opt_out()
+    {
+        await using var db = CreateDb();
+        var sut = new SqlNotificationSubscriptionStore(db);
+        const string defId = "def-1";
+
+        await sut.AddAsync(
+            new NotificationSubscriptionCreateCommand(
+                defId,
+                null,
+                NotificationRecipientKinds.Principal,
+                "user-1",
+                NotificationDeliveryModes.Immediate,
+                NotificationSubscriptionOrigins.UserSelfSubscribed,
+                true,
+                "user-1"));
+
+        (await sut.FindUserSelfSubscriptionAsync("user-1", defId)).Should().NotBeNull();
+        (await sut.HasGlobalUserOptOutAsync("user-1", defId)).Should().BeFalse();
+
+        await sut.SetUserOptOutAsync(
+            new NotificationSubscriptionUserOverrideCommand("user-1", defId, null, "user-1"));
+        (await sut.HasGlobalUserOptOutAsync("user-1", defId)).Should().BeTrue();
+    }
 }

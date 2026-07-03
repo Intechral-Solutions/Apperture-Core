@@ -71,4 +71,14 @@ public interface INotificationSubscriptionStore
         string notificationDefinitionId,
         string? integrationId,
         CancellationToken cancellationToken = default);
+
+    ValueTask<NotificationSubscription?> FindUserSelfSubscriptionAsync(
+        string userId,
+        string notificationDefinitionId,
+        CancellationToken cancellationToken = default);
+
+    ValueTask<bool> HasGlobalUserOptOutAsync(
+        string userId,
+        string notificationDefinitionId,
+        CancellationToken cancellationToken = default);
 }

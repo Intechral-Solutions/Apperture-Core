@@ -296,6 +296,49 @@ public sealed class NotificationInstanceCoordinatorTests
     }
 
     [Fact]
+    public async Task No_outbox_when_user_globally_opted_out()
+    {
+        await using var db = CreateDb();
+        await SeedBuiltInDefinitionAsync(db);
+        db.Users.Add(new UserEntity { Id = "user-1", DisplayName = "Owner", EmailAddress = "owner@test.com" });
+        await db.SaveChangesAsync();
+
+        var subStore = new SqlNotificationSubscriptionStore(db);
+        await subStore.AddAsync(
+            new NotificationSubscriptionCreateCommand(
+                NotificationDefinitionIds.PlatformScheduleExpectedRunMissing,
+                null,
+                NotificationRecipientKinds.Principal,
+                "user-1",
+                NotificationDeliveryModes.Immediate,
+                NotificationSubscriptionOrigins.UserSelfSubscribed,
+                true,
+                "user-1"));
+        await subStore.SetUserOptOutAsync(
+            new NotificationSubscriptionUserOverrideCommand(
+                "user-1",
+                NotificationDefinitionIds.PlatformScheduleExpectedRunMissing,
+                null,
+                "user-1"));
+
+        var sut = CreateCoordinator(db);
+        var envelope = NotificationEvaluationTestHelpers.SampleMissingEvent("int-1", "inc-1");
+        var context = new NotificationRuleEvaluationContext(
+            NotificationEvaluationSourceKind.PlatformEvent,
+            envelope,
+            null,
+            envelope.RecordedAtUtc);
+
+        await sut.TryCreateFromMatchAsync(
+            Matched(NotificationDefinitionIds.PlatformScheduleExpectedRunMissing, NotificationKinds.Activation),
+            context);
+
+        db.NotificationDeliveryOutbox.Should().BeEmpty();
+        var instance = await db.NotificationInstances.SingleAsync();
+        instance.RecipientSnapshotJson.Should().Contain(NotificationRecipientSkipReasons.UserOptOut);
+    }
+
+    [Fact]
     public async Task Implicit_routing_recipient_in_snapshot_when_no_team_subscription()
     {
         await using var db = CreateDb();

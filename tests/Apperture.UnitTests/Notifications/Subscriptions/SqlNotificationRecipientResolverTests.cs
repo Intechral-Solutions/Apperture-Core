@@ -78,6 +78,63 @@ public sealed class SqlNotificationRecipientResolverTests
     }
 
     [Fact]
+    public async Task User_self_subscribed_principal_resolves_deliverable_email()
+    {
+        await using var db = CreateDb();
+        await SeedBuiltInDefinitionAsync(db);
+        db.Users.Add(new UserEntity { Id = "user-1", DisplayName = "Owner", EmailAddress = "owner@test.com" });
+        await db.SaveChangesAsync();
+
+        var store = new SqlNotificationSubscriptionStore(db);
+        await store.AddAsync(
+            new NotificationSubscriptionCreateCommand(
+                NotificationDefinitionIds.PlatformScheduleExpectedRunMissing,
+                null,
+                NotificationRecipientKinds.Principal,
+                "user-1",
+                NotificationDeliveryModes.Immediate,
+                NotificationSubscriptionOrigins.UserSelfSubscribed,
+                true,
+                "user-1"));
+
+        var preview = await CreateSut(db).ResolvePreviewAsync(
+            NotificationDefinitionIds.PlatformScheduleExpectedRunMissing,
+            "int-1");
+
+        preview.Deliverable.Should().ContainSingle(r => r.Email == "owner@test.com");
+    }
+
+    [Fact]
+    public async Task Global_email_opt_out_skips_user_with_subscription()
+    {
+        await using var db = CreateDb();
+        await SeedBuiltInDefinitionAsync(db);
+        db.Users.Add(new UserEntity { Id = "user-1", DisplayName = "Owner", EmailAddress = "owner@test.com" });
+        await db.SaveChangesAsync();
+
+        var store = new SqlNotificationSubscriptionStore(db);
+        await store.AddAsync(
+            new NotificationSubscriptionCreateCommand(
+                NotificationDefinitionIds.PlatformScheduleExpectedRunMissing,
+                null,
+                NotificationRecipientKinds.Principal,
+                "user-1",
+                NotificationDeliveryModes.Immediate,
+                NotificationSubscriptionOrigins.UserSelfSubscribed,
+                true,
+                "user-1"));
+        await store.SetUserOptOutAsync(
+            new NotificationSubscriptionUserOverrideCommand("user-1", NotificationDefinitionIds.PlatformScheduleExpectedRunMissing, null, "user-1"));
+
+        var preview = await CreateSut(db).ResolvePreviewAsync(
+            NotificationDefinitionIds.PlatformScheduleExpectedRunMissing,
+            "int-1");
+
+        preview.Deliverable.Should().BeEmpty();
+        preview.Skipped.Should().Contain(s => s.Reason == NotificationRecipientSkipReasons.UserOptOut);
+    }
+
+    [Fact]
     public async Task Team_member_opt_out_is_skipped_direct_principal_survives()
     {
         await using var db = CreateDb();

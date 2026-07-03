@@ -1938,6 +1938,34 @@ public sealed class ManagementClient : IManagementClient
         return list ?? Array.Empty<PersonalNotificationInboxItemDto>();
     }
 
+    public async Task<IReadOnlyList<PersonalNotificationEmailPreferenceDto>> GetMyNotificationEmailPreferencesAsync(
+        CancellationToken cancellationToken = default)
+    {
+        var list = await _http
+            .GetFromJsonAsync<PersonalNotificationEmailPreferenceDto[]>(
+                "me/notification-subscriptions",
+                ApiJsonReadOptions,
+                cancellationToken)
+            .ConfigureAwait(false);
+        return list ?? Array.Empty<PersonalNotificationEmailPreferenceDto>();
+    }
+
+    public async Task<PersonalNotificationEmailPreferenceDto> SetMyNotificationEmailPreferenceAsync(
+        string definitionId,
+        bool emailEnabled,
+        CancellationToken cancellationToken = default)
+    {
+        var response = await _http.PutAsJsonAsync(
+                $"me/notification-subscriptions/{Uri.EscapeDataString(definitionId)}",
+                new SetPersonalNotificationEmailPreferenceRequest { EmailEnabled = emailEnabled },
+                ApiJsonWriteOptions,
+                cancellationToken)
+            .ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+        return (await response.Content.ReadFromJsonAsync<PersonalNotificationEmailPreferenceDto>(ApiJsonReadOptions, cancellationToken)
+            .ConfigureAwait(false))!;
+    }
+
     public async Task<PersonalNotificationUnreadCountDto> GetMyUnreadNotificationCountAsync(
         CancellationToken cancellationToken = default)
     {

@@ -49,6 +49,7 @@ public static class NotificationsServiceCollectionExtensions
         services.AddScoped<NotificationDefinitionAuthorization>();
         services.AddScoped<INotificationDefinitionService, NotificationDefinitionService>();
         services.AddScoped<INotificationSubscriptionService, NotificationSubscriptionService>();
+        services.AddScoped<IOperatorNotificationSubscriptionService, OperatorNotificationSubscriptionService>();
         services.AddScoped<INotificationInstanceStore, SqlNotificationInstanceStore>();
         services.AddScoped<INotificationDeliveryOutboxStore, SqlNotificationDeliveryOutboxStore>();
         services.AddScoped<INotificationInstanceCoordinator, NotificationInstanceCoordinator>();

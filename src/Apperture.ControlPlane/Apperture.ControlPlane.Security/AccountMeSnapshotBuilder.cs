@@ -52,8 +52,8 @@ public static class AccountMeSnapshotBuilder
         new(
             AvatarManagementDeferred: true,
             ProfileEditDeferred: true,
-            NotificationSubscriptionsDeferred: true,
-            Message: "Avatar, profile editing, and notification subscription preferences are not available in this release.");
+            NotificationSubscriptionsDeferred: false,
+            Message: "Avatar and profile editing are not available in this release. Manage email notification preferences from My notifications.");
 }
 
 public sealed record AccountDeferredFeaturesSnapshot(

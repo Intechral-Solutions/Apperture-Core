@@ -40,4 +40,6 @@ public static class NotificationRecipientSkipReasons
     public const string TeamDisabled = "teamDisabled";
     public const string TeamEmpty = "teamEmpty";
     public const string DuplicateEmail = "duplicateEmail";
+    public const string NoEmailSubscription = "noEmailSubscription";
+    public const string EmailOptedOut = "emailOptedOut";
 }

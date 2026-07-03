@@ -209,6 +209,37 @@ public sealed class SqlNotificationSubscriptionStore : INotificationSubscription
         return rows.Select(ToDomain).ToList();
     }
 
+    public async ValueTask<NotificationSubscription?> FindUserSelfSubscriptionAsync(
+        string userId,
+        string notificationDefinitionId,
+        CancellationToken cancellationToken = default)
+    {
+        var row = await _db.NotificationSubscriptions.AsNoTracking()
+            .FirstOrDefaultAsync(
+                x => x.NotificationDefinitionId == notificationDefinitionId
+                     && x.RecipientKind == NotificationRecipientKinds.Principal
+                     && x.RecipientRef == userId
+                     && x.Origin == NotificationSubscriptionOrigins.UserSelfSubscribed
+                     && x.IntegrationId == null,
+                cancellationToken)
+            .ConfigureAwait(false);
+        return row is null ? null : ToDomain(row);
+    }
+
+    public async ValueTask<bool> HasGlobalUserOptOutAsync(
+        string userId,
+        string notificationDefinitionId,
+        CancellationToken cancellationToken = default)
+    {
+        return await _db.NotificationSubscriptionUserOverrides.AsNoTracking()
+            .AnyAsync(
+                x => x.UserId == userId
+                     && x.NotificationDefinitionId == notificationDefinitionId
+                     && x.OperationalTeamId == null,
+                cancellationToken)
+            .ConfigureAwait(false);
+    }
+
     private static NotificationSubscription ToDomain(NotificationSubscriptionEntity e) =>
         new(
             NotificationSubscriptionId.From(e.Id),

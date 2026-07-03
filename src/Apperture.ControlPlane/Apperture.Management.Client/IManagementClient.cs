@@ -599,6 +599,14 @@ public interface IManagementClient
 
     Task RecordMyNotificationsPageViewedAsync(IReadOnlyList<string> inboxItemIds, CancellationToken cancellationToken = default);
 
+    Task<IReadOnlyList<PersonalNotificationEmailPreferenceDto>> GetMyNotificationEmailPreferencesAsync(
+        CancellationToken cancellationToken = default);
+
+    Task<PersonalNotificationEmailPreferenceDto> SetMyNotificationEmailPreferenceAsync(
+        string definitionId,
+        bool emailEnabled,
+        CancellationToken cancellationToken = default);
+
     Task<NotificationDeliveryHealthSummaryDto> GetNotificationDeliveryHealthAsync(
         string? definitionId = null,
         int take = 50,
