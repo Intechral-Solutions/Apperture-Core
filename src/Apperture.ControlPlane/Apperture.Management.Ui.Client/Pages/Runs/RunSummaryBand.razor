@@ -19,6 +19,29 @@
         }
     </div>
 
+    @{
+        var attentionReason = RunScheduleOperatorUiHelpers.BuildRunAttentionReason(Detail);
+    }
+    @if (!string.IsNullOrWhiteSpace(attentionReason))
+    {
+        <div class="mt-3 text-sm text-body">@attentionReason</div>
+    }
+
+    @if (!string.IsNullOrWhiteSpace(Detail.ProcedureId))
+    {
+        <div class="mt-2 text-sm text-body">
+            <span class="text-xs text-muted">Procedure</span>
+            <span class="ml-1 font-mono text-xs">@Detail.ProcedureId</span>
+        </div>
+    }
+    else if (!string.IsNullOrWhiteSpace(Detail.ExecutionDefinitionId))
+    {
+        <div class="mt-2 text-sm text-body">
+            <span class="text-xs text-muted">@RunScheduleOperatorUiHelpers.FormatExecutionKindLabel(Detail.ExecutionKind)</span>
+            <span class="ml-1 font-mono text-xs">@Detail.ExecutionDefinitionId</span>
+        </div>
+    }
+
     @if (Detail.ForensicContext is { } fx)
     {
         <div class="mt-3 text-sm text-body">
@@ -28,6 +51,13 @@
             {
                 <span class="text-xs text-muted"> — @fx.OriginDetail</span>
             }
+        </div>
+    }
+
+    @if (Detail.StartRequestedAt is not null)
+    {
+        <div class="mt-2 text-xs text-muted">
+            Requested @Detail.StartRequestedAt.Value.ToLocalTime().ToString("u")
         </div>
     }
 

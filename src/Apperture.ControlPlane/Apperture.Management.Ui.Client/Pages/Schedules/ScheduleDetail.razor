@@ -14,9 +14,6 @@
                 Eyebrow="Schedules"
                 Title="@ScheduleHeaderTitle"
                 Subtitle="@ScheduleHeaderSubtitle">
-        <ChildContent>
-            <div class="mt-1 font-mono text-xs text-muted break-all">@ScheduleId</div>
-        </ChildContent>
         <Toolbar>
             <a href="/schedules" class="ui-toolbar-btn">Back to list</a>
             @if (_capabilities?.CanManageSchedules == true && !_editing)
@@ -119,6 +116,29 @@
                 }
             </div>
 
+            @{
+                var healthSummary = RunScheduleOperatorUiHelpers.BuildScheduleHealthSummary(_detail);
+            }
+            @if (!string.IsNullOrWhiteSpace(healthSummary))
+            {
+                <div class="mt-3 text-sm text-body">@healthSummary</div>
+            }
+
+            @if (_detail.LastAttemptedUtc is not null || _detail.LastSuccessfulDispatchUtc is not null)
+            {
+                <div class="mt-3">
+                    <MetadataGrid ThreeColumn="true">
+                        <MetadataItem Label="Last attempted" Value="@Fmt(_detail.LastAttemptedUtc)" />
+                        <MetadataItem Label="Last outcome" Value="@(_detail.LastOutcome ?? "—")" />
+                        <MetadataItem Label="Last successful dispatch" Value="@Fmt(_detail.LastSuccessfulDispatchUtc)" />
+                    </MetadataGrid>
+                    @if (!string.IsNullOrWhiteSpace(_detail.LastOutcomeReason))
+                    {
+                        <div class="mt-2 text-xs text-muted">@_detail.LastOutcomeReason</div>
+                    }
+                </div>
+            }
+
             <div class="ui-summary-card-grid">
                 @if (!string.IsNullOrWhiteSpace(_detail.IntegrationId))
                 {
@@ -141,28 +161,12 @@
             </div>
         </ManagementSection>
 
-        <ManagementSection Title="Schedule configuration"
-                           Layer="ManagementSection.UiLayer.Detail"
-                           Help="@Epic33UiDisplayHelpers.ScheduleActionExplanatoryText">
-            <div class="text-xs text-muted mb-3">Target cannot be changed after creation.</div>
-
-            @if (!_editing)
-            {
-                <MetadataGrid>
-                    <MetadataItem Label="Name" Value="@_detail.Name" />
-                    <MetadataItem Label="Integration" Monospace="true" Value="@(_detail.IntegrationId ?? "-")" />
-                    <MetadataItem Label="Recurrence" Monospace="true" Value="@_detail.RecurrenceExpression" />
-                    <MetadataItem Label="Time zone" Value="@_detail.TimeZone" />
-                    <MetadataItem Label="Target type" Monospace="true" Value="@GetTargetKind(_detail.TargetJobType)" />
-                    <MetadataItem Label="Target configuration" Monospace="true" Value="@(_detail.TargetJobConfiguration ?? "-")" />
-                    <MetadataItem Label="Last attempted" Value="@Fmt(_detail.LastAttemptedUtc)" />
-                    <MetadataItem Label="Last outcome" Value="@(_detail.LastOutcome ?? "-")" />
-                    <MetadataItem Label="Last outcome reason" Value="@(_detail.LastOutcomeReason ?? "-")" />
-                    <MetadataItem Label="Last successful dispatch" Value="@Fmt(_detail.LastSuccessfulDispatchUtc)" />
-                </MetadataGrid>
-            }
-            else
-            {
+        @if (_editing)
+        {
+            <ManagementSection Title="Edit schedule"
+                               Layer="ManagementSection.UiLayer.Detail"
+                               Help="@Epic33UiDisplayHelpers.ScheduleActionExplanatoryText">
+                <div class="text-xs text-muted mb-3">Target cannot be changed after creation.</div>
                 <div class="grid grid-cols-1 gap-2 md:grid-cols-2">
                     <div>
                         <label class="block text-xs text-muted">Name</label>
@@ -211,17 +215,28 @@
                         </SectionActions>
                     </div>
                 </div>
-            }
-        </ManagementSection>
+            </ManagementSection>
+        }
 
-        <ManagementSection Title="Links"
-                           Layer="ManagementSection.UiLayer.Detail">
-            <div class="ui-action-row">
-                <DrillInLink Href="@Epic33UiDisplayHelpers.GetRunsListCorrelationFilterHref($"schedule:{ScheduleId}")">Runs for this schedule</DrillInLink>
-                <DrillInLink Href="@Epic33UiDisplayHelpers.GetAuditLinkForSchedule(ScheduleId)">View audit for this schedule</DrillInLink>
-                <DrillInLink Href="/control/blocked-work">Blocked work / recovery</DrillInLink>
-            </div>
-        </ManagementSection>
+        <ManagementAdvancedSection Title="Schedule configuration and recurrence"
+                                   Subtitle="Cron expression, target metadata, and persisted execution fields."
+                                   InitiallyOpen="false">
+            @if (!_editing)
+            {
+                <MetadataGrid>
+                    <MetadataItem Label="Name" Value="@_detail.Name" />
+                    <MetadataItem Label="Integration" Monospace="true" Value="@(_detail.IntegrationId ?? "-")" />
+                    <MetadataItem Label="Recurrence" Monospace="true" Value="@_detail.RecurrenceExpression" />
+                    <MetadataItem Label="Time zone" Value="@_detail.TimeZone" />
+                    <MetadataItem Label="Target type" Monospace="true" Value="@GetTargetKind(_detail.TargetJobType)" />
+                    <MetadataItem Label="Target configuration" Monospace="true" Value="@(_detail.TargetJobConfiguration ?? "-")" />
+                </MetadataGrid>
+            }
+            else
+            {
+                <div class="text-xs text-muted">Use the edit form above to change name, recurrence, time zone, and enabled state.</div>
+            }
+        </ManagementAdvancedSection>
 
         <ManagementAdvancedSection Title="Technical identifiers and scheduler claim"
                                    Subtitle="Raw ids and in-flight claim metadata from the management API."
@@ -279,20 +294,10 @@
     private string ScheduleHeaderTitle =>
         string.IsNullOrWhiteSpace(_detail?.Name) ? "Schedule" : _detail!.Name;
 
-    private string ScheduleHeaderSubtitle
-    {
-        get
-        {
-            if (_detail is null)
-                return string.Empty;
-            var en = _detail.Enabled ? "Enabled" : "Disabled";
-            var target = GetTargetKind(_detail.TargetJobType);
-            var integ = string.IsNullOrWhiteSpace(_detail.IntegrationId)
-                ? ""
-                : $" · {_detail.IntegrationId}";
-            return $"{en} · {target}{integ} · {_detail.RecurrenceExpression}";
-        }
-    }
+    private string ScheduleHeaderSubtitle =>
+        _detail is null
+            ? string.Empty
+            : RunScheduleOperatorUiHelpers.BuildScheduleDetailSubtitle(_detail);
 
     private void StartEdit()
     {

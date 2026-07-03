@@ -364,9 +364,9 @@
             if (_fleet is null)
                 return [];
 
-            var rows = string.IsNullOrWhiteSpace(_sort)
-                ? _fleet.OrderBy(IntegrationOperatorUiHelpers.FleetAttentionRank).ThenBy(r => r.DisplayName, StringComparer.OrdinalIgnoreCase)
-                : _fleet;
+            IEnumerable<IntegrationFleetRowDto> rows = _fleet;
+            if (string.IsNullOrWhiteSpace(_sort))
+                rows = rows.OrderBy(IntegrationOperatorUiHelpers.FleetAttentionRank).ThenBy(r => r.DisplayName, StringComparer.OrdinalIgnoreCase);
 
             if (_showNeedsAttentionOnly)
                 rows = rows.Where(IntegrationOperatorUiHelpers.FleetNeedsAttention);

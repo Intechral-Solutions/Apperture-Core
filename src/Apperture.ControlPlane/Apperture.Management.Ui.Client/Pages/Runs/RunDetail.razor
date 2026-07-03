@@ -15,9 +15,6 @@
                 Eyebrow="Runs"
                 Title="@RunPageTitle"
                 Subtitle="@RunHeaderSubtitle">
-        <ChildContent>
-            <div class="mt-1 font-mono text-xs text-muted break-all">@RunId</div>
-        </ChildContent>
         <Toolbar>
             <button type="button"
                     class="ui-toolbar-btn"
@@ -89,9 +86,9 @@
 
         @if (_detail.ForensicContext is { } fxInv)
         {
-            <ManagementSection Title="Investigation"
-                               Layer="ManagementSection.UiLayer.Detail"
-                               Help="Run forensics from persisted data and platform conventions (Epic 35).">
+            <ManagementAdvancedSection Title="Investigation and forensics"
+                                       Subtitle="Origin inference, module state, retry lineage, and investigation hints (Epic 35)."
+                                       InitiallyOpen="@RunScheduleOperatorUiHelpers.IsProblematicRunStatus(_detail.Status)">
                 <div class="grid grid-cols-1 gap-2 md:grid-cols-2">
                     <div>
                         <div class="text-xs text-muted">Outcome (derived)</div>
@@ -162,12 +159,12 @@
                         <DrillInLink Href="@href">@FormatInvestigationHintLabel(h)</DrillInLink>
                     }
                 </div>
-            </ManagementSection>
+            </ManagementAdvancedSection>
         }
 
-        <ManagementSection Title="Action availability"
-                           Layer="ManagementSection.UiLayer.Detail"
-                           Help="Server-projected action eligibility for this run.">
+        <ManagementAdvancedSection Title="Action availability"
+                                   Subtitle="Server-projected action eligibility for this run."
+                                   InitiallyOpen="false">
             @if (_actions.Count == 0)
             {
                 <EmptyState Message="No actions available." />
@@ -188,7 +185,7 @@
                     }
                 </div>
             }
-        </ManagementSection>
+        </ManagementAdvancedSection>
 
         <ManagementSection Title="Related context"
                            Layer="ManagementSection.UiLayer.Detail"
@@ -248,6 +245,10 @@
         <ManagementAdvancedSection Title="Technical identifiers and start request"
                                    Subtitle="Execution ids, correlation, idempotency, and persisted start metadata (ADR-0031).">
             <div class="grid grid-cols-1 gap-2 md:grid-cols-2">
+                <div>
+                    <div class="text-xs text-muted">Run id</div>
+                    <div class="text-sm font-mono break-all">@RunId</div>
+                </div>
                 <div>
                     <div class="text-xs text-muted">Lifecycle status</div>
                     <div class="text-sm text-body">@_detail.Status</div>
@@ -649,14 +650,7 @@
     private string RunHeaderSubtitle =>
         _detail is null
             ? string.Empty
-            : string.Concat(
-                _detail.ExecutionKind,
-                " · ",
-                _detail.Status,
-                string.IsNullOrEmpty(_detail.IntegrationId) ? "" : $" · {_detail.IntegrationId}",
-                _detail.ForensicContext is { } fx
-                    ? $" · {Epic33UiDisplayHelpers.FormatRunOriginKind(fx.OriginKind)}"
-                    : "");
+            : RunScheduleOperatorUiHelpers.BuildRunDetailSubtitle(_detail);
 
     private bool CanInvoke(string actionKind) =>
         !_loading && string.Equals(GetAction(actionKind)?.AvailabilityState, "available", StringComparison.Ordinal);

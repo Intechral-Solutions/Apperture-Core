@@ -1,78 +1,30 @@
 @page "/runs"
 @using Apperture.Management.Client
 @using Apperture.Management.Ui.Shared
+@using Apperture.Management.Ui.Client.Organisms
+@using Apperture.Management.Ui.Client.Molecules
 @using Microsoft.AspNetCore.Components
 @using System.Globalization
 @inject IManagementClient Client
 @inject NavigationManager Nav
 
-<div class="p-4">
-    <div class="flex items-center justify-between">
-        <div>
-            <div class="text-xs text-muted mb-1">Automation</div>
-            <h1 class="text-xl font-semibold text-heading">Runs</h1>
-            <p class="mt-1 text-xs text-muted max-w-2xl">Run history and remediation entry points. For live console signals, use Control Center.</p>
-        </div>
-        <div class="flex items-center gap-2">
-            <select class="rounded border border-default bg-surface px-2 py-2 text-sm"
-                    disabled="@_loading"
-                    @bind="_executionKindFilter"
-                    @bind:after="LoadAsync">
-                <option value="">All executions</option>
-                <option value="operation">Operations</option>
-                <option value="workflow">Workflows</option>
-            </select>
-            <button class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface"
+<div class="p-4 ui-page-stack">
+    <PageHeader Eyebrow="Automation"
+                Title="Runs"
+                Subtitle="Run history and remediation. Prioritize failures and recent outcomes; open a row for actions and diagnostics.">
+        <Toolbar>
+            <label class="flex items-center gap-2 text-sm text-body">
+                <input type="checkbox" class="h-4 w-4" @bind="_showProblemsOnly" />
+                Needs attention
+            </label>
+            <button type="button"
+                    class="ui-toolbar-btn"
                     disabled="@_loading"
                     @onclick="LoadAsync">
                 Refresh
             </button>
-        </div>
-    </div>
-
-    @if (HasUrlFilters)
-    {
-        <div class="mt-3 rounded border border-default bg-surface px-3 py-2 text-sm text-body space-y-1">
-            @if (!string.IsNullOrWhiteSpace(QueryCorrelationKey))
-            {
-                <div>
-                    <span class="text-muted">Correlation key</span>
-                    <span class="ml-2 font-mono text-xs break-all">@QueryCorrelationKey</span>
-                </div>
-            }
-            @if (!string.IsNullOrWhiteSpace(QueryStatus))
-            {
-                <div>
-                    <span class="text-muted">Status</span>
-                    <span class="ml-2 font-mono text-xs">@QueryStatus</span>
-                </div>
-            }
-            @if (!string.IsNullOrWhiteSpace(QueryCreatedFromRaw))
-            {
-                <div>
-                    <span class="text-muted">Created from (UTC)</span>
-                    <span class="ml-2 font-mono text-xs break-all">@QueryCreatedFromRaw</span>
-                </div>
-            }
-            @if (!string.IsNullOrWhiteSpace(QueryIntegrationId))
-            {
-                <div>
-                    <span class="text-muted">Integration</span>
-                    <span class="ml-2 font-mono text-xs break-all">@QueryIntegrationId</span>
-                </div>
-            }
-            @if (!string.IsNullOrWhiteSpace(QueryModuleId))
-            {
-                <div>
-                    <span class="text-muted">Module</span>
-                    <span class="ml-2 font-mono text-xs break-all">@QueryModuleId</span>
-                </div>
-            }
-            <div>
-                <a href="/runs" class="text-xs underline">Clear URL filters</a>
-            </div>
-        </div>
-    }
+        </Toolbar>
+    </PageHeader>
 
     @if (_error is not null)
     {
@@ -84,47 +36,197 @@
     }
     else if (_runs.Count == 0)
     {
-        <EmptyState Message="No runs found." />
+        @if (HasUrlFilters)
+        {
+            <EmptyState Title="No matches"
+                        Message="No runs match the current filters. Clear filters or adjust criteria.">
+                <a href="/runs" class="mt-3 inline-block ui-toolbar-btn">Clear filters</a>
+            </EmptyState>
+        }
+        else
+        {
+            <EmptyState Title="No runs yet"
+                        Message="Runs appear here after workflows or operations execute. Check Control Center for live signals or open an integration to start work." />
+        }
+    }
+    else if (!DisplayRuns.Any())
+    {
+        <EmptyState Title="Nothing needs attention"
+                    Message="All visible runs look healthy under the current filter.">
+            <button type="button" class="mt-3 ui-toolbar-btn" @onclick="ShowAllRuns">Show all runs</button>
+        </EmptyState>
     }
     else
     {
-        <div class="mt-4 overflow-x-auto rounded border border-default bg-surface">
-            <table class="min-w-full text-left text-sm text-body">
-                <thead class="border-b border-default text-xs text-muted">
-                    <tr>
-                        <th class="px-3 py-2">Run</th>
-                        <th class="px-3 py-2">Execution</th>
-                        <th class="px-3 py-2">Status</th>
-                        <th class="px-3 py-2">Created</th>
-                        <th class="px-3 py-2">Completed</th>
-                        <th class="px-3 py-2">Correlation</th>
-                        <th class="px-3 py-2">Retry of</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @foreach (var r in _runs)
-                    {
-                        <tr class="border-b border-default hover:bg-surface-muted cursor-pointer"
-                            @onclick="() => Open(r.RunId)">
-                            <td class="px-3 py-2 font-mono text-xs">@r.RunId</td>
-                            <td class="px-3 py-2">
-                                <div class="text-xs text-muted">@r.ExecutionKind</div>
-                                <div class="font-mono text-xs">@r.ExecutionDefinitionId</div>
-                            </td>
-                            <td class="px-3 py-2">@r.Status</td>
-                            <td class="px-3 py-2">@r.CreatedAt.ToLocalTime().ToString("u")</td>
-                            <td class="px-3 py-2">@((r.CompletedAt is null) ? "" : r.CompletedAt.Value.ToLocalTime().ToString("u"))</td>
-                            <td class="px-3 py-2">@r.CorrelationKey</td>
-                            <td class="px-3 py-2 font-mono text-xs">@r.RetryOfRunId</td>
-                        </tr>
-                    }
-                </tbody>
-            </table>
-        </div>
+        <ManagementSection Title="Summary"
+                           Layer="ManagementSection.UiLayer.Summary"
+                           Help="Counts from loaded rows; server filters may narrow the set.">
+            <div class="flex flex-wrap items-center gap-2">
+                <StatusPill Label="@($"{DisplayRuns.Count()} run(s)")" Semantic="@ManagementStatusSemantic.Neutral" />
+                @{
+                    var problemCount = RunScheduleOperatorUiHelpers.CountProblematicRuns(_runs);
+                }
+                @if (problemCount > 0)
+                {
+                    <AttentionPill Label="@($"{problemCount} need attention")" Semantic="@ManagementAttentionSemantic.Warning" />
+                }
+                else
+                {
+                    <StatusPill Label="No failures in view" Semantic="@ManagementStatusSemantic.Success" />
+                }
+            </div>
 
-        <div class="mt-2 text-xs text-muted">
-            This list is intentionally simple (recent runs only). Use refresh to observe queued/applied control outcomes.
-        </div>
+            <div class="ui-summary-card-grid ui-summary-card-grid--wide">
+                <ManagementSummaryCard Title="Control Center"
+                                       Description="Live platform signals and recent problems."
+                                       Href="/control/center" />
+                <ManagementSummaryCard Title="Schedules"
+                                       Description="Timing, outcomes, and schedule health."
+                                       Href="/schedules" />
+                <ManagementSummaryCard Title="Blocked work"
+                                       Description="Deferred runs and retry recovery."
+                                       Href="/control/blocked-work" />
+                <ManagementSummaryCard Title="Integrations"
+                                       Description="Deployment units owning workflows and procedures."
+                                       Href="/integrations" />
+            </div>
+        </ManagementSection>
+
+        <ManagementSection Title="Run history"
+                           Layer="ManagementSection.UiLayer.Detail">
+            <div class="ui-data-table">
+                <table class="ui-data-table__table min-w-full text-left text-body">
+                    <thead class="border-b border-default text-xs text-muted">
+                        <tr>
+                            <th class="px-3 py-2">Outcome</th>
+                            <th class="px-3 py-2">Context</th>
+                            <th class="px-3 py-2">When</th>
+                            <th class="px-3 py-2">Links</th>
+                            <th class="px-3 py-2"></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var r in DisplayRuns)
+                        {
+                            var scheduleId = RunScheduleOperatorUiHelpers.TryGetScheduleIdFromCorrelation(r.CorrelationKey);
+                            <tr class="border-b border-default hover:bg-surface-muted cursor-pointer"
+                                @onclick="() => Open(r.RunId)">
+                                <td class="px-3 py-2">
+                                    <StatusPill Label="@r.Status"
+                                                Semantic="@ManagementUiSemantics.MapRunLifecycleStatus(r.Status)" />
+                                </td>
+                                <td class="px-3 py-2">
+                                    <div class="text-sm text-body">@RunScheduleOperatorUiHelpers.FormatRunListContextLine(r)</div>
+                                    @if (!string.IsNullOrWhiteSpace(r.IntegrationId))
+                                    {
+                                        <DrillInLink Href="@Epic33UiDisplayHelpers.GetRunsListIntegrationFilterHref(r.IntegrationId)"
+                                                     @onclick:stopPropagation="true">
+                                            Integration @r.IntegrationId
+                                        </DrillInLink>
+                                    }
+                                </td>
+                                <td class="px-3 py-2 text-sm">@RunScheduleOperatorUiHelpers.FormatRunListWhenLine(r)</td>
+                                <td class="px-3 py-2">
+                                    <div class="flex flex-wrap gap-2 text-xs">
+                                        @if (!string.IsNullOrWhiteSpace(r.IntegrationId))
+                                        {
+                                            <DrillInLink Href="@($"/integrations/{Uri.EscapeDataString(r.IntegrationId)}")"
+                                                         @onclick:stopPropagation="true">Integration</DrillInLink>
+                                        }
+                                        @if (!string.IsNullOrWhiteSpace(scheduleId))
+                                        {
+                                            <DrillInLink Href="@($"/schedules/{Uri.EscapeDataString(scheduleId)}")"
+                                                         @onclick:stopPropagation="true">Schedule</DrillInLink>
+                                        }
+                                        @if (!string.IsNullOrWhiteSpace(r.CorrelationKey))
+                                        {
+                                            <DrillInLink Href="@Epic33UiDisplayHelpers.GetRunsListCorrelationFilterHref(r.CorrelationKey)"
+                                                         @onclick:stopPropagation="true">Correlation</DrillInLink>
+                                        }
+                                    </div>
+                                </td>
+                                <td class="px-3 py-2">
+                                    <DrillInLink Href="@($"/runs/{Uri.EscapeDataString(r.RunId)}")"
+                                                 @onclick:stopPropagation="true">Open</DrillInLink>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </ManagementSection>
+
+        <ManagementAdvancedSection Title="Filters and diagnostics"
+                                   Subtitle="Execution kind, URL query filters, and row identifiers."
+                                   InitiallyOpen="@HasUrlFilters">
+            <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
+                <div>
+                    <label class="block text-xs text-muted">Execution kind</label>
+                    <select class="mt-1 w-full rounded border border-default bg-surface px-2 py-2 text-sm"
+                            disabled="@_loading"
+                            @bind="_executionKindFilter"
+                            @bind:after="LoadAsync">
+                        <option value="">All executions</option>
+                        <option value="operation">Operations</option>
+                        <option value="workflow">Workflows</option>
+                    </select>
+                </div>
+            </div>
+
+            @if (HasUrlFilters)
+            {
+                <div class="mt-3 rounded border border-default bg-surface-muted px-3 py-2 text-sm text-body space-y-1">
+                    @if (!string.IsNullOrWhiteSpace(QueryCorrelationKey))
+                    {
+                        <div>
+                            <span class="text-muted">Correlation key</span>
+                            <span class="ml-2 font-mono text-xs break-all">@QueryCorrelationKey</span>
+                        </div>
+                    }
+                    @if (!string.IsNullOrWhiteSpace(QueryStatus))
+                    {
+                        <div>
+                            <span class="text-muted">Status</span>
+                            <span class="ml-2 font-mono text-xs">@QueryStatus</span>
+                        </div>
+                    }
+                    @if (!string.IsNullOrWhiteSpace(QueryCreatedFromRaw))
+                    {
+                        <div>
+                            <span class="text-muted">Created from (UTC)</span>
+                            <span class="ml-2 font-mono text-xs break-all">@QueryCreatedFromRaw</span>
+                        </div>
+                    }
+                    @if (!string.IsNullOrWhiteSpace(QueryIntegrationId))
+                    {
+                        <div>
+                            <span class="text-muted">Integration</span>
+                            <span class="ml-2 font-mono text-xs break-all">@QueryIntegrationId</span>
+                        </div>
+                    }
+                    @if (!string.IsNullOrWhiteSpace(QueryModuleId))
+                    {
+                        <div>
+                            <span class="text-muted">Module</span>
+                            <span class="ml-2 font-mono text-xs break-all">@QueryModuleId</span>
+                        </div>
+                    }
+                    <div>
+                        <a href="/runs" class="text-xs underline">Clear URL filters</a>
+                    </div>
+                </div>
+            }
+
+            <details class="mt-3">
+                <summary class="cursor-pointer text-xs text-muted">Row identifiers (all loaded runs)</summary>
+                <div class="mt-2 space-y-1 text-xs font-mono text-muted">
+                    @foreach (var r in DisplayRuns)
+                    {
+                        <div>@r.RunId · @r.ExecutionDefinitionId · @(r.CorrelationKey ?? "-") · @(r.RetryOfRunId ?? "-")</div>
+                    }
+                </div>
+            </details>
+        </ManagementAdvancedSection>
     }
 </div>
 
@@ -147,6 +249,7 @@
     private IReadOnlyList<RunSummaryDto>? _runs;
     private string? _executionKindFilter;
     private bool _loading;
+    private bool _showProblemsOnly;
     private string? _error;
     private string? _dataLoadKey;
 
@@ -156,6 +259,21 @@
         || !string.IsNullOrWhiteSpace(QueryCreatedFromRaw)
         || !string.IsNullOrWhiteSpace(QueryIntegrationId)
         || !string.IsNullOrWhiteSpace(QueryModuleId);
+
+    private IEnumerable<RunSummaryDto> DisplayRuns
+    {
+        get
+        {
+            if (_runs is null)
+                return [];
+
+            var sorted = RunScheduleOperatorUiHelpers.SortRunsForTriage(_runs);
+            if (!_showProblemsOnly)
+                return sorted;
+
+            return sorted.Where(RunScheduleOperatorUiHelpers.RunNeedsAttention);
+        }
+    }
 
     protected override async Task OnParametersSetAsync()
     {
@@ -168,6 +286,8 @@
 
     private string BuildLoadKey() =>
         $"{QueryCorrelationKey ?? ""}\u001f{QueryStatus ?? ""}\u001f{QueryCreatedFromRaw ?? ""}\u001f{QueryIntegrationId ?? ""}\u001f{QueryModuleId ?? ""}\u001f{_executionKindFilter ?? ""}";
+
+    private void ShowAllRuns() => _showProblemsOnly = false;
 
     private async Task LoadAsync()
     {

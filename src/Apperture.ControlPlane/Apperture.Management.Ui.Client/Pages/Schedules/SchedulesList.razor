@@ -11,8 +11,12 @@
 <div class="p-4 ui-page-stack">
     <PageHeader Eyebrow="Automation"
                 Title="Schedules"
-                Subtitle="Schedule definitions and persisted execution linkage; open a row for timing, outcomes, and actions.">
+                Subtitle="Schedule health and targets at a glance. Open a row for timing, outcomes, and actions.">
         <Toolbar>
+            <label class="flex items-center gap-2 text-sm text-body">
+                <input type="checkbox" class="h-4 w-4" @bind="_showNeedsAttentionOnly" />
+                Needs attention
+            </label>
             @if (_capabilities?.CanManageSchedules == true)
             {
                 <a href="/schedules/new" class="ui-toolbar-btn">Create schedule</a>
@@ -36,17 +40,37 @@
     }
     else if (_schedules.Count == 0)
     {
-        <EmptyState Message="No schedules found." />
+        <EmptyState Title="No schedules yet"
+                    Message="Schedules trigger workflows or operations on a recurrence. Create one from an integration or here.">
+            @if (_capabilities?.CanManageSchedules == true)
+            {
+                <a href="/schedules/new" class="mt-3 inline-block ui-toolbar-btn">Create schedule</a>
+            }
+        </EmptyState>
+    }
+    else if (!DisplaySchedules.Any())
+    {
+        <EmptyState Title="Nothing needs attention"
+                    Message="All visible schedules look healthy under the current filter.">
+            <button type="button" class="mt-3 ui-toolbar-btn" @onclick="ShowAllSchedules">Show all schedules</button>
+        </EmptyState>
     }
     else
     {
         <ManagementSection Title="Summary"
                            Layer="ManagementSection.UiLayer.Summary"
-                           Help="Derived from loaded schedule rows only — no degraded-only list filter exists yet (Epic 47).">
+                           Help="Derived from loaded schedule rows only — last outcome appears on detail pages.">
             <div class="flex flex-wrap items-center gap-2">
                 <StatusPill Label="@($"Total: {_schedules.Count}")" Semantic="@ManagementStatusSemantic.Neutral" />
                 <StatusPill Label="@($"Enabled: {EnabledCount}")" Semantic="@ManagementStatusSemantic.Success" />
                 <StatusPill Label="@($"Disabled: {DisabledCount}")" Semantic="@ManagementStatusSemantic.Warning" />
+                @{
+                    var needsAttention = _schedules.Count(RunScheduleOperatorUiHelpers.ScheduleListNeedsAttention);
+                }
+                @if (needsAttention > 0)
+                {
+                    <AttentionPill Label="@($"{needsAttention} need review")" Semantic="@ManagementAttentionSemantic.Warning" />
+                }
             </div>
 
             <div class="ui-summary-card-grid ui-summary-card-grid--wide">
@@ -56,9 +80,9 @@
                 <ManagementSummaryCard Title="Runs history"
                                        Description="Correlation and status filters apply from list rows."
                                        Href="/runs" />
-                <ManagementSummaryCard Title="Audit timeline"
-                                       Description="Operational events with schedule context."
-                                       Href="/control/audit" />
+                <ManagementSummaryCard Title="Control Center"
+                                       Description="Platform schedule health and blocked dispatch signals."
+                                       Href="/control/center" />
                 <ManagementSummaryCard Title="Blocked work"
                                        Description="Deferred runs and retry recovery."
                                        Href="/control/blocked-work" />
@@ -71,43 +95,56 @@
                 <table class="ui-data-table__table min-w-full text-left text-body">
                     <thead class="border-b border-default text-xs text-muted">
                         <tr>
-                            <th class="px-3 py-2">Id</th>
-                            <th class="px-3 py-2">Name</th>
+                            <th class="px-3 py-2">Schedule</th>
                             <th class="px-3 py-2">State</th>
-                            <th class="px-3 py-2">Recurrence</th>
-                            <th class="px-3 py-2">Integration</th>
                             <th class="px-3 py-2">Target</th>
+                            <th class="px-3 py-2">Integration</th>
+                            <th class="px-3 py-2">Links</th>
                             <th class="px-3 py-2"></th>
                         </tr>
                     </thead>
                     <tbody>
-                        @foreach (var s in _schedules)
+                        @foreach (var s in DisplaySchedules)
                         {
                             <tr class="border-b border-default hover:bg-surface-muted cursor-pointer"
                                 @onclick="@(() => Nav.NavigateTo("/schedules/" + Uri.EscapeDataString(s.Id)))">
-                                <td class="px-3 py-2 font-mono text-xs">@s.Id</td>
-                                <td class="px-3 py-2">@s.Name</td>
+                                <td class="px-3 py-2">
+                                    <div class="text-sm font-medium text-body">@s.Name</div>
+                                    @if (RunScheduleOperatorUiHelpers.ScheduleListNeedsAttention(s))
+                                    {
+                                        <div class="text-xs text-muted mt-0.5">
+                                            @(s.Enabled ? (string.IsNullOrWhiteSpace(s.IntegrationId) ? "Missing integration link" : "") : "Disabled")
+                                        </div>
+                                    }
+                                    <details class="mt-1" @onclick:stopPropagation="true">
+                                        <summary class="cursor-pointer text-xs text-muted">Technical</summary>
+                                        <div class="mt-1 font-mono text-xs text-muted break-all">@s.Id</div>
+                                        <div class="mt-1 font-mono text-xs text-muted break-all">@s.RecurrenceExpression (@s.TimeZone)</div>
+                                    </details>
+                                </td>
                                 <td class="px-3 py-2">
                                     <StatusPill Label="@(s.Enabled ? "Enabled" : "Disabled")"
                                                 Semantic="@(s.Enabled ? ManagementStatusSemantic.Success : ManagementStatusSemantic.Neutral)" />
                                 </td>
-                                <td class="px-3 py-2 font-mono text-xs break-all max-w-xs">@s.RecurrenceExpression</td>
-                                <td class="px-3 py-2 font-mono text-xs">
+                                <td class="px-3 py-2 text-sm">@RunScheduleOperatorUiHelpers.FormatScheduleTargetSummary(s)</td>
+                                <td class="px-3 py-2">
                                     @if (!string.IsNullOrWhiteSpace(s.IntegrationId))
                                     {
-                                        <DrillInLink Href="@($"/integrations/{Uri.EscapeDataString(s.IntegrationId)}")">@s.IntegrationId</DrillInLink>
+                                        <DrillInLink Href="@($"/integrations/{Uri.EscapeDataString(s.IntegrationId)}")"
+                                                     @onclick:stopPropagation="true">@s.IntegrationId</DrillInLink>
                                     }
                                     else
                                     {
-                                        <span>-</span>
+                                        <span class="text-xs text-muted">Not linked</span>
                                     }
                                 </td>
                                 <td class="px-3 py-2">
-                                    <span class="font-mono text-xs">@GetTargetKind(s.TargetJobType)</span>
-                                    @if (!string.IsNullOrEmpty(s.TargetJobConfiguration))
-                                    {
-                                        <div class="text-xs text-muted truncate max-w-xs">@s.TargetJobConfiguration</div>
-                                    }
+                                    <div class="flex flex-wrap gap-2 text-xs">
+                                        <DrillInLink Href="@Epic33UiDisplayHelpers.GetRunsListCorrelationFilterHref($"schedule:{s.Id}")"
+                                                     @onclick:stopPropagation="true">Runs</DrillInLink>
+                                        <DrillInLink Href="@Epic33UiDisplayHelpers.GetAuditLinkForSchedule(s.Id)"
+                                                     @onclick:stopPropagation="true">Audit</DrillInLink>
+                                    </div>
                                 </td>
                                 <td class="px-3 py-2">
                                     <a href="@($"/schedules/{Uri.EscapeDataString(s.Id)}")"
@@ -125,8 +162,9 @@
                                    Subtitle="Constraints that affect how this view should be interpreted."
                                    InitiallyOpen="false">
             <ul class="list-disc space-y-2 pl-4 text-xs text-muted">
-                <li>Last outcome / next-fire timing appears on each schedule&apos;s detail page (not in list DTO).</li>
+                <li>Last outcome, last dispatch, and next-fire timing appear on each schedule&apos;s detail page (not in list DTO).</li>
                 <li>Dashboard and Control Center may surface schedule-health counts; degraded-only filtering for this list is deferred until the API exposes a compatible filter.</li>
+                <li>Calendar and date-period scheduling are deferred — recurrence is shown as stored cron expression only.</li>
             </ul>
         </ManagementAdvancedSection>
     }
@@ -136,11 +174,27 @@
     private IReadOnlyList<ScheduleDto>? _schedules;
     private OperatorCapabilitiesDto? _capabilities;
     private bool _loading;
+    private bool _showNeedsAttentionOnly;
     private string? _error;
 
     private int EnabledCount => _schedules?.Count(x => x.Enabled) ?? 0;
 
     private int DisabledCount => _schedules?.Count(x => !x.Enabled) ?? 0;
+
+    private IEnumerable<ScheduleDto> DisplaySchedules
+    {
+        get
+        {
+            if (_schedules is null)
+                return [];
+
+            var sorted = RunScheduleOperatorUiHelpers.SortSchedulesForTriage(_schedules);
+            if (!_showNeedsAttentionOnly)
+                return sorted;
+
+            return sorted.Where(RunScheduleOperatorUiHelpers.ScheduleListNeedsAttention);
+        }
+    }
 
     protected override async Task OnInitializedAsync()
     {
@@ -148,6 +202,8 @@
         catch { _capabilities = new OperatorCapabilitiesDto(false, false, false, false, false, false, false); }
         await LoadAsync();
     }
+
+    private void ShowAllSchedules() => _showNeedsAttentionOnly = false;
 
     private async Task LoadAsync()
     {
@@ -166,7 +222,4 @@
             _loading = false;
         }
     }
-
-    private static string GetTargetKind(int targetJobType) =>
-        targetJobType == 0 ? "Workflow" : targetJobType == 1 ? "Operation" : $"Type{targetJobType}";
 }
