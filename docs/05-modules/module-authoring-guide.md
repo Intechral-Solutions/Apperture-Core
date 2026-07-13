@@ -504,7 +504,11 @@ Example full type for HelloWorld `demo.completed`:
 
 ### Built-in module notification definitions
 
-> **Planned / not shipped:** Modules may eventually ship static notification definition JSON in the manifest (owner `module:{moduleId}`). No module in this repository seeds built-in definitions today. Operators rely on user-created definitions matching module event types.
+Sample.HelloWorld ships a built-in notification definition (`module.sample.helloworld.demo.completed`) seeded by migration Epic 121. It fires when the Complete step emits `demo.completed` (default on; disable per-run with `emitDemoPlatformEvent=false`).
+
+Operators enable email delivery via **My notifications** (S9) for “HelloWorld demo completed”. Management Host polls worker-emitted module platform events for notification evaluation (S13A).
+
+See [S13A HelloWorld notification debugging](../02-decisions/S13A-helloworld-notification-pipeline-debugging.md).
 
 ### Out of scope for module authors
 

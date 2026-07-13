@@ -40,6 +40,9 @@ public static class NotificationsServiceCollectionExtensions
         services.AddScoped<INotificationRenderContextBuilder, NotificationRenderContextBuilder>();
         services.AddScoped<INotificationRuleEvaluator, NotificationRuleEvaluator>();
         services.AddScoped<INotificationEvaluateOnlyCoordinator, NotificationEvaluateOnlyCoordinator>();
+        services.AddScoped<IPlatformEventNotificationEvaluationStore, SqlPlatformEventNotificationEvaluationStore>();
+        services.AddScoped<PlatformEventNotificationEvaluationProcessor>();
+        services.AddHostedService<PlatformEventNotificationEvaluationHostedService>();
         services.AddScoped<INotificationDefinitionStore, SqlNotificationDefinitionStore>();
         services.AddScoped<INotificationSubscriptionStore, SqlNotificationSubscriptionStore>();
         services.AddScoped<OperationalTeamRecipientExpander>();

@@ -93,6 +93,17 @@ public sealed class NotificationInstanceCoordinator : INotificationInstanceCoord
             NotificationDefinitionIds.PlatformScheduleExpectedRunMissing,
             StringComparison.Ordinal);
 
+        var definition = await _definitions
+            .GetAsync(NotificationDefinitionId.From(match.DefinitionId), cancellationToken)
+            .ConfigureAwait(false);
+        if (definition is null)
+            return;
+
+        var isModuleBuiltIn = string.Equals(
+            definition.Origin,
+            NotificationDefinitionOrigins.ModuleBuiltIn,
+            StringComparison.Ordinal);
+
         AttentionRecipientResolution? attentionRoute = null;
         TimeSpan? reminderInterval = null;
 
@@ -159,12 +170,6 @@ public sealed class NotificationInstanceCoordinator : INotificationInstanceCoord
             return;
         }
 
-        var definition = await _definitions
-            .GetAsync(NotificationDefinitionId.From(match.DefinitionId), cancellationToken)
-            .ConfigureAwait(false);
-        if (definition is null)
-            return;
-
         if (!NotificationDocumentJson.TryDeserializeTemplate(definition.TemplateJson, out var template, out _))
             return;
 
@@ -212,6 +217,23 @@ public sealed class NotificationInstanceCoordinator : INotificationInstanceCoord
                     recipientPreview).ConfigureAwait(false);
                 return;
             }
+        }
+        else if (isModuleBuiltIn
+                 && kind == NotificationKinds.Activation
+                 && recipientPreview.Deliverable.Count == 0)
+        {
+            await CreateSuppressedInstanceAsync(
+                match,
+                evaluationContext,
+                envelope,
+                incidentId,
+                integrationId,
+                dedupeKey,
+                AttentionNotificationSuppressionReasons.NoRouteConfigured,
+                cancellationToken,
+                rendered,
+                recipientPreview).ConfigureAwait(false);
+            return;
         }
 
         await CreateDeliverableInstanceAsync(
