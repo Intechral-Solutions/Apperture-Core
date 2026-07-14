@@ -71,15 +71,23 @@ Not captured live (SQL timeout / stack not up). Expected pre-fix WorkerHost beha
 | Full unit tests | Passed **1118** / 0 failed |
 | Integration tests | Skipped (test SQL / Aspire SQL unavailable) |
 
-## Completion report
+## Live validation (2026-07-14, post-restart)
 
-1. **Root cause:** Plane mismatch (`local` assignments vs `worker-local` timer).
-2. **Management.Host DB:** Aspire `DefaultConnection` → catalog `Apperture` @ host port 14333.
-3. **WorkerHost DB:** Same under Aspire.
-4. **Ownership:** Timer dispatch + execution = WorkerHost; manual run-cycle = Management; plane `local`, claim host `worker-local`.
-5. **Fix:** Decouple plane from `APERTURE_RUNTIME_ID` (see above).
-6. **Manual validation:** Deferred — restart AppHost and follow Epic SWM-1 verify steps.
-7. **Tests:** `ScheduleDispatchPlaneIdentityTests` + existing suite green.
-8. **Docs:** diagnosis, Epic SWM-1, Epic106, deploy/README, audit header.
-9. **Build/test:** Build OK; 1118 unit tests passed.
-10. **Next epic:** Scheduler health/diagnostics surface; assignment-plane UI; multi-host plane management; non-Aspire connection alignment; SchedulerHost stub retirement.
+**Stack:** AppHost restarted; Management `/health` = Healthy; WorkerHost running; SQL reachable via DCP proxy `127.0.0.1:14333` (same catalog as container map `52712`).
+
+**Aspire WorkerHost env (read from live process):**
+- `APERTURE_RUNTIME_ID=worker-local`
+- `ScheduleDispatch__RuntimePlaneId=local`
+- `ConnectionStrings__DefaultConnection` → `127.0.0.1,14333` / `Apperture`
+
+**Startup / cycle log (diagnostic worker with identical env; Aspire DCP `_out` empty / OTLP-only):**
+```
+Schedule dispatch loop starting. Plane=local HostId=worker-local PollIntervalSeconds=15
+Schedule dispatch cycle begin. Plane=local HostId=worker-local Assignments=1 Due=0 Stale=0 Candidates=0
+```
+
+**Schedule:** `SWM1-Validate-HelloWorld` (`e3a76ff4dac24679b192305b`), cron `* * * * *`, plane `local`, HelloWorld workflow, integration Active.
+
+**Automatic fire:** **No** — once a due minute was reached, cycles failed in `SqlScheduleRepository.RunExistsAsync` (`FireTimeUtc.UtcDateTime` not EF-translatable against SQL Server). Zero `ScheduleRuns` rows. This is **outside** SWM-1 plane-identity scope.
+
+**SWM-1 close:** Yes for plane/host identity alignment. Not for full timer E2E until `RunExistsAsync` EF translation is fixed (next scheduling epic).
