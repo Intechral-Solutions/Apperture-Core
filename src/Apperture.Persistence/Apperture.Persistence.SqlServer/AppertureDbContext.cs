@@ -53,6 +53,7 @@ public class AppertureDbContext : DbContext
     public DbSet<ScheduleAssignmentEntity> ScheduleAssignments => Set<ScheduleAssignmentEntity>();
     public DbSet<ScheduleRunEntity> ScheduleRuns => Set<ScheduleRunEntity>();
     public DbSet<ScheduleStateEntity> ScheduleStates => Set<ScheduleStateEntity>();
+    public DbSet<SchedulerDispatchHeartbeatEntity> SchedulerDispatchHeartbeats => Set<SchedulerDispatchHeartbeatEntity>();
     public DbSet<InstanceAuthUiPolicyEntity> InstanceAuthUiPolicies => Set<InstanceAuthUiPolicyEntity>();
     public DbSet<EntraInstanceRegistrationEntity> EntraInstanceRegistrations => Set<EntraInstanceRegistrationEntity>();
     public DbSet<PlatformSettingValueEntity> PlatformSettingValues => Set<PlatformSettingValueEntity>();
@@ -701,6 +702,15 @@ public class AppertureDbContext : DbContext
             e.Property(x => x.AssignmentId).HasMaxLength(64);
             e.Property(x => x.LastOutcome).HasMaxLength(64);
             e.Property(x => x.LastOutcomeReason).HasMaxLength(2048);
+        });
+
+        modelBuilder.Entity<SchedulerDispatchHeartbeatEntity>(e =>
+        {
+            e.ToTable("SchedulerDispatchHeartbeats");
+            e.HasKey(x => x.RuntimePlaneId);
+            e.Property(x => x.RuntimePlaneId).HasMaxLength(128);
+            e.Property(x => x.HostId).HasMaxLength(128);
+            e.Property(x => x.LastErrorSummary).HasMaxLength(512);
         });
 
         modelBuilder.Entity<InstanceAuthUiPolicyEntity>(e =>

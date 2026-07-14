@@ -365,10 +365,10 @@ public sealed class RecoveryControllerTests
     {
         public bool RunCycleCalled { get; private set; }
 
-        public ValueTask RunCycleAsync(RuntimePlaneId planeId, DateTimeOffset asOfUtc, CancellationToken cancellationToken = default)
+        public ValueTask<ScheduleDispatchCycleResult> RunCycleAsync(RuntimePlaneId planeId, DateTimeOffset asOfUtc, CancellationToken cancellationToken = default)
         {
             RunCycleCalled = true;
-            return ValueTask.CompletedTask;
+            return ValueTask.FromResult(new ScheduleDispatchCycleResult(0, 0, 0));
         }
     }
 

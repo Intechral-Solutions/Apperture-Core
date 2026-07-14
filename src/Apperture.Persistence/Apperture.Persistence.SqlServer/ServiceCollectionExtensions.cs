@@ -112,6 +112,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IScheduleRepository, SqlScheduleRepository>();
         services.AddScoped<IScheduleEvaluator, CronScheduleEvaluator>();
         services.AddScoped<IScheduleProvider, SqlScheduleProvider>();
+        services.AddScoped<ISchedulerDispatchHeartbeatStore, SqlSchedulerDispatchHeartbeatStore>();
         return services;
     }
 }

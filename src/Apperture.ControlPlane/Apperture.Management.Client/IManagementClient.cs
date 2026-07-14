@@ -81,6 +81,13 @@ public interface IManagementClient
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// SWM-6: background scheduler timer-loop status from persisted heartbeat.
+    /// </summary>
+    Task<SchedulerStatusSnapshotDto?> GetSchedulerStatusAsync(
+        string? runtimePlaneId = "local",
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Lists connections with Used In projection. Epic 48.
     /// </summary>
     Task<IReadOnlyList<ConnectionDto>> GetConnectionsAsync(CancellationToken cancellationToken = default);

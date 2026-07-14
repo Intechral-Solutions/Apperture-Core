@@ -61,3 +61,28 @@ public sealed record ExecutionAnomalyEntryDto(
     string? DefinitionId,
     string Summary,
     DateTimeOffset OccurredAtUtc);
+
+/// <summary>SWM-6: background scheduler timer-loop status from heartbeat.</summary>
+public sealed record SchedulerStatusSnapshotDto(
+    DateTimeOffset CapturedAtUtc,
+    string Status,
+    string ExpectedManagementPlaneId,
+    string? ObservedRuntimePlaneId,
+    string? ObservedHostId,
+    string Alignment,
+    bool IsStale,
+    int? PollIntervalSeconds,
+    DateTimeOffset? LastCycleStartedUtc,
+    DateTimeOffset? LastCycleCompletedUtc,
+    DateTimeOffset? LastSuccessfulCycleUtc,
+    DateTimeOffset? UpdatedUtc,
+    int? AssignmentCount,
+    int? DueCount,
+    int? StaleCount,
+    int? CandidateCount,
+    int? ClaimedCount,
+    int? DispatchedCount,
+    int? SkippedCount,
+    string? LastErrorSummary,
+    string? Guidance);
+

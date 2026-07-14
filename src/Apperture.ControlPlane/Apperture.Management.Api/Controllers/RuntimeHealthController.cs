@@ -14,15 +14,18 @@ namespace Apperture.Management.Api.Controllers;
 public sealed class RuntimeHealthController : ControllerBase
 {
     private readonly IRuntimeHealthQueryService _health;
+    private readonly ISchedulerStatusQueryService _schedulerStatus;
     private readonly IPrincipalContext _principalContext;
     private readonly IAuthorizationEvaluationService _authorizationEvaluation;
 
     public RuntimeHealthController(
         IRuntimeHealthQueryService health,
+        ISchedulerStatusQueryService schedulerStatus,
         IPrincipalContext principalContext,
         IAuthorizationEvaluationService authorizationEvaluation)
     {
         _health = health;
+        _schedulerStatus = schedulerStatus;
         _principalContext = principalContext;
         _authorizationEvaluation = authorizationEvaluation;
     }
@@ -47,6 +50,22 @@ public sealed class RuntimeHealthController : ControllerBase
             Math.Max(1, Math.Min(scheduleFailureWindowHours, 168)),
             cancellationToken).ConfigureAwait(false);
         return Ok(snapshot);
+    }
+
+    /// <summary>
+    /// SWM-6: background scheduler timer-loop status from persisted heartbeat (WorkerHost). Requires runtime.health.read.
+    /// </summary>
+    [HttpGet("scheduler-status")]
+    [ProducesResponseType(typeof(SchedulerStatusSnapshot), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    public async Task<ActionResult<SchedulerStatusSnapshot>> GetSchedulerStatus(
+        [FromQuery] string? runtimePlaneId = "local",
+        CancellationToken cancellationToken = default)
+    {
+        if (!await CanReadRuntimeHealthAsync(cancellationToken).ConfigureAwait(false))
+            return Forbid();
+        var status = await _schedulerStatus.GetStatusAsync(runtimePlaneId, cancellationToken).ConfigureAwait(false);
+        return Ok(status);
     }
 
     private async Task<bool> CanReadRuntimeHealthAsync(CancellationToken cancellationToken)

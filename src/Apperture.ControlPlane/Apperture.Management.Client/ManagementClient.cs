@@ -246,6 +246,16 @@ public sealed class ManagementClient : IManagementClient
         return await response.Content.ReadFromJsonAsync<RuntimeHealthSnapshotDto>(cancellationToken: cancellationToken).ConfigureAwait(false);
     }
 
+    public async Task<SchedulerStatusSnapshotDto?> GetSchedulerStatusAsync(
+        string? runtimePlaneId = "local",
+        CancellationToken cancellationToken = default)
+    {
+        var query = $"?runtimePlaneId={Uri.EscapeDataString(runtimePlaneId ?? "local")}";
+        using var response = await _http.GetAsync($"control/scheduler-status{query}", cancellationToken).ConfigureAwait(false);
+        await EnsureSuccessOrThrowAsync(response, cancellationToken).ConfigureAwait(false);
+        return await response.Content.ReadFromJsonAsync<SchedulerStatusSnapshotDto>(cancellationToken: cancellationToken).ConfigureAwait(false);
+    }
+
     public async Task<IReadOnlyList<ConnectionDto>> GetConnectionsAsync(CancellationToken cancellationToken = default)
     {
         var list = await _http.GetFromJsonAsync<ConnectionDto[]>("connections", ApiJsonReadOptions, cancellationToken).ConfigureAwait(false);

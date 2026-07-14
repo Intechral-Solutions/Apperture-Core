@@ -144,6 +144,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IDashboardDefaultViewService, DashboardDefaultViewService>();
         services.AddScoped<IRuntimeModuleCompositionQueryService, RuntimeModuleCompositionQueryService>();
         services.AddScoped<IRuntimeHealthQueryService, RuntimeHealthQueryService>();
+        services.AddScoped<ISchedulerStatusQueryService, SchedulerStatusQueryService>();
         services.AddScoped<IRecoveryQueryService, RecoveryQueryService>();
         services.AddScoped<IAuditTimelineQueryService, AuditTimelineQueryService>();
         services.AddHostedService<ModuleCompositionBootstrapHostedService>();

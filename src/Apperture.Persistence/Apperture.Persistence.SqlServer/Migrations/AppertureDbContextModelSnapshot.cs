@@ -2278,6 +2278,62 @@ namespace Apperture.Persistence.SqlServer.Migrations
                     b.ToTable("ScheduleStates", (string)null);
                 });
 
+            modelBuilder.Entity("Apperture.Persistence.SqlServer.SchedulerDispatchHeartbeatEntity", b =>
+                {
+                    b.Property<string>("RuntimePlaneId")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<int>("AssignmentCount")
+                        .HasColumnType("int");
+
+                    b.Property<int>("CandidateCount")
+                        .HasColumnType("int");
+
+                    b.Property<int>("ClaimedCount")
+                        .HasColumnType("int");
+
+                    b.Property<int>("DispatchedCount")
+                        .HasColumnType("int");
+
+                    b.Property<int>("DueCount")
+                        .HasColumnType("int");
+
+                    b.Property<string>("HostId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<DateTimeOffset?>("LastCycleCompletedUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset>("LastCycleStartedUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("LastErrorSummary")
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)");
+
+                    b.Property<DateTimeOffset?>("LastSuccessfulCycleUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<int>("PollIntervalSeconds")
+                        .HasColumnType("int");
+
+                    b.Property<int>("SkippedCount")
+                        .HasColumnType("int");
+
+                    b.Property<int>("StaleCount")
+                        .HasColumnType("int");
+
+                    b.Property<DateTimeOffset>("UpdatedUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("RuntimePlaneId");
+
+                    b.ToTable("SchedulerDispatchHeartbeats", (string)null);
+                });
+
             modelBuilder.Entity("Apperture.Persistence.SqlServer.SecretAuditEntity", b =>
                 {
                     b.Property<long>("Id")

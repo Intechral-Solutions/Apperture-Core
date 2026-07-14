@@ -21,7 +21,8 @@ public sealed class Epic34AuthorizationTests
         var principal = new StubPrincipalContext();
         var auth = new StubAuthorizationEvaluationService(allowed: false);
         var health = new StubRuntimeHealthQueryService();
-        var controller = new RuntimeHealthController(health, principal, auth);
+        var scheduler = new StubSchedulerStatusQueryService();
+        var controller = new RuntimeHealthController(health, scheduler, principal, auth);
         var result = await controller.GetRuntimeHealth(cancellationToken: CancellationToken.None);
         result.Result.Should().BeOfType<ForbidResult>();
     }
@@ -32,8 +33,33 @@ public sealed class Epic34AuthorizationTests
         var principal = new StubPrincipalContext();
         var auth = new StubAuthorizationEvaluationService(allowed: true);
         var health = new StubRuntimeHealthQueryService();
-        var controller = new RuntimeHealthController(health, principal, auth);
+        var scheduler = new StubSchedulerStatusQueryService();
+        var controller = new RuntimeHealthController(health, scheduler, principal, auth);
         var result = await controller.GetRuntimeHealth(cancellationToken: CancellationToken.None);
+        result.Result.Should().BeOfType<OkObjectResult>();
+    }
+
+    [Fact]
+    public async Task RuntimeHealthController_GetSchedulerStatus_WithoutRuntimeHealthRead_Returns403()
+    {
+        var principal = new StubPrincipalContext();
+        var auth = new StubAuthorizationEvaluationService(allowed: false);
+        var health = new StubRuntimeHealthQueryService();
+        var scheduler = new StubSchedulerStatusQueryService();
+        var controller = new RuntimeHealthController(health, scheduler, principal, auth);
+        var result = await controller.GetSchedulerStatus(cancellationToken: CancellationToken.None);
+        result.Result.Should().BeOfType<ForbidResult>();
+    }
+
+    [Fact]
+    public async Task RuntimeHealthController_GetSchedulerStatus_WithRuntimeHealthRead_Returns200()
+    {
+        var principal = new StubPrincipalContext();
+        var auth = new StubAuthorizationEvaluationService(allowed: true);
+        var health = new StubRuntimeHealthQueryService();
+        var scheduler = new StubSchedulerStatusQueryService();
+        var controller = new RuntimeHealthController(health, scheduler, principal, auth);
+        var result = await controller.GetSchedulerStatus(cancellationToken: CancellationToken.None);
         result.Result.Should().BeOfType<OkObjectResult>();
     }
 
@@ -95,6 +121,35 @@ public sealed class Epic34AuthorizationTests
                 [],
                 [],
                 []));
+    }
+
+    private sealed class StubSchedulerStatusQueryService : ISchedulerStatusQueryService
+    {
+        public ValueTask<SchedulerStatusSnapshot> GetStatusAsync(
+            string? runtimePlaneId = null,
+            CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(new SchedulerStatusSnapshot(
+                DateTimeOffset.UtcNow,
+                SchedulerLoopStatus.Unknown,
+                ScheduleRuntimePlaneDefaults.ExpectedManagementPlaneId,
+                null,
+                null,
+                SchedulerPlaneAlignment.Unknown,
+                false,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                "No scheduler heartbeat yet."));
     }
 
     private sealed class StubOperatorCapabilitiesQueryService : IOperatorCapabilitiesQueryService

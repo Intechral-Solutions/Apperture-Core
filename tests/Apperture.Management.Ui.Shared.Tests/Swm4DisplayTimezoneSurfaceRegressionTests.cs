@@ -28,6 +28,12 @@ public sealed class Swm4DisplayTimezoneSurfaceRegressionTests
             .Should().Contain("TimestampDisplay");
         File.ReadAllText(RepoPath("src/Apperture.ControlPlane/Apperture.Management.Ui.Client/Pages/Control/ControlCenter.razor"))
             .Should().Contain("OperatorTimestampFormat");
+        File.ReadAllText(RepoPath("src/Apperture.ControlPlane/Apperture.Management.Ui.Client/Pages/Control/ControlCenter.razor"))
+            .Should().Contain("TimestampDisplay");
+        File.ReadAllText(RepoPath("src/Apperture.ControlPlane/Apperture.Management.Ui.Client/Pages/Control/ControlCenter.razor"))
+            .Should().Contain("Scheduler runtime");
+        File.ReadAllText(RepoPath("src/Apperture.ControlPlane/Apperture.Management.Ui.Client/Pages/Control/ControlCenter.razor"))
+            .Should().Contain("GetSchedulerStatusAsync");
         File.ReadAllText(RepoPath("src/Apperture.ControlPlane/Apperture.Management.Ui.Client/Pages/Runs/RunsList.razor"))
             .Should().Contain("FormatRunListWhenLine");
     }

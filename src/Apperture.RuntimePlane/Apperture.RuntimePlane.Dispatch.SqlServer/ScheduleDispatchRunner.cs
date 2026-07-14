@@ -50,7 +50,7 @@ public sealed class ScheduleDispatchRunner : IScheduleDispatchRunner
         _claimOptions = claimOptions;
     }
 
-    public async ValueTask RunCycleAsync(RuntimePlaneId planeId, DateTimeOffset asOfUtc, CancellationToken ct = default)
+    public async ValueTask<ScheduleDispatchCycleResult> RunCycleAsync(RuntimePlaneId planeId, DateTimeOffset asOfUtc, CancellationToken ct = default)
     {
         var hostId = _hostIdentity.HostId;
         var staleCutoffUtc = asOfUtc.AddMinutes(-_claimOptions.ClaimLeaseMinutes);
@@ -62,16 +62,42 @@ public sealed class ScheduleDispatchRunner : IScheduleDispatchRunner
             .Concat(stale.Where(s => !due.Any(d => d.ScheduleId == s.ScheduleId && d.FireTimeUtc == s.FireTimeUtc)))
             .ToList();
 
+        var claimed = 0;
+        var dispatched = 0;
+        var skipped = 0;
+
         foreach (var candidate in candidates)
         {
-            await ProcessDueAsync(candidate, hostId, staleCutoffUtc, ct);
+            var outcome = await ProcessDueAsync(candidate, hostId, staleCutoffUtc, ct);
+            switch (outcome)
+            {
+                case CycleCandidateOutcome.Skipped:
+                    skipped++;
+                    break;
+                case CycleCandidateOutcome.Claimed:
+                    claimed++;
+                    break;
+                case CycleCandidateOutcome.Dispatched:
+                    claimed++;
+                    dispatched++;
+                    break;
+            }
         }
+
+        return new ScheduleDispatchCycleResult(claimed, dispatched, skipped);
     }
 
     private static ScheduleFireCandidate NormalizeFireUtc(ScheduleFireCandidate c) =>
         new(c.ScheduleId, c.AssignmentId, new DateTimeOffset(c.FireTimeUtc.UtcDateTime, TimeSpan.Zero));
 
-    private async Task ProcessDueAsync(ScheduleFireCandidate candidate, string hostId, DateTimeOffset staleCutoffUtc, CancellationToken ct)
+    private enum CycleCandidateOutcome
+    {
+        Skipped,
+        Claimed,
+        Dispatched
+    }
+
+    private async Task<CycleCandidateOutcome> ProcessDueAsync(ScheduleFireCandidate candidate, string hostId, DateTimeOffset staleCutoffUtc, CancellationToken ct)
     {
         var claimed = await _repo.TryClaimFireAsync(candidate.ScheduleId, candidate.FireTimeUtc, candidate.AssignmentId, hostId, ct);
         if (!claimed)
@@ -98,40 +124,35 @@ public sealed class ScheduleDispatchRunner : IScheduleDispatchRunner
         }
 
         if (!claimed)
-            return;
+            return CycleCandidateOutcome.Skipped;
 
         var definition = await _repo.GetDefinitionAsync(new ScheduleId(candidate.ScheduleId), ct);
         if (definition is null)
         {
             await CompleteWithOutcomeAsync(candidate, "Failed", "Schedule definition not found", null, ct);
-            return;
+            return CycleCandidateOutcome.Claimed;
         }
 
         if (definition.Target.JobType == ScheduledJobType.WorkflowExecution)
-        {
-            await ProcessWorkflowTargetAsync(definition, candidate, ct);
-            return;
-        }
+            return await ProcessWorkflowTargetAsync(definition, candidate, ct);
 
         if (definition.Target.JobType == ScheduledJobType.ModuleOperationExecution)
-        {
-            await ProcessOperationTargetAsync(definition, candidate, ct);
-            return;
-        }
+            return await ProcessOperationTargetAsync(definition, candidate, ct);
 
         await CompleteWithOutcomeAsync(candidate, "Failed", $"Unsupported target type: {definition.Target.JobType}", null, ct);
+        return CycleCandidateOutcome.Claimed;
     }
 
-    private async Task ProcessWorkflowTargetAsync(ScheduleDefinition definition, ScheduleFireCandidate candidate, CancellationToken ct)
+    private async Task<CycleCandidateOutcome> ProcessWorkflowTargetAsync(ScheduleDefinition definition, ScheduleFireCandidate candidate, CancellationToken ct)
     {
         if (!await EnsureIntegrationOperationalAsync(definition.IntegrationId, candidate, ct))
-            return;
+            return CycleCandidateOutcome.Claimed;
 
         var workflowId = ParseWorkflowDefinitionId(definition.Target.JobConfiguration);
         if (workflowId is null)
         {
             await CompleteWithOutcomeAsync(candidate, "Failed", "Invalid JobConfiguration: missing workflowDefinitionId", null, ct);
-            return;
+            return CycleCandidateOutcome.Claimed;
         }
 
         var canDispatch = await _guard.CanDispatchWorkflowAsync(workflowId, ct);
@@ -153,7 +174,7 @@ public sealed class ScheduleDispatchRunner : IScheduleDispatchRunner
                 ), ct);
             }
             catch { /* best-effort audit */ }
-            return;
+            return CycleCandidateOutcome.Claimed;
         }
 
         var request = new StartWorkflowRequest(
@@ -185,7 +206,7 @@ public sealed class ScheduleDispatchRunner : IScheduleDispatchRunner
                 ), ct);
             }
             catch { /* best-effort audit */ }
-            return;
+            return CycleCandidateOutcome.Claimed;
         }
 
         await CompleteWithOutcomeAsync(candidate, "Dispatched", null, result.RunId.Value, ct);
@@ -214,18 +235,19 @@ public sealed class ScheduleDispatchRunner : IScheduleDispatchRunner
             LastOutcomeReason: null,
             LastSuccessfulDispatchUtc: now
         ), ct);
+        return CycleCandidateOutcome.Dispatched;
     }
 
-    private async Task ProcessOperationTargetAsync(ScheduleDefinition definition, ScheduleFireCandidate candidate, CancellationToken ct)
+    private async Task<CycleCandidateOutcome> ProcessOperationTargetAsync(ScheduleDefinition definition, ScheduleFireCandidate candidate, CancellationToken ct)
     {
         if (!await EnsureIntegrationOperationalAsync(definition.IntegrationId, candidate, ct))
-            return;
+            return CycleCandidateOutcome.Claimed;
 
         var operationId = ParseOperationDefinitionId(definition.Target.JobConfiguration);
         if (operationId is null)
         {
             await CompleteWithOutcomeAsync(candidate, "Failed", "Invalid JobConfiguration: missing operationDefinitionId", null, ct);
-            return;
+            return CycleCandidateOutcome.Claimed;
         }
 
         var canDispatch = await _guard.CanDispatchOperationAsync(operationId, ct);
@@ -247,7 +269,7 @@ public sealed class ScheduleDispatchRunner : IScheduleDispatchRunner
                 ), ct);
             }
             catch { /* best-effort audit */ }
-            return;
+            return CycleCandidateOutcome.Claimed;
         }
 
         var request = new StartOperationRequest(
@@ -278,7 +300,7 @@ public sealed class ScheduleDispatchRunner : IScheduleDispatchRunner
                 ), ct);
             }
             catch { /* best-effort audit */ }
-            return;
+            return CycleCandidateOutcome.Claimed;
         }
 
         await CompleteWithOutcomeAsync(candidate, "Dispatched", null, result.RunId.Value, ct);
@@ -307,6 +329,7 @@ public sealed class ScheduleDispatchRunner : IScheduleDispatchRunner
             LastOutcomeReason: null,
             LastSuccessfulDispatchUtc: now
         ), ct);
+        return CycleCandidateOutcome.Dispatched;
     }
 
     private async Task<bool> EnsureIntegrationOperationalAsync(IntegrationId? integrationId, ScheduleFireCandidate candidate, CancellationToken ct)
