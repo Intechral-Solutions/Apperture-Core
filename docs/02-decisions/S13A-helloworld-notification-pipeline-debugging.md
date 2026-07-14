@@ -9,11 +9,10 @@ Executing the HelloWorld workflow on `Sample.HelloWorld` did not produce notific
 
 ## Root cause
 
-**Worker-emitted platform events were persisted but never evaluated on Management Host.**
+Two separate gaps can both look like “no notification”:
 
-- Worker uses `SqlPlatformEventStore` (append only).
-- Management Host uses `EvaluatingPlatformEventStore` (append + inline notification evaluation) for schedule/observation emits only.
-- Module `demo.completed` events from HelloWorld Complete step were stored in `PlatformEvents` with no linked `NotificationInstances`.
+1. **Emit never happens (empty `PlatformEvents`)** — HelloWorld Complete previously resolved the `Db` slot first and `return null` when unbound. That was treated as step success and **skipped emit entirely**. After the S13B emit-path fix: emit `demo.completed` first; fail loudly if emit skips or `Db` is missing.
+2. **Emit persists but is never evaluated (rows in `PlatformEvents`, empty `NotificationInstances`)** — Worker uses `SqlPlatformEventStore` (append only). Management Host only evaluated its own appends via `EvaluatingPlatformEventStore`. Module events sat unevaluated until the S13A poller.
 
 **Secondary:** `HelloWorld demo completed` is a **module-scoped** built-in definition. S9 self-subscribe (`/me/notifications`) only listed **platform-scoped** definitions, so operators could not subscribe without admin subscription setup.
 
@@ -22,6 +21,7 @@ Executing the HelloWorld workflow on `Sample.HelloWorld` did not produce notific
 1. **`PlatformEventNotificationEvaluationHostedService`** on Management Host — polls module platform events (`ModuleId != null`) with no notification instance and runs `INotificationEvaluateOnlyCoordinator.EvaluatePlatformEventAsync`.
 2. **`SubscribableNotificationDefinitions`** — include module built-ins with `StaticRuleMutableSubscription` for operator email preferences.
 3. **`NotificationInstanceCoordinator`** — module built-ins with no deliverable recipients create a **suppressed** instance (`noRouteConfigured`) with recipient snapshot for S10 diagnostics.
+4. **HelloWorld Complete emit guarantees** — emit before `Db`; fail when `Emitted=false` or `Db` unbound; WorkerHost wires `IWorkflowExecutor` with the real `IModulePlatformEventEmitter` and rejects `NullModulePlatformEventEmitter` at startup.
 
 ## HelloWorld trigger path
 
@@ -44,9 +44,9 @@ Same as platform pipeline (see S12 / Epic 77 runbook):
 
 ## Diagnostics
 
-- Config → Notifications → Instances / Delivery
-- Instance detail: recipient snapshot shows skipped reasons if not subscribed
-- S12 pipeline verification tools remain for synthetic expected-run-missing; HelloWorld uses real workflow execution
+If SQL shows **no** `PlatformEvents` for `apperture.module.sample.helloworld.demo.completed` after a Greet run, the Worker Complete step never emitted (common cause: unbound `Db` slot with the pre-fix silent `return null`). After rebuild, Complete should either persist the event or fail with an explicit emit/`Db` message.
+
+If events exist but **no** `NotificationInstances`, check the Management Host evaluation poller (S13A) and subscription/email flags.
 
 ## Differs from expected-run-missing
 

@@ -1,12 +1,41 @@
 using Apperture.Core.Application.Execution;
 using Apperture.Core.Application.PlatformEvents;
 using Apperture.ModuleSdk.Abstractions;
+using Apperture.ModuleSdk.Abstractions.Signals;
 using Apperture.RuntimePlane.Abstractions;
+using Apperture.RuntimePlane.Engine.PlatformEvents;
+using Microsoft.Extensions.Logging;
 
 namespace Apperture.RuntimeHost.Windows.WorkerHost;
 
 internal static class WorkerHostStartupValidation
 {
+    public static void ValidatePlatformEventPipeline(
+        IModulePlatformEventEmitter emitter,
+        bool platformEventsEnabled,
+        ILogger logger)
+    {
+        if (ReferenceEquals(emitter, NullModulePlatformEventEmitter.Instance)
+            || emitter is NullModulePlatformEventEmitter)
+        {
+            throw new InvalidOperationException(
+                "WorkerHost resolved NullModulePlatformEventEmitter. "
+                + "Module signals (e.g. HelloWorld demo.completed) would be silently dropped. "
+                + "Register AddRuntimePlatformEvents and wire DefaultWorkflowExecutor with IModulePlatformEventEmitter.");
+        }
+
+        logger.LogInformation(
+            "Worker platform-event pipeline: Emitter={EmitterType}; PlatformEvents:Enabled={Enabled}",
+            emitter.GetType().Name,
+            platformEventsEnabled);
+
+        if (!platformEventsEnabled)
+        {
+            logger.LogWarning(
+                "PlatformEvents:Enabled=false — module signals including HelloWorld demo.completed will not be persisted.");
+        }
+    }
+
     public static void ValidateModules(IReadOnlyList<IModule> modules)
     {
         if (modules.Count == 0)

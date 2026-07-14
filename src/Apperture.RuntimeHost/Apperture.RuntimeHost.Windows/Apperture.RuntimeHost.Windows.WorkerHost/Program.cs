@@ -4,9 +4,11 @@ using Apperture.Connectors.Sftp;
 using Apperture.ConnectorResolution;
 using Apperture.RuntimePlane.Dispatch.SqlServer;
 using Apperture.Core.Application.Execution;
+using Apperture.Core.Application.PlatformEvents;
 using Apperture.Core.Application.PlatformSettings;
 using Apperture.Core.Application.Services;
 using Apperture.ModuleSdk.Abstractions;
+using Apperture.ModuleSdk.Abstractions.Signals;
 using Apperture.Persistence.SqlServer;
 using Apperture.Persistence.SqlServer.Options;
 using Apperture.RuntimeHost.Windows.WorkerHost;
@@ -144,13 +146,28 @@ builder.Services.AddWorkerHostIntegrationRepository();
         WorkerHostStartupValidation.ValidateHandlerOwnership(registry, modules);
         return registry;
     });
-    builder.Services.AddScoped<IWorkflowExecutor, DefaultWorkflowExecutor>();
+    // Explicit factory: never allow the 2-arg DefaultWorkflowExecutor ctor that wires NullModulePlatformEventEmitter.
+    builder.Services.AddScoped<IWorkflowExecutor>(sp => new DefaultWorkflowExecutor(
+        sp.GetRequiredService<IRuntimeSlotResolver>(),
+        sp.GetRequiredService<IStepHandlerRegistry>(),
+        sp.GetRequiredService<IModulePlatformEventEmitter>(),
+        sp.GetRequiredService<IModuleOperationalLogger>(),
+        sp.GetRequiredService<IModuleTelemetry>(),
+        sp.GetRequiredService<ILoggerFactory>()));
 
     builder.Services.AddHostedService<StartRequestWorker>();
     builder.Services.AddHostedService<ScheduleDispatchBackgroundService>();
     builder.Services.AddHostedService<ModuleCompositionBootstrapHostedService>();
 
     var host = builder.Build();
+
+    using (var validateScope = host.Services.CreateScope())
+    {
+        var platformEvents = validateScope.ServiceProvider.GetRequiredService<IOptions<PlatformEventsOptions>>().Value;
+        var emitter = validateScope.ServiceProvider.GetRequiredService<IModulePlatformEventEmitter>();
+        WorkerHostStartupValidation.ValidatePlatformEventPipeline(emitter, platformEvents.Enabled, startupLogger);
+    }
+
     startupLogger.LogInformation("Worker runtime launch succeeded; entering run loop.");
     host.Run();
 }
