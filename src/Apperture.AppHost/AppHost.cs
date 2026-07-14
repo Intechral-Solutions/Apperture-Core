@@ -38,7 +38,10 @@ builder.AddProject<Projects.Apperture_RuntimeHost_Windows_WorkerHost>("worker")
     .WithReference(db, connectionName: "DefaultConnection")
     .WithEnvironment("DOTNET_ENVIRONMENT", "Development")
     .WithEnvironment("ASPNETCORE_ENVIRONMENT", "Development")
+    // Host/claim identity (ScheduleRuns.ClaimedByHostId). Independent of schedule plane (SWM-1).
     .WithEnvironment("APERTURE_RUNTIME_ID", "worker-local")
+    // Must match SchedulesController / IntegrationSchedulesController assignment default ("local").
+    .WithEnvironment("ScheduleDispatch__RuntimePlaneId", "local")
     .WaitFor(managementApi);
 
 builder.Build().Run();

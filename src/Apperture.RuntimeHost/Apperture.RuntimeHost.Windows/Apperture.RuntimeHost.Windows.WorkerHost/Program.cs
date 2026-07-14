@@ -85,10 +85,9 @@ builder.Services.AddWorkerHostIntegrationRepository();
     builder.Services.AddConnectorResolution();
     builder.Services.AddSchedulePersistence();
     builder.Services.Configure<ScheduleDispatchOptions>(builder.Configuration.GetSection(ScheduleDispatchOptions.SectionName));
-    builder.Services.PostConfigure<ScheduleDispatchOptions>(opts =>
-    {
-        opts.RuntimePlaneId ??= builder.Configuration["APERTURE_RUNTIME_ID"] ?? builder.Configuration["RuntimeHostIdentity:RuntimeId"] ?? "local";
-    });
+    // SWM-1: schedule plane is independent of APERTURE_RUNTIME_ID (host/claim identity).
+    // Default plane "local" matches SchedulesController / IntegrationSchedulesController assignment defaults.
+    builder.Services.PostConfigure<ScheduleDispatchOptions>(ScheduleDispatchOptionsDefaults.ApplyPlaneDefaults);
     builder.Services.AddSingleton<ISchedulerHostIdentity>(sp =>
     {
         var opts = sp.GetRequiredService<IOptions<ScheduleDispatchOptions>>().Value;

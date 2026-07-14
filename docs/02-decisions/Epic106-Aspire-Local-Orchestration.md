@@ -16,7 +16,19 @@ Add [`Apperture.AppHost`](../../src/Apperture.AppHost/) and [`Apperture.ServiceD
 | **Processes** | Management API (:9000), Management UI (:9001), WorkerHost |
 | **Ordering** | `WaitFor`: SQL → Management API (health/migrations) → UI and Worker |
 | **ServiceDefaults** | Health checks, OpenTelemetry, service discovery conventions |
-| **Worker identity** | `APERTURE_RUNTIME_ID=worker-local` for dev |
+| **Worker identity** | `APERTURE_RUNTIME_ID=worker-local` for **host/claim** identity (not schedule plane) |
+| **Schedule plane (SWM-1)** | `ScheduleDispatch__RuntimePlaneId=local` so WorkerHost timer matches assignment defaults |
+
+### Scheduling under Aspire (SWM-1)
+
+| Role | Process | Mechanism |
+|------|---------|-----------|
+| Timer dispatch | WorkerHost | `ScheduleDispatchBackgroundService` evaluates plane `local` |
+| Manual dispatch | Management.Host | Recovery `run-cycle` (plane `local`) |
+| Execution | WorkerHost | `StartRequestWorker` |
+| Shared SQL | Both | Aspire-injected `ConnectionStrings:DefaultConnection` → catalog `Apperture` |
+
+**Do not** treat `APERTURE_RUNTIME_ID` as the schedule plane. See [Epic SWM-1](./Epic-SWM1-Runtime-Plane-Identity-Alignment.md).
 
 **Preferred start:**
 
@@ -38,6 +50,7 @@ dotnet run --project src/Apperture.AppHost/Apperture.AppHost.csproj
 
 ## References
 
+- [Epic SWM-1](./Epic-SWM1-Runtime-Plane-Identity-Alignment.md) — schedule plane vs `APERTURE_RUNTIME_ID`
 - [ADR-0039](./ADR-0039-environment-startup-bootstrap-and-platform-settings.md) — Epic 106 relationship section
 - [management-platform-configuration.md](../03-operations/management-platform-configuration.md) — local orchestration section
 - [Epic 107](./Epic107-Post-Aspire-Assessment.md) — what Aspire solved vs deferred

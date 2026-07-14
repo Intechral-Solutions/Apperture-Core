@@ -4,6 +4,7 @@
 - **Type:** Read-only architecture & runtime investigation (planning pass, not implementation)
 - **Dev mode at time of audit:** Aspire (`scripts/.runtime/dev/mode.json` → `"mode": "aspire"`)
 - **Method:** Repository-wide search, dependency inspection, configuration tracing, migration review, composition-root tracing. Runtime smoke test (§H) and test-suite execution (§12) are **not** run in this pass and are flagged as required follow-up.
+- **SWM-1 follow-up (2026-07-14):** Finding **C1 (plane mismatch) resolved** by decoupling `ScheduleDispatch:RuntimePlaneId` from `APERTURE_RUNTIME_ID`. See [swm1-runtime-plane-diagnosis.md](./swm1-runtime-plane-diagnosis.md) and [Epic SWM-1](../02-decisions/Epic-SWM1-Runtime-Plane-Identity-Alignment.md). Historical text below describes pre-fix Aspire behavior.
 
 > Evidence convention: file paths and line numbers refer to the state of the repository at audit time. Conclusions are marked **Confirmed** (pure code/config trace), **Strongly-supported inference**, or **Unverified** (needs runtime).
 
@@ -13,7 +14,7 @@
 
 **Is scheduling operational?** The scheduling *machinery* is implemented and structurally sound, but **automatic (timer-driven) scheduled execution is broken in the Aspire development environment** — the environment this repository is currently running. Manual/triggered execution works; the background timer path does not.
 
-**Most likely failure point (Confirmed statically; High confidence):** a **runtime-plane identity mismatch**.
+**Most likely failure point (Confirmed statically; High confidence):** a **runtime-plane identity mismatch**. **(Resolved in SWM-1 — see note above.)**
 
 - Schedules are assigned to plane **`"local"`** (controller default).
 - The WorkerHost that runs the dispatch timer polls plane **`"worker-local"`** because Aspire injects `APERTURE_RUNTIME_ID=worker-local`.
