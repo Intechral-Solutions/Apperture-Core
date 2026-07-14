@@ -2,7 +2,18 @@ var builder = DistributedApplication.CreateBuilder(args);
 
 var sqlPassword = builder.AddParameter("sql-password", secret: true);
 
-var sql = builder.AddSqlServer("sql", sqlPassword)
+// Stable host port (default 14333) so local tools / Platform Settings can target Aspire SQL
+// without chasing a random mapping each start. Keep 1433 free for script/docker-compose SQL.
+const int defaultSqlHostPort = 14333;
+var sqlHostPortRaw = builder.Configuration["Aspire:SqlServer:HostPort"];
+var sqlHostPort = string.IsNullOrWhiteSpace(sqlHostPortRaw)
+    ? defaultSqlHostPort
+    : int.TryParse(sqlHostPortRaw, out var parsedPort) ? parsedPort : -1;
+if (sqlHostPort is <= 0 or > 65535)
+    throw new InvalidOperationException(
+        $"Aspire:SqlServer:HostPort must be an integer between 1 and 65535 (configured: '{sqlHostPortRaw}').");
+
+var sql = builder.AddSqlServer("sql", sqlPassword, port: sqlHostPort)
     .WithImageTag("2022-latest")
     .WithLifetime(ContainerLifetime.Persistent)
     .WithDataVolume("apperture-aspire-sql");

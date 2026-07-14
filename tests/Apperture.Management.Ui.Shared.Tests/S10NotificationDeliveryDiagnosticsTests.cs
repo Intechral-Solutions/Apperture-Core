@@ -63,6 +63,17 @@ public sealed class NotificationDeliveryErrorGuidanceTests
         guidance.Should().NotContain("secret-ref");
         guidance.Should().Contain("authentication");
     }
+
+    [Fact]
+    public void Summarize_maps_tls_and_generic_smtp_client_failures()
+    {
+        NotificationDeliveryErrorGuidance
+            .Summarize("Failure sending mail. → Server does not support secure connections.", "failed")
+            .Should().Contain("TLS/STARTTLS");
+        NotificationDeliveryErrorGuidance
+            .Summarize("Failure sending mail.", "failed")
+            .Should().Contain("SMTP send failed");
+    }
 }
 
 public sealed class S10NotificationDiagnosticsUiTests

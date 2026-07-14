@@ -49,7 +49,26 @@ internal static class SmtpEmailTransport
         catch (Exception ex)
         {
             logger.LogWarning(ex, "SMTP send failed for recipient {Recipient}.", request.Recipient);
-            return new EmailNotificationSendResult(false, null, ex.Message);
+            // SmtpClient often uses a generic outer message ("Failure sending mail.");
+            // operators need the inner chain in diagnostics / outbox LastError.
+            return new EmailNotificationSendResult(false, null, FormatExceptionChain(ex));
         }
+    }
+
+    internal static string FormatExceptionChain(Exception ex)
+    {
+        var parts = new List<string>();
+        for (Exception? current = ex; current is not null; current = current.InnerException)
+        {
+            var message = current.Message?.Trim();
+            if (string.IsNullOrEmpty(message))
+                continue;
+            if (parts.Count > 0 &&
+                string.Equals(parts[^1], message, StringComparison.Ordinal))
+                continue;
+            parts.Add(message);
+        }
+
+        return parts.Count == 0 ? "SMTP send failed." : string.Join(" → ", parts);
     }
 }

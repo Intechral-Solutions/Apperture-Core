@@ -61,6 +61,7 @@ builder.Services.AddAttentionIncidentObservation(builder.Configuration);
 builder.Services.AddApperturePlatformSettingsManagementHost(builder.Configuration);
 builder.Services.AddUnisaCampusNexusPaymentPlansIntegration(applyModulePersistenceMigrationsOnStartup: true);
 builder.Services.AddProofCampusNexusStudentReviewIntegration();
+builder.Services.AddSampleHelloWorldIntegration();
 builder.Services.AddAppertureAuthentication(builder.Configuration);
 builder.Services.AddAuthorization();
 
