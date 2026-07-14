@@ -98,15 +98,18 @@ public sealed class SqlScheduleRepository : IScheduleRepository
 
     public async ValueTask<bool> RunExistsAsync(string scheduleId, DateTimeOffset fireTimeUtc, CancellationToken ct = default)
     {
-        var instant = fireTimeUtc.UtcDateTime;
+        // SWM-2: compare DateTimeOffset to DateTimeOffset. EF SQL Server cannot translate
+        // member access like FireTimeUtc.UtcDateTime inside the expression tree.
+        var instant = NormalizeFireTimeUtc(fireTimeUtc);
         return await _db.ScheduleRuns.AsNoTracking()
-            .AnyAsync(x => x.ScheduleId == scheduleId && x.FireTimeUtc.UtcDateTime == instant, ct);
+            .AnyAsync(x => x.ScheduleId == scheduleId && x.FireTimeUtc == instant, ct);
     }
 
     public async ValueTask<bool> TryClaimFireAsync(string scheduleId, DateTimeOffset fireTimeUtc, string assignmentId, string hostId, CancellationToken ct = default)
     {
+        var instant = NormalizeFireTimeUtc(fireTimeUtc);
         // InMemory does not reliably enforce unique indexes on DateTimeOffset; treat existing row as lost claim race.
-        if (await RunExistsAsync(scheduleId, fireTimeUtc, ct))
+        if (await RunExistsAsync(scheduleId, instant, ct))
             return false;
 
         try
@@ -115,7 +118,7 @@ public sealed class SqlScheduleRepository : IScheduleRepository
             {
                 ScheduleId = scheduleId,
                 AssignmentId = assignmentId,
-                FireTimeUtc = fireTimeUtc,
+                FireTimeUtc = instant,
                 StartedAtUtc = DateTimeOffset.UtcNow,
                 Outcome = "InProgress",
                 OutcomeReason = null,
@@ -152,6 +155,7 @@ public sealed class SqlScheduleRepository : IScheduleRepository
     public async ValueTask<bool> TryRecoverStaleClaimAsync(string scheduleId, DateTimeOffset fireTimeUtc, string assignmentId, string hostId, DateTimeOffset staleCutoffUtc, CancellationToken ct = default)
     {
         var now = DateTimeOffset.UtcNow;
+        var instant = NormalizeFireTimeUtc(fireTimeUtc);
         var isInMemory = _db.Database.ProviderName?.Contains("InMemory", StringComparison.Ordinal) == true;
 
         // InMemory provider does not support ExecuteUpdateAsync.
@@ -160,7 +164,7 @@ public sealed class SqlScheduleRepository : IScheduleRepository
             var rows = await _db.ScheduleRuns
                 .Where(r =>
                     r.ScheduleId == scheduleId &&
-                    r.FireTimeUtc == fireTimeUtc &&
+                    r.FireTimeUtc == instant &&
                     r.Outcome == "InProgress" &&
                     r.StartedAtUtc < staleCutoffUtc)
                 .ExecuteUpdateAsync(
@@ -175,21 +179,20 @@ public sealed class SqlScheduleRepository : IScheduleRepository
         ScheduleRunEntity? run;
         if (isInMemory)
         {
-            var instant = fireTimeUtc.UtcDateTime;
             var candidates = await _db.ScheduleRuns
                 .Where(r =>
                     r.ScheduleId == scheduleId &&
                     r.Outcome == "InProgress" &&
                     r.StartedAtUtc < staleCutoffUtc)
                 .ToListAsync(ct);
-            run = candidates.FirstOrDefault(r => r.FireTimeUtc.UtcDateTime == instant);
+            run = candidates.FirstOrDefault(r => r.FireTimeUtc == instant);
         }
         else
         {
             run = await _db.ScheduleRuns.FirstOrDefaultAsync(
                 r =>
                     r.ScheduleId == scheduleId &&
-                    r.FireTimeUtc == fireTimeUtc &&
+                    r.FireTimeUtc == instant &&
                     r.Outcome == "InProgress" &&
                     r.StartedAtUtc < staleCutoffUtc,
                 ct);
@@ -217,9 +220,10 @@ public sealed class SqlScheduleRepository : IScheduleRepository
 
     public async ValueTask CompleteRunAsync(string scheduleId, DateTimeOffset fireTimeUtc, string outcome, string? outcomeReason, string? runId, CancellationToken ct = default)
     {
-        var instant = fireTimeUtc.UtcDateTime;
+        // SWM-2: same normalization as RunExistsAsync — no .UtcDateTime in the EF predicate.
+        var instant = NormalizeFireTimeUtc(fireTimeUtc);
         var run = await _db.ScheduleRuns.FirstOrDefaultAsync(
-            x => x.ScheduleId == scheduleId && x.FireTimeUtc.UtcDateTime == instant, ct);
+            x => x.ScheduleId == scheduleId && x.FireTimeUtc == instant, ct);
         if (run is null)
             return;
         run.CompletedAtUtc = DateTimeOffset.UtcNow;
@@ -228,6 +232,13 @@ public sealed class SqlScheduleRepository : IScheduleRepository
         run.RunId = runId;
         await _db.SaveChangesAsync(ct);
     }
+
+    /// <summary>
+    /// UTC instant with zero offset, matching <c>ScheduleDispatchRunner</c> fire normalization
+    /// and the unique index on <c>(ScheduleId, FireTimeUtc)</c>.
+    /// </summary>
+    private static DateTimeOffset NormalizeFireTimeUtc(DateTimeOffset fireTimeUtc) =>
+        new(fireTimeUtc.UtcDateTime, TimeSpan.Zero);
 
     public async ValueTask UpdateStateAsync(string assignmentId, ScheduleStateUpdate state, CancellationToken ct = default)
     {

@@ -91,3 +91,15 @@ Schedule dispatch cycle begin. Plane=local HostId=worker-local Assignments=1 Due
 **Automatic fire:** **No** — once a due minute was reached, cycles failed in `SqlScheduleRepository.RunExistsAsync` (`FireTimeUtc.UtcDateTime` not EF-translatable against SQL Server). Zero `ScheduleRuns` rows. This is **outside** SWM-1 plane-identity scope.
 
 **SWM-1 close:** Yes for plane/host identity alignment. Not for full timer E2E until `RunExistsAsync` EF translation is fixed (next scheduling epic).
+
+## SWM-2 follow-up (due-evaluation SQL translation)
+
+**Status:** Fixed in code (`SqlScheduleRepository` normalizes `DateTimeOffset` outside EF queries). See [Epic SWM-2](../02-decisions/Epic-SWM2-Scheduled-Dispatch-E2E-Correctness.md).
+
+| Item | Detail |
+|------|--------|
+| Root cause | `RunExistsAsync` / `CompleteRunAsync` used `FireTimeUtc.UtcDateTime` inside LINQ → SQL Server cannot translate |
+| Entity/DB type | `DateTimeOffset` / `datetimeoffset` |
+| Fix | Compare normalized `DateTimeOffset` (`offset=0`) to column; normalize on claim insert |
+| Tests | `ScheduleRunExistsQueryTests` (unit); `ScheduleRunExistsSqlServerTests` (SQL when available) |
+| Live E2E (2026-07-14) | Automatic fire OK — e.g. `RunId=e7f02827639a46bbbabbbc47`, host `worker-local`, outcome `Dispatched` |
