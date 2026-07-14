@@ -19,4 +19,7 @@ public static class PlatformSettingKeys
     public const string PlatformEventsEnabled = "PlatformEvents.Enabled";
     public const string AttentionIncidentsObservationEnabled = "AttentionIncidents.Observation.Enabled";
     public const string AttentionIncidentsObservationInterval = "AttentionIncidents.Observation.Interval";
+
+    /// <summary>SWM-3: default IANA/Windows time-zone id applied when schedule create omits TimeZone.</summary>
+    public const string SchedulingDefaultTimeZoneId = "Scheduling.DefaultTimeZoneId";
 }

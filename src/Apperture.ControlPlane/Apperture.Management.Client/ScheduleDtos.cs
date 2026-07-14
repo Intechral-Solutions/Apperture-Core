@@ -1,21 +1,21 @@
 namespace Apperture.Management.Client;
 
-/// <summary>Epic 50: Create schedule for Integration. Shape matches API CreateIntegrationScheduleRequestBody.</summary>
+/// <summary>Epic 50 / SWM-3: Create schedule for Integration. Null/blank TimeZone → platform Scheduling.DefaultTimeZoneId.</summary>
 public sealed record CreateIntegrationScheduleRequest(
     string Name,
     string RecurrenceExpression,
-    string? TimeZone = "UTC",
+    string? TimeZone = null,
     bool Enabled = true,
     int? TargetJobType = 0,
     string? TargetJobConfiguration = null,
     string? ExecutionPolicyRef = null,
     string? RuntimePlaneId = "local");
 
-/// <summary>Epic 38: Create schedule request. Shape matches API CreateScheduleRequestBody.</summary>
+/// <summary>Epic 38 / SWM-3: Create schedule request. Null/blank TimeZone → platform Scheduling.DefaultTimeZoneId.</summary>
 public sealed record CreateScheduleRequest(
     string Name,
     string RecurrenceExpression,
-    string? TimeZone = "UTC",
+    string? TimeZone = null,
     bool Enabled = true,
     int? TargetJobType = 0,
     string? TargetJobConfiguration = null,

@@ -135,8 +135,8 @@
                         <label class="block text-xs text-muted">Time zone</label>
                         <input class="mt-1 w-full rounded border border-default bg-surface px-2 py-2 text-sm"
                                @bind="_timeZone"
-                               placeholder="UTC" />
-                        <div class="mt-1 text-xs text-muted">IANA time zone (e.g. UTC, America/New_York)</div>
+                               placeholder="America/Los_Angeles" />
+                        <div class="mt-1 text-xs text-muted">IANA id (e.g. UTC, America/Los_Angeles). Cron is interpreted in this zone; fire times are stored as UTC. Leave blank to use Scheduling.DefaultTimeZoneId.</div>
                     </div>
 
                     <div class="flex items-center gap-2">
@@ -170,7 +170,7 @@
     private int _targetKind; // 0 = Workflow, 1 = Operation
     private string _name = "";
     private string _recurrence = "";
-    private string _timeZone = "UTC";
+    private string _timeZone = "";
     private bool _enabled = true;
     private bool _loading;
     private string? _error;
@@ -320,7 +320,7 @@
             var request = new CreateIntegrationScheduleRequest(
                 _name.Trim(),
                 _recurrence.Trim(),
-                string.IsNullOrWhiteSpace(_timeZone) ? "UTC" : _timeZone.Trim(),
+                string.IsNullOrWhiteSpace(_timeZone) ? null : _timeZone.Trim(),
                 _enabled,
                 _targetKind,
                 targetConfig,

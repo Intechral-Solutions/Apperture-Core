@@ -3,6 +3,7 @@
 @inject ThemeService ThemeService
 @inject SessionStateService SessionStateService
 @inject AuthSignInOptionsService AuthSignInOptionsService
+@inject IOperatorDisplayTimeZone OperatorDisplayTimeZone
 
 <AuthRouteGate>
     <Router AppAssembly="@typeof(App).Assembly">
@@ -34,6 +35,9 @@
         {
             /* JS interop not ready */
         }
+
+        // SWM-4: non-blocking; pages may briefly show UTC then upgrade to browser IANA.
+        await OperatorDisplayTimeZone.EnsureResolvedAsync();
 
         await SessionStateService.RefreshAsync();
         await AuthSignInOptionsService.RefreshAsync();

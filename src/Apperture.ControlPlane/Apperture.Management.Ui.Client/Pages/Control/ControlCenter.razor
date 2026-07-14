@@ -1,10 +1,12 @@
 @page "/control/center"
+@using System.Globalization
 @using Apperture.Management.Client
 @using Apperture.Management.Ui.Client.Services
 @using Apperture.Management.Ui.Shared
 @inject IManagementClient Client
 @inject IOperatorCapabilitiesService Capabilities
 @inject NavigationManager Nav
+@inject IOperatorDisplayTimeZone DisplayTimeZone
 @implements IDisposable
 
 <div class="p-4 ui-page-stack">
@@ -421,12 +423,17 @@
 
     protected override async Task OnInitializedAsync()
     {
+        DisplayTimeZone.Changed += OnDisplayZoneChanged;
+        await DisplayTimeZone.EnsureResolvedAsync();
         await LoadCapabilitiesAsync();
         await LoadAsync();
     }
 
+    private void OnDisplayZoneChanged() => _ = InvokeAsync(StateHasChanged);
+
     public void Dispose()
     {
+        DisplayTimeZone.Changed -= OnDisplayZoneChanged;
         _loadCts?.Cancel();
         _loadCts?.Dispose();
     }
@@ -511,8 +518,17 @@
         }
     }
 
-    private string FmtWhen(string iso) =>
-        DateTimeOffset.TryParse(iso, out var dt) ? dt.ToLocalTime().ToString("u") : iso;
+    private string FmtWhen(string iso)
+    {
+        if (!DateTimeOffset.TryParse(iso, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var dt))
+            return iso;
+
+        return OperatorTimestampFormat.FormatPrimary(
+            dt,
+            DisplayTimeZone.TimeZoneId,
+            DisplayTimeZone.Source,
+            showUtcDetail: false);
+    }
 
     private int BlockedWorkCount =>
         _health is null ? 0 : Epic33UiDisplayHelpers.GetPlatformHealthCounts(_health).BlockedWorkCount;

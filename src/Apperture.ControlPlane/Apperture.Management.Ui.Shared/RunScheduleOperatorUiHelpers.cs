@@ -52,12 +52,24 @@ public static class RunScheduleOperatorUiHelpers
         return $"{kind} · {def}";
     }
 
-    public static string FormatRunListWhenLine(RunSummaryDto run)
+    public static string FormatRunListWhenLine(
+        RunSummaryDto run,
+        string displayTimeZoneId,
+        OperatorDisplayTimeZoneSource source)
     {
         if (run.CompletedAt is not null)
-            return $"Ended {run.CompletedAt.Value:g}";
-        return $"Started {run.CreatedAt:g}";
+        {
+            var ended = OperatorTimestampFormat.FormatPrimary(run.CompletedAt, displayTimeZoneId, source);
+            return $"Ended {ended}";
+        }
+
+        var started = OperatorTimestampFormat.FormatPrimary(run.CreatedAt, displayTimeZoneId, source);
+        return $"Started {started}";
     }
+
+    /// <summary>UTC-fallback convenience for tests that do not exercise browser capture.</summary>
+    public static string FormatRunListWhenLine(RunSummaryDto run) =>
+        FormatRunListWhenLine(run, OperatorTimestampFormat.UtcId, OperatorDisplayTimeZoneSource.UtcFallback);
 
     public static string? TryGetScheduleIdFromCorrelation(string? correlationKey)
     {

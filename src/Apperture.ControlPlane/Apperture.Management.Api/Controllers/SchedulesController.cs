@@ -1,4 +1,5 @@
 using Apperture.ControlPlane.Security;
+using Apperture.Core.Application.Scheduling;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Environment;
 using Apperture.Core.Domain.Integration;
@@ -18,12 +19,18 @@ public sealed class SchedulesController : ControllerBase
     private readonly IScheduleGovernanceService _scheduleGovernance;
     private readonly IScheduleManagementService _scheduleManagement;
     private readonly IScheduleValidationService _scheduleValidation;
+    private readonly IScheduleCreateTimeZoneDefaults _createTimeZoneDefaults;
 
-    public SchedulesController(IScheduleGovernanceService scheduleGovernance, IScheduleManagementService scheduleManagement, IScheduleValidationService scheduleValidation)
+    public SchedulesController(
+        IScheduleGovernanceService scheduleGovernance,
+        IScheduleManagementService scheduleManagement,
+        IScheduleValidationService scheduleValidation,
+        IScheduleCreateTimeZoneDefaults createTimeZoneDefaults)
     {
         _scheduleGovernance = scheduleGovernance;
         _scheduleManagement = scheduleManagement;
         _scheduleValidation = scheduleValidation;
+        _createTimeZoneDefaults = createTimeZoneDefaults;
     }
 
     [HttpGet("capabilities")]
@@ -84,10 +91,11 @@ public sealed class SchedulesController : ControllerBase
             });
         }
 
+        var timeZone = await _createTimeZoneDefaults.ResolveCreateTimeZoneIdAsync(body.TimeZone, cancellationToken);
         var validation = _scheduleValidation.ValidateCreate(
             body.Name,
             body.RecurrenceExpression,
-            body.TimeZone,
+            timeZone,
             body.Enabled,
             body.TargetJobType,
             body.TargetJobConfiguration);
@@ -101,7 +109,7 @@ public sealed class SchedulesController : ControllerBase
             new ScheduleId(id),
             body.Name,
             body.RecurrenceExpression,
-            body.TimeZone ?? "UTC",
+            timeZone,
             body.Enabled,
             target,
             body.ExecutionPolicyRef,

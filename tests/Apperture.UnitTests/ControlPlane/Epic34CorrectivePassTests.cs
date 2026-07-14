@@ -1,6 +1,7 @@
 using Apperture.ControlPlane.Security;
 using Microsoft.Extensions.Logging.Abstractions;
 using Apperture.ControlPlane.Security.Models;
+using Apperture.Core.Application.Scheduling;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Environment;
 using Apperture.Core.Domain.Governance;
@@ -66,7 +67,7 @@ public sealed class Epic34CorrectivePassTests
         var gov = new StubScheduleGovernanceService(canManage: false);
         var mgmt = new StubScheduleManagementService();
         var validation = new ScheduleValidationService();
-        var controller = new SchedulesController(gov, mgmt, validation);
+        var controller = new SchedulesController(gov, mgmt, validation, PassthroughCreateTimeZoneDefaults.Instance);
         var result = await controller.Enable("s1", CancellationToken.None);
         result.Should().BeOfType<ForbidResult>();
     }
@@ -77,7 +78,7 @@ public sealed class Epic34CorrectivePassTests
         var gov = new StubScheduleGovernanceService(canManage: true);
         var mgmt = new StubScheduleManagementService();
         var validation = new ScheduleValidationService();
-        var controller = new SchedulesController(gov, mgmt, validation);
+        var controller = new SchedulesController(gov, mgmt, validation, PassthroughCreateTimeZoneDefaults.Instance);
         var result = await controller.Enable("s1", CancellationToken.None);
         result.Should().BeOfType<OkResult>();
     }
@@ -88,7 +89,7 @@ public sealed class Epic34CorrectivePassTests
         var gov = new StubScheduleGovernanceService(canManage: false);
         var mgmt = new StubScheduleManagementService();
         var validation = new ScheduleValidationService();
-        var controller = new SchedulesController(gov, mgmt, validation);
+        var controller = new SchedulesController(gov, mgmt, validation, PassthroughCreateTimeZoneDefaults.Instance);
         var result = await controller.Disable("s1", CancellationToken.None);
         result.Should().BeOfType<ForbidResult>();
     }
@@ -345,5 +346,13 @@ public sealed class Epic34CorrectivePassTests
             ValueTask.FromResult(new ScheduleAssignment(new ScheduleAssignmentId("s1"), scheduleId, runtimePlaneId, policyOverrides, 1, 1));
         public ValueTask<IReadOnlyList<ScheduleAssignment>> GetAssignmentsAsync(RuntimePlaneId runtimePlaneId, CancellationToken cancellationToken = default) =>
             ValueTask.FromResult<IReadOnlyList<ScheduleAssignment>>([]);
+    }
+
+    private sealed class PassthroughCreateTimeZoneDefaults : IScheduleCreateTimeZoneDefaults
+    {
+        public static readonly PassthroughCreateTimeZoneDefaults Instance = new();
+
+        public ValueTask<string> ResolveCreateTimeZoneIdAsync(string? requestedTimeZone, CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(string.IsNullOrWhiteSpace(requestedTimeZone) ? "UTC" : requestedTimeZone.Trim());
     }
 }

@@ -39,10 +39,15 @@ Normalize to UTC `DateTimeOffset` **outside** the query (`new DateTimeOffset(fir
 - Example run: `RunId=e7f02827639a46bbbabbbc47`, `ClaimedByHostId=worker-local`, `Outcome=Dispatched`, fire `2026-07-14T16:28:00Z`.
 - Cycle logs showed `Due=1 Candidates=1` then completed with no EF translation errors.
 
-## SWM-3 backlog (suggested)
+## Follow-ups
+
+SWM-3 (timezone / fire-time semantics) is delivered — see `Epic-SWM3-Schedule-Timezone-Fire-Time-Semantics.md`.
+
+Remaining scheduling UX backlog:
 
 - Scheduler / worker health diagnostics in Management UI
 - Operator visibility for active plane, last evaluation, assignment plane
 - Aspire console log capture / status card
 - Non-Aspire connection-string footguns
 - SchedulerHost stub retirement
+- **Operator Display Time Zone Foundation** (per-user display preference; not in SWM-3)

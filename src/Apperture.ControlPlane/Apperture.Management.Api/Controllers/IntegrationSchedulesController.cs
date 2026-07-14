@@ -1,4 +1,5 @@
 using Apperture.ControlPlane.Security;
+using Apperture.Core.Application.Scheduling;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Environment;
 using Apperture.Core.Domain.Integration;
@@ -9,7 +10,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace Apperture.Management.Api.Controllers;
 
 /// <summary>
-/// Integration-owned schedules. Epic 50.
+/// Integration-owned schedules. Epic 50 / SWM-3 timezone defaults.
 /// </summary>
 [ApiController]
 [Route("api/integrations/{integrationId}/schedules")]
@@ -21,19 +22,22 @@ public sealed class IntegrationSchedulesController : ControllerBase
     private readonly IScheduleManagementService _scheduleManagement;
     private readonly IScheduleGovernanceService _scheduleGovernance;
     private readonly IScheduleValidationService _scheduleValidation;
+    private readonly IScheduleCreateTimeZoneDefaults _createTimeZoneDefaults;
 
     public IntegrationSchedulesController(
         IIntegrationManagementService integrationManagement,
         IScheduleRepository scheduleRepository,
         IScheduleManagementService scheduleManagement,
         IScheduleGovernanceService scheduleGovernance,
-        IScheduleValidationService scheduleValidation)
+        IScheduleValidationService scheduleValidation,
+        IScheduleCreateTimeZoneDefaults createTimeZoneDefaults)
     {
         _integrationManagement = integrationManagement;
         _scheduleRepository = scheduleRepository;
         _scheduleManagement = scheduleManagement;
         _scheduleGovernance = scheduleGovernance;
         _scheduleValidation = scheduleValidation;
+        _createTimeZoneDefaults = createTimeZoneDefaults;
     }
 
     /// <summary>
@@ -77,10 +81,11 @@ public sealed class IntegrationSchedulesController : ControllerBase
             if (!await _scheduleGovernance.CanManageAsync(cancellationToken))
                 return Forbid();
 
+            var timeZone = await _createTimeZoneDefaults.ResolveCreateTimeZoneIdAsync(body.TimeZone, cancellationToken);
             var validation = _scheduleValidation.ValidateCreate(
                 body.Name,
                 body.RecurrenceExpression,
-                body.TimeZone,
+                timeZone,
                 body.Enabled,
                 body.TargetJobType,
                 body.TargetJobConfiguration);
@@ -94,7 +99,7 @@ public sealed class IntegrationSchedulesController : ControllerBase
                 new ScheduleId(scheduleId),
                 body.Name,
                 body.RecurrenceExpression,
-                body.TimeZone ?? "UTC",
+                timeZone,
                 body.Enabled,
                 target,
                 body.ExecutionPolicyRef,

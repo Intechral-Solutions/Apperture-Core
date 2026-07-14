@@ -13,7 +13,7 @@ public sealed class PlatformSettingDefinitionRegistryTests
 
         var defs = sut.GetAll();
 
-        defs.Should().HaveCount(16);
+        defs.Should().HaveCount(17);
         defs.Select(x => x.Key).Should().OnlyHaveUniqueItems();
         sut.TryGet(PlatformSettingKeys.PlatformEventsEnabled)!.InputKind.Should().Be(PlatformSettingInputKind.Toggle);
         sut.TryGet(PlatformSettingKeys.NotificationsDeliveryPollIntervalSeconds)!.InputKind.Should().Be(PlatformSettingInputKind.Number);
@@ -21,5 +21,9 @@ public sealed class PlatformSettingDefinitionRegistryTests
         sut.TryGet(PlatformSettingKeys.NotificationsEmailSmtpHost)!.InputKind.Should().Be(PlatformSettingInputKind.Text);
         sut.TryGet(PlatformSettingKeys.NotificationsEmailSmtpPasswordRef)!.InputKind.Should().Be(PlatformSettingInputKind.Secret);
         sut.TryGet(PlatformSettingKeys.NotificationsEmailSmtpPasswordRef)!.IsSensitive.Should().BeTrue();
+        sut.TryGet(PlatformSettingKeys.SchedulingDefaultTimeZoneId)!.InputKind.Should().Be(PlatformSettingInputKind.Text);
+        sut.TryGet(PlatformSettingKeys.SchedulingDefaultTimeZoneId)!.Category.Should().Be(PlatformSettingCategory.Scheduling);
+        sut.TryGet(PlatformSettingKeys.SchedulingDefaultTimeZoneId)!.DefaultValue.Should().Be("UTC");
+        sut.TryGet(PlatformSettingKeys.SchedulingDefaultTimeZoneId)!.RequiresRestart.Should().BeFalse();
     }
 }

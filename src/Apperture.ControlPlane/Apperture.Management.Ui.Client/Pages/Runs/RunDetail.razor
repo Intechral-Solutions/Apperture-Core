@@ -125,7 +125,7 @@
                             <DrillInLink Href="@($"/schedules/{fxInv.ScheduleId}")">@fxInv.ScheduleId</DrillInLink>
                             @if (fxInv.ScheduleFireTimeUtc is not null)
                             {
-                                <span class="text-xs text-muted ml-2">fire @fxInv.ScheduleFireTimeUtc.Value.ToLocalTime().ToString("u")</span>
+                                <span class="text-xs text-muted ml-2">fire <TimestampDisplay Value="@fxInv.ScheduleFireTimeUtc" ShowUtcDetail="true" /></span>
                             }
                             <div class="text-xs text-muted mt-1">@Epic33UiDisplayHelpers.RunScheduleInferenceDisclaimer</div>
                         </div>
@@ -296,11 +296,11 @@
                     }
                     <div>
                         <div class="text-xs text-muted">Requested</div>
-                        <div class="text-sm text-body">@Fmt(_detail.StartRequestedAt)</div>
+                        <div class="text-sm text-body"><TimestampDisplay Value="@_detail.StartRequestedAt" ShowUtcDetail="true" /></div>
                     </div>
                     <div>
                         <div class="text-xs text-muted">Claimed</div>
-                        <div class="text-sm text-body">@Fmt(_detail.StartClaimedAt)</div>
+                        <div class="text-sm text-body"><TimestampDisplay Value="@_detail.StartClaimedAt" ShowUtcDetail="true" /></div>
                     </div>
                     <div>
                         <div class="text-xs text-muted">Idempotency key</div>
@@ -440,7 +440,7 @@
                                 @foreach (var e in _timeline.Events)
                                 {
                                     <tr class="border-b border-default">
-                                        <td class="px-2 py-2">@e.OccurredAt.ToLocalTime().ToString("u")</td>
+                                        <td class="px-2 py-2"><TimestampDisplay Value="@e.OccurredAt" ShowUtcDetail="true" /></td>
                                         <td class="px-2 py-2 font-mono text-xs">@e.EventKind</td>
                                         <td class="px-2 py-2">@e.Summary</td>
                                         <td class="px-2 py-2">@e.Actor</td>
@@ -494,7 +494,7 @@
                                             @foreach (var e in _detail.LifecycleEvents)
                                             {
                                                 <tr class="border-b border-default">
-                                                    <td class="px-2 py-2">@e.OccurredAt.ToLocalTime().ToString("u")</td>
+                                                    <td class="px-2 py-2"><TimestampDisplay Value="@e.OccurredAt" ShowUtcDetail="true" /></td>
                                                     <td class="px-2 py-2 font-mono text-xs">@e.EventType</td>
                                                     <td class="px-2 py-2">@e.FromStatus</td>
                                                     <td class="px-2 py-2">@e.ToStatus</td>
@@ -535,8 +535,8 @@
                                                     <td class="px-2 py-2 font-mono text-xs">@s.StepName</td>
                                                     <td class="px-2 py-2">@s.Attempt</td>
                                                     <td class="px-2 py-2">@s.Status</td>
-                                                    <td class="px-2 py-2">@Fmt(s.StartedAt)</td>
-                                                    <td class="px-2 py-2">@Fmt(s.EndedAt)</td>
+                                                    <td class="px-2 py-2"><TimestampDisplay Value="@s.StartedAt" ShowUtcDetail="true" /></td>
+                                                    <td class="px-2 py-2"><TimestampDisplay Value="@s.EndedAt" ShowUtcDetail="true" /></td>
                                                     <td class="px-2 py-2 text-xs break-all">@s.Error</td>
                                                 </tr>
                                             }
@@ -573,9 +573,9 @@
                                                 <tr class="border-b border-default">
                                                     <td class="px-2 py-2 font-mono text-xs">@c.ControlKind</td>
                                                     <td class="px-2 py-2">@c.Status</td>
-                                                    <td class="px-2 py-2">@c.RequestedAt.ToLocalTime().ToString("u")</td>
+                                                    <td class="px-2 py-2"><TimestampDisplay Value="@c.RequestedAt" ShowUtcDetail="true" /></td>
                                                     <td class="px-2 py-2">@c.RequestedBy</td>
-                                                    <td class="px-2 py-2">@Fmt(c.AppliedAt)</td>
+                                                    <td class="px-2 py-2"><TimestampDisplay Value="@c.AppliedAt" ShowUtcDetail="true" /></td>
                                                     <td class="px-2 py-2">@c.AppliedBy</td>
                                                     <td class="px-2 py-2 text-xs break-all">@c.LastError</td>
                                                 </tr>
@@ -753,9 +753,6 @@
 
     private void PublishShellTitle() =>
         ShellOrientation.PublishForCurrentUri(Nav, RunPageTitle, RunHeaderSubtitle);
-
-    private static string Fmt(DateTimeOffset? value) =>
-        value is null ? "" : value.Value.ToLocalTime().ToString("u");
 
     private static string FormatInvestigationHintLabel(RunInvestigationHintDto h) =>
         h.Kind.ToLowerInvariant() switch

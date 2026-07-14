@@ -16,6 +16,7 @@ public static class AppertureUiShellServiceCollectionExtensions
         services.AddScoped<AuthSignInOptionsService>();
         services.AddScoped<ShellHostNavigation>();
         services.AddScoped<ShellOrientationService>();
+        services.AddScoped<IOperatorDisplayTimeZone, OperatorDisplayTimeZoneService>();
         return services;
     }
 }

@@ -128,9 +128,13 @@
             {
                 <div class="mt-3">
                     <MetadataGrid ThreeColumn="true">
-                        <MetadataItem Label="Last attempted" Value="@Fmt(_detail.LastAttemptedUtc)" />
+                        <MetadataItem Label="Last attempted">
+                            <TimestampDisplay Value="@_detail.LastAttemptedUtc" ShowUtcDetail="true" />
+                        </MetadataItem>
                         <MetadataItem Label="Last outcome" Value="@(_detail.LastOutcome ?? "—")" />
-                        <MetadataItem Label="Last successful dispatch" Value="@Fmt(_detail.LastSuccessfulDispatchUtc)" />
+                        <MetadataItem Label="Last successful dispatch">
+                            <TimestampDisplay Value="@_detail.LastSuccessfulDispatchUtc" ShowUtcDetail="true" />
+                        </MetadataItem>
                     </MetadataGrid>
                     @if (!string.IsNullOrWhiteSpace(_detail.LastOutcomeReason))
                     {
@@ -197,6 +201,7 @@
                         <label class="block text-xs text-muted">Time zone</label>
                         <input class="mt-1 w-full rounded border border-default bg-surface px-2 py-2 text-sm"
                                @bind="_editTimeZone" />
+                        <div class="mt-1 text-xs text-muted">Cron is interpreted in this zone (IANA, e.g. America/Los_Angeles). Fire times are stored as UTC.</div>
                     </div>
                     <div class="md:col-span-2">
                         <SectionActions>
@@ -257,8 +262,8 @@
                             <div class="text-sm text-body">@_detail.ClaimedByHostId</div>
                         </div>
                         <div>
-                            <div class="text-xs text-muted">Claim started (UTC)</div>
-                            <div class="text-sm text-body">@Fmt(_detail.ClaimedAtUtc)</div>
+                            <div class="text-xs text-muted">Claim started</div>
+                            <div class="text-sm text-body"><TimestampDisplay Value="@_detail.ClaimedAtUtc" ShowUtcDetail="true" /></div>
                         </div>
                     </div>
                     @if (_detail.IsClaimStale == true)
@@ -449,9 +454,6 @@
         }
         await LoadAsync(preserveActionFeedback: true);
     }
-
-    private static string Fmt(DateTimeOffset? dt) =>
-        dt is null ? "-" : dt.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss");
 
     private static string GetTargetKind(int targetJobType) =>
         targetJobType == 0 ? "Workflow" : targetJobType == 1 ? "Operation" : $"Type{targetJobType}";

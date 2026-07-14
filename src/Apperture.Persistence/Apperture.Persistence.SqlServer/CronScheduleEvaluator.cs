@@ -1,12 +1,15 @@
+using Apperture.Core.Application.Scheduling;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Environment;
 using Apperture.Core.Domain.Scheduling;
 using Cronos;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Apperture.Persistence.SqlServer;
 
 /// <summary>
-/// Cron-based schedule evaluator. Epic 28.
+/// Cron-based schedule evaluator. Epic 28 / SWM-3 timezone semantics.
 /// </summary>
 public sealed class CronScheduleEvaluator : IScheduleEvaluator
 {
@@ -18,8 +21,13 @@ public sealed class CronScheduleEvaluator : IScheduleEvaluator
     internal const int FirstRunLookbackMinutes = 5;
 
     private readonly IScheduleRepository _repo;
+    private readonly ILogger<CronScheduleEvaluator> _log;
 
-    public CronScheduleEvaluator(IScheduleRepository repo) => _repo = repo;
+    public CronScheduleEvaluator(IScheduleRepository repo, ILogger<CronScheduleEvaluator>? log = null)
+    {
+        _repo = repo;
+        _log = log ?? NullLogger<CronScheduleEvaluator>.Instance;
+    }
 
     public async ValueTask<IReadOnlyList<ScheduleFireCandidate>> GetDueAsync(
         RuntimePlaneId runtimePlaneId,
@@ -43,15 +51,7 @@ public sealed class CronScheduleEvaluator : IScheduleEvaluator
             // First-run: bounded lookback to prevent burst dispatch. Subsequent runs: from last attempted + 1s.
             var fromUtc = state?.LastAttemptedUtc?.AddSeconds(1) ?? asOfUtc.AddMinutes(-FirstRunLookbackMinutes);
 
-            TimeZoneInfo tz;
-            try
-            {
-                tz = TimeZoneInfo.FindSystemTimeZoneById(definition.TimeZone);
-            }
-            catch
-            {
-                tz = TimeZoneInfo.Utc;
-            }
+            var tz = ScheduleTimeZoneResolver.ResolvePersistedOrUtc(definition.TimeZone, _log);
 
             CronExpression cron;
             try
@@ -76,7 +76,7 @@ public sealed class CronScheduleEvaluator : IScheduleEvaluator
 
             foreach (var occ in occurrences)
             {
-                var fireUtc = new DateTimeOffset(occ, TimeSpan.Zero);
+                var fireUtc = ScheduleTimeZoneResolver.ToNormalizedFireUtc(occ);
                 var alreadyProcessed = await _repo.RunExistsAsync(assignment.ScheduleId.Value, fireUtc, cancellationToken);
                 if (!alreadyProcessed)
                     results.Add(new ScheduleFireCandidate(assignment.ScheduleId.Value, assignment.Id.Value, fireUtc));

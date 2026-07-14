@@ -34,7 +34,7 @@ public sealed class GatedPlatformSettingDefinitionRegistryTests
         var keys = sut.GetAll().Select(d => d.Key).ToList();
 
         keys.Should().NotContain(k => k.StartsWith("demo.settings.", StringComparison.Ordinal));
-        keys.Should().HaveCount(16);
+        keys.Should().HaveCount(17);
     }
 
     [Fact]

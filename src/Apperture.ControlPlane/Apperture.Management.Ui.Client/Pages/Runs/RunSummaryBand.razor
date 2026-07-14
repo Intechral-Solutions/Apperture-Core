@@ -57,14 +57,18 @@
     @if (Detail.StartRequestedAt is not null)
     {
         <div class="mt-2 text-xs text-muted">
-            Requested @Detail.StartRequestedAt.Value.ToLocalTime().ToString("u")
+            Requested <TimestampDisplay Value="@Detail.StartRequestedAt" ShowUtcDetail="true" />
         </div>
     }
 
     <div class="mt-3">
         <MetadataGrid ThreeColumn="true">
-            <MetadataItem Label="Created" Value="@Detail.CreatedAt.ToLocalTime().ToString("u")" />
-            <MetadataItem Label="Completed" Value="@((Detail.CompletedAt is null) ? "—" : Detail.CompletedAt.Value.ToLocalTime().ToString("u"))" />
+            <MetadataItem Label="Created">
+                <TimestampDisplay Value="@Detail.CreatedAt" ShowUtcDetail="true" />
+            </MetadataItem>
+            <MetadataItem Label="Completed">
+                <TimestampDisplay Value="@Detail.CompletedAt" ShowUtcDetail="true" />
+            </MetadataItem>
             <MetadataItem Label="@CurrentStepLabel" Monospace="true" Value="@Detail.CurrentStepName" />
         </MetadataGrid>
     </div>

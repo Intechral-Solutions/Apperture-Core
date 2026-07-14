@@ -124,7 +124,7 @@
                                 <div class="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted">
                                     <StatusPill Label="@(item.StatusOrOutcome ?? item.TypeLabel)"
                                                 Semantic="@EntityRecentActivityComposer.MapStatusSemantic(item.StatusOrOutcome)" />
-                                    <span>@item.SourceKind · @item.TimestampUtc.ToLocalTime().ToString("g")</span>
+                                    <span>@item.SourceKind · <TimestampDisplay Value="@item.TimestampUtc" /></span>
                                 </div>
                             </div>
                             @if (!string.IsNullOrWhiteSpace(item.DrillInHref))
@@ -207,7 +207,8 @@
                         </div>
                         <div>
                             <label class="block text-xs text-muted">Time zone</label>
-                            <input class="mt-1 w-full rounded border border-default bg-surface px-2 py-1 text-sm" @bind="_scheduleTimeZone" placeholder="UTC" />
+                            <input class="mt-1 w-full rounded border border-default bg-surface px-2 py-1 text-sm" @bind="_scheduleTimeZone" placeholder="America/Los_Angeles" />
+                            <div class="mt-1 text-xs text-muted">IANA id (e.g. UTC, America/Los_Angeles). Cron uses this zone; fires stored as UTC. Leave blank to use the platform default (Scheduling.DefaultTimeZoneId).</div>
                         </div>
                         <div>
                             <label class="block text-xs text-muted">Workflow</label>
@@ -754,7 +755,7 @@
     private bool _addingSchedule;
     private string _scheduleName = "";
     private string _scheduleCron = "0 0 * * *";
-    private string _scheduleTimeZone = "UTC";
+    private string _scheduleTimeZone = "";
     private string _scheduleWorkflowId = "";
     private bool _scheduleSaving;
 
@@ -1592,7 +1593,7 @@
         _addingSchedule = true;
         _scheduleName = "";
         _scheduleCron = "0 0 * * *";
-        _scheduleTimeZone = "UTC";
+        _scheduleTimeZone = "";
         _scheduleWorkflowId = "";
         if (_integration is not null)
             _workflows = await Client.GetWorkflowsAsync(_integration.ModuleId);
@@ -1614,7 +1615,7 @@
             await Client.CreateIntegrationScheduleAsync(IntegrationId, new CreateIntegrationScheduleRequest(
                 _scheduleName.Trim(),
                 _scheduleCron.Trim(),
-                string.IsNullOrWhiteSpace(_scheduleTimeZone) ? "UTC" : _scheduleTimeZone.Trim(),
+                string.IsNullOrWhiteSpace(_scheduleTimeZone) ? null : _scheduleTimeZone.Trim(),
                 true,
                 0,
                 targetConfig));

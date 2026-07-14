@@ -24,7 +24,15 @@ public sealed class PlatformSettingDefinitionRegistry : IPlatformSettingDefiniti
             "Notifications:Email:SmtpPasswordRef"),
         Bool(PlatformSettingKeys.PlatformEventsEnabled, "Platform events", "Enables platform event emission and consumption.", PlatformSettingCategory.PlatformEvents, "PlatformEvents:Enabled", true),
         Bool(PlatformSettingKeys.AttentionIncidentsObservationEnabled, "Attention observation", "Runs periodic schedule-expectation observation cycles.", PlatformSettingCategory.AttentionIncidents, "AttentionIncidents:Observation:Enabled", true),
-        Duration(PlatformSettingKeys.AttentionIncidentsObservationInterval, "Observation interval", "Delay between attention observation cycles (ISO 8601 duration).", PlatformSettingCategory.AttentionIncidents, "AttentionIncidents:Observation:Interval", TimeSpan.FromMinutes(5), min: TimeSpan.FromMinutes(1))
+        Duration(PlatformSettingKeys.AttentionIncidentsObservationInterval, "Observation interval", "Delay between attention observation cycles (ISO 8601 duration).", PlatformSettingCategory.AttentionIncidents, "AttentionIncidents:Observation:Interval", TimeSpan.FromMinutes(5), min: TimeSpan.FromMinutes(1)),
+        String(
+            PlatformSettingKeys.SchedulingDefaultTimeZoneId,
+            "Default schedule time zone",
+            "IANA time-zone id used when creating a schedule without an explicit TimeZone (e.g. UTC, America/Los_Angeles). Cron is interpreted in the schedule's stored zone; fire times are stored as UTC. Never uses the server's local time zone. Change applies to new schedules only.",
+            PlatformSettingCategory.Scheduling,
+            "Scheduling:DefaultTimeZoneId",
+            "UTC",
+            requiresRestart: false)
     ];
 
     private static readonly Dictionary<string, PlatformSettingDefinition> ByKey =
@@ -85,7 +93,7 @@ public sealed class PlatformSettingDefinitionRegistry : IPlatformSettingDefiniti
 
     private static PlatformSettingDefinition String(
         string key, string displayName, string description, PlatformSettingCategory category,
-        string configurationPath, string defaultValue) =>
+        string configurationPath, string defaultValue, bool requiresRestart = true) =>
         new()
         {
             Key = key,
@@ -96,7 +104,7 @@ public sealed class PlatformSettingDefinitionRegistry : IPlatformSettingDefiniti
             InputKind = PlatformSettingInputKind.Text,
             ConfigurationPath = configurationPath,
             DefaultValue = defaultValue,
-            RequiresRestart = true
+            RequiresRestart = requiresRestart
         };
 
     private static PlatformSettingDefinition Secret(

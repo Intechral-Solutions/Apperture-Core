@@ -39,6 +39,14 @@
             };
             mq.addEventListener('change', handler);
             return 1;
+        },
+        /** SWM-4: browser IANA time zone id (e.g. America/Los_Angeles), or null if unavailable. */
+        getTimeZone: function () {
+            try {
+                return Intl.DateTimeFormat().resolvedOptions().timeZone || null;
+            } catch {
+                return null;
+            }
         }
     };
 })();

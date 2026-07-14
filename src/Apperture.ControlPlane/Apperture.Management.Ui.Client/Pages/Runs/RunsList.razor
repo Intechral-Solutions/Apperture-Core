@@ -3,10 +3,13 @@
 @using Apperture.Management.Ui.Shared
 @using Apperture.Management.Ui.Client.Organisms
 @using Apperture.Management.Ui.Client.Molecules
+@using Apperture.Management.Ui.Client.Services
 @using Microsoft.AspNetCore.Components
 @using System.Globalization
+@implements IDisposable
 @inject IManagementClient Client
 @inject NavigationManager Nav
+@inject IOperatorDisplayTimeZone DisplayTimeZone
 
 <div class="p-4 ui-page-stack">
     <PageHeader Eyebrow="Automation"
@@ -125,7 +128,7 @@
                                         </DrillInLink>
                                     }
                                 </td>
-                                <td class="px-3 py-2 text-sm">@RunScheduleOperatorUiHelpers.FormatRunListWhenLine(r)</td>
+                                <td class="px-3 py-2 text-sm">@FormatWhen(r)</td>
                                 <td class="px-3 py-2">
                                     <div class="flex flex-wrap gap-2 text-xs">
                                         @if (!string.IsNullOrWhiteSpace(r.IntegrationId))
@@ -253,6 +256,20 @@
     private string? _error;
     private string? _dataLoadKey;
 
+    protected override async Task OnInitializedAsync()
+    {
+        DisplayTimeZone.Changed += OnDisplayZoneChanged;
+        await DisplayTimeZone.EnsureResolvedAsync();
+    }
+
+    private void OnDisplayZoneChanged() => _ = InvokeAsync(StateHasChanged);
+
+    private string FormatWhen(RunSummaryDto run) =>
+        RunScheduleOperatorUiHelpers.FormatRunListWhenLine(
+            run,
+            DisplayTimeZone.TimeZoneId,
+            DisplayTimeZone.Source);
+
     private bool HasUrlFilters =>
         !string.IsNullOrWhiteSpace(QueryCorrelationKey)
         || !string.IsNullOrWhiteSpace(QueryStatus)
@@ -330,4 +347,6 @@
     }
 
     private void Open(string runId) => Nav.NavigateTo($"/runs/{runId}");
+
+    public void Dispose() => DisplayTimeZone.Changed -= OnDisplayZoneChanged;
 }

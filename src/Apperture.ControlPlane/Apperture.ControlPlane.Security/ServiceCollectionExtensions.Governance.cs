@@ -2,6 +2,7 @@ using Apperture.Bootstrap;
 using Apperture.ControlPlane.Dashboard;
 using Apperture.ControlPlane.Security.Audit;
 using Apperture.Core.Application.PlatformSettings;
+using Apperture.Core.Application.Scheduling;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Governance;
 using Apperture.ModuleSdk.Abstractions;
@@ -122,6 +123,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IScheduleGovernanceService, ScheduleGovernanceService>();
         services.TryAddSingleton(TimeProvider.System);
         services.AddScoped<IScheduleValidationService, ScheduleValidationService>();
+        services.AddScoped<IScheduleCreateTimeZoneDefaults, ScheduleCreateTimeZoneDefaults>();
         services.AddScoped<IRecoveryGovernanceService, RecoveryGovernanceService>();
         services.AddScoped<IOperatorCapabilitiesQueryService, OperatorCapabilitiesQueryService>();
         services.AddScoped<IScheduleManagementService, SqlScheduleManagementService>();
