@@ -30,7 +30,7 @@ Concise backlog after Phases 1–8C and 9A UAT hardening. Items are **out of sco
 | Templates | Allowlisted variables; no arbitrary logic in user templates |
 | Digest / journal | Schema/future only; **no digest scheduler or in-app journal UI** |
 | Escalation | **No platform notification escalation** (Epic 69 attention escalation separate) |
-| User preferences | **No user opt-out UI** or preference center |
+| User preferences | S9 shipped operator email preferences / opt-out at `/me/notifications` (not a full digests center) |
 | Operator actions | **No retry-now or send-now** buttons in UI |
 | Cutover | **Manual config only** — UI does not set `UsePlatformPipeline` or delivery flags |
 | Production | **No automated production cutover** — runbook + operator sign-off |
@@ -56,7 +56,7 @@ Concise backlog after Phases 1–8C and 9A UAT hardening. Items are **out of sco
 
 ### P2 — User-facing preferences
 
-- User opt-out API + UI
+- Operator preference UX beyond S9 email toggles (digests/muted modes)
 - User preference center (per-definition / per-team)
 - Digest-only and muted mode UX beyond admin subscription edit
 

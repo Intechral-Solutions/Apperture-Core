@@ -34,7 +34,7 @@ dotnet run --project src/Apperture.AppHost/Apperture.AppHost.csproj
 | | Deprecating `Start-Dev.ps1` |
 | | Eliminating appsettings Development copy (auth/bootstrap still required) |
 
-**Mutual exclusion:** Do not run Aspire and script paths simultaneously (ports 1433, 9000, 9001; separate SQL volumes and credentials).
+**Mutual exclusion:** Do not run Aspire and script paths simultaneously (API/UI 9000/9001; Aspire SQL host port **14333** by default vs compose **1433**; separate SQL volumes and credentials).
 
 ## References
 

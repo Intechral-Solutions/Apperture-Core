@@ -65,7 +65,7 @@ Requires Docker for the Aspire-managed SQL Server container.
 
    Or use the interactive menu: `.\scripts\Interactive.ps1`
 
-Do not run Aspire and native script dev at the same time — both use ports 1433, 9000, and 9001.
+Do not run Aspire and native script dev at the same time — both want Management API/UI on 9000/9001. Aspire SQL defaults to host port **14333**; docker-compose/native SQL uses **1433**.
 
 ## Architecture and decisions
 

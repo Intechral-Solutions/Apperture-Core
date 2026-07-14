@@ -514,7 +514,7 @@ See [S13A HelloWorld notification debugging](../02-decisions/S13A-helloworld-not
 
 - Log-source or telemetry-based notification rules
 - Calendar- or schedule-specific module signal SDK
-- Digest scheduler, user preference center, non-email channels — platform notification backlog
+- Digest scheduler, non-email channels — platform notification backlog (operator email preferences: `/me/notifications`, S9)
 
 See [epic77-notification-system-backlog.md](../03-operations/epic77-notification-system-backlog.md).
 

@@ -53,7 +53,7 @@ Nine Phase 1 instance keys unchanged in `PlatformSettingDefinitionRegistry`. Wor
 
 ## Follow-on
 
-**Epic 121 (recommended):** first production integration-scoped setting key (previously documented as Epic 120 in foundation docs).
+**Epic 121 (already used):** HelloWorld demo notification definition seed + Sample.HelloWorld demo integration settings — do not reuse for “first production integration setting.” Allocate a new epic id for the next production module-owned integration setting key.
 
 ## References
 

@@ -38,7 +38,7 @@ The AppHost orchestrates:
 
 | Resource | Port / detail |
 |----------|----------------|
-| SQL Server (Aspire container, `2022-latest`, volume `apperture-aspire-sql`) | `localhost:1433` |
+| SQL Server (Aspire container, `2022-latest`, volume `apperture-aspire-sql`) | Host port from `Aspire:SqlServer:HostPort` in AppHost `appsettings.json` (default **`localhost:14333`**) |
 | Management API (`Apperture.Management.Host`) | `http://localhost:9000` |
 | Management UI (`Apperture.Management.Ui.Server` + Blazor WASM client) | `http://localhost:9001` (HTTP only) |
 | Worker runtime (`Apperture.RuntimeHost.Windows.WorkerHost`) | background worker |
@@ -56,7 +56,7 @@ Aspire injects `ConnectionStrings:DefaultConnection` for SQL; that connection **
 
 **Separate SQL volumes:** Aspire (`apperture-aspire-sql`) and docker-compose (`apperture-sqlserver`) are independent. Dev users/passwords created on one path do not exist on the other. After switching to Aspire, sign in with the credentials from `DevTestUser` in your `appsettings.Development.json` (template default username/password). To wipe the Aspire database, remove the `apperture-aspire-sql` Docker volume and restart AppHost (migrations and dev bootstrap run again on Management.Host startup).
 
-**Mutual exclusion:** Do not run Aspire and native script dev at the same time — both bind ports 1433, 9000, and 9001. Aspire uses its own SQL container/volume (`apperture-aspire-sql`); the script path uses docker-compose (`apperture-sqlserver`).
+**Mutual exclusion:** Do not run Aspire and native script dev at the same time — Management API/UI both want **9000/9001**. Aspire SQL uses host port **14333** by default; the script/docker-compose path uses **1433**. Aspire uses its own SQL container/volume (`apperture-aspire-sql`); the script path uses docker-compose (`apperture-sqlserver`).
 
 ## Root Docker Compose shim (script path)
 

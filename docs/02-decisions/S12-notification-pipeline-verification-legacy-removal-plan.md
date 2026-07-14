@@ -30,12 +30,12 @@ Enabling `PlatformEvents`, `Notifications:Evaluation/Instances/Delivery`, and `U
 | Stage | Typical gap |
 |-------|-------------|
 | Condition | `expected_run_missing` requires active integration + recurring schedule + 48h grace + no authorized runs in window — rarely true on demand |
-| Observation | `AttentionIncidents:Observation:Enabled` must be true (not in committed baseline) |
+| Observation | `AttentionIncidents:Observation:Enabled` must be true (enabled in Management.Host committed `appsettings.json`) |
 | Platform event | Emitted only on incident **Opened** or **Resolved** transitions |
 | Recipients | Platform uses **subscriptions + attention routing**, not `AttentionNotifications:ExpectedRunMissing:Recipients` |
 | S9 opt-out | User global/team email opt-out skips delivery |
 | SMTP | `Notifications:Email` host/from/credentials required; empty in docker-dev template |
-| Links | `ShellUi:ManagementHostUrl` in UI appsettings for absolute email links |
+| Links | `ShellUi:ManagementHostUrl` on **Management.Host** (e.g. `appsettings.Development.json` → `http://localhost:9001`) for absolute email action links — not the UI Client appsettings used for Entra sign-in/out |
 
 With `UsePlatformPipeline=true`, Epic 69 orchestrator is **skipped** — legacy `AttentionNotifications` recipients do not apply.
 
@@ -51,9 +51,13 @@ With `UsePlatformPipeline=true`, Epic 69 orchestrator is **skipped** — legacy 
 - Subscriptions on `platform.schedule.expected_run_missing` for target integration (or attention routing → operational team)
 - Operator email enabled under `/me/notifications` (S9)
 
+**Management.Host** (email absolute links):
+
+- `ShellUi:ManagementHostUrl` — e.g. `http://localhost:9001` in `appsettings.Development.json` (operator UI origin for deep links in email). UI Client `ShellUi:ManagementHostUrl` is separate (Entra sign-in/out against the API).
+
 **UI** (`deploy/config/ui/appsettings.json`):
 
-- `ShellUi:ManagementHostUrl` — e.g. `http://localhost:9001`
+- Used for client/API host URLs; do **not** treat as the email deep-link base unless intentionally co-configured.
 
 ## Operator test path (S12)
 

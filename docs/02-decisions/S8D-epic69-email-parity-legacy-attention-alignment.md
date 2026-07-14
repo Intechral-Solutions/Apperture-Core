@@ -7,9 +7,11 @@ Epic S8D aligns the legacy Epic 69 attention email path with the platform S8B/S8
 | Path | When active | Email behavior |
 |------|-------------|----------------|
 | **Platform notification pipeline** (recommended for cutover) | `Notifications:UsePlatformPipeline:Enabled=true` plus evaluation/instances/delivery flags | Instances, outbox, subscriptions (S9), diagnostics (S10) |
-| **Epic 69 legacy orchestrator** (default dual-path) | `Notifications:UsePlatformPipeline:Enabled=false` (default) | `AttentionIncidentNotificationOrchestrator` + ledger; **now uses shared composer** |
+| **Epic 69 legacy orchestrator** (when cutover off) | `Notifications:UsePlatformPipeline:Enabled=false` (platform-setting definition default) | `AttentionIncidentNotificationOrchestrator` + ledger; **uses shared composer** |
 
-The legacy path is **not deprecated** for v1. It remains the default until operators enable platform pipeline cutover. It is **bypassed** when `Notifications:UsePlatformPipeline:Enabled=true` (`PlatformNotificationCutoverGate`).
+**Stabilization host baseline:** Management.Host `appsettings.json` sets `UsePlatformPipeline=true` (platform preferred; Epic 69 bypassed). Legacy remains available when that flag is false. It is **bypassed** when `Notifications:UsePlatformPipeline:Enabled=true` (`PlatformNotificationCutoverGate`).
+
+The legacy path is **retained temporarily** for escalation/parity until removal criteria in S12 are met — not a long-term dual-default product story.
 
 ## Shared email behavior (S8D)
 

@@ -25,7 +25,7 @@
 
 - **Aspire (preferred)** — AppHost orchestrates SQL (`apperture-aspire-sql` volume), Management API (:9000), Management UI (:9001), WorkerHost; API health gated on SQL/migrations; UI and Worker wait for API readiness.
 - **Scripts (alternate)** — [`Manage.ps1`](../../scripts/Manage.ps1) (`-Area dev -Command start`, native default) / docker-compose SQL (`apperture-sqlserver` volume); service restart via `-Command restart-service`; **not deprecated**.
-- **Separate SQL volumes** — Aspire and script paths do not share users, passwords, or data. Do not run both paths simultaneously (ports 1433, 9000, 9001).
+- **Separate SQL volumes** — Aspire and script paths do not share users, passwords, or data. Do not run both paths simultaneously (API/UI 9000/9001; Aspire SQL host port **14333** by default vs compose **1433**).
 - **appsettings** — Startup/default/template layer only; platform settings do not write back to JSON.
 - **Bootstrap store** — Non-secret SQL profile + credential references in JSON; no plaintext passwords; not the platform settings registry.
 - **Platform settings Phase 1** — Operator edits via API/UI; secrets are not stored in registry or bootstrap JSON.
@@ -161,7 +161,7 @@ Decision records: [Epic 111](../02-decisions/Epic111-Platform-Settings-Operator-
 
 Epic 120: settings UI presentation refinement and Development-gated demo input gallery (`demo.settings.*`). No new production keys.
 
-Epic 121 (recommended next): first production module-owned integration setting key. Runtime WorkerHost consumption remains deferred.
+Next (new epic id — **do not reuse Epic 121**): first production module-owned integration setting key beyond Sample.HelloWorld. Runtime WorkerHost consumption remains deferred. Epic 121 already covers HelloWorld demo notification seed + demo settings.
 
 Alternatively: expanded WorkerHost runtime overlays for Phase 1 keys, **Epic 108b DPAPI** credential binding, or a broader UI/design-system sweep — per team priority.
 

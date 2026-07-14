@@ -27,9 +27,11 @@ Returns:
 
 `NotificationPipelineCutoverPreflight` in `Apperture.Core.Application.Notifications.Cutover` centralizes checks. `PlatformNotificationCutoverGate` moved to Core.Application; ControlPlane.Security delegates to it.
 
-## Defaults unchanged
+## Defaults vs host baseline
 
-`Notifications:UsePlatformPipeline:Enabled` remains **false** by default. Legacy Epic 69 path stays active until operators enable cutover manually.
+Platform setting definition default for `Notifications:UsePlatformPipeline:Enabled` remains **false** until an environment binds otherwise.
+
+**Management.Host committed `appsettings.json` (stabilization baseline)** enables Evaluation, Instances, Delivery, and `UsePlatformPipeline` so the preferred v1 path is the **platform pipeline** (Epic 69 orchestrator skipped). Local/docker example templates may still show cutover-off for safer staged enablement — treat Host config + platform settings as the effective source of truth.
 
 ## Related
 

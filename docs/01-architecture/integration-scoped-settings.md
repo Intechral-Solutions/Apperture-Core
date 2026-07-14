@@ -4,11 +4,11 @@
 
 **Epic 117 — design (delivered).** This document is the canonical model for integration-scoped settings.
 
-**Epic 118 — backend/API foundation (delivered).** Integration value scope is implemented: scoped repository, `IntegrationSettingsResolver` / `IntegrationSettingsService`, explicit routes under `/api/integrations/{integrationId}/settings`, integration-only authorization (`integration.read` / `integration.update`), audit actions `integration.settings.set` / `integration.settings.reset`, and management client methods. Production integration setting keys remain empty until Epic 121.
+**Epic 118 — backend/API foundation (delivered).** Integration value scope is implemented: scoped repository, `IntegrationSettingsResolver` / `IntegrationSettingsService`, explicit routes under `/api/integrations/{integrationId}/settings`, integration-only authorization (`integration.read` / `integration.update`), audit actions `integration.settings.set` / `integration.settings.reset`, and management client methods. Sample.HelloWorld demo keys shipped under **Epic 121**; further production keys need a new epic id.
 
 **Epic 119 — Integration Detail settings UI (delivered).** Management UI at `/integrations/{integrationId}/settings` reuses platform setting row editors, calls Epic 118 client APIs, and shows an empty state when no production integration definitions exist (current default).
 
-**Not implemented:** runtime WorkerHost consumption, module-contributed definitions, cross-integration `ProviderBinding`, production integration setting keys (Epic 121).
+**Not implemented:** runtime WorkerHost consumption, cross-integration `ProviderBinding`, additional production integration setting keys beyond Sample.HelloWorld (Epic 121 already used for HelloWorld demo).
 
 **Current baseline:**
 
@@ -278,8 +278,9 @@ Initial runtime behavior recommendation:
    - `/integrations/{id}/settings`
    - Reuses typed setting editors; integration-scoped save/reset/options client methods
    - Empty state when integration definition registry has no keys
-3. **Epic 121 — First module-owned integration setting (next, if product-approved)**
-   - Example: included campuses via `campusnexus.campuses`
+3. **Next epic (new id — do not reuse 121) — First production module-owned integration setting**
+   - Epic 121 already delivered Sample.HelloWorld demo notification seed + demo settings
+   - Example production key: included campuses via `campusnexus.campuses`
 4. **Later**
    - Module-contributed definitions
    - Resource/catalog browser integration

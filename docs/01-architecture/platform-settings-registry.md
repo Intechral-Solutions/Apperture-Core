@@ -18,7 +18,7 @@
 
 **Epic 118 (integration-scoped API foundation):** Integration value scope in `PlatformSettingValues` (`Integration` + `integrationId`); `IntegrationSettingsService` / resolver; `/api/integrations/{integrationId}/settings` routes; `AllowedValueScopes` on definitions; empty production integration registry. Instance platform settings unchanged.
 
-**Epic 119 (Integration Detail settings UI):** `/integrations/{integrationId}/settings` reuses platform setting row editors and Epic 118 client methods. Production integrations typically see an empty state until Epic 121 adds the first production integration definition key. Runtime consumption still deferred.
+**Epic 119 (Integration Detail settings UI):** `/integrations/{integrationId}/settings` reuses platform setting row editors and Epic 118 client methods. Sample.HelloWorld demo settings already exist (Epic 121). Additional production integration definition keys need a **new** epic id — do not reuse 121. Runtime consumption still deferred.
 
 **Epic 120 (settings presentation + demo gallery):** Compact setting rows, category tabs on `/config/platform-settings`, and Development-gated demo definitions (`demo.settings.*`) under the **Settings gallery** tab. Demo settings exercise all `InputKind` values (including provider-backed select/multi-select via `platform.connectorDefinitions`). They persist like normal settings for UI/audit exercise only — **no runtime `IOptions` consumption**, no new production keys. Gating: `IHostEnvironment.IsDevelopment()` or `PlatformSettings:DemoGallery:Enabled`. See [Epic120-Settings-Presentation-Demo-Gallery.md](../02-decisions/Epic120-Settings-Presentation-Demo-Gallery.md).
 
