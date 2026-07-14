@@ -824,13 +824,18 @@ public sealed record PlatformSettingResolvedDto(
     IReadOnlyList<string>? CurrentValues = null,
     IReadOnlyList<PlatformSettingAllowedValueDto>? AllowedValues = null,
     string ValueScopeKind = "Instance",
-    string? ValueScopeId = null);
+    string? ValueScopeId = null,
+    bool IsSensitive = false,
+    bool IsSecretConfigured = false,
+    bool HasPlatformOverride = false);
 
 public sealed record UpdatePlatformSettingRequest(
     string? Value = null,
     IReadOnlyList<string>? Values = null,
     string? RowVersionBase64 = null,
-    string? IntegrationId = null);
+    string? IntegrationId = null,
+    string? SecretOperation = null,
+    string? SecretValue = null);
 
 public sealed record ManagedContactSummaryDto(
     string Id,

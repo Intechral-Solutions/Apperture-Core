@@ -15,6 +15,7 @@ public sealed class IntegrationSettingsService : IIntegrationSettingsService
     private readonly IPlatformSettingValueRepository _repository;
     private readonly IIntegrationSettingsResolver _resolver;
     private readonly PlatformSettingOptionProviderCoordinator _optionProviderCoordinator;
+    private readonly PlatformSettingSecretMaterialProvisioner _secretProvisioner;
     private readonly IPrincipalContext _principalContext;
     private readonly IAuditService _audit;
 
@@ -23,6 +24,7 @@ public sealed class IntegrationSettingsService : IIntegrationSettingsService
         IPlatformSettingValueRepository repository,
         IIntegrationSettingsResolver resolver,
         PlatformSettingOptionProviderCoordinator optionProviderCoordinator,
+        PlatformSettingSecretMaterialProvisioner secretProvisioner,
         IPrincipalContext principalContext,
         IAuditService audit)
     {
@@ -30,6 +32,7 @@ public sealed class IntegrationSettingsService : IIntegrationSettingsService
         _repository = repository;
         _resolver = resolver;
         _optionProviderCoordinator = optionProviderCoordinator;
+        _secretProvisioner = secretProvisioner;
         _principalContext = principalContext;
         _audit = audit;
     }
@@ -60,6 +63,216 @@ public sealed class IntegrationSettingsService : IIntegrationSettingsService
         if (!def.Editable)
             throw new InvalidOperationException($"Setting '{key}' is not editable.");
 
+        if (def.IsSensitive)
+            return await SetSensitiveAsync(integrationId, def, payload, rowVersionBase64, cancellationToken)
+                .ConfigureAwait(false);
+
+        return await SetOrdinaryAsync(integrationId, def, payload, rowVersionBase64, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    public async Task<PlatformSettingResolvedValue?> ResetAsync(
+        string integrationId,
+        string key,
+        CancellationToken cancellationToken = default)
+    {
+        var def = _registry.TryGet(key);
+        if (def is null)
+            return null;
+
+        EnsureIntegrationValueScope(def, key);
+
+        var existing = await _repository
+            .GetScopedAsync(key, PlatformSettingScopeConstants.IntegrationKind, integrationId, cancellationToken)
+            .ConfigureAwait(false);
+        if (existing is null)
+            return await _resolver.GetResolvedAsync(integrationId, key, cancellationToken).ConfigureAwait(false);
+
+        string? previousRef = null;
+        if (def.IsSensitive)
+        {
+            try
+            {
+                previousRef = PlatformSettingsValueCodec.ParseFromStoredJson(def, existing.ValueJson) as string;
+            }
+            catch
+            {
+                previousRef = null;
+            }
+        }
+
+        var deleted = await _repository
+            .DeleteScopedAsync(key, PlatformSettingScopeConstants.IntegrationKind, integrationId, cancellationToken)
+            .ConfigureAwait(false);
+        if (!deleted)
+            return await _resolver.GetResolvedAsync(integrationId, key, cancellationToken).ConfigureAwait(false);
+
+        if (def.IsSensitive)
+        {
+            await _secretProvisioner
+                .TryDisableOwnedSecretAsync(key, previousRef, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        var actor = await _principalContext.GetCurrentActorAsync(cancellationToken).ConfigureAwait(false);
+        if (actor is not null)
+        {
+            var details = def.IsSensitive
+                ? $"key={key} scope={PlatformSettingScopeConstants.IntegrationKind}:{integrationId} operation=reset sensitive=true previousConfigured={(string.IsNullOrWhiteSpace(previousRef) ? "false" : "true")}"
+                : $"key={key} scope={PlatformSettingScopeConstants.IntegrationKind}:{integrationId} previousValue={PlatformSettingsValueCodec.ToDisplayString(PlatformSettingsValueCodec.ParseFromStoredJson(def, existing.ValueJson))}";
+            await AppendAuditAsync(
+                IntegrationSettingsAuditActionNames.Reset,
+                integrationId,
+                actor.Id,
+                details,
+                cancellationToken).ConfigureAwait(false);
+        }
+
+        return await _resolver.GetResolvedAsync(integrationId, key, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<PlatformSettingResolvedValue> SetSensitiveAsync(
+        string integrationId,
+        PlatformSettingDefinition def,
+        PlatformSettingUpdatePayload payload,
+        string? rowVersionBase64,
+        CancellationToken cancellationToken)
+    {
+        if (!string.IsNullOrWhiteSpace(payload.ScalarValue) || payload.ArrayValues is not null)
+        {
+            throw new ArgumentException(
+                $"Sensitive setting '{def.Key}' does not accept Value/Values. Use SecretOperation replace or clear.",
+                nameof(payload));
+        }
+
+        var operation = PlatformSettingSecretOperations.Normalize(payload.SecretOperation);
+        if (operation is null)
+        {
+            if (!string.IsNullOrWhiteSpace(payload.SecretOperation))
+                throw new ArgumentException(
+                    $"Unknown SecretOperation '{payload.SecretOperation}'. Use '{PlatformSettingSecretOperations.Replace}' or '{PlatformSettingSecretOperations.Clear}'.",
+                    nameof(payload));
+
+            return (await _resolver.GetResolvedAsync(integrationId, def.Key, cancellationToken).ConfigureAwait(false))!;
+        }
+
+        if (operation == PlatformSettingSecretOperations.Clear)
+            return await ClearSensitiveAsync(integrationId, def, cancellationToken).ConfigureAwait(false);
+
+        if (string.IsNullOrWhiteSpace(payload.SecretValue))
+            throw new ArgumentException("SecretValue is required when SecretOperation is replace.", nameof(payload));
+
+        var existing = await _repository
+            .GetScopedAsync(def.Key, PlatformSettingScopeConstants.IntegrationKind, integrationId, cancellationToken)
+            .ConfigureAwait(false);
+        string? existingRef = null;
+        if (existing is not null)
+        {
+            try
+            {
+                existingRef = PlatformSettingsValueCodec.ParseFromStoredJson(def, existing.ValueJson) as string;
+            }
+            catch
+            {
+                existingRef = null;
+            }
+        }
+
+        byte[]? expectedRowVersion = ParseExpectedRowVersion(existing, rowVersionBase64);
+
+        var (secretRef, createdNew) = await _secretProvisioner
+            .ReplaceAsync(def.Key, payload.SecretValue, existingRef, cancellationToken)
+            .ConfigureAwait(false);
+
+        var actor = await _principalContext.GetCurrentActorAsync(cancellationToken).ConfigureAwait(false);
+        var domain = new PlatformSettingValue
+        {
+            Key = def.Key,
+            ScopeKind = PlatformSettingScopeConstants.IntegrationKind,
+            ScopeId = integrationId,
+            ValueJson = PlatformSettingsValueCodec.ToStoredJson(def, secretRef),
+            UpdatedByPrincipalId = actor?.Id.Value
+        };
+
+        try
+        {
+            await _repository.UpsertAsync(domain, expectedRowVersion, cancellationToken).ConfigureAwait(false);
+        }
+        catch
+        {
+            if (createdNew)
+            {
+                await _secretProvisioner
+                    .TryDisableOwnedSecretAsync(def.Key, secretRef, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
+            throw;
+        }
+
+        if (actor is not null)
+        {
+            await AppendAuditAsync(
+                IntegrationSettingsAuditActionNames.Set,
+                integrationId,
+                actor.Id,
+                $"key={def.Key} scope={PlatformSettingScopeConstants.IntegrationKind}:{integrationId} operation=replace sensitive=true configured=true",
+                cancellationToken).ConfigureAwait(false);
+        }
+
+        return (await _resolver.GetResolvedAsync(integrationId, def.Key, cancellationToken).ConfigureAwait(false))!;
+    }
+
+    private async Task<PlatformSettingResolvedValue> ClearSensitiveAsync(
+        string integrationId,
+        PlatformSettingDefinition def,
+        CancellationToken cancellationToken)
+    {
+        var existing = await _repository
+            .GetScopedAsync(def.Key, PlatformSettingScopeConstants.IntegrationKind, integrationId, cancellationToken)
+            .ConfigureAwait(false);
+        if (existing is null)
+            return (await _resolver.GetResolvedAsync(integrationId, def.Key, cancellationToken).ConfigureAwait(false))!;
+
+        string? previousRef = null;
+        try
+        {
+            previousRef = PlatformSettingsValueCodec.ParseFromStoredJson(def, existing.ValueJson) as string;
+        }
+        catch
+        {
+            previousRef = null;
+        }
+
+        await _repository
+            .DeleteScopedAsync(def.Key, PlatformSettingScopeConstants.IntegrationKind, integrationId, cancellationToken)
+            .ConfigureAwait(false);
+        await _secretProvisioner
+            .TryDisableOwnedSecretAsync(def.Key, previousRef, cancellationToken)
+            .ConfigureAwait(false);
+
+        var actor = await _principalContext.GetCurrentActorAsync(cancellationToken).ConfigureAwait(false);
+        if (actor is not null)
+        {
+            await AppendAuditAsync(
+                IntegrationSettingsAuditActionNames.Set,
+                integrationId,
+                actor.Id,
+                $"key={def.Key} scope={PlatformSettingScopeConstants.IntegrationKind}:{integrationId} operation=clear sensitive=true previousConfigured={(string.IsNullOrWhiteSpace(previousRef) ? "false" : "true")}",
+                cancellationToken).ConfigureAwait(false);
+        }
+
+        return (await _resolver.GetResolvedAsync(integrationId, def.Key, cancellationToken).ConfigureAwait(false))!;
+    }
+
+    private async Task<PlatformSettingResolvedValue> SetOrdinaryAsync(
+        string integrationId,
+        PlatformSettingDefinition def,
+        PlatformSettingUpdatePayload payload,
+        string? rowVersionBase64,
+        CancellationToken cancellationToken)
+    {
+        var key = def.Key;
         var parsed = PlatformSettingsUpdateParser.Parse(def, payload);
 
         if (!string.IsNullOrWhiteSpace(def.OptionProviderKey))
@@ -90,21 +303,7 @@ public sealed class IntegrationSettingsService : IIntegrationSettingsService
             ? null
             : PlatformSettingsValueCodec.ToDisplayString(PlatformSettingsValueCodec.ParseFromStoredJson(def, existing.ValueJson));
 
-        byte[]? expectedRowVersion = null;
-        if (existing is not null)
-        {
-            if (string.IsNullOrWhiteSpace(rowVersionBase64))
-                throw new ArgumentException("rowVersionBase64 is required when updating an existing override.", nameof(rowVersionBase64));
-
-            try
-            {
-                expectedRowVersion = Convert.FromBase64String(rowVersionBase64);
-            }
-            catch (FormatException ex)
-            {
-                throw new ArgumentException("rowVersionBase64 is not valid base64.", nameof(rowVersionBase64), ex);
-            }
-        }
+        byte[]? expectedRowVersion = ParseExpectedRowVersion(existing, rowVersionBase64);
 
         var actor = await _principalContext.GetCurrentActorAsync(cancellationToken).ConfigureAwait(false);
         var principalId = actor?.Id.Value;
@@ -118,14 +317,7 @@ public sealed class IntegrationSettingsService : IIntegrationSettingsService
             UpdatedByPrincipalId = principalId
         };
 
-        try
-        {
-            await _repository.UpsertAsync(domain, expectedRowVersion, cancellationToken).ConfigureAwait(false);
-        }
-        catch (DbUpdateConcurrencyException)
-        {
-            throw;
-        }
+        await _repository.UpsertAsync(domain, expectedRowVersion, cancellationToken).ConfigureAwait(false);
 
         if (actor is not null)
         {
@@ -146,43 +338,22 @@ public sealed class IntegrationSettingsService : IIntegrationSettingsService
         return (await _resolver.GetResolvedAsync(integrationId, key, cancellationToken).ConfigureAwait(false))!;
     }
 
-    public async Task<PlatformSettingResolvedValue?> ResetAsync(
-        string integrationId,
-        string key,
-        CancellationToken cancellationToken = default)
+    private static byte[]? ParseExpectedRowVersion(PlatformSettingValue? existing, string? rowVersionBase64)
     {
-        var def = _registry.TryGet(key);
-        if (def is null)
+        if (existing is null)
             return null;
 
-        EnsureIntegrationValueScope(def, key);
+        if (string.IsNullOrWhiteSpace(rowVersionBase64))
+            throw new ArgumentException("rowVersionBase64 is required when updating an existing override.", nameof(rowVersionBase64));
 
-        var existing = await _repository
-            .GetScopedAsync(key, PlatformSettingScopeConstants.IntegrationKind, integrationId, cancellationToken)
-            .ConfigureAwait(false);
-        if (existing is null)
-            return await _resolver.GetResolvedAsync(integrationId, key, cancellationToken).ConfigureAwait(false);
-
-        var deleted = await _repository
-            .DeleteScopedAsync(key, PlatformSettingScopeConstants.IntegrationKind, integrationId, cancellationToken)
-            .ConfigureAwait(false);
-        if (!deleted)
-            return await _resolver.GetResolvedAsync(integrationId, key, cancellationToken).ConfigureAwait(false);
-
-        var actor = await _principalContext.GetCurrentActorAsync(cancellationToken).ConfigureAwait(false);
-        if (actor is not null)
+        try
         {
-            var previous = PlatformSettingsValueCodec.ToDisplayString(
-                PlatformSettingsValueCodec.ParseFromStoredJson(def, existing.ValueJson));
-            await AppendAuditAsync(
-                IntegrationSettingsAuditActionNames.Reset,
-                integrationId,
-                actor.Id,
-                $"key={key} scope={PlatformSettingScopeConstants.IntegrationKind}:{integrationId} previousValue={previous}",
-                cancellationToken).ConfigureAwait(false);
+            return Convert.FromBase64String(rowVersionBase64);
         }
-
-        return await _resolver.GetResolvedAsync(integrationId, key, cancellationToken).ConfigureAwait(false);
+        catch (FormatException ex)
+        {
+            throw new ArgumentException("rowVersionBase64 is not valid base64.", nameof(rowVersionBase64), ex);
+        }
     }
 
     private static void EnsureIntegrationValueScope(PlatformSettingDefinition def, string key)

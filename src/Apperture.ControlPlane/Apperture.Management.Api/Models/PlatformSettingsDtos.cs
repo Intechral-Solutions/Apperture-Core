@@ -56,6 +56,12 @@ public sealed record PlatformSettingResolvedDto
     public int? MaxItems { get; init; }
 
     public IReadOnlyList<PlatformSettingAllowedValueDto>? AllowedValues { get; init; }
+
+    public bool IsSensitive { get; init; }
+
+    public bool IsSecretConfigured { get; init; }
+
+    public bool HasPlatformOverride { get; init; }
 }
 
 public sealed record UpdatePlatformSettingRequestBody
@@ -67,12 +73,20 @@ public sealed record UpdatePlatformSettingRequestBody
     public string? RowVersionBase64 { get; init; }
 
     public string? IntegrationId { get; init; }
+
+    /// <summary>Sensitive settings: "replace", "clear", or omit for unchanged.</summary>
+    public string? SecretOperation { get; init; }
+
+    /// <summary>Plaintext for replace only; never returned from read APIs.</summary>
+    public string? SecretValue { get; init; }
 }
 
 public static class PlatformSettingsDtoMapper
 {
-    public static PlatformSettingResolvedDto ToDto(PlatformSettingResolvedValue value) =>
-        new()
+    public static PlatformSettingResolvedDto ToDto(PlatformSettingResolvedValue value)
+    {
+        var isSensitive = value.IsSensitive;
+        return new PlatformSettingResolvedDto
         {
             Key = value.Key,
             ValueScopeKind = value.ValueScopeKind,
@@ -84,10 +98,15 @@ public static class PlatformSettingsDtoMapper
             InputKind = value.InputKind.ToString(),
             OptionProviderKey = value.OptionProviderKey,
             OptionProviderContextKind = value.OptionProviderContextKind.ToString(),
-            CurrentValue = PlatformSettingsValueCodec.ToDisplayString(value.CurrentValue),
-            CurrentValues = value.ValueType == PlatformSettingValueType.StringArray
-                ? PlatformSettingsValueCodec.CoerceStringArray(value.CurrentValue)
-                : null,
+            // Sensitive settings: never expose plaintext or secret reference GUIDs on the wire.
+            CurrentValue = isSensitive
+                ? string.Empty
+                : PlatformSettingsValueCodec.ToDisplayString(value.CurrentValue),
+            CurrentValues = isSensitive
+                ? null
+                : value.ValueType == PlatformSettingValueType.StringArray
+                    ? PlatformSettingsValueCodec.CoerceStringArray(value.CurrentValue)
+                    : null,
             Source = value.Source.ToString(),
             IsEditable = value.IsEditable,
             RequiresRestart = value.RequiresRestart,
@@ -106,15 +125,21 @@ public static class PlatformSettingsDtoMapper
                         Label = v.Label,
                         Description = v.Description
                     })
-                    .ToList()
+                    .ToList(),
+            IsSensitive = isSensitive,
+            IsSecretConfigured = value.IsSecretConfigured,
+            HasPlatformOverride = value.HasPlatformOverride
         };
+    }
 
     public static PlatformSettingUpdatePayload ToPayload(UpdatePlatformSettingRequestBody body) =>
         new()
         {
             ScalarValue = body.Value,
             ArrayValues = body.Values,
-            IntegrationId = body.IntegrationId
+            IntegrationId = body.IntegrationId,
+            SecretOperation = body.SecretOperation,
+            SecretValue = body.SecretValue
         };
 
     /// <summary>Integration settings route supplies integration context; body IntegrationId is ignored.</summary>
@@ -123,6 +148,8 @@ public static class PlatformSettingsDtoMapper
         {
             ScalarValue = body.Value,
             ArrayValues = body.Values,
-            IntegrationId = null
+            IntegrationId = null,
+            SecretOperation = body.SecretOperation,
+            SecretValue = body.SecretValue
         };
 }

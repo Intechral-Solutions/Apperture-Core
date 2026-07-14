@@ -1,5 +1,6 @@
 using Apperture.ControlPlane.Security;
 using Apperture.Core.Application.PlatformSettings;
+using Apperture.Core.Security.Secrets.Abstractions;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Audit;
 using Apperture.Core.Domain.Governance;
@@ -43,6 +44,7 @@ public sealed class Epic112PlatformSettingsServiceAuditTests
             repo.Object,
             resolver.Object,
             coordinator,
+            new PlatformSettingSecretMaterialProvisioner(Mock.Of<ISecretStore>()),
             principalContext.Object,
             audit.Object);
 

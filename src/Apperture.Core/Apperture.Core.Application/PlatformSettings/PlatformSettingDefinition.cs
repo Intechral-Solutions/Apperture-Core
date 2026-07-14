@@ -51,4 +51,10 @@ public sealed record PlatformSettingDefinition
     public bool Editable { get; init; } = true;
 
     public bool RequiresRestart { get; init; } = true;
+
+    /// <summary>
+    /// When true, values are stored via <c>ISecretStore</c>; platform setting persistence holds only an opaque secret reference.
+    /// Read APIs expose configuration status, never plaintext or the reference GUID.
+    /// </summary>
+    public bool IsSensitive { get; init; }
 }

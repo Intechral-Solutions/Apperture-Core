@@ -42,7 +42,7 @@ internal class PlatformSettingRepositoryFake : IPlatformSettingValueRepository
         return Task.FromResult<IReadOnlyList<PlatformSettingValue>>(list);
     }
 
-    public Task UpsertAsync(PlatformSettingValue value, byte[]? expectedRowVersion, CancellationToken cancellationToken = default)
+    public virtual Task UpsertAsync(PlatformSettingValue value, byte[]? expectedRowVersion, CancellationToken cancellationToken = default)
     {
         _values[BuildKey(value.ScopeKind, value.ScopeId, value.Key)] = value;
         return Task.CompletedTask;

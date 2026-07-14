@@ -1,6 +1,7 @@
 using Apperture.ControlPlane.Security;
 using Apperture.Core.Application.PlatformSettings;
 using Apperture.Core.Application.Services;
+using Apperture.Core.Security.Secrets.Abstractions;
 using FluentAssertions;
 using Moq;
 using Xunit;
@@ -33,6 +34,7 @@ public sealed class PlatformSettingsServiceValidationTests
             repo.Object,
             resolver.Object,
             coordinator,
+            new PlatformSettingSecretMaterialProvisioner(Mock.Of<ISecretStore>()),
             principalContext.Object,
             audit.Object);
 

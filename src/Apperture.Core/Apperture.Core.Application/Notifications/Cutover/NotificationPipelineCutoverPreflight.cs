@@ -109,11 +109,11 @@ public static class NotificationPipelineCutoverPreflight
                     : "Set Notifications:Email.FromAddress before live delivery."),
             new(
                 CheckEmailCredentialRef,
-                "SMTP credentials",
+                "SMTP password configured",
                 credentialRefOk,
                 credentialRefOk
-                    ? "SMTP user is unset or password/secret ref is configured (secrets are not displayed)."
-                    : "Set SmtpPasswordRef or SmtpPassword when SmtpUser is configured."),
+                    ? "SMTP user is unset, or password is configured via Platform Settings (secret store) or appsettings/env (secrets are not displayed)."
+                    : "Configure the SMTP password from Platform Settings (Notifications → SMTP password), or set Notifications:Email:SmtpPassword / SmtpPasswordRef when SmtpUser is set."),
             new(
                 CheckManagementHostUrl,
                 "Management host URL (absolute email links)",

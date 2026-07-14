@@ -7,5 +7,7 @@ public enum PlatformSettingInputKind
     Text,
     Duration,
     Select,
-    MultiSelect
+    MultiSelect,
+    /// <summary>Password/secret editor; persisted value is a secret reference, not plaintext.</summary>
+    Secret
 }

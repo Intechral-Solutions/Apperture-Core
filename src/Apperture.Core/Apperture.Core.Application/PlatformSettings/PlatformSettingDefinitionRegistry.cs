@@ -16,7 +16,12 @@ public sealed class PlatformSettingDefinitionRegistry : IPlatformSettingDefiniti
         String(PlatformSettingKeys.NotificationsEmailSmtpUser, "SMTP username", "SMTP authentication username (optional).", PlatformSettingCategory.Notifications, "Notifications:Email:SmtpUser", ""),
         String(PlatformSettingKeys.NotificationsEmailFromAddress, "From address", "Sender email address for notification messages.", PlatformSettingCategory.Notifications, "Notifications:Email:FromAddress", ""),
         String(PlatformSettingKeys.NotificationsEmailFromDisplayName, "From display name", "Optional sender display name for notification email.", PlatformSettingCategory.Notifications, "Notifications:Email:FromDisplayName", ""),
-        String(PlatformSettingKeys.NotificationsEmailSmtpPasswordRef, "SMTP password secret ref", "GUID reference to a secret in the SQL secret store. Password is never stored as a platform setting value.", PlatformSettingCategory.Notifications, "Notifications:Email:SmtpPasswordRef", ""),
+        Secret(
+            PlatformSettingKeys.NotificationsEmailSmtpPasswordRef,
+            "SMTP password",
+            "SMTP authentication password. Stored in the platform secret store; this setting retains only an opaque reference. Never stored as plaintext in PlatformSettingValues.",
+            PlatformSettingCategory.Notifications,
+            "Notifications:Email:SmtpPasswordRef"),
         Bool(PlatformSettingKeys.PlatformEventsEnabled, "Platform events", "Enables platform event emission and consumption.", PlatformSettingCategory.PlatformEvents, "PlatformEvents:Enabled", true),
         Bool(PlatformSettingKeys.AttentionIncidentsObservationEnabled, "Attention observation", "Runs periodic schedule-expectation observation cycles.", PlatformSettingCategory.AttentionIncidents, "AttentionIncidents:Observation:Enabled", true),
         Duration(PlatformSettingKeys.AttentionIncidentsObservationInterval, "Observation interval", "Delay between attention observation cycles (ISO 8601 duration).", PlatformSettingCategory.AttentionIncidents, "AttentionIncidents:Observation:Interval", TimeSpan.FromMinutes(5), min: TimeSpan.FromMinutes(1))
@@ -92,5 +97,22 @@ public sealed class PlatformSettingDefinitionRegistry : IPlatformSettingDefiniti
             ConfigurationPath = configurationPath,
             DefaultValue = defaultValue,
             RequiresRestart = true
+        };
+
+    private static PlatformSettingDefinition Secret(
+        string key, string displayName, string description, PlatformSettingCategory category,
+        string configurationPath) =>
+        new()
+        {
+            Key = key,
+            DisplayName = displayName,
+            Description = description,
+            Category = category,
+            ValueType = PlatformSettingValueType.String,
+            InputKind = PlatformSettingInputKind.Secret,
+            ConfigurationPath = configurationPath,
+            DefaultValue = "",
+            RequiresRestart = true,
+            IsSensitive = true
         };
 }

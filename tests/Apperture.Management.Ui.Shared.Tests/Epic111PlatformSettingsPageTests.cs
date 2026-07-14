@@ -56,7 +56,9 @@ public sealed class Epic111PlatformSettingsPageTests
             "src/Apperture.ControlPlane/Apperture.Management.Ui.Client/Pages/Config/PlatformSettingRow.razor");
         content.Should().Contain("<StatusPill");
         content.Should().Contain("PlatformSettingUiHelpers.GetSourceLabel");
-        content.Should().Contain("disabled=\"@(!IsDirty || IsSaving)\"");
+        content.Should().Contain("disabled=\"@(!CanSave || IsSaving)\"");
+        content.Should().Contain("type=\"password\"");
+        content.Should().Contain("IsSecretConfigured");
         content.Should().Contain("type=\"checkbox\"");
         content.Should().Contain("@ReadOnlyMessage");
         content.Should().Contain("PlatformSettingUiHelpers.GetReadOnlyPermissionMessage");

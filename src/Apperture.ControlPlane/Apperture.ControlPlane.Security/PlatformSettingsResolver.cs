@@ -104,30 +104,5 @@ public sealed class PlatformSettingsResolver : IPlatformSettingsResolver
         object currentValue,
         PlatformSettingValueSource source,
         byte[]? rowVersion) =>
-        new()
-        {
-            Key = def.Key,
-            ValueScopeKind = PlatformSettingScopeConstants.InstanceKind,
-            ValueScopeId = PlatformSettingScopeConstants.InstanceId,
-            DisplayName = def.DisplayName,
-            Description = def.Description,
-            Category = def.Category,
-            ValueType = def.ValueType,
-            InputKind = def.InputKind,
-            OptionProviderKey = def.OptionProviderKey,
-            OptionProviderContextKind = def.OptionProviderContextKind,
-            AllowedValues = def.AllowedValues ?? PlatformSettingResolvedValue.EmptyAllowedValues,
-            CurrentValue = def.ValueType == PlatformSettingValueType.StringArray
-                ? PlatformSettingsValueCodec.CoerceStringArray(currentValue)
-                : currentValue,
-            Source = source,
-            IsEditable = def.Editable,
-            RequiresRestart = def.RequiresRestart,
-            RowVersionBase64 = rowVersion is { Length: > 0 } ? Convert.ToBase64String(rowVersion) : null,
-            MinInteger = def.MinInteger,
-            MaxInteger = def.MaxInteger,
-            MinDurationIso = def.MinDuration?.ToString("c", System.Globalization.CultureInfo.InvariantCulture),
-            MinItems = def.MinItems,
-            MaxItems = def.MaxItems
-        };
+        PlatformSettingResolvedValueFactory.Create(def, currentValue, source, rowVersion);
 }

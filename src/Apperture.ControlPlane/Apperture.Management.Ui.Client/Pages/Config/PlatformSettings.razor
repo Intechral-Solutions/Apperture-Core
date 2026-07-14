@@ -32,7 +32,7 @@
         <PageMessage Kind="PageMessageKind.Info"
                      Class="mt-4 max-w-3xl"
                      Title="How platform settings work"
-                     Message="Save creates a platform override in the database. Precedence is: platform override, then configuration default (appsettings/environment), then definition default. Reset removes the database override and restores the next source. Changes are recorded in the audit log." />
+                     Message="Save creates a platform override in the database. Precedence is: platform override, then configuration default (appsettings/environment), then definition default. Sensitive settings store passwords in the platform secret store and never return the value. Leave a password field blank to keep the current secret; use Clear to remove a platform-managed secret override. Reset removes the database override and restores the next source. Changes are recorded in the audit log." />
 
         @if (!_canManage)
         {
@@ -51,6 +51,7 @@
                                     EditValueChanged="OnEditValueChanged"
                                     EditValuesChanged="OnEditValuesChanged"
                                     OnSave="SaveAsync"
+                                    OnClear="ClearAsync"
                                     OnReset="ResetAsync" />
         </div>
 
@@ -163,7 +164,23 @@
         try
         {
             PlatformSettingResolvedDto updated;
-            if (PlatformSettingUiHelpers.IsMultiSelect(row.InputKind))
+            if (PlatformSettingUiHelpers.IsSecret(row.InputKind, row.IsSensitive))
+            {
+                var secretValue = GetEditValue(row.Key);
+                if (string.IsNullOrWhiteSpace(secretValue))
+                {
+                    _errors[row.Key] = "Enter a new value to replace the secret. Leaving the field blank keeps the current secret unchanged.";
+                    return;
+                }
+
+                updated = await Client.SetPlatformSettingAsync(
+                    row.Key,
+                    new UpdatePlatformSettingRequest(
+                        RowVersionBase64: row.RowVersionBase64,
+                        SecretOperation: PlatformSettingUiHelpers.SecretOperationReplace,
+                        SecretValue: secretValue));
+            }
+            else if (PlatformSettingUiHelpers.IsMultiSelect(row.InputKind))
             {
                 updated = await Client.SetPlatformSettingAsync(
                     row.Key,
@@ -182,6 +199,39 @@
 
             ReplaceRow(updated);
             Toasts.Show(ToastSeverity.Success, $"Saved {row.DisplayName}.");
+        }
+        catch (HttpRequestException ex)
+        {
+            _errors[row.Key] = ex.Message;
+        }
+        finally
+        {
+            _savingKey = null;
+        }
+    }
+
+    private async Task ClearAsync(PlatformSettingResolvedDto row)
+    {
+        if (!row.HasPlatformOverride && !PlatformSettingUiHelpers.IsPlatformOverride(row.Source))
+            return;
+
+        var confirmed = await JSRuntime.InvokeAsync<bool>(
+            "confirm",
+            $"Clear \"{row.DisplayName}\"? This removes the platform override and disables the managed secret when owned by this setting.");
+        if (!confirmed)
+            return;
+
+        _errors.Remove(row.Key);
+        _savingKey = row.Key;
+        try
+        {
+            var updated = await Client.SetPlatformSettingAsync(
+                row.Key,
+                new UpdatePlatformSettingRequest(
+                    RowVersionBase64: row.RowVersionBase64,
+                    SecretOperation: PlatformSettingUiHelpers.SecretOperationClear));
+            ReplaceRow(updated);
+            Toasts.Show(ToastSeverity.Success, $"Cleared {row.DisplayName}.");
         }
         catch (HttpRequestException ex)
         {
@@ -239,7 +289,10 @@
 
     private void SyncEditState(PlatformSettingResolvedDto row)
     {
-        _editValues[row.Key] = row.CurrentValue;
+        // Never prefill secrets; blank means leave unchanged.
+        _editValues[row.Key] = PlatformSettingUiHelpers.IsSecret(row.InputKind, row.IsSensitive)
+            ? string.Empty
+            : row.CurrentValue;
         _editArrayValues[row.Key] = row.CurrentValues?.ToList() ?? [];
     }
 }

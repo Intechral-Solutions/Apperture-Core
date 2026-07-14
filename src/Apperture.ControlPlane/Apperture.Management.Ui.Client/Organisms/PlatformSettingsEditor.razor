@@ -46,6 +46,7 @@ else
                                     EditValueChanged="@(v => EditValueChanged.InvokeAsync((row.Key, v)))"
                                     EditValuesChanged="@(v => EditValuesChanged.InvokeAsync((row.Key, v)))"
                                     OnSave="@(() => OnSave.InvokeAsync(row))"
+                                    OnClear="@(() => OnClear.InvokeAsync(row))"
                                     OnReset="@(() => OnReset.InvokeAsync(row))" />
             }
         </div>
@@ -74,6 +75,8 @@ else
     [Parameter] public EventCallback<(string Key, IReadOnlyList<string> Values)> EditValuesChanged { get; set; }
 
     [Parameter] public EventCallback<PlatformSettingResolvedDto> OnSave { get; set; }
+
+    [Parameter] public EventCallback<PlatformSettingResolvedDto> OnClear { get; set; }
 
     [Parameter] public EventCallback<PlatformSettingResolvedDto> OnReset { get; set; }
 

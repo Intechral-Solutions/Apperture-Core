@@ -46,4 +46,12 @@ public sealed record PlatformSettingResolvedValue
     public int? MinItems { get; init; }
 
     public int? MaxItems { get; init; }
+
+    public bool IsSensitive { get; init; }
+
+    /// <summary>Effective secret reference is present (DB or configuration). Never implies plaintext availability.</summary>
+    public bool IsSecretConfigured { get; init; }
+
+    /// <summary>True when a platform/integration database override exists for this setting.</summary>
+    public bool HasPlatformOverride { get; init; }
 }

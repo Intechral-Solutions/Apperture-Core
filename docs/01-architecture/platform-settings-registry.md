@@ -66,8 +66,9 @@ Metadata describing a configurable knob (not the live value).
 
 - **Key / path** — stable identifier (e.g. `Notifications.Delivery.Enabled`)
 - **ValueType** — `Boolean`, `Integer`, `Duration`, `String` (Epic 114 Select), `StringArray` (Epic 112 MultiSelect)
+- **IsSensitive** — when true, plaintext is never stored in `PlatformSettingValues`; values go through `ISecretStore` and the setting retains only an opaque GUID reference
 - **OptionProviderKey** — when set, options are loaded from a registered platform provider and validated on write (Epic 114)
-- **InputKind** — UI/editor hint distinct from value type: `Toggle`, `Number`, `Text`, `Duration`, `Select`, `MultiSelect`
+- **InputKind** — UI/editor hint distinct from value type: `Toggle`, `Number`, `Text`, `Duration`, `Select`, `MultiSelect`, `Secret`
 - **AllowedValues** — static option list for Select/MultiSelect (`value`, `label`, optional `description`)
 - **Description** — operator-facing help text
 - **Default** — used when no scoped value exists (scalar or string array)
@@ -76,6 +77,26 @@ Metadata describing a configurable knob (not the live value).
 - **UI hints** — control kind, grouping, read-only when derived
 
 Definitions may be **platform-owned** initially; modules and integrations may **contribute** definitions later (deferred).
+
+## Sensitive settings
+
+Sensitive platform settings (e.g. `Notifications.Email.SmtpPasswordRef`) use the existing operational secret subsystem:
+
+| Concern | Behavior |
+|---------|----------|
+| Declaration | `IsSensitive = true`, `InputKind = Secret`, `ValueType = String` |
+| Write | `SecretOperation=replace` with `SecretValue` (plaintext once) → `ISecretStore` create/rotate → persist GUID in `PlatformSettingValues` |
+| Clear | `SecretOperation=clear` removes the DB override and disables the owned secret (`platform-setting:{key}`) when ownership is clear |
+| Reset | `DELETE` removes the override and disables the owned secret; config/definition precedence resumes |
+| Unchanged | Omit `SecretOperation` or leave password blank in UI — never treat empty string as clear |
+| Read API / UI | Expose `IsSecretConfigured`, `HasPlatformOverride`, `Source`; **never** plaintext or the GUID reference |
+| Runtime consumers | Resolvers keep the GUID in `CurrentValue` for overlays; email resolves via `ISecretResolver` at send time |
+| Audit | Records operation (`replace` / `clear` / `reset`) and configured yes/no — never the value or GUID |
+| Restart | Changing the stored reference still requires Management host restart for `IOptions` overlay; rotating secret **content** behind the same GUID does not |
+
+Ordinary `Value` / `Values` writes are rejected for sensitive keys so plaintext cannot land in `ValueJson`.
+
+Do not invent a parallel secret store. Producer naming: `provider=platform-setting`, secret name `platform-setting:{settingKey}` (alongside connection secrets).
 
 ## Setting scopes
 

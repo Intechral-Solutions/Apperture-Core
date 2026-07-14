@@ -13,6 +13,7 @@ public static class DemoPlatformSettingKeys
     public const string ProviderMultiSelect = "demo.settings.providerMultiSelect";
     public const string RequiresRestart = "demo.settings.requiresRestart";
     public const string ReadOnly = "demo.settings.readOnly";
+    public const string Secret = "demo.settings.secret";
 
     public const string ConnectorDefinitionsProviderKey = "platform.connectorDefinitions";
 }

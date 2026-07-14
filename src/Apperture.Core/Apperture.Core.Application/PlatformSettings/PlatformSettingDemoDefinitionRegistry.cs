@@ -17,7 +17,8 @@ public static class PlatformSettingDemoDefinitionRegistry
         ProviderSelect(),
         ProviderMultiSelect(),
         RequiresRestartSample(),
-        ReadOnlySample()
+        ReadOnlySample(),
+        SecretSample()
     ];
 
     private static readonly Dictionary<string, PlatformSettingDefinition> ByKey =
@@ -198,6 +199,21 @@ public static class PlatformSettingDemoDefinitionRegistry
             DefaultValue = "read-only-default",
             Editable = false,
             RequiresRestart = false
+        };
+
+    private static PlatformSettingDefinition SecretSample() =>
+        new()
+        {
+            Key = DemoPlatformSettingKeys.Secret,
+            DisplayName = "Demo secret",
+            Description = "Sensitive secret editor for the settings gallery. Value is stored via the platform secret store; UI shows configured status only.",
+            Category = PlatformSettingCategory.Demo,
+            ValueType = PlatformSettingValueType.String,
+            InputKind = PlatformSettingInputKind.Secret,
+            ConfigurationPath = "Demo:Settings:Secret",
+            DefaultValue = "",
+            RequiresRestart = false,
+            IsSensitive = true
         };
 
     private static string Suffix(string key)

@@ -102,9 +102,11 @@ public sealed class EmailNotificationOptionsTests
     public async Task Credential_resolver_does_not_store_password_in_platform_settings_keys()
     {
         PlatformSettingKeys.NotificationsEmailSmtpPasswordRef.Should().Be("Notifications.Email.SmtpPasswordRef");
+        var passwordDef = new PlatformSettingDefinitionRegistry().TryGet(PlatformSettingKeys.NotificationsEmailSmtpPasswordRef)!;
+        passwordDef.IsSensitive.Should().BeTrue();
+        passwordDef.InputKind.Should().Be(PlatformSettingInputKind.Secret);
         new PlatformSettingDefinitionRegistry().GetAll()
-            .Should().NotContain(d => d.Key.Contains("Password", StringComparison.OrdinalIgnoreCase)
-                                      && !d.Key.EndsWith("PasswordRef", StringComparison.Ordinal));
+            .Should().NotContain(d => d.Key == "Notifications.Email.SmtpPassword");
     }
 
     private sealed class StubPlatformSettingsResolver : IPlatformSettingsResolver

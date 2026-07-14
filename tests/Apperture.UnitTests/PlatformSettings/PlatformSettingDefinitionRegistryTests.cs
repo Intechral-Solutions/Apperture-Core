@@ -19,6 +19,7 @@ public sealed class PlatformSettingDefinitionRegistryTests
         sut.TryGet(PlatformSettingKeys.NotificationsDeliveryPollIntervalSeconds)!.InputKind.Should().Be(PlatformSettingInputKind.Number);
         sut.TryGet(PlatformSettingKeys.AttentionIncidentsObservationInterval)!.InputKind.Should().Be(PlatformSettingInputKind.Duration);
         sut.TryGet(PlatformSettingKeys.NotificationsEmailSmtpHost)!.InputKind.Should().Be(PlatformSettingInputKind.Text);
-        sut.TryGet(PlatformSettingKeys.NotificationsEmailSmtpPasswordRef)!.InputKind.Should().Be(PlatformSettingInputKind.Text);
+        sut.TryGet(PlatformSettingKeys.NotificationsEmailSmtpPasswordRef)!.InputKind.Should().Be(PlatformSettingInputKind.Secret);
+        sut.TryGet(PlatformSettingKeys.NotificationsEmailSmtpPasswordRef)!.IsSensitive.Should().BeTrue();
     }
 }

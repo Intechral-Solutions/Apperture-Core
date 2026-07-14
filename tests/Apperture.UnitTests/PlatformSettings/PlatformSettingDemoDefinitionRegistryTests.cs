@@ -18,6 +18,7 @@ public sealed class PlatformSettingDemoDefinitionRegistryTests
         inputKinds.Should().Contain(PlatformSettingInputKind.Duration);
         inputKinds.Should().Contain(PlatformSettingInputKind.Select);
         inputKinds.Should().Contain(PlatformSettingInputKind.MultiSelect);
+        inputKinds.Should().Contain(PlatformSettingInputKind.Secret);
     }
 
     [Fact]
@@ -61,5 +62,13 @@ public sealed class PlatformSettingDemoDefinitionRegistryTests
     {
         var sample = PlatformSettingDemoDefinitionRegistry.TryGet(DemoPlatformSettingKeys.RequiresRestart);
         sample!.RequiresRestart.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Secret_demo_is_sensitive()
+    {
+        var sample = PlatformSettingDemoDefinitionRegistry.TryGet(DemoPlatformSettingKeys.Secret);
+        sample!.IsSensitive.Should().BeTrue();
+        sample.InputKind.Should().Be(PlatformSettingInputKind.Secret);
     }
 }

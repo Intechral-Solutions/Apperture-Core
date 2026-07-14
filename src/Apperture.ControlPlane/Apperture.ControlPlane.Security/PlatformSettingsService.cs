@@ -16,6 +16,7 @@ public sealed class PlatformSettingsService : IPlatformSettingsService
     private readonly IPlatformSettingValueRepository _repository;
     private readonly IPlatformSettingsResolver _resolver;
     private readonly PlatformSettingOptionProviderCoordinator _optionProviderCoordinator;
+    private readonly PlatformSettingSecretMaterialProvisioner _secretProvisioner;
     private readonly IPrincipalContext _principalContext;
     private readonly IAuditService _audit;
 
@@ -24,6 +25,7 @@ public sealed class PlatformSettingsService : IPlatformSettingsService
         IPlatformSettingValueRepository repository,
         IPlatformSettingsResolver resolver,
         PlatformSettingOptionProviderCoordinator optionProviderCoordinator,
+        PlatformSettingSecretMaterialProvisioner secretProvisioner,
         IPrincipalContext principalContext,
         IAuditService audit)
     {
@@ -31,6 +33,7 @@ public sealed class PlatformSettingsService : IPlatformSettingsService
         _repository = repository;
         _resolver = resolver;
         _optionProviderCoordinator = optionProviderCoordinator;
+        _secretProvisioner = secretProvisioner;
         _principalContext = principalContext;
         _audit = audit;
     }
@@ -60,6 +63,199 @@ public sealed class PlatformSettingsService : IPlatformSettingsService
         if (!def.Editable)
             throw new InvalidOperationException($"Setting '{key}' is not editable.");
 
+        if (def.IsSensitive)
+            return await SetSensitiveAsync(def, payload, rowVersionBase64, cancellationToken).ConfigureAwait(false);
+
+        return await SetOrdinaryAsync(def, payload, rowVersionBase64, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<PlatformSettingResolvedValue?> ResetAsync(string key, CancellationToken cancellationToken = default)
+    {
+        var def = _registry.TryGet(key);
+        if (def is null)
+            return null;
+
+        if (!def.AllowedValueScopes.Contains(PlatformSettingValueScopeKind.Instance))
+            return null;
+
+        var existing = await _repository.GetByKeyAsync(key, cancellationToken).ConfigureAwait(false);
+        if (existing is null)
+            return await _resolver.GetResolvedAsync(key, cancellationToken).ConfigureAwait(false);
+
+        string? previousRef = null;
+        if (def.IsSensitive)
+        {
+            try
+            {
+                previousRef = PlatformSettingsValueCodec.ParseFromStoredJson(def, existing.ValueJson) as string;
+            }
+            catch
+            {
+                previousRef = null;
+            }
+        }
+
+        var deleted = await _repository.DeleteAsync(key, cancellationToken).ConfigureAwait(false);
+        if (!deleted)
+            return await _resolver.GetResolvedAsync(key, cancellationToken).ConfigureAwait(false);
+
+        if (def.IsSensitive)
+        {
+            await _secretProvisioner
+                .TryDisableOwnedSecretAsync(key, previousRef, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        var actor = await _principalContext.GetCurrentActorAsync(cancellationToken).ConfigureAwait(false);
+        if (actor is not null)
+        {
+            var details = def.IsSensitive
+                ? $"key={key} operation=reset sensitive=true previousConfigured={(string.IsNullOrWhiteSpace(previousRef) ? "false" : "true")}"
+                : $"key={key} previousValue={PlatformSettingsValueCodec.ToDisplayString(PlatformSettingsValueCodec.ParseFromStoredJson(def, existing.ValueJson))}";
+            await AppendAuditAsync(
+                PlatformSettingsAuditActionNames.Reset,
+                actor.Id,
+                details,
+                cancellationToken).ConfigureAwait(false);
+        }
+
+        return await _resolver.GetResolvedAsync(key, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<PlatformSettingResolvedValue> SetSensitiveAsync(
+        PlatformSettingDefinition def,
+        PlatformSettingUpdatePayload payload,
+        string? rowVersionBase64,
+        CancellationToken cancellationToken)
+    {
+        if (!string.IsNullOrWhiteSpace(payload.ScalarValue) || payload.ArrayValues is not null)
+        {
+            throw new ArgumentException(
+                $"Sensitive setting '{def.Key}' does not accept Value/Values. Use SecretOperation replace or clear.",
+                nameof(payload));
+        }
+
+        var operation = PlatformSettingSecretOperations.Normalize(payload.SecretOperation);
+        if (operation is null)
+        {
+            if (!string.IsNullOrWhiteSpace(payload.SecretOperation))
+                throw new ArgumentException(
+                    $"Unknown SecretOperation '{payload.SecretOperation}'. Use '{PlatformSettingSecretOperations.Replace}' or '{PlatformSettingSecretOperations.Clear}'.",
+                    nameof(payload));
+
+            // Unchanged: blank / omitted operation leaves the current secret as-is.
+            return (await _resolver.GetResolvedAsync(def.Key, cancellationToken).ConfigureAwait(false))!;
+        }
+
+        if (operation == PlatformSettingSecretOperations.Clear)
+            return await ClearSensitiveAsync(def, cancellationToken).ConfigureAwait(false);
+
+        // Replace
+        if (string.IsNullOrWhiteSpace(payload.SecretValue))
+            throw new ArgumentException("SecretValue is required when SecretOperation is replace.", nameof(payload));
+
+        var existing = await _repository.GetByKeyAsync(def.Key, cancellationToken).ConfigureAwait(false);
+        string? existingRef = null;
+        if (existing is not null)
+        {
+            try
+            {
+                existingRef = PlatformSettingsValueCodec.ParseFromStoredJson(def, existing.ValueJson) as string;
+            }
+            catch
+            {
+                existingRef = null;
+            }
+        }
+
+        // Config-only GUID refs are not rotated in place — create a new owned secret and write a DB override.
+        byte[]? expectedRowVersion = ParseExpectedRowVersion(existing, rowVersionBase64);
+
+        var (secretRef, createdNew) = await _secretProvisioner
+            .ReplaceAsync(def.Key, payload.SecretValue, existingRef, cancellationToken)
+            .ConfigureAwait(false);
+
+        var actor = await _principalContext.GetCurrentActorAsync(cancellationToken).ConfigureAwait(false);
+        var domain = new PlatformSettingValue
+        {
+            Key = def.Key,
+            ScopeKind = PlatformSettingScopeConstants.InstanceKind,
+            ScopeId = PlatformSettingScopeConstants.InstanceId,
+            ValueJson = PlatformSettingsValueCodec.ToStoredJson(def, secretRef),
+            UpdatedByPrincipalId = actor?.Id.Value
+        };
+
+        try
+        {
+            await _repository.UpsertAsync(domain, expectedRowVersion, cancellationToken).ConfigureAwait(false);
+        }
+        catch
+        {
+            if (createdNew)
+            {
+                await _secretProvisioner
+                    .TryDisableOwnedSecretAsync(def.Key, secretRef, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
+            throw;
+        }
+
+        if (actor is not null)
+        {
+            await AppendAuditAsync(
+                PlatformSettingsAuditActionNames.Set,
+                actor.Id,
+                $"key={def.Key} operation=replace sensitive=true configured=true",
+                cancellationToken).ConfigureAwait(false);
+        }
+
+        return (await _resolver.GetResolvedAsync(def.Key, cancellationToken).ConfigureAwait(false))!;
+    }
+
+    private async Task<PlatformSettingResolvedValue> ClearSensitiveAsync(
+        PlatformSettingDefinition def,
+        CancellationToken cancellationToken)
+    {
+        var existing = await _repository.GetByKeyAsync(def.Key, cancellationToken).ConfigureAwait(false);
+        if (existing is null)
+            return (await _resolver.GetResolvedAsync(def.Key, cancellationToken).ConfigureAwait(false))!;
+
+        string? previousRef = null;
+        try
+        {
+            previousRef = PlatformSettingsValueCodec.ParseFromStoredJson(def, existing.ValueJson) as string;
+        }
+        catch
+        {
+            previousRef = null;
+        }
+
+        await _repository.DeleteAsync(def.Key, cancellationToken).ConfigureAwait(false);
+        await _secretProvisioner
+            .TryDisableOwnedSecretAsync(def.Key, previousRef, cancellationToken)
+            .ConfigureAwait(false);
+
+        var actor = await _principalContext.GetCurrentActorAsync(cancellationToken).ConfigureAwait(false);
+        if (actor is not null)
+        {
+            await AppendAuditAsync(
+                PlatformSettingsAuditActionNames.Set,
+                actor.Id,
+                $"key={def.Key} operation=clear sensitive=true previousConfigured={(string.IsNullOrWhiteSpace(previousRef) ? "false" : "true")}",
+                cancellationToken).ConfigureAwait(false);
+        }
+
+        return (await _resolver.GetResolvedAsync(def.Key, cancellationToken).ConfigureAwait(false))!;
+    }
+
+    private async Task<PlatformSettingResolvedValue> SetOrdinaryAsync(
+        PlatformSettingDefinition def,
+        PlatformSettingUpdatePayload payload,
+        string? rowVersionBase64,
+        CancellationToken cancellationToken)
+    {
+        var key = def.Key;
         var parsed = PlatformSettingsUpdateParser.Parse(def, payload);
 
         if (!string.IsNullOrWhiteSpace(def.OptionProviderKey))
@@ -90,21 +286,7 @@ public sealed class PlatformSettingsService : IPlatformSettingsService
             ? null
             : PlatformSettingsValueCodec.ToDisplayString(PlatformSettingsValueCodec.ParseFromStoredJson(def, existing.ValueJson));
 
-        byte[]? expectedRowVersion = null;
-        if (existing is not null)
-        {
-            if (string.IsNullOrWhiteSpace(rowVersionBase64))
-                throw new ArgumentException("rowVersionBase64 is required when updating an existing override.", nameof(rowVersionBase64));
-
-            try
-            {
-                expectedRowVersion = Convert.FromBase64String(rowVersionBase64);
-            }
-            catch (FormatException ex)
-            {
-                throw new ArgumentException("rowVersionBase64 is not valid base64.", nameof(rowVersionBase64), ex);
-            }
-        }
+        byte[]? expectedRowVersion = ParseExpectedRowVersion(existing, rowVersionBase64);
 
         var actor = await _principalContext.GetCurrentActorAsync(cancellationToken).ConfigureAwait(false);
         var principalId = actor?.Id.Value;
@@ -118,14 +300,7 @@ public sealed class PlatformSettingsService : IPlatformSettingsService
             UpdatedByPrincipalId = principalId
         };
 
-        try
-        {
-            await _repository.UpsertAsync(domain, expectedRowVersion, cancellationToken).ConfigureAwait(false);
-        }
-        catch (DbUpdateConcurrencyException)
-        {
-            throw;
-        }
+        await _repository.UpsertAsync(domain, expectedRowVersion, cancellationToken).ConfigureAwait(false);
 
         if (actor is not null)
         {
@@ -142,36 +317,22 @@ public sealed class PlatformSettingsService : IPlatformSettingsService
         return (await _resolver.GetResolvedAsync(key, cancellationToken).ConfigureAwait(false))!;
     }
 
-    public async Task<PlatformSettingResolvedValue?> ResetAsync(string key, CancellationToken cancellationToken = default)
+    private static byte[]? ParseExpectedRowVersion(PlatformSettingValue? existing, string? rowVersionBase64)
     {
-        var def = _registry.TryGet(key);
-        if (def is null)
-            return null;
-
-        if (!def.AllowedValueScopes.Contains(PlatformSettingValueScopeKind.Instance))
-            return null;
-
-        var existing = await _repository.GetByKeyAsync(key, cancellationToken).ConfigureAwait(false);
         if (existing is null)
-            return await _resolver.GetResolvedAsync(key, cancellationToken).ConfigureAwait(false);
+            return null;
 
-        var deleted = await _repository.DeleteAsync(key, cancellationToken).ConfigureAwait(false);
-        if (!deleted)
-            return await _resolver.GetResolvedAsync(key, cancellationToken).ConfigureAwait(false);
+        if (string.IsNullOrWhiteSpace(rowVersionBase64))
+            throw new ArgumentException("rowVersionBase64 is required when updating an existing override.", nameof(rowVersionBase64));
 
-        var actor = await _principalContext.GetCurrentActorAsync(cancellationToken).ConfigureAwait(false);
-        if (actor is not null)
+        try
         {
-            var previous = PlatformSettingsValueCodec.ToDisplayString(
-                PlatformSettingsValueCodec.ParseFromStoredJson(def, existing.ValueJson));
-            await AppendAuditAsync(
-                PlatformSettingsAuditActionNames.Reset,
-                actor.Id,
-                $"key={key} previousValue={previous}",
-                cancellationToken).ConfigureAwait(false);
+            return Convert.FromBase64String(rowVersionBase64);
         }
-
-        return await _resolver.GetResolvedAsync(key, cancellationToken).ConfigureAwait(false);
+        catch (FormatException ex)
+        {
+            throw new ArgumentException("rowVersionBase64 is not valid base64.", nameof(rowVersionBase64), ex);
+        }
     }
 
     private async Task ValidateNotificationSafetyAsync(string key, object parsedValue, CancellationToken cancellationToken)
@@ -247,7 +408,8 @@ public sealed class PlatformSettingsService : IPlatformSettingsService
             }
 
             default:
-                throw new InvalidOperationException($"OptionProviderKey is only supported for Select settings in this epic. Setting '{settingKey}' has ValueType '{def.ValueType}'.");
+                throw new InvalidOperationException(
+                    $"OptionProviderKey is only supported for Select/MultiSelect settings. Setting '{settingKey}' has ValueType '{def.ValueType}'.");
         }
     }
 }

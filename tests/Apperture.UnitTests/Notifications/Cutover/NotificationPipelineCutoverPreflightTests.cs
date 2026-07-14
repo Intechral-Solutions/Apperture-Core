@@ -135,6 +135,36 @@ public sealed class NotificationPipelineCutoverPreflightTests
         status.LegacyEpic69PathActive.Should().BeFalse();
     }
 
+    [Fact]
+    public void Preflight_reports_smtp_password_configured_safely()
+    {
+        var status = NotificationPipelineCutoverPreflight.Evaluate(
+            DefaultConfig(platformEvents: true, evaluation: true, instances: true),
+            EmailOptions(user: "smtp-user", passwordRef: Guid.NewGuid().ToString("D")),
+            "https://mgmt.example.com",
+            true,
+            true,
+            DateTimeOffset.UtcNow);
+
+        status.EmailCredentialReferenceConfigured.Should().BeTrue();
+        var check = status.PreflightChecks.Should().ContainSingle(c =>
+            c.Code == NotificationPipelineCutoverPreflight.CheckEmailCredentialRef).Subject;
+        check.Passed.Should().BeTrue();
+        check.Label.Should().Be("SMTP password configured");
+        check.Guidance.Should().NotContain("s3cret");
+        check.Guidance.Should().Contain("are not displayed");
+
+        var missing = NotificationPipelineCutoverPreflight.Evaluate(
+            DefaultConfig(platformEvents: true, evaluation: true, instances: true),
+            EmailOptions(user: "smtp-user", passwordRef: null),
+            "https://mgmt.example.com",
+            true,
+            true,
+            DateTimeOffset.UtcNow);
+        missing.PreflightChecks.Should().Contain(c =>
+            c.Code == NotificationPipelineCutoverPreflight.CheckEmailCredentialRef && !c.Passed);
+    }
+
     [Theory]
     [InlineData(false, false, "legacy")]
     [InlineData(false, true, "dual")]

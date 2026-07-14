@@ -8,6 +8,7 @@
 @{
     var helpTooltip = PlatformSettingUiHelpers.BuildHelpTooltip(Row);
     var sourceTooltip = $"{PlatformSettingUiHelpers.GetSourceTooltip(Row.Source, IntegrationScope)} Resolved: {GetResolvedDisplay()}";
+    var isSecret = PlatformSettingUiHelpers.IsSecret(Row.InputKind, Row.IsSensitive);
 }
 
 <div class="border-b border-default py-2 last:border-b-0">
@@ -24,6 +25,12 @@
             <StatusPill Label="@PlatformSettingUiHelpers.GetSourceLabel(Row.Source, IntegrationScope)"
                         Title="@sourceTooltip"
                         Semantic="@PlatformSettingUiHelpers.GetSourceSemantic(Row.Source)" />
+            @if (isSecret)
+            {
+                <StatusPill Label="@PlatformSettingUiHelpers.GetSecretConfiguredLabel(Row.IsSecretConfigured)"
+                            Title="@(Row.IsSecretConfigured ? "A secret is configured for this setting. The value is never shown." : "No secret is configured.")"
+                            Semantic="@PlatformSettingUiHelpers.GetSecretConfiguredSemantic(Row.IsSecretConfigured)" />
+            }
             @if (IsDirty)
             {
                 <span class="text-xs text-muted shrink-0">Unsaved</span>
@@ -33,7 +40,18 @@
         @if (CanEdit)
         {
             <div class="flex flex-wrap items-center gap-2 min-w-0">
-                @if (PlatformSettingUiHelpers.IsMultiSelect(Row.InputKind))
+                @if (isSecret)
+                {
+                    <input type="password"
+                           class="rounded border border-default px-2 py-1 text-sm min-w-48"
+                           value="@EditValue"
+                           disabled="@IsSaving"
+                           autocomplete="new-password"
+                           placeholder="@(Row.IsSecretConfigured ? "Enter new value to replace" : "Enter secret value")"
+                           aria-label="@(Row.IsSecretConfigured ? $"Replace {Row.DisplayName}" : $"Set {Row.DisplayName}")"
+                           @onchange="OnTextInput" />
+                }
+                else if (PlatformSettingUiHelpers.IsMultiSelect(Row.InputKind))
                 {
                     <span class="text-sm text-body">@EditValues.Count selected</span>
                 }
@@ -101,11 +119,21 @@
             <div class="flex shrink-0 items-center gap-1">
                 <button type="button"
                         class="rounded bg-surface-muted px-2 py-1 text-xs font-medium text-heading disabled:opacity-50"
-                        disabled="@(!IsDirty || IsSaving)"
-                        title="@(IsDirty ? null : "Change the value to enable save.")"
+                        disabled="@(!CanSave || IsSaving)"
+                        title="@SaveTitle"
                         @onclick="OnSave">
-                    @(IsSaving ? "Saving…" : "Save")
+                    @(IsSaving ? "Saving…" : (isSecret && Row.IsSecretConfigured ? "Replace" : "Save"))
                 </button>
+                @if (isSecret)
+                {
+                    <button type="button"
+                            class="rounded bg-surface-muted px-2 py-1 text-xs disabled:opacity-50"
+                            disabled="@(!CanClearSecret || IsSaving)"
+                            title="@PlatformSettingUiHelpers.GetSecretClearTitle(CanClearSecret)"
+                            @onclick="OnClear">
+                        Clear
+                    </button>
+                }
                 <button type="button"
                         class="rounded bg-surface-muted px-2 py-1 text-xs disabled:opacity-50"
                         disabled="@(!CanReset || IsSaving)"
@@ -117,7 +145,14 @@
         }
         else
         {
-            <code class="text-xs rounded bg-surface-muted px-1 max-w-xs truncate" title="@GetResolvedDisplay()">@GetResolvedDisplay()</code>
+            @if (isSecret)
+            {
+                <span class="text-xs text-muted">@PlatformSettingUiHelpers.GetSecretConfiguredLabel(Row.IsSecretConfigured)</span>
+            }
+            else
+            {
+                <code class="text-xs rounded bg-surface-muted px-1 max-w-xs truncate" title="@GetResolvedDisplay()">@GetResolvedDisplay()</code>
+            }
         }
     </div>
 
@@ -188,6 +223,8 @@
     [Parameter] public EventCallback<IReadOnlyList<string>> EditValuesChanged { get; set; }
 
     [Parameter] public EventCallback OnSave { get; set; }
+
+    [Parameter] public EventCallback OnClear { get; set; }
 
     [Parameter] public EventCallback OnReset { get; set; }
 
@@ -278,18 +315,39 @@
         return "Editor unavailable — no options defined.";
     }
 
-    private bool IsDirty => PlatformSettingUiHelpers.IsMultiSelect(Row.InputKind)
-        ? PlatformSettingUiHelpers.IsDirtyArray(EditValues, Row.CurrentValues)
-        : PlatformSettingUiHelpers.IsDirty(EditValue, Row.CurrentValue);
+    private bool IsSecretRow => PlatformSettingUiHelpers.IsSecret(Row.InputKind, Row.IsSensitive);
+
+    private bool IsDirty => IsSecretRow
+        ? !string.IsNullOrWhiteSpace(EditValue)
+        : PlatformSettingUiHelpers.IsMultiSelect(Row.InputKind)
+            ? PlatformSettingUiHelpers.IsDirtyArray(EditValues, Row.CurrentValues)
+            : PlatformSettingUiHelpers.IsDirty(EditValue, Row.CurrentValue);
+
+    private bool CanSave => IsSecretRow
+        ? !string.IsNullOrWhiteSpace(EditValue)
+        : IsDirty;
+
+    private string SaveTitle => IsSecretRow
+        ? (string.IsNullOrWhiteSpace(EditValue)
+            ? "Enter a new value to replace the secret. Leaving blank keeps the current secret."
+            : (Row.IsSecretConfigured ? "Replace the stored secret." : "Store the secret."))
+        : (IsDirty ? null : "Change the value to enable save.")!;
+
+    private bool CanClearSecret => Row.HasPlatformOverride || PlatformSettingUiHelpers.IsScopedOverride(Row.Source);
 
     private bool CanReset => PlatformSettingUiHelpers.IsScopedOverride(Row.Source);
 
     private string ResetTitle => PlatformSettingUiHelpers.GetResetTitle(IntegrationScope, CanReset);
 
-    private string GetResolvedDisplay() =>
-        PlatformSettingUiHelpers.IsMultiSelect(Row.InputKind)
+    private string GetResolvedDisplay()
+    {
+        if (IsSecretRow)
+            return PlatformSettingUiHelpers.GetSecretConfiguredLabel(Row.IsSecretConfigured);
+
+        return PlatformSettingUiHelpers.IsMultiSelect(Row.InputKind)
             ? PlatformSettingUiHelpers.FormatArrayDisplay(Row.CurrentValues)
             : Row.CurrentValue;
+    }
 
     private static bool IsBoolChecked(string? value) =>
         bool.TryParse(value, out var b) && b;

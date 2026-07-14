@@ -4,6 +4,7 @@ using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Audit;
 using Apperture.Core.Domain.Governance;
 using Apperture.Core.Domain.Integration;
+using Apperture.Core.Security.Secrets.Abstractions;
 using Apperture.Management.Api.Controllers;
 using Apperture.Management.Api.Models;
 using Apperture.Shared.Kernel;
@@ -134,6 +135,7 @@ public sealed class Epic118IntegrationSettingsTests
             new PlatformSettingRepositoryFake(),
             new Mock<IPlatformSettingsResolver>().Object,
             PlatformSettingOptionProviderTestHarness.CreateCoordinator(new TestIntegrationOptionsOptionProvider()),
+            new PlatformSettingSecretMaterialProvisioner(Mock.Of<ISecretStore>()),
             new Mock<IPrincipalContext>().Object,
             new Mock<IAuditService>().Object);
 
@@ -256,6 +258,7 @@ public sealed class Epic118IntegrationSettingsTests
             repo,
             resolver,
             coordinator,
+            new PlatformSettingSecretMaterialProvisioner(Mock.Of<ISecretStore>()),
             principalContext.Object,
             auditMock.Object);
     }
@@ -285,6 +288,7 @@ public sealed class Epic118IntegrationSettingsTests
             repo,
             resolver,
             coordinator,
+            new PlatformSettingSecretMaterialProvisioner(Mock.Of<ISecretStore>()),
             principal.Object,
             new Mock<IAuditService>().Object);
 

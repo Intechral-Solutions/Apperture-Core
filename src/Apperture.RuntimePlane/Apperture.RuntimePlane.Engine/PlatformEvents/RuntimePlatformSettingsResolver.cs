@@ -99,26 +99,5 @@ public sealed class RuntimePlatformSettingsResolver : IPlatformSettingsResolver
         PlatformSettingDefinition def,
         object currentValue,
         PlatformSettingValueSource source) =>
-        new()
-        {
-            Key = def.Key,
-            DisplayName = def.DisplayName,
-            Description = def.Description,
-            Category = def.Category,
-            ValueType = def.ValueType,
-            InputKind = def.InputKind,
-            OptionProviderKey = def.OptionProviderKey,
-            AllowedValues = def.AllowedValues ?? PlatformSettingResolvedValue.EmptyAllowedValues,
-            CurrentValue = def.ValueType == PlatformSettingValueType.StringArray
-                ? PlatformSettingsValueCodec.CoerceStringArray(currentValue)
-                : currentValue,
-            Source = source,
-            IsEditable = def.Editable,
-            RequiresRestart = def.RequiresRestart,
-            MinInteger = def.MinInteger,
-            MaxInteger = def.MaxInteger,
-            MinDurationIso = def.MinDuration?.ToString("c", System.Globalization.CultureInfo.InvariantCulture),
-            MinItems = def.MinItems,
-            MaxItems = def.MaxItems
-        };
+        PlatformSettingResolvedValueFactory.Create(def, currentValue, source);
 }

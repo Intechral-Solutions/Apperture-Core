@@ -43,6 +43,7 @@ public static class PlatformSettingsServiceCollectionExtensions
         services.AddScoped<IIntegrationSettingsResolver, IntegrationSettingsResolver>();
         services.AddScoped<IIntegrationSettingsService, IntegrationSettingsService>();
         services.AddScoped<IntegrationSettingsAuthorization>();
+        services.AddScoped<PlatformSettingSecretMaterialProvisioner>();
         services.AddScoped<IPlatformSettingsService, PlatformSettingsService>();
 
         services.AddSingleton<IPostConfigureOptions<NotificationEvaluationOptions>, NotificationEvaluationOptionsPlatformSettingsPostConfigure>();

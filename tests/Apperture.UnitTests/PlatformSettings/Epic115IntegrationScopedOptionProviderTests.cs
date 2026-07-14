@@ -3,6 +3,7 @@ using Apperture.Core.Application.PlatformSettings;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Governance;
 using Apperture.Core.Domain.Integration;
+using Apperture.Core.Security.Secrets.Abstractions;
 using Apperture.Management.Api.Controllers;
 using Apperture.Management.Api.Models;
 using Apperture.Shared.Kernel;
@@ -231,6 +232,7 @@ public sealed class Epic115IntegrationScopedOptionProviderTests
             repo.Object,
             resolver.Object,
             coordinator,
+            new PlatformSettingSecretMaterialProvisioner(Mock.Of<ISecretStore>()),
             principalContext.Object,
             audit.Object);
     }

@@ -11,7 +11,7 @@ Epic S8B makes built-in email delivery configurable via `Notifications:Email`, m
 - `SmtpHost`, `SmtpPort`, `SmtpUseSsl`, `SmtpUser`
 - `FromAddress`, `FromDisplayName`
 - `SmtpPassword` — appsettings/env fallback only (not a platform setting)
-- `SmtpPasswordRef` — GUID reference to SQL secret store (resolved at send time)
+- `SmtpPasswordRef` — opaque GUID reference to the SQL secret store (resolved at send time). Operators set this via the Platform Settings **SMTP password** sensitive editor; they do not paste GUIDs.
 
 Platform pipeline SMTP (`SmtpEmailNotificationChannel`) and Epic 69 attention email (`SmtpAttentionNotificationSender`) both use `EmailNotificationOptions`.
 
@@ -23,7 +23,7 @@ When `Notifications:Email:SmtpHost` is empty, `EmailNotificationOptionsLegacyMer
 
 Set `ShellUi:ManagementHostUrl` to the operator-facing management host base URL (no trailing slash). Live instances populate `instance.baseUrl` in render context for absolute action links in email when templates use `{{instance.baseUrl}}` prefixes.
 
-## Platform settings (non-secret SMTP)
+## Platform settings (SMTP)
 
 | Key | Purpose |
 |-----|---------|
@@ -33,9 +33,9 @@ Set `ShellUi:ManagementHostUrl` to the operator-facing management host base URL 
 | `Notifications.Email.SmtpUser` | Auth username |
 | `Notifications.Email.FromAddress` | Sender address |
 | `Notifications.Email.FromDisplayName` | Sender display name |
-| `Notifications.Email.SmtpPasswordRef` | Secret store GUID ref (not the password) |
+| `Notifications.Email.SmtpPasswordRef` | Sensitive setting — password via secret store; setting holds GUID only |
 
-Password is **never** stored as a platform setting value.
+Password is **never** stored as plaintext in platform setting values. Configure it from `/config/platform-settings` (Notifications → SMTP password). After creating or replacing the secret reference, restart the Management host so the options overlay picks up the new ref. Diagnostics report configured/not configured only — never the password or GUID.
 
 ## Render context (live instances)
 

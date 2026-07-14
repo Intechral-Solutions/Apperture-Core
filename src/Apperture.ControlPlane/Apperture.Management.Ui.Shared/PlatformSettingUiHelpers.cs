@@ -19,6 +19,10 @@ public static class PlatformSettingUiHelpers
     public const string InputKindToggle = "Toggle";
     public const string InputKindNumber = "Number";
     public const string InputKindDuration = "Duration";
+    public const string InputKindSecret = "Secret";
+
+    public const string SecretOperationReplace = "replace";
+    public const string SecretOperationClear = "clear";
 
     public static string GetSourceLabel(string? apiSource) =>
         GetSourceLabel(apiSource, integrationScope: false);
@@ -148,6 +152,21 @@ public static class PlatformSettingUiHelpers
     public static bool IsSelect(string? inputKind) =>
         string.Equals(inputKind, InputKindSelect, StringComparison.OrdinalIgnoreCase);
 
+    public static bool IsSecret(string? inputKind, bool isSensitive = false) =>
+        isSensitive
+        || string.Equals(inputKind, InputKindSecret, StringComparison.OrdinalIgnoreCase);
+
+    public static string GetSecretConfiguredLabel(bool isConfigured) =>
+        isConfigured ? "Configured" : "Not configured";
+
+    public static ManagementStatusSemantic GetSecretConfiguredSemantic(bool isConfigured) =>
+        isConfigured ? ManagementStatusSemantic.Success : ManagementStatusSemantic.Neutral;
+
+    public static string GetSecretClearTitle(bool hasPlatformOverride) =>
+        hasPlatformOverride
+            ? "Clear removes the platform override and disables the managed secret when owned by this setting."
+            : "No platform override to clear. Configuration-sourced secrets are managed outside Platform Settings.";
+
     public static string FormatArrayDisplay(IReadOnlyList<string>? values)
     {
         if (values is null || values.Count == 0)
@@ -173,6 +192,8 @@ public static class PlatformSettingUiHelpers
                 "Changes how attention notifications are orchestrated relative to the Epic 69 path.",
             "Notifications.Delivery.PollIntervalSeconds" or "Notifications.Delivery.BatchSize" =>
                 "Tuning for the notification delivery worker poll loop.",
+            "Notifications.Email.SmtpPasswordRef" =>
+                "Password is stored in the platform secret store. Platform Settings retain only an opaque reference. Leave the password field blank to keep the current secret. Use Clear to remove a platform override explicitly. Changing the reference requires a Management host restart before email delivery picks it up.",
             "PlatformEvents.Enabled" =>
                 "Affects platform event emission and consumption across the instance.",
             "AttentionIncidents.Observation.Enabled" =>
