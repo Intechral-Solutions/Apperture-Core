@@ -938,11 +938,20 @@ public sealed class ManagementClient : IManagementClient
         return new BlockedWorkRetryResult(false, null, response.ReasonPhrase, false);
     }
 
-    public async Task TriggerSchedulerRunCycleAsync(string? runtimePlaneId = "local", CancellationToken cancellationToken = default)
+    public async Task<SchedulerManualOperationResultDto?> TriggerSchedulerRunCycleAsync(string? runtimePlaneId = "local", CancellationToken cancellationToken = default)
     {
         var query = $"?runtimePlaneId={Uri.EscapeDataString(runtimePlaneId ?? "local")}";
-        var response = await _http.PostAsync($"control/recovery/schedules/run-cycle{query}", content: null, cancellationToken).ConfigureAwait(false);
-        response.EnsureSuccessStatusCode();
+        using var response = await _http.PostAsync($"control/scheduler/run-cycle{query}", content: null, cancellationToken).ConfigureAwait(false);
+        await EnsureSuccessOrThrowAsync(response, cancellationToken).ConfigureAwait(false);
+        return await response.Content.ReadFromJsonAsync<SchedulerManualOperationResultDto>(cancellationToken: cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<SchedulerManualOperationResultDto?> RecoverStaleScheduleRunsAsync(string? runtimePlaneId = "local", CancellationToken cancellationToken = default)
+    {
+        var query = $"?runtimePlaneId={Uri.EscapeDataString(runtimePlaneId ?? "local")}";
+        using var response = await _http.PostAsync($"control/scheduler/recover-stale{query}", content: null, cancellationToken).ConfigureAwait(false);
+        await EnsureSuccessOrThrowAsync(response, cancellationToken).ConfigureAwait(false);
+        return await response.Content.ReadFromJsonAsync<SchedulerManualOperationResultDto>(cancellationToken: cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<GovernanceDescriptorResponse> GetGovernanceDescriptorsAsync(CancellationToken cancellationToken = default)

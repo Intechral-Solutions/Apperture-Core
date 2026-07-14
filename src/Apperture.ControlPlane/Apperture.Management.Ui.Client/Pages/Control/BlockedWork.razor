@@ -245,8 +245,10 @@
         _actionMessage = null;
         try
         {
-            await Client.TriggerSchedulerRunCycleAsync();
-            _actionMessage = "Scheduler cycle triggered. Global re-evaluation for all schedules.";
+            var result = await Client.TriggerSchedulerRunCycleAsync();
+            _actionMessage = result is null
+                ? "Scheduler cycle completed."
+                : $"Scheduler cycle: due={result.DueCount} claimed={result.ClaimedCount} dispatched={result.DispatchedCount} skipped={result.SkippedCount}. WritesHeartbeat={result.WritesHeartbeat}.";
         }
         catch (HttpRequestException ex)
         {

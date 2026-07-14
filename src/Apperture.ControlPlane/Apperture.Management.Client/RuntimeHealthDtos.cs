@@ -101,3 +101,21 @@ public sealed record WorkerRuntimeStatusDto(
     string? EnvironmentName,
     string? Guidance);
 
+/// <summary>SWM-8: manual scheduler run-cycle / stale recovery operation result.</summary>
+public sealed record SchedulerManualOperationResultDto(
+    string RuntimePlaneId,
+    string? HostId,
+    bool WritesHeartbeat,
+    string Action,
+    int AssignmentCount,
+    int DueCount,
+    int StaleCount,
+    int CandidateCount,
+    int ClaimedCount,
+    int DispatchedCount,
+    int SkippedCount,
+    int RecoveredStaleCount,
+    string? ErrorSummary,
+    string Message,
+    string? Guidance);
+

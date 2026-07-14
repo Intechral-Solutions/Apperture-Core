@@ -70,7 +70,7 @@ public sealed class SchedulesController : ControllerBase
             return NotFound();
         if (detail.Definition.IntegrationId is null)
             TryAppendWarningHeader(LegacyScheduleWarningHeader);
-        return Ok(ToDetailDto(detail));
+        return Ok(ToDetailDto(detail, planeId.Value));
     }
 
     [HttpPost]
@@ -195,7 +195,7 @@ public sealed class SchedulesController : ControllerBase
         d.Version,
         d.IntegrationId?.Value);
 
-    private static ScheduleDetailDto ToDetailDto(ScheduleWithExecutionState detail)
+    private static ScheduleDetailDto ToDetailDto(ScheduleWithExecutionState detail, string runtimePlaneId)
     {
         var d = detail.Definition;
         var state = detail.ExecutionState;
@@ -216,7 +216,8 @@ public sealed class SchedulesController : ControllerBase
             claim?.ClaimedByHostId,
             claim?.ClaimedAtUtc,
             claim?.IsStale,
-            d.IntegrationId?.Value);
+            d.IntegrationId?.Value,
+            runtimePlaneId);
     }
 
     private void TryAppendWarningHeader(string value)
@@ -261,7 +262,8 @@ public sealed record ScheduleDetailDto(
     string? ClaimedByHostId = null,
     DateTimeOffset? ClaimedAtUtc = null,
     bool? IsClaimStale = null,
-    string? IntegrationId = null);
+    string? IntegrationId = null,
+    string? RuntimePlaneId = null);
 
 public sealed record CreateScheduleRequestBody(
     string Name,

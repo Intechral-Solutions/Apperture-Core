@@ -75,4 +75,5 @@ public sealed record ScheduleDetailDto(
     string? ClaimedByHostId = null,
     DateTimeOffset? ClaimedAtUtc = null,
     bool? IsClaimStale = null,
-    string? IntegrationId = null);
+    string? IntegrationId = null,
+    string? RuntimePlaneId = null);

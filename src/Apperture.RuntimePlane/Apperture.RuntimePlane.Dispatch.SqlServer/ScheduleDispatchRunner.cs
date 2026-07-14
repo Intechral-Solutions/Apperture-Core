@@ -54,6 +54,7 @@ public sealed class ScheduleDispatchRunner : IScheduleDispatchRunner
     {
         var hostId = _hostIdentity.HostId;
         var staleCutoffUtc = asOfUtc.AddMinutes(-_claimOptions.ClaimLeaseMinutes);
+        var assignments = await _repo.GetAssignmentsAsync(planeId, ct);
 
         var due = (await _evaluator.GetDueAsync(planeId, asOfUtc, ct)).Select(NormalizeFireUtc).ToList();
         var stale = (await _repo.GetRecoverableStaleCandidatesAsync(planeId, staleCutoffUtc, ct)).Select(NormalizeFireUtc).ToList();
@@ -62,13 +63,57 @@ public sealed class ScheduleDispatchRunner : IScheduleDispatchRunner
             .Concat(stale.Where(s => !due.Any(d => d.ScheduleId == s.ScheduleId && d.FireTimeUtc == s.FireTimeUtc)))
             .ToList();
 
+        return await ProcessCandidatesAsync(
+            hostId,
+            assignments.Count,
+            due.Count,
+            stale.Count,
+            candidates,
+            staleCutoffUtc,
+            allowNewClaims: true,
+            ct);
+    }
+
+    /// <inheritdoc />
+    public async ValueTask<ScheduleDispatchCycleResult> RecoverStaleAsync(RuntimePlaneId planeId, DateTimeOffset asOfUtc, CancellationToken ct = default)
+    {
+        var hostId = _hostIdentity.HostId;
+        var staleCutoffUtc = asOfUtc.AddMinutes(-_claimOptions.ClaimLeaseMinutes);
+        var assignments = await _repo.GetAssignmentsAsync(planeId, ct);
+        // Intentionally do not call GetDueAsync — newly due work must not dispatch on stale-only recovery.
+        var stale = (await _repo.GetRecoverableStaleCandidatesAsync(planeId, staleCutoffUtc, ct)).Select(NormalizeFireUtc).ToList();
+
+        return await ProcessCandidatesAsync(
+            hostId,
+            assignments.Count,
+            dueCount: 0,
+            stale.Count,
+            stale,
+            staleCutoffUtc,
+            allowNewClaims: false,
+            ct);
+    }
+
+    private async ValueTask<ScheduleDispatchCycleResult> ProcessCandidatesAsync(
+        string hostId,
+        int assignmentCount,
+        int dueCount,
+        int staleCount,
+        IReadOnlyList<ScheduleFireCandidate> candidates,
+        DateTimeOffset staleCutoffUtc,
+        bool allowNewClaims,
+        CancellationToken ct)
+    {
         var claimed = 0;
         var dispatched = 0;
         var skipped = 0;
+        var recovered = 0;
 
         foreach (var candidate in candidates)
         {
-            var outcome = await ProcessDueAsync(candidate, hostId, staleCutoffUtc, ct);
+            var (outcome, wasRecovered) = await ProcessDueAsync(candidate, hostId, staleCutoffUtc, allowNewClaims, ct);
+            if (wasRecovered)
+                recovered++;
             switch (outcome)
             {
                 case CycleCandidateOutcome.Skipped:
@@ -84,7 +129,16 @@ public sealed class ScheduleDispatchRunner : IScheduleDispatchRunner
             }
         }
 
-        return new ScheduleDispatchCycleResult(claimed, dispatched, skipped);
+        return new ScheduleDispatchCycleResult(
+            claimed,
+            dispatched,
+            skipped,
+            assignmentCount,
+            dueCount,
+            staleCount,
+            candidates.Count,
+            recovered,
+            hostId);
     }
 
     private static ScheduleFireCandidate NormalizeFireUtc(ScheduleFireCandidate c) =>
@@ -97,14 +151,25 @@ public sealed class ScheduleDispatchRunner : IScheduleDispatchRunner
         Dispatched
     }
 
-    private async Task<CycleCandidateOutcome> ProcessDueAsync(ScheduleFireCandidate candidate, string hostId, DateTimeOffset staleCutoffUtc, CancellationToken ct)
+    private async Task<(CycleCandidateOutcome Outcome, bool Recovered)> ProcessDueAsync(
+        ScheduleFireCandidate candidate,
+        string hostId,
+        DateTimeOffset staleCutoffUtc,
+        bool allowNewClaims,
+        CancellationToken ct)
     {
-        var claimed = await _repo.TryClaimFireAsync(candidate.ScheduleId, candidate.FireTimeUtc, candidate.AssignmentId, hostId, ct);
+        var claimed = false;
+        var recovered = false;
+
+        if (allowNewClaims)
+            claimed = await _repo.TryClaimFireAsync(candidate.ScheduleId, candidate.FireTimeUtc, candidate.AssignmentId, hostId, ct);
+
         if (!claimed)
         {
             claimed = await _repo.TryRecoverStaleClaimAsync(candidate.ScheduleId, candidate.FireTimeUtc, candidate.AssignmentId, hostId, staleCutoffUtc, ct);
             if (claimed)
             {
+                recovered = true;
                 try
                 {
                     await _audit.AppendAsync(new AuditRecord(
@@ -124,23 +189,29 @@ public sealed class ScheduleDispatchRunner : IScheduleDispatchRunner
         }
 
         if (!claimed)
-            return CycleCandidateOutcome.Skipped;
+            return (CycleCandidateOutcome.Skipped, recovered);
 
         var definition = await _repo.GetDefinitionAsync(new ScheduleId(candidate.ScheduleId), ct);
         if (definition is null)
         {
             await CompleteWithOutcomeAsync(candidate, "Failed", "Schedule definition not found", null, ct);
-            return CycleCandidateOutcome.Claimed;
+            return (CycleCandidateOutcome.Claimed, recovered);
         }
 
         if (definition.Target.JobType == ScheduledJobType.WorkflowExecution)
-            return await ProcessWorkflowTargetAsync(definition, candidate, ct);
+        {
+            var outcome = await ProcessWorkflowTargetAsync(definition, candidate, ct);
+            return (outcome, recovered);
+        }
 
         if (definition.Target.JobType == ScheduledJobType.ModuleOperationExecution)
-            return await ProcessOperationTargetAsync(definition, candidate, ct);
+        {
+            var outcome = await ProcessOperationTargetAsync(definition, candidate, ct);
+            return (outcome, recovered);
+        }
 
         await CompleteWithOutcomeAsync(candidate, "Failed", $"Unsupported target type: {definition.Target.JobType}", null, ct);
-        return CycleCandidateOutcome.Claimed;
+        return (CycleCandidateOutcome.Claimed, recovered);
     }
 
     private async Task<CycleCandidateOutcome> ProcessWorkflowTargetAsync(ScheduleDefinition definition, ScheduleFireCandidate candidate, CancellationToken ct)

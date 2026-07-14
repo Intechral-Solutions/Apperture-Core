@@ -1,4 +1,5 @@
 using Apperture.Core.Application.Recovery;
+using Apperture.Core.Application.RuntimeHealth;
 using Apperture.Core.Application.Services;
 using Apperture.ControlPlane.Security;
 using Apperture.Core.Domain.Environment;
@@ -128,13 +129,13 @@ public sealed class RecoveryControllerTests
         var runner = new StubScheduleDispatchRunner();
         var controller = NewController(scheduleRunner: runner);
         var result = await controller.RunScheduleCycle(cancellationToken: CancellationToken.None);
-        var accepted = result.Should().BeOfType<AcceptedResult>().Subject;
+        var accepted = result.Result.Should().BeOfType<AcceptedResult>().Subject;
         runner.RunCycleCalled.Should().BeTrue("controller must invoke IScheduleDispatchRunner.RunCycleAsync");
-        accepted.Value.Should().NotBeNull();
-        var action = accepted.Value!.GetType().GetProperty("action")?.GetValue(accepted.Value);
-        action.Should().Be("global_scheduler_run_cycle", "response must indicate global scheduler action");
-        var message = accepted.Value!.GetType().GetProperty("message")?.GetValue(accepted.Value) as string;
-        message.Should().Contain("not schedule-specific", "response must clarify this is global re-evaluation, not schedule-specific force-fire");
+        var body = accepted.Value.Should().BeOfType<SchedulerManualOperationResult>().Subject;
+        body.Action.Should().Be(SchedulerManualOperationMapper.ActionRunCycle);
+        body.WritesHeartbeat.Should().BeFalse();
+        body.Message.Should().Contain("not schedule-specific", "response must clarify this is global re-evaluation, not schedule-specific force-fire");
+        body.Message.Should().Contain("heartbeat", "SWM-8: manual cycle must disclose it does not write heartbeat");
     }
 
     [Fact]
@@ -212,7 +213,7 @@ public sealed class RecoveryControllerTests
         var gov = new StubRecoveryGovernanceService(canRead: true, canManage: false);
         var controller = NewController(recoveryGovernance: gov);
         var result = await controller.RunScheduleCycle(cancellationToken: CancellationToken.None);
-        result.Should().BeOfType<ForbidResult>();
+        result.Result.Should().BeOfType<ForbidResult>();
     }
 
     [Fact]
@@ -222,7 +223,7 @@ public sealed class RecoveryControllerTests
         var runner = new StubScheduleDispatchRunner();
         var controller = NewController(recoveryGovernance: gov, scheduleRunner: runner);
         var result = await controller.RunScheduleCycle(cancellationToken: CancellationToken.None);
-        result.Should().BeOfType<AcceptedResult>();
+        result.Result.Should().BeOfType<AcceptedResult>();
         runner.RunCycleCalled.Should().BeTrue();
     }
 
@@ -249,7 +250,7 @@ public sealed class RecoveryControllerTests
         var spyAudit = new SpyAuditService();
         var controller = NewController(recoveryGovernance: gov, audit: spyAudit);
         var result = await controller.RunScheduleCycle(cancellationToken: CancellationToken.None);
-        result.Should().BeOfType<ForbidResult>();
+        result.Result.Should().BeOfType<ForbidResult>();
         spyAudit.LastAppended.Should().NotBeNull("denial audit policy requires run-cycle denials to be audited");
         spyAudit.LastAppended!.Action.Should().Be(RecoveryAuditActionNames.RunCycleDenied);
     }
@@ -364,11 +365,18 @@ public sealed class RecoveryControllerTests
     private sealed class StubScheduleDispatchRunner : IScheduleDispatchRunner
     {
         public bool RunCycleCalled { get; private set; }
+        public bool RecoverStaleCalled { get; private set; }
 
         public ValueTask<ScheduleDispatchCycleResult> RunCycleAsync(RuntimePlaneId planeId, DateTimeOffset asOfUtc, CancellationToken cancellationToken = default)
         {
             RunCycleCalled = true;
-            return ValueTask.FromResult(new ScheduleDispatchCycleResult(0, 0, 0));
+            return ValueTask.FromResult(new ScheduleDispatchCycleResult(0, 0, 0, AssignmentCount: 1, HostId: "mgmt-host"));
+        }
+
+        public ValueTask<ScheduleDispatchCycleResult> RecoverStaleAsync(RuntimePlaneId planeId, DateTimeOffset asOfUtc, CancellationToken cancellationToken = default)
+        {
+            RecoverStaleCalled = true;
+            return ValueTask.FromResult(new ScheduleDispatchCycleResult(0, 0, 0, DueCount: 0, StaleCount: 0, HostId: "mgmt-host"));
         }
     }
 

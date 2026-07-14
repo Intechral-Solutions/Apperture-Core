@@ -366,8 +366,14 @@ public interface IManagementClient
 
     /// <summary>
     /// Triggers global scheduler re-evaluation cycle. Not schedule-specific.
+    /// SWM-8: prefers <c>/api/control/scheduler/run-cycle</c>; does not write WorkerHost heartbeat.
     /// </summary>
-    Task TriggerSchedulerRunCycleAsync(string? runtimePlaneId = "local", CancellationToken cancellationToken = default);
+    Task<SchedulerManualOperationResultDto?> TriggerSchedulerRunCycleAsync(string? runtimePlaneId = "local", CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// SWM-8: recovers only stale InProgress schedule claims (does not dispatch newly due fires).
+    /// </summary>
+    Task<SchedulerManualOperationResultDto?> RecoverStaleScheduleRunsAsync(string? runtimePlaneId = "local", CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Gets operator UI capabilities for permission-aware rendering. Epic 34.

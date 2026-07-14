@@ -46,6 +46,10 @@ flowchart LR
 - Scheduler error → check WorkerHost logs (Plane/HostId)
 - Heartbeat write failure → dispatch may still run; logs warn; UI stays Unknown/stale until write succeeds
 
-## Deferred — SWM-8+
+## Follow-on — SWM-8
+
+Scheduler operations (manual run-cycle + stale-only recovery) — see `Epic-SWM8-Scheduler-Operations-Recovery-Controls.md`.
+
+## Deferred — SWM-9+
 
 Multi-host fleet inventory, lifecycle controls (start/stop/restart), claiming controls, scaling, live attach.

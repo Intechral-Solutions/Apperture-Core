@@ -209,16 +209,50 @@ public static class RunScheduleOperatorUiHelpers
 
     public static string? BuildScheduleHealthSummary(ScheduleDetailDto detail)
     {
+        var hints = BuildWhyNotFiringHints(detail);
+        return hints.Count == 0 ? null : hints[0];
+    }
+
+    /// <summary>SWM-8: narrow operator hints for schedules that may not be firing (not a full debugger).</summary>
+    public static IReadOnlyList<string> BuildWhyNotFiringHints(
+        ScheduleDetailDto detail,
+        string? workerRuntimeStatus = null,
+        string expectedPlaneId = "local")
+    {
+        var hints = new List<string>();
         if (!detail.Enabled)
-            return "Disabled — will not fire until enabled.";
-        if (detail.IsClaimStale == true)
-            return "Stale scheduler claim — review recovery if dispatch appears stuck.";
+            hints.Add("Schedule is disabled — it will not fire until enabled.");
+
+        if (!string.IsNullOrWhiteSpace(detail.RuntimePlaneId)
+            && !string.Equals(detail.RuntimePlaneId.Trim(), expectedPlaneId, StringComparison.OrdinalIgnoreCase))
+        {
+            hints.Add(
+                $"Assignment plane '{detail.RuntimePlaneId}' differs from expected Management plane '{expectedPlaneId}'. "
+                + "Confirm WorkerHost ScheduleDispatch:RuntimePlaneId matches.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(detail.ClaimedByHostId) || detail.ClaimedAtUtc is not null)
+        {
+            if (detail.IsClaimStale == true)
+                hints.Add("In-progress claim appears stale — use Control Center → Recover stale schedule runs.");
+            else
+                hints.Add("An in-progress claim exists — wait for completion or stale recovery after the claim lease.");
+        }
+
         if (IsProblematicScheduleOutcome(detail.LastOutcome))
-            return detail.LastOutcomeReason ?? $"Last outcome: {detail.LastOutcome}";
-        if (detail.LastAttemptedUtc is null)
-            return "No dispatch attempts recorded yet.";
+            hints.Add(detail.LastOutcomeReason ?? $"Last outcome was {detail.LastOutcome}.");
+
         if (string.IsNullOrWhiteSpace(detail.IntegrationId))
-            return "No integration linked — verify binding and target configuration.";
-        return null;
+            hints.Add("No integration linked — verify binding and target configuration.");
+
+        if (string.Equals(workerRuntimeStatus, "Unknown", StringComparison.OrdinalIgnoreCase))
+            hints.Add("Worker heartbeat is unknown — confirm WorkerHost is running (Control Center → Worker runtime).");
+        else if (string.Equals(workerRuntimeStatus, "Warning", StringComparison.OrdinalIgnoreCase))
+            hints.Add("Worker/scheduler status is warning (stale or error) — open Control Center → Worker runtime.");
+
+        if (hints.Count == 0 && detail.Enabled && detail.LastAttemptedUtc is null)
+            hints.Add("No dispatch attempts recorded yet — wait for the next due fire or run one scheduler cycle.");
+
+        return hints;
     }
 }

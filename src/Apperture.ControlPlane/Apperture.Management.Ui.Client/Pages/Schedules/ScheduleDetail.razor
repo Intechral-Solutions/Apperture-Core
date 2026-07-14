@@ -117,11 +117,24 @@
             </div>
 
             @{
-                var healthSummary = RunScheduleOperatorUiHelpers.BuildScheduleHealthSummary(_detail);
+                var whyNotFiring = RunScheduleOperatorUiHelpers.BuildWhyNotFiringHints(
+                    _detail,
+                    workerRuntimeStatus: _schedulerStatus?.Status);
             }
-            @if (!string.IsNullOrWhiteSpace(healthSummary))
+            @if (whyNotFiring.Count > 0)
             {
-                <div class="mt-3 text-sm text-body">@healthSummary</div>
+                <div class="mt-3 rounded border border-default bg-surface-muted p-3 text-sm text-body">
+                    <div class="font-semibold">Why this schedule may not be firing</div>
+                    <ul class="mt-2 list-disc pl-5 text-xs text-muted">
+                        @foreach (var hint in whyNotFiring)
+                        {
+                            <li>@hint</li>
+                        }
+                    </ul>
+                    <div class="mt-2">
+                        <DrillInLink Href="/control/center">Open Control Center worker runtime</DrillInLink>
+                    </div>
+                </div>
             }
 
             @if (_detail.LastAttemptedUtc is not null || _detail.LastSuccessfulDispatchUtc is not null)
@@ -284,6 +297,7 @@
 
     private ScheduleDetailDto? _detail;
     private OperatorCapabilitiesDto? _capabilities;
+    private SchedulerStatusSnapshotDto? _schedulerStatus;
     private bool _loading;
     private string? _error;
     private string? _actionMessage;
@@ -394,6 +408,17 @@
         try
         {
             _detail = await Client.GetScheduleAsync(ScheduleId);
+            if (_capabilities?.CanViewRuntimeHealth == true)
+            {
+                try
+                {
+                    _schedulerStatus = await Client.GetSchedulerStatusAsync();
+                }
+                catch (HttpRequestException)
+                {
+                    _schedulerStatus = null;
+                }
+            }
         }
         catch (HttpRequestException ex)
         {
@@ -431,8 +456,10 @@
     {
         await ExecuteScheduleActionAsync(async () =>
         {
-            await Client.TriggerSchedulerRunCycleAsync();
-            return "Scheduler run cycle triggered. Processes all schedules due at cycle time.";
+            var result = await Client.TriggerSchedulerRunCycleAsync();
+            if (result is null)
+                return "Scheduler run cycle completed.";
+            return $"Scheduler cycle: assigned={result.AssignmentCount} due={result.DueCount} claimed={result.ClaimedCount} dispatched={result.DispatchedCount} skipped={result.SkippedCount}. WritesHeartbeat={result.WritesHeartbeat}.";
         });
     }
 

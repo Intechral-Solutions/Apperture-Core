@@ -1,4 +1,5 @@
 using Apperture.Core.Application.Recovery;
+using Apperture.Core.Application.RuntimeHealth;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Audit;
 using Apperture.Core.Domain.Environment;
@@ -173,12 +174,13 @@ public sealed class RecoveryController : ControllerBase
     /// <summary>
     /// Triggers a global scheduler re-evaluation cycle for the runtime plane.
     /// Processes all schedules due at the current time; this is not a schedule-specific replay.
-    /// Blocked schedules will re-evaluate at their NextDueUtc when the cycle runs.
+    /// SWM-8: returns enriched counts; does <strong>not</strong> write the WorkerHost scheduler heartbeat.
+    /// Prefer <c>POST /api/control/scheduler/run-cycle</c> for the clearer alias.
     /// </summary>
     [HttpPost("schedules/run-cycle")]
-    [ProducesResponseType(StatusCodes.Status202Accepted)]
+    [ProducesResponseType(typeof(SchedulerManualOperationResult), StatusCodes.Status202Accepted)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
-    public async Task<ActionResult> RunScheduleCycle(
+    public async Task<ActionResult<SchedulerManualOperationResult>> RunScheduleCycle(
         [FromQuery] string? runtimePlaneId = "local",
         CancellationToken cancellationToken = default)
     {
@@ -187,15 +189,28 @@ public sealed class RecoveryController : ControllerBase
             await TryAuditRunCycleDeniedAsync(cancellationToken).ConfigureAwait(false);
             return Forbid();
         }
-        var planeId = new RuntimePlaneId(runtimePlaneId ?? "local");
-        await _scheduleRunner.RunCycleAsync(planeId, DateTimeOffset.UtcNow, cancellationToken).ConfigureAwait(false);
-        await TryAuditRunCycleRequestedAsync(planeId.Value, cancellationToken).ConfigureAwait(false);
-        return Accepted(new
+
+        var planeId = new RuntimePlaneId(runtimePlaneId ?? ScheduleRuntimePlaneDefaults.ExpectedManagementPlaneId);
+        string? error = null;
+        ScheduleDispatchCycleResult cycle;
+        try
         {
-            runtimePlaneId = planeId.Value,
-            action = "global_scheduler_run_cycle",
-            message = "Global scheduler cycle completed. Processes schedules due at cycle time; not schedule-specific."
-        });
+            cycle = await _scheduleRunner.RunCycleAsync(planeId, DateTimeOffset.UtcNow, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            error = SchedulerStatusClassifier.SanitizeErrorSummary(ex);
+            cycle = new ScheduleDispatchCycleResult(0, 0, 0, HostId: null);
+        }
+
+        var result = SchedulerManualOperationMapper.FromCycle(
+            planeId.Value,
+            SchedulerManualOperationMapper.ActionRunCycle,
+            cycle,
+            error);
+        await TryAuditRunCycleRequestedAsync(planeId.Value, cancellationToken).ConfigureAwait(false);
+        return Accepted(result);
     }
 
     /// <summary>
