@@ -46,6 +46,10 @@ flowchart LR
 - One heartbeat row per plane — last writer wins (multi-host fleet deferred).
 - No process-alive / PID attach from Management.
 
+## Closeout hotfix (2026-07-14)
+
+Scheduled HelloWorld runs failed inserting `PlatformEvents` because `CausationId` (`nvarchar(64)`) was set from start-request `IdempotencyKey` (`schedule:{id}:{fire:O}`, often &gt;64). Fix: map `CausationId` to **run id**; keep fire identity on start-request idempotency / correlation. See `PlatformEventScopeCorrelation`.
+
 ## Deferred — SWM-7+ worker management
 
 Fleet inventory, lifecycle controls, multi-host dashboards, scaling, live attach.

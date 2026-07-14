@@ -179,7 +179,8 @@ public interface IModuleTelemetry
 
 - **Merged catalog on Management:** `AddApperturePlatformEvents` registers `IModuleSignalRegistry` + `CompositePlatformEventCatalog` from the same `IEnumerable<IModule>` used by `AddKnownModules`. Startup warmup resolves `IPlatformEventCatalog` so invalid manifests fail fast.
 - **Read API filters:** `PlatformEventQuery` / `GET api/platform/events` support optional `runId` and `moduleId`. Indexes: `(RunId, OccurredAtUtc DESC)`, `(ModuleId, OccurredAtUtc DESC)` on `PlatformEvents` where columns non-null.
-- **Workflow causation:** When present on `WorkflowStartRequestEntity`, `IdempotencyKey` is copied to platform-event `CausationId` via `WorkflowStepExecutionScope` (aligned with operation starts).
+- **Workflow / operation causation:** Platform-event `CausationId` is the **run id** (bounded `nvarchar(64)`). Start-request `IdempotencyKey` (including long schedule fire keys `schedule:{scheduleId}:{fireUtc:O}`) is **not** copied into CausationId. Schedule fire identity remains on the start-request idempotency column; schedule lineage uses `CorrelationId` / `ScheduleId` scope. (SWM-6 hotfix; supersedes the earlier IdempotencyKey→CausationId mapping.)
+- Operation start requests share the same causation rule.
 
 ### Design note — emit failures vs workflow completion
 

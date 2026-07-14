@@ -115,7 +115,7 @@ context.Signals.Telemetry.RecordCounter("records_processed", rows);
 | `ModuleId` | Workflow/operation definition |
 | `IntegrationId` | Start request / binding scope |
 | `RunId`, `ProcedureId`, `ScheduleId` | `WorkflowStepExecutionScope` |
-| `CorrelationId`, `CausationId` | Scope (workflow idempotency key may map to causation) |
+| `CorrelationId`, `CausationId` | Scope (`CausationId` = run id; schedule fire identity stays on start-request IdempotencyKey) |
 
 On **platform event** emit, the runtime also sets:
 

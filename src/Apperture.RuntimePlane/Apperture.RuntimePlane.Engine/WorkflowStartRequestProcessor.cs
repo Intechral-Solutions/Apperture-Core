@@ -10,6 +10,7 @@ using Apperture.ModuleSdk.Abstractions;
 using Apperture.Persistence.SqlServer;
 using Apperture.Persistence.SqlServer.Options;
 using Apperture.RuntimePlane.Abstractions;
+using Apperture.RuntimePlane.Engine.PlatformEvents;
 using Apperture.Shared.Kernel;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -519,7 +520,7 @@ WHERE RunId = {runId} AND (
                 ProcedureId: request.ProcedureId,
                 ScheduleId: scheduleId,
                 CorrelationId: request.CorrelationId,
-                CausationId: request.IdempotencyKey,
+                CausationId: PlatformEventScopeCorrelation.CausationFromRunId(run.Id),
                 StartedAtUtc: run.CreatedAt,
                 CompletedAtUtc: run.CompletedAt ?? DateTimeOffset.UtcNow,
                 StepCount: stepCount,
@@ -780,7 +781,7 @@ WHERE RunId = {runId} AND (
             ProcedureId: request.ProcedureId,
             ScheduleId: scheduleId,
             CorrelationId: request.CorrelationId,
-            CausationId: request.IdempotencyKey);
+            CausationId: PlatformEventScopeCorrelation.CausationFromRunId(run.Id));
     }
 
     private static IReadOnlyDictionary<string, object?>? DeserializeParameters(string? parametersJson)
