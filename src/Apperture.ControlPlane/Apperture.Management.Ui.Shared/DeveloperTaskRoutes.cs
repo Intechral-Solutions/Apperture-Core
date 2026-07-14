@@ -16,6 +16,16 @@ public static class DeveloperTaskRoutes
     /// <summary>SWM-7: worker runtime visibility lives on Control Center (no duplicate Developer surface).</summary>
     public const string WorkerRuntimeControlCenter = "/control/center";
 
+    /// <summary>
+    /// SWM-9a: points at the hosting guidance ops doc (markdown is shown via repo path in descriptions;
+    /// UI uses Control Center for live status — this constant is for static/route tests).
+    /// Prefer Control Center; docs path is relative for developers cloning the repo.
+    /// </summary>
+    public const string WorkerHostingGuidanceDoc = "/control/center";
+
+    /// <summary>Label used in Developer/Internal for quarantined lifecycle — must not imply start/stop works.</summary>
+    public const string WorkerLifecycleQuarantinedLabel = "Worker lifecycle (quarantined)";
+
     public static IReadOnlyList<string> DeferredDashboardRoutes { get; } =
     [
         ManageDashboards,

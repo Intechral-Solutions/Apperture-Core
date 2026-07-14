@@ -42,12 +42,26 @@ public sealed class Swm4DisplayTimezoneSurfaceRegressionTests
             .Should().Contain("Does not write the scheduler heartbeat");
         File.ReadAllText(RepoPath("src/Apperture.ControlPlane/Apperture.Management.Ui.Client/Pages/Control/ControlCenter.razor"))
             .Should().Contain("Recover stale schedule runs");
+        File.ReadAllText(RepoPath("src/Apperture.ControlPlane/Apperture.Management.Ui.Client/Pages/Control/ControlCenter.razor"))
+            .Should().Contain("Hosting guidance (v1)");
+        File.ReadAllText(RepoPath("src/Apperture.ControlPlane/Apperture.Management.Ui.Client/Pages/Control/ControlCenter.razor"))
+            .Should().Contain("externally managed");
+        File.ReadAllText(RepoPath("src/Apperture.ControlPlane/Apperture.Management.Ui.Client/Pages/Control/ControlCenter.razor"))
+            .Should().Contain("runtime-worker/start");
+        File.ReadAllText(RepoPath("src/Apperture.ControlPlane/Apperture.Management.Ui.Client/Pages/Control/ControlCenter.razor"))
+            .Should().NotContain("onclick=\"StartWorker");
         File.ReadAllText(RepoPath("src/Apperture.ControlPlane/Apperture.Management.Ui.Client/Pages/Schedules/ScheduleDetail.razor"))
             .Should().Contain("Why this schedule may not be firing");
         File.ReadAllText(RepoPath("src/Apperture.ControlPlane/Apperture.Management.Ui.Client/Pages/Schedules/ScheduleDetail.razor"))
             .Should().Contain("BuildWhyNotFiringHints");
         File.ReadAllText(RepoPath("src/Apperture.ControlPlane/Apperture.Management.Ui.Client/Pages/Config/DeveloperTasks.razor"))
             .Should().Contain("WorkerRuntimeControlCenter");
+        File.ReadAllText(RepoPath("src/Apperture.ControlPlane/Apperture.Management.Ui.Client/Pages/Config/DeveloperTasks.razor"))
+            .Should().Contain("Worker lifecycle (quarantined)");
+        File.ReadAllText(RepoPath("src/Apperture.ControlPlane/Apperture.Management.Ui.Client/Pages/Config/DeveloperTasks.razor"))
+            .Should().Contain("410");
+        File.ReadAllText(RepoPath("src/Apperture.ControlPlane/Apperture.Management.Ui.Client/Pages/Config/DeveloperTasks.razor"))
+            .Should().NotContain("start-worker.ps1");
         File.ReadAllText(RepoPath("src/Apperture.ControlPlane/Apperture.Management.Ui.Client/Pages/Config/DeveloperTasks.razor"))
             .Should().NotContain("ToLocalTime()");
         File.ReadAllText(RepoPath("src/Apperture.ControlPlane/Apperture.Management.Ui.Client/Pages/Runs/RunsList.razor"))

@@ -200,9 +200,11 @@
             var worker = _schedulerStatus.WorkerRuntime;
             <ManagementSection Title="Worker runtime"
                                Layer="ManagementSection.UiLayer.Summary"
-                               Help="Observed WorkerHost from the latest scheduler heartbeat for the expected plane (SWM-7). Single-host inventory — not a fleet manager. Manual recovery run-cycle does not write this heartbeat."
+                               Help="Observed WorkerHost from the scheduler heartbeat (SWM-7). Single-host inventory — not a fleet manager. Process lifecycle is externally managed in v1 (SWM-9a)."
                                Class="mt-4">
-                <div class="flex flex-wrap items-start gap-4">
+                <PageMessage Kind="PageMessageKind.Info"
+                             Message="WorkerHost lifecycle is externally managed in v1. Management observes health and offers scheduler recovery — it does not start, stop, or restart WorkerHost. Aspire: use AppHost/Aspire dashboard. Scripted local: Manage.ps1. Production host adapters (Windows Service/Docker/Azure) are deferred." />
+                <div class="flex flex-wrap items-start gap-4 mt-3">
                     <div>
                         <span class="text-xs text-muted">Worker status</span>
                         <div class="mt-1">
@@ -241,6 +243,16 @@
                 {
                     <div class="mt-2 text-xs text-muted">@(worker?.Guidance ?? _schedulerStatus.Guidance)</div>
                 }
+                <details class="mt-3 text-xs text-muted">
+                    <summary class="cursor-pointer">Hosting guidance (v1)</summary>
+                    <div class="mt-2 space-y-2 text-sm text-body">
+                        <div>Observable here: host id, plane, heartbeat last seen, scheduler Healthy/Warning/Unknown, scheduler ops (run-cycle / recover-stale).</div>
+                        <div>Not owned by Management: WorkerHost process start, stop, restart, scale, or fleet orchestration.</div>
+                        <div>Aspire/dev: <code class="rounded bg-surface-muted px-1">dotnet run --project src/Apperture.AppHost</code> or Aspire dashboard — restart the <code class="rounded bg-surface-muted px-1">worker</code> resource.</div>
+                        <div>Scripted local: <code class="rounded bg-surface-muted px-1">./scripts/Manage.ps1 -Area dev -Command start</code> (do not mix with Aspire).</div>
+                        <div>Epic72B <code class="rounded bg-surface-muted px-1">runtime-worker/start</code> is quarantined (410) — do not use it.</div>
+                    </div>
+                </details>
                 <details class="mt-3 text-xs text-muted">
                     <summary class="cursor-pointer">Technical details</summary>
                     <div class="mt-2 space-y-1 font-mono">

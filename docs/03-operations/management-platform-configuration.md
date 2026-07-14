@@ -83,7 +83,7 @@ Each ASP.NET Core host uses the default configuration chain (simplified):
 
 - **Never** commit SQL passwords, SMTP passwords, or Entra client secrets in JSON.
 - **Development:** `SqlServer:Password` in User Secrets on Management.Host; synced to `.env` as `MSSQL_SA_PASSWORD` for Docker ([Sync-EnvFromUserSecrets.ps1](../../scripts/dev/Sync-EnvFromUserSecrets.ps1)).
-- **Worker dev:** password via `SqlServer__Password` or `MSSQL_SA_PASSWORD` from [start-worker.ps1](../../scripts/dev/start-worker.ps1).
+- **Worker dev:** password via `SqlServer__Password` or `MSSQL_SA_PASSWORD` (User Secrets / `.env`). Prefer Aspire AppHost or Manage.ps1 — not Management `runtime-worker/start` (quarantined SWM-9a). See [Worker-Hosting-Guidance-v1.md](Worker-Hosting-Guidance-v1.md).
 - **Production:** `SqlServer:CredentialReference` + `IBootstrapCredentialResolver` (see [bootstrap-and-secrets-boundary.md](../01-architecture/bootstrap-and-secrets-boundary.md)).
 
 ## Key configuration sections

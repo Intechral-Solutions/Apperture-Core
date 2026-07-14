@@ -203,21 +203,17 @@ Aspire/Docker/Windows Service/Azure own lifecycle; Apperture observes and deep-l
 
 ## 7. Required follow-up epics
 
-### SWM-9a — Hosting Mode Guidance (observe + guided docs/UI)
+### SWM-9a — Hosting Mode Guidance (observe + guided docs/UI) — **Delivered**
 
-- **Goal:** Make host lifecycle explicit without executing process control.
-- **Scope:** Detect/document hosting mode; Control Center help links (Aspire dashboard / Manage.ps1 / future service); deprecate or hard-disable broken Epic72B start endpoints when scripts absent; align ops docs with SWM-6/7 heartbeat as truth.
-- **Acceptance:** Operators see “how to restart worker” guidance matching Aspire vs native; no UI start/stop buttons; Epic72B API returns clear “unavailable” when scripts missing or not Development.
-- **Tests:** Static UI/docs conventions; API unavailable behavior; heartbeat still primary.
-- **Docs:** Ops runbook for WorkerHost lifecycle by hosting mode.
+See `Epic-SWM9a-Worker-Hosting-Guidance-Lifecycle-Quarantine.md`. Epic72B start is **410**; Control Center + Developer guidance added.
 
 ### SWM-9b — Epic72B Native-Script Recovery Hygiene (optional, native path only)
 
 - **Goal:** Restore or remove incomplete native worker start scripts.
-- **Scope:** Either restore `start-worker.ps1`/`restart-worker.ps1` for **non-Aspire** native only, or remove API + docs until then. Never target Aspire-managed workers.
-- **Acceptance:** No 500/Conflict ambiguity; documented Aspire exclusion.
-- **Tests:** Development gate; script-absent path; refuse when Aspire marker/env present if detectable.
-- **Docs:** Update `Worker-Runtime-Dev-Recovery.md`.
+- **Scope:** Either restore `start-worker.ps1`/`restart-worker.ps1` for **non-Aspire** native only, or remove remaining API stubs. Never target Aspire-managed workers. Quarantine already blocks execution (SWM-9a).
+- **Acceptance:** No confusion with Aspire path; docs stay aligned.
+- **Tests:** Development gate; script-absent path if scripts restored.
+- **Docs:** Keep Worker-Hosting-Guidance-v1.md as source of truth.
 
 ### SWM-10 — Multi-Host Worker Inventory (observe fleet)
 

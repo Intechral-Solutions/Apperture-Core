@@ -214,7 +214,8 @@ public sealed class RecoveryController : ControllerBase
     }
 
     /// <summary>
-    /// Development-only worker runtime status projection used for launch recovery diagnostics.
+    /// SWM-9a: Epic72B file/PID worker status is quarantined.
+    /// Use GET /api/control/scheduler-status for supported WorkerHost observability.
     /// </summary>
     [HttpGet("runtime-worker/status")]
     [ProducesResponseType(typeof(DevWorkerRuntimeStatus), StatusCodes.Status200OK)]
@@ -228,34 +229,37 @@ public sealed class RecoveryController : ControllerBase
     }
 
     /// <summary>
-    /// Development-only worker runtime start/retry action. Allows start without full env teardown.
+    /// SWM-9a: WorkerHost start/restart via Management is quarantined (410 Gone).
+    /// Does not shell to scripts. Use Aspire AppHost or Manage.ps1 for process lifecycle.
     /// </summary>
     [HttpPost("runtime-worker/start")]
-    [ProducesResponseType(StatusCodes.Status202Accepted)]
+    [ProducesResponseType(StatusCodes.Status410Gone)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
-    [ProducesResponseType(StatusCodes.Status409Conflict)]
     public async Task<ActionResult> StartRuntimeWorker([FromQuery] bool restart = false, CancellationToken cancellationToken = default)
     {
         if (!await _recoveryGovernance.CanManageAsync(cancellationToken).ConfigureAwait(false))
             return Forbid();
-        var result = await _devWorkerRecovery.StartAsync(restart, cancellationToken).ConfigureAwait(false);
-        if (!result.Succeeded)
-        {
-            return Conflict(new
-            {
-                error = "runtime_worker_start_failed",
-                result.Message,
-                result.ExitCode,
-                result.Output,
-                result.Error
-            });
-        }
 
-        return Accepted(new
+        // Still call the service so quarantine messaging stays centralized; never returns success in v1.
+        var result = await _devWorkerRecovery.StartAsync(restart, cancellationToken).ConfigureAwait(false);
+        return StatusCode(StatusCodes.Status410Gone, new
         {
+            error = WorkerLifecycleQuarantine.ErrorCode,
+            quarantined = true,
             action = restart ? "runtime_worker_restart" : "runtime_worker_start",
             result.Message,
-            result.Output
+            observe = "GET /api/control/scheduler-status",
+            schedulerOps = new[]
+            {
+                "POST /api/control/scheduler/run-cycle",
+                "POST /api/control/scheduler/recover-stale"
+            },
+            hostGuidance = new[]
+            {
+                WorkerLifecycleQuarantine.GuidanceAspire,
+                WorkerLifecycleQuarantine.GuidanceScriptDev,
+                WorkerLifecycleQuarantine.GuidanceFuture
+            }
         });
     }
 

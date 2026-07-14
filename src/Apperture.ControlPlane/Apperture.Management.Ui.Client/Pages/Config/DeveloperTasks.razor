@@ -29,8 +29,11 @@
     <ManagementSection Title="Diagnostics & demos" Layer="@ManagementSection.UiLayer.Summary">
         <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
             <ManagementSummaryCard Title="Worker runtime (Control Center)"
-                                   Description="Observed WorkerHost status, plane, host id, and scheduler heartbeat (SWM-7). Not a fleet manager."
+                                   Description="Observe WorkerHost heartbeat and scheduler ops. Process start/stop/restart is external (Aspire/Manage.ps1) — SWM-9a."
                                    Href="@DeveloperTaskRoutes.WorkerRuntimeControlCenter" />
+            <ManagementSummaryCard Title="Worker lifecycle (quarantined)"
+                                   Description="Direct Management WorkerHost start/stop is not supported in v1. Epic72B runtime-worker/start returns 410. Use Aspire or Manage.ps1."
+                                   Href="@DeveloperTaskRoutes.WorkerHostingGuidanceDoc" />
             <ManagementSummaryCard Title="Notification diagnostics"
                                    Description="Cutover parity checks for expected-run-missing (read-only)."
                                    Href="@DeveloperTaskRoutes.NotificationDiagnostics" />
