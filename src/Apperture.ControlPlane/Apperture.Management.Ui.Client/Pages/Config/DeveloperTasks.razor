@@ -28,6 +28,9 @@
 
     <ManagementSection Title="Diagnostics & demos" Layer="@ManagementSection.UiLayer.Summary">
         <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <ManagementSummaryCard Title="Worker runtime (Control Center)"
+                                   Description="Observed WorkerHost status, plane, host id, and scheduler heartbeat (SWM-7). Not a fleet manager."
+                                   Href="@DeveloperTaskRoutes.WorkerRuntimeControlCenter" />
             <ManagementSummaryCard Title="Notification diagnostics"
                                    Description="Cutover parity checks for expected-run-missing (read-only)."
                                    Href="@DeveloperTaskRoutes.NotificationDiagnostics" />

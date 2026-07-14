@@ -149,7 +149,11 @@ public sealed class Epic34AuthorizationTests
                 null,
                 null,
                 null,
-                "No scheduler heartbeat yet."));
+                "No scheduler heartbeat yet.",
+                SchedulerStatusClassifier.BuildWorkerRuntime(
+                    ScheduleRuntimePlaneDefaults.ExpectedManagementPlaneId,
+                    null,
+                    DateTimeOffset.UtcNow)));
     }
 
     private sealed class StubOperatorCapabilitiesQueryService : IOperatorCapabilitiesQueryService

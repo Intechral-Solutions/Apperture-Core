@@ -53,7 +53,8 @@ public sealed class RuntimeHealthController : ControllerBase
     }
 
     /// <summary>
-    /// SWM-6: background scheduler timer-loop status from persisted heartbeat (WorkerHost). Requires runtime.health.read.
+    /// SWM-6/SWM-7: background scheduler timer-loop status from persisted heartbeat (WorkerHost),
+    /// including WorkerRuntime projection. Requires runtime.health.read.
     /// </summary>
     [HttpGet("scheduler-status")]
     [ProducesResponseType(typeof(SchedulerStatusSnapshot), StatusCodes.Status200OK)]

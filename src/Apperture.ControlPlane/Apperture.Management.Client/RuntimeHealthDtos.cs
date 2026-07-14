@@ -62,7 +62,7 @@ public sealed record ExecutionAnomalyEntryDto(
     string Summary,
     DateTimeOffset OccurredAtUtc);
 
-/// <summary>SWM-6: background scheduler timer-loop status from heartbeat.</summary>
+/// <summary>SWM-6/SWM-7: background scheduler timer-loop status from heartbeat (+ worker projection).</summary>
 public sealed record SchedulerStatusSnapshotDto(
     DateTimeOffset CapturedAtUtc,
     string Status,
@@ -84,5 +84,20 @@ public sealed record SchedulerStatusSnapshotDto(
     int? DispatchedCount,
     int? SkippedCount,
     string? LastErrorSummary,
+    string? Guidance,
+    WorkerRuntimeStatusDto? WorkerRuntime = null);
+
+/// <summary>SWM-7: single-host observed worker runtime projection.</summary>
+public sealed record WorkerRuntimeStatusDto(
+    string InventoryModel,
+    string Status,
+    string? HostId,
+    string? RuntimePlaneId,
+    DateTimeOffset? LastSeenUtc,
+    string Alignment,
+    string SchedulerStatus,
+    DateTimeOffset? ProcessStartedUtc,
+    string? ApplicationVersion,
+    string? EnvironmentName,
     string? Guidance);
 

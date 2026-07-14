@@ -50,6 +50,8 @@
                 }
                 @if (_capabilities?.CanViewRuntimeHealth == true && _schedulerStatus is not null)
                 {
+                    var workerPill = _schedulerStatus.WorkerRuntime?.Status ?? _schedulerStatus.Status;
+                    <StatusPill Label="@($"Worker: {workerPill}")" Semantic="@MapSchedulerStatus(workerPill)" />
                     <StatusPill Label="@($"Scheduler: {_schedulerStatus.Status}")" Semantic="@MapSchedulerStatus(_schedulerStatus.Status)" />
                 }
             </div>
@@ -195,29 +197,36 @@
 
         @if (_capabilities?.CanViewRuntimeHealth == true && _schedulerStatus is not null)
         {
-            <ManagementSection Title="Scheduler runtime"
+            var worker = _schedulerStatus.WorkerRuntime;
+            <ManagementSection Title="Worker runtime"
                                Layer="ManagementSection.UiLayer.Summary"
-                               Help="Background WorkerHost dispatch timer heartbeat (SWM-6). Manual recovery run-cycle does not write this heartbeat."
+                               Help="Observed WorkerHost from the latest scheduler heartbeat for the expected plane (SWM-7). Single-host inventory — not a fleet manager. Manual recovery run-cycle does not write this heartbeat."
                                Class="mt-4">
                 <div class="flex flex-wrap items-start gap-4">
                     <div>
-                        <span class="text-xs text-muted">Status</span>
+                        <span class="text-xs text-muted">Worker status</span>
                         <div class="mt-1">
-                            <StatusPill Label="@_schedulerStatus.Status" Semantic="@MapSchedulerStatus(_schedulerStatus.Status)" />
+                            <StatusPill Label="@(worker?.Status ?? _schedulerStatus.Status)" Semantic="@MapSchedulerStatus(worker?.Status ?? _schedulerStatus.Status)" />
                         </div>
                     </div>
                     <div>
-                        <span class="text-xs text-muted">Plane</span>
-                        <div class="mt-1 font-mono text-sm">@(_schedulerStatus.ObservedRuntimePlaneId ?? "—")</div>
-                    </div>
-                    <div>
                         <span class="text-xs text-muted">Host id</span>
-                        <div class="mt-1 font-mono text-sm">@(_schedulerStatus.ObservedHostId ?? "—")</div>
+                        <div class="mt-1 font-mono text-sm">@(worker?.HostId ?? _schedulerStatus.ObservedHostId ?? "—")</div>
                     </div>
                     <div>
-                        <span class="text-xs text-muted">Last cycle</span>
+                        <span class="text-xs text-muted">Plane</span>
+                        <div class="mt-1 font-mono text-sm">@(worker?.RuntimePlaneId ?? _schedulerStatus.ObservedRuntimePlaneId ?? "—")</div>
+                    </div>
+                    <div>
+                        <span class="text-xs text-muted">Last seen</span>
                         <div class="mt-1 text-sm">
-                            <TimestampDisplay Value="@_schedulerStatus.LastCycleCompletedUtc" />
+                            <TimestampDisplay Value="@(worker?.LastSeenUtc ?? _schedulerStatus.UpdatedUtc)" />
+                        </div>
+                    </div>
+                    <div>
+                        <span class="text-xs text-muted">Scheduler</span>
+                        <div class="mt-1">
+                            <StatusPill Label="@_schedulerStatus.Status" Semantic="@MapSchedulerStatus(_schedulerStatus.Status)" />
                         </div>
                     </div>
                     @if (!string.IsNullOrWhiteSpace(_schedulerStatus.LastErrorSummary))
@@ -228,20 +237,24 @@
                         </div>
                     }
                 </div>
-                @if (!string.IsNullOrWhiteSpace(_schedulerStatus.Guidance))
+                @if (!string.IsNullOrWhiteSpace(worker?.Guidance ?? _schedulerStatus.Guidance))
                 {
-                    <div class="mt-2 text-xs text-muted">@_schedulerStatus.Guidance</div>
+                    <div class="mt-2 text-xs text-muted">@(worker?.Guidance ?? _schedulerStatus.Guidance)</div>
                 }
                 <details class="mt-3 text-xs text-muted">
                     <summary class="cursor-pointer">Technical details</summary>
                     <div class="mt-2 space-y-1 font-mono">
+                        <div>Inventory model: @(worker?.InventoryModel ?? "SingleHostObserved") (v1 — latest heartbeat for expected plane)</div>
                         <div>Expected plane: @_schedulerStatus.ExpectedManagementPlaneId</div>
-                        <div>Alignment: @_schedulerStatus.Alignment / Stale: @_schedulerStatus.IsStale</div>
+                        <div>Alignment: @(worker?.Alignment ?? _schedulerStatus.Alignment) / Stale: @_schedulerStatus.IsStale</div>
+                        <div>Process started: <TimestampDisplay Value="@worker?.ProcessStartedUtc" CssClass="inline" /></div>
+                        <div>Application version: @(worker?.ApplicationVersion ?? "—")</div>
+                        <div>Environment: @(worker?.EnvironmentName ?? "—")</div>
                         <div>Poll interval: @(_schedulerStatus.PollIntervalSeconds?.ToString() ?? "—")s</div>
                         <div>Assignments/Due/Stale/Candidates: @_schedulerStatus.AssignmentCount / @_schedulerStatus.DueCount / @_schedulerStatus.StaleCount / @_schedulerStatus.CandidateCount</div>
                         <div>Claimed/Dispatched/Skipped: @_schedulerStatus.ClaimedCount / @_schedulerStatus.DispatchedCount / @_schedulerStatus.SkippedCount</div>
-                        <div>Started: <TimestampDisplay Value="@_schedulerStatus.LastCycleStartedUtc" CssClass="inline" /></div>
-                        <div>Completed: <TimestampDisplay Value="@_schedulerStatus.LastCycleCompletedUtc" CssClass="inline" /></div>
+                        <div>Cycle started: <TimestampDisplay Value="@_schedulerStatus.LastCycleStartedUtc" CssClass="inline" /></div>
+                        <div>Cycle completed: <TimestampDisplay Value="@_schedulerStatus.LastCycleCompletedUtc" CssClass="inline" /></div>
                         <div>Last successful: <TimestampDisplay Value="@_schedulerStatus.LastSuccessfulCycleUtc" CssClass="inline" /></div>
                         <div>Heartbeat updated: <TimestampDisplay Value="@_schedulerStatus.UpdatedUtc" CssClass="inline" /></div>
                     </div>

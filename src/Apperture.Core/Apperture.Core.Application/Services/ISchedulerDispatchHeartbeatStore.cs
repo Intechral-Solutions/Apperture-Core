@@ -1,8 +1,6 @@
-using Apperture.Core.Domain.Environment;
-
 namespace Apperture.Core.Application.Services;
 
-/// <summary>SWM-6: last observed background scheduler timer-loop cycle for a plane.</summary>
+/// <summary>SWM-6/SWM-7: last observed background scheduler timer-loop cycle for a plane.</summary>
 public sealed record SchedulerDispatchHeartbeat(
     string RuntimePlaneId,
     string HostId,
@@ -18,9 +16,12 @@ public sealed record SchedulerDispatchHeartbeat(
     int ClaimedCount,
     int DispatchedCount,
     int SkippedCount,
-    DateTimeOffset UpdatedUtc);
+    DateTimeOffset UpdatedUtc,
+    DateTimeOffset? ProcessStartedUtc = null,
+    string? ApplicationVersion = null,
+    string? EnvironmentName = null);
 
-/// <summary>Upsert/read of scheduler timer heartbeats (SWM-6).</summary>
+/// <summary>Upsert/read of scheduler timer heartbeats (SWM-6 / SWM-7 metadata).</summary>
 public interface ISchedulerDispatchHeartbeatStore
 {
     ValueTask UpsertAsync(SchedulerDispatchHeartbeat heartbeat, CancellationToken cancellationToken = default);

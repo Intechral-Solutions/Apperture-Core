@@ -2304,6 +2304,14 @@ namespace Apperture.Persistence.SqlServer.Migrations
                         .HasMaxLength(128)
                         .HasColumnType("nvarchar(128)");
 
+                    b.Property<string>("ApplicationVersion")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("EnvironmentName")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
                     b.Property<DateTimeOffset?>("LastCycleCompletedUtc")
                         .HasColumnType("datetimeoffset");
 
@@ -2319,6 +2327,9 @@ namespace Apperture.Persistence.SqlServer.Migrations
 
                     b.Property<int>("PollIntervalSeconds")
                         .HasColumnType("int");
+
+                    b.Property<DateTimeOffset?>("ProcessStartedUtc")
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<int>("SkippedCount")
                         .HasColumnType("int");

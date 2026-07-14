@@ -200,7 +200,10 @@ public sealed class ScheduleDispatchBackgroundService : BackgroundService
                     claimedCount,
                     dispatchedCount,
                     skippedCount,
-                    DateTimeOffset.UtcNow),
+                    DateTimeOffset.UtcNow,
+                    WorkerRuntimeHeartbeatMetadata.TryGetProcessStartedUtc(),
+                    WorkerRuntimeHeartbeatMetadata.TryGetApplicationVersion(),
+                    WorkerRuntimeHeartbeatMetadata.TryGetEnvironmentName()),
                 cancellationToken);
         }
         catch (Exception ex)

@@ -711,6 +711,8 @@ public class AppertureDbContext : DbContext
             e.Property(x => x.RuntimePlaneId).HasMaxLength(128);
             e.Property(x => x.HostId).HasMaxLength(128);
             e.Property(x => x.LastErrorSummary).HasMaxLength(512);
+            e.Property(x => x.ApplicationVersion).HasMaxLength(128);
+            e.Property(x => x.EnvironmentName).HasMaxLength(64);
         });
 
         modelBuilder.Entity<InstanceAuthUiPolicyEntity>(e =>

@@ -70,16 +70,21 @@ public static class SchedulerStatusClassifier
     {
         if (string.Equals(status, SchedulerLoopStatus.Unknown, StringComparison.OrdinalIgnoreCase))
         {
-            return "No scheduler heartbeat yet. Confirm WorkerHost is running and can write to the shared database. "
+            return "No scheduler heartbeat for the expected plane. WorkerHost is likely not running, never started a cycle, "
+                   + "or cannot write heartbeats to the shared database. "
                    + "Manual recovery run-cycle does not write this heartbeat.";
         }
 
         if (!string.IsNullOrWhiteSpace(lastError))
-            return "Last scheduler cycle reported an error. Check WorkerHost logs for Plane/HostId context.";
+        {
+            return "Last scheduler cycle reported an error. Check WorkerHost logs for Plane/HostId context. "
+                   + "Dispatch may still retry on the next poll.";
+        }
 
         if (isStale)
         {
-            return "Scheduler heartbeat is stale. The WorkerHost timer may have stopped or lost database connectivity.";
+            return "Scheduler heartbeat is stale. The WorkerHost timer may have stopped, crashed, or lost database connectivity "
+                   + "(heartbeat writes are best-effort — a write failure leaves the previous row aging).";
         }
 
         if (string.Equals(alignment, SchedulerPlaneAlignment.Mismatched, StringComparison.OrdinalIgnoreCase))
@@ -88,6 +93,34 @@ public static class SchedulerStatusClassifier
         }
 
         return null;
+    }
+
+    /// <summary>SWM-7: builds the worker runtime projection from an optional heartbeat snapshot.</summary>
+    public static WorkerRuntimeStatus BuildWorkerRuntime(
+        string expectedPlaneId,
+        SchedulerDispatchHeartbeatSnapshot? snap,
+        DateTimeOffset asOfUtc,
+        DateTimeOffset? processStartedUtc = null,
+        string? applicationVersion = null,
+        string? environmentName = null)
+    {
+        var status = Classify(snap, asOfUtc);
+        var isStale = IsStale(snap, asOfUtc);
+        var alignment = ClassifyAlignment(expectedPlaneId, snap?.RuntimePlaneId);
+        var guidance = BuildGuidance(status, isStale, alignment, snap?.LastErrorSummary);
+
+        return new WorkerRuntimeStatus(
+            InventoryModel: WorkerRuntimeInventoryModel.SingleHostObserved,
+            Status: status,
+            HostId: snap?.HostId,
+            RuntimePlaneId: snap?.RuntimePlaneId,
+            LastSeenUtc: snap?.UpdatedUtc,
+            Alignment: alignment,
+            SchedulerStatus: status,
+            ProcessStartedUtc: processStartedUtc,
+            ApplicationVersion: applicationVersion,
+            EnvironmentName: environmentName,
+            Guidance: guidance);
     }
 
     public static string? SanitizeErrorSummary(Exception? exception, int maxLength = MaxErrorSummaryLength)

@@ -31,9 +31,15 @@ public sealed class Swm4DisplayTimezoneSurfaceRegressionTests
         File.ReadAllText(RepoPath("src/Apperture.ControlPlane/Apperture.Management.Ui.Client/Pages/Control/ControlCenter.razor"))
             .Should().Contain("TimestampDisplay");
         File.ReadAllText(RepoPath("src/Apperture.ControlPlane/Apperture.Management.Ui.Client/Pages/Control/ControlCenter.razor"))
-            .Should().Contain("Scheduler runtime");
+            .Should().Contain("Worker runtime");
         File.ReadAllText(RepoPath("src/Apperture.ControlPlane/Apperture.Management.Ui.Client/Pages/Control/ControlCenter.razor"))
             .Should().Contain("GetSchedulerStatusAsync");
+        File.ReadAllText(RepoPath("src/Apperture.ControlPlane/Apperture.Management.Ui.Client/Pages/Control/ControlCenter.razor"))
+            .Should().Contain("WorkerRuntime");
+        File.ReadAllText(RepoPath("src/Apperture.ControlPlane/Apperture.Management.Ui.Client/Pages/Config/DeveloperTasks.razor"))
+            .Should().Contain("WorkerRuntimeControlCenter");
+        File.ReadAllText(RepoPath("src/Apperture.ControlPlane/Apperture.Management.Ui.Client/Pages/Config/DeveloperTasks.razor"))
+            .Should().NotContain("ToLocalTime()");
         File.ReadAllText(RepoPath("src/Apperture.ControlPlane/Apperture.Management.Ui.Client/Pages/Runs/RunsList.razor"))
             .Should().Contain("FormatRunListWhenLine");
     }

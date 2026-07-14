@@ -50,6 +50,10 @@ flowchart LR
 
 Scheduled HelloWorld runs failed inserting `PlatformEvents` because `CausationId` (`nvarchar(64)`) was set from start-request `IdempotencyKey` (`schedule:{id}:{fire:O}`, often &gt;64). Fix: map `CausationId` to **run id**; keep fire identity on start-request idempotency / correlation. See `PlatformEventScopeCorrelation`.
 
-## Deferred — SWM-7+ worker management
+## Follow-on — SWM-7
+
+Worker runtime inventory / health detail reuses this heartbeat and adds a `WorkerRuntime` projection + optional process metadata. See `Epic-SWM7-Worker-Runtime-Inventory-Health-Detail.md`.
+
+## Deferred — SWM-8+ worker management
 
 Fleet inventory, lifecycle controls, multi-host dashboards, scaling, live attach.

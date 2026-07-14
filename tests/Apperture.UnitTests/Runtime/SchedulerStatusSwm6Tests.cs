@@ -8,7 +8,7 @@ using Xunit;
 
 namespace Apperture.UnitTests.Runtime;
 
-/// <summary>SWM-6: scheduler heartbeat store + status classification.</summary>
+/// <summary>SWM-6 + SWM-7: scheduler heartbeat store, classification, and worker runtime projection.</summary>
 public sealed class SchedulerStatusSwm6Tests
 {
     private static AppertureDbContext NewDb()
@@ -24,7 +24,10 @@ public sealed class SchedulerStatusSwm6Tests
         string host = "worker-local",
         int poll = 15,
         string? error = null,
-        DateTimeOffset? updated = null) =>
+        DateTimeOffset? updated = null,
+        DateTimeOffset? processStarted = null,
+        string? applicationVersion = null,
+        string? environmentName = null) =>
         new(
             plane,
             host,
@@ -40,7 +43,10 @@ public sealed class SchedulerStatusSwm6Tests
             ClaimedCount: 1,
             DispatchedCount: 1,
             SkippedCount: 0,
-            UpdatedUtc: updated ?? DateTimeOffset.Parse("2025-06-15T12:00:01Z"));
+            UpdatedUtc: updated ?? DateTimeOffset.Parse("2025-06-15T12:00:01Z"),
+            ProcessStartedUtc: processStarted,
+            ApplicationVersion: applicationVersion,
+            EnvironmentName: environmentName);
 
     [Fact]
     public async Task Heartbeat_upsert_creates_then_updates_single_row_per_plane()
@@ -62,6 +68,36 @@ public sealed class SchedulerStatusSwm6Tests
         rows.Should().ContainSingle();
         rows[0].AssignmentCount.Should().Be(5);
         rows[0].HostId.Should().Be("worker-local-b");
+    }
+
+    [Fact]
+    public async Task Heartbeat_upsert_persists_optional_worker_metadata()
+    {
+        await using var db = NewDb();
+        var store = new SqlSchedulerDispatchHeartbeatStore(db);
+        var started = DateTimeOffset.Parse("2025-06-15T11:55:00Z");
+        await store.UpsertAsync(SampleHeartbeat(
+            updated: DateTimeOffset.Parse("2025-06-15T12:00:01Z"),
+            processStarted: started,
+            applicationVersion: "1.2.3-test",
+            environmentName: "Development"));
+
+        var got = await store.GetAsync("local");
+        got!.ProcessStartedUtc.Should().Be(started);
+        got.ApplicationVersion.Should().Be("1.2.3-test");
+        got.EnvironmentName.Should().Be("Development");
+    }
+
+    [Fact]
+    public async Task Heartbeat_upsert_allows_null_metadata()
+    {
+        await using var db = NewDb();
+        var store = new SqlSchedulerDispatchHeartbeatStore(db);
+        await store.UpsertAsync(SampleHeartbeat(updated: DateTimeOffset.UtcNow));
+        var got = await store.GetAsync("local");
+        got!.ProcessStartedUtc.Should().BeNull();
+        got.ApplicationVersion.Should().BeNull();
+        got.EnvironmentName.Should().BeNull();
     }
 
     [Fact]
@@ -125,6 +161,47 @@ public sealed class SchedulerStatusSwm6Tests
     }
 
     [Fact]
+    public void BuildWorkerRuntime_unknown_includes_guidance()
+    {
+        var now = DateTimeOffset.Parse("2025-06-15T12:01:00Z");
+        var worker = SchedulerStatusClassifier.BuildWorkerRuntime("local", null, now);
+        worker.InventoryModel.Should().Be(WorkerRuntimeInventoryModel.SingleHostObserved);
+        worker.Status.Should().Be(SchedulerLoopStatus.Unknown);
+        worker.Alignment.Should().Be(SchedulerPlaneAlignment.Unknown);
+        worker.SchedulerStatus.Should().Be(SchedulerLoopStatus.Unknown);
+        worker.HostId.Should().BeNull();
+        worker.Guidance.Should().Contain("Manual recovery");
+        worker.ProcessStartedUtc.Should().BeNull();
+        worker.ApplicationVersion.Should().BeNull();
+        worker.EnvironmentName.Should().BeNull();
+    }
+
+    [Fact]
+    public void BuildWorkerRuntime_healthy_maps_metadata_and_last_seen()
+    {
+        var now = DateTimeOffset.Parse("2025-06-15T12:01:00Z");
+        var started = DateTimeOffset.Parse("2025-06-15T11:00:00Z");
+        var hb = SampleHeartbeat(updated: now.AddSeconds(-5), processStarted: started, applicationVersion: "9.9.9", environmentName: "Development");
+        var worker = SchedulerStatusClassifier.BuildWorkerRuntime("local", ToSnapshot(hb), now, hb.ProcessStartedUtc, hb.ApplicationVersion, hb.EnvironmentName);
+        worker.Status.Should().Be(SchedulerLoopStatus.Healthy);
+        worker.Alignment.Should().Be(SchedulerPlaneAlignment.Aligned);
+        worker.HostId.Should().Be("worker-local");
+        worker.RuntimePlaneId.Should().Be("local");
+        worker.LastSeenUtc.Should().Be(hb.UpdatedUtc);
+        worker.ProcessStartedUtc.Should().Be(started);
+        worker.ApplicationVersion.Should().Be("9.9.9");
+        worker.EnvironmentName.Should().Be("Development");
+        worker.Guidance.Should().BeNull();
+    }
+
+    [Fact]
+    public void BuildGuidance_stale_mentions_write_failure_aging()
+    {
+        var guidance = SchedulerStatusClassifier.BuildGuidance(SchedulerLoopStatus.Warning, isStale: true, SchedulerPlaneAlignment.Aligned, lastError: null);
+        guidance.Should().Contain("best-effort");
+    }
+
+    [Fact]
     public async Task QueryService_maps_counts_and_guidance_for_unknown()
     {
         await using var db = NewDb();
@@ -135,14 +212,21 @@ public sealed class SchedulerStatusSwm6Tests
         status.ExpectedManagementPlaneId.Should().Be("local");
         status.Guidance.Should().NotBeNullOrWhiteSpace();
         status.AssignmentCount.Should().BeNull();
+        status.WorkerRuntime.Status.Should().Be(SchedulerLoopStatus.Unknown);
+        status.WorkerRuntime.InventoryModel.Should().Be(WorkerRuntimeInventoryModel.SingleHostObserved);
+        status.WorkerRuntime.Guidance.Should().NotBeNullOrWhiteSpace();
     }
 
     [Fact]
-    public async Task QueryService_maps_counts_when_heartbeat_present()
+    public async Task QueryService_maps_counts_and_worker_runtime_when_heartbeat_present()
     {
         await using var db = NewDb();
         var store = new SqlSchedulerDispatchHeartbeatStore(db);
-        var hb = SampleHeartbeat(updated: DateTimeOffset.UtcNow);
+        var hb = SampleHeartbeat(
+            updated: DateTimeOffset.UtcNow,
+            processStarted: DateTimeOffset.UtcNow.AddHours(-1),
+            applicationVersion: "build-42",
+            environmentName: "Development");
         await store.UpsertAsync(hb);
         var svc = new SchedulerStatusQueryService(store);
         var status = await svc.GetStatusAsync("local");
@@ -153,6 +237,13 @@ public sealed class SchedulerStatusSwm6Tests
         status.DueCount.Should().Be(1);
         status.ClaimedCount.Should().Be(1);
         status.DispatchedCount.Should().Be(1);
+        status.WorkerRuntime.Status.Should().Be(SchedulerLoopStatus.Healthy);
+        status.WorkerRuntime.HostId.Should().Be("worker-local");
+        status.WorkerRuntime.RuntimePlaneId.Should().Be("local");
+        status.WorkerRuntime.ApplicationVersion.Should().Be("build-42");
+        status.WorkerRuntime.EnvironmentName.Should().Be("Development");
+        status.WorkerRuntime.ProcessStartedUtc.Should().NotBeNull();
+        status.WorkerRuntime.LastSeenUtc.Should().NotBeNull();
     }
 
     private static SchedulerDispatchHeartbeatSnapshot ToSnapshot(SchedulerDispatchHeartbeat h) =>

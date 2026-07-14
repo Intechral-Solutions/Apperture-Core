@@ -3,7 +3,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Apperture.Persistence.SqlServer;
 
-/// <summary>SWM-6: upsert/read scheduler timer heartbeats.</summary>
+/// <summary>SWM-6/SWM-7: upsert/read scheduler timer heartbeats (incl. optional worker metadata).</summary>
 public sealed class SqlSchedulerDispatchHeartbeatStore : ISchedulerDispatchHeartbeatStore
 {
     private readonly AppertureDbContext _db;
@@ -41,6 +41,9 @@ public sealed class SqlSchedulerDispatchHeartbeatStore : ISchedulerDispatchHeart
         entity.DispatchedCount = heartbeat.DispatchedCount;
         entity.SkippedCount = heartbeat.SkippedCount;
         entity.UpdatedUtc = heartbeat.UpdatedUtc;
+        entity.ProcessStartedUtc = heartbeat.ProcessStartedUtc;
+        entity.ApplicationVersion = Truncate(heartbeat.ApplicationVersion, 128);
+        entity.EnvironmentName = Truncate(heartbeat.EnvironmentName, 64);
 
         await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
     }
@@ -81,5 +84,16 @@ public sealed class SqlSchedulerDispatchHeartbeatStore : ISchedulerDispatchHeart
             e.ClaimedCount,
             e.DispatchedCount,
             e.SkippedCount,
-            e.UpdatedUtc);
+            e.UpdatedUtc,
+            e.ProcessStartedUtc,
+            e.ApplicationVersion,
+            e.EnvironmentName);
+
+    private static string? Truncate(string? value, int maxLength)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return null;
+        var trimmed = value.Trim();
+        return trimmed.Length <= maxLength ? trimmed : trimmed[..maxLength];
+    }
 }
