@@ -2425,6 +2425,10 @@ namespace Apperture.Persistence.SqlServer.Migrations
                         .HasMaxLength(256)
                         .HasColumnType("nvarchar(256)");
 
+                    b.Property<string>("DisplayTimeZoneId")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
                     b.Property<string>("EmailAddress")
                         .HasMaxLength(512)
                         .HasColumnType("nvarchar(512)");

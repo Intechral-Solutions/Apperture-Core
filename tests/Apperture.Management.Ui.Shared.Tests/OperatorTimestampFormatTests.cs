@@ -40,6 +40,41 @@ public sealed class OperatorTimestampFormatTests
     }
 
     [Fact]
+    public void FromCandidates_Valid_Preference_Wins_Over_Browser()
+    {
+        if (!OperatorTimestampFormat.TryFind("America/Los_Angeles", out _))
+            return;
+        if (!OperatorTimestampFormat.TryFind("America/New_York", out _))
+            return;
+
+        var (id, source) = OperatorDisplayTimeZoneResolution.FromCandidates(
+            "America/Los_Angeles",
+            "America/New_York");
+        id.Should().Be("America/Los_Angeles");
+        source.Should().Be(OperatorDisplayTimeZoneSource.UserPreference);
+    }
+
+    [Fact]
+    public void FromCandidates_Invalid_Preference_Falls_Through_To_Browser()
+    {
+        if (!OperatorTimestampFormat.TryFind("America/New_York", out _))
+            return;
+
+        var (id, source) = OperatorDisplayTimeZoneResolution.FromCandidates(
+            "Not/AZone",
+            "America/New_York");
+        id.Should().Be("America/New_York");
+        source.Should().Be(OperatorDisplayTimeZoneSource.Browser);
+    }
+
+    [Fact]
+    public void FromCandidates_Null_Preference_Uses_Browser_Then_Utc()
+    {
+        OperatorDisplayTimeZoneResolution.FromCandidates(null, null)
+            .Should().Be(("UTC", OperatorDisplayTimeZoneSource.UtcFallback));
+    }
+
+    [Fact]
     public void Format_Uses_Browser_Zone_When_Valid()
     {
         if (!OperatorTimestampFormat.TryFind("America/Los_Angeles", out _))
@@ -90,6 +125,13 @@ public sealed class OperatorTimestampFormatTests
             .Should().Be("Your time (America/Los_Angeles)");
         OperatorTimestampFormat.FormatZoneLabel("UTC", OperatorDisplayTimeZoneSource.UtcFallback)
             .Should().Be("UTC");
+    }
+
+    [Fact]
+    public void FormatZoneLabel_UserPreference_Uses_Preferred_Prefix()
+    {
+        OperatorTimestampFormat.FormatZoneLabel("America/Los_Angeles", OperatorDisplayTimeZoneSource.UserPreference)
+            .Should().Be("Preferred (America/Los_Angeles)");
     }
 
     [Fact]

@@ -9,7 +9,7 @@
 
 1. **Stored truth** remains UTC `DateTimeOffset` (schedule fires, run timestamps).
 2. **Schedule timezone** remains schedule-specific (cron interpretation only; SWM-3). Unchanged by this epic.
-3. **Operator display timezone** resolves: **browser IANA → UTC**.
+3. **Operator display timezone** resolves: **browser IANA → UTC** (superseded for preference path by [SWM-5](Epic-SWM5-Operator-Display-Timezone-Preferences.md): preference → browser → UTC when preference is set).
 4. Labels are explicit zone ids (`America/Los_Angeles`, `UTC`), or `Your time (America/Los_Angeles)` when the source is the browser. Vague unlabeled “local” is forbidden on touched surfaces.
 5. Browser resolution is async-safe: UI may render UTC first, then re-render when JS interop succeeds. JS failures never throw to the page.
 6. Do **not** overload `Scheduling.DefaultTimeZoneId` (schedule create only).
@@ -34,10 +34,9 @@ flowchart LR
 
 ## Explicitly deferred — SWM-5 Operator Display Time Zone Preferences
 
-- Persisted user/profile timezone field
-- Account page setting
-- `MeResponse` preference field
-- Platform-level display fallback distinct from `Scheduling.DefaultTimeZoneId`
+**Delivered in [SWM-5](Epic-SWM5-Operator-Display-Timezone-Preferences.md):** persisted nullable `DisplayTimeZoneId`, additive Me read field, resolver preference → browser → UTC.
+
+**Still deferred (profile overhaul):** Account/UI to set the preference, write API, capability flags, platform-level display fallback distinct from `Scheduling.DefaultTimeZoneId`.
 
 ## Out of scope
 

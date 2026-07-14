@@ -1284,7 +1284,9 @@ public sealed record MeResponse(
     [property: JsonPropertyName("localCredentialStatus")] string LocalCredentialStatus,
     [property: JsonPropertyName("roleNames")] IReadOnlyList<string> RoleNames,
     [property: JsonPropertyName("canChangeLocalPassword")] bool CanChangeLocalPassword,
-    [property: JsonPropertyName("deferred")] AccountDeferredFeaturesDto Deferred);
+    [property: JsonPropertyName("deferred")] AccountDeferredFeaturesDto Deferred,
+    /// <summary>SWM-5: stored operator display timezone preference; null until profile overhaul sets it.</summary>
+    [property: JsonPropertyName("displayTimeZoneId")] string? DisplayTimeZoneId = null);
 
 public sealed record AccountIdentityLinkDto(
     [property: JsonPropertyName("source")] string Source,

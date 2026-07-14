@@ -65,7 +65,8 @@ public sealed class SqlUserRepository : IUserRepository
         {
             Id = user.Id.Value,
             DisplayName = user.DisplayName,
-            IsBreakGlassEligible = user.IsBreakGlassEligible
+            IsBreakGlassEligible = user.IsBreakGlassEligible,
+            DisplayTimeZoneId = user.DisplayTimeZoneId
         };
         _db.Users.Add(userEntity);
 
@@ -101,6 +102,7 @@ public sealed class SqlUserRepository : IUserRepository
 
         entity.DisplayName = user.DisplayName;
         entity.IsBreakGlassEligible = user.IsBreakGlassEligible;
+        entity.DisplayTimeZoneId = user.DisplayTimeZoneId;
         await _db.SaveChangesAsync(cancellationToken);
     }
 
@@ -215,6 +217,7 @@ public sealed class SqlUserRepository : IUserRepository
             userEntity.DisplayName,
             identityLinks,
             assignedRoleIds,
-            userEntity.IsBreakGlassEligible);
+            userEntity.IsBreakGlassEligible,
+            userEntity.DisplayTimeZoneId);
     }
 }

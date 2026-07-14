@@ -140,7 +140,8 @@ public sealed class AuthController : ControllerBase
                 deferred.AvatarManagementDeferred,
                 deferred.ProfileEditDeferred,
                 deferred.NotificationSubscriptionsDeferred,
-                deferred.Message)));
+                deferred.Message),
+            user.DisplayTimeZoneId));
     }
 
     /// <summary>
@@ -479,7 +480,9 @@ public sealed record MeResponse(
     string LocalCredentialStatus,
     string[] RoleNames,
     bool CanChangeLocalPassword,
-    AccountDeferredFeaturesDto Deferred);
+    AccountDeferredFeaturesDto Deferred,
+    /// <summary>SWM-5: stored operator display timezone preference; null until profile overhaul sets it.</summary>
+    string? DisplayTimeZoneId = null);
 
 public sealed record AccountIdentityLinkDto(
     string Source,

@@ -38,13 +38,15 @@ public static class OperatorTimestampFormat
     public static string FormatZoneLabel(string timeZoneId, OperatorDisplayTimeZoneSource source)
     {
         var id = string.IsNullOrWhiteSpace(timeZoneId) ? UtcId : timeZoneId.Trim();
-        if (source == OperatorDisplayTimeZoneSource.Browser
-            && !string.Equals(id, UtcId, StringComparison.OrdinalIgnoreCase))
-        {
-            return $"Your time ({id})";
-        }
+        if (string.Equals(id, UtcId, StringComparison.OrdinalIgnoreCase))
+            return UtcId;
 
-        return id;
+        return source switch
+        {
+            OperatorDisplayTimeZoneSource.UserPreference => $"Preferred ({id})",
+            OperatorDisplayTimeZoneSource.Browser => $"Your time ({id})",
+            _ => id
+        };
     }
 
     public static OperatorTimestampFormatResult Format(

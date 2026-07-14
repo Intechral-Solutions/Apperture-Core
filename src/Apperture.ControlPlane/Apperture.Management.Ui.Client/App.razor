@@ -36,10 +36,10 @@
             /* JS interop not ready */
         }
 
-        // SWM-4: non-blocking; pages may briefly show UTC then upgrade to browser IANA.
-        await OperatorDisplayTimeZone.EnsureResolvedAsync();
-
+        // SWM-5: Me (preference) before display-TZ resolve so stored DisplayTimeZoneId can win.
         await SessionStateService.RefreshAsync();
+        // SWM-4/5: non-blocking; pages may briefly show UTC then upgrade to pref/browser IANA.
+        await OperatorDisplayTimeZone.EnsureResolvedAsync();
         await AuthSignInOptionsService.RefreshAsync();
     }
 }

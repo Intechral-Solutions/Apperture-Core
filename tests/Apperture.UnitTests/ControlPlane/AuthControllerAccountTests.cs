@@ -73,6 +73,32 @@ public sealed class AuthControllerAccountTests
         body.IdentityLinks.Should().ContainSingle(l =>
             l.Source == "Local" && l.DisplayLabel == LocalUsername);
         body.Deferred.AvatarManagementDeferred.Should().BeTrue();
+        body.DisplayTimeZoneId.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Me_includes_display_timezone_when_user_has_preference()
+    {
+        var user = SampleUser() with { DisplayTimeZoneId = "America/Los_Angeles" };
+        var roles = new[]
+        {
+            new Role(new RoleId("rol_platform_admin"), "Platform administrator", null, [], true)
+        };
+        var credential = new LocalCredentialData(TestUserId, "hash", "salt", "stub", IsDisabled: false);
+        var httpContext = HttpContextWithLocalClaims(LocalUsername);
+        var controller = NewController(
+            actor: new HumanActor(new ActorId(LocalUsername), LocalUsername, isBreakGlassSession: false),
+            resolvedUserId: TestUserId,
+            user: user,
+            roles: roles,
+            credential: credential,
+            httpContext: httpContext);
+
+        var result = await controller.Me(CancellationToken.None);
+
+        var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var body = ok.Value.Should().BeOfType<MeResponse>().Subject;
+        body.DisplayTimeZoneId.Should().Be("America/Los_Angeles");
     }
 
     [Fact]

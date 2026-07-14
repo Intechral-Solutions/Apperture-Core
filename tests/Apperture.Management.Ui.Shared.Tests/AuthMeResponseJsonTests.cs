@@ -35,6 +35,30 @@ public sealed class AuthMeResponseJsonTests
         me.RoleNames.Should().Equal("Platform administrator");
         me.IdentityLinks.Should().ContainSingle(l => l.DisplayLabel == "ada");
         me.Deferred.Message.Should().Be("Deferred.");
+        me.DisplayTimeZoneId.Should().BeNull();
+    }
+
+    [Fact]
+    public void MeResponse_deserializes_displayTimeZoneId_when_present()
+    {
+        const string json = """
+            {
+              "userId":"usr_1",
+              "displayName":"Ada",
+              "roles":["platform-admin"],
+              "userPrincipal":"ada@contoso.com",
+              "signInSource":"Local",
+              "identityLinks":[],
+              "localCredentialStatus":"active",
+              "roleNames":["Platform administrator"],
+              "canChangeLocalPassword":true,
+              "deferred":{"avatarManagementDeferred":true,"profileEditDeferred":true,"notificationSubscriptionsDeferred":true,"message":"Deferred."},
+              "displayTimeZoneId":"America/Chicago"
+            }
+            """;
+        var me = JsonSerializer.Deserialize<MeResponse>(json, ClientJsonOptions());
+        me.Should().NotBeNull();
+        me!.DisplayTimeZoneId.Should().Be("America/Chicago");
     }
 
     private static JsonSerializerOptions ClientJsonOptions() =>

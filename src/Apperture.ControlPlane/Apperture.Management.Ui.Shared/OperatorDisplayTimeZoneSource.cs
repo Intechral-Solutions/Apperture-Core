@@ -1,20 +1,38 @@
 namespace Apperture.Management.Ui.Shared;
 
-/// <summary>SWM-4: how the operator display timezone was chosen.</summary>
+/// <summary>How the operator display timezone was chosen.</summary>
 public enum OperatorDisplayTimeZoneSource
 {
-    /// <summary>UTC used before browser resolve or when browser id is missing/invalid.</summary>
+    /// <summary>UTC used before resolve or when no valid preference/browser id.</summary>
     UtcFallback = 0,
 
     /// <summary>Browser IANA id from JS <c>Intl.DateTimeFormat</c>.</summary>
-    Browser = 1
+    Browser = 1,
+
+    /// <summary>SWM-5: persisted user preference (<c>User.DisplayTimeZoneId</c>).</summary>
+    UserPreference = 2
 }
 
-/// <summary>SWM-4: maps a browser timezone candidate to the effective display zone.</summary>
+/// <summary>Maps preference + browser candidates to the effective display zone.</summary>
 public static class OperatorDisplayTimeZoneResolution
 {
-    public static (string TimeZoneId, OperatorDisplayTimeZoneSource Source) FromBrowserCandidate(string? browserTimeZoneId)
+    public static (string TimeZoneId, OperatorDisplayTimeZoneSource Source) FromBrowserCandidate(string? browserTimeZoneId) =>
+        FromCandidates(userPreferenceTimeZoneId: null, browserTimeZoneId);
+
+    /// <summary>
+    /// SWM-5 order: valid user preference → valid browser IANA → UTC.
+    /// Invalid preference is ignored (treated as unset).
+    /// </summary>
+    public static (string TimeZoneId, OperatorDisplayTimeZoneSource Source) FromCandidates(
+        string? userPreferenceTimeZoneId,
+        string? browserTimeZoneId)
     {
+        if (!string.IsNullOrWhiteSpace(userPreferenceTimeZoneId)
+            && OperatorTimestampFormat.TryFind(userPreferenceTimeZoneId, out _))
+        {
+            return (userPreferenceTimeZoneId.Trim(), OperatorDisplayTimeZoneSource.UserPreference);
+        }
+
         if (!string.IsNullOrWhiteSpace(browserTimeZoneId)
             && OperatorTimestampFormat.TryFind(browserTimeZoneId, out _))
         {
