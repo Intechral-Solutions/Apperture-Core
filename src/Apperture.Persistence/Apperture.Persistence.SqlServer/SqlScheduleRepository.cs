@@ -136,18 +136,17 @@ public sealed class SqlScheduleRepository : IScheduleRepository
 
     public async ValueTask<IReadOnlyList<ScheduleFireCandidate>> GetRecoverableStaleCandidatesAsync(RuntimePlaneId planeId, DateTimeOffset staleCutoffUtc, CancellationToken ct = default)
     {
-        var assignmentIds = await _db.ScheduleAssignments.AsNoTracking()
-            .Where(a => a.RuntimePlaneId == planeId.Value)
-            .Select(a => a.Id)
-            .ToListAsync(ct);
-
-        var runs = await _db.ScheduleRuns.AsNoTracking()
-            .Where(r =>
-                r.Outcome == "InProgress" &&
-                r.StartedAtUtc < staleCutoffUtc &&
-                assignmentIds.Contains(r.AssignmentId))
-            .Select(r => new ScheduleFireCandidate(r.ScheduleId, r.AssignmentId, r.FireTimeUtc))
-            .ToListAsync(ct);
+        // Join definitions so disabled schedules cannot be re-dispatched via stale recovery.
+        var runs = await (
+            from r in _db.ScheduleRuns.AsNoTracking()
+            join a in _db.ScheduleAssignments.AsNoTracking() on r.AssignmentId equals a.Id
+            join d in _db.ScheduleDefinitions.AsNoTracking() on r.ScheduleId equals d.Id
+            where a.RuntimePlaneId == planeId.Value
+                  && d.Enabled
+                  && r.Outcome == "InProgress"
+                  && r.StartedAtUtc < staleCutoffUtc
+            select new ScheduleFireCandidate(r.ScheduleId, r.AssignmentId, r.FireTimeUtc)
+        ).ToListAsync(ct);
 
         return runs;
     }

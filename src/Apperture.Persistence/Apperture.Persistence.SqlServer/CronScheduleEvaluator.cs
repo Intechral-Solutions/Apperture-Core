@@ -14,9 +14,10 @@ namespace Apperture.Persistence.SqlServer;
 public sealed class CronScheduleEvaluator : IScheduleEvaluator
 {
     /// <summary>
-    /// Bounded lookback when no prior state exists (first-run).
-    /// Prevents accidental burst dispatch of many missed runs.
-    /// Only occurrences within this window are considered due.
+    /// First-run lookback when no <c>LastAttemptedUtc</c> exists. Bounds cold-start so a new
+    /// high-frequency schedule does not claim a large historical window in one cycle.
+    /// Subsequent evaluation uses <c>LastAttemptedUtc+1s</c> and returns at most one fire
+    /// (catch-up drains across polls — never burst-dispatches every missed minute).
     /// </summary>
     internal const int FirstRunLookbackMinutes = 5;
 
@@ -48,8 +49,11 @@ public sealed class CronScheduleEvaluator : IScheduleEvaluator
                 continue; // V1: workflow and operation only
 
             var state = await _repo.GetStateAsync(assignment.Id.Value, cancellationToken);
-            // First-run: bounded lookback to prevent burst dispatch. Subsequent runs: from last attempted + 1s.
-            var fromUtc = state?.LastAttemptedUtc?.AddSeconds(1) ?? asOfUtc.AddMinutes(-FirstRunLookbackMinutes);
+            // First-run: bounded lookback. Subsequent: from LastAttempted+1s (catch-up is
+            // serialized by returning at most one fire below — do not floor away older due
+            // instants or they are permanently skipped).
+            var fromUtc = state?.LastAttemptedUtc?.AddSeconds(1)
+                ?? asOfUtc.AddMinutes(-FirstRunLookbackMinutes);
 
             var tz = ScheduleTimeZoneResolver.ResolvePersistedOrUtc(definition.TimeZone, _log);
 
@@ -74,13 +78,21 @@ public sealed class CronScheduleEvaluator : IScheduleEvaluator
                 continue;
             }
 
-            foreach (var occ in occurrences)
+            // At most one due fire per schedule per evaluation cycle (earliest unclaimed).
+            // Further missed instants drain on later polls — never burst-dispatch.
+            ScheduleFireCandidate? nextDue = null;
+            foreach (var occ in occurrences.OrderBy(o => o))
             {
                 var fireUtc = ScheduleTimeZoneResolver.ToNormalizedFireUtc(occ);
-                var alreadyProcessed = await _repo.RunExistsAsync(assignment.ScheduleId.Value, fireUtc, cancellationToken);
-                if (!alreadyProcessed)
-                    results.Add(new ScheduleFireCandidate(assignment.ScheduleId.Value, assignment.Id.Value, fireUtc));
+                if (await _repo.RunExistsAsync(assignment.ScheduleId.Value, fireUtc, cancellationToken))
+                    continue;
+
+                nextDue = new ScheduleFireCandidate(assignment.ScheduleId.Value, assignment.Id.Value, fireUtc);
+                break;
             }
+
+            if (nextDue is not null)
+                results.Add(nextDue);
         }
 
         return results;

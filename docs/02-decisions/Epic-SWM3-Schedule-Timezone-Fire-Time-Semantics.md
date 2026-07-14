@@ -10,10 +10,11 @@
 1. Cron is interpreted in the schedule’s stored `TimeZone` string via `TimeZoneInfo.FindSystemTimeZoneById` (IANA preferred, e.g. `America/Los_Angeles`; Windows IDs accepted where the OS resolves them).
 2. Due/fire instants are **UTC** `DateTimeOffset` with zero offset (`ScheduleTimeZoneResolver.ToNormalizedFireUtc`), matching SWM-2 claim/exists/complete normalization.
 3. Idempotency = schedule id + UTC fire instant (unchanged).
-4. Operators see the cron timezone on create/list/detail; fire and schedule execution timestamps on SWM-3-touched pages are labeled **UTC** (not unlabeled server-local).
-5. Create omit/blank timezone → `Scheduling.DefaultTimeZoneId` (platform setting, default `UTC`). Never server local time.
-6. Create/update **rejects** invalid timezone IDs. Runtime evaluators/collectors fall back to UTC only for corrupt persisted rows, with a diagnosable warning log.
-7. DST behavior is delegated to **Cronos** `GetOccurrences` (see notes below).
+4. **Due evaluation returns at most one unclaimed fire per schedule per cycle** (earliest after `LastAttemptedUtc`, or after a bounded first-run lookback). High-frequency crons such as `* * * * *` must not burst-dispatch every missed minute in one poll; catch-up drains across subsequent polls.
+5. Operators see the cron timezone on create/list/detail; fire and schedule execution timestamps on SWM-3-touched pages are labeled **UTC** (not unlabeled server-local).
+6. Create omit/blank timezone → `Scheduling.DefaultTimeZoneId` (platform setting, default `UTC`). Never server local time.
+7. Create/update **rejects** invalid timezone IDs. Runtime evaluators/collectors fall back to UTC only for corrupt persisted rows, with a diagnosable warning log.
+8. DST behavior is delegated to **Cronos** `GetOccurrences` (see notes below).
 
 ```mermaid
 flowchart LR
