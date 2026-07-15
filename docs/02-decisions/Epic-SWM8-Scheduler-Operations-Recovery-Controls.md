@@ -45,4 +45,5 @@ See design audit: `Epic-SWM9-Worker-Lifecycle-Fleet-Management-Design-Audit.md`.
 - **SWM-9a** — Hosting mode guidance (observe + runbooks; no process control) — delivered
 - **SWM-9b** — Optional Epic72B native-script hygiene (or remove)
 - **SWM-10** — Schedule readiness & next-fire clarity — delivered (`Epic-SWM10-…`)
-- **Later** — Multi-host observe inventory; external hosting adapters for lifecycle (post-v1)
+- **SWM-11** — Multi-host worker observation — delivered (`Epic-SWM11-…`)
+- **Later** — External hosting adapters for lifecycle (post-v1)

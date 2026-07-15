@@ -49,17 +49,16 @@ public sealed class SchedulerStatusSwm6Tests
             EnvironmentName: environmentName);
 
     [Fact]
-    public async Task Heartbeat_upsert_creates_then_updates_single_row_per_plane()
+    public async Task Heartbeat_upsert_updates_same_plane_and_host_row()
     {
         await using var db = NewDb();
         var store = new SqlSchedulerDispatchHeartbeatStore(db);
-        var first = SampleHeartbeat(updated: DateTimeOffset.Parse("2025-06-15T12:00:01Z"));
+        var first = SampleHeartbeat(host: "worker-local", updated: DateTimeOffset.Parse("2025-06-15T12:00:01Z"));
         await store.UpsertAsync(first);
 
         var second = first with
         {
             AssignmentCount = 5,
-            HostId = "worker-local-b",
             UpdatedUtc = DateTimeOffset.Parse("2025-06-15T12:00:30Z")
         };
         await store.UpsertAsync(second);
@@ -67,7 +66,25 @@ public sealed class SchedulerStatusSwm6Tests
         var rows = await store.ListAsync();
         rows.Should().ContainSingle();
         rows[0].AssignmentCount.Should().Be(5);
-        rows[0].HostId.Should().Be("worker-local-b");
+        rows[0].HostId.Should().Be("worker-local");
+    }
+
+    [Fact]
+    public async Task Heartbeat_upsert_creates_separate_rows_for_different_hosts_same_plane()
+    {
+        await using var db = NewDb();
+        var store = new SqlSchedulerDispatchHeartbeatStore(db);
+        await store.UpsertAsync(SampleHeartbeat(host: "worker-a", updated: DateTimeOffset.Parse("2025-06-15T12:00:01Z")));
+        await store.UpsertAsync(SampleHeartbeat(host: "worker-b", updated: DateTimeOffset.Parse("2025-06-15T12:00:30Z")));
+
+        var rows = await store.ListByPlaneAsync("local");
+        rows.Should().HaveCount(2);
+        rows[0].HostId.Should().Be("worker-b");
+        rows[1].HostId.Should().Be("worker-a");
+
+        var primary = await store.GetAsync("local");
+        primary!.HostId.Should().Be("worker-b");
+        primary.UpdatedUtc.Should().Be(DateTimeOffset.Parse("2025-06-15T12:00:30Z"));
     }
 
     [Fact]
@@ -244,6 +261,43 @@ public sealed class SchedulerStatusSwm6Tests
         status.WorkerRuntime.EnvironmentName.Should().Be("Development");
         status.WorkerRuntime.ProcessStartedUtc.Should().NotBeNull();
         status.WorkerRuntime.LastSeenUtc.Should().NotBeNull();
+        status.ObservedWorkerCount.Should().Be(1);
+        status.ObservedWorkers.Should().ContainSingle(w => w.HostId == "worker-local");
+        status.StaleObservedWorkerCount.Should().Be(0);
+        status.WorkerRuntime.InventoryModel.Should().Be(WorkerRuntimeInventoryModel.SingleHostObserved);
+    }
+
+    [Fact]
+    public async Task QueryService_multi_host_selects_latest_and_lists_observed()
+    {
+        await using var db = NewDb();
+        var store = new SqlSchedulerDispatchHeartbeatStore(db);
+        var older = DateTimeOffset.UtcNow.AddMinutes(-2);
+        var newer = DateTimeOffset.UtcNow.AddSeconds(-5);
+        await store.UpsertAsync(SampleHeartbeat(host: "worker-old", updated: older));
+        await store.UpsertAsync(SampleHeartbeat(host: "worker-new", updated: newer));
+
+        var svc = new SchedulerStatusQueryService(store);
+        var status = await svc.GetStatusAsync("local");
+
+        status.ObservedHostId.Should().Be("worker-new");
+        status.ObservedWorkerCount.Should().Be(2);
+        status.WorkerRuntime.InventoryModel.Should().Be(WorkerRuntimeInventoryModel.MultiHostObserved);
+        status.ObservedWorkers.Should().HaveCount(2);
+        status.ObservedWorkers![0].HostId.Should().Be("worker-new");
+        status.ObservationGuidance.Should().Contain("2 worker hosts");
+        status.ObservationGuidance.Should().Contain("externally managed");
+    }
+
+    [Fact]
+    public void Observation_guidance_covers_none_and_stale()
+    {
+        SchedulerStatusClassifier.BuildObservationSummaryGuidance(0, 0, false, false)
+            .Should().Contain("No workers observed");
+        SchedulerStatusClassifier.BuildObservationSummaryGuidance(2, 1, true, true)
+            .Should().Contain("stale")
+            .And.Contain("plane")
+            .And.Contain("HostId");
     }
 
     private static SchedulerDispatchHeartbeatSnapshot ToSnapshot(SchedulerDispatchHeartbeat h) =>

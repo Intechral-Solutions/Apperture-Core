@@ -1,6 +1,6 @@
 namespace Apperture.Persistence.SqlServer;
 
-/// <summary>SWM-6/SWM-7: latest background scheduler dispatch cycle heartbeat (one row per plane).</summary>
+/// <summary>SWM-6/SWM-7/SWM-11: scheduler dispatch cycle heartbeat (one row per plane+host).</summary>
 public sealed class SchedulerDispatchHeartbeatEntity
 {
     public string RuntimePlaneId { get; set; } = "";

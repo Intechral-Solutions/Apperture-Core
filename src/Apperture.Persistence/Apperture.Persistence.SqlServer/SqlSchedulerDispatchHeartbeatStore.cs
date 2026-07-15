@@ -3,7 +3,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Apperture.Persistence.SqlServer;
 
-/// <summary>SWM-6/SWM-7: upsert/read scheduler timer heartbeats (incl. optional worker metadata).</summary>
+/// <summary>SWM-6/SWM-7/SWM-11: upsert/read scheduler timer heartbeats (plane+host identity).</summary>
 public sealed class SqlSchedulerDispatchHeartbeatStore : ISchedulerDispatchHeartbeatStore
 {
     private readonly AppertureDbContext _db;
@@ -17,17 +17,22 @@ public sealed class SqlSchedulerDispatchHeartbeatStore : ISchedulerDispatchHeart
         if (string.IsNullOrWhiteSpace(plane))
             throw new ArgumentException("RuntimePlaneId is required.", nameof(heartbeat));
 
+        var hostId = string.IsNullOrWhiteSpace(heartbeat.HostId) ? "unknown" : heartbeat.HostId.Trim();
+
         var entity = await _db.SchedulerDispatchHeartbeats
-            .FirstOrDefaultAsync(x => x.RuntimePlaneId == plane, cancellationToken)
+            .FirstOrDefaultAsync(x => x.RuntimePlaneId == plane && x.HostId == hostId, cancellationToken)
             .ConfigureAwait(false);
 
         if (entity is null)
         {
-            entity = new SchedulerDispatchHeartbeatEntity { RuntimePlaneId = plane };
+            entity = new SchedulerDispatchHeartbeatEntity
+            {
+                RuntimePlaneId = plane,
+                HostId = hostId
+            };
             _db.SchedulerDispatchHeartbeats.Add(entity);
         }
 
-        entity.HostId = heartbeat.HostId;
         entity.PollIntervalSeconds = heartbeat.PollIntervalSeconds;
         entity.LastCycleStartedUtc = heartbeat.LastCycleStartedUtc;
         entity.LastCycleCompletedUtc = heartbeat.LastCycleCompletedUtc;
@@ -48,12 +53,16 @@ public sealed class SqlSchedulerDispatchHeartbeatStore : ISchedulerDispatchHeart
         await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>Latest heartbeat for the plane (max UpdatedUtc) — SWM-6/7 primary compatibility.</summary>
     public async ValueTask<SchedulerDispatchHeartbeat?> GetAsync(string runtimePlaneId, CancellationToken cancellationToken = default)
     {
         var plane = runtimePlaneId.Trim();
         var entity = await _db.SchedulerDispatchHeartbeats
             .AsNoTracking()
-            .FirstOrDefaultAsync(x => x.RuntimePlaneId == plane, cancellationToken)
+            .Where(x => x.RuntimePlaneId == plane)
+            .OrderByDescending(x => x.UpdatedUtc)
+            .ThenBy(x => x.HostId)
+            .FirstOrDefaultAsync(cancellationToken)
             .ConfigureAwait(false);
         return entity is null ? null : ToDomain(entity);
     }
@@ -63,6 +72,23 @@ public sealed class SqlSchedulerDispatchHeartbeatStore : ISchedulerDispatchHeart
         var rows = await _db.SchedulerDispatchHeartbeats
             .AsNoTracking()
             .OrderBy(x => x.RuntimePlaneId)
+            .ThenByDescending(x => x.UpdatedUtc)
+            .ThenBy(x => x.HostId)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+        return rows.Select(ToDomain).ToList();
+    }
+
+    public async ValueTask<IReadOnlyList<SchedulerDispatchHeartbeat>> ListByPlaneAsync(
+        string runtimePlaneId,
+        CancellationToken cancellationToken = default)
+    {
+        var plane = runtimePlaneId.Trim();
+        var rows = await _db.SchedulerDispatchHeartbeats
+            .AsNoTracking()
+            .Where(x => x.RuntimePlaneId == plane)
+            .OrderByDescending(x => x.UpdatedUtc)
+            .ThenBy(x => x.HostId)
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
         return rows.Select(ToDomain).ToList();

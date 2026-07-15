@@ -1,6 +1,6 @@
 namespace Apperture.Core.Application.RuntimeHealth;
 
-/// <summary>SWM-6/SWM-7: operator-facing scheduler timer-loop status (+ worker runtime projection).</summary>
+/// <summary>SWM-6/SWM-7/SWM-11: operator-facing scheduler timer-loop status (+ worker runtime observation).</summary>
 public sealed record SchedulerStatusSnapshot(
     DateTimeOffset CapturedAtUtc,
     string Status,
@@ -23,9 +23,13 @@ public sealed record SchedulerStatusSnapshot(
     int? SkippedCount,
     string? LastErrorSummary,
     string? Guidance,
-    WorkerRuntimeStatus WorkerRuntime);
+    WorkerRuntimeStatus WorkerRuntime,
+    IReadOnlyList<ObservedWorkerStatus>? ObservedWorkers = null,
+    int ObservedWorkerCount = 0,
+    int StaleObservedWorkerCount = 0,
+    string? ObservationGuidance = null);
 
-/// <summary>Reads scheduler dispatch heartbeat and classifies loop health (SWM-6 / SWM-7).</summary>
+/// <summary>Reads scheduler dispatch heartbeat and classifies loop health (SWM-6 / SWM-7 / SWM-11).</summary>
 public interface ISchedulerStatusQueryService
 {
     ValueTask<SchedulerStatusSnapshot> GetStatusAsync(

@@ -62,7 +62,7 @@ public sealed record ExecutionAnomalyEntryDto(
     string Summary,
     DateTimeOffset OccurredAtUtc);
 
-/// <summary>SWM-6/SWM-7: background scheduler timer-loop status from heartbeat (+ worker projection).</summary>
+/// <summary>SWM-6/SWM-7/SWM-11: background scheduler timer-loop status from heartbeat (+ worker observation).</summary>
 public sealed record SchedulerStatusSnapshotDto(
     DateTimeOffset CapturedAtUtc,
     string Status,
@@ -85,9 +85,13 @@ public sealed record SchedulerStatusSnapshotDto(
     int? SkippedCount,
     string? LastErrorSummary,
     string? Guidance,
-    WorkerRuntimeStatusDto? WorkerRuntime = null);
+    WorkerRuntimeStatusDto? WorkerRuntime = null,
+    IReadOnlyList<ObservedWorkerStatusDto>? ObservedWorkers = null,
+    int ObservedWorkerCount = 0,
+    int StaleObservedWorkerCount = 0,
+    string? ObservationGuidance = null);
 
-/// <summary>SWM-7: single-host observed worker runtime projection.</summary>
+/// <summary>SWM-7/SWM-11: primary worker runtime projection (latest heartbeat for expected plane).</summary>
 public sealed record WorkerRuntimeStatusDto(
     string InventoryModel,
     string Status,
@@ -99,6 +103,22 @@ public sealed record WorkerRuntimeStatusDto(
     DateTimeOffset? ProcessStartedUtc,
     string? ApplicationVersion,
     string? EnvironmentName,
+    string? Guidance);
+
+/// <summary>SWM-11: one observed worker host (safe fields only).</summary>
+public sealed record ObservedWorkerStatusDto(
+    string HostId,
+    string RuntimePlaneId,
+    string Status,
+    bool IsStale,
+    DateTimeOffset? LastSeenUtc,
+    DateTimeOffset? ProcessStartedUtc,
+    string? ApplicationVersion,
+    string? EnvironmentName,
+    int? PollIntervalSeconds,
+    DateTimeOffset? LastCycleCompletedUtc,
+    string? LastErrorSummary,
+    string Alignment,
     string? Guidance);
 
 /// <summary>SWM-8: manual scheduler run-cycle / stale recovery operation result.</summary>

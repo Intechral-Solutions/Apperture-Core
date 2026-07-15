@@ -707,7 +707,7 @@ public class AppertureDbContext : DbContext
         modelBuilder.Entity<SchedulerDispatchHeartbeatEntity>(e =>
         {
             e.ToTable("SchedulerDispatchHeartbeats");
-            e.HasKey(x => x.RuntimePlaneId);
+            e.HasKey(x => new { x.RuntimePlaneId, x.HostId });
             e.Property(x => x.RuntimePlaneId).HasMaxLength(128);
             e.Property(x => x.HostId).HasMaxLength(128);
             e.Property(x => x.LastErrorSummary).HasMaxLength(512);

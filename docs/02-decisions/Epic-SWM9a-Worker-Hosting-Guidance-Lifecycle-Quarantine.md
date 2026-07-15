@@ -21,4 +21,4 @@
 
 ## Deferred
 
-SWM-9b (optional script hygiene), SWM-10 multi-host inventory, SWM-11 host adapters.
+SWM-9b (optional script hygiene), later host adapters / fleet lifecycle.

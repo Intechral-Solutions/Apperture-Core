@@ -67,6 +67,14 @@ public sealed class Swm4DisplayTimezoneSurfaceRegressionTests
             .Should().Contain("ScheduleCatchUpHelpText");
         File.ReadAllText(RepoPath("src/Apperture.ControlPlane/Apperture.Management.Ui.Client/Pages/Schedules/SchedulesList.razor"))
             .Should().NotContain("ToLocalTime()");
+        File.ReadAllText(RepoPath("src/Apperture.ControlPlane/Apperture.Management.Ui.Client/Pages/Control/ControlCenter.razor"))
+            .Should().Contain("Observed worker hosts");
+        File.ReadAllText(RepoPath("src/Apperture.ControlPlane/Apperture.Management.Ui.Client/Pages/Control/ControlCenter.razor"))
+            .Should().Contain("ObservedWorkerCount");
+        File.ReadAllText(RepoPath("src/Apperture.ControlPlane/Apperture.Management.Ui.Client/Pages/Control/ControlCenter.razor"))
+            .Should().Contain("Observe-only multi-host");
+        File.ReadAllText(RepoPath("src/Apperture.ControlPlane/Apperture.Management.Ui.Client/Pages/Control/ControlCenter.razor"))
+            .Should().Contain("Does not restart WorkerHost");
         File.ReadAllText(RepoPath("src/Apperture.ControlPlane/Apperture.Management.Ui.Client/Pages/Config/DeveloperTasks.razor"))
             .Should().Contain("WorkerRuntimeControlCenter");
         File.ReadAllText(RepoPath("src/Apperture.ControlPlane/Apperture.Management.Ui.Client/Pages/Config/DeveloperTasks.razor"))

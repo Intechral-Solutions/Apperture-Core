@@ -198,9 +198,14 @@
         @if (_capabilities?.CanViewRuntimeHealth == true && _schedulerStatus is not null)
         {
             var worker = _schedulerStatus.WorkerRuntime;
+            var observedWorkers = _schedulerStatus.ObservedWorkers ?? Array.Empty<ObservedWorkerStatusDto>();
+            var observedCount = _schedulerStatus.ObservedWorkerCount > 0
+                ? _schedulerStatus.ObservedWorkerCount
+                : observedWorkers.Count;
+            var staleObserved = _schedulerStatus.StaleObservedWorkerCount;
             <ManagementSection Title="Worker runtime"
                                Layer="ManagementSection.UiLayer.Summary"
-                               Help="Observed WorkerHost from the scheduler heartbeat (SWM-7). Single-host inventory — not a fleet manager. Process lifecycle is externally managed in v1 (SWM-9a)."
+                               Help="Observed WorkerHost heartbeats (SWM-7/SWM-11). Observe-only multi-host inventory — not a fleet manager. Process lifecycle is externally managed (SWM-9a)."
                                Class="mt-4">
                 <PageMessage Kind="PageMessageKind.Info"
                              Message="WorkerHost lifecycle is externally managed in v1. Management observes health and offers scheduler recovery — it does not start, stop, or restart WorkerHost. Aspire: use AppHost/Aspire dashboard. Scripted local: Manage.ps1. Production host adapters (Windows Service/Docker/Azure) are deferred." />
@@ -212,12 +217,20 @@
                         </div>
                     </div>
                     <div>
-                        <span class="text-xs text-muted">Host id</span>
+                        <span class="text-xs text-muted">Latest host</span>
                         <div class="mt-1 font-mono text-sm">@(worker?.HostId ?? _schedulerStatus.ObservedHostId ?? "—")</div>
                     </div>
                     <div>
-                        <span class="text-xs text-muted">Plane</span>
-                        <div class="mt-1 font-mono text-sm">@(worker?.RuntimePlaneId ?? _schedulerStatus.ObservedRuntimePlaneId ?? "—")</div>
+                        <span class="text-xs text-muted">Expected plane</span>
+                        <div class="mt-1 font-mono text-sm">@_schedulerStatus.ExpectedManagementPlaneId</div>
+                    </div>
+                    <div>
+                        <span class="text-xs text-muted">Observed workers</span>
+                        <div class="mt-1 text-sm">@observedCount</div>
+                    </div>
+                    <div>
+                        <span class="text-xs text-muted">Stale observed</span>
+                        <div class="mt-1 text-sm">@staleObserved</div>
                     </div>
                     <div>
                         <span class="text-xs text-muted">Last seen</span>
@@ -239,14 +252,73 @@
                         </div>
                     }
                 </div>
-                @if (!string.IsNullOrWhiteSpace(worker?.Guidance ?? _schedulerStatus.Guidance))
+                @if (!string.IsNullOrWhiteSpace(_schedulerStatus.ObservationGuidance))
+                {
+                    <div class="mt-2 text-xs text-muted">@_schedulerStatus.ObservationGuidance</div>
+                }
+                else if (!string.IsNullOrWhiteSpace(worker?.Guidance ?? _schedulerStatus.Guidance))
                 {
                     <div class="mt-2 text-xs text-muted">@(worker?.Guidance ?? _schedulerStatus.Guidance)</div>
                 }
                 <details class="mt-3 text-xs text-muted">
+                    <summary class="cursor-pointer">Observed worker hosts</summary>
+                    @if (observedWorkers.Count == 0)
+                    {
+                        <div class="mt-2 text-sm text-body">No heartbeat rows for the expected plane yet.</div>
+                    }
+                    else
+                    {
+                        <div class="mt-2 overflow-x-auto">
+                            <table class="ui-data-table__table min-w-full text-left text-body">
+                                <thead class="border-b border-default text-xs text-muted">
+                                    <tr>
+                                        <th class="px-2 py-1">Host</th>
+                                        <th class="px-2 py-1">Plane</th>
+                                        <th class="px-2 py-1">Status</th>
+                                        <th class="px-2 py-1">Last seen</th>
+                                        <th class="px-2 py-1">Started</th>
+                                        <th class="px-2 py-1">Version / env</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var ow in observedWorkers)
+                                    {
+                                        <tr class="border-b border-default">
+                                            <td class="px-2 py-1 font-mono text-xs">@ow.HostId</td>
+                                            <td class="px-2 py-1 font-mono text-xs">@ow.RuntimePlaneId</td>
+                                            <td class="px-2 py-1">
+                                                <StatusPill Label="@(ow.IsStale ? $"{ow.Status} (stale)" : ow.Status)"
+                                                            Semantic="@MapSchedulerStatus(ow.Status)" />
+                                            </td>
+                                            <td class="px-2 py-1 text-xs"><TimestampDisplay Value="@ow.LastSeenUtc" /></td>
+                                            <td class="px-2 py-1 text-xs"><TimestampDisplay Value="@ow.ProcessStartedUtc" /></td>
+                                            <td class="px-2 py-1 text-xs">@(ow.ApplicationVersion ?? "—") / @(ow.EnvironmentName ?? "—")</td>
+                                        </tr>
+                                        @if (!string.IsNullOrWhiteSpace(ow.Guidance) || !string.IsNullOrWhiteSpace(ow.LastErrorSummary))
+                                        {
+                                            <tr class="border-b border-default">
+                                                <td colspan="6" class="px-2 py-1 text-xs text-muted">
+                                                    @if (!string.IsNullOrWhiteSpace(ow.LastErrorSummary))
+                                                    {
+                                                        <div class="text-danger">@ow.LastErrorSummary</div>
+                                                    }
+                                                    @if (!string.IsNullOrWhiteSpace(ow.Guidance))
+                                                    {
+                                                        <div>@ow.Guidance</div>
+                                                    }
+                                                </td>
+                                            </tr>
+                                        }
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                </details>
+                <details class="mt-3 text-xs text-muted">
                     <summary class="cursor-pointer">Hosting guidance (v1)</summary>
                     <div class="mt-2 space-y-2 text-sm text-body">
-                        <div>Observable here: host id, plane, heartbeat last seen, scheduler Healthy/Warning/Unknown, scheduler ops (run-cycle / recover-stale).</div>
+                        <div>Observable here: host id, plane, heartbeat last seen, observed worker count, scheduler Healthy/Warning/Unknown, scheduler ops (run-cycle / recover-stale).</div>
                         <div>Not owned by Management: WorkerHost process start, stop, restart, scale, or fleet orchestration.</div>
                         <div>Aspire/dev: <code class="rounded bg-surface-muted px-1">dotnet run --project src/Apperture.AppHost</code> or Aspire dashboard — restart the <code class="rounded bg-surface-muted px-1">worker</code> resource.</div>
                         <div>Scripted local: <code class="rounded bg-surface-muted px-1">./scripts/Manage.ps1 -Area dev -Command start</code> (do not mix with Aspire).</div>
@@ -256,7 +328,7 @@
                 <details class="mt-3 text-xs text-muted">
                     <summary class="cursor-pointer">Technical details</summary>
                     <div class="mt-2 space-y-1 font-mono">
-                        <div>Inventory model: @(worker?.InventoryModel ?? "SingleHostObserved") (v1 — latest heartbeat for expected plane)</div>
+                        <div>Inventory model: @(worker?.InventoryModel ?? "SingleHostObserved") (primary = latest UpdatedUtc for expected plane)</div>
                         <div>Expected plane: @_schedulerStatus.ExpectedManagementPlaneId</div>
                         <div>Alignment: @(worker?.Alignment ?? _schedulerStatus.Alignment) / Stale: @_schedulerStatus.IsStale</div>
                         <div>Process started: <TimestampDisplay Value="@worker?.ProcessStartedUtc" CssClass="inline" /></div>

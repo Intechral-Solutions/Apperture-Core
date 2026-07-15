@@ -215,15 +215,17 @@ See `Epic-SWM9a-Worker-Hosting-Guidance-Lifecycle-Quarantine.md`. Epic72B start 
 - **Tests:** Development gate; script-absent path if scripts restored.
 - **Docs:** Keep Worker-Hosting-Guidance-v1.md as source of truth.
 
-### SWM-10 — Multi-Host Worker Inventory (observe fleet)
+### SWM-10 — Schedule readiness & next-fire clarity — **Delivered**
 
-- **Goal:** Replace last-writer heartbeat with inventory when >1 host is real.
-- **Scope:** Persist host rows (host id, plane, last seen, metadata); list in Control Center; no start/stop.
-- **Acceptance:** Two hosts both visible; stale classification per host.
-- **Tests:** Dual heartbeat upsert; query list; UI list bounds.
-- **Docs:** Fleet observe model vs lifecycle.
+See `Epic-SWM10-Schedule-Management-Readiness-Next-Fire-Clarity.md`.
 
-### SWM-11 — Hosting Adapters for Lifecycle (defer past v1)
+### SWM-11 — Multi-Host Worker Observation (observe inventory) — **Delivered**
+
+- **Goal:** Replace last-writer heartbeat with multi-host observation when >1 host is real.
+- **Implementation:** See `Epic-SWM11-Multi-Host-Worker-Observation-Model.md`.
+- **Out:** Lifecycle, scaling, claim-steal UI, adapters.
+
+### Later — Hosting Adapters for Lifecycle (defer past v1)
 
 - **Goal:** Optional adapters that request lifecycle from external control planes (Aspire DCP/API, Windows SCM, Docker, Azure).
 - **Scope:** Pluggable `IWorkerLifecycleAdapter`; permission `runtime.host.manage`; heavy audit; explicit resource identity.

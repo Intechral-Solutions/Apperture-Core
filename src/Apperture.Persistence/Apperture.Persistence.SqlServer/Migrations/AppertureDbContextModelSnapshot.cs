@@ -2340,7 +2340,7 @@ namespace Apperture.Persistence.SqlServer.Migrations
                     b.Property<DateTimeOffset>("UpdatedUtc")
                         .HasColumnType("datetimeoffset");
 
-                    b.HasKey("RuntimePlaneId");
+                    b.HasKey("RuntimePlaneId", "HostId");
 
                     b.ToTable("SchedulerDispatchHeartbeats", (string)null);
                 });

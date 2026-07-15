@@ -102,7 +102,8 @@ public static class SchedulerStatusClassifier
         DateTimeOffset asOfUtc,
         DateTimeOffset? processStartedUtc = null,
         string? applicationVersion = null,
-        string? environmentName = null)
+        string? environmentName = null,
+        string inventoryModel = WorkerRuntimeInventoryModel.SingleHostObserved)
     {
         var status = Classify(snap, asOfUtc);
         var isStale = IsStale(snap, asOfUtc);
@@ -110,7 +111,7 @@ public static class SchedulerStatusClassifier
         var guidance = BuildGuidance(status, isStale, alignment, snap?.LastErrorSummary);
 
         return new WorkerRuntimeStatus(
-            InventoryModel: WorkerRuntimeInventoryModel.SingleHostObserved,
+            InventoryModel: inventoryModel,
             Status: status,
             HostId: snap?.HostId,
             RuntimePlaneId: snap?.RuntimePlaneId,
@@ -121,6 +122,78 @@ public static class SchedulerStatusClassifier
             ApplicationVersion: applicationVersion,
             EnvironmentName: environmentName,
             Guidance: guidance);
+    }
+
+    /// <summary>SWM-11: maps one heartbeat row to an observed-worker projection.</summary>
+    public static ObservedWorkerStatus BuildObservedWorker(
+        string expectedPlaneId,
+        SchedulerDispatchHeartbeatSnapshot snap,
+        DateTimeOffset asOfUtc,
+        DateTimeOffset? processStartedUtc = null,
+        string? applicationVersion = null,
+        string? environmentName = null)
+    {
+        var status = Classify(snap, asOfUtc);
+        var isStale = IsStale(snap, asOfUtc);
+        var alignment = ClassifyAlignment(expectedPlaneId, snap.RuntimePlaneId);
+        var guidance = BuildGuidance(status, isStale, alignment, snap.LastErrorSummary);
+
+        return new ObservedWorkerStatus(
+            HostId: snap.HostId,
+            RuntimePlaneId: snap.RuntimePlaneId,
+            Status: status,
+            IsStale: isStale,
+            LastSeenUtc: snap.UpdatedUtc,
+            ProcessStartedUtc: processStartedUtc,
+            ApplicationVersion: applicationVersion,
+            EnvironmentName: environmentName,
+            PollIntervalSeconds: snap.PollIntervalSeconds,
+            LastCycleCompletedUtc: snap.LastCycleCompletedUtc,
+            LastErrorSummary: snap.LastErrorSummary,
+            Alignment: alignment,
+            Guidance: guidance);
+    }
+
+    /// <summary>SWM-11: observation-level guidance (observe-only; lifecycle externally managed).</summary>
+    public static string? BuildObservationSummaryGuidance(
+        int observedCount,
+        int staleCount,
+        bool hasPlaneMismatch,
+        bool hasDuplicateHostIdentityHint)
+    {
+        if (observedCount == 0)
+        {
+            return "No workers observed for the expected plane. Confirm WorkerHost is running and can write heartbeats "
+                   + "(lifecycle is externally managed — Aspire AppHost, Manage.ps1, or host adapters).";
+        }
+
+        if (observedCount == 1 && staleCount == 0 && !hasPlaneMismatch)
+            return null;
+
+        var parts = new List<string>();
+
+        if (observedCount > 1)
+        {
+            parts.Add(
+                $"{observedCount} worker hosts observed on this plane. Primary scheduler status uses the most recently updated heartbeat. "
+                + "Multiple hosts on one plane can be valid (Epic36 claim leases); confirm unintended duplicates are not from mixing Aspire and Manage.ps1.");
+        }
+
+        if (staleCount > 0)
+            parts.Add($"{staleCount} observed worker heartbeat(s) are stale — timer may have stopped or lost DB connectivity.");
+
+        if (hasPlaneMismatch)
+            parts.Add("At least one observed worker reports a plane that does not match Management expected plane.");
+
+        if (hasDuplicateHostIdentityHint)
+        {
+            parts.Add(
+                "Same HostId reused across distinct process starts can look like one host; confirm APERTURE_RUNTIME_ID / SchedulerHostId uniqueness.");
+        }
+
+        parts.Add("WorkerHost lifecycle remains externally managed — Management does not start, stop, or restart workers.");
+
+        return string.Join(" ", parts);
     }
 
     public static string? SanitizeErrorSummary(Exception? exception, int maxLength = MaxErrorSummaryLength)
