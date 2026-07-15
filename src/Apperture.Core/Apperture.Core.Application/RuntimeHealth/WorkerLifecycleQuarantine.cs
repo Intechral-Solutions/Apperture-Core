@@ -32,5 +32,5 @@ public static class WorkerLifecycleQuarantine
         "Scripted local: use ./scripts/Manage.ps1 -Area dev -Command start (or stop/restart). Prefer one stack only — do not mix with Aspire.";
 
     public const string GuidanceFuture =
-        "Production future: Windows Service, Docker, Azure, or host adapters may own lifecycle. Direct Management process control remains deferred (SWM-11).";
+        "Production future: Windows Service, Docker, Azure, or host adapters may own lifecycle. Direct Management process control remains deferred.";
 }

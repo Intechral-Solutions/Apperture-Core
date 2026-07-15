@@ -21,4 +21,4 @@
 
 ## Deferred
 
-SWM-9b (optional script hygiene), later host adapters / fleet lifecycle.
+Hosting adapters / fleet lifecycle (post-v1). Script hygiene closed by **SWM-12** (do not restore Management lifecycle scripts).

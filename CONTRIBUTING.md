@@ -40,6 +40,8 @@ Requires Docker for the Aspire-managed SQL Server container.
 
    Starts SQL Server, Management API (:9000), Management UI (:9001), and WorkerHost. Opens the Aspire dashboard. [`Apperture.ServiceDefaults`](src/Apperture.ServiceDefaults/) adds conventional health, OpenTelemetry, and service discovery on orchestrated hosts — hosts still run without Aspire when started directly.
 
+   **WorkerHost lifecycle:** AppHost owns the worker process. Management UI observes health (Control Center → Worker runtime) and can run scheduler recovery — it does **not** start/stop/restart WorkerHost. Quarantined `runtime-worker/start` returns 410. See [Worker-Hosting-Guidance-v1.md](docs/03-operations/Worker-Hosting-Guidance-v1.md).
+
    **URLs (important):**
    - Management UI: `http://localhost:9001` (HTTP only — there is no HTTPS listener on 9001)
    - Management API: `http://localhost:9000`

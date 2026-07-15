@@ -86,6 +86,8 @@ The script-based dev stack includes SQL Server for EF Core. **User Secrets are t
 
 This syncs User Secrets to `.env`, starts SQL Server (Docker), and launches the API (Management.Host), UI, and WorkerHost. Use `-Build` to build before start. Use `-Mode aspire` for AppHost orchestration instead.
 
+Management does **not** start/stop/restart WorkerHost via Recovery APIs (`runtime-worker/start` is quarantined — 410). Prefer AppHost or Manage.ps1. See [Worker-Hosting-Guidance-v1.md](../docs/03-operations/Worker-Hosting-Guidance-v1.md).
+
 ### First-time setup
 
 1. **Set the SQL password** (one-time; stored in User Secrets, never committed):

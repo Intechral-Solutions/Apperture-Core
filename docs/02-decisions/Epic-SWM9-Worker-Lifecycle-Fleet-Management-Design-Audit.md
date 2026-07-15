@@ -207,13 +207,13 @@ Aspire/Docker/Windows Service/Azure own lifecycle; Apperture observes and deep-l
 
 See `Epic-SWM9a-Worker-Hosting-Guidance-Lifecycle-Quarantine.md`. Epic72B start is **410**; Control Center + Developer guidance added.
 
-### SWM-9b — Epic72B Native-Script Recovery Hygiene (optional, native path only)
+### SWM-9b / SWM-12 — Epic72B Native-Script Recovery Hygiene — **Delivered**
 
-- **Goal:** Restore or remove incomplete native worker start scripts.
-- **Scope:** Either restore `start-worker.ps1`/`restart-worker.ps1` for **non-Aspire** native only, or remove remaining API stubs. Never target Aspire-managed workers. Quarantine already blocks execution (SWM-9a).
-- **Acceptance:** No confusion with Aspire path; docs stay aligned.
-- **Tests:** Development gate; script-absent path if scripts restored.
-- **Docs:** Keep Worker-Hosting-Guidance-v1.md as source of truth.
+Delivered as **SWM-12** (`Epic-SWM12-Worker-Hosting-Script-Hygiene.md`).
+
+- **Decision:** Do **not** restore missing `start-worker.ps1` / `restart-worker.ps1` for Management. Keep quarantine (410). Align docs (Epic72B superseded; Worker-Hosting-Guidance is source of truth).
+- **Supported lifecycle:** AppHost/Aspire or Manage.ps1 only.
+- **Out:** Recreating Management shell-out scripts; unquarantining endpoints.
 
 ### SWM-10 — Schedule readiness & next-fire clarity — **Delivered**
 

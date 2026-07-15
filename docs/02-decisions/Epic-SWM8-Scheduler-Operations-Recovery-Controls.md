@@ -46,4 +46,5 @@ See design audit: `Epic-SWM9-Worker-Lifecycle-Fleet-Management-Design-Audit.md`.
 - **SWM-9b** — Optional Epic72B native-script hygiene (or remove)
 - **SWM-10** — Schedule readiness & next-fire clarity — delivered (`Epic-SWM10-…`)
 - **SWM-11** — Multi-host worker observation — delivered (`Epic-SWM11-…`)
+- **SWM-12** — Worker hosting script hygiene — delivered (`Epic-SWM12-…`; also closes SWM-9b)
 - **Later** — External hosting adapters for lifecycle (post-v1)

@@ -53,6 +53,22 @@ public sealed class WorkerLifecycleQuarantineSwm9aTests
     }
 
     [Fact]
+    public async Task StartRuntimeWorker_410_body_includes_aspire_and_manage_guidance()
+    {
+        var controller = NewRecoveryController(canManage: true);
+        var result = await controller.StartRuntimeWorker(restart: false, CancellationToken.None);
+        var objectResult = result.Should().BeOfType<ObjectResult>().Subject;
+        objectResult.StatusCode.Should().Be(StatusCodes.Status410Gone);
+        var json = System.Text.Json.JsonSerializer.Serialize(objectResult.Value);
+        json.Should().Contain("quarantined");
+        json.Should().Contain("AppHost");
+        json.Should().Contain("Aspire");
+        json.Should().Contain("Manage.ps1");
+        json.Should().Contain("deferred");
+        json.Should().Contain(WorkerLifecycleQuarantine.ErrorCode);
+    }
+
+    [Fact]
     public async Task StartRuntimeWorker_without_manage_returns_403()
     {
         var controller = NewRecoveryController(canManage: false);

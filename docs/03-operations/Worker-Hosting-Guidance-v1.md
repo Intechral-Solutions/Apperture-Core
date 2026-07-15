@@ -1,8 +1,8 @@
-# Worker Hosting Guidance (v1) — SWM-9a
+# Worker Hosting Guidance (v1) — SWM-9a / SWM-12
 
 ## Product stance
 
-Management **observes** WorkerHost (scheduler heartbeat, SWM-6/7) and can run **scheduler recovery** (SWM-8).  
+Management **observes** WorkerHost (scheduler heartbeat, SWM-6/7/11) and can run **scheduler recovery** (SWM-8).  
 Management does **not** start, stop, or restart WorkerHost in v1.
 
 Process lifecycle belongs to the **host orchestrator**.
@@ -22,21 +22,21 @@ AppHost sets `APERTURE_RUNTIME_ID=worker-local` and `ScheduleDispatch__RuntimePl
 
 ```powershell
 ./scripts/Manage.ps1 -Area dev -Command start
-# stop / restart via Manage.ps1 as documented in deploy/README.md
+# stop / restart via Manage.ps1 as documented in deploy/README.md and scripts/README.md
 ```
 
-Do **not** run Aspire and native Manage.ps1 stacks at the same time (ports 9000/9001).
+`Manage.ps1` is the supported **script-entry** for the native docker-compose + local-process stack. Prefer **one** stack only — do **not** run Aspire and Manage.ps1 native stacks at the same time (ports 9000/9001).
 
 ### Production / future
 
-Windows Service packaging, Docker orchestration, and Azure adapters are **deferred** (see SWM-9 audit / SWM-11). Bootstrap config under ProgramData does not start WorkerHost for you.
+Windows Service packaging, Docker orchestration, and Azure adapters are **deferred** (SWM-9 audit). Bootstrap config under ProgramData does not start WorkerHost for you. Direct Management process control remains out of scope.
 
 ## Observe health (supported)
 
 | Surface | Purpose |
 |---------|---------|
-| Control Center → **Worker runtime** | Host id, plane, last seen, Healthy/Warning/Unknown |
-| `GET /api/control/scheduler-status` | Same + `WorkerRuntime` projection |
+| Control Center → **Worker runtime** | Host id, plane, last seen, observed worker count (SWM-11), Healthy/Warning/Unknown |
+| `GET /api/control/scheduler-status` | Same + `WorkerRuntime` / `observedWorkers` |
 
 ## Schedule recovery (supported, not process lifecycle)
 
@@ -47,19 +47,21 @@ Windows Service packaging, Docker orchestration, and Azure adapters are **deferr
 
 Permission: `recovery.manage`. Neither writes the WorkerHost heartbeat.
 
-## Epic72B lifecycle quarantine
+## Epic72B lifecycle quarantine (SWM-9a / SWM-12)
 
 | Endpoint | v1 behavior |
 |----------|-------------|
 | `POST /api/control/recovery/runtime-worker/start` | **410 Gone** — quarantined; never shells to scripts |
 | `GET /api/control/recovery/runtime-worker/status` | **200** with status `Quarantined` and guidance to use scheduler-status |
 
-Missing `scripts/dev/start-worker.ps1` / `restart-worker.ps1` are **not** restored as supported Management actions.
+**Historical only:** Epic72B planned `scripts/dev/start-worker.ps1` / `restart-worker.ps1`. Those files are **not** in the repo and are **not** restored as supported Management actions (SWM-12 closes script hygiene by documentation alignment, not by recreating broken Management lifecycle scripts).
 
-Historical doc: Epic72B introduced these for native-script recovery; they are **Aspire-unsafe** and incomplete for the current preferred path.
+Canonical historical note: [Epic72B ADR](../02-decisions/Epic72B-Worker-Runtime-Launch-Recovery-and-Workflow-Testability.md) (Superseded / Quarantined).
 
 ## Related ADRs
 
+- [Epic-SWM12 Script Hygiene](../02-decisions/Epic-SWM12-Worker-Hosting-Script-Hygiene.md)
 - [Epic-SWM9 Design Audit](../02-decisions/Epic-SWM9-Worker-Lifecycle-Fleet-Management-Design-Audit.md)
-- [Epic-SWM6](../02-decisions/Epic-SWM6-Scheduler-Worker-Runtime-Visibility.md) / [SWM-7](../02-decisions/Epic-SWM7-Worker-Runtime-Inventory-Health-Detail.md) / [SWM-8](../02-decisions/Epic-SWM8-Scheduler-Operations-Recovery-Controls.md)
-- [deploy/README.md](../../deploy/README.md)
+- [Epic-SWM9a Quarantine](../02-decisions/Epic-SWM9a-Worker-Hosting-Guidance-Lifecycle-Quarantine.md)
+- [Epic-SWM11 Multi-host observation](../02-decisions/Epic-SWM11-Multi-Host-Worker-Observation-Model.md)
+- [deploy/README.md](../../deploy/README.md) · [scripts/README.md](../../scripts/README.md)

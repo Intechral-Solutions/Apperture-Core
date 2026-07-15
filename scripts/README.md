@@ -24,6 +24,8 @@ Copies the docker-dev appsettings template when missing, optionally prompts for 
 .\scripts\Interactive.ps1
 ```
 
+`Manage.ps1` owns local process start/stop for the native stack (and can launch AppHost with `-Mode aspire`). Management API/UI does **not** start WorkerHost — see [Worker-Hosting-Guidance-v1.md](../docs/03-operations/Worker-Hosting-Guidance-v1.md). There is no supported `scripts/dev/start-worker.ps1` / `restart-worker.ps1` path.
+
 Saved defaults (`Area`, `Mode`, `Target`, `Service`, `Configuration`) persist in `scripts/.runtime/script-settings.ini` after successful commands. Resolution order: explicit CLI → saved INI → built-in default (`Mode` = **native** when unset).
 
 ```powershell
