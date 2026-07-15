@@ -47,7 +47,7 @@ Highlights:
 - Module UI / configuration / template foundations
 
 **Recommended next implementation track (PFB-1):** SDK & Demo Module Validation.  
-**SDK-1 closed** — [`docs/audits/sdk1-demo-module-strategy-and-sdk-contract-audit.md`](../audits/sdk1-demo-module-strategy-and-sdk-contract-audit.md). **Next epic: SDK-2 File Import Demo.**
+**SDK-2 implemented** — `Sample.FileImport` (see [`docs/superpowers/specs/SDK-2-Sample-FileImport-Demo.md`](../superpowers/specs/SDK-2-Sample-FileImport-Demo.md)). **Next epic: SDK-3 Itemized Operation Model.**
 
 ## Deferred until after major product work
 

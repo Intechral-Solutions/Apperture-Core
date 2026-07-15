@@ -20,7 +20,31 @@ This guide is for developers building **Apperture modules**: workflow-centric pa
 **Reference modules in this repo:**
 
 - `Sample.HelloWorld` — minimal workflow, operation, procedures, manifest signals, harness-friendly emit/log/telemetry demo
+- `Sample.FileImport` — portable CSV import demo (SDK-2): embedded fixtures, process-local row outcomes, partial-failure signals, settings contributor. See [SDK-2 design](../superpowers/specs/SDK-2-Sample-FileImport-Demo.md).
 - `Proof.CampusNexus.StudentReview` — integration-scoped slots (Campus Nexus + SQL), procedures, operational logs (no manifest signals)
+
+### Sample.FileImport (SDK-2)
+
+**Purpose:** Contract-validation sample for file-ingest modules. Proves fixture selection, multi-step import workflow, module-local per-row outcomes, and fail-loud summary signals without external files or SQL durability.
+
+**How to run:** Create a `Sample.FileImport` integration (or use an existing one). Launch procedure `Sample.FileImport.procedures.import` with `fixtureId`. Optional `strictMode` overrides `strictModeDefault`. Platform schedules can target workflow `Sample.FileImport.Import`.
+
+**Fixture ids:**
+
+| Id | Expected path |
+|----|---------------|
+| `customers-valid` | All rows succeed → `import.completed` |
+| `customers-mixed` | Partial success → `import.completed.with.errors` |
+| `customers-invalid-structure` | Parse hard-fail before row processing; no row outcomes; signal may not emit |
+| `customers-all-bad` | Valid header, all rows fail → outcomes + `import.failed` |
+
+**Settings (integration-scoped):** `strictModeDefault`, `maxRowsPerImport`, `failOnFirstError` (no secrets).
+
+**Signals:** `import.completed`, `import.completed.with.errors`, `import.failed` — exactly one per completed batch. Payload includes fixture/batch ids and counts. (Dotted signal names; underscores are not catalog-valid.)
+
+**Outcome store:** `IImportOutcomeStore` with in-memory singleton — **process-local** module-local outcome capture. Not durable across process restarts. Row outcome shape is intentional pressure for **SDK-3 Itemized Operation Model** (platform durability, item APIs, per-item retry).
+
+**Notification seed:** Built-in definition for `import.completed.with.errors` (HelloWorld-sized). Subscribe to validate partial-failure → notification path.
 
 ---
 

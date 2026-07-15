@@ -9,6 +9,7 @@ using Apperture.Management.Host;
 using Apperture.Persistence.SqlServer;
 using Proof.CampusNexus.StudentReview;
 using Sample.HelloWorld;
+using Sample.FileImport;
 using Unisa.CampusNexus.PaymentPlans;
 using Apperture.RuntimePlane.DTFx;
 using Microsoft.AspNetCore.Authentication;
@@ -46,7 +47,7 @@ builder.Services.Configure<DevTestUserOptions>(builder.Configuration.GetSection(
 builder.Services.Configure<BootstrapPlatformAdminOptions>(builder.Configuration.GetSection(BootstrapPlatformAdminOptions.SectionName));
 builder.Services.AddAppertureGovernance();
 builder.Services.AddKnownModules(
-    [new HelloWorldModule(), new UnisaCampusNexusPaymentPlansModule(), new ProofCampusNexusStudentReviewModule()]);
+    [new HelloWorldModule(), new FileImportModule(), new UnisaCampusNexusPaymentPlansModule(), new ProofCampusNexusStudentReviewModule()]);
 builder.Services.AddAppertureRecovery();
 builder.Services.AddRuntimeSchedulerDispatch();
 builder.Services.AddAppertureCampusNexusConnector();

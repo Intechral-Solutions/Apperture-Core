@@ -1,0 +1,4 @@
+externalId,firstName,lastName,email,category,status,effectiveDate
+C-001,Ada,Lovelace,ada@example.com,Premium,Active,2024-01-15
+C-002,Alan,Turing,alan@example.com,Standard,Active,2024-02-01
+C-003,Grace,Hopper,grace@example.com,Premium,Inactive,2024-03-10
