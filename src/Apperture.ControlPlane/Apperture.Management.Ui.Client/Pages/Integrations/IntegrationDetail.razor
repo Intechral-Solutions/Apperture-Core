@@ -173,9 +173,15 @@
                 <ul class="space-y-1">
                     @foreach (var s in _schedules)
                     {
-                        <li class="flex items-center justify-between gap-2">
+                        <li class="flex flex-wrap items-center justify-between gap-2">
                             <DrillInLink Href="@("/schedules/" + Uri.EscapeDataString(s.Id))">@s.Name</DrillInLink>
-                            <span class="text-muted text-xs">@(s.Enabled ? "Enabled" : "Disabled")</span>
+                            <span class="text-muted text-xs flex items-center gap-2">
+                                @(s.Enabled ? "Enabled" : "Disabled")
+                                @if (s.NextFireUtc is not null)
+                                {
+                                    <span>· next <TimestampDisplay Value="@s.NextFireUtc" /></span>
+                                }
+                            </span>
                         </li>
                     }
                 </ul>
@@ -1001,16 +1007,28 @@
                     if (!string.IsNullOrWhiteSpace(b.ConnectionId) && !string.IsNullOrWhiteSpace(b.ConnectionVerificationStatus))
                         _bindingVerificationByConnectionId[b.ConnectionId] = b.ConnectionVerificationStatus;
                 }
-                _schedules = detail.Schedules.Select(s => new ScheduleDto(
-                    s.Id,
-                    s.Name,
-                    s.RecurrenceExpression,
-                    "UTC",
-                    s.Enabled,
-                    0,
-                    null,
-                    1,
-                    s.IntegrationId)).ToList();
+                _schedules = null;
+                try
+                {
+                    if (_loadGuard.IsCurrent(generation))
+                        _schedules = await Client.GetIntegrationSchedulesAsync(integrationId, cancellationToken);
+                }
+                catch (HttpRequestException)
+                {
+                    if (_loadGuard.IsCurrent(generation))
+                    {
+                        _schedules = detail.Schedules.Select(s => new ScheduleDto(
+                            s.Id,
+                            s.Name,
+                            s.RecurrenceExpression,
+                            "UTC",
+                            s.Enabled,
+                            0,
+                            null,
+                            1,
+                            s.IntegrationId)).ToList();
+                    }
+                }
 
                 _procedureError = null;
                 _procedureList = null;

@@ -7,10 +7,11 @@ namespace Apperture.Management.Ui.Shared.Tests;
 public sealed class Swm4DisplayTimezoneSurfaceRegressionTests
 {
     [Theory]
+    [InlineData("src/Apperture.ControlPlane/Apperture.Management.Ui.Client/Pages/Schedules/SchedulesList.razor")]
+    [InlineData("src/Apperture.ControlPlane/Apperture.Management.Ui.Client/Pages/Schedules/ScheduleDetail.razor")]
     [InlineData("src/Apperture.ControlPlane/Apperture.Management.Ui.Client/Pages/Runs/RunsList.razor")]
     [InlineData("src/Apperture.ControlPlane/Apperture.Management.Ui.Client/Pages/Runs/RunDetail.razor")]
     [InlineData("src/Apperture.ControlPlane/Apperture.Management.Ui.Client/Pages/Runs/RunSummaryBand.razor")]
-    [InlineData("src/Apperture.ControlPlane/Apperture.Management.Ui.Client/Pages/Schedules/ScheduleDetail.razor")]
     [InlineData("src/Apperture.ControlPlane/Apperture.Management.Ui.Client/Pages/Control/ControlCenter.razor")]
     [InlineData("src/Apperture.ControlPlane/Apperture.Management.Ui.Client/Pages/Integrations/IntegrationDetail.razor")]
     public void Touched_surface_has_no_unlabeled_ToLocalTime(string relativePath)
@@ -54,6 +55,18 @@ public sealed class Swm4DisplayTimezoneSurfaceRegressionTests
             .Should().Contain("Why this schedule may not be firing");
         File.ReadAllText(RepoPath("src/Apperture.ControlPlane/Apperture.Management.Ui.Client/Pages/Schedules/ScheduleDetail.razor"))
             .Should().Contain("BuildWhyNotFiringHints");
+        File.ReadAllText(RepoPath("src/Apperture.ControlPlane/Apperture.Management.Ui.Client/Pages/Schedules/ScheduleDetail.razor"))
+            .Should().Contain("NextFireUtc");
+        File.ReadAllText(RepoPath("src/Apperture.ControlPlane/Apperture.Management.Ui.Client/Pages/Schedules/ScheduleDetail.razor"))
+            .Should().Contain("ScheduleCatchUpHelpText");
+        File.ReadAllText(RepoPath("src/Apperture.ControlPlane/Apperture.Management.Ui.Client/Pages/Schedules/SchedulesList.razor"))
+            .Should().Contain("NextFireUtc");
+        File.ReadAllText(RepoPath("src/Apperture.ControlPlane/Apperture.Management.Ui.Client/Pages/Schedules/SchedulesList.razor"))
+            .Should().Contain("TimestampDisplay");
+        File.ReadAllText(RepoPath("src/Apperture.ControlPlane/Apperture.Management.Ui.Client/Pages/Schedules/SchedulesList.razor"))
+            .Should().Contain("ScheduleCatchUpHelpText");
+        File.ReadAllText(RepoPath("src/Apperture.ControlPlane/Apperture.Management.Ui.Client/Pages/Schedules/SchedulesList.razor"))
+            .Should().NotContain("ToLocalTime()");
         File.ReadAllText(RepoPath("src/Apperture.ControlPlane/Apperture.Management.Ui.Client/Pages/Config/DeveloperTasks.razor"))
             .Should().Contain("WorkerRuntimeControlCenter");
         File.ReadAllText(RepoPath("src/Apperture.ControlPlane/Apperture.Management.Ui.Client/Pages/Config/DeveloperTasks.razor"))

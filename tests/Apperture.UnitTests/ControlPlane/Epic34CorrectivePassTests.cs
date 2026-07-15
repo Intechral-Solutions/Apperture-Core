@@ -67,7 +67,7 @@ public sealed class Epic34CorrectivePassTests
         var gov = new StubScheduleGovernanceService(canManage: false);
         var mgmt = new StubScheduleManagementService();
         var validation = new ScheduleValidationService();
-        var controller = new SchedulesController(gov, mgmt, validation, PassthroughCreateTimeZoneDefaults.Instance);
+        var controller = new SchedulesController(gov, mgmt, validation, PassthroughCreateTimeZoneDefaults.Instance, StubSchedulerStatus.Instance);
         var result = await controller.Enable("s1", CancellationToken.None);
         result.Should().BeOfType<ForbidResult>();
     }
@@ -78,7 +78,7 @@ public sealed class Epic34CorrectivePassTests
         var gov = new StubScheduleGovernanceService(canManage: true);
         var mgmt = new StubScheduleManagementService();
         var validation = new ScheduleValidationService();
-        var controller = new SchedulesController(gov, mgmt, validation, PassthroughCreateTimeZoneDefaults.Instance);
+        var controller = new SchedulesController(gov, mgmt, validation, PassthroughCreateTimeZoneDefaults.Instance, StubSchedulerStatus.Instance);
         var result = await controller.Enable("s1", CancellationToken.None);
         result.Should().BeOfType<OkResult>();
     }
@@ -89,7 +89,7 @@ public sealed class Epic34CorrectivePassTests
         var gov = new StubScheduleGovernanceService(canManage: false);
         var mgmt = new StubScheduleManagementService();
         var validation = new ScheduleValidationService();
-        var controller = new SchedulesController(gov, mgmt, validation, PassthroughCreateTimeZoneDefaults.Instance);
+        var controller = new SchedulesController(gov, mgmt, validation, PassthroughCreateTimeZoneDefaults.Instance, StubSchedulerStatus.Instance);
         var result = await controller.Disable("s1", CancellationToken.None);
         result.Should().BeOfType<ForbidResult>();
     }
@@ -354,5 +354,51 @@ public sealed class Epic34CorrectivePassTests
 
         public ValueTask<string> ResolveCreateTimeZoneIdAsync(string? requestedTimeZone, CancellationToken cancellationToken = default) =>
             ValueTask.FromResult(string.IsNullOrWhiteSpace(requestedTimeZone) ? "UTC" : requestedTimeZone.Trim());
+    }
+
+    private sealed class StubSchedulerStatus : Apperture.Core.Application.RuntimeHealth.ISchedulerStatusQueryService
+    {
+        public static readonly StubSchedulerStatus Instance = new();
+
+        public ValueTask<Apperture.Core.Application.RuntimeHealth.SchedulerStatusSnapshot> GetStatusAsync(
+            string? runtimePlaneId = null,
+            CancellationToken cancellationToken = default)
+        {
+            var worker = new Apperture.Core.Application.RuntimeHealth.WorkerRuntimeStatus(
+                Apperture.Core.Application.RuntimeHealth.WorkerRuntimeInventoryModel.SingleHostObserved,
+                "Healthy",
+                "host-1",
+                "local",
+                DateTimeOffset.UtcNow,
+                "Aligned",
+                "Healthy",
+                null,
+                null,
+                null,
+                null);
+            return ValueTask.FromResult(new Apperture.Core.Application.RuntimeHealth.SchedulerStatusSnapshot(
+                DateTimeOffset.UtcNow,
+                "Healthy",
+                "local",
+                "local",
+                "host-1",
+                "Aligned",
+                false,
+                30,
+                null,
+                null,
+                null,
+                DateTimeOffset.UtcNow,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                worker));
+        }
     }
 }

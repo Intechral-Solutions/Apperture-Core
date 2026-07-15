@@ -42,9 +42,7 @@ Fresh in-progress and disabled schedules are skipped.
 
 See design audit: `Epic-SWM9-Worker-Lifecycle-Fleet-Management-Design-Audit.md`.
 
-- **SWM-9a** — Hosting mode guidance (observe + runbooks; no process control)
+- **SWM-9a** — Hosting mode guidance (observe + runbooks; no process control) — delivered
 - **SWM-9b** — Optional Epic72B native-script hygiene (or remove)
-- **SWM-10** — Multi-host observe inventory
-- **SWM-11** — External hosting adapters for lifecycle (post-v1)
-
-Do **not** productize direct WorkerHost start/stop/restart from Management for v1.
+- **SWM-10** — Schedule readiness & next-fire clarity — delivered (`Epic-SWM10-…`)
+- **Later** — Multi-host observe inventory; external hosting adapters for lifecycle (post-v1)

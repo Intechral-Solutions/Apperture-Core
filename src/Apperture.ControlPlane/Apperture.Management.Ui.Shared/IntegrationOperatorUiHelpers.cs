@@ -96,6 +96,14 @@ public static class IntegrationOperatorUiHelpers
         if (enabled.Count == 0)
             return $"{schedules.Count} schedule(s); none enabled";
 
+        var withNext = enabled
+            .Where(s => s.NextFireUtc is not null)
+            .OrderBy(s => s.NextFireUtc)
+            .FirstOrDefault();
+
+        if (withNext?.NextFireUtc is { } next)
+            return $"{enabled.Count} enabled · next: {withNext.Name} @ {next:u}";
+
         var first = enabled[0];
         return $"{enabled.Count} enabled · next: {first.Name}";
     }

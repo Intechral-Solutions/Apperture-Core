@@ -59,7 +59,7 @@
     {
         <ManagementSection Title="Summary"
                            Layer="ManagementSection.UiLayer.Summary"
-                           Help="Derived from loaded schedule rows only — last outcome appears on detail pages.">
+                           Help="Derived from loaded schedule rows — next-fire and readiness are compute-only projections.">
             <div class="flex flex-wrap items-center gap-2">
                 <StatusPill Label="@($"Total: {_schedules.Count}")" Semantic="@ManagementStatusSemantic.Neutral" />
                 <StatusPill Label="@($"Enabled: {EnabledCount}")" Semantic="@ManagementStatusSemantic.Success" />
@@ -97,6 +97,8 @@
                         <tr>
                             <th class="px-3 py-2">Schedule</th>
                             <th class="px-3 py-2">State</th>
+                            <th class="px-3 py-2">Health</th>
+                            <th class="px-3 py-2">Next fire</th>
                             <th class="px-3 py-2">Target</th>
                             <th class="px-3 py-2">Integration</th>
                             <th class="px-3 py-2">Links</th>
@@ -106,25 +108,39 @@
                     <tbody>
                         @foreach (var s in DisplaySchedules)
                         {
+                            var healthLabel = RunScheduleOperatorUiHelpers.FormatScheduleHealthLabel(s.HealthStatus, s.Enabled);
+                            var primaryReason = RunScheduleOperatorUiHelpers.FormatPrimaryStatusReason(s.StatusReasons);
                             <tr class="border-b border-default hover:bg-surface-muted cursor-pointer"
                                 @onclick="@(() => Nav.NavigateTo("/schedules/" + Uri.EscapeDataString(s.Id)))">
                                 <td class="px-3 py-2">
                                     <div class="text-sm font-medium text-body">@s.Name</div>
-                                    @if (RunScheduleOperatorUiHelpers.ScheduleListNeedsAttention(s))
+                                    @if (!string.IsNullOrWhiteSpace(primaryReason))
                                     {
-                                        <div class="text-xs text-muted mt-0.5">
-                                            @(s.Enabled ? (string.IsNullOrWhiteSpace(s.IntegrationId) ? "Missing integration link" : "") : "Disabled")
-                                        </div>
+                                        <div class="text-xs text-muted mt-0.5 line-clamp-2">@primaryReason</div>
                                     }
                                     <details class="mt-1" @onclick:stopPropagation="true">
                                         <summary class="cursor-pointer text-xs text-muted">Technical</summary>
                                         <div class="mt-1 font-mono text-xs text-muted break-all">@s.Id</div>
-                                        <div class="mt-1 font-mono text-xs text-muted break-all">@s.RecurrenceExpression (@s.TimeZone)</div>
+                                        <div class="mt-1 font-mono text-xs text-muted break-all">@s.RecurrenceExpression (@(s.ScheduleTimeZoneId ?? s.TimeZone))</div>
                                     </details>
                                 </td>
                                 <td class="px-3 py-2">
                                     <StatusPill Label="@(s.Enabled ? "Enabled" : "Disabled")"
                                                 Semantic="@(s.Enabled ? ManagementStatusSemantic.Success : ManagementStatusSemantic.Neutral)" />
+                                </td>
+                                <td class="px-3 py-2">
+                                    <StatusPill Label="@healthLabel"
+                                                Semantic="@RunScheduleOperatorUiHelpers.MapScheduleHealthSemantic(s.HealthStatus)" />
+                                </td>
+                                <td class="px-3 py-2 text-sm">
+                                    @if (s.NextFireUtc is not null)
+                                    {
+                                        <TimestampDisplay Value="@s.NextFireUtc" ShowUtcDetail="true" />
+                                    }
+                                    else
+                                    {
+                                        <span class="text-xs text-muted">@(s.Enabled ? "None in window" : "—")</span>
+                                    }
                                 </td>
                                 <td class="px-3 py-2 text-sm">@RunScheduleOperatorUiHelpers.FormatScheduleTargetSummary(s)</td>
                                 <td class="px-3 py-2">
@@ -162,9 +178,10 @@
                                    Subtitle="Constraints that affect how this view should be interpreted."
                                    InitiallyOpen="false">
             <ul class="list-disc space-y-2 pl-4 text-xs text-muted">
-                <li>Last outcome, last dispatch, and next-fire timing appear on each schedule&apos;s detail page (not in list DTO).</li>
-                <li>Dashboard and Control Center may surface schedule-health counts; degraded-only filtering for this list is deferred until the API exposes a compatible filter.</li>
-                <li>Calendar and date-period scheduling are deferred — recurrence is shown as stored cron expression only.</li>
+                <li>Next fire is a compute-only projection from cron + schedule time zone (not persisted). Look-ahead is bounded (32 days).</li>
+                <li>Schedule time zone is the cron evaluation zone; operator timestamps use display time zone (SWM-4/SWM-5).</li>
+                <li>@RunScheduleOperatorUiHelpers.ScheduleCatchUpHelpText</li>
+                <li>Last attempt/outcome detail remains richest on the schedule detail page. Calendar and date-period scheduling are deferred.</li>
             </ul>
         </ManagementAdvancedSection>
     }

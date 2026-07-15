@@ -1,4 +1,5 @@
 using Apperture.ControlPlane.Security;
+using Apperture.Core.Application.RuntimeHealth;
 using Apperture.Core.Application.Scheduling;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Environment;
@@ -10,7 +11,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace Apperture.Management.Api.Controllers;
 
 /// <summary>
-/// Integration-owned schedules. Epic 50 / SWM-3 timezone defaults.
+/// Integration-owned schedules. Epic 50 / SWM-3 timezone defaults / SWM-10 next-fire clarity.
 /// </summary>
 [ApiController]
 [Route("api/integrations/{integrationId}/schedules")]
@@ -23,6 +24,7 @@ public sealed class IntegrationSchedulesController : ControllerBase
     private readonly IScheduleGovernanceService _scheduleGovernance;
     private readonly IScheduleValidationService _scheduleValidation;
     private readonly IScheduleCreateTimeZoneDefaults _createTimeZoneDefaults;
+    private readonly ISchedulerStatusQueryService _schedulerStatus;
 
     public IntegrationSchedulesController(
         IIntegrationManagementService integrationManagement,
@@ -30,7 +32,8 @@ public sealed class IntegrationSchedulesController : ControllerBase
         IScheduleManagementService scheduleManagement,
         IScheduleGovernanceService scheduleGovernance,
         IScheduleValidationService scheduleValidation,
-        IScheduleCreateTimeZoneDefaults createTimeZoneDefaults)
+        IScheduleCreateTimeZoneDefaults createTimeZoneDefaults,
+        ISchedulerStatusQueryService schedulerStatus)
     {
         _integrationManagement = integrationManagement;
         _scheduleRepository = scheduleRepository;
@@ -38,10 +41,11 @@ public sealed class IntegrationSchedulesController : ControllerBase
         _scheduleGovernance = scheduleGovernance;
         _scheduleValidation = scheduleValidation;
         _createTimeZoneDefaults = createTimeZoneDefaults;
+        _schedulerStatus = schedulerStatus;
     }
 
     /// <summary>
-    /// Lists schedules owned by this Integration.
+    /// Lists schedules owned by this Integration (includes SWM-10 next-fire / readiness).
     /// </summary>
     [HttpGet]
     public async Task<ActionResult<IReadOnlyList<ScheduleDto>>> List(string integrationId, CancellationToken cancellationToken)
@@ -57,7 +61,9 @@ public sealed class IntegrationSchedulesController : ControllerBase
                 return Forbid();
 
             var definitions = await _scheduleRepository.GetByIntegrationIdAsync(id, cancellationToken);
-            return Ok(definitions.Select(ToDto).ToList());
+            var asOf = DateTimeOffset.UtcNow;
+            var workerStatus = await TryGetWorkerRuntimeStatusAsync(cancellationToken);
+            return Ok(definitions.Select(d => ToDto(d, asOf, workerStatus)).ToList());
         }
         catch (UnauthorizedAccessException)
         {
@@ -110,7 +116,7 @@ public sealed class IntegrationSchedulesController : ControllerBase
             var planeId = new RuntimePlaneId(body.RuntimePlaneId ?? "local");
             await _scheduleManagement.AssignToRuntimePlaneAsync(definition.Id, planeId, null, cancellationToken);
 
-            return CreatedAtAction(nameof(List), new { integrationId }, ToDto(definition));
+            return CreatedAtAction(nameof(List), new { integrationId }, ToDto(definition, DateTimeOffset.UtcNow, workerRuntimeStatus: null));
         }
         catch (UnauthorizedAccessException)
         {
@@ -122,16 +128,44 @@ public sealed class IntegrationSchedulesController : ControllerBase
         }
     }
 
-    private static ScheduleDto ToDto(ScheduleDefinition d) => new(
-        d.Id.Value,
-        d.Name,
-        d.RecurrenceExpression,
-        d.TimeZone,
-        d.Enabled,
-        (int)d.Target.JobType,
-        d.Target.JobConfiguration,
-        d.Version,
-        d.IntegrationId?.Value);
+    private async Task<string?> TryGetWorkerRuntimeStatusAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            var snapshot = await _schedulerStatus.GetStatusAsync(cancellationToken: cancellationToken);
+            return snapshot.WorkerRuntime.Status ?? snapshot.Status;
+        }
+        catch
+        {
+            return "Unknown";
+        }
+    }
+
+    private static ScheduleDto ToDto(ScheduleDefinition d, DateTimeOffset asOfUtc, string? workerRuntimeStatus)
+    {
+        var clarity = ScheduleClarityProjector.Project(
+            d.RecurrenceExpression,
+            d.TimeZone,
+            d.Enabled,
+            d.IntegrationId?.Value,
+            asOfUtc,
+            workerRuntimeStatus: workerRuntimeStatus);
+
+        return new ScheduleDto(
+            d.Id.Value,
+            d.Name,
+            d.RecurrenceExpression,
+            d.TimeZone,
+            d.Enabled,
+            (int)d.Target.JobType,
+            d.Target.JobConfiguration,
+            d.Version,
+            d.IntegrationId?.Value,
+            clarity.NextFireUtc,
+            clarity.ScheduleTimeZoneId,
+            clarity.HealthStatus,
+            clarity.StatusReasons.Select(r => new ScheduleStatusReasonDto(r.Code, r.Message)).ToList());
+    }
 }
 
 public sealed record CreateIntegrationScheduleRequestBody(

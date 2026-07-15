@@ -1,4 +1,5 @@
 using Apperture.ControlPlane.Security;
+using Apperture.Core.Application.RuntimeHealth;
 using Apperture.Core.Application.Scheduling;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Environment;
@@ -20,17 +21,20 @@ public sealed class SchedulesController : ControllerBase
     private readonly IScheduleManagementService _scheduleManagement;
     private readonly IScheduleValidationService _scheduleValidation;
     private readonly IScheduleCreateTimeZoneDefaults _createTimeZoneDefaults;
+    private readonly ISchedulerStatusQueryService _schedulerStatus;
 
     public SchedulesController(
         IScheduleGovernanceService scheduleGovernance,
         IScheduleManagementService scheduleManagement,
         IScheduleValidationService scheduleValidation,
-        IScheduleCreateTimeZoneDefaults createTimeZoneDefaults)
+        IScheduleCreateTimeZoneDefaults createTimeZoneDefaults,
+        ISchedulerStatusQueryService schedulerStatus)
     {
         _scheduleGovernance = scheduleGovernance;
         _scheduleManagement = scheduleManagement;
         _scheduleValidation = scheduleValidation;
         _createTimeZoneDefaults = createTimeZoneDefaults;
+        _schedulerStatus = schedulerStatus;
     }
 
     [HttpGet("capabilities")]
@@ -54,7 +58,10 @@ public sealed class SchedulesController : ControllerBase
         var definitions = await _scheduleManagement.ListDefinitionsAsync(cancellationToken);
         if (definitions.Any(d => d.IntegrationId is null))
             TryAppendWarningHeader(LegacyScheduleWarningHeader);
-        return Ok(definitions.Select(ToDto).ToList());
+
+        var asOf = DateTimeOffset.UtcNow;
+        var workerStatus = await TryGetWorkerRuntimeStatusAsync(cancellationToken);
+        return Ok(definitions.Select(d => ToDto(d, asOf, workerStatus)).ToList());
     }
 
     [HttpGet("{id}")]
@@ -70,7 +77,9 @@ public sealed class SchedulesController : ControllerBase
             return NotFound();
         if (detail.Definition.IntegrationId is null)
             TryAppendWarningHeader(LegacyScheduleWarningHeader);
-        return Ok(ToDetailDto(detail, planeId.Value));
+
+        var workerStatus = await TryGetWorkerRuntimeStatusAsync(cancellationToken);
+        return Ok(ToDetailDto(detail, planeId.Value, DateTimeOffset.UtcNow, workerStatus));
     }
 
     [HttpPost]
@@ -118,7 +127,7 @@ public sealed class SchedulesController : ControllerBase
         await _scheduleManagement.CreateScheduleAsync(definition, cancellationToken);
         var planeId = new RuntimePlaneId(body.RuntimePlaneId ?? "local");
         await _scheduleManagement.AssignToRuntimePlaneAsync(definition.Id, planeId, null, cancellationToken);
-        return CreatedAtAction(nameof(Get), new { id }, ToDto(definition));
+        return CreatedAtAction(nameof(Get), new { id }, ToDto(definition, DateTimeOffset.UtcNow, workerRuntimeStatus: null));
     }
 
     [HttpPatch("{id}")]
@@ -145,7 +154,7 @@ public sealed class SchedulesController : ControllerBase
             Enabled = body.Enabled ?? def.Enabled
         };
         await _scheduleManagement.UpdateScheduleAsync(updated, cancellationToken);
-        return Ok(ToDto(updated));
+        return Ok(ToDto(updated, DateTimeOffset.UtcNow, workerRuntimeStatus: null));
     }
 
     [HttpPost("{id}/enable")]
@@ -184,22 +193,64 @@ public sealed class SchedulesController : ControllerBase
         }
     }
 
-    private static ScheduleDto ToDto(ScheduleDefinition d) => new(
-        d.Id.Value,
-        d.Name,
-        d.RecurrenceExpression,
-        d.TimeZone,
-        d.Enabled,
-        (int)d.Target.JobType,
-        d.Target.JobConfiguration,
-        d.Version,
-        d.IntegrationId?.Value);
+    private async Task<string?> TryGetWorkerRuntimeStatusAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            var snapshot = await _schedulerStatus.GetStatusAsync(cancellationToken: cancellationToken);
+            return snapshot.WorkerRuntime.Status ?? snapshot.Status;
+        }
+        catch
+        {
+            return "Unknown";
+        }
+    }
 
-    private static ScheduleDetailDto ToDetailDto(ScheduleWithExecutionState detail, string runtimePlaneId)
+    private static ScheduleDto ToDto(ScheduleDefinition d, DateTimeOffset asOfUtc, string? workerRuntimeStatus)
+    {
+        var clarity = ScheduleClarityProjector.Project(
+            d.RecurrenceExpression,
+            d.TimeZone,
+            d.Enabled,
+            d.IntegrationId?.Value,
+            asOfUtc,
+            workerRuntimeStatus: workerRuntimeStatus);
+
+        return new ScheduleDto(
+            d.Id.Value,
+            d.Name,
+            d.RecurrenceExpression,
+            d.TimeZone,
+            d.Enabled,
+            (int)d.Target.JobType,
+            d.Target.JobConfiguration,
+            d.Version,
+            d.IntegrationId?.Value,
+            clarity.NextFireUtc,
+            clarity.ScheduleTimeZoneId,
+            clarity.HealthStatus,
+            clarity.StatusReasons.Select(r => new ScheduleStatusReasonDto(r.Code, r.Message)).ToList());
+    }
+
+    private static ScheduleDetailDto ToDetailDto(
+        ScheduleWithExecutionState detail,
+        string runtimePlaneId,
+        DateTimeOffset asOfUtc,
+        string? workerRuntimeStatus)
     {
         var d = detail.Definition;
         var state = detail.ExecutionState;
         var claim = detail.InProgressClaim;
+        var clarity = ScheduleClarityProjector.Project(
+            d.RecurrenceExpression,
+            d.TimeZone,
+            d.Enabled,
+            d.IntegrationId?.Value,
+            asOfUtc,
+            lastOutcome: state?.LastOutcome,
+            isClaimStale: claim?.IsStale,
+            workerRuntimeStatus: workerRuntimeStatus);
+
         return new ScheduleDetailDto(
             d.Id.Value,
             d.Name,
@@ -217,7 +268,11 @@ public sealed class SchedulesController : ControllerBase
             claim?.ClaimedAtUtc,
             claim?.IsStale,
             d.IntegrationId?.Value,
-            runtimePlaneId);
+            runtimePlaneId,
+            clarity.NextFireUtc,
+            clarity.ScheduleTimeZoneId,
+            clarity.HealthStatus,
+            clarity.StatusReasons.Select(r => new ScheduleStatusReasonDto(r.Code, r.Message)).ToList());
     }
 
     private void TryAppendWarningHeader(string value)
@@ -231,6 +286,8 @@ public sealed class SchedulesController : ControllerBase
 
 public sealed record ScheduleCapabilitiesDto(bool CanManage);
 
+public sealed record ScheduleStatusReasonDto(string Code, string Message);
+
 public sealed record ScheduleDto(
     string Id,
     string Name,
@@ -240,11 +297,16 @@ public sealed record ScheduleDto(
     int TargetJobType,
     string? TargetJobConfiguration,
     int Version,
-    string? IntegrationId = null);
+    string? IntegrationId = null,
+    DateTimeOffset? NextFireUtc = null,
+    string? ScheduleTimeZoneId = null,
+    string? HealthStatus = null,
+    IReadOnlyList<ScheduleStatusReasonDto>? StatusReasons = null);
 
 /// <summary>
 /// Schedule with execution state for operator visibility. Epic 28, Epic 36 (claim visibility).
 /// <see cref="ClaimedByHostId"/> / <see cref="ClaimedAtUtc"/> / <see cref="IsClaimStale"/>: active in-progress claim only; not historical.
+/// SWM-10: additive next-fire / readiness projection (compute-only).
 /// </summary>
 public sealed record ScheduleDetailDto(
     string Id,
@@ -263,7 +325,11 @@ public sealed record ScheduleDetailDto(
     DateTimeOffset? ClaimedAtUtc = null,
     bool? IsClaimStale = null,
     string? IntegrationId = null,
-    string? RuntimePlaneId = null);
+    string? RuntimePlaneId = null,
+    DateTimeOffset? NextFireUtc = null,
+    string? ScheduleTimeZoneId = null,
+    string? HealthStatus = null,
+    IReadOnlyList<ScheduleStatusReasonDto>? StatusReasons = null);
 
 public sealed record CreateScheduleRequestBody(
     string Name,
@@ -287,4 +353,3 @@ public sealed record UpdateScheduleRequestBody(
     bool? Enabled = null,
     int? TargetJobType = null,
     string? TargetJobConfiguration = null);
-

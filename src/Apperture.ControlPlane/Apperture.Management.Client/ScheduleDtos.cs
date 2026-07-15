@@ -44,6 +44,9 @@ public sealed class ScheduleValidationException : Exception
 
 public sealed record ScheduleCapabilitiesDto(bool CanManage);
 
+/// <summary>SWM-10: stable schedule status reason (code + operator message).</summary>
+public sealed record ScheduleStatusReasonDto(string Code, string Message);
+
 public sealed record ScheduleDto(
     string Id,
     string Name,
@@ -53,11 +56,16 @@ public sealed record ScheduleDto(
     int TargetJobType,
     string? TargetJobConfiguration,
     int Version,
-    string? IntegrationId = null);
+    string? IntegrationId = null,
+    DateTimeOffset? NextFireUtc = null,
+    string? ScheduleTimeZoneId = null,
+    string? HealthStatus = null,
+    IReadOnlyList<ScheduleStatusReasonDto>? StatusReasons = null);
 
 /// <summary>
 /// Schedule with execution state for operator visibility. Epic 28, Epic 36 (claim visibility).
 /// Claim fields: populated only when a schedule run is <strong>in progress</strong> for this plane's assignment; absent once completed.
+/// SWM-10: additive next-fire / readiness projection fields (compute-only, not persisted).
 /// </summary>
 public sealed record ScheduleDetailDto(
     string Id,
@@ -76,4 +84,8 @@ public sealed record ScheduleDetailDto(
     DateTimeOffset? ClaimedAtUtc = null,
     bool? IsClaimStale = null,
     string? IntegrationId = null,
-    string? RuntimePlaneId = null);
+    string? RuntimePlaneId = null,
+    DateTimeOffset? NextFireUtc = null,
+    string? ScheduleTimeZoneId = null,
+    string? HealthStatus = null,
+    IReadOnlyList<ScheduleStatusReasonDto>? StatusReasons = null);

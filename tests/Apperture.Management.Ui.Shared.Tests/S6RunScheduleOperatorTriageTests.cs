@@ -58,7 +58,7 @@ public sealed class S6RunScheduleOperatorTriageTests
     public void BuildScheduleHealthSummary_reports_disabled_and_missing_integration()
     {
         RunScheduleOperatorUiHelpers.BuildScheduleHealthSummary(SampleScheduleDetail(enabled: false))
-            .Should().Contain("Disabled");
+            .Should().Contain("disabled");
         RunScheduleOperatorUiHelpers.BuildScheduleHealthSummary(SampleScheduleDetail(integrationId: null))
             .Should().Contain("integration");
     }
@@ -100,8 +100,9 @@ public sealed class S6RunScheduleOperatorTriageTests
     {
         var path = RepoPath("src/Apperture.ControlPlane/Apperture.Management.Ui.Client/Pages/Schedules/ScheduleDetail.razor");
         var content = File.ReadAllText(path);
-        content.Should().Contain("RunScheduleOperatorUiHelpers.BuildScheduleHealthSummary");
+        content.Should().Contain("RunScheduleOperatorUiHelpers.BuildWhyNotFiringHints");
         content.Should().Contain("ManagementAdvancedSection Title=\"Schedule configuration and recurrence\"");
+        content.Should().Contain("ScheduleCatchUpHelpText");
         content.Should().NotContain("Title=\"Links\"");
     }
 

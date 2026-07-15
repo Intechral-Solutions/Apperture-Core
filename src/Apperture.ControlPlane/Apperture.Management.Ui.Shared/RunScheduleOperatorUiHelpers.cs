@@ -149,6 +149,10 @@ public static class RunScheduleOperatorUiHelpers
 
     public static int ScheduleListAttentionRank(ScheduleDto schedule)
     {
+        if (string.Equals(schedule.HealthStatus, "Warning", StringComparison.OrdinalIgnoreCase))
+            return 0;
+        if (string.Equals(schedule.HealthStatus, "Unknown", StringComparison.OrdinalIgnoreCase))
+            return 1;
         if (!schedule.Enabled)
             return 3;
         if (string.IsNullOrWhiteSpace(schedule.IntegrationId))
@@ -158,6 +162,36 @@ public static class RunScheduleOperatorUiHelpers
 
     public static bool ScheduleListNeedsAttention(ScheduleDto schedule) =>
         ScheduleListAttentionRank(schedule) < 4;
+
+    /// <summary>Primary operator reason excluding catch-up policy help text.</summary>
+    public static string? FormatPrimaryStatusReason(IReadOnlyList<ScheduleStatusReasonDto>? reasons)
+    {
+        if (reasons is null || reasons.Count == 0)
+            return null;
+
+        return reasons
+            .FirstOrDefault(r => !string.Equals(r.Code, "catch_up_policy", StringComparison.OrdinalIgnoreCase))
+            ?.Message;
+    }
+
+    public static string FormatScheduleHealthLabel(string? healthStatus, bool enabled) =>
+        string.IsNullOrWhiteSpace(healthStatus)
+            ? (enabled ? "Unknown" : "Inactive")
+            : healthStatus!;
+
+    public static ManagementStatusSemantic MapScheduleHealthSemantic(string? healthStatus) =>
+        healthStatus?.Trim().ToLowerInvariant() switch
+        {
+            "healthy" => ManagementStatusSemantic.Success,
+            "warning" => ManagementStatusSemantic.Warning,
+            "inactive" => ManagementStatusSemantic.Neutral,
+            "unknown" => ManagementStatusSemantic.Neutral,
+            _ => ManagementStatusSemantic.Neutral
+        };
+
+    /// <summary>SWM-10 catch-up help (one due fire per cycle).</summary>
+    public const string ScheduleCatchUpHelpText =
+        "Missed fires drain one due fire per scheduler cycle; duplicate prevention uses schedule id + UTC fire instant. A backlog may span multiple cycles — this is not a duplicate-fire condition.";
 
     public static IReadOnlyList<ScheduleDto> SortSchedulesForTriage(IEnumerable<ScheduleDto> schedules) =>
         schedules.OrderBy(ScheduleListAttentionRank)
