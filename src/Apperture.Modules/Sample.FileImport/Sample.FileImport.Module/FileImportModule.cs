@@ -26,7 +26,7 @@ public sealed class FileImportModule : IModule, IModuleStepHandlerRegistrar, IMo
         ModuleIdValue,
         "File Import",
         "1.0.0",
-        "Sample file import: Validate → Parse → ProcessRows → Complete with process-local row outcomes.")
+        "Sample file import: Validate → Parse → ProcessRows → Complete with process-local outcomes and durable platform operation items.")
     {
         Permissions =
         [

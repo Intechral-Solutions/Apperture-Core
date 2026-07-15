@@ -11,7 +11,9 @@ public sealed record ImportBatch(
     int TotalRows,
     int SucceededCount,
     int FailedCount,
-    int SkippedCount);
+    int SkippedCount,
+    /// <summary>Platform <c>OperationGroup</c> id when durable itemization was begun (SDK-3C).</summary>
+    string? OperationGroupId = null);
 
 public sealed record ImportRowOutcome(
     string BatchId,
@@ -27,4 +29,5 @@ public sealed record ImportBatchCreateRequest(
     string FixtureId,
     string? RunId,
     string? CorrelationId,
-    DateTimeOffset? StartedAtUtc = null);
+    DateTimeOffset? StartedAtUtc = null,
+    string? OperationGroupId = null);

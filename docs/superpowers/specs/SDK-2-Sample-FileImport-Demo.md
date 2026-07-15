@@ -62,6 +62,8 @@ Use precise language only:
 
 SDK-3 promotes the proven shape into a durable platform/module itemized operation model.
 
+> **SDK-3C (2026-07-15):** `Sample.FileImport` now also writes durable `OperationGroup` / `OperationItem` via `context.Signals.OperationItems`. Process-local `IImportOutcomeStore` remains for inspection/tests. UI panel → SDK-3D; per-item retry → SDK-4.
+
 ## 4. Projects and registration
 
 ### 4.1 Layout

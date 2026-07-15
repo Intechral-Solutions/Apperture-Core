@@ -1,11 +1,12 @@
 using Apperture.Core.Application.Execution;
+using Apperture.Core.Application.OperationItems;
 using Apperture.ModuleSdk.Abstractions.Signals;
 using Sample.FileImport.Contracts;
 
 namespace Sample.FileImport;
 
 /// <summary>
-/// Finalizes the batch via CompleteBatch and emits exactly one fail-loud import signal.
+/// Finalizes the process-local batch and platform operation group, then emits exactly one fail-loud import signal.
 /// </summary>
 public sealed class FileImportCompleteStepHandler : IStepHandler
 {
@@ -30,6 +31,12 @@ public sealed class FileImportCompleteStepHandler : IStepHandler
                 $"No running import batch found for run '{runId}'.");
         }
 
+        if (string.IsNullOrWhiteSpace(open.OperationGroupId))
+        {
+            throw OperatorExecutionResult.FailSummaryOnly(
+                $"Import batch '{open.BatchId}' has no platform operation group id.");
+        }
+
         var outcomes = _store.GetOutcomesByBatchId(open.BatchId);
         var succeeded = outcomes.Count(o => o.Status == ImportRowStatus.Succeeded);
         var failed = outcomes.Count(o => o.Status == ImportRowStatus.Failed);
@@ -37,7 +44,35 @@ public sealed class FileImportCompleteStepHandler : IStepHandler
         var total = outcomes.Count;
 
         var strictMode = FileImportParameterReader.ResolveStrictMode(parameters);
+        var failOnFirst = FileImportParameterReader.ResolveFailOnFirstError(parameters);
+        var maxRows = FileImportParameterReader.ResolveMaxRows(parameters);
         var status = FileImportRowProcessor.ResolveBatchStatus(succeeded, failed, skipped, strictMode);
+        var groupStatus = FileImportOperationItemization.MapGroupStatus(status);
+
+        try
+        {
+            await context.Signals.OperationItems.CompleteGroupAsync(
+                new CompleteOperationGroupRequest(
+                    open.OperationGroupId!,
+                    groupStatus,
+                    total,
+                    succeeded,
+                    failed,
+                    skipped,
+                    SummaryJson: FileImportOperationItemization.BuildGroupSummaryJson(
+                        open.FixtureId,
+                        open.BatchId,
+                        strictMode,
+                        failOnFirst,
+                        maxRows)),
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationItemizationException ex)
+        {
+            throw OperatorExecutionResult.FailSummaryOnly(
+                "Sample.FileImport could not complete platform operation group: " + ex.Message);
+        }
+
         var batch = _store.CompleteBatch(open.BatchId, status, total, succeeded, failed, skipped);
 
         var signal = FileImportRowProcessor.SignalForBatchStatus(status);
@@ -45,6 +80,7 @@ public sealed class FileImportCompleteStepHandler : IStepHandler
         {
             ["fixtureId"] = batch.FixtureId,
             ["batchId"] = batch.BatchId,
+            ["operationGroupId"] = batch.OperationGroupId,
             ["totalRows"] = batch.TotalRows,
             ["succeededCount"] = batch.SucceededCount,
             ["failedCount"] = batch.FailedCount,
@@ -85,6 +121,7 @@ public sealed class FileImportCompleteStepHandler : IStepHandler
                 ["signal"] = signal,
                 ["eventId"] = emitResult.EventId,
                 ["batchId"] = batch.BatchId,
+                ["operationGroupId"] = batch.OperationGroupId,
             });
 
         return OperatorExecutionResult.SuccessSummaryOnly(new
@@ -92,6 +129,7 @@ public sealed class FileImportCompleteStepHandler : IStepHandler
             step = "Complete",
             fixtureId = batch.FixtureId,
             batchId = batch.BatchId,
+            operationGroupId = batch.OperationGroupId,
             totalRows = batch.TotalRows,
             succeededCount = batch.SucceededCount,
             failedCount = batch.FailedCount,

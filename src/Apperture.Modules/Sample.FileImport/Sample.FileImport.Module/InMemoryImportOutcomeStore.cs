@@ -29,7 +29,8 @@ public sealed class InMemoryImportOutcomeStore : IImportOutcomeStore
             TotalRows: 0,
             SucceededCount: 0,
             FailedCount: 0,
-            SkippedCount: 0);
+            SkippedCount: 0,
+            OperationGroupId: request.OperationGroupId);
 
         if (!_batches.TryAdd(batch.BatchId, batch))
             throw new InvalidOperationException("Failed to create import batch.");

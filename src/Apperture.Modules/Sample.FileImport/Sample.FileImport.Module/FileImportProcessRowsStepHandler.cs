@@ -1,10 +1,12 @@
 using Apperture.Core.Application.Execution;
+using Apperture.Core.Application.OperationItems;
 using Sample.FileImport.Contracts;
 
 namespace Sample.FileImport;
 
 /// <summary>
-/// Owns row-level success/failure/skipped outcomes in the process-local store.
+/// Owns row-level success/failure/skipped outcomes in the process-local store
+/// and appends durable platform operation items (SDK-3C).
 /// </summary>
 public sealed class FileImportProcessRowsStepHandler : IStepHandler
 {
@@ -13,13 +15,11 @@ public sealed class FileImportProcessRowsStepHandler : IStepHandler
     public FileImportProcessRowsStepHandler(IImportOutcomeStore store) =>
         _store = store ?? throw new ArgumentNullException(nameof(store));
 
-    public ValueTask<object?> ExecuteAsync(
+    public async ValueTask<object?> ExecuteAsync(
         IStepExecutionContext context,
         IReadOnlyDictionary<string, object?> parameters,
         CancellationToken cancellationToken = default)
     {
-        _ = cancellationToken;
-
         var runId = context.Signals.Correlation.RunId ?? context.RunId
             ?? throw OperatorExecutionResult.FailSummaryOnly(
                 "ProcessRows requires a run id to locate the open import batch.");
@@ -27,6 +27,12 @@ public sealed class FileImportProcessRowsStepHandler : IStepHandler
         var batch = _store.GetRunningBatchByRunId(runId)
             ?? throw OperatorExecutionResult.FailSummaryOnly(
                 $"No running import batch found for run '{runId}'. Parse must create the batch first.");
+
+        if (string.IsNullOrWhiteSpace(batch.OperationGroupId))
+        {
+            throw OperatorExecutionResult.FailSummaryOnly(
+                $"Import batch '{batch.BatchId}' has no platform operation group id. Parse must begin itemization.");
+        }
 
         var fixtureId = batch.FixtureId;
         if (!FileImportEmbeddedFixtures.TryLoadCsv(fixtureId, out var csv, out var loadError))
@@ -55,10 +61,11 @@ public sealed class FileImportProcessRowsStepHandler : IStepHandler
         for (var i = 0; i < parsed.Rows.Count; i++)
         {
             var row = parsed.Rows[i];
+            ImportRowOutcome outcome;
 
             if (stopAfterFailure)
             {
-                var skip = new ImportRowOutcome(
+                outcome = new ImportRowOutcome(
                     batch.BatchId,
                     row.RowNumber,
                     row.ExternalId,
@@ -67,14 +74,10 @@ public sealed class FileImportProcessRowsStepHandler : IStepHandler
                     "Skipped because failOnFirstError stopped processing after an earlier failure.",
                     FileImportRowProcessor.BuildSafeSummary(row),
                     now);
-                _store.AppendRowOutcome(skip);
-                skipped++;
-                continue;
             }
-
-            if (i >= maxRows)
+            else if (i >= maxRows)
             {
-                var skip = new ImportRowOutcome(
+                outcome = new ImportRowOutcome(
                     batch.BatchId,
                     row.RowNumber,
                     row.ExternalId,
@@ -83,13 +86,29 @@ public sealed class FileImportProcessRowsStepHandler : IStepHandler
                     $"Skipped because maxRowsPerImport={maxRows}.",
                     FileImportRowProcessor.BuildSafeSummary(row),
                     now);
-                _store.AppendRowOutcome(skip);
-                skipped++;
-                continue;
+            }
+            else
+            {
+                outcome = FileImportRowProcessor.ValidateAndMap(batch.BatchId, row, seen, now);
             }
 
-            var outcome = FileImportRowProcessor.ValidateAndMap(batch.BatchId, row, seen, now);
             _store.AppendRowOutcome(outcome);
+
+            try
+            {
+                await context.Signals.OperationItems.AppendItemAsync(
+                    FileImportOperationItemization.ToAppendRequest(
+                        batch.OperationGroupId!,
+                        runId,
+                        fixtureId,
+                        outcome),
+                    cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationItemizationException ex)
+            {
+                throw OperatorExecutionResult.FailSummaryOnly(
+                    "Sample.FileImport could not append platform operation item: " + ex.Message);
+            }
 
             switch (outcome.Status)
             {
@@ -108,16 +127,16 @@ public sealed class FileImportProcessRowsStepHandler : IStepHandler
         }
 
         var total = succeeded + failed + skipped;
-        return ValueTask.FromResult<object?>(
-            OperatorExecutionResult.SuccessSummaryOnly(new
-            {
-                step = "ProcessRows",
-                batchId = batch.BatchId,
-                fixtureId,
-                totalRows = total,
-                succeededCount = succeeded,
-                failedCount = failed,
-                skippedCount = skipped,
-            }));
+        return OperatorExecutionResult.SuccessSummaryOnly(new
+        {
+            step = "ProcessRows",
+            batchId = batch.BatchId,
+            operationGroupId = batch.OperationGroupId,
+            fixtureId,
+            totalRows = total,
+            succeededCount = succeeded,
+            failedCount = failed,
+            skippedCount = skipped,
+        });
     }
 }

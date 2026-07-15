@@ -386,7 +386,7 @@ authoring writer contract, following the hybrid model in the SDK-3 audit.
 Summarize schema, writer API, tests, docs, and recommended SDK-3B prompt.
 ```
 
-> **Status update (2026-07-15):** SDK-3A and **SDK-3B** are implemented. Read APIs: `GET /api/runs/{runId}/operation-groups` and `…/items`. Plan: `docs/superpowers/plans/2026-07-15-sdk3b-operation-itemization-read-apis.md`. Next: **SDK-3C** FileImport adapter.
+> **Status update (2026-07-15):** SDK-3A, **SDK-3B**, and **SDK-3C** are implemented. FileImport writes durable groups/items. Next: **SDK-3D** Run Detail itemization panel.
 
 ---
 

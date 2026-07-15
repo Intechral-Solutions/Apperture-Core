@@ -20,12 +20,12 @@ This guide is for developers building **Apperture modules**: workflow-centric pa
 **Reference modules in this repo:**
 
 - `Sample.HelloWorld` — minimal workflow, operation, procedures, manifest signals, harness-friendly emit/log/telemetry demo
-- `Sample.FileImport` — portable CSV import demo (SDK-2): embedded fixtures, process-local row outcomes, partial-failure signals, settings contributor. See [SDK-2 design](../superpowers/specs/SDK-2-Sample-FileImport-Demo.md).
+- `Sample.FileImport` — portable CSV import demo (SDK-2/3C): embedded fixtures, process-local inspection store + durable platform operation items, partial-failure signals, settings contributor. See [SDK-2 design](../superpowers/specs/SDK-2-Sample-FileImport-Demo.md).
 - `Proof.CampusNexus.StudentReview` — integration-scoped slots (Campus Nexus + SQL), procedures, operational logs (no manifest signals)
 
-### Sample.FileImport (SDK-2)
+### Sample.FileImport (SDK-2 + SDK-3C)
 
-**Purpose:** Contract-validation sample for file-ingest modules. Proves fixture selection, multi-step import workflow, module-local per-row outcomes, and fail-loud summary signals without external files or SQL durability.
+**Purpose:** Contract-validation sample for file-ingest modules. Proves fixture selection, multi-step import workflow, module-local per-row outcomes, fail-loud summary signals, and durable platform operation itemization (SDK-3C) without external files.
 
 **How to run:** Create a `Sample.FileImport` integration (or use an existing one). Launch procedure `Sample.FileImport.procedures.import` with `fixtureId`. Optional `strictMode` overrides `strictModeDefault`. Platform schedules can target workflow `Sample.FileImport.Import`.
 
@@ -33,16 +33,19 @@ This guide is for developers building **Apperture modules**: workflow-centric pa
 
 | Id | Expected path |
 |----|---------------|
-| `customers-valid` | All rows succeed → `import.completed` |
-| `customers-mixed` | Partial success → `import.completed.with.errors` |
-| `customers-invalid-structure` | Parse hard-fail before row processing; no row outcomes; signal may not emit |
-| `customers-all-bad` | Valid header, all rows fail → outcomes + `import.failed` |
+| `customers-valid` | All rows succeed → `import.completed` + succeeded operation items |
+| `customers-mixed` | Partial success → `import.completed.with.errors` + mixed items |
+| `customers-invalid-structure` | Parse hard-fail before row processing; no groups/items; signal may not emit |
+| `customers-all-bad` | Valid header, all rows fail → outcomes + failed group + `import.failed` |
 
 **Settings (integration-scoped):** `strictModeDefault`, `maxRowsPerImport`, `failOnFirstError` (no secrets).
 
-**Signals:** `import.completed`, `import.completed.with.errors`, `import.failed` — exactly one per completed batch. Payload includes fixture/batch ids and counts. (Dotted signal names; underscores are not catalog-valid.)
+**Signals:** `import.completed`, `import.completed.with.errors`, `import.failed` — exactly one per completed batch. Payload includes fixture/batch/`operationGroupId` and counts. (Dotted signal names; underscores are not catalog-valid.)
 
-**Outcome store:** `IImportOutcomeStore` with in-memory singleton — **process-local** module-local outcome capture. Not durable across process restarts. Row outcome shape is intentional pressure for **SDK-3 Itemized Operation Model** (platform durability, item APIs, per-item retry).
+**Outcome stores:**
+
+* `IImportOutcomeStore` (in-memory) — **process-local** inspection aid; not restart-durable.
+* Platform `context.Signals.OperationItems` — durable run-attached `OperationGroup` / `OperationItem` for SDK-3B APIs and SDK-3D UI. `operationKind=file_import`; failed rows set `isRetryable` (execution is SDK-4).
 
 **Notification seed:** Built-in definition for `import.completed.with.errors` (HelloWorld-sized). Subscribe to validate partial-failure → notification path.
 
@@ -62,7 +65,7 @@ This guide is for developers building **Apperture modules**: workflow-centric pa
 
 **Retry fields:** `IsRetryable`, `RetryCount`, `LastAttemptedAtUtc` persist for future use. **Per-item retry execution/UI is SDK-4**, not SDK-3A.
 
-**Relation to Sample.FileImport (SDK-2):** Process-local `IImportOutcomeStore` remains the sample’s in-process shape. **SDK-3C** adapts FileImport to this platform writer. **SDK-3B** adds read APIs; **SDK-3D** adds the run-detail itemization panel.
+**Relation to Sample.FileImport (SDK-2/3C):** Process-local `IImportOutcomeStore` remains a sample inspection aid. **SDK-3C** FileImport writes durable platform operation items via `context.Signals.OperationItems`. **SDK-3D** adds the run-detail itemization panel; **SDK-4** adds per-item retry.
 
 **Persistence:** Host registers `AddOperationItemizationPersistence()` (Worker Host + Management Host). Migration `20260715180000_Sdk3A_OperationItemization` creates `OperationGroups` / `OperationItems`. Unit coverage uses `InMemoryOperationItemStore`; SQL round-trip is `OperationItemizationSqlServerTests` (soft-skips without `APPERTURE_TEST_SQL_*`).
 
@@ -73,7 +76,7 @@ This guide is for developers building **Apperture modules**: workflow-centric pa
 
 Same run-read authorization as run detail/timeline. Missing run → 404; no groups/items → empty 200. Client: `GetRunOperationGroupsAsync` / `GetRunOperationGroupItemsAsync`. Run detail includes optional `operationItemization` summary (`groupCount`, `failedItemCount`, `skippedItemCount`, `hasOperationItems`) — **not** full item lists.
 
-**Deferred:** UI panel (**SDK-3D**), FileImport adapter (**SDK-3C**), per-item retry (**SDK-4**). Retry fields (`isRetryable`, `retryCount`, `lastAttemptedAtUtc`) are readable now.
+**Deferred:** UI panel (**SDK-3D**), per-item retry (**SDK-4**). Retry fields (`isRetryable`, `retryCount`, `lastAttemptedAtUtc`) are readable now; FileImport sets retry readiness on failed rows.
 
 **Audit:** [sdk3-itemized-operation-model-design-audit.md](../audits/sdk3-itemized-operation-model-design-audit.md)  
 **Plan:** [2026-07-15-sdk3b-operation-itemization-read-apis.md](../superpowers/plans/2026-07-15-sdk3b-operation-itemization-read-apis.md)

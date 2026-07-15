@@ -1,8 +1,9 @@
 namespace Sample.FileImport.Contracts;
 
 /// <summary>
-/// Process-local sample outcome store for module-local outcome capture.
-/// Not durable across process restarts; row outcome shape for future itemization (SDK-3).
+/// Process-local sample outcome store for module-local outcome capture / test inspection.
+/// Not durable across process restarts. SDK-3C also writes platform <c>OperationGroup</c>/<c>OperationItem</c>
+/// via <c>context.Signals.OperationItems</c> for run-attached durable history.
 /// </summary>
 public interface IImportOutcomeStore
 {
