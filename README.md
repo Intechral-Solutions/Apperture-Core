@@ -4,7 +4,7 @@ Apperture Core is an open-core automation and integration platform built around 
 
 ## Status
 
-**Current phase:** Stabilization toward a narrow v1. The repository contains a working control plane (Management Host/API, Blazor UI), worker/runtime path, settings registry, auth/RBAC, integrations and connections, notifications, and automated tests. Documentation and ADRs continue alongside implementation.
+**Current phase:** Product foundation baseline complete; major pre-release product development ahead. Stabilization (S1–S13) and Scheduling & Worker Management foundation (SWM-1–SWM-12) are closed. The repository has a working control plane (Management Host/API, Blazor UI), worker/runtime path, settings registry, auth/RBAC, integrations and connections, notifications, and schedule dispatch — operable via Aspire AppHost or Manage.ps1. This is **foundation-ready for continued product work**, not a finished release. See [`docs/00-overview/pre-release-product-roadmap.md`](docs/00-overview/pre-release-product-roadmap.md) and [`docs/audits/pfb1-product-foundation-baseline-audit.md`](docs/audits/pfb1-product-foundation-baseline-audit.md).
 
 ## Prerequisites
 

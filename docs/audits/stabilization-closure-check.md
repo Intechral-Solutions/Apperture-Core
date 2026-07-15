@@ -1,9 +1,10 @@
-# Stabilization Closure & v1 Baseline
+# Stabilization Closure & Foundation Baseline
 
-- **Date:** 2026-07-14 (hygiene patch applied same day)
-- **Status:** **Closed** — S1–S13 product track
+- **Date:** 2026-07-14 (hygiene patch applied same day; framing updated 2026-07-15 under PFB-1)
+- **Status:** **Closed** — S1–S13 foundation track
 - **Naming:** Stabilization closeout is **not** Epic 121. Epic 121 is already used for HelloWorld demo notification seed + Sample.HelloWorld demo integration settings.
 - **Scope of hygiene patch:** unit-test emitter fix, docs/config truth, this note. No features, no scheduling implementation, no Epic 69 removal.
+- **Framing:** This closes **stabilization**, not a product release. Later SWM-1–SWM-12 closed scheduling/worker **foundation**. Current product phase is **pre-release product development** — see [`pfb1-product-foundation-baseline-audit.md`](pfb1-product-foundation-baseline-audit.md) and [`../00-overview/pre-release-product-roadmap.md`](../00-overview/pre-release-product-roadmap.md). Do not treat this as “v1 / release readiness.”
 
 ---
 
@@ -11,7 +12,7 @@
 
 **Stabilization S1–S13 is closed.**
 
-Product baseline:
+Foundation baseline (operator/on-prem-dev operable — not a finished release):
 
 - Operator shell (auth, dashboard, integrations, runs/schedules triage, procedure launch)
 - **Platform notification pipeline** (`UsePlatformPipeline` on in Management.Host committed config)
@@ -20,7 +21,7 @@ Product baseline:
 
 Legacy Epic 69: **retained temporarily** with S12 removal criteria (escalation gap). Prefer platform; do not dual-send.
 
-Scheduling Aspire timer plane mismatch: **not** a stabilization blocker — moves to next track.
+Scheduling Aspire timer plane mismatch: **resolved under SWM-1–SWM-12** (not a stabilization reopen).
 
 ---
 
@@ -49,18 +50,24 @@ Corrected: S9 opt-out claim; cutover defaults vs Host baseline; Aspire SQL **143
 
 ---
 
-## Next track
+## Next track (updated after SWM + PFB-1)
+
+Stabilization closed → **Scheduling & Worker Management (SWM-1–SWM-12) completed** as foundation.
 
 | | |
 |--|--|
-| **Track** | Scheduling & Worker Management |
-| **First epic** | Runtime-plane identity alignment under Aspire (`local` vs `worker-local`) |
-| **Evidence** | `docs/audits/scheduling-runtime-audit.md` |
+| **Current planning stage** | Pre-release product development |
+| **Recommended next implementation track** | **SDK & Demo Module Validation** |
+| **Canonical docs** | [`pfb1-product-foundation-baseline-audit.md`](pfb1-product-foundation-baseline-audit.md), [`../00-overview/pre-release-product-roadmap.md`](../00-overview/pre-release-product-roadmap.md) |
+
+Do **not** treat the next step as Final Release Readiness / RC.
 
 ---
 
 ## Related
 
-- Scheduling audit: [scheduling-runtime-audit.md](scheduling-runtime-audit.md)
+- Product foundation baseline: [pfb1-product-foundation-baseline-audit.md](pfb1-product-foundation-baseline-audit.md)
+- Pre-release product roadmap: [../00-overview/pre-release-product-roadmap.md](../00-overview/pre-release-product-roadmap.md)
+- Scheduling audit (historical): [scheduling-runtime-audit.md](scheduling-runtime-audit.md)
 - HelloWorld notify ADR: [S13A-helloworld-notification-pipeline-debugging.md](../02-decisions/S13A-helloworld-notification-pipeline-debugging.md)
 - Legacy removal plan: [S12-notification-pipeline-verification-legacy-removal-plan.md](../02-decisions/S12-notification-pipeline-verification-legacy-removal-plan.md)
