@@ -29,6 +29,36 @@ public sealed class RunsControllerTests
     }
 
     [Fact]
+    public async Task GetOperationGroups_WhenMissingRun_Returns404()
+    {
+        var controller = NewController(
+            new StubRunQueryService(),
+            operationItems: new NullGroupsOperationItemizationQueryService());
+        var result = await controller.GetOperationGroups("missing", CancellationToken.None);
+        result.Result.Should().BeOfType<NotFoundResult>();
+    }
+
+    [Fact]
+    public async Task GetOperationGroups_ReturnsEmptyList_WhenAuthorizedAndNoItems()
+    {
+        var controller = NewController(new StubRunQueryService());
+        var result = await controller.GetOperationGroups("run-1", CancellationToken.None);
+        var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        ok.Value.Should().BeAssignableTo<IReadOnlyList<OperationGroupSummaryDto>>()
+            .Which.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task GetOperationGroupItems_WhenUnauthorized_Returns403()
+    {
+        var controller = NewController(
+            new StubRunQueryService(),
+            operationItems: new ForbiddenOperationItemizationQueryService());
+        var result = await controller.GetOperationGroupItems("run-1", "g1", null, null, null);
+        result.Result.Should().BeOfType<ForbidResult>();
+    }
+
+    [Fact]
     public async Task RetryRun_WhenMissing_Returns404()
     {
         var controller = NewController(new StubRunQueryService(), retry: new StubRetryService(returnNull: true));
@@ -198,7 +228,8 @@ public sealed class RunsControllerTests
         IWorkflowRetryService? retry = null,
         IWorkflowExternalControlService? external = null,
         IRunActionAvailabilityQueryService? runActions = null,
-        IRunTimelineQueryService? timeline = null) =>
+        IRunTimelineQueryService? timeline = null,
+        IOperationItemizationQueryService? operationItems = null) =>
         new(
             runs,
             cancel ?? new StubCancelService(),
@@ -208,7 +239,68 @@ public sealed class RunsControllerTests
             {
                 new Apperture.Core.Application.ControlFacade.ControlActionAvailabilityDto("execution.cancel", "available", null)
             }),
-            timeline ?? new StubRunTimelineQueryService(new RunTimelineDto("run-1", "workflow", Array.Empty<RunTimelineEventDto>())));
+            timeline ?? new StubRunTimelineQueryService(new RunTimelineDto("run-1", "workflow", Array.Empty<RunTimelineEventDto>())),
+            operationItems ?? new StubOperationItemizationQueryService());
+
+    private sealed class StubOperationItemizationQueryService : IOperationItemizationQueryService
+    {
+        public Task<IReadOnlyList<OperationGroupSummaryDto>?> ListGroupsByRunAsync(
+            OperationRunId runId,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<OperationGroupSummaryDto>?>(Array.Empty<OperationGroupSummaryDto>());
+
+        public Task<OperationItemPageDto?> ListItemsByGroupAsync(
+            OperationRunId runId,
+            string operationGroupId,
+            Apperture.Core.Application.OperationItems.OperationItemQuery query,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult<OperationItemPageDto?>(new OperationItemPageDto(Array.Empty<OperationItemSummaryDto>(), 0, 0, 50));
+
+        public Task<RunOperationItemizationSummaryDto?> GetRunSummaryAsync(
+            OperationRunId runId,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult<RunOperationItemizationSummaryDto?>(new RunOperationItemizationSummaryDto(0, 0, 0, false));
+    }
+
+    private sealed class NullGroupsOperationItemizationQueryService : IOperationItemizationQueryService
+    {
+        public Task<IReadOnlyList<OperationGroupSummaryDto>?> ListGroupsByRunAsync(
+            OperationRunId runId,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<OperationGroupSummaryDto>?>(null);
+
+        public Task<OperationItemPageDto?> ListItemsByGroupAsync(
+            OperationRunId runId,
+            string operationGroupId,
+            Apperture.Core.Application.OperationItems.OperationItemQuery query,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult<OperationItemPageDto?>(null);
+
+        public Task<RunOperationItemizationSummaryDto?> GetRunSummaryAsync(
+            OperationRunId runId,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult<RunOperationItemizationSummaryDto?>(null);
+    }
+
+    private sealed class ForbiddenOperationItemizationQueryService : IOperationItemizationQueryService
+    {
+        public Task<IReadOnlyList<OperationGroupSummaryDto>?> ListGroupsByRunAsync(
+            OperationRunId runId,
+            CancellationToken cancellationToken = default) =>
+            throw new UnauthorizedAccessException();
+
+        public Task<OperationItemPageDto?> ListItemsByGroupAsync(
+            OperationRunId runId,
+            string operationGroupId,
+            Apperture.Core.Application.OperationItems.OperationItemQuery query,
+            CancellationToken cancellationToken = default) =>
+            throw new UnauthorizedAccessException();
+
+        public Task<RunOperationItemizationSummaryDto?> GetRunSummaryAsync(
+            OperationRunId runId,
+            CancellationToken cancellationToken = default) =>
+            throw new UnauthorizedAccessException();
+    }
 
     private sealed class StubRunQueryService : IRunQueryService
     {

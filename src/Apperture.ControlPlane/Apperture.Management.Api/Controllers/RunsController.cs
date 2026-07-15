@@ -1,5 +1,6 @@
 using Apperture.ControlPlane.Security;
 using Apperture.Core.Application.ControlFacade;
+using Apperture.Core.Application.OperationItems;
 using Apperture.RuntimePlane.Abstractions;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -17,6 +18,7 @@ public sealed class RunsController : ControllerBase
     private readonly IWorkflowExternalControlService _externalControl;
     private readonly IRunActionAvailabilityQueryService _runActions;
     private readonly IRunTimelineQueryService _timeline;
+    private readonly IOperationItemizationQueryService _operationItems;
 
     public RunsController(
         IRunQueryService runs,
@@ -24,7 +26,8 @@ public sealed class RunsController : ControllerBase
         IWorkflowRetryService retry,
         IWorkflowExternalControlService externalControl,
         IRunActionAvailabilityQueryService runActions,
-        IRunTimelineQueryService timeline)
+        IRunTimelineQueryService timeline,
+        IOperationItemizationQueryService operationItems)
     {
         _runs = runs;
         _cancel = cancel;
@@ -32,6 +35,7 @@ public sealed class RunsController : ControllerBase
         _externalControl = externalControl;
         _runActions = runActions;
         _timeline = timeline;
+        _operationItems = operationItems;
     }
 
     [HttpGet]
@@ -109,6 +113,54 @@ public sealed class RunsController : ControllerBase
             if (timeline is null)
                 return NotFound();
             return Ok(timeline);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return Forbid();
+        }
+    }
+
+    /// <summary>SDK-3B: business-facing operation groups for a run (not platform log lines).</summary>
+    [HttpGet("{id}/operation-groups")]
+    public async Task<ActionResult<IReadOnlyList<OperationGroupSummaryDto>>> GetOperationGroups(
+        string id,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var groups = await _operationItems.ListGroupsByRunAsync(new OperationRunId(id), cancellationToken);
+            if (groups is null)
+                return NotFound();
+            return Ok(groups);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return Forbid();
+        }
+    }
+
+    /// <summary>SDK-3B: paged operation items for a group under a run.</summary>
+    [HttpGet("{id}/operation-groups/{groupId}/items")]
+    public async Task<ActionResult<OperationItemPageDto>> GetOperationGroupItems(
+        string id,
+        string groupId,
+        [FromQuery] string? status,
+        [FromQuery] bool? retryableOnly,
+        [FromQuery] string? q,
+        [FromQuery] int skip = 0,
+        [FromQuery] int take = OperationItemizationBounds.DefaultItemPageTake,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var page = await _operationItems.ListItemsByGroupAsync(
+                new OperationRunId(id),
+                groupId,
+                new OperationItemQuery(status, retryableOnly, q, skip, take),
+                cancellationToken);
+            if (page is null)
+                return NotFound();
+            return Ok(page);
         }
         catch (UnauthorizedAccessException)
         {

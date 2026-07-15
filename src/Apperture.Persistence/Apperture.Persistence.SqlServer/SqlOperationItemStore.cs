@@ -163,6 +163,78 @@ public sealed class SqlOperationItemStore : IOperationItemStore
         return groups.Select(MapGroup).ToArray();
     }
 
+    public async Task<OperationItemPage> QueryItemsByGroupAsync(
+        string operationGroupId,
+        OperationItemQuery query,
+        CancellationToken cancellationToken = default)
+    {
+        query ??= new OperationItemQuery();
+        var (skip, take) = OperationItemizationBounds.ClampPaging(query.Skip, query.Take);
+
+        if (string.IsNullOrWhiteSpace(operationGroupId))
+            return new OperationItemPage([], 0, skip, take);
+
+        var q = _db.OperationItems.AsNoTracking()
+            .Where(i => i.OperationGroupId == operationGroupId);
+
+        if (!string.IsNullOrWhiteSpace(query.Status))
+        {
+            var status = query.Status.Trim();
+            q = q.Where(i => i.Status == status);
+        }
+
+        if (query.RetryableOnly == true)
+            q = q.Where(i => i.IsRetryable);
+
+        if (!string.IsNullOrWhiteSpace(query.Q))
+        {
+            var term = query.Q.Trim();
+            q = q.Where(i =>
+                (i.SubjectKey != null && i.SubjectKey.Contains(term))
+                || (i.DisplayLabel != null && i.DisplayLabel.Contains(term)));
+        }
+
+        var total = await q.CountAsync(cancellationToken).ConfigureAwait(false);
+        var rows = await q
+            .OrderBy(i => i.Sequence)
+            .Skip(skip)
+            .Take(take)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        return new OperationItemPage(rows.Select(MapItem).ToArray(), total, skip, take);
+    }
+
+    public async Task<OperationItemizationRunSummary> GetRunSummaryAsync(
+        string runId,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(runId))
+            return new OperationItemizationRunSummary(0, 0, 0, false);
+
+        var aggregates = await _db.OperationGroups
+            .AsNoTracking()
+            .Where(g => g.RunId == runId)
+            .GroupBy(_ => 1)
+            .Select(g => new
+            {
+                GroupCount = g.Count(),
+                FailedItemCount = g.Sum(x => x.FailedCount),
+                SkippedItemCount = g.Sum(x => x.SkippedCount),
+            })
+            .FirstOrDefaultAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        if (aggregates is null)
+            return new OperationItemizationRunSummary(0, 0, 0, false);
+
+        return new OperationItemizationRunSummary(
+            aggregates.GroupCount,
+            aggregates.FailedItemCount,
+            aggregates.SkippedItemCount,
+            aggregates.GroupCount > 0);
+    }
+
     private static OperationGroup MapGroup(OperationGroupEntity e) =>
         new(
             e.Id,

@@ -75,3 +75,24 @@ public sealed record CompleteOperationGroupRequest(
     int SkippedCount,
     string? SummaryJson = null,
     DateTimeOffset? CompletedAtUtc = null);
+
+/// <summary>SDK-3B read filters for paged operation items within a group.</summary>
+public sealed record OperationItemQuery(
+    string? Status = null,
+    bool? RetryableOnly = null,
+    string? Q = null,
+    int Skip = 0,
+    int Take = 50);
+
+public sealed record OperationItemPage(
+    IReadOnlyList<OperationItem> Items,
+    int TotalCount,
+    int Skip,
+    int Take);
+
+/// <summary>Lightweight per-run aggregates for run detail (no item payload).</summary>
+public sealed record OperationItemizationRunSummary(
+    int GroupCount,
+    int FailedItemCount,
+    int SkippedItemCount,
+    bool HasOperationItems);

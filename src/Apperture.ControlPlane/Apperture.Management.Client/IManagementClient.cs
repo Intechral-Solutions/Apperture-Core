@@ -25,6 +25,14 @@ public interface IManagementClient
     Task<RunDetailDto?> GetRunAsync(string runId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<ControlActionAvailabilityDto>> GetRunActionsAsync(string runId, CancellationToken cancellationToken = default);
     Task<RunTimelineDto?> GetRunTimelineAsync(string runId, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<OperationGroupSummaryDto>?> GetRunOperationGroupsAsync(
+        string runId,
+        CancellationToken cancellationToken = default);
+    Task<OperationItemPageDto?> GetRunOperationGroupItemsAsync(
+        string runId,
+        string operationGroupId,
+        OperationItemListFilter? filter = null,
+        CancellationToken cancellationToken = default);
 
     Task<IReadOnlyList<OperationDefinitionDto>> GetOperationsAsync(CancellationToken cancellationToken = default);
     Task<OperationDefinitionDto?> GetOperationAsync(string operationDefinitionId, CancellationToken cancellationToken = default);
@@ -1098,7 +1106,64 @@ public sealed record RunDetailDto(
     string ExecutionKind = "workflow",
     RunForensicContextDto? ForensicContext = null,
     string? IntegrationId = null,
-    string? ProcedureId = null);
+    string? ProcedureId = null,
+    RunOperationItemizationSummaryDto? OperationItemization = null);
+
+public sealed record RunOperationItemizationSummaryDto(
+    int GroupCount,
+    int FailedItemCount,
+    int SkippedItemCount,
+    bool HasOperationItems);
+
+public sealed record OperationGroupSummaryDto(
+    string OperationGroupId,
+    string RunId,
+    string? IntegrationId,
+    string ModuleId,
+    string? ProcedureId,
+    string OperationKind,
+    string? SourceLabel,
+    string Status,
+    int TotalCount,
+    int SucceededCount,
+    int FailedCount,
+    int SkippedCount,
+    DateTimeOffset StartedAtUtc,
+    DateTimeOffset? CompletedAtUtc,
+    string? SummaryJson,
+    string? MetadataJson);
+
+public sealed record OperationItemSummaryDto(
+    string OperationItemId,
+    string OperationGroupId,
+    string RunId,
+    int Sequence,
+    string? SubjectKey,
+    string? DisplayLabel,
+    string Status,
+    string? ErrorCode,
+    string? ErrorMessage,
+    bool IsRetryable,
+    int RetryCount,
+    DateTimeOffset? LastAttemptedAtUtc,
+    DateTimeOffset? CompletedAtUtc,
+    string? ChangeSummaryJson,
+    string? MetadataJson,
+    DateTimeOffset CreatedAtUtc,
+    DateTimeOffset UpdatedAtUtc);
+
+public sealed record OperationItemPageDto(
+    IReadOnlyList<OperationItemSummaryDto> Items,
+    int TotalCount,
+    int Skip,
+    int Take);
+
+public sealed record OperationItemListFilter(
+    string? Status = null,
+    bool? RetryableOnly = null,
+    string? Q = null,
+    int Skip = 0,
+    int Take = 50);
 
 public sealed record RunResultDto(
     string Outcome,

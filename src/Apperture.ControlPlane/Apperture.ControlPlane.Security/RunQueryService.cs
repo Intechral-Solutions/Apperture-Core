@@ -1,3 +1,4 @@
+using Apperture.Core.Application.OperationItems;
 using Apperture.Core.Application.RuntimeComposition;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Operations;
@@ -20,6 +21,7 @@ public sealed class RunQueryService : IRunQueryService
     private readonly IOperationRunReadAuthorizationService _operationAuthz;
     private readonly IWorkflowDefinitionResolver _workflowDefinitions;
     private readonly IRuntimeModuleCompositionQueryService _composition;
+    private readonly IOperationItemStore? _operationItems;
 
     public RunQueryService(
         AppertureDbContext db,
@@ -28,7 +30,8 @@ public sealed class RunQueryService : IRunQueryService
         IWorkflowRunReadAuthorizationService workflowAuthz,
         IOperationRunReadAuthorizationService operationAuthz,
         IWorkflowDefinitionResolver workflowDefinitions,
-        IRuntimeModuleCompositionQueryService composition)
+        IRuntimeModuleCompositionQueryService composition,
+        IOperationItemStore? operationItems = null)
     {
         _db = db;
         _operations = operations;
@@ -37,6 +40,7 @@ public sealed class RunQueryService : IRunQueryService
         _operationAuthz = operationAuthz;
         _workflowDefinitions = workflowDefinitions;
         _composition = composition;
+        _operationItems = operationItems;
     }
 
     public async ValueTask<IReadOnlyList<RunSummaryDto>> ListRunsAsync(RunQueryFilter? filter = null, CancellationToken cancellationToken = default)
@@ -434,7 +438,8 @@ public sealed class RunQueryService : IRunQueryService
                 RunKindNames.Workflow,
                 forensic,
                 r.IntegrationId,
-                r.ProcedureId);
+                r.ProcedureId,
+                await TryGetOperationItemizationSummaryAsync(r.Id, cancellationToken).ConfigureAwait(false));
         }
 
         var operationInstance = await _db.OperationInstances.AsNoTracking()
@@ -515,7 +520,31 @@ public sealed class RunQueryService : IRunQueryService
             RunKindNames.Operation,
             opForensic,
             r.IntegrationId,
-            r.ProcedureId);
+            r.ProcedureId,
+            await TryGetOperationItemizationSummaryAsync(r.Id, cancellationToken).ConfigureAwait(false));
+    }
+
+    private async Task<RunOperationItemizationSummaryDto?> TryGetOperationItemizationSummaryAsync(
+        string runId,
+        CancellationToken cancellationToken)
+    {
+        if (_operationItems is null)
+            return null;
+
+        try
+        {
+            var summary = await _operationItems.GetRunSummaryAsync(runId, cancellationToken).ConfigureAwait(false);
+            return new RunOperationItemizationSummaryDto(
+                summary.GroupCount,
+                summary.FailedItemCount,
+                summary.SkippedItemCount,
+                summary.HasOperationItems);
+        }
+        catch
+        {
+            // Run detail must not fail when itemization store is unavailable; summary is optional.
+            return null;
+        }
     }
 
     private async ValueTask<RunForensicContextDto> BuildForensicContextAsync(

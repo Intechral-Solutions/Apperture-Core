@@ -114,6 +114,41 @@ public sealed class OperationItemizationSqlServerTests
     }
 
     [Fact]
+    public async Task Sql_store_QueryItems_filters_and_GetRunSummary()
+    {
+        await using var db = await TryCreateMigratedDbAsync();
+        if (db is null)
+            return;
+
+        IOperationItemStore store = new SqlOperationItemStore(db);
+        var runId = "sdk3b-" + Guid.NewGuid().ToString("N")[..12];
+
+        var group = await store.BeginGroupAsync(new BeginOperationGroupRequest(
+            runId, "Sample.FileImport", null, null, "file.import", "batch"));
+        await store.AppendItemAsync(new AppendOperationItemRequest(
+            group.OperationGroupId, runId, 1, OperationItemStatuses.Failed, "X-1", IsRetryable: true));
+        await store.AppendItemAsync(new AppendOperationItemRequest(
+            group.OperationGroupId, runId, 2, OperationItemStatuses.Succeeded, "X-2"));
+        await store.CompleteGroupAsync(new CompleteOperationGroupRequest(
+            group.OperationGroupId, OperationGroupStatuses.CompletedWithErrors, 2, 1, 1, 0));
+
+        var page = await store.QueryItemsByGroupAsync(
+            group.OperationGroupId,
+            new OperationItemQuery(Status: OperationItemStatuses.Failed, RetryableOnly: true));
+        page.TotalCount.Should().Be(1);
+        page.Items.Single().SubjectKey.Should().Be("X-1");
+
+        var summary = await store.GetRunSummaryAsync(runId);
+        summary.GroupCount.Should().Be(1);
+        summary.FailedItemCount.Should().Be(1);
+        summary.HasOperationItems.Should().BeTrue();
+
+        db.OperationItems.RemoveRange(db.OperationItems.Where(i => i.RunId == runId));
+        db.OperationGroups.RemoveRange(db.OperationGroups.Where(g => g.RunId == runId));
+        await db.SaveChangesAsync();
+    }
+
+    [Fact]
     public async Task AddOperationItemizationPersistence_registers_Sql_store()
     {
         var cs = SqlServerTestConfiguration.GetConnectionString()

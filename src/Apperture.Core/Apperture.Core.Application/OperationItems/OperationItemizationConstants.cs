@@ -50,4 +50,16 @@ public static class OperationItemizationBounds
     public const int SummaryJsonMaxChars = 2048;
     public const int ChangeSummaryJsonMaxChars = 2048;
     public const int MetadataJsonMaxChars = 4096;
+
+    public const int DefaultItemPageTake = 50;
+    public const int MaxItemPageTake = 200;
+
+    public static (int Skip, int Take) ClampPaging(int skip, int take)
+    {
+        var s = Math.Max(0, skip);
+        var t = take <= 0
+            ? DefaultItemPageTake
+            : Math.Clamp(take, 1, MaxItemPageTake);
+        return (s, t);
+    }
 }

@@ -16,4 +16,13 @@ public interface IOperationItemStore
     Task<IReadOnlyList<OperationItem>> GetItemsByGroupAsync(string operationGroupId, CancellationToken cancellationToken = default);
 
     Task<IReadOnlyList<OperationGroup>> GetGroupsByRunAsync(string runId, CancellationToken cancellationToken = default);
+
+    Task<OperationItemPage> QueryItemsByGroupAsync(
+        string operationGroupId,
+        OperationItemQuery query,
+        CancellationToken cancellationToken = default);
+
+    Task<OperationItemizationRunSummary> GetRunSummaryAsync(
+        string runId,
+        CancellationToken cancellationToken = default);
 }

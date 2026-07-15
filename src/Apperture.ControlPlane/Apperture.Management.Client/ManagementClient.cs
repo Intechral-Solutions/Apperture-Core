@@ -112,6 +112,39 @@ public sealed class ManagementClient : IManagementClient
         return await _http.GetFromJsonAsync<RunTimelineDto>($"runs/{runId}/timeline", cancellationToken).ConfigureAwait(false);
     }
 
+    public async Task<IReadOnlyList<OperationGroupSummaryDto>?> GetRunOperationGroupsAsync(
+        string runId,
+        CancellationToken cancellationToken = default)
+    {
+        return await _http.GetFromJsonAsync<IReadOnlyList<OperationGroupSummaryDto>>(
+            $"runs/{Uri.EscapeDataString(runId)}/operation-groups",
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<OperationItemPageDto?> GetRunOperationGroupItemsAsync(
+        string runId,
+        string operationGroupId,
+        OperationItemListFilter? filter = null,
+        CancellationToken cancellationToken = default)
+    {
+        filter ??= new OperationItemListFilter();
+        var qs = new List<string>
+        {
+            $"skip={filter.Skip}",
+            $"take={filter.Take}",
+        };
+        if (!string.IsNullOrWhiteSpace(filter.Status))
+            qs.Add($"status={Uri.EscapeDataString(filter.Status)}");
+        if (filter.RetryableOnly is not null)
+            qs.Add($"retryableOnly={filter.RetryableOnly.Value.ToString().ToLowerInvariant()}");
+        if (!string.IsNullOrWhiteSpace(filter.Q))
+            qs.Add($"q={Uri.EscapeDataString(filter.Q)}");
+
+        var path =
+            $"runs/{Uri.EscapeDataString(runId)}/operation-groups/{Uri.EscapeDataString(operationGroupId)}/items?{string.Join("&", qs)}";
+        return await _http.GetFromJsonAsync<OperationItemPageDto>(path, cancellationToken).ConfigureAwait(false);
+    }
+
     public async Task<CancelRunResult> CancelRunAsync(string runId, CancellationToken cancellationToken = default)
     {
         var response = await _http.PostAsync($"runs/{runId}/cancel", content: null, cancellationToken).ConfigureAwait(false);

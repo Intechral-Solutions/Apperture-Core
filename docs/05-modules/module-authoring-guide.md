@@ -64,9 +64,19 @@ This guide is for developers building **Apperture modules**: workflow-centric pa
 
 **Relation to Sample.FileImport (SDK-2):** Process-local `IImportOutcomeStore` remains the sample’s in-process shape. **SDK-3C** adapts FileImport to this platform writer. **SDK-3B** adds read APIs; **SDK-3D** adds the run-detail itemization panel.
 
-**Persistence:** Host registers `AddOperationItemizationPersistence()` (Worker Host). Migration `20260715180000_Sdk3A_OperationItemization` creates `OperationGroups` / `OperationItems`. Unit coverage uses `InMemoryOperationItemStore`; SQL round-trip is `OperationItemizationSqlServerTests` (soft-skips without `APPERTURE_TEST_SQL_*`).
+**Persistence:** Host registers `AddOperationItemizationPersistence()` (Worker Host + Management Host). Migration `20260715180000_Sdk3A_OperationItemization` creates `OperationGroups` / `OperationItems`. Unit coverage uses `InMemoryOperationItemStore`; SQL round-trip is `OperationItemizationSqlServerTests` (soft-skips without `APPERTURE_TEST_SQL_*`).
 
-**Audit:** [sdk3-itemized-operation-model-design-audit.md](../audits/sdk3-itemized-operation-model-design-audit.md)
+**Read APIs (SDK-3B):** Management exposes:
+
+* `GET /api/runs/{runId}/operation-groups` — group summaries for the run  
+* `GET /api/runs/{runId}/operation-groups/{groupId}/items?status=&retryableOnly=&q=&skip=&take=` — paged items  
+
+Same run-read authorization as run detail/timeline. Missing run → 404; no groups/items → empty 200. Client: `GetRunOperationGroupsAsync` / `GetRunOperationGroupItemsAsync`. Run detail includes optional `operationItemization` summary (`groupCount`, `failedItemCount`, `skippedItemCount`, `hasOperationItems`) — **not** full item lists.
+
+**Deferred:** UI panel (**SDK-3D**), FileImport adapter (**SDK-3C**), per-item retry (**SDK-4**). Retry fields (`isRetryable`, `retryCount`, `lastAttemptedAtUtc`) are readable now.
+
+**Audit:** [sdk3-itemized-operation-model-design-audit.md](../audits/sdk3-itemized-operation-model-design-audit.md)  
+**Plan:** [2026-07-15-sdk3b-operation-itemization-read-apis.md](../superpowers/plans/2026-07-15-sdk3b-operation-itemization-read-apis.md)
 
 ---
 

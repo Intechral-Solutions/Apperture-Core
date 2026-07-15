@@ -143,7 +143,8 @@ public sealed record RunDetailDto(
     string ExecutionKind = "workflow",
     RunForensicContextDto? ForensicContext = null,
     string? IntegrationId = null,
-    string? ProcedureId = null);
+    string? ProcedureId = null,
+    RunOperationItemizationSummaryDto? OperationItemization = null);
 
 /// <summary>
 /// Terminal run result projection for <c>GET /runs/{id}</c>. <see cref="Outcome"/> is derived from lifecycle status.

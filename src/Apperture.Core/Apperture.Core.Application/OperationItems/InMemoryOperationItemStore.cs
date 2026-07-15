@@ -146,4 +146,57 @@ public sealed class InMemoryOperationItemStore : IOperationItemStore
                 .OrderBy(g => g.StartedAtUtc)
                 .ToArray());
     }
+
+    public Task<OperationItemPage> QueryItemsByGroupAsync(
+        string operationGroupId,
+        OperationItemQuery query,
+        CancellationToken cancellationToken = default)
+    {
+        _ = cancellationToken;
+        query ??= new OperationItemQuery();
+        var (skip, take) = OperationItemizationBounds.ClampPaging(query.Skip, query.Take);
+
+        lock (_gate)
+        {
+            if (!_items.TryGetValue(operationGroupId, out var list))
+                return Task.FromResult(new OperationItemPage([], 0, skip, take));
+
+            IEnumerable<OperationItem> filtered = list;
+            if (!string.IsNullOrWhiteSpace(query.Status))
+                filtered = filtered.Where(i => string.Equals(i.Status, query.Status, StringComparison.Ordinal));
+            if (query.RetryableOnly == true)
+                filtered = filtered.Where(i => i.IsRetryable);
+            if (!string.IsNullOrWhiteSpace(query.Q))
+            {
+                var term = query.Q.Trim();
+                filtered = filtered.Where(i =>
+                    (i.SubjectKey is not null && i.SubjectKey.Contains(term, StringComparison.OrdinalIgnoreCase))
+                    || (i.DisplayLabel is not null && i.DisplayLabel.Contains(term, StringComparison.OrdinalIgnoreCase)));
+            }
+
+            var matched = filtered.OrderBy(i => i.Sequence).ToArray();
+            var page = matched.Skip(skip).Take(take).ToArray();
+            return Task.FromResult(new OperationItemPage(page, matched.Length, skip, take));
+        }
+    }
+
+    public Task<OperationItemizationRunSummary> GetRunSummaryAsync(
+        string runId,
+        CancellationToken cancellationToken = default)
+    {
+        _ = cancellationToken;
+        if (string.IsNullOrWhiteSpace(runId))
+            return Task.FromResult(new OperationItemizationRunSummary(0, 0, 0, false));
+
+        var groups = _groups.Values
+            .Where(g => string.Equals(g.RunId, runId, StringComparison.Ordinal))
+            .ToArray();
+
+        return Task.FromResult(new OperationItemizationRunSummary(
+            GroupCount: groups.Length,
+            FailedItemCount: groups.Sum(g => g.FailedCount),
+            SkippedItemCount: groups.Sum(g => g.SkippedCount),
+            HasOperationItems: groups.Length > 0));
+    }
+
 }
