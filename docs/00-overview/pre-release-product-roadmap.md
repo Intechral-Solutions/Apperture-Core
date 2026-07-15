@@ -59,6 +59,9 @@ This is **not** a release-candidate plan. Completing a row does not make Appertu
 
 **PFB-1 recommendation:** prioritize this track next (see baseline audit §12).
 
+**SDK-1 (closed):** strategy + capability map — [`docs/audits/sdk1-demo-module-strategy-and-sdk-contract-audit.md`](../audits/sdk1-demo-module-strategy-and-sdk-contract-audit.md).  
+**Next epic:** **SDK-2 File Import Demo** (then SDK-3 Itemized Operation Model → API Sync → Config Metadata → File Drop → Cross-Integration).
+
 ---
 
 ## Track 4 — Systems / Applications / Services Model
