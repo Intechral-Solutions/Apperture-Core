@@ -60,7 +60,7 @@ This is **not** a release-candidate plan. Completing a row does not make Appertu
 **PFB-1 recommendation:** prioritize this track next (see baseline audit §12).
 
 **SDK-1 (closed):** strategy + capability map — [`docs/audits/sdk1-demo-module-strategy-and-sdk-contract-audit.md`](../audits/sdk1-demo-module-strategy-and-sdk-contract-audit.md).  
-**Next epic:** **SDK-3 Itemized Operation Model** (after SDK-2 `Sample.FileImport` delivered process-local row outcomes and partial-failure signals).
+**Next epic:** **SDK-3A Operation Itemization Persistence & Writer** (then 3B read APIs → 3C FileImport adapter → 3D run-detail panel → SDK-4 per-item retry). See [`sdk3-itemized-operation-model-design-audit.md`](../audits/sdk3-itemized-operation-model-design-audit.md).
 
 ---
 
