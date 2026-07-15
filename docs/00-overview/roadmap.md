@@ -47,7 +47,7 @@ Highlights:
 - Module UI / configuration / template foundations
 
 **Recommended next implementation track (PFB-1):** SDK & Demo Module Validation.  
-**SDK-3 design audit closed** — [`docs/audits/sdk3-itemized-operation-model-design-audit.md`](../audits/sdk3-itemized-operation-model-design-audit.md) (hybrid OperationGroup/Item; retry deferred). **Next epic: SDK-3A Persistence & Writer.**
+**SDK-3A in progress / foundation** — durable OperationGroup/Item store + writer (see design audit). **Next after 3A: SDK-3B read APIs.**
 
 ## Deferred until after major product work
 

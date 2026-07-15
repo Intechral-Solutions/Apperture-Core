@@ -46,6 +46,28 @@ This guide is for developers building **Apperture modules**: workflow-centric pa
 
 **Notification seed:** Built-in definition for `import.completed.with.errors` (HelloWorld-sized). Subscribe to validate partial-failure → notification path.
 
+## Operation itemization (SDK-3A)
+
+**Purpose:** Platform-durable **operation groups** and **operation items** for business-facing outcome history (rows, records, files)—not merely run-log lines. Workflow **step instances** remain supporting platform diagnostics.
+
+**Hybrid model:** Platform owns SQL tables `OperationGroups` / `OperationItems`. Modules write through `IOperationItemWriter` on `context.Signals.OperationItems`.
+
+**Writer lifecycle (append-oriented):**
+
+1. `BeginGroupAsync(operationKind, sourceLabel?)` — requires platform `RunId` on the step context  
+2. `AppendItemAsync(...)` — subject key, display label, status, bounded change summary / metadata  
+3. `CompleteGroupAsync(...)` — terminal group status + counts (`Succeeded` / `CompletedWithErrors` / `Failed`)
+
+**Safety rules:** No secrets; no raw files; no silent truncation; JSON fields bounded (see `OperationItemizationBounds`). Missing `RunId` or unregistered store fails loudly.
+
+**Retry fields:** `IsRetryable`, `RetryCount`, `LastAttemptedAtUtc` persist for future use. **Per-item retry execution/UI is SDK-4**, not SDK-3A.
+
+**Relation to Sample.FileImport (SDK-2):** Process-local `IImportOutcomeStore` remains the sample’s in-process shape. **SDK-3C** adapts FileImport to this platform writer. **SDK-3B** adds read APIs; **SDK-3D** adds the run-detail itemization panel.
+
+**Persistence:** Host registers `AddOperationItemizationPersistence()` (Worker Host). Migration `20260715180000_Sdk3A_OperationItemization` creates `OperationGroups` / `OperationItems`. Unit coverage uses `InMemoryOperationItemStore`; SQL round-trip is `OperationItemizationSqlServerTests` (soft-skips without `APPERTURE_TEST_SQL_*`).
+
+**Audit:** [sdk3-itemized-operation-model-design-audit.md](../audits/sdk3-itemized-operation-model-design-audit.md)
+
 ---
 
 ## 1. What a module is

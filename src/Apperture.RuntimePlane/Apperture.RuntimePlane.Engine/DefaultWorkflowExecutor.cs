@@ -1,4 +1,5 @@
 using Apperture.Core.Application.Execution;
+using Apperture.Core.Application.OperationItems;
 using Apperture.Core.Application.Services;
 using Apperture.ModuleSdk.Abstractions.Signals;
 using Apperture.RuntimePlane.Abstractions;
@@ -20,6 +21,7 @@ public sealed class DefaultWorkflowExecutor : IWorkflowExecutor
     private readonly IModuleOperationalLogger _operationalLogger;
     private readonly IModuleTelemetry _moduleTelemetry;
     private readonly ILoggerFactory _loggerFactory;
+    private readonly IOperationItemStore? _operationItemStore;
 
     public DefaultWorkflowExecutor(
         IRuntimeSlotResolver resolver,
@@ -30,7 +32,8 @@ public sealed class DefaultWorkflowExecutor : IWorkflowExecutor
             NullModulePlatformEventEmitter.Instance,
             NullModuleOperationalLogger.Instance,
             NoOpModuleTelemetry.Instance,
-            NullLoggerFactory.Instance)
+            NullLoggerFactory.Instance,
+            operationItemStore: null)
     {
     }
 
@@ -44,7 +47,8 @@ public sealed class DefaultWorkflowExecutor : IWorkflowExecutor
             modulePlatformEvents,
             NullModuleOperationalLogger.Instance,
             NoOpModuleTelemetry.Instance,
-            NullLoggerFactory.Instance)
+            NullLoggerFactory.Instance,
+            operationItemStore: null)
     {
     }
 
@@ -54,7 +58,8 @@ public sealed class DefaultWorkflowExecutor : IWorkflowExecutor
         IModulePlatformEventEmitter modulePlatformEvents,
         IModuleOperationalLogger operationalLogger,
         IModuleTelemetry moduleTelemetry,
-        ILoggerFactory loggerFactory)
+        ILoggerFactory loggerFactory,
+        IOperationItemStore? operationItemStore = null)
     {
         _resolver = resolver ?? throw new ArgumentNullException(nameof(resolver));
         _registry = registry ?? throw new ArgumentNullException(nameof(registry));
@@ -62,6 +67,7 @@ public sealed class DefaultWorkflowExecutor : IWorkflowExecutor
         _operationalLogger = operationalLogger ?? throw new ArgumentNullException(nameof(operationalLogger));
         _moduleTelemetry = moduleTelemetry ?? throw new ArgumentNullException(nameof(moduleTelemetry));
         _loggerFactory = loggerFactory ?? throw new ArgumentNullException(nameof(loggerFactory));
+        _operationItemStore = operationItemStore;
     }
 
     /// <inheritdoc />
@@ -106,7 +112,8 @@ public sealed class DefaultWorkflowExecutor : IWorkflowExecutor
             _operationalLogger,
             _moduleTelemetry,
             _loggerFactory,
-            stepName);
+            stepName,
+            _operationItemStore);
         var parametersDict = parameters ?? new Dictionary<string, object?>();
         return await handler.ExecuteAsync(context, parametersDict, cancellationToken);
     }

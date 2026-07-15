@@ -115,4 +115,14 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ISchedulerDispatchHeartbeatStore, SqlSchedulerDispatchHeartbeatStore>();
         return services;
     }
+
+    /// <summary>
+    /// Registers durable operation itemization store (SDK-3A).
+    /// Requires AddApperturePersistence (DbContext) to be registered first.
+    /// </summary>
+    public static IServiceCollection AddOperationItemizationPersistence(this IServiceCollection services)
+    {
+        services.AddScoped<Apperture.Core.Application.OperationItems.IOperationItemStore, SqlOperationItemStore>();
+        return services;
+    }
 }

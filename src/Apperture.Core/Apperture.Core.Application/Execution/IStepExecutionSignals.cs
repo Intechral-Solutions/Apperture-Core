@@ -1,3 +1,4 @@
+using Apperture.Core.Application.OperationItems;
 using Apperture.ModuleSdk.Abstractions.Signals;
 
 namespace Apperture.Core.Application.Execution;
@@ -19,4 +20,9 @@ public interface IStepExecutionSignals
 
     /// <summary>Correlation fields for emit and logging scopes.</summary>
     IModulePlatformEmitContext Correlation { get; }
+
+    /// <summary>
+    /// Durable operation itemization writer (SDK-3A). Fail-loud when store is unregistered or RunId is missing.
+    /// </summary>
+    IOperationItemWriter OperationItems { get; }
 }

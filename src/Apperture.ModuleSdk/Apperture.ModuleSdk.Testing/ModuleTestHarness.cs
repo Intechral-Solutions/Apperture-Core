@@ -81,7 +81,8 @@ public sealed class ModuleTestHarness
             _options.ScheduleId,
             _options.CorrelationId,
             _options.CausationId,
-            _options.SlotResolver);
+            _options.SlotResolver,
+            _options.OperationItemStore);
     }
 
     /// <summary>Invokes a step handler with <see cref="CreateStepContext"/>.</summary>

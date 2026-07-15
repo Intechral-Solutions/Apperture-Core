@@ -1,4 +1,5 @@
 using Apperture.Core.Application.Execution;
+using Apperture.Core.Application.OperationItems;
 using Apperture.Core.Application.Services;
 using Apperture.ModuleSdk.Abstractions.Signals;
 using Apperture.RuntimePlane.Abstractions;
@@ -31,7 +32,8 @@ public sealed class StepExecutionContext : IStepExecutionContext
             operationalLogger: null,
             telemetry: null,
             loggerFactory: null,
-            stepName: null)
+            stepName: null,
+            operationItemStore: null)
     {
     }
 
@@ -44,7 +46,8 @@ public sealed class StepExecutionContext : IStepExecutionContext
         IModuleOperationalLogger? operationalLogger,
         IModuleTelemetry? telemetry,
         ILoggerFactory? loggerFactory,
-        string? stepName)
+        string? stepName,
+        IOperationItemStore? operationItemStore = null)
     {
         _resolver = resolver ?? throw new ArgumentNullException(nameof(resolver));
         _moduleId = moduleId ?? throw new ArgumentNullException(nameof(moduleId));
@@ -61,7 +64,11 @@ public sealed class StepExecutionContext : IStepExecutionContext
         var logLogger = loggerFactory?.CreateLogger<CorrelatedModuleOperationalLogger>();
         var logs = new CorrelatedModuleOperationalLogger(innerLogs, this, stepName, logLogger);
 
-        Signals = new StepExecutionSignals(this, events, logs, tel);
+        IOperationItemWriter writer = operationItemStore is null
+            ? NullOperationItemWriter.Instance
+            : new ContextBoundOperationItemWriter(operationItemStore, this);
+
+        Signals = new StepExecutionSignals(this, events, logs, tel, writer);
         PlatformEvents = Signals.Events;
     }
 

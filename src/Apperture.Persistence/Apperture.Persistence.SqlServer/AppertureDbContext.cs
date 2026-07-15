@@ -66,6 +66,8 @@ public class AppertureDbContext : DbContext
     public DbSet<ManagedContactEntity> ManagedContacts => Set<ManagedContactEntity>();
     public DbSet<ManagedContactIdentityLinkEntity> ManagedContactIdentityLinks => Set<ManagedContactIdentityLinkEntity>();
     public DbSet<ManagedContactGroupEntity> ManagedContactGroups => Set<ManagedContactGroupEntity>();
+    public DbSet<OperationGroupEntity> OperationGroups => Set<OperationGroupEntity>();
+    public DbSet<OperationItemEntity> OperationItems => Set<OperationItemEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -911,6 +913,46 @@ public class AppertureDbContext : DbContext
             e.Property(x => x.Source).HasMaxLength(32);
             e.Property(x => x.EntraGroupObjectId).HasMaxLength(64);
             e.HasIndex(x => x.EntraGroupObjectId).IsUnique();
+        });
+
+        modelBuilder.Entity<OperationGroupEntity>(e =>
+        {
+            e.ToTable("OperationGroups");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasMaxLength(64);
+            e.Property(x => x.RunId).HasMaxLength(64).IsRequired();
+            e.Property(x => x.IntegrationId).HasMaxLength(64);
+            e.Property(x => x.ModuleId).HasMaxLength(128).IsRequired();
+            e.Property(x => x.ProcedureId).HasMaxLength(128);
+            e.Property(x => x.OperationKind).HasMaxLength(64).IsRequired();
+            e.Property(x => x.SourceLabel).HasMaxLength(256);
+            e.Property(x => x.Status).HasMaxLength(32).IsRequired();
+            e.Property(x => x.SummaryJson).HasMaxLength(2048);
+            e.Property(x => x.MetadataJson).HasMaxLength(4096);
+            e.HasIndex(x => x.RunId);
+            e.HasMany(x => x.Items)
+                .WithOne(x => x.Group!)
+                .HasForeignKey(x => x.OperationGroupId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<OperationItemEntity>(e =>
+        {
+            e.ToTable("OperationItems");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasMaxLength(64);
+            e.Property(x => x.OperationGroupId).HasMaxLength(64).IsRequired();
+            e.Property(x => x.RunId).HasMaxLength(64).IsRequired();
+            e.Property(x => x.SubjectKey).HasMaxLength(256);
+            e.Property(x => x.DisplayLabel).HasMaxLength(256);
+            e.Property(x => x.Status).HasMaxLength(32).IsRequired();
+            e.Property(x => x.ErrorCode).HasMaxLength(64);
+            e.Property(x => x.ErrorMessage).HasMaxLength(1024);
+            e.Property(x => x.ChangeSummaryJson).HasMaxLength(2048);
+            e.Property(x => x.MetadataJson).HasMaxLength(4096);
+            e.HasIndex(x => x.RunId);
+            e.HasIndex(x => new { x.RunId, x.Status });
+            e.HasIndex(x => new { x.OperationGroupId, x.Sequence });
         });
     }
 }

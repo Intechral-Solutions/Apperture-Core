@@ -1,3 +1,4 @@
+using Apperture.Core.Application.OperationItems;
 using Apperture.ModuleSdk.Abstractions;
 
 namespace Apperture.ModuleSdk.Testing;
@@ -57,6 +58,13 @@ public sealed class ModuleTestHarnessBuilder
     public ModuleTestHarnessBuilder WithSlotResolver(Func<string, object?> slotResolver)
     {
         _options.SlotResolver = slotResolver;
+        return this;
+    }
+
+    /// <summary>Wires an <see cref="IOperationItemStore"/> for durable itemization tests (SDK-3A).</summary>
+    public ModuleTestHarnessBuilder WithOperationItemStore(IOperationItemStore store)
+    {
+        _options.OperationItemStore = store ?? throw new ArgumentNullException(nameof(store));
         return this;
     }
 

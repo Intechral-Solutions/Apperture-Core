@@ -77,6 +77,7 @@ try
     builder.Services.AddApperturePersistence(
         sp => sp.GetRequiredService<IBootstrapConnectionProfile>().ConnectionString);
     builder.Services.AddAppertureSqlSecrets();
+    builder.Services.AddOperationItemizationPersistence();
     builder.Services.AddSingleton<IEnvironmentContext, RuntimeEnvironmentContext>();
     builder.Services.AddScoped<IAuditService, SqlAuditService>();
     builder.Services.AddScoped<IModuleRegistryService, SqlModuleRegistryService>();
@@ -155,7 +156,8 @@ builder.Services.AddWorkerHostIntegrationRepository();
         sp.GetRequiredService<IModulePlatformEventEmitter>(),
         sp.GetRequiredService<IModuleOperationalLogger>(),
         sp.GetRequiredService<IModuleTelemetry>(),
-        sp.GetRequiredService<ILoggerFactory>()));
+        sp.GetRequiredService<ILoggerFactory>(),
+        sp.GetService<Apperture.Core.Application.OperationItems.IOperationItemStore>()));
 
     builder.Services.AddHostedService<StartRequestWorker>();
     builder.Services.AddHostedService<ScheduleDispatchBackgroundService>();

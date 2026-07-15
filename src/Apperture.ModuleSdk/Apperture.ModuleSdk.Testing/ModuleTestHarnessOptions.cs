@@ -18,4 +18,7 @@ public sealed class ModuleTestHarnessOptions
     public bool PlatformEventsEnabled { get; set; } = true;
 
     public Func<string, object?>? SlotResolver { get; set; }
+
+    /// <summary>Optional in-memory/durable store for SDK-3A operation itemization tests.</summary>
+    public Apperture.Core.Application.OperationItems.IOperationItemStore? OperationItemStore { get; set; }
 }

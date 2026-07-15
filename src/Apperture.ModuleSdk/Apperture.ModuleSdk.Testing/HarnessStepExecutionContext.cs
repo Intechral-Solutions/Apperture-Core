@@ -1,9 +1,10 @@
 using Apperture.Core.Application.Execution;
+using Apperture.Core.Application.OperationItems;
 using Apperture.ModuleSdk.Abstractions.Signals;
 
 namespace Apperture.ModuleSdk.Testing;
 
-/// <summary>Test <see cref="IStepExecutionContext"/> for module harness (Epic 103C).</summary>
+/// <summary>Test <see cref="IStepExecutionContext"/> for module harness (Epic 103C / SDK-3A).</summary>
 public sealed class HarnessStepExecutionContext : IStepExecutionContext
 {
     private readonly Func<string, object?>? _slotResolver;
@@ -19,7 +20,8 @@ public sealed class HarnessStepExecutionContext : IStepExecutionContext
         string? scheduleId = null,
         string? correlationId = null,
         string? causationId = null,
-        Func<string, object?>? slotResolver = null)
+        Func<string, object?>? slotResolver = null,
+        IOperationItemStore? operationItemStore = null)
     {
         ModuleId = moduleId ?? throw new ArgumentNullException(nameof(moduleId));
         IntegrationId = integrationId;
@@ -30,7 +32,11 @@ public sealed class HarnessStepExecutionContext : IStepExecutionContext
         CausationId = causationId;
         _slotResolver = slotResolver;
 
-        Signals = new HarnessStepExecutionSignals(this, events, logs, telemetry);
+        IOperationItemWriter writer = operationItemStore is null
+            ? NullOperationItemWriter.Instance
+            : new ContextBoundOperationItemWriter(operationItemStore, this);
+
+        Signals = new HarnessStepExecutionSignals(this, events, logs, telemetry, writer);
         PlatformEvents = Signals.Events;
     }
 
