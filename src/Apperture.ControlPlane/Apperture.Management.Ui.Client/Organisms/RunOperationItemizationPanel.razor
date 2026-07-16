@@ -1,0 +1,424 @@
+@using System.Net
+@inject IManagementClient Client
+
+<ManagementSection Title="@OperationItemizationUiHelpers.SectionTitle"
+                   Subtitle="@OperationItemizationUiHelpers.SectionSubtitle"
+                   Layer="ManagementSection.UiLayer.Detail"
+                   Help="Requires modules that emit durable operation groups/items. Retryable flags are read-only until SDK-4.">
+    <Toolbar>
+        <button type="button"
+                class="ui-toolbar-btn"
+                disabled="@_groupsLoading"
+                @onclick="ReloadGroupsAsync">
+            Reload
+        </button>
+    </Toolbar>
+    <ChildContent>
+    @if (_groupsLoading && _groups is null)
+    {
+        <LoadingState Message="Loading operation groups…" />
+    }
+    else if (!string.IsNullOrEmpty(_groupsError))
+    {
+        <PageMessage Kind="PageMessageKind.Error"
+                     Title="Operation history unavailable"
+                     Message="@_groupsError">
+            <button type="button"
+                    class="ui-toolbar-btn mt-2"
+                    disabled="@_groupsLoading"
+                    @onclick="ReloadGroupsAsync">
+                Try again
+            </button>
+        </PageMessage>
+    }
+    else if (_groups is null || _groups.Count == 0)
+    {
+        <EmptyState Title="@OperationItemizationUiHelpers.EmptyTitle"
+                    Message="@OperationItemizationUiHelpers.EmptyMessage" />
+    }
+    else
+    {
+        @if (Summary is { HasOperationItems: true })
+        {
+            <div class="mb-3 text-xs text-muted">
+                @Summary.GroupCount group(s) · @Summary.FailedItemCount failed item(s) · @Summary.SkippedItemCount skipped
+            </div>
+        }
+
+        <div class="ui-page-stack gap-3">
+            @foreach (var group in _groups)
+            {
+                var expanded = string.Equals(_expandedGroupId, group.OperationGroupId, StringComparison.Ordinal);
+                <div class="rounded border border-default bg-surface p-3"
+                     data-testid="operation-group"
+                     data-operation-group-id="@group.OperationGroupId">
+                    <div class="flex flex-wrap items-start justify-between gap-2">
+                        <div class="min-w-0">
+                            <div class="flex flex-wrap items-center gap-2">
+                                <span class="text-sm font-semibold text-heading">
+                                    @OperationItemizationUiHelpers.FormatOperationKind(group.OperationKind)
+                                </span>
+                                <StatusPill Label="@group.Status"
+                                            Semantic="@OperationItemizationUiHelpers.MapGroupStatusSemantic(group.Status)" />
+                                @if (!string.IsNullOrWhiteSpace(group.SourceLabel))
+                                {
+                                    <span class="text-xs text-muted">Source: @group.SourceLabel</span>
+                                }
+                            </div>
+                            <div class="mt-1 text-xs text-body">
+                                @OperationItemizationUiHelpers.FormatGroupCounts(group)
+                            </div>
+                            @{
+                                var summaryText = OperationItemizationUiHelpers.TryFormatGroupSummaryText(group.SummaryJson);
+                            }
+                            @if (!string.IsNullOrWhiteSpace(summaryText))
+                            {
+                                <div class="mt-1 text-xs text-muted">@summaryText</div>
+                            }
+                            <div class="mt-1 text-xs text-muted">
+                                Started <TimestampDisplay Value="@group.StartedAtUtc" ShowUtcDetail="true" />
+                                @if (group.CompletedAtUtc is not null)
+                                {
+                                    <span> · Completed <TimestampDisplay Value="@group.CompletedAtUtc" ShowUtcDetail="true" /></span>
+                                }
+                            </div>
+                            <details class="mt-2">
+                                <summary class="cursor-pointer text-xs text-muted">Group technical details</summary>
+                                <div class="mt-1 space-y-1 rounded border border-default bg-surface-muted p-2 font-mono text-xs">
+                                    <div><span class="text-muted">Group id:</span> @group.OperationGroupId</div>
+                                    <div><span class="text-muted">Run id:</span> @group.RunId</div>
+                                    @if (!string.IsNullOrWhiteSpace(group.ModuleId))
+                                    {
+                                        <div><span class="text-muted">Module:</span> @group.ModuleId</div>
+                                    }
+                                    @if (!string.IsNullOrWhiteSpace(group.SummaryJson))
+                                    {
+                                        <div><span class="text-muted">Summary JSON:</span> @group.SummaryJson</div>
+                                    }
+                                    @if (!string.IsNullOrWhiteSpace(group.MetadataJson))
+                                    {
+                                        <div><span class="text-muted">Metadata:</span> @group.MetadataJson</div>
+                                    }
+                                </div>
+                            </details>
+                        </div>
+                        <button type="button"
+                                class="ui-toolbar-btn"
+                                @onclick="() => ToggleGroupAsync(group)">
+                            @(expanded ? "Hide items" : "View items")
+                        </button>
+                    </div>
+
+                    @if (expanded)
+                    {
+                        <div class="mt-3 border-t border-default pt-3">
+                            <div class="mb-2 flex flex-wrap items-center gap-2">
+                                <span class="text-xs font-semibold text-heading">Items</span>
+                                <span class="text-xs text-muted">(failed first when viewing All)</span>
+                                @foreach (var opt in OperationItemizationUiHelpers.StatusFilterOptions)
+                                {
+                                    var active = string.Equals(_itemStatusFilter, opt.Value, StringComparison.Ordinal);
+                                    <button type="button"
+                                            class="@(active ? "ui-toolbar-btn font-semibold underline" : "ui-toolbar-btn")"
+                                            aria-pressed="@active"
+                                            disabled="@_itemsLoading"
+                                            @onclick="() => SetStatusFilterAsync(opt.Value)">
+                                        @opt.Label
+                                    </button>
+                                }
+                            </div>
+
+                            @if (_itemsLoading && _items.Count == 0)
+                            {
+                                <LoadingState Message="Loading items…" />
+                            }
+                            else if (!string.IsNullOrEmpty(_itemsError))
+                            {
+                                <PageMessage Kind="PageMessageKind.Error"
+                                             Title="Items unavailable"
+                                             Message="@_itemsError">
+                                    <button type="button"
+                                            class="ui-toolbar-btn mt-2"
+                                            disabled="@_itemsLoading"
+                                            @onclick="() => LoadItemsAsync(reset: true)">
+                                        Try again
+                                    </button>
+                                </PageMessage>
+                            }
+                            else if (_items.Count == 0)
+                            {
+                                <EmptyState Message="No items match this filter." />
+                            }
+                            else
+                            {
+                                <div class="ui-data-table overflow-x-auto">
+                                    <table class="ui-data-table__table min-w-full text-left text-body">
+                                        <thead class="border-b border-default text-xs text-muted">
+                                            <tr>
+                                                <th class="px-2 py-2">#</th>
+                                                <th class="px-2 py-2">Label</th>
+                                                <th class="px-2 py-2">Key</th>
+                                                <th class="px-2 py-2">Status</th>
+                                                <th class="px-2 py-2">Error</th>
+                                                <th class="px-2 py-2">Retryable</th>
+                                                <th class="px-2 py-2">When</th>
+                                                <th class="px-2 py-2"></th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            @foreach (var item in DisplayItems)
+                                            {
+                                                var rowClass = string.Equals(item.Status, "Failed", StringComparison.Ordinal)
+                                                    ? "border-l-2 border-message-error"
+                                                    : "";
+                                                <tr class="@rowClass" data-testid="operation-item" data-status="@item.Status">
+                                                    <td class="px-2 py-2 font-mono text-xs">@item.Sequence</td>
+                                                    <td class="px-2 py-2 text-xs">@(item.DisplayLabel ?? "—")</td>
+                                                    <td class="px-2 py-2 font-mono text-xs break-all">@(item.SubjectKey ?? "—")</td>
+                                                    <td class="px-2 py-2">
+                                                        <StatusPill Label="@item.Status"
+                                                                    Semantic="@OperationItemizationUiHelpers.MapItemStatusSemantic(item.Status)" />
+                                                    </td>
+                                                    <td class="px-2 py-2 text-xs">
+                                                        @if (!string.IsNullOrWhiteSpace(item.ErrorCode) || !string.IsNullOrWhiteSpace(item.ErrorMessage))
+                                                        {
+                                                            <div class="font-mono text-xs">@(item.ErrorCode ?? "—")</div>
+                                                            <div class="text-muted break-words">@(item.ErrorMessage ?? "")</div>
+                                                        }
+                                                        else
+                                                        {
+                                                            <span class="text-muted">—</span>
+                                                        }
+                                                    </td>
+                                                    <td class="px-2 py-2 text-xs">
+                                                        @(item.IsRetryable ? "Yes" : "No")
+                                                    </td>
+                                                    <td class="px-2 py-2 text-xs">
+                                                        @if (item.CompletedAtUtc is not null)
+                                                        {
+                                                            <TimestampDisplay Value="@item.CompletedAtUtc" ShowUtcDetail="true" />
+                                                        }
+                                                        else if (item.LastAttemptedAtUtc is not null)
+                                                        {
+                                                            <TimestampDisplay Value="@item.LastAttemptedAtUtc" ShowUtcDetail="true" />
+                                                        }
+                                                        else
+                                                        {
+                                                            <span class="text-muted">—</span>
+                                                        }
+                                                    </td>
+                                                    <td class="px-2 py-2 text-xs">
+                                                        <details>
+                                                            <summary class="cursor-pointer text-muted">Details</summary>
+                                                            <div class="mt-2 space-y-1 rounded border border-default bg-surface-muted p-2 font-mono text-xs">
+                                                                @{
+                                                                    var changeText = OperationItemizationUiHelpers.TryFormatChangeSummaryText(item.ChangeSummaryJson);
+                                                                }
+                                                                @if (!string.IsNullOrWhiteSpace(changeText))
+                                                                {
+                                                                    <div><span class="text-muted">Change:</span> @changeText</div>
+                                                                }
+                                                                @if (!string.IsNullOrWhiteSpace(item.ChangeSummaryJson) && string.IsNullOrWhiteSpace(changeText))
+                                                                {
+                                                                    <div><span class="text-muted">Change summary:</span> @item.ChangeSummaryJson</div>
+                                                                }
+                                                                @if (!string.IsNullOrWhiteSpace(item.MetadataJson))
+                                                                {
+                                                                    <div><span class="text-muted">Metadata:</span> @item.MetadataJson</div>
+                                                                }
+                                                                <div><span class="text-muted">Item id:</span> @item.OperationItemId</div>
+                                                                <div><span class="text-muted">Group id:</span> @item.OperationGroupId</div>
+                                                                <div><span class="text-muted">Run id:</span> @item.RunId</div>
+                                                            </div>
+                                                        </details>
+                                                    </td>
+                                                </tr>
+                                            }
+                                        </tbody>
+                                    </table>
+                                </div>
+
+                                @if (_itemsTotalCount > _items.Count)
+                                {
+                                    <div class="mt-3">
+                                        <button type="button"
+                                                class="ui-toolbar-btn"
+                                                disabled="@_itemsLoading"
+                                                @onclick="() => LoadItemsAsync(reset: false)">
+                                            Load more (@(_items.Count) of @_itemsTotalCount)
+                                        </button>
+                                    </div>
+                                }
+                            }
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+    }
+    </ChildContent>
+</ManagementSection>
+
+@code {
+    [Parameter, EditorRequired]
+    public string RunId { get; set; } = "";
+
+    /// <summary>Optional run-detail summary hint (counts). Groups are always loaded from the API.</summary>
+    [Parameter]
+    public RunOperationItemizationSummaryDto? Summary { get; set; }
+
+    private string? _loadKey;
+    private bool _groupsLoading;
+    private string? _groupsError;
+    private IReadOnlyList<OperationGroupSummaryDto>? _groups;
+
+    private string? _expandedGroupId;
+    private string _itemStatusFilter = OperationItemizationUiHelpers.StatusFilterAll;
+    private readonly List<OperationItemSummaryDto> _items = new();
+    private int _itemsTotalCount;
+    private bool _itemsLoading;
+    private string? _itemsError;
+
+    private IReadOnlyList<OperationItemSummaryDto> DisplayItems =>
+        string.IsNullOrEmpty(_itemStatusFilter)
+            ? OperationItemizationUiHelpers.OrderItemsFailedFirst(_items)
+            : _items.OrderBy(i => i.Sequence).ToArray();
+
+    protected override async Task OnParametersSetAsync()
+    {
+        await base.OnParametersSetAsync();
+        var key = RunId?.Trim() ?? "";
+        if (string.IsNullOrEmpty(key) || key == _loadKey)
+            return;
+        _loadKey = key;
+        await LoadGroupsAsync(resetExpanded: true);
+    }
+
+    private Task ReloadGroupsAsync() => LoadGroupsAsync(resetExpanded: false);
+
+    private async Task LoadGroupsAsync(bool resetExpanded)
+    {
+        if (string.IsNullOrWhiteSpace(RunId))
+            return;
+
+        _groupsLoading = true;
+        _groupsError = null;
+        if (resetExpanded)
+        {
+            _expandedGroupId = null;
+            ClearItemsState();
+        }
+
+        try
+        {
+            var groups = await Client.GetRunOperationGroupsAsync(RunId);
+            _groups = groups ?? Array.Empty<OperationGroupSummaryDto>();
+            if (_expandedGroupId is not null
+                && _groups.All(g => !string.Equals(g.OperationGroupId, _expandedGroupId, StringComparison.Ordinal)))
+            {
+                _expandedGroupId = null;
+                ClearItemsState();
+            }
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.Forbidden)
+        {
+            _groups = null;
+            _groupsError = "Not authorized to view operation history for this run (403).";
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
+        {
+            _groups = null;
+            _groupsError = "Operation history was not found for this run (404).";
+        }
+        catch (Exception ex)
+        {
+            _groups = null;
+            _groupsError = ex.Message;
+        }
+        finally
+        {
+            _groupsLoading = false;
+        }
+    }
+
+    private async Task ToggleGroupAsync(OperationGroupSummaryDto group)
+    {
+        if (string.Equals(_expandedGroupId, group.OperationGroupId, StringComparison.Ordinal))
+        {
+            _expandedGroupId = null;
+            ClearItemsState();
+            return;
+        }
+
+        _expandedGroupId = group.OperationGroupId;
+        // Default All with failed-first emphasis; operators can narrow to Failed.
+        _itemStatusFilter = OperationItemizationUiHelpers.StatusFilterAll;
+        await LoadItemsAsync(reset: true);
+    }
+
+    private async Task SetStatusFilterAsync(string status)
+    {
+        if (string.Equals(_itemStatusFilter, status, StringComparison.Ordinal))
+            return;
+        _itemStatusFilter = status ?? OperationItemizationUiHelpers.StatusFilterAll;
+        await LoadItemsAsync(reset: true);
+    }
+
+    private async Task LoadItemsAsync(bool reset)
+    {
+        if (string.IsNullOrWhiteSpace(RunId) || string.IsNullOrWhiteSpace(_expandedGroupId))
+            return;
+
+        if (reset)
+        {
+            _items.Clear();
+            _itemsTotalCount = 0;
+            _itemsError = null;
+        }
+
+        _itemsLoading = true;
+        try
+        {
+            var filter = new OperationItemListFilter(
+                Status: OperationItemizationUiHelpers.ToApiStatusFilter(_itemStatusFilter),
+                Skip: _items.Count,
+                Take: OperationItemizationUiHelpers.DefaultItemPageSize);
+
+            var page = await Client.GetRunOperationGroupItemsAsync(RunId, _expandedGroupId, filter);
+            if (page is null)
+            {
+                _itemsError = "Items were not found for this group (404).";
+                return;
+            }
+
+            _itemsTotalCount = page.TotalCount;
+            foreach (var item in page.Items)
+                _items.Add(item);
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.Forbidden)
+        {
+            _itemsError = "Not authorized to view items for this group (403).";
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
+        {
+            _itemsError = "Items were not found for this group (404).";
+        }
+        catch (Exception ex)
+        {
+            _itemsError = ex.Message;
+        }
+        finally
+        {
+            _itemsLoading = false;
+        }
+    }
+
+    private void ClearItemsState()
+    {
+        _items.Clear();
+        _itemsTotalCount = 0;
+        _itemsError = null;
+        _itemsLoading = false;
+        _itemStatusFilter = OperationItemizationUiHelpers.StatusFilterAll;
+    }
+}

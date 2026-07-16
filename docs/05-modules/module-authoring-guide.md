@@ -65,7 +65,7 @@ This guide is for developers building **Apperture modules**: workflow-centric pa
 
 **Retry fields:** `IsRetryable`, `RetryCount`, `LastAttemptedAtUtc` persist for future use. **Per-item retry execution/UI is SDK-4**, not SDK-3A.
 
-**Relation to Sample.FileImport (SDK-2/3C):** Process-local `IImportOutcomeStore` remains a sample inspection aid. **SDK-3C** FileImport writes durable platform operation items via `context.Signals.OperationItems`. **SDK-3D** adds the run-detail itemization panel; **SDK-4** adds per-item retry.
+**Relation to Sample.FileImport (SDK-2/3C):** Process-local `IImportOutcomeStore` remains a sample inspection aid. **SDK-3C** FileImport writes durable platform operation items via `context.Signals.OperationItems`. **SDK-3D** Run Detail panel displays those items; **SDK-4** adds per-item retry.
 
 **Persistence:** Host registers `AddOperationItemizationPersistence()` (Worker Host + Management Host). Migration `20260715180000_Sdk3A_OperationItemization` creates `OperationGroups` / `OperationItems`. Unit coverage uses `InMemoryOperationItemStore`; SQL round-trip is `OperationItemizationSqlServerTests` (soft-skips without `APPERTURE_TEST_SQL_*`).
 
@@ -76,10 +76,12 @@ This guide is for developers building **Apperture modules**: workflow-centric pa
 
 Same run-read authorization as run detail/timeline. Missing run → 404; no groups/items → empty 200. Client: `GetRunOperationGroupsAsync` / `GetRunOperationGroupItemsAsync`. Run detail includes optional `operationItemization` summary (`groupCount`, `failedItemCount`, `skippedItemCount`, `hasOperationItems`) — **not** full item lists.
 
-**Deferred:** UI panel (**SDK-3D**), per-item retry (**SDK-4**). Retry fields (`isRetryable`, `retryCount`, `lastAttemptedAtUtc`) are readable now; FileImport sets retry readiness on failed rows.
+**Deferred:** Per-item retry actions/UI (**SDK-4**). Retry fields (`isRetryable`, `retryCount`, `lastAttemptedAtUtc`) are readable and shown as read-only indicators on Run Detail.
+
+**Run Detail panel (SDK-3D):** Management UI hosts `RunOperationItemizationPanel` on `/runs/{runId}` below the run summary band and above forensics. Operators see group kind/source/status/counts, expand to paged items (default page size 50), status filters (All / Failed / Succeeded / Skipped), failed-first ordering when viewing All, and metadata behind disclosure. Empty state when no groups. Section-level errors do not break the rest of Run Detail. **No retry buttons yet.**
 
 **Audit:** [sdk3-itemized-operation-model-design-audit.md](../audits/sdk3-itemized-operation-model-design-audit.md)  
-**Plan:** [2026-07-15-sdk3b-operation-itemization-read-apis.md](../superpowers/plans/2026-07-15-sdk3b-operation-itemization-read-apis.md)
+**Plans:** [SDK-3B](../superpowers/plans/2026-07-15-sdk3b-operation-itemization-read-apis.md) · [SDK-3C](../superpowers/plans/2026-07-15-sdk3c-fileimport-operation-itemization.md) · [SDK-3D](../superpowers/plans/2026-07-15-sdk3d-run-detail-operation-itemization-panel.md)
 
 ---
 

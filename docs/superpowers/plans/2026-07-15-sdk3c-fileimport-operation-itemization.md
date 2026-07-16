@@ -26,4 +26,4 @@ Structurally invalid fixtures: hard-fail in Parse with no group (documented).
 
 - [x] Adapter implemented
 - [x] Tests + docs
-- [x] Follow-ups: SDK-3D UI panel, SDK-4 retry
+- [x] Follow-ups: SDK-3D UI panel (done), SDK-4 retry

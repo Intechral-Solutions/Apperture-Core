@@ -84,6 +84,9 @@
                         BlockedWork="@_blockedWork"
                         CurrentStepLabel="@CurrentStepLabel" />
 
+        <RunOperationItemizationPanel RunId="@RunId"
+                                      Summary="@_detail.OperationItemization" />
+
         @if (_detail.ForensicContext is { } fxInv)
         {
             <ManagementAdvancedSection Title="Investigation and forensics"

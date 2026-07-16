@@ -11,6 +11,7 @@ public sealed class Swm4DisplayTimezoneSurfaceRegressionTests
     [InlineData("src/Apperture.ControlPlane/Apperture.Management.Ui.Client/Pages/Schedules/ScheduleDetail.razor")]
     [InlineData("src/Apperture.ControlPlane/Apperture.Management.Ui.Client/Pages/Runs/RunsList.razor")]
     [InlineData("src/Apperture.ControlPlane/Apperture.Management.Ui.Client/Pages/Runs/RunDetail.razor")]
+    [InlineData("src/Apperture.ControlPlane/Apperture.Management.Ui.Client/Organisms/RunOperationItemizationPanel.razor")]
     [InlineData("src/Apperture.ControlPlane/Apperture.Management.Ui.Client/Pages/Runs/RunSummaryBand.razor")]
     [InlineData("src/Apperture.ControlPlane/Apperture.Management.Ui.Client/Pages/Control/ControlCenter.razor")]
     [InlineData("src/Apperture.ControlPlane/Apperture.Management.Ui.Client/Pages/Integrations/IntegrationDetail.razor")]

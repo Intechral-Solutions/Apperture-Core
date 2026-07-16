@@ -21,7 +21,7 @@ Run Detail already exposed rich forensics (Epic 35), cooperative actions, timeli
 | Layer | Before (Epic 77 baseline) | After (Epic 81) |
 |-------|---------------------------|-----------------|
 | **Summary** | Status and key facts scattered in grids and duplicated headers | `RunSummaryBand`: `StatusPill` / outcome pill, `AttentionPill` for blocked work, origin line, created/completed/current step, `ManagementSummaryCard` quick links |
-| **Detail** | Investigation, actions, overview, result, timeline as similar-weight boxes | `ManagementSection`: Investigation, action availability, related context, execution overview, **Result**, **Execution timeline** |
+| **Detail** | Investigation, actions, overview, result, timeline as similar-weight boxes | `ManagementSection`: Investigation, action availability, related context, execution overview, **Result**, **Execution timeline**; **SDK-3D:** `RunOperationItemizationPanel` (itemized business outcomes) below summary band |
 | **Advanced** | Start request, ids, JSON payloads mixed with operator narrative | `ManagementAdvancedSection`: technical ids + correlation + start request metadata/JSON; **Supporting records** (lifecycle/step/control tables) |
 | **Page chrome** | Basic header | `PageHeader` with Eyebrow **Runs**, subtitle = execution kind · status · integration (if any) · origin kind (from forensics when present); mono `RunId` preserved |
 
