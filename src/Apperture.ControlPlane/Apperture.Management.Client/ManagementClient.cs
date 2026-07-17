@@ -145,6 +145,31 @@ public sealed class ManagementClient : IManagementClient
         return await _http.GetFromJsonAsync<OperationItemPageDto>(path, cancellationToken).ConfigureAwait(false);
     }
 
+    public async Task<OperationItemRetryAttemptDto?> RetryOperationItemAsync(
+        string runId,
+        string operationItemId,
+        RequestOperationItemRetryDto request,
+        CancellationToken cancellationToken = default)
+    {
+        var response = await _http.PostAsJsonAsync(
+            $"runs/{Uri.EscapeDataString(runId)}/operation-items/{Uri.EscapeDataString(operationItemId)}/retry",
+            request,
+            cancellationToken).ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<OperationItemRetryAttemptDto>(cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    public async Task<IReadOnlyList<OperationItemRetryAttemptDto>?> GetOperationItemRetriesAsync(
+        string runId,
+        string operationItemId,
+        CancellationToken cancellationToken = default)
+    {
+        return await _http.GetFromJsonAsync<IReadOnlyList<OperationItemRetryAttemptDto>>(
+            $"runs/{Uri.EscapeDataString(runId)}/operation-items/{Uri.EscapeDataString(operationItemId)}/retries",
+            cancellationToken).ConfigureAwait(false);
+    }
+
     public async Task<CancelRunResult> CancelRunAsync(string runId, CancellationToken cancellationToken = default)
     {
         var response = await _http.PostAsync($"runs/{runId}/cancel", content: null, cancellationToken).ConfigureAwait(false);

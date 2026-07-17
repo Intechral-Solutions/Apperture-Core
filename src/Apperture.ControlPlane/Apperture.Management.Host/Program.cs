@@ -49,6 +49,7 @@ builder.Services.Configure<BootstrapPlatformAdminOptions>(builder.Configuration.
 builder.Services.AddAppertureGovernance();
 builder.Services.AddKnownModules(
     [new HelloWorldModule(), new FileImportModule(), new UnisaCampusNexusPaymentPlansModule(), new ProofCampusNexusStudentReviewModule()]);
+builder.Services.AddSampleFileImportRetryHandlers();
 builder.Services.AddAppertureRecovery();
 builder.Services.AddRuntimeSchedulerDispatch();
 builder.Services.AddAppertureCampusNexusConnector();

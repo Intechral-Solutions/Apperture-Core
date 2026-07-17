@@ -1,0 +1,40 @@
+namespace Apperture.Core.Application.OperationItems;
+
+/// <summary>SDK-4A — statuses for durable per-item retry attempts.</summary>
+public static class OperationItemRetryAttemptStatuses
+{
+    public const string Requested = "Requested";
+    public const string Dispatched = "Dispatched";
+    public const string Succeeded = "Succeeded";
+    public const string Failed = "Failed";
+    public const string Blocked = "Blocked";
+
+    public static readonly IReadOnlySet<string> All = new HashSet<string>(StringComparer.Ordinal)
+    {
+        Requested,
+        Dispatched,
+        Succeeded,
+        Failed,
+        Blocked,
+    };
+}
+
+public static class OperationItemRetryErrorCodes
+{
+    public const string MissingRetryMetadata = "missing_retry_metadata";
+    public const string RowNotFound = "retry_row_not_found";
+    public const string NotFailed = "item_not_failed";
+    public const string NotRetryable = "item_not_retryable";
+    public const string ModuleUnsupported = "module_retry_unsupported";
+    public const string DefinitionUnavailable = "definition_not_executable";
+    public const string IntegrationNotRunnable = "integration_not_runnable";
+}
+
+/// <summary>Size bounds for retry attempt fields (SDK-4A).</summary>
+public static class OperationItemRetryBounds
+{
+    public const int IdempotencyKeyMaxLength = 128;
+    public const int ReasonMaxLength = 512;
+    public const int ActorIdMaxLength = 128;
+    public const int DispatchIdempotencyKeyMaxLength = 128;
+}

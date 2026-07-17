@@ -68,6 +68,7 @@ public class AppertureDbContext : DbContext
     public DbSet<ManagedContactGroupEntity> ManagedContactGroups => Set<ManagedContactGroupEntity>();
     public DbSet<OperationGroupEntity> OperationGroups => Set<OperationGroupEntity>();
     public DbSet<OperationItemEntity> OperationItems => Set<OperationItemEntity>();
+    public DbSet<OperationItemRetryAttemptEntity> OperationItemRetryAttempts => Set<OperationItemRetryAttemptEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -953,6 +954,34 @@ public class AppertureDbContext : DbContext
             e.HasIndex(x => x.RunId);
             e.HasIndex(x => new { x.RunId, x.Status });
             e.HasIndex(x => new { x.OperationGroupId, x.Sequence });
+            e.HasMany(x => x.RetryAttempts)
+                .WithOne(x => x.Item!)
+                .HasForeignKey(x => x.OperationItemId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<OperationItemRetryAttemptEntity>(e =>
+        {
+            e.ToTable("OperationItemRetryAttempts");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasMaxLength(64);
+            e.Property(x => x.OperationItemId).HasMaxLength(64).IsRequired();
+            e.Property(x => x.RunId).HasMaxLength(64).IsRequired();
+            e.Property(x => x.OperationGroupId).HasMaxLength(64).IsRequired();
+            e.Property(x => x.IdempotencyKey).HasMaxLength(128).IsRequired();
+            e.Property(x => x.RequestedByActorId).HasMaxLength(128);
+            e.Property(x => x.Reason).HasMaxLength(512);
+            e.Property(x => x.Status).HasMaxLength(32).IsRequired();
+            e.Property(x => x.ChildRunId).HasMaxLength(64);
+            e.Property(x => x.ChildOperationGroupId).HasMaxLength(64);
+            e.Property(x => x.ChildOperationItemId).HasMaxLength(64);
+            e.Property(x => x.ErrorCode).HasMaxLength(64);
+            e.Property(x => x.ErrorMessage).HasMaxLength(1024);
+            e.HasIndex(x => new { x.OperationItemId, x.IdempotencyKey }).IsUnique();
+            e.HasIndex(x => new { x.OperationItemId, x.AttemptIndex }).IsUnique();
+            e.HasIndex(x => x.ChildRunId);
+            e.HasIndex(x => x.Status);
+            e.HasIndex(x => x.RunId);
         });
     }
 }

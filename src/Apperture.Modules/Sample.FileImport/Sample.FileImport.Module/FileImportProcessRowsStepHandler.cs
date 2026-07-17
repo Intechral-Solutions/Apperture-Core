@@ -50,8 +50,65 @@ public sealed class FileImportProcessRowsStepHandler : IStepHandler
 
         var maxRows = FileImportParameterReader.ResolveMaxRows(parameters);
         var failOnFirst = FileImportParameterReader.ResolveFailOnFirstError(parameters);
+        var retryMode = FileImportParameterReader.GetBool(parameters, FileImportOperationItemRetryHandler.RetryModeParameter) == true;
+        var retryRowNumber = FileImportParameterReader.GetInt(parameters, FileImportOperationItemRetryHandler.RetryRowNumberParameter);
         var now = DateTimeOffset.UtcNow;
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        if (retryMode)
+        {
+            if (retryRowNumber is null or < 1)
+            {
+                throw OperatorExecutionResult.FailSummaryOnly(
+                    "FileImport retry mode requires retryRowNumber >= 1.");
+            }
+
+            var target = parsed.Rows.FirstOrDefault(r => r.RowNumber == retryRowNumber.Value);
+            if (target is null)
+            {
+                throw OperatorExecutionResult.FailSummaryOnly(
+                    $"FileImport retry could not find row {retryRowNumber.Value} in fixture '{fixtureId}'.");
+            }
+
+            var outcome = FileImportRowProcessor.ValidateAndMap(batch.BatchId, target, seen, now);
+            _store.AppendRowOutcome(outcome);
+
+            try
+            {
+                await context.Signals.OperationItems.AppendItemAsync(
+                    FileImportOperationItemization.ToAppendRequest(
+                        batch.OperationGroupId!,
+                        runId,
+                        fixtureId,
+                        outcome),
+                    cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationItemizationException ex)
+            {
+                throw OperatorExecutionResult.FailSummaryOnly(
+                    "Sample.FileImport could not append platform operation item: " + ex.Message);
+            }
+
+            return OperatorExecutionResult.SuccessSummaryOnly(new
+            {
+                step = "ProcessRows",
+                retryMode = true,
+                retryRowNumber = retryRowNumber.Value,
+                parentOperationItemId = FileImportParameterReader.GetString(
+                    parameters,
+                    FileImportOperationItemRetryHandler.ParentOperationItemIdParameter),
+                retryAttemptId = FileImportParameterReader.GetString(
+                    parameters,
+                    FileImportOperationItemRetryHandler.RetryAttemptIdParameter),
+                batchId = batch.BatchId,
+                operationGroupId = batch.OperationGroupId,
+                fixtureId,
+                totalRows = 1,
+                succeededCount = outcome.Status == ImportRowStatus.Succeeded ? 1 : 0,
+                failedCount = outcome.Status == ImportRowStatus.Failed ? 1 : 0,
+                skippedCount = outcome.Status == ImportRowStatus.Skipped ? 1 : 0,
+            });
+        }
 
         var succeeded = 0;
         var failed = 0;

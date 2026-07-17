@@ -34,6 +34,17 @@ public interface IManagementClient
         OperationItemListFilter? filter = null,
         CancellationToken cancellationToken = default);
 
+    Task<OperationItemRetryAttemptDto?> RetryOperationItemAsync(
+        string runId,
+        string operationItemId,
+        RequestOperationItemRetryDto request,
+        CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<OperationItemRetryAttemptDto>?> GetOperationItemRetriesAsync(
+        string runId,
+        string operationItemId,
+        CancellationToken cancellationToken = default);
+
     Task<IReadOnlyList<OperationDefinitionDto>> GetOperationsAsync(CancellationToken cancellationToken = default);
     Task<OperationDefinitionDto?> GetOperationAsync(string operationDefinitionId, CancellationToken cancellationToken = default);
     Task<StartOperationResult> StartOperationAsync(
@@ -1164,6 +1175,31 @@ public sealed record OperationItemListFilter(
     string? Q = null,
     int Skip = 0,
     int Take = 50);
+
+public sealed record RequestOperationItemRetryDto(
+    string IdempotencyKey,
+    string? Reason = null);
+
+public sealed record OperationItemRetryAttemptDto(
+    string OperationItemRetryAttemptId,
+    string OperationItemId,
+    string RunId,
+    string OperationGroupId,
+    int AttemptIndex,
+    string IdempotencyKey,
+    string? RequestedByActorId,
+    string? Reason,
+    string Status,
+    string? ChildRunId,
+    string? ChildOperationGroupId,
+    string? ChildOperationItemId,
+    DateTimeOffset StartedAtUtc,
+    DateTimeOffset? CompletedAtUtc,
+    string? ErrorCode,
+    string? ErrorMessage,
+    DateTimeOffset CreatedAtUtc,
+    DateTimeOffset UpdatedAtUtc,
+    string? Message = null);
 
 public sealed record RunResultDto(
     string Outcome,

@@ -124,6 +124,60 @@ public sealed class InMemoryOperationItemStore : IOperationItemStore
             string.IsNullOrWhiteSpace(operationGroupId) ? null : _groups.GetValueOrDefault(operationGroupId));
     }
 
+    public Task<OperationItem?> GetItemAsync(string operationItemId, CancellationToken cancellationToken = default)
+    {
+        _ = cancellationToken;
+        if (string.IsNullOrWhiteSpace(operationItemId))
+            return Task.FromResult<OperationItem?>(null);
+
+        lock (_gate)
+        {
+            foreach (var list in _items.Values)
+            {
+                var match = list.FirstOrDefault(i =>
+                    string.Equals(i.OperationItemId, operationItemId, StringComparison.Ordinal));
+                if (match is not null)
+                    return Task.FromResult<OperationItem?>(match);
+            }
+        }
+
+        return Task.FromResult<OperationItem?>(null);
+    }
+
+    public Task<OperationItem?> RecordRetryDispatchAsync(
+        string operationItemId,
+        DateTimeOffset attemptedAtUtc,
+        CancellationToken cancellationToken = default)
+    {
+        _ = cancellationToken;
+        if (string.IsNullOrWhiteSpace(operationItemId))
+            return Task.FromResult<OperationItem?>(null);
+
+        lock (_gate)
+        {
+            foreach (var (groupId, list) in _items)
+            {
+                for (var i = 0; i < list.Count; i++)
+                {
+                    if (!string.Equals(list[i].OperationItemId, operationItemId, StringComparison.Ordinal))
+                        continue;
+
+                    var current = list[i];
+                    var updated = current with
+                    {
+                        RetryCount = current.RetryCount + 1,
+                        LastAttemptedAtUtc = attemptedAtUtc,
+                        UpdatedAtUtc = attemptedAtUtc,
+                    };
+                    list[i] = updated;
+                    return Task.FromResult<OperationItem?>(updated);
+                }
+            }
+        }
+
+        return Task.FromResult<OperationItem?>(null);
+    }
+
     public Task<IReadOnlyList<OperationItem>> GetItemsByGroupAsync(string operationGroupId, CancellationToken cancellationToken = default)
     {
         _ = cancellationToken;

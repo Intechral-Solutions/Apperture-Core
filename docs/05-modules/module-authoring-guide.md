@@ -23,7 +23,7 @@ This guide is for developers building **Apperture modules**: workflow-centric pa
 - `Sample.FileImport` — portable CSV import demo (SDK-2/3C): embedded fixtures, process-local inspection store + durable platform operation items, partial-failure signals, settings contributor. See [SDK-2 design](../superpowers/specs/SDK-2-Sample-FileImport-Demo.md).
 - `Proof.CampusNexus.StudentReview` — integration-scoped slots (Campus Nexus + SQL), procedures, operational logs (no manifest signals)
 
-### Sample.FileImport (SDK-2 + SDK-3C)
+### Sample.FileImport (SDK-2 + SDK-3C + SDK-4A)
 
 **Purpose:** Contract-validation sample for file-ingest modules. Proves fixture selection, multi-step import workflow, module-local per-row outcomes, fail-loud summary signals, and durable platform operation itemization (SDK-3C) without external files.
 
@@ -45,7 +45,7 @@ This guide is for developers building **Apperture modules**: workflow-centric pa
 **Outcome stores:**
 
 * `IImportOutcomeStore` (in-memory) — **process-local** inspection aid; not restart-durable.
-* Platform `context.Signals.OperationItems` — durable run-attached `OperationGroup` / `OperationItem` for SDK-3B APIs and SDK-3D UI. `operationKind=file_import`; failed rows set `isRetryable` (execution is SDK-4).
+* Platform `context.Signals.OperationItems` — durable run-attached `OperationGroup` / `OperationItem` for SDK-3B APIs and SDK-3D UI. `operationKind=file_import`; failed rows set `isRetryable` with safe metadata (`fixtureId`, `rowNumber`) for SDK-4A retry.
 
 **Notification seed:** Built-in definition for `import.completed.with.errors` (HelloWorld-sized). Subscribe to validate partial-failure → notification path.
 
@@ -63,11 +63,11 @@ This guide is for developers building **Apperture modules**: workflow-centric pa
 
 **Safety rules:** No secrets; no raw files; no silent truncation; JSON fields bounded (see `OperationItemizationBounds`). Missing `RunId` or unregistered store fails loudly.
 
-**Retry fields:** `IsRetryable`, `RetryCount`, `LastAttemptedAtUtc` persist for future use. **Per-item retry execution/UI is SDK-4**, not SDK-3A.
+**Retry fields:** `IsRetryable`, `RetryCount`, `LastAttemptedAtUtc` persist on items. Parent **Status / ErrorCode / ErrorMessage are immutable** across retries (SDK-4A only bumps counters).
 
-**Relation to Sample.FileImport (SDK-2/3C):** Process-local `IImportOutcomeStore` remains a sample inspection aid. **SDK-3C** FileImport writes durable platform operation items via `context.Signals.OperationItems`. **SDK-3D** Run Detail panel displays those items; **SDK-4** adds per-item retry.
+**Relation to Sample.FileImport (SDK-2/3C/4A):** Process-local `IImportOutcomeStore` remains a sample inspection aid. FileImport writes durable platform items via `context.Signals.OperationItems`. **SDK-4A** retries one failed row by starting a child run in `retryMode` using metadata `fixtureId` + `rowNumber` (no raw CSV storage).
 
-**Persistence:** Host registers `AddOperationItemizationPersistence()` (Worker Host + Management Host). Migration `20260715180000_Sdk3A_OperationItemization` creates `OperationGroups` / `OperationItems`. Unit coverage uses `InMemoryOperationItemStore`; SQL round-trip is `OperationItemizationSqlServerTests` (soft-skips without `APPERTURE_TEST_SQL_*`).
+**Persistence:** Host registers `AddOperationItemizationPersistence()` (Worker Host + Management Host). Migrations: `20260715180000_Sdk3A_OperationItemization` (`OperationGroups` / `OperationItems`), `20260716160000_Sdk4A_OperationItemRetryAttempts`. Unit coverage uses in-memory stores; SQL round-trip is `OperationItemizationSqlServerTests` (soft-skips without `APPERTURE_TEST_SQL_*`).
 
 **Read APIs (SDK-3B):** Management exposes:
 
@@ -76,12 +76,20 @@ This guide is for developers building **Apperture modules**: workflow-centric pa
 
 Same run-read authorization as run detail/timeline. Missing run → 404; no groups/items → empty 200. Client: `GetRunOperationGroupsAsync` / `GetRunOperationGroupItemsAsync`. Run detail includes optional `operationItemization` summary (`groupCount`, `failedItemCount`, `skippedItemCount`, `hasOperationItems`) — **not** full item lists.
 
-**Deferred:** Per-item retry actions/UI (**SDK-4**). Retry fields (`isRetryable`, `retryCount`, `lastAttemptedAtUtc`) are readable and shown as read-only indicators on Run Detail.
+**Per-item retry (SDK-4A):**
 
-**Run Detail panel (SDK-3D):** Management UI hosts `RunOperationItemizationPanel` on `/runs/{runId}` below the run summary band and above forensics. Operators see group kind/source/status/counts, expand to paged items (default page size 50), status filters (All / Failed / Succeeded / Skipped), failed-first ordering when viewing All, and metadata behind disclosure. Empty state when no groups. Section-level errors do not break the rest of Run Detail. **No retry buttons yet.**
+* Durable append-only `OperationItemRetryAttempts` (status: `Requested` → `Dispatched` / `Blocked`; `Succeeded`/`Failed` deferred to **SDK-4B**)
+* Module contract: `IOperationItemRetryHandler` (`CanRetry` via `Evaluate` + `BuildStartPlan`). Platform does **not** infer retry for modules without a handler. FileImport registers `FileImportOperationItemRetryHandler`.
+* `POST /api/runs/{runId}/operation-items/{itemId}/retry` — body `{ "idempotencyKey": "...", "reason": "..." }`. Same-key replay returns the existing attempt/child run. Authz: execute-equivalent (`IWorkflowRunRetryAuthorizationService` / `workflow.execute`), **not** read-only.
+* `GET /api/runs/{runId}/operation-items/{itemId}/retries` — list attempts
+* Child run: `RetryOfRunId` = original run; start idempotency key derived from item + client key; parameters include `retryMode`, `retryRowNumber`, `fixtureId`, `parentOperationItemId`, `retryAttemptId`
 
-**Audit:** [sdk3-itemized-operation-model-design-audit.md](../audits/sdk3-itemized-operation-model-design-audit.md)  
-**Plans:** [SDK-3B](../superpowers/plans/2026-07-15-sdk3b-operation-itemization-read-apis.md) · [SDK-3C](../superpowers/plans/2026-07-15-sdk3c-fileimport-operation-itemization.md) · [SDK-3D](../superpowers/plans/2026-07-15-sdk3d-run-detail-operation-itemization-panel.md)
+**Deferred:** Attempt outcome reconciliation (**SDK-4B**); Run Detail retry buttons/UI (**SDK-4C**); retry-all / policies / scheduled retry.
+
+**Run Detail panel (SDK-3D):** Management UI hosts `RunOperationItemizationPanel` on `/runs/{runId}` below the run summary band and above forensics. Operators see group kind/source/status/counts, expand to paged items (default page size 50), status filters (All / Failed / Succeeded / Skipped), failed-first ordering when viewing All, and metadata behind disclosure. Empty state when no groups. Section-level errors do not break the rest of Run Detail. **No retry buttons yet (SDK-4C).**
+
+**Audit:** [sdk3-itemized-operation-model-design-audit.md](../audits/sdk3-itemized-operation-model-design-audit.md) · [sdk4-per-item-retry-design-audit.md](../audits/sdk4-per-item-retry-design-audit.md)  
+**Plans:** [SDK-3B](../superpowers/plans/2026-07-15-sdk3b-operation-itemization-read-apis.md) · [SDK-3C](../superpowers/plans/2026-07-15-sdk3c-fileimport-operation-itemization.md) · [SDK-3D](../superpowers/plans/2026-07-15-sdk3d-run-detail-operation-itemization-panel.md) · [SDK-4A](../superpowers/plans/2026-07-16-sdk4a-operation-item-retry-dispatch.md)
 
 ---
 

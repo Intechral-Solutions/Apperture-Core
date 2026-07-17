@@ -123,6 +123,7 @@ public static class ServiceCollectionExtensions
     public static IServiceCollection AddOperationItemizationPersistence(this IServiceCollection services)
     {
         services.AddScoped<Apperture.Core.Application.OperationItems.IOperationItemStore, SqlOperationItemStore>();
+        services.AddScoped<Apperture.Core.Application.OperationItems.IOperationItemRetryAttemptStore, SqlOperationItemRetryAttemptStore>();
         return services;
     }
 }

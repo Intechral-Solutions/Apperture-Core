@@ -19,6 +19,7 @@ public sealed class RunsController : ControllerBase
     private readonly IRunActionAvailabilityQueryService _runActions;
     private readonly IRunTimelineQueryService _timeline;
     private readonly IOperationItemizationQueryService _operationItems;
+    private readonly IOperationItemRetryService _itemRetry;
 
     public RunsController(
         IRunQueryService runs,
@@ -27,7 +28,8 @@ public sealed class RunsController : ControllerBase
         IWorkflowExternalControlService externalControl,
         IRunActionAvailabilityQueryService runActions,
         IRunTimelineQueryService timeline,
-        IOperationItemizationQueryService operationItems)
+        IOperationItemizationQueryService operationItems,
+        IOperationItemRetryService itemRetry)
     {
         _runs = runs;
         _cancel = cancel;
@@ -36,6 +38,7 @@ public sealed class RunsController : ControllerBase
         _runActions = runActions;
         _timeline = timeline;
         _operationItems = operationItems;
+        _itemRetry = itemRetry;
     }
 
     [HttpGet]
@@ -161,6 +164,57 @@ public sealed class RunsController : ControllerBase
             if (page is null)
                 return NotFound();
             return Ok(page);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return Forbid();
+        }
+    }
+
+    /// <summary>SDK-4A: request a per-item retry (child run + durable attempt). Outcome sync deferred to SDK-4B.</summary>
+    [HttpPost("{id}/operation-items/{itemId}/retry")]
+    public async Task<ActionResult<OperationItemRetryAttemptDto>> RetryOperationItem(
+        string id,
+        string itemId,
+        [FromBody] RequestOperationItemRetryDto? body,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            body ??= new RequestOperationItemRetryDto("");
+            var result = await _itemRetry.RequestRetryAsync(
+                new OperationRunId(id),
+                itemId,
+                body,
+                cancellationToken);
+            if (result is null)
+                return NotFound();
+            return Ok(result);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return Forbid();
+        }
+        catch (OperationItemRetryException ex)
+        {
+            var payload = new { error = ex.Message, errorCode = ex.ErrorCode, blocked = true };
+            return ex.IsConflict ? Conflict(payload) : BadRequest(payload);
+        }
+    }
+
+    /// <summary>SDK-4A: list durable retry attempts for an operation item.</summary>
+    [HttpGet("{id}/operation-items/{itemId}/retries")]
+    public async Task<ActionResult<IReadOnlyList<OperationItemRetryAttemptDto>>> ListOperationItemRetries(
+        string id,
+        string itemId,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var result = await _itemRetry.ListAttemptsAsync(new OperationRunId(id), itemId, cancellationToken);
+            if (result is null)
+                return NotFound();
+            return Ok(result);
         }
         catch (UnauthorizedAccessException)
         {

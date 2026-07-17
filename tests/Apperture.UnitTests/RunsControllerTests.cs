@@ -229,7 +229,8 @@ public sealed class RunsControllerTests
         IWorkflowExternalControlService? external = null,
         IRunActionAvailabilityQueryService? runActions = null,
         IRunTimelineQueryService? timeline = null,
-        IOperationItemizationQueryService? operationItems = null) =>
+        IOperationItemizationQueryService? operationItems = null,
+        IOperationItemRetryService? itemRetry = null) =>
         new(
             runs,
             cancel ?? new StubCancelService(),
@@ -240,7 +241,24 @@ public sealed class RunsControllerTests
                 new Apperture.Core.Application.ControlFacade.ControlActionAvailabilityDto("execution.cancel", "available", null)
             }),
             timeline ?? new StubRunTimelineQueryService(new RunTimelineDto("run-1", "workflow", Array.Empty<RunTimelineEventDto>())),
-            operationItems ?? new StubOperationItemizationQueryService());
+            operationItems ?? new StubOperationItemizationQueryService(),
+            itemRetry ?? new StubOperationItemRetryService());
+
+    private sealed class StubOperationItemRetryService : IOperationItemRetryService
+    {
+        public Task<OperationItemRetryAttemptDto?> RequestRetryAsync(
+            OperationRunId runId,
+            string operationItemId,
+            RequestOperationItemRetryDto request,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult<OperationItemRetryAttemptDto?>(null);
+
+        public Task<IReadOnlyList<OperationItemRetryAttemptDto>?> ListAttemptsAsync(
+            OperationRunId runId,
+            string operationItemId,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<OperationItemRetryAttemptDto>?>(null);
+    }
 
     private sealed class StubOperationItemizationQueryService : IOperationItemizationQueryService
     {

@@ -129,6 +129,40 @@ public sealed class SqlOperationItemStore : IOperationItemStore
         return entity is null ? null : MapGroup(entity);
     }
 
+    public async Task<OperationItem?> GetItemAsync(string operationItemId, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(operationItemId))
+            return null;
+
+        var entity = await _db.OperationItems
+            .AsNoTracking()
+            .FirstOrDefaultAsync(i => i.Id == operationItemId, cancellationToken)
+            .ConfigureAwait(false);
+        return entity is null ? null : MapItem(entity);
+    }
+
+    public async Task<OperationItem?> RecordRetryDispatchAsync(
+        string operationItemId,
+        DateTimeOffset attemptedAtUtc,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(operationItemId))
+            return null;
+
+        var entity = await _db.OperationItems
+            .FirstOrDefaultAsync(i => i.Id == operationItemId, cancellationToken)
+            .ConfigureAwait(false);
+        if (entity is null)
+            return null;
+
+        // Non-destructive: RetryCount / LastAttemptedAtUtc / UpdatedAtUtc only.
+        entity.RetryCount += 1;
+        entity.LastAttemptedAtUtc = attemptedAtUtc;
+        entity.UpdatedAtUtc = attemptedAtUtc;
+        await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        return MapItem(entity);
+    }
+
     public async Task<IReadOnlyList<OperationItem>> GetItemsByGroupAsync(
         string operationGroupId,
         CancellationToken cancellationToken = default)

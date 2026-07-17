@@ -45,4 +45,31 @@ public sealed class OperationItemEntity
     public DateTimeOffset UpdatedAtUtc { get; set; }
 
     public OperationGroupEntity? Group { get; set; }
+
+    public List<OperationItemRetryAttemptEntity> RetryAttempts { get; set; } = [];
+}
+
+/// <summary>SDK-4A — durable append-only retry attempt for a failed operation item.</summary>
+public sealed class OperationItemRetryAttemptEntity
+{
+    public string Id { get; set; } = "";
+    public string OperationItemId { get; set; } = "";
+    public string RunId { get; set; } = "";
+    public string OperationGroupId { get; set; } = "";
+    public int AttemptIndex { get; set; }
+    public string IdempotencyKey { get; set; } = "";
+    public string? RequestedByActorId { get; set; }
+    public string? Reason { get; set; }
+    public string Status { get; set; } = "";
+    public string? ChildRunId { get; set; }
+    public string? ChildOperationGroupId { get; set; }
+    public string? ChildOperationItemId { get; set; }
+    public DateTimeOffset StartedAtUtc { get; set; }
+    public DateTimeOffset? CompletedAtUtc { get; set; }
+    public string? ErrorCode { get; set; }
+    public string? ErrorMessage { get; set; }
+    public DateTimeOffset CreatedAtUtc { get; set; }
+    public DateTimeOffset UpdatedAtUtc { get; set; }
+
+    public OperationItemEntity? Item { get; set; }
 }
