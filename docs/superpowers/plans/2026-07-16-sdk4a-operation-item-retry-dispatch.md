@@ -11,12 +11,17 @@
 - Service: `IOperationItemRetryService` / `OperationItemRetryService`
 - API: `POST /api/runs/{runId}/operation-items/{itemId}/retry`, `GET .../retries`
 - Contract: `IOperationItemRetryHandler`; FileImport `FileImportOperationItemRetryHandler` + ProcessRows `retryMode`
-- Outcome: attempts stop at **`Dispatched`** (SDK-4B reconciles final outcomes)
+- Outcome: attempts stop at **`Dispatched`** at dispatch time; **SDK-4B** reconciles to `Succeeded`/`Failed`
 - Parent item status/error fields remain unchanged; counters may bump
 
-## Out of scope (deferred)
+## Out of scope (deferred from 4A)
 
-- SDK-4B outcome sync · SDK-4C UI · retry-all · policies · scheduled retry
+- ~~SDK-4B outcome sync~~ → done in SDK-4B
+- SDK-4C UI · retry-all · policies · scheduled retry
+
+## Follow-on
+
+See [SDK-4B plan](2026-07-17-sdk4b-retry-attempt-outcome-reconciliation.md).
 
 ## Validation
 

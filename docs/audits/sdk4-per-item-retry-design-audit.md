@@ -24,7 +24,7 @@ Reuse execute-equivalent permission (`IWorkflowRunRetryAuthorizationService` / `
 | Slice | Scope |
 |-------|--------|
 | **SDK-4A** | Attempt persistence, idempotent API, FileImport single-row retry dispatch; stop at `Dispatched` |
-| **SDK-4B** | Attempt outcome reconciliation (`Succeeded`/`Failed`) + richer read models |
+| **SDK-4B** | Attempt outcome reconciliation (`Succeeded`/`Failed`) + enriched read model (lazy + Worker hook) |
 | **SDK-4C** | Run Detail retry UI actions |
 
 ## Explicitly deferred

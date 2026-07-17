@@ -75,6 +75,7 @@ public sealed class OperationItemRetryService : IOperationItemRetryService
     private readonly AppertureDbContext _db;
     private readonly IOperationItemStore _items;
     private readonly IOperationItemRetryAttemptStore _attempts;
+    private readonly IOperationItemRetryReconciliationService _reconcile;
     private readonly IEnumerable<IOperationItemRetryHandler> _handlers;
     private readonly IWorkflowRunRetryAuthorizationService _retryAuthz;
     private readonly IWorkflowStartDispatchService _dispatch;
@@ -84,6 +85,7 @@ public sealed class OperationItemRetryService : IOperationItemRetryService
         AppertureDbContext db,
         IOperationItemStore items,
         IOperationItemRetryAttemptStore attempts,
+        IOperationItemRetryReconciliationService reconcile,
         IEnumerable<IOperationItemRetryHandler> handlers,
         IWorkflowRunRetryAuthorizationService retryAuthz,
         IWorkflowStartDispatchService dispatch,
@@ -92,6 +94,7 @@ public sealed class OperationItemRetryService : IOperationItemRetryService
         _db = db;
         _items = items;
         _attempts = attempts;
+        _reconcile = reconcile;
         _handlers = handlers;
         _retryAuthz = retryAuthz;
         _dispatch = dispatch;
@@ -143,7 +146,9 @@ public sealed class OperationItemRetryService : IOperationItemRetryService
             .ConfigureAwait(false);
         if (existing is not null)
         {
-            return Map(existing, "Idempotent replay of an existing retry attempt.");
+            var reconciled = await _reconcile.ReconcileAttemptAsync(existing.OperationItemRetryAttemptId, cancellationToken)
+                .ConfigureAwait(false) ?? existing;
+            return Map(reconciled, GuidanceFor(reconciled, idempotentReplay: true));
         }
 
         var group = await _items.GetGroupAsync(item.OperationGroupId, cancellationToken).ConfigureAwait(false);
@@ -275,7 +280,7 @@ public sealed class OperationItemRetryService : IOperationItemRetryService
 
         return Map(
             dispatched,
-            "Retry attempt dispatched. Outcome reconciliation (Succeeded/Failed) is deferred to SDK-4B.");
+            GuidanceFor(dispatched, idempotentReplay: false));
     }
 
     public async Task<IReadOnlyList<OperationItemRetryAttemptDto>?> ListAttemptsAsync(
@@ -292,9 +297,7 @@ public sealed class OperationItemRetryService : IOperationItemRetryService
         if (run is null)
             return null;
 
-        // List uses execute authz? Spec says view + execute for retry request.
-        // For read of attempts, require at least retry/execute permission (same as request) to avoid
-        // exposing dispatch metadata to read-only users. Align with execute model.
+        // Execute-equivalent authz (same as retry request) — not read-only.
         await _retryAuthz.EnsureCanRetryRunAsync(new WorkflowDefinitionId(run.DefinitionId), cancellationToken)
             .ConfigureAwait(false);
 
@@ -302,8 +305,9 @@ public sealed class OperationItemRetryService : IOperationItemRetryService
         if (item is null || !string.Equals(item.RunId, runId.Value, StringComparison.Ordinal))
             return null;
 
-        var attempts = await _attempts.ListByItemAsync(item.OperationItemId, cancellationToken).ConfigureAwait(false);
-        return attempts.Select(a => Map(a, message: null)).ToArray();
+        var attempts = await _reconcile.ReconcileForParentItemAsync(item.OperationItemId, cancellationToken)
+            .ConfigureAwait(false);
+        return attempts.Select(a => Map(a, GuidanceFor(a, idempotentReplay: false))).ToArray();
     }
 
     public static string BuildDispatchIdempotencyKey(string operationItemId, string clientIdempotencyKey)
@@ -314,6 +318,25 @@ public sealed class OperationItemRetryService : IOperationItemRetryService
 
         var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(raw))).ToLowerInvariant();
         return $"oir:{hash[..48]}";
+    }
+
+    private static string GuidanceFor(OperationItemRetryAttempt a, bool idempotentReplay)
+    {
+        var prefix = idempotentReplay ? "Idempotent replay. " : "";
+        return a.Status switch
+        {
+            OperationItemRetryAttemptStatuses.Dispatched =>
+                prefix + "Retry attempt dispatched; waiting for child run outcome.",
+            OperationItemRetryAttemptStatuses.Succeeded =>
+                prefix + "Retry attempt succeeded (child operation item succeeded).",
+            OperationItemRetryAttemptStatuses.Failed =>
+                prefix + "Retry attempt failed.",
+            OperationItemRetryAttemptStatuses.Blocked =>
+                prefix + "Retry attempt blocked; child run was not dispatched or could not proceed.",
+            OperationItemRetryAttemptStatuses.Requested =>
+                prefix + "Retry attempt requested.",
+            _ => prefix.TrimEnd(),
+        };
     }
 
     private static OperationItemRetryAttemptDto Map(OperationItemRetryAttempt a, string? message) =>

@@ -28,6 +28,14 @@ public static class OperationItemRetryErrorCodes
     public const string ModuleUnsupported = "module_retry_unsupported";
     public const string DefinitionUnavailable = "definition_not_executable";
     public const string IntegrationNotRunnable = "integration_not_runnable";
+
+    // SDK-4B reconciliation
+    public const string ChildRunCancelled = "child_run_cancelled";
+    public const string ChildRunFailedBeforeItemization = "child_run_failed_before_itemization";
+    public const string MissingChildOutcome = "missing_child_outcome";
+    public const string AmbiguousChildOutcome = "ambiguous_child_outcome";
+    public const string ChildItemSkipped = "child_item_skipped";
+    public const string ChildRunMissing = "child_run_missing";
 }
 
 /// <summary>Size bounds for retry attempt fields (SDK-4A).</summary>

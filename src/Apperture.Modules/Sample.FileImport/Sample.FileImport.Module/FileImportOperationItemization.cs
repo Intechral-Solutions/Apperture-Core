@@ -64,7 +64,9 @@ internal static class FileImportOperationItemization
         string operationGroupId,
         string runId,
         string fixtureId,
-        ImportRowOutcome outcome)
+        ImportRowOutcome outcome,
+        string? retryAttemptId = null,
+        string? parentOperationItemId = null)
     {
         // Prefer business key; fall back to compact row label (no silent truncation of large payloads).
         var displayLabel = !string.IsNullOrWhiteSpace(outcome.SourceKey)
@@ -75,14 +77,23 @@ internal static class FileImportOperationItemization
             new { summary = outcome.SafeRowSummary },
             JsonOptions);
 
-        var metadataJson = JsonSerializer.Serialize(
-            new
+        object metadata = string.IsNullOrWhiteSpace(retryAttemptId)
+            ? new
             {
                 fixtureId,
                 rowNumber = outcome.RowNumber,
                 errorCode = outcome.ErrorCode,
-            },
-            JsonOptions);
+            }
+            : new
+            {
+                fixtureId,
+                rowNumber = outcome.RowNumber,
+                errorCode = outcome.ErrorCode,
+                retryAttemptId,
+                parentOperationItemId,
+            };
+
+        var metadataJson = JsonSerializer.Serialize(metadata, JsonOptions);
 
         return new AppendOperationItemRequest(
             OperationGroupId: operationGroupId,

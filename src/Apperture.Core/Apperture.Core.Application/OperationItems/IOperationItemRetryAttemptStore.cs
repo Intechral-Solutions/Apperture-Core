@@ -31,4 +31,13 @@ public interface IOperationItemRetryAttemptStore
     Task<OperationItemRetryAttempt> MarkBlockedAsync(
         MarkOperationItemRetryAttemptBlockedRequest request,
         CancellationToken cancellationToken = default);
+
+    Task<OperationItemRetryAttempt?> GetByChildRunIdAsync(
+        string childRunId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>SDK-4B — set Succeeded/Failed/Blocked with child item links. No-op if already terminal with same status.</summary>
+    Task<OperationItemRetryAttempt> MarkTerminalAsync(
+        MarkOperationItemRetryAttemptTerminalRequest request,
+        CancellationToken cancellationToken = default);
 }

@@ -124,6 +124,22 @@ public sealed class StartRequestWorker : BackgroundService
                         continue;
 
                     await processor.ProcessClaimedAsync(runId, stoppingToken);
+
+                    // SDK-4B: best-effort reconcile per-item retry attempts linked to this child run.
+                    try
+                    {
+                        var reconcile = scope.ServiceProvider
+                            .GetService<Apperture.Core.Application.OperationItems.IOperationItemRetryReconciliationService>();
+                        if (reconcile is not null)
+                            await reconcile.ReconcileByChildRunAsync(runId, stoppingToken).ConfigureAwait(false);
+                    }
+                    catch (Exception reconcileEx)
+                    {
+                        _logger.LogWarning(
+                            reconcileEx,
+                            "Operation item retry reconciliation failed after run completion. RunId={RunId}",
+                            runId);
+                    }
                 }
 
                 // Best-effort: attempt to process a small batch of operation starts each poll.

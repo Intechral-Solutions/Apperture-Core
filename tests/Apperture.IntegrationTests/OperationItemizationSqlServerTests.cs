@@ -164,6 +164,8 @@ public sealed class OperationItemizationSqlServerTests
         store.Should().BeOfType<SqlOperationItemStore>();
         scope.ServiceProvider.GetRequiredService<IOperationItemRetryAttemptStore>()
             .Should().BeOfType<SqlOperationItemRetryAttemptStore>();
+        scope.ServiceProvider.GetRequiredService<IOperationItemRetryReconciliationService>()
+            .Should().BeOfType<OperationItemRetryReconciliationService>();
     }
 
     [Fact]

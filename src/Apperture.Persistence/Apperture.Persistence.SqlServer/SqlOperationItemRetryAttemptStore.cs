@@ -174,6 +174,62 @@ public sealed class SqlOperationItemRetryAttemptStore : IOperationItemRetryAttem
         return Map(entity);
     }
 
+    public async Task<OperationItemRetryAttempt?> GetByChildRunIdAsync(
+        string childRunId,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(childRunId))
+            return null;
+
+        var entity = await _db.OperationItemRetryAttempts
+            .AsNoTracking()
+            .FirstOrDefaultAsync(a => a.ChildRunId == childRunId, cancellationToken)
+            .ConfigureAwait(false);
+        return entity is null ? null : Map(entity);
+    }
+
+    public async Task<OperationItemRetryAttempt> MarkTerminalAsync(
+        MarkOperationItemRetryAttemptTerminalRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        if (string.IsNullOrWhiteSpace(request.OperationItemRetryAttemptId))
+            throw new OperationItemizationException("Retry attempt id is required.");
+
+        var status = request.Status.Trim();
+        if (status is not (OperationItemRetryAttemptStatuses.Succeeded
+            or OperationItemRetryAttemptStatuses.Failed
+            or OperationItemRetryAttemptStatuses.Blocked))
+        {
+            throw new OperationItemizationException(
+                $"Terminal status must be Succeeded, Failed, or Blocked (got '{request.Status}').");
+        }
+
+        var entity = await _db.OperationItemRetryAttempts
+            .FirstOrDefaultAsync(a => a.Id == request.OperationItemRetryAttemptId, cancellationToken)
+            .ConfigureAwait(false)
+            ?? throw new OperationItemizationException($"Unknown retry attempt '{request.OperationItemRetryAttemptId}'.");
+
+        // Already terminal: keep existing outcome (do not overwrite Succeeded with Failed, etc.).
+        if (entity.Status is OperationItemRetryAttemptStatuses.Succeeded
+            or OperationItemRetryAttemptStatuses.Failed
+            or OperationItemRetryAttemptStatuses.Blocked)
+        {
+            return Map(entity);
+        }
+
+        var now = request.CompletedAtUtc ?? DateTimeOffset.UtcNow;
+        entity.Status = status;
+        entity.ChildOperationGroupId = request.ChildOperationGroupId ?? entity.ChildOperationGroupId;
+        entity.ChildOperationItemId = request.ChildOperationItemId ?? entity.ChildOperationItemId;
+        entity.ErrorCode = Truncate(request.ErrorCode, OperationItemizationBounds.ErrorCodeMaxLength);
+        entity.ErrorMessage = Truncate(request.ErrorMessage, OperationItemizationBounds.ErrorMessageMaxLength);
+        entity.CompletedAtUtc = now;
+        entity.UpdatedAtUtc = now;
+        await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        return Map(entity);
+    }
+
     private static void ValidateCreate(CreateOperationItemRetryAttemptRequest request)
     {
         if (string.IsNullOrWhiteSpace(request.OperationItemId))

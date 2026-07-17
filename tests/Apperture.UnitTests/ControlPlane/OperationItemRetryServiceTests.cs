@@ -283,10 +283,12 @@ public sealed class OperationItemRetryServiceTests
             new[] { "Validate", "Parse", "ProcessRows", "Complete" }));
         var dispatch = new WorkflowStartDispatchService(definitionResolver, new SqlWorkflowPersistence(db), db);
         IWorkflowRunRetryAuthorizationService authz = allowAuthz ? new AllowRetryAuthz() : new DenyRetryAuthz();
+        var reconcile = new OperationItemRetryReconciliationService(db, items, attempts);
         return new OperationItemRetryService(
             db,
             items,
             attempts,
+            reconcile,
             [new FileImportOperationItemRetryHandler()],
             authz,
             dispatch,

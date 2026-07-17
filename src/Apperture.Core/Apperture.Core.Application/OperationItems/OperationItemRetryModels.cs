@@ -47,3 +47,13 @@ public sealed record MarkOperationItemRetryAttemptBlockedRequest(
     string ErrorCode,
     string ErrorMessage,
     DateTimeOffset? CompletedAtUtc = null);
+
+/// <summary>SDK-4B — terminal outcome for a dispatched retry attempt.</summary>
+public sealed record MarkOperationItemRetryAttemptTerminalRequest(
+    string OperationItemRetryAttemptId,
+    string Status,
+    string? ChildOperationGroupId = null,
+    string? ChildOperationItemId = null,
+    string? ErrorCode = null,
+    string? ErrorMessage = null,
+    DateTimeOffset? CompletedAtUtc = null);

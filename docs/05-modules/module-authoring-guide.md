@@ -76,20 +76,23 @@ This guide is for developers building **Apperture modules**: workflow-centric pa
 
 Same run-read authorization as run detail/timeline. Missing run → 404; no groups/items → empty 200. Client: `GetRunOperationGroupsAsync` / `GetRunOperationGroupItemsAsync`. Run detail includes optional `operationItemization` summary (`groupCount`, `failedItemCount`, `skippedItemCount`, `hasOperationItems`) — **not** full item lists.
 
-**Per-item retry (SDK-4A):**
+**Per-item retry (SDK-4A/4B):**
 
-* Durable append-only `OperationItemRetryAttempts` (status: `Requested` → `Dispatched` / `Blocked`; `Succeeded`/`Failed` deferred to **SDK-4B**)
-* Module contract: `IOperationItemRetryHandler` (`CanRetry` via `Evaluate` + `BuildStartPlan`). Platform does **not** infer retry for modules without a handler. FileImport registers `FileImportOperationItemRetryHandler`.
-* `POST /api/runs/{runId}/operation-items/{itemId}/retry` — body `{ "idempotencyKey": "...", "reason": "..." }`. Same-key replay returns the existing attempt/child run. Authz: execute-equivalent (`IWorkflowRunRetryAuthorizationService` / `workflow.execute`), **not** read-only.
-* `GET /api/runs/{runId}/operation-items/{itemId}/retries` — list attempts
+* Durable append-only `OperationItemRetryAttempts` (status: `Requested` → `Dispatched` → `Succeeded`/`Failed`, or `Blocked`)
+* Module contract: `IOperationItemRetryHandler` (`Evaluate` + `BuildStartPlan`). Platform does **not** infer retry for modules without a handler. FileImport registers `FileImportOperationItemRetryHandler`.
+* `POST /api/runs/{runId}/operation-items/{itemId}/retry` — body `{ "idempotencyKey": "...", "reason": "..." }`. Same-key replay returns the existing attempt/child run (after lazy reconciliation). Authz: execute-equivalent (`IWorkflowRunRetryAuthorizationService` / `workflow.execute`), **not** read-only.
+* `GET /api/runs/{runId}/operation-items/{itemId}/retries` — list attempts; **SDK-4B** reconciles `Dispatched` attempts against child run/item outcomes before returning
 * Child run: `RetryOfRunId` = original run; start idempotency key derived from item + client key; parameters include `retryMode`, `retryRowNumber`, `fixtureId`, `parentOperationItemId`, `retryAttemptId`
+* FileImport retry child items store `retryAttemptId` + `parentOperationItemId` in safe metadata (no raw CSV)
+* Reconciliation (`IOperationItemRetryReconciliationService`): explicit + idempotent; also best-effort after Worker completes a child run. Mapping: child item Succeeded→attempt Succeeded; Failed/Skipped→Failed; child run failed/cancelled/missing items→Failed with clear codes; active child run stays Dispatched. Never fake success.
+* Parent item **Status/ErrorCode/ErrorMessage immutable**; `RetryCount` / `LastAttemptedAtUtc` may bump on dispatch
 
-**Deferred:** Attempt outcome reconciliation (**SDK-4B**); Run Detail retry buttons/UI (**SDK-4C**); retry-all / policies / scheduled retry.
+**Deferred:** Run Detail retry buttons/UI (**SDK-4C**); retry-all / policies / scheduled retry.
 
 **Run Detail panel (SDK-3D):** Management UI hosts `RunOperationItemizationPanel` on `/runs/{runId}` below the run summary band and above forensics. Operators see group kind/source/status/counts, expand to paged items (default page size 50), status filters (All / Failed / Succeeded / Skipped), failed-first ordering when viewing All, and metadata behind disclosure. Empty state when no groups. Section-level errors do not break the rest of Run Detail. **No retry buttons yet (SDK-4C).**
 
 **Audit:** [sdk3-itemized-operation-model-design-audit.md](../audits/sdk3-itemized-operation-model-design-audit.md) · [sdk4-per-item-retry-design-audit.md](../audits/sdk4-per-item-retry-design-audit.md)  
-**Plans:** [SDK-3B](../superpowers/plans/2026-07-15-sdk3b-operation-itemization-read-apis.md) · [SDK-3C](../superpowers/plans/2026-07-15-sdk3c-fileimport-operation-itemization.md) · [SDK-3D](../superpowers/plans/2026-07-15-sdk3d-run-detail-operation-itemization-panel.md) · [SDK-4A](../superpowers/plans/2026-07-16-sdk4a-operation-item-retry-dispatch.md)
+**Plans:** [SDK-3B](../superpowers/plans/2026-07-15-sdk3b-operation-itemization-read-apis.md) · [SDK-3C](../superpowers/plans/2026-07-15-sdk3c-fileimport-operation-itemization.md) · [SDK-3D](../superpowers/plans/2026-07-15-sdk3d-run-detail-operation-itemization-panel.md) · [SDK-4A](../superpowers/plans/2026-07-16-sdk4a-operation-item-retry-dispatch.md) · [SDK-4B](../superpowers/plans/2026-07-17-sdk4b-retry-attempt-outcome-reconciliation.md)
 
 ---
 

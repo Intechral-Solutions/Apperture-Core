@@ -160,4 +160,61 @@ public sealed class InMemoryOperationItemRetryAttemptStore : IOperationItemRetry
             return Task.FromResult(updated);
         }
     }
+
+    public Task<OperationItemRetryAttempt?> GetByChildRunIdAsync(
+        string childRunId,
+        CancellationToken cancellationToken = default)
+    {
+        _ = cancellationToken;
+        if (string.IsNullOrWhiteSpace(childRunId))
+            return Task.FromResult<OperationItemRetryAttempt?>(null);
+
+        lock (_gate)
+        {
+            return Task.FromResult(_byId.Values.FirstOrDefault(a =>
+                string.Equals(a.ChildRunId, childRunId, StringComparison.Ordinal)));
+        }
+    }
+
+    public Task<OperationItemRetryAttempt> MarkTerminalAsync(
+        MarkOperationItemRetryAttemptTerminalRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        _ = cancellationToken;
+        lock (_gate)
+        {
+            if (!_byId.TryGetValue(request.OperationItemRetryAttemptId, out var current))
+                throw new OperationItemizationException($"Unknown retry attempt '{request.OperationItemRetryAttemptId}'.");
+
+            if (current.Status is OperationItemRetryAttemptStatuses.Succeeded
+                or OperationItemRetryAttemptStatuses.Failed
+                or OperationItemRetryAttemptStatuses.Blocked)
+            {
+                return Task.FromResult(current);
+            }
+
+            var status = request.Status.Trim();
+            if (status is not (OperationItemRetryAttemptStatuses.Succeeded
+                or OperationItemRetryAttemptStatuses.Failed
+                or OperationItemRetryAttemptStatuses.Blocked))
+            {
+                throw new OperationItemizationException(
+                    $"Terminal status must be Succeeded, Failed, or Blocked (got '{request.Status}').");
+            }
+
+            var now = request.CompletedAtUtc ?? DateTimeOffset.UtcNow;
+            var updated = current with
+            {
+                Status = status,
+                ChildOperationGroupId = request.ChildOperationGroupId ?? current.ChildOperationGroupId,
+                ChildOperationItemId = request.ChildOperationItemId ?? current.ChildOperationItemId,
+                ErrorCode = request.ErrorCode,
+                ErrorMessage = request.ErrorMessage,
+                CompletedAtUtc = now,
+                UpdatedAtUtc = now,
+            };
+            _byId[updated.OperationItemRetryAttemptId] = updated;
+            return Task.FromResult(updated);
+        }
+    }
 }

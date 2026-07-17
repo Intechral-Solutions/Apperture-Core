@@ -73,6 +73,13 @@ public sealed class FileImportProcessRowsStepHandler : IStepHandler
             var outcome = FileImportRowProcessor.ValidateAndMap(batch.BatchId, target, seen, now);
             _store.AppendRowOutcome(outcome);
 
+            var parentOperationItemId = FileImportParameterReader.GetString(
+                parameters,
+                FileImportOperationItemRetryHandler.ParentOperationItemIdParameter);
+            var retryAttemptId = FileImportParameterReader.GetString(
+                parameters,
+                FileImportOperationItemRetryHandler.RetryAttemptIdParameter);
+
             try
             {
                 await context.Signals.OperationItems.AppendItemAsync(
@@ -80,7 +87,9 @@ public sealed class FileImportProcessRowsStepHandler : IStepHandler
                         batch.OperationGroupId!,
                         runId,
                         fixtureId,
-                        outcome),
+                        outcome,
+                        retryAttemptId: retryAttemptId,
+                        parentOperationItemId: parentOperationItemId),
                     cancellationToken).ConfigureAwait(false);
             }
             catch (OperationItemizationException ex)
@@ -94,12 +103,8 @@ public sealed class FileImportProcessRowsStepHandler : IStepHandler
                 step = "ProcessRows",
                 retryMode = true,
                 retryRowNumber = retryRowNumber.Value,
-                parentOperationItemId = FileImportParameterReader.GetString(
-                    parameters,
-                    FileImportOperationItemRetryHandler.ParentOperationItemIdParameter),
-                retryAttemptId = FileImportParameterReader.GetString(
-                    parameters,
-                    FileImportOperationItemRetryHandler.RetryAttemptIdParameter),
+                parentOperationItemId,
+                retryAttemptId,
                 batchId = batch.BatchId,
                 operationGroupId = batch.OperationGroupId,
                 fixtureId,
