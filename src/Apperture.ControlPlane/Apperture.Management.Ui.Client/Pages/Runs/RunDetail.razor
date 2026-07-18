@@ -85,7 +85,8 @@
                         CurrentStepLabel="@CurrentStepLabel" />
 
         <RunOperationItemizationPanel RunId="@RunId"
-                                      Summary="@_detail.OperationItemization" />
+                                      Summary="@_detail.OperationItemization"
+                                      OnRetryCompleted="RefreshAsync" />
 
         @if (_detail.ForensicContext is { } fxInv)
         {

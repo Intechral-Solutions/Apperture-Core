@@ -35,4 +35,4 @@ FileImport retry mode writes `retryAttemptId` + `parentOperationItemId` into chi
 
 ## Deferred
 
-SDK-4C — Run Detail retry buttons / UI actions.
+~~SDK-4C UI~~ → [SDK-4C plan](2026-07-17-sdk4c-run-detail-per-item-retry-ui.md). Retry-all / policies / scheduled retry remain deferred.

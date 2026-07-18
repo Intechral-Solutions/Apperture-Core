@@ -155,7 +155,14 @@ public sealed class ManagementClient : IManagementClient
             $"runs/{Uri.EscapeDataString(runId)}/operation-items/{Uri.EscapeDataString(operationItemId)}/retry",
             request,
             cancellationToken).ConfigureAwait(false);
-        response.EnsureSuccessStatusCode();
+        if (!response.IsSuccessStatusCode)
+        {
+            var body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            var message = TryReadApiErrorMessage(body)
+                          ?? $"Retry request failed ({(int)response.StatusCode}).";
+            throw new HttpRequestException(message, inner: null, statusCode: response.StatusCode);
+        }
+
         return await response.Content.ReadFromJsonAsync<OperationItemRetryAttemptDto>(cancellationToken)
             .ConfigureAwait(false);
     }
@@ -165,9 +172,53 @@ public sealed class ManagementClient : IManagementClient
         string operationItemId,
         CancellationToken cancellationToken = default)
     {
-        return await _http.GetFromJsonAsync<IReadOnlyList<OperationItemRetryAttemptDto>>(
+        var response = await _http.GetAsync(
             $"runs/{Uri.EscapeDataString(runId)}/operation-items/{Uri.EscapeDataString(operationItemId)}/retries",
             cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+            return null;
+        if (!response.IsSuccessStatusCode)
+        {
+            var body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            var message = TryReadApiErrorMessage(body)
+                          ?? $"Retry history request failed ({(int)response.StatusCode}).";
+            throw new HttpRequestException(message, inner: null, statusCode: response.StatusCode);
+        }
+
+        return await response.Content.ReadFromJsonAsync<IReadOnlyList<OperationItemRetryAttemptDto>>(cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private static string? TryReadApiErrorMessage(string? body)
+    {
+        if (string.IsNullOrWhiteSpace(body))
+            return null;
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(body);
+            var root = doc.RootElement;
+            if (root.TryGetProperty("error", out var error) && error.ValueKind == System.Text.Json.JsonValueKind.String)
+            {
+                var text = error.GetString();
+                if (!string.IsNullOrWhiteSpace(text))
+                {
+                    if (root.TryGetProperty("errorCode", out var code)
+                        && code.ValueKind == System.Text.Json.JsonValueKind.String
+                        && !string.IsNullOrWhiteSpace(code.GetString()))
+                    {
+                        return $"{text} ({code.GetString()})";
+                    }
+
+                    return text;
+                }
+            }
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            // fall through
+        }
+
+        return null;
     }
 
     public async Task<CancelRunResult> CancelRunAsync(string runId, CancellationToken cancellationToken = default)

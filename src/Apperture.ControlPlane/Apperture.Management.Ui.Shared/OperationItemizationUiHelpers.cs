@@ -150,4 +150,54 @@ public static class OperationItemizationUiHelpers
 
     public static bool ShouldShowSummaryHint(RunOperationItemizationSummaryDto? summary) =>
         summary is { HasOperationItems: true };
+
+    // --- SDK-4C per-item retry UI ---
+
+    public const int RetryReasonMaxLength = 512;
+
+    public const string RetryCreatesChildRunHint =
+        "Retry starts a child run. The original item stays Failed and is not edited.";
+
+    public const string NotRetryableLabel = "Not retryable";
+
+    public const string RetryAllDeferredNote =
+        "Retry all / batch retry is not available yet.";
+
+    /// <summary>Failed items marked retryable by the module (e.g. FileImport row failures).</summary>
+    public static bool CanShowRetryAction(OperationItemSummaryDto item) =>
+        string.Equals(item.Status, "Failed", StringComparison.Ordinal) && item.IsRetryable;
+
+    public static bool IsFailedNotRetryable(OperationItemSummaryDto item) =>
+        string.Equals(item.Status, "Failed", StringComparison.Ordinal) && !item.IsRetryable;
+
+    public static ManagementStatusSemantic MapRetryAttemptStatusSemantic(string? status) =>
+        status switch
+        {
+            "Succeeded" => ManagementStatusSemantic.Success,
+            "Failed" => ManagementStatusSemantic.Error,
+            "Blocked" => ManagementStatusSemantic.Warning,
+            "Dispatched" => ManagementStatusSemantic.Pending,
+            "Requested" => ManagementStatusSemantic.Pending,
+            _ => ManagementStatusSemantic.Neutral,
+        };
+
+    public static string NewRetryIdempotencyKey() => Guid.NewGuid().ToString("N");
+
+    public static string? ClampRetryReason(string? reason)
+    {
+        if (string.IsNullOrWhiteSpace(reason))
+            return null;
+        var trimmed = reason.Trim();
+        return trimmed.Length <= RetryReasonMaxLength
+            ? trimmed
+            : trimmed[..RetryReasonMaxLength];
+    }
+
+    public static string FormatRetrySuccessMessage(OperationItemRetryAttemptDto attempt)
+    {
+        var status = string.IsNullOrWhiteSpace(attempt.Status) ? "unknown" : attempt.Status;
+        if (!string.IsNullOrWhiteSpace(attempt.ChildRunId))
+            return $"Retry {status}. Child run {attempt.ChildRunId}. Original item unchanged.";
+        return $"Retry {status}. Original item unchanged.";
+    }
 }

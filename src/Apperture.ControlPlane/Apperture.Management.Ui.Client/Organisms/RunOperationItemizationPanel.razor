@@ -1,10 +1,11 @@
 @using System.Net
+@using Apperture.Management.Ui.Client.Atoms
 @inject IManagementClient Client
 
 <ManagementSection Title="@OperationItemizationUiHelpers.SectionTitle"
                    Subtitle="@OperationItemizationUiHelpers.SectionSubtitle"
                    Layer="ManagementSection.UiLayer.Detail"
-                   Help="Requires modules that emit durable operation groups/items. Per-item retry API + outcome reconciliation exist (SDK-4A/4B); Run Detail retry buttons are deferred to SDK-4C.">
+                   Help="Modules that emit operation items can support per-item retry (SDK-4C). Retry starts a child run; the original item stays unchanged. Retry-all is deferred.">
     <Toolbar>
         <button type="button"
                 class="ui-toolbar-btn"
@@ -44,6 +45,8 @@
                 @Summary.GroupCount group(s) · @Summary.FailedItemCount failed item(s) · @Summary.SkippedItemCount skipped
             </div>
         }
+
+        <p class="mb-3 text-xs text-muted">@OperationItemizationUiHelpers.RetryAllDeferredNote</p>
 
         <div class="ui-page-stack gap-3">
             @foreach (var group in _groups)
@@ -162,6 +165,7 @@
                                                 <th class="px-2 py-2">Error</th>
                                                 <th class="px-2 py-2">Retryable</th>
                                                 <th class="px-2 py-2">When</th>
+                                                <th class="px-2 py-2">Retry</th>
                                                 <th class="px-2 py-2"></th>
                                             </tr>
                                         </thead>
@@ -171,7 +175,13 @@
                                                 var rowClass = string.Equals(item.Status, "Failed", StringComparison.Ordinal)
                                                     ? "border-l-2 border-message-error"
                                                     : "";
-                                                <tr class="@rowClass" data-testid="operation-item" data-status="@item.Status">
+                                                var showRetry = OperationItemizationUiHelpers.CanShowRetryAction(item);
+                                                var notRetryable = OperationItemizationUiHelpers.IsFailedNotRetryable(item);
+                                                var formOpen = string.Equals(_retryFormItemId, item.OperationItemId, StringComparison.Ordinal);
+                                                var inFlight = string.Equals(_retryInFlightItemId, item.OperationItemId, StringComparison.Ordinal);
+                                                _retryErrors.TryGetValue(item.OperationItemId, out var itemError);
+                                                _retrySuccess.TryGetValue(item.OperationItemId, out var itemSuccess);
+                                                <tr class="@rowClass" data-testid="operation-item" data-status="@item.Status" data-retryable="@item.IsRetryable.ToString().ToLowerInvariant()">
                                                     <td class="px-2 py-2 font-mono text-xs">@item.Sequence</td>
                                                     <td class="px-2 py-2 text-xs">@(item.DisplayLabel ?? "—")</td>
                                                     <td class="px-2 py-2 font-mono text-xs break-all">@(item.SubjectKey ?? "—")</td>
@@ -207,6 +217,158 @@
                                                             <span class="text-muted">—</span>
                                                         }
                                                     </td>
+                                                    <td class="px-2 py-2 text-xs align-top" style="min-width: 12rem;">
+                                                        @if (showRetry)
+                                                        {
+                                                            @if (!formOpen)
+                                                            {
+                                                                <button type="button"
+                                                                        class="ui-toolbar-btn"
+                                                                        data-testid="operation-item-retry"
+                                                                        disabled="@(inFlight || _retryInFlightItemId is not null)"
+                                                                        @onclick="() => OpenRetryForm(item)">
+                                                                    Retry
+                                                                </button>
+                                                            }
+                                                            else
+                                                            {
+                                                                <div class="space-y-2 rounded border border-default bg-surface-muted p-2" data-testid="operation-item-retry-form">
+                                                                    <div class="text-xs text-muted">@OperationItemizationUiHelpers.RetryCreatesChildRunHint</div>
+                                                                    <label class="block text-xs text-heading">
+                                                                        Reason (optional)
+                                                                        <input class="mt-1 w-full rounded border border-default bg-surface px-2 py-1 text-xs"
+                                                                               maxlength="@OperationItemizationUiHelpers.RetryReasonMaxLength"
+                                                                               disabled="@inFlight"
+                                                                               @bind="_retryReason"
+                                                                               @bind:event="oninput" />
+                                                                    </label>
+                                                                    <div class="flex flex-wrap gap-2">
+                                                                        <button type="button"
+                                                                                class="ui-toolbar-btn"
+                                                                                data-testid="operation-item-retry-submit"
+                                                                                disabled="@inFlight"
+                                                                                @onclick="() => SubmitRetryAsync(item)">
+                                                                            @(inFlight ? "Submitting…" : "Submit retry")
+                                                                        </button>
+                                                                        <button type="button"
+                                                                                class="ui-toolbar-btn"
+                                                                                disabled="@inFlight"
+                                                                                @onclick="CloseRetryForm">
+                                                                            Cancel
+                                                                        </button>
+                                                                    </div>
+                                                                </div>
+                                                            }
+                                                        }
+                                                        else if (notRetryable)
+                                                        {
+                                                            <span class="text-muted"
+                                                                  data-testid="operation-item-not-retryable"
+                                                                  title="This failed item is not marked retryable by the module (for example control-flow skips).">
+                                                                @OperationItemizationUiHelpers.NotRetryableLabel
+                                                            </span>
+                                                        }
+                                                        else
+                                                        {
+                                                            <span class="text-muted">—</span>
+                                                        }
+
+                                                        @if (!string.IsNullOrWhiteSpace(itemError))
+                                                        {
+                                                            <div class="mt-2 text-xs text-message-error" data-testid="operation-item-retry-error">@itemError</div>
+                                                        }
+                                                        @if (!string.IsNullOrWhiteSpace(itemSuccess))
+                                                        {
+                                                            <div class="mt-2 text-xs text-body" data-testid="operation-item-retry-success">
+                                                                @itemSuccess
+                                                                @{
+                                                                    _retryChildRunIds.TryGetValue(item.OperationItemId, out var childRunId);
+                                                                }
+                                                                @if (!string.IsNullOrWhiteSpace(childRunId))
+                                                                {
+                                                                    <div class="mt-1">
+                                                                        <DrillInLink Href="@($"/runs/{Uri.EscapeDataString(childRunId)}")">
+                                                                            Open child run
+                                                                        </DrillInLink>
+                                                                    </div>
+                                                                }
+                                                            </div>
+                                                        }
+
+                                                        @if (string.Equals(item.Status, "Failed", StringComparison.Ordinal))
+                                                        {
+                                                            var historyOpen = _retryHistoryOpen.Contains(item.OperationItemId);
+                                                            <div class="mt-2" data-testid="operation-item-retry-history">
+                                                                <button type="button"
+                                                                        class="ui-toolbar-btn"
+                                                                        @onclick="() => ToggleRetryHistoryAsync(item)">
+                                                                    @(historyOpen ? "Hide retry history" : "Show retry history")
+                                                                </button>
+                                                                @if (historyOpen)
+                                                                {
+                                                                    <div class="mt-2 space-y-2">
+                                                                        @if (_retryHistoryLoading.Contains(item.OperationItemId))
+                                                                        {
+                                                                            <div class="text-xs text-muted">Loading attempts…</div>
+                                                                        }
+                                                                        else if (_retryHistoryErrors.TryGetValue(item.OperationItemId, out var histErr))
+                                                                        {
+                                                                            <div class="text-xs text-message-error">@histErr</div>
+                                                                        }
+                                                                        else if (_retryHistory.TryGetValue(item.OperationItemId, out var attempts)
+                                                                                 && attempts.Count > 0)
+                                                                        {
+                                                                            @foreach (var attempt in attempts.OrderByDescending(a => a.AttemptIndex))
+                                                                            {
+                                                                                <div class="rounded border border-default bg-surface p-2 text-xs"
+                                                                                     data-testid="retry-attempt"
+                                                                                     data-attempt-status="@attempt.Status">
+                                                                                    <div class="flex flex-wrap items-center gap-2">
+                                                                                        <span class="font-semibold">Attempt #@attempt.AttemptIndex</span>
+                                                                                        <StatusPill Label="@attempt.Status"
+                                                                                                    Semantic="@OperationItemizationUiHelpers.MapRetryAttemptStatusSemantic(attempt.Status)" />
+                                                                                    </div>
+                                                                                    <div class="mt-1 text-muted">
+                                                                                        Started <TimestampDisplay Value="@attempt.StartedAtUtc" ShowUtcDetail="true" />
+                                                                                        @if (attempt.CompletedAtUtc is not null)
+                                                                                        {
+                                                                                            <span> · Completed <TimestampDisplay Value="@attempt.CompletedAtUtc" ShowUtcDetail="true" /></span>
+                                                                                        }
+                                                                                    </div>
+                                                                                    @if (!string.IsNullOrWhiteSpace(attempt.Reason))
+                                                                                    {
+                                                                                        <div class="mt-1">Reason: @attempt.Reason</div>
+                                                                                    }
+                                                                                    @if (!string.IsNullOrWhiteSpace(attempt.Message))
+                                                                                    {
+                                                                                        <div class="mt-1 text-muted">@attempt.Message</div>
+                                                                                    }
+                                                                                    @if (!string.IsNullOrWhiteSpace(attempt.ErrorCode) || !string.IsNullOrWhiteSpace(attempt.ErrorMessage))
+                                                                                    {
+                                                                                        <div class="mt-1 font-mono">@(attempt.ErrorCode ?? "—")</div>
+                                                                                        <div class="text-muted break-words">@(attempt.ErrorMessage ?? "")</div>
+                                                                                    }
+                                                                                    @if (!string.IsNullOrWhiteSpace(attempt.ChildRunId))
+                                                                                    {
+                                                                                        <div class="mt-1">
+                                                                                            Child run:
+                                                                                            <DrillInLink Href="@($"/runs/{Uri.EscapeDataString(attempt.ChildRunId)}")">
+                                                                                                @attempt.ChildRunId
+                                                                                            </DrillInLink>
+                                                                                        </div>
+                                                                                    }
+                                                                                </div>
+                                                                            }
+                                                                        }
+                                                                        else
+                                                                        {
+                                                                            <div class="text-xs text-muted">No retry attempts yet.</div>
+                                                                        }
+                                                                    </div>
+                                                                }
+                                                            </div>
+                                                        }
+                                                    </td>
                                                     <td class="px-2 py-2 text-xs">
                                                         <details>
                                                             <summary class="cursor-pointer text-muted">Details</summary>
@@ -229,6 +391,10 @@
                                                                 <div><span class="text-muted">Item id:</span> @item.OperationItemId</div>
                                                                 <div><span class="text-muted">Group id:</span> @item.OperationGroupId</div>
                                                                 <div><span class="text-muted">Run id:</span> @item.RunId</div>
+                                                                @if (item.RetryCount > 0)
+                                                                {
+                                                                    <div><span class="text-muted">Retry count:</span> @item.RetryCount</div>
+                                                                }
                                                             </div>
                                                         </details>
                                                     </td>
@@ -267,6 +433,10 @@
     [Parameter]
     public RunOperationItemizationSummaryDto? Summary { get; set; }
 
+    /// <summary>SDK-4C — notify parent (Run Detail) to refresh summary after a successful retry.</summary>
+    [Parameter]
+    public EventCallback OnRetryCompleted { get; set; }
+
     private string? _loadKey;
     private bool _groupsLoading;
     private string? _groupsError;
@@ -278,6 +448,18 @@
     private int _itemsTotalCount;
     private bool _itemsLoading;
     private string? _itemsError;
+
+    private string? _retryFormItemId;
+    private string? _retryReason;
+    private string? _retryInFlightItemId;
+    private string? _retryIdempotencyKey;
+    private readonly Dictionary<string, string> _retryErrors = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, string> _retrySuccess = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, string> _retryChildRunIds = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, IReadOnlyList<OperationItemRetryAttemptDto>> _retryHistory = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, string> _retryHistoryErrors = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _retryHistoryLoading = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _retryHistoryOpen = new(StringComparer.Ordinal);
 
     private IReadOnlyList<OperationItemSummaryDto> DisplayItems =>
         string.IsNullOrEmpty(_itemStatusFilter)
@@ -291,6 +473,7 @@
         if (string.IsNullOrEmpty(key) || key == _loadKey)
             return;
         _loadKey = key;
+        ClearRetryUiState();
         await LoadGroupsAsync(resetExpanded: true);
     }
 
@@ -351,7 +534,6 @@
         }
 
         _expandedGroupId = group.OperationGroupId;
-        // Default All with failed-first emphasis; operators can narrow to Failed.
         _itemStatusFilter = OperationItemizationUiHelpers.StatusFilterAll;
         await LoadItemsAsync(reset: true);
     }
@@ -413,6 +595,148 @@
         }
     }
 
+    private void OpenRetryForm(OperationItemSummaryDto item)
+    {
+        if (_retryInFlightItemId is not null)
+            return;
+
+        _retryFormItemId = item.OperationItemId;
+        _retryReason = null;
+        _retryIdempotencyKey = OperationItemizationUiHelpers.NewRetryIdempotencyKey();
+        _retryErrors.Remove(item.OperationItemId);
+        _retrySuccess.Remove(item.OperationItemId);
+        _retryChildRunIds.Remove(item.OperationItemId);
+    }
+
+    private void CloseRetryForm()
+    {
+        if (_retryInFlightItemId is not null)
+            return;
+        _retryFormItemId = null;
+        _retryReason = null;
+        _retryIdempotencyKey = null;
+    }
+
+    private async Task SubmitRetryAsync(OperationItemSummaryDto item)
+    {
+        if (!OperationItemizationUiHelpers.CanShowRetryAction(item))
+            return;
+        if (_retryInFlightItemId is not null)
+            return;
+
+        _retryInFlightItemId = item.OperationItemId;
+        _retryIdempotencyKey ??= OperationItemizationUiHelpers.NewRetryIdempotencyKey();
+        _retryErrors.Remove(item.OperationItemId);
+        _retrySuccess.Remove(item.OperationItemId);
+
+        try
+        {
+            var request = new RequestOperationItemRetryDto(
+                IdempotencyKey: _retryIdempotencyKey,
+                Reason: OperationItemizationUiHelpers.ClampRetryReason(_retryReason));
+
+            var result = await Client.RetryOperationItemAsync(RunId, item.OperationItemId, request);
+            if (result is null)
+            {
+                _retryErrors[item.OperationItemId] = "Retry response was empty.";
+                return;
+            }
+
+            _retrySuccess[item.OperationItemId] =
+                OperationItemizationUiHelpers.FormatRetrySuccessMessage(result);
+            if (!string.IsNullOrWhiteSpace(result.ChildRunId))
+                _retryChildRunIds[item.OperationItemId] = result.ChildRunId;
+
+            _retryFormItemId = null;
+            _retryReason = null;
+            _retryIdempotencyKey = null;
+
+            await LoadRetryHistoryAsync(item.OperationItemId, force: true);
+            await LoadGroupsAsync(resetExpanded: false);
+            // Keep expanded items list; bump RetryCount display by reloading current page.
+            await LoadItemsAsync(reset: true);
+
+            if (OnRetryCompleted.HasDelegate)
+                await OnRetryCompleted.InvokeAsync();
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.Forbidden)
+        {
+            _retryErrors[item.OperationItemId] = "Not authorized to retry this item (403).";
+            _retryIdempotencyKey = null;
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
+        {
+            _retryErrors[item.OperationItemId] = "Run or item was not found (404).";
+            _retryIdempotencyKey = null;
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode is HttpStatusCode.Conflict or HttpStatusCode.BadRequest)
+        {
+            _retryErrors[item.OperationItemId] = string.IsNullOrWhiteSpace(ex.Message)
+                ? $"Retry rejected ({(int)ex.StatusCode!})."
+                : ex.Message;
+            _retryIdempotencyKey = null;
+        }
+        catch (HttpRequestException ex)
+        {
+            _retryErrors[item.OperationItemId] = string.IsNullOrWhiteSpace(ex.Message)
+                ? "Retry request failed."
+                : ex.Message;
+            _retryIdempotencyKey = null;
+        }
+        catch (Exception ex)
+        {
+            _retryErrors[item.OperationItemId] = ex.Message;
+            _retryIdempotencyKey = null;
+        }
+        finally
+        {
+            _retryInFlightItemId = null;
+        }
+    }
+
+    private async Task ToggleRetryHistoryAsync(OperationItemSummaryDto item)
+    {
+        if (!_retryHistoryOpen.Add(item.OperationItemId))
+        {
+            _retryHistoryOpen.Remove(item.OperationItemId);
+            return;
+        }
+
+        await LoadRetryHistoryAsync(item.OperationItemId, force: false);
+    }
+
+    private async Task LoadRetryHistoryAsync(string operationItemId, bool force)
+    {
+        if (string.IsNullOrWhiteSpace(RunId) || string.IsNullOrWhiteSpace(operationItemId))
+            return;
+        if (!force && _retryHistory.ContainsKey(operationItemId))
+            return;
+
+        _retryHistoryLoading.Add(operationItemId);
+        _retryHistoryErrors.Remove(operationItemId);
+        try
+        {
+            var attempts = await Client.GetOperationItemRetriesAsync(RunId, operationItemId);
+            _retryHistory[operationItemId] = attempts ?? Array.Empty<OperationItemRetryAttemptDto>();
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.Forbidden)
+        {
+            _retryHistoryErrors[operationItemId] = "Not authorized to view retry history (403).";
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
+        {
+            _retryHistoryErrors[operationItemId] = "Retry history was not found (404).";
+        }
+        catch (Exception ex)
+        {
+            _retryHistoryErrors[operationItemId] = ex.Message;
+        }
+        finally
+        {
+            _retryHistoryLoading.Remove(operationItemId);
+        }
+    }
+
     private void ClearItemsState()
     {
         _items.Clear();
@@ -420,5 +744,21 @@
         _itemsError = null;
         _itemsLoading = false;
         _itemStatusFilter = OperationItemizationUiHelpers.StatusFilterAll;
+        CloseRetryForm();
+    }
+
+    private void ClearRetryUiState()
+    {
+        _retryFormItemId = null;
+        _retryReason = null;
+        _retryInFlightItemId = null;
+        _retryIdempotencyKey = null;
+        _retryErrors.Clear();
+        _retrySuccess.Clear();
+        _retryChildRunIds.Clear();
+        _retryHistory.Clear();
+        _retryHistoryErrors.Clear();
+        _retryHistoryLoading.Clear();
+        _retryHistoryOpen.Clear();
     }
 }

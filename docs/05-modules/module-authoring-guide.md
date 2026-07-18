@@ -76,7 +76,7 @@ This guide is for developers building **Apperture modules**: workflow-centric pa
 
 Same run-read authorization as run detail/timeline. Missing run → 404; no groups/items → empty 200. Client: `GetRunOperationGroupsAsync` / `GetRunOperationGroupItemsAsync`. Run detail includes optional `operationItemization` summary (`groupCount`, `failedItemCount`, `skippedItemCount`, `hasOperationItems`) — **not** full item lists.
 
-**Per-item retry (SDK-4A/4B):**
+**Per-item retry (SDK-4A/4B/4C):**
 
 * Durable append-only `OperationItemRetryAttempts` (status: `Requested` → `Dispatched` → `Succeeded`/`Failed`, or `Blocked`)
 * Module contract: `IOperationItemRetryHandler` (`Evaluate` + `BuildStartPlan`). Platform does **not** infer retry for modules without a handler. FileImport registers `FileImportOperationItemRetryHandler`.
@@ -86,13 +86,14 @@ Same run-read authorization as run detail/timeline. Missing run → 404; no grou
 * FileImport retry child items store `retryAttemptId` + `parentOperationItemId` in safe metadata (no raw CSV)
 * Reconciliation (`IOperationItemRetryReconciliationService`): explicit + idempotent; also best-effort after Worker completes a child run. Mapping: child item Succeeded→attempt Succeeded; Failed/Skipped→Failed; child run failed/cancelled/missing items→Failed with clear codes; active child run stays Dispatched. Never fake success.
 * Parent item **Status/ErrorCode/ErrorMessage immutable**; `RetryCount` / `LastAttemptedAtUtc` may bump on dispatch
+* **SDK-4C UI:** Run Detail itemization panel shows Retry for failed+retryable items (optional reason, client idempotency key, in-flight guard), “Not retryable” for other failed items, retry attempt history with child-run links. Retry-all remains deferred.
 
-**Deferred:** Run Detail retry buttons/UI (**SDK-4C**); retry-all / policies / scheduled retry.
+**Deferred:** Retry-all / batch retry / policies / scheduled retry.
 
-**Run Detail panel (SDK-3D):** Management UI hosts `RunOperationItemizationPanel` on `/runs/{runId}` below the run summary band and above forensics. Operators see group kind/source/status/counts, expand to paged items (default page size 50), status filters (All / Failed / Succeeded / Skipped), failed-first ordering when viewing All, and metadata behind disclosure. Empty state when no groups. Section-level errors do not break the rest of Run Detail. **No retry buttons yet (SDK-4C).**
+**Run Detail panel (SDK-3D + SDK-4C):** Management UI hosts `RunOperationItemizationPanel` on `/runs/{runId}` below the run summary band and above forensics. Operators see group kind/source/status/counts, expand to paged items (default page size 50), status filters (All / Failed / Succeeded / Skipped), failed-first ordering when viewing All, metadata behind disclosure, and per-item retry for eligible failures. Empty state when no groups. Section-level errors do not break the rest of Run Detail.
 
 **Audit:** [sdk3-itemized-operation-model-design-audit.md](../audits/sdk3-itemized-operation-model-design-audit.md) · [sdk4-per-item-retry-design-audit.md](../audits/sdk4-per-item-retry-design-audit.md)  
-**Plans:** [SDK-3B](../superpowers/plans/2026-07-15-sdk3b-operation-itemization-read-apis.md) · [SDK-3C](../superpowers/plans/2026-07-15-sdk3c-fileimport-operation-itemization.md) · [SDK-3D](../superpowers/plans/2026-07-15-sdk3d-run-detail-operation-itemization-panel.md) · [SDK-4A](../superpowers/plans/2026-07-16-sdk4a-operation-item-retry-dispatch.md) · [SDK-4B](../superpowers/plans/2026-07-17-sdk4b-retry-attempt-outcome-reconciliation.md)
+**Plans:** [SDK-3B](../superpowers/plans/2026-07-15-sdk3b-operation-itemization-read-apis.md) · [SDK-3C](../superpowers/plans/2026-07-15-sdk3c-fileimport-operation-itemization.md) · [SDK-3D](../superpowers/plans/2026-07-15-sdk3d-run-detail-operation-itemization-panel.md) · [SDK-4A](../superpowers/plans/2026-07-16-sdk4a-operation-item-retry-dispatch.md) · [SDK-4B](../superpowers/plans/2026-07-17-sdk4b-retry-attempt-outcome-reconciliation.md) · [SDK-4C](../superpowers/plans/2026-07-17-sdk4c-run-detail-per-item-retry-ui.md)
 
 ---
 

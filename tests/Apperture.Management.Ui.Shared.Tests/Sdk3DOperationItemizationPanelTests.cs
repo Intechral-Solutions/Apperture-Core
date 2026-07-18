@@ -36,9 +36,6 @@ public sealed class Sdk3DOperationItemizationPanelTests
         content.Should().Contain("Load more");
         content.Should().Contain("TimestampDisplay");
         content.Should().NotContain("ToLocalTime()");
-        content.Should().NotContain("Retry item");
-        content.Should().NotContain("RetryItem");
-        content.Should().NotContain("@onclick=\"Retry");
         content.Should().Contain("<details");
         content.Should().Contain("failed first");
         content.Should().Contain("IsRetryable");
