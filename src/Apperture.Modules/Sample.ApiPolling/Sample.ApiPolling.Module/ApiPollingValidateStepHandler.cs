@@ -26,6 +26,37 @@ public sealed class ApiPollingValidateStepHandler : IStepHandler
                 $"Unknown snapshot id '{snapshotId}'. Known: {string.Join(", ", ApiPollingSnapshotIds.All)}.");
         }
 
+        var retryMode = ApiPollingParameterReader.ResolveRetryMode(parameters);
+        if (retryMode)
+        {
+            var sequence = ApiPollingParameterReader.GetInt(
+                parameters,
+                ApiPollingOperationItemRetryHandler.RetrySequenceParameter);
+            if (sequence is null or < 1)
+            {
+                throw OperatorExecutionResult.FailSummaryOnly(
+                    "ApiPolling retry mode requires retrySequence >= 1.");
+            }
+
+            if (string.IsNullOrWhiteSpace(
+                    ApiPollingParameterReader.GetString(
+                        parameters,
+                        ApiPollingOperationItemRetryHandler.ParentOperationItemIdParameter)))
+            {
+                throw OperatorExecutionResult.FailSummaryOnly(
+                    "ApiPolling retry mode requires parentOperationItemId.");
+            }
+
+            if (string.IsNullOrWhiteSpace(
+                    ApiPollingParameterReader.GetString(
+                        parameters,
+                        ApiPollingOperationItemRetryHandler.RetryAttemptIdParameter)))
+            {
+                throw OperatorExecutionResult.FailSummaryOnly(
+                    "ApiPolling retry mode requires retryAttemptId.");
+            }
+        }
+
         var pageSize = ApiPollingParameterReader.ResolvePageSize(parameters);
         var maxRecords = ApiPollingParameterReader.ResolveMaxRecords(parameters);
         if (pageSize <= 0)
@@ -38,6 +69,7 @@ public sealed class ApiPollingValidateStepHandler : IStepHandler
             {
                 step = "Validate",
                 snapshotId = snapshotId.Trim(),
+                retryMode,
                 resetState = ApiPollingParameterReader.ResolveResetState(parameters),
                 strictMode = ApiPollingParameterReader.ResolveStrictMode(parameters),
                 failOnRecordError = ApiPollingParameterReader.ResolveFailOnRecordError(parameters),

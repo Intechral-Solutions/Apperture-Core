@@ -6,6 +6,7 @@ namespace Sample.ApiPolling;
 /// <summary>
 /// Loads the embedded snapshot via the fake API client and opens a process-local Running sync batch.
 /// Pages through the full matching set so Compare can detect missing/deleted keys.
+/// Retry mode loads exactly one record by sequence.
 /// </summary>
 public sealed class ApiPollingPollStepHandler : IStepHandler
 {
@@ -33,10 +34,11 @@ public sealed class ApiPollingPollStepHandler : IStepHandler
         var pageSize = ApiPollingParameterReader.ResolvePageSize(parameters);
         var includeDeleted = ApiPollingParameterReader.ResolveIncludeDeleted(parameters);
         var resetState = ApiPollingParameterReader.ResolveResetState(parameters);
+        var retryMode = ApiPollingParameterReader.ResolveRetryMode(parameters);
 
         var integrationId = context.Signals.Correlation.IntegrationId ?? context.IntegrationId;
         var scopeKey = _store.ResolveScopeKey(integrationId);
-        if (resetState)
+        if (resetState && !retryMode)
             _store.ResetScope(scopeKey);
 
         List<DirectoryAccountRecord> all;
@@ -54,6 +56,21 @@ public sealed class ApiPollingPollStepHandler : IStepHandler
             throw OperatorExecutionResult.FailSummaryOnly(ex.Message);
         }
 
+        if (retryMode)
+        {
+            var sequence = ApiPollingParameterReader.GetInt(
+                parameters,
+                ApiPollingOperationItemRetryHandler.RetrySequenceParameter);
+            if (sequence is null or < 1 || sequence.Value > all.Count)
+            {
+                throw OperatorExecutionResult.FailSummaryOnly(
+                    $"ApiPolling retry could not find sequence {sequence} in snapshot '{snapshotId}'.");
+            }
+
+            all = [all[sequence.Value - 1]];
+            totalMatching = 1;
+        }
+
         var runId = context.Signals.Correlation.RunId ?? context.RunId;
         var correlationId = context.Signals.Correlation.CorrelationId ?? context.CorrelationId;
 
@@ -63,7 +80,7 @@ public sealed class ApiPollingPollStepHandler : IStepHandler
             RunId: runId,
             CorrelationId: correlationId,
             IntegrationId: integrationId,
-            ResetState: resetState));
+            ResetState: resetState && !retryMode));
 
         _store.SetPolledRecords(batch.SyncBatchId, all);
 
@@ -73,7 +90,8 @@ public sealed class ApiPollingPollStepHandler : IStepHandler
             snapshotId,
             syncBatchId = batch.SyncBatchId,
             scopeKey,
-            resetState,
+            resetState = batch.ResetState,
+            retryMode,
             includeDeleted,
             pageSize,
             recordCount = all.Count,

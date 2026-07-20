@@ -7,7 +7,7 @@ public static class ApiPollingServiceCollectionExtensions
 {
     /// <summary>
     /// Registers embedded <see cref="ISampleDirectoryApiClient"/>, <see cref="IApiPollingStateStore"/>,
-    /// and <see cref="ApiPollingModule"/>.
+    /// <see cref="ApiPollingModule"/>, and ApiPolling retry handlers.
     /// When <see cref="IApiPollingDurableLastSeenStore"/> is registered (via
     /// <c>AddSampleApiPollingPersistence</c>), uses <see cref="HybridApiPollingStateStore"/>;
     /// otherwise uses process-local <see cref="InMemoryApiPollingStateStore"/>.
@@ -25,6 +25,19 @@ public static class ApiPollingServiceCollectionExtensions
         services.AddSingleton(sp => new ApiPollingModule(
             sp.GetRequiredService<IApiPollingStateStore>(),
             sp.GetRequiredService<ISampleDirectoryApiClient>()));
+        services.AddSampleApiPollingRetryHandlers();
+        return services;
+    }
+
+    /// <summary>
+    /// Registers ApiPolling <see cref="Apperture.Core.Application.OperationItems.IOperationItemRetryHandler"/> (SDK-5C).
+    /// Safe to call when the module instance is registered separately via AddKnownModules.
+    /// </summary>
+    public static IServiceCollection AddSampleApiPollingRetryHandlers(this IServiceCollection services)
+    {
+        services.AddSingleton<Apperture.Core.Application.OperationItems.IOperationItemRetryHandler>(sp =>
+            new ApiPollingOperationItemRetryHandler(
+                sp.GetService<ISampleDirectoryApiClient>() ?? new EmbeddedSampleDirectoryApiClient()));
         return services;
     }
 }

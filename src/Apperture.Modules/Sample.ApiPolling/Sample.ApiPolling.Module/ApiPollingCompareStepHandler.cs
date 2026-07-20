@@ -4,7 +4,8 @@ using Sample.ApiPolling.Contracts;
 namespace Sample.ApiPolling;
 
 /// <summary>
-/// Diffs polled records against process-local last-seen fingerprints.
+/// Diffs polled records against process-local / durable last-seen fingerprints.
+/// Retry mode classifies exactly the one polled record (no missing-deletion sweep).
 /// </summary>
 public sealed class ApiPollingCompareStepHandler : IStepHandler
 {
@@ -33,16 +34,39 @@ public sealed class ApiPollingCompareStepHandler : IStepHandler
         var includeDeleted = ApiPollingParameterReader.ResolveIncludeDeleted(parameters);
         var maxRecords = ApiPollingParameterReader.ResolveMaxRecords(parameters);
         var failOnRecordError = ApiPollingParameterReader.ResolveFailOnRecordError(parameters);
+        var retryMode = ApiPollingParameterReader.ResolveRetryMode(parameters);
         var now = DateTimeOffset.UtcNow;
 
-        var classifications = ApiPollingClassifier.Classify(
-            batch.SyncBatchId,
-            polled,
-            lastSeen,
-            includeDeleted,
-            maxRecords,
-            failOnRecordError,
-            now);
+        IReadOnlyList<RecordClassification> classifications;
+        if (retryMode)
+        {
+            // Single-record revalidation — do not sweep missing deletions for the whole scope.
+            var originalSequence = ApiPollingParameterReader.GetInt(
+                parameters,
+                ApiPollingOperationItemRetryHandler.RetrySequenceParameter) ?? 1;
+
+            classifications = ApiPollingClassifier.Classify(
+                batch.SyncBatchId,
+                polled,
+                lastSeen,
+                includeDeleted: false,
+                maxRecords: Math.Max(1, polled.Count),
+                failOnRecordError: false,
+                now)
+                .Select(c => c with { Sequence = originalSequence })
+                .ToList();
+        }
+        else
+        {
+            classifications = ApiPollingClassifier.Classify(
+                batch.SyncBatchId,
+                polled,
+                lastSeen,
+                includeDeleted,
+                maxRecords,
+                failOnRecordError,
+                now);
+        }
 
         _store.SetClassifications(batch.SyncBatchId, classifications);
 
@@ -59,6 +83,7 @@ public sealed class ApiPollingCompareStepHandler : IStepHandler
                 step = "Compare",
                 syncBatchId = batch.SyncBatchId,
                 snapshotId = batch.SnapshotId,
+                retryMode,
                 totalRecords = classifications.Count,
                 newCount,
                 updatedCount,

@@ -62,6 +62,9 @@ public static class ApiPollingParameterReader
     public static bool ResolveResetState(IReadOnlyDictionary<string, object?> parameters) =>
         GetBool(parameters, "resetState") ?? false;
 
+    public static bool ResolveRetryMode(IReadOnlyDictionary<string, object?> parameters) =>
+        GetBool(parameters, ApiPollingOperationItemRetryHandler.RetryModeParameter) == true;
+
     public static int ResolvePageSize(IReadOnlyDictionary<string, object?> parameters)
     {
         var size = GetInt(parameters, "pageSize") ?? ApiPollingSettingDefaults.PageSize;

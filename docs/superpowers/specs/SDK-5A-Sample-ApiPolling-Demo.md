@@ -76,5 +76,5 @@ Exactly one from Complete (fail-loud):
 ## Deferred
 
 - SDK-5B: durable SQL watermark / sync state
-- SDK-5C: failed-record retry
+- SDK-5C: failed-record retry — **closed** ([spec](SDK-5C-ApiPolling-Failed-Record-Retry.md))
 - Systems/Services, shared entity store, cross-integration lookup, live HTTP/OAuth, module `.Ui`

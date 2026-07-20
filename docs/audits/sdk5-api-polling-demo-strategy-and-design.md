@@ -2,7 +2,7 @@
 
 **Date:** 2026-07-18  
 **Type:** Design / evidence audit (no module implementation)  
-**Prior closed:** SDK-1 through SDK-4C  
+**Prior closed:** SDK-1 through SDK-4C; SDK-5A–SDK-5C  
 **Proposed module id:** `Sample.ApiPolling`  
 **Note:** SDK-1 called this candidate `Sample.ApiSync`. Prefer `Sample.ApiPolling` for schedule-first, poll-shaped clarity.
 
@@ -22,7 +22,8 @@
 **Next implementation epic:** SDK-5A — implement `Sample.ApiPolling` (fixtures, state store, workflow, itemization, signals, settings, tests, docs).
 
 > **SDK-5A (2026-07-18):** Implemented. See [SDK-5A spec](../superpowers/specs/SDK-5A-Sample-ApiPolling-Demo.md).  
-> **SDK-5B (2026-07-19):** Durable SQL watermark / last-seen. See [SDK-5B spec](../superpowers/specs/SDK-5B-ApiPolling-Durable-Sync-State.md).
+> **SDK-5B (2026-07-19):** Durable SQL watermark / last-seen. See [SDK-5B spec](../superpowers/specs/SDK-5B-ApiPolling-Durable-Sync-State.md).  
+> **SDK-5C (2026-07-20):** Failed-record retry. See [SDK-5C spec](../superpowers/specs/SDK-5C-ApiPolling-Failed-Record-Retry.md).
 
 ---
 
@@ -322,7 +323,7 @@ Optional follow-ons (separate epics):
 |------|--------|
 | **SDK-5A** | Implement module per this design |
 | **SDK-5B** | Durable SQL watermark for ApiPolling |
-| **SDK-5C** | Per-failed-record retry handler (reuse SDK-4) |
+| **SDK-5C** | Per-failed-record retry handler (reuse SDK-4) — **closed** |
 | **SDK-6+** | Second sample + shared key for cross-integration design |
 
 ---
@@ -337,7 +338,7 @@ This sample should make the following **answerable later** without implementing 
 | What changed? | `changeKind` + bounded change summary |
 | Which source? | Module id + snapshot / sourceLabel; later Systems/Services |
 | What did Apperture do? | Operation group `api_poll` + run id |
-| What failed? | Failed item errorCode/message; retryable flag for future SDK-5C |
+| What failed? | Failed item errorCode/message; retryable flag; SDK-5C single-record retry |
 | Cross-integration key? | Stable `externalId` vocabulary shared with future samples |
 
 Platform run/step data remains **supporting**; itemization + external ids are the bridge toward business-primary UX.

@@ -6,7 +6,8 @@ namespace Sample.ApiPolling;
 
 /// <summary>
 /// Begins a durable platform operation group, appends one item per classification,
-/// and updates process-local last-seen state for successful classifications.
+/// and stages last-seen mutations for successful classifications.
+/// Retry mode writes <c>api_poll_retry</c> with parent/attempt linkage metadata.
 /// </summary>
 public sealed class ApiPollingProcessChangesStepHandler : IStepHandler
 {
@@ -40,6 +41,13 @@ public sealed class ApiPollingProcessChangesStepHandler : IStepHandler
         var includeDeleted = ApiPollingParameterReader.ResolveIncludeDeleted(parameters);
         var pageSize = ApiPollingParameterReader.ResolvePageSize(parameters);
         var maxRecords = ApiPollingParameterReader.ResolveMaxRecords(parameters);
+        var retryMode = ApiPollingParameterReader.ResolveRetryMode(parameters);
+        var parentOperationItemId = ApiPollingParameterReader.GetString(
+            parameters,
+            ApiPollingOperationItemRetryHandler.ParentOperationItemIdParameter);
+        var retryAttemptId = ApiPollingParameterReader.GetString(
+            parameters,
+            ApiPollingOperationItemRetryHandler.RetryAttemptIdParameter);
 
         var newCount = classifications.Count(c => c.ChangeKind == ApiPollingChangeKinds.New);
         var updatedCount = classifications.Count(c => c.ChangeKind == ApiPollingChangeKinds.Updated);
@@ -48,11 +56,15 @@ public sealed class ApiPollingProcessChangesStepHandler : IStepHandler
         var failedCount = classifications.Count(c => c.ChangeKind == ApiPollingChangeKinds.Failed);
         var skippedCount = classifications.Count(c => c.ChangeKind == ApiPollingChangeKinds.Skipped);
 
+        var operationKind = retryMode
+            ? ApiPollingOperationItemization.RetryOperationKind
+            : ApiPollingOperationItemization.OperationKind;
+
         OperationGroup group;
         try
         {
             group = await context.Signals.OperationItems.BeginGroupAsync(
-                operationKind: ApiPollingOperationItemization.OperationKind,
+                operationKind: operationKind,
                 sourceLabel: batch.SnapshotId,
                 summaryJson: ApiPollingOperationItemization.BuildGroupSummaryJson(
                     batch.SnapshotId,
@@ -92,7 +104,10 @@ public sealed class ApiPollingProcessChangesStepHandler : IStepHandler
                         group.OperationGroupId,
                         runId,
                         batch.SnapshotId,
-                        classification),
+                        includeDeleted,
+                        classification,
+                        retryAttemptId: retryMode ? retryAttemptId : null,
+                        parentOperationItemId: retryMode ? parentOperationItemId : null),
                     cancellationToken).ConfigureAwait(false);
             }
             catch (OperationItemizationException ex)
@@ -111,6 +126,8 @@ public sealed class ApiPollingProcessChangesStepHandler : IStepHandler
             syncBatchId = batch.SyncBatchId,
             operationGroupId = group.OperationGroupId,
             snapshotId = batch.SnapshotId,
+            retryMode,
+            operationKind,
             totalRecords = classifications.Count,
             newCount,
             updatedCount,
@@ -123,7 +140,8 @@ public sealed class ApiPollingProcessChangesStepHandler : IStepHandler
     }
 
     /// <summary>
-    /// Stages last-seen mutations. Commit happens in Complete only for Succeeded / CompletedWithErrors.
+    /// Stages last-seen mutations for successful classifications only (one record in retry mode).
+    /// Commit happens in Complete only for Succeeded / CompletedWithErrors.
     /// </summary>
     private void ApplyStateUpdates(SyncBatch batch, IReadOnlyList<RecordClassification> classifications)
     {

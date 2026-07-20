@@ -52,6 +52,7 @@ builder.Services.AddAppertureGovernance();
 builder.Services.AddKnownModules(
     [new HelloWorldModule(), new FileImportModule(), new ApiPollingModule(), new UnisaCampusNexusPaymentPlansModule(), new ProofCampusNexusStudentReviewModule()]);
 builder.Services.AddSampleFileImportRetryHandlers();
+builder.Services.AddSampleApiPollingRetryHandlers();
 builder.Services.AddAppertureRecovery();
 builder.Services.AddRuntimeSchedulerDispatch();
 builder.Services.AddAppertureCampusNexusConnector();

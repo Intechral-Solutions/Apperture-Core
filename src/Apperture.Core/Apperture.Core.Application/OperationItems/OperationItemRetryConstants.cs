@@ -23,6 +23,7 @@ public static class OperationItemRetryErrorCodes
 {
     public const string MissingRetryMetadata = "missing_retry_metadata";
     public const string RowNotFound = "retry_row_not_found";
+    public const string RecordNotFound = "retry_record_not_found";
     public const string NotFailed = "item_not_failed";
     public const string NotRetryable = "item_not_retryable";
     public const string ModuleUnsupported = "module_retry_unsupported";

@@ -79,9 +79,11 @@ This guide is for developers building **Apperture modules**: workflow-centric pa
 
 **Watermark commit rule:** ProcessChanges stages last-seen mutations; Complete **commits** only for `Succeeded` / `CompletedWithErrors`, and **discards** on `Failed` (strict / all-failed) so failures do not poison incremental state.
 
+**Per-item retry (SDK-5C):** Failed items with `IsRetryable=true` and metadata `snapshotId` + `sequence` (+ `includeDeleted`) can be retried via the SDK-4 Run Detail path. Child run uses `retryMode`, writes `api_poll_retry` with one item linked by `retryAttemptId` / `parentOperationItemId`. Success upserts **only that record** into durable last-seen; failure does not advance watermark. Parent item Status/Error immutable. Items written before SDK-5C (missing `sequence`) are blocked from retry.
+
 **Notification seed:** Built-in definition for `sync.completed.with.errors`.
 
-**Deferred:** Failed-record retry (SDK-5C), Systems/Services, shared business entity store, live HTTP/OAuth, module `.Ui`.
+**Deferred:** Retry-all / batch retry, Systems/Services, shared business entity store, live HTTP/OAuth, module `.Ui`.
 
 ## Operation itemization (SDK-3A)
 
@@ -122,7 +124,7 @@ Same run-read authorization as run detail/timeline. Missing run → 404; no grou
 * Parent item **Status/ErrorCode/ErrorMessage immutable**; `RetryCount` / `LastAttemptedAtUtc` may bump on dispatch
 * **SDK-4C UI:** Run Detail itemization panel shows Retry for failed+retryable items (optional reason, client idempotency key, in-flight guard), “Not retryable” for other failed items, retry attempt history with child-run links. Retry-all remains deferred.
 
-**Deferred:** Retry-all / batch retry / policies / scheduled retry.
+**Deferred:** Retry-all / batch retry / policies / scheduled retry. **SDK-5C:** `Sample.ApiPolling` also registers `ApiPollingOperationItemRetryHandler` — retries one failed record by `snapshotId` + `sequence` (reload embedded snapshot); child group `api_poll_retry`; durable watermark updates **that one record only** on success.
 
 **Run Detail panel (SDK-3D + SDK-4C):** Management UI hosts `RunOperationItemizationPanel` on `/runs/{runId}` below the run summary band and above forensics. Operators see group kind/source/status/counts, expand to paged items (default page size 50), status filters (All / Failed / Succeeded / Skipped), failed-first ordering when viewing All, metadata behind disclosure, and per-item retry for eligible failures. Empty state when no groups. Section-level errors do not break the rest of Run Detail.
 

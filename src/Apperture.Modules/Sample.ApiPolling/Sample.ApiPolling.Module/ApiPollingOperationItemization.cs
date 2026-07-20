@@ -4,9 +4,10 @@ using Sample.ApiPolling.Contracts;
 
 namespace Sample.ApiPolling;
 
-internal static class ApiPollingOperationItemization
+public static class ApiPollingOperationItemization
 {
     public const string OperationKind = "api_poll";
+    public const string RetryOperationKind = "api_poll_retry";
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -67,7 +68,10 @@ internal static class ApiPollingOperationItemization
         string operationGroupId,
         string runId,
         string snapshotId,
-        RecordClassification classification)
+        bool includeDeleted,
+        RecordClassification classification,
+        string? retryAttemptId = null,
+        string? parentOperationItemId = null)
     {
         var displayLabel = !string.IsNullOrWhiteSpace(classification.DisplayName)
             ? classification.DisplayName!.Trim()
@@ -82,18 +86,35 @@ internal static class ApiPollingOperationItemization
             },
             JsonOptions);
 
-        var metadataJson = JsonSerializer.Serialize(
-            new
+        object metadata = string.IsNullOrWhiteSpace(retryAttemptId)
+            ? new
             {
                 snapshotId,
+                sequence = classification.Sequence,
+                includeDeleted,
                 changeKind = classification.ChangeKind,
                 externalId = classification.ExternalId,
                 version = classification.Version,
                 status = classification.Status,
                 tier = classification.Tier,
                 errorCode = classification.ErrorCode,
-            },
-            JsonOptions);
+            }
+            : new
+            {
+                snapshotId,
+                sequence = classification.Sequence,
+                includeDeleted,
+                changeKind = classification.ChangeKind,
+                externalId = classification.ExternalId,
+                version = classification.Version,
+                status = classification.Status,
+                tier = classification.Tier,
+                errorCode = classification.ErrorCode,
+                retryAttemptId,
+                parentOperationItemId,
+            };
+
+        var metadataJson = JsonSerializer.Serialize(metadata, JsonOptions);
 
         return new AppendOperationItemRequest(
             OperationGroupId: operationGroupId,
