@@ -7,6 +7,8 @@ public static class NotificationDefinitionIds
     public const string ModuleSampleHelloWorldDemoCompleted = "module.sample.helloworld.demo.completed";
 
     public const string ModuleSampleFileImportCompletedWithErrors = "module.sample.fileimport.import.completed_with_errors";
+
+    public const string ModuleSampleApiPollingSyncCompletedWithErrors = "module.sample.apipolling.sync.completed_with_errors";
 }
 
 public static class NotificationSourceKinds

@@ -1,0 +1,46 @@
+{
+  "snapshotId": "snapshot-initial",
+  "fetchedAtUtc": "2026-07-18T10:00:00Z",
+  "records": [
+    {
+      "externalId": "A-100",
+      "displayName": "Acme Retail",
+      "email": "ops@acme.example",
+      "status": "Active",
+      "tier": "Standard",
+      "updatedAtUtc": "2026-07-01T08:00:00Z",
+      "version": 1,
+      "isDeleted": false
+    },
+    {
+      "externalId": "A-200",
+      "displayName": "Beta Foods",
+      "email": "hello@betafoods.example",
+      "status": "Active",
+      "tier": "Standard",
+      "updatedAtUtc": "2026-07-02T09:00:00Z",
+      "version": 1,
+      "isDeleted": false
+    },
+    {
+      "externalId": "A-300",
+      "displayName": "Gamma Labs",
+      "email": "contact@gammalabs.example",
+      "status": "Active",
+      "tier": "Premium",
+      "updatedAtUtc": "2026-07-03T10:00:00Z",
+      "version": 1,
+      "isDeleted": false
+    },
+    {
+      "externalId": "A-400",
+      "displayName": "Delta Media",
+      "email": "team@deltamedia.example",
+      "status": "Inactive",
+      "tier": "Standard",
+      "updatedAtUtc": "2026-07-04T11:00:00Z",
+      "version": 1,
+      "isDeleted": false
+    }
+  ]
+}

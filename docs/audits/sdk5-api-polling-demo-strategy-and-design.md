@@ -21,6 +21,9 @@
 
 **Next implementation epic:** SDK-5A — implement `Sample.ApiPolling` (fixtures, state store, workflow, itemization, signals, settings, tests, docs).
 
+> **SDK-5A (2026-07-18):** Implemented. See [SDK-5A spec](../superpowers/specs/SDK-5A-Sample-ApiPolling-Demo.md).  
+> **SDK-5B (2026-07-19):** Durable SQL watermark / last-seen. See [SDK-5B spec](../superpowers/specs/SDK-5B-ApiPolling-Durable-Sync-State.md).
+
 ---
 
 ## 2. Recommended sample architecture

@@ -20,6 +20,8 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Proof.CampusNexus.StudentReview;
+using Sample.ApiPolling;
+using Sample.ApiPolling.Persistence;
 using Sample.FileImport;
 using Sample.HelloWorld;
 using Unisa.CampusNexus.PaymentPlans;
@@ -112,6 +114,10 @@ builder.Services.AddWorkerHostIntegrationRepository();
 // Known modules (explicit host-controlled DI list; may include multiple modules for dev/testing and constrained composition).
 // Intended deployment model remains one primary module per process (ADR-0001).
     builder.Services.AddSampleFileImport();
+    builder.Services.AddSampleApiPollingPersistence(
+        sp => sp.GetRequiredService<IBootstrapConnectionProfile>().ConnectionString,
+        applyMigrationsOnStartup: false);
+    builder.Services.AddSampleApiPolling();
     builder.Services.AddSingleton<HelloWorldModule>();
     builder.Services.AddSingleton(sp => new UnisaCampusNexusPaymentPlansModule(sp.GetRequiredService<IServiceScopeFactory>()));
     builder.Services.AddSingleton(sp => new ProofCampusNexusStudentReviewModule(sp.GetRequiredService<ILoggerFactory>()));
@@ -119,6 +125,7 @@ builder.Services.AddWorkerHostIntegrationRepository();
     {
         sp.GetRequiredService<HelloWorldModule>(),
         sp.GetRequiredService<FileImportModule>(),
+        sp.GetRequiredService<ApiPollingModule>(),
         sp.GetRequiredService<UnisaCampusNexusPaymentPlansModule>(),
         sp.GetRequiredService<ProofCampusNexusStudentReviewModule>()
     });

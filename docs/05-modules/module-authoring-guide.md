@@ -21,6 +21,7 @@ This guide is for developers building **Apperture modules**: workflow-centric pa
 
 - `Sample.HelloWorld` — minimal workflow, operation, procedures, manifest signals, harness-friendly emit/log/telemetry demo
 - `Sample.FileImport` — portable CSV import demo (SDK-2/3C): embedded fixtures, process-local inspection store + durable platform operation items, partial-failure signals, settings contributor. See [SDK-2 design](../superpowers/specs/SDK-2-Sample-FileImport-Demo.md).
+- `Sample.ApiPolling` — portable API-style sync demo (SDK-5A): embedded JSON snapshots, fake API client, process-local incremental state, durable operation items, sync.* signals. See [SDK-5A design](../superpowers/specs/SDK-5A-Sample-ApiPolling-Demo.md).
 - `Proof.CampusNexus.StudentReview` — integration-scoped slots (Campus Nexus + SQL), procedures, operational logs (no manifest signals)
 
 ### Sample.FileImport (SDK-2 + SDK-3C + SDK-4A)
@@ -48,6 +49,39 @@ This guide is for developers building **Apperture modules**: workflow-centric pa
 * Platform `context.Signals.OperationItems` — durable run-attached `OperationGroup` / `OperationItem` for SDK-3B APIs and SDK-3D UI. `operationKind=file_import`; failed rows set `isRetryable` with safe metadata (`fixtureId`, `rowNumber`) for SDK-4A retry.
 
 **Notification seed:** Built-in definition for `import.completed.with.errors` (HelloWorld-sized). Subscribe to validate partial-failure → notification path.
+
+### Sample.ApiPolling (SDK-5A + SDK-5B)
+
+**Purpose:** Contract-validation sample for scheduled/API-style sync. Complements FileImport (one-shot import) by proving repeatable polling, incremental compare, external IDs, change classification, and sync summary signals — with zero HTTP/Azure/OAuth setup.
+
+**How to run:** Create a `Sample.ApiPolling` integration. Launch procedure `Sample.ApiPolling.procedures.poll` with required `snapshotId`. Optional `resetState`, `strictMode`, `failOnRecordError`. Platform schedules can target workflow `Sample.ApiPolling.Poll`.
+
+**Snapshot ids:**
+
+| Id | Expected path |
+|----|---------------|
+| `snapshot-initial` | First poll → all `new` → `sync.completed.with.changes` |
+| `snapshot-changes` | After initial → `new`/`updated`/`unchanged` → `sync.completed.with.changes` |
+| `snapshot-errors` | Mix of valid + invalid → failed retryable items → `sync.completed.with.errors` (or `sync.failed` under strict) |
+| `snapshot-deletions` | After initial → tombstone + missing → `deleted` classifications |
+| `snapshot-empty` | Empty page (edge case) |
+
+**Settings (integration-scoped):** `pageSize`, `maxRecordsPerSync`, `includeDeleted`, `failOnRecordError`, `strictModeDefault` (no secrets).
+
+**Signals:** `sync.completed`, `sync.completed.with.changes`, `sync.completed.with.errors`, `sync.failed` — exactly one per completed poll. Payload includes snapshot/`operationGroupId` and change counts.
+
+**State stores (SDK-5B):**
+
+* `IApiPollingDurableLastSeenStore` / SQL (`Sample.ApiPolling.Persistence`) — **restart-durable** last-seen fingerprints + sync summary, scoped by integration id. Tables `ApiPollingSyncStates` / `ApiPollingKnownRecords`. This is a **sync watermark**, not a business entity store.
+* `HybridApiPollingStateStore` (Worker Host) — durable last-seen + process-local in-flight batch/classifications.
+* `InMemoryApiPollingStateStore` — harness/unit tests (full process-local).
+* Platform `context.Signals.OperationItems` — durable per-run history (`operationKind=api_poll`).
+
+**Watermark commit rule:** ProcessChanges stages last-seen mutations; Complete **commits** only for `Succeeded` / `CompletedWithErrors`, and **discards** on `Failed` (strict / all-failed) so failures do not poison incremental state.
+
+**Notification seed:** Built-in definition for `sync.completed.with.errors`.
+
+**Deferred:** Failed-record retry (SDK-5C), Systems/Services, shared business entity store, live HTTP/OAuth, module `.Ui`.
 
 ## Operation itemization (SDK-3A)
 

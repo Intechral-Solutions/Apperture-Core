@@ -1,0 +1,56 @@
+{
+  "snapshotId": "snapshot-changes",
+  "fetchedAtUtc": "2026-07-18T12:00:00Z",
+  "records": [
+    {
+      "externalId": "A-100",
+      "displayName": "Acme Retail",
+      "email": "billing@acme.example",
+      "status": "Active",
+      "tier": "Standard",
+      "updatedAtUtc": "2026-07-10T08:00:00Z",
+      "version": 2,
+      "isDeleted": false
+    },
+    {
+      "externalId": "A-200",
+      "displayName": "Beta Foods",
+      "email": "hello@betafoods.example",
+      "status": "Active",
+      "tier": "Standard",
+      "updatedAtUtc": "2026-07-02T09:00:00Z",
+      "version": 1,
+      "isDeleted": false
+    },
+    {
+      "externalId": "A-300",
+      "displayName": "Gamma Labs Inc",
+      "email": "contact@gammalabs.example",
+      "status": "Active",
+      "tier": "Enterprise",
+      "updatedAtUtc": "2026-07-11T10:00:00Z",
+      "version": 2,
+      "isDeleted": false
+    },
+    {
+      "externalId": "A-400",
+      "displayName": "Delta Media",
+      "email": "team@deltamedia.example",
+      "status": "Inactive",
+      "tier": "Standard",
+      "updatedAtUtc": "2026-07-04T11:00:00Z",
+      "version": 1,
+      "isDeleted": false
+    },
+    {
+      "externalId": "A-500",
+      "displayName": "Echo Corp",
+      "email": "ops@echo.example",
+      "status": "Pending",
+      "tier": "Standard",
+      "updatedAtUtc": "2026-07-12T12:00:00Z",
+      "version": 1,
+      "isDeleted": false
+    }
+  ]
+}

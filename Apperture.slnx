@@ -40,6 +40,13 @@
   <Folder Name="/src/Apperture.Modules/">
     <Project Path="src/Apperture.Modules/Proof.CampusNexus.StudentReview.Persistence/Proof.CampusNexus.StudentReview.Persistence.csproj" />
     <Project Path="src/Apperture.Modules/Proof.CampusNexus.StudentReview/Proof.CampusNexus.StudentReview.csproj" />
+    <Project Path="src/Apperture.Modules/Sample.ApiPolling/Sample.ApiPolling.Contracts/Sample.ApiPolling.Contracts.csproj" />
+    <Project Path="src/Apperture.Modules/Sample.ApiPolling/Sample.ApiPolling.Module/Sample.ApiPolling.Module.csproj" />
+    <Project Path="src/Apperture.Modules/Sample.ApiPolling/Sample.ApiPolling.Persistence/Sample.ApiPolling.Persistence.csproj" />
+    <Project Path="src/Apperture.Modules/Sample.FileImport/Sample.FileImport.Contracts/Sample.FileImport.Contracts.csproj" />
+    <Project Path="src/Apperture.Modules/Sample.FileImport/Sample.FileImport.Module/Sample.FileImport.Module.csproj" />
+    <Project Path="src/Apperture.Modules/Sample.HelloWorld/Sample.HelloWorld.Contracts/Sample.HelloWorld.Contracts.csproj" />
+    <Project Path="src/Apperture.Modules/Sample.HelloWorld/Sample.HelloWorld.Module/Sample.HelloWorld.Module.csproj" />
     <Project Path="src/Apperture.Modules/Unisa.CampusNexus.PaymentPlans.Persistence/Unisa.CampusNexus.PaymentPlans.Persistence.csproj" />
     <Project Path="src/Apperture.Modules/Unisa.CampusNexus.PaymentPlans/Unisa.CampusNexus.PaymentPlans.csproj" />
   </Folder>

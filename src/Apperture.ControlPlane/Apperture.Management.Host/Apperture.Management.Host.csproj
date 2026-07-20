@@ -28,6 +28,9 @@
     <ProjectReference Include="..\..\Apperture.Modules\Sample.HelloWorld\Sample.HelloWorld.Module\Sample.HelloWorld.Module.csproj" />
     <ProjectReference Include="..\..\Apperture.Modules\Sample.FileImport\Sample.FileImport.Contracts\Sample.FileImport.Contracts.csproj" />
     <ProjectReference Include="..\..\Apperture.Modules\Sample.FileImport\Sample.FileImport.Module\Sample.FileImport.Module.csproj" />
+    <ProjectReference Include="..\..\Apperture.Modules\Sample.ApiPolling\Sample.ApiPolling.Contracts\Sample.ApiPolling.Contracts.csproj" />
+    <ProjectReference Include="..\..\Apperture.Modules\Sample.ApiPolling\Sample.ApiPolling.Module\Sample.ApiPolling.Module.csproj" />
+    <ProjectReference Include="..\..\Apperture.Modules\Sample.ApiPolling\Sample.ApiPolling.Persistence\Sample.ApiPolling.Persistence.csproj" />
     <ProjectReference Include="..\..\Apperture.Modules\Unisa.CampusNexus.PaymentPlans\Unisa.CampusNexus.PaymentPlans.csproj" />
     <ProjectReference Include="..\..\Apperture.Modules\Proof.CampusNexus.StudentReview\Proof.CampusNexus.StudentReview.csproj" />
   </ItemGroup>

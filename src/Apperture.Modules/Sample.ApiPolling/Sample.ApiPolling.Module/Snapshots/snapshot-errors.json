@@ -1,0 +1,76 @@
+{
+  "snapshotId": "snapshot-errors",
+  "fetchedAtUtc": "2026-07-18T13:00:00Z",
+  "records": [
+    {
+      "externalId": "A-100",
+      "displayName": "Acme Retail",
+      "email": "ops@acme.example",
+      "status": "Active",
+      "tier": "Standard",
+      "updatedAtUtc": "2026-07-01T08:00:00Z",
+      "version": 1,
+      "isDeleted": false
+    },
+    {
+      "externalId": "",
+      "displayName": "Missing Id Co",
+      "email": "missing@id.example",
+      "status": "Active",
+      "tier": "Standard",
+      "updatedAtUtc": "2026-07-05T08:00:00Z",
+      "version": 1,
+      "isDeleted": false
+    },
+    {
+      "externalId": "A-610",
+      "displayName": "Bad Email Co",
+      "email": "not-an-email",
+      "status": "Active",
+      "tier": "Standard",
+      "updatedAtUtc": "2026-07-05T09:00:00Z",
+      "version": 1,
+      "isDeleted": false
+    },
+    {
+      "externalId": "A-620",
+      "displayName": "Bad Status Co",
+      "email": "ok@badstatus.example",
+      "status": "Unknown",
+      "tier": "Standard",
+      "updatedAtUtc": "2026-07-05T10:00:00Z",
+      "version": 1,
+      "isDeleted": false
+    },
+    {
+      "externalId": "A-630",
+      "displayName": "Bad Date Co",
+      "email": "ok@baddate.example",
+      "status": "Active",
+      "tier": "Standard",
+      "updatedAtUtc": "not-a-date",
+      "version": 1,
+      "isDeleted": false
+    },
+    {
+      "externalId": "A-100",
+      "displayName": "Acme Duplicate",
+      "email": "dup@acme.example",
+      "status": "Active",
+      "tier": "Standard",
+      "updatedAtUtc": "2026-07-05T11:00:00Z",
+      "version": 1,
+      "isDeleted": false
+    },
+    {
+      "externalId": "A-700",
+      "displayName": "Valid Extra",
+      "email": "valid@extra.example",
+      "status": "Active",
+      "tier": "Premium",
+      "updatedAtUtc": "2026-07-05T12:00:00Z",
+      "version": 1,
+      "isDeleted": false
+    }
+  ]
+}

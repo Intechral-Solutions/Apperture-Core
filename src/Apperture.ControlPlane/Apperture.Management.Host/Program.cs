@@ -10,6 +10,8 @@ using Apperture.Persistence.SqlServer;
 using Proof.CampusNexus.StudentReview;
 using Sample.HelloWorld;
 using Sample.FileImport;
+using Sample.ApiPolling;
+using Sample.ApiPolling.Persistence;
 using Unisa.CampusNexus.PaymentPlans;
 using Apperture.RuntimePlane.DTFx;
 using Microsoft.AspNetCore.Authentication;
@@ -48,7 +50,7 @@ builder.Services.Configure<DevTestUserOptions>(builder.Configuration.GetSection(
 builder.Services.Configure<BootstrapPlatformAdminOptions>(builder.Configuration.GetSection(BootstrapPlatformAdminOptions.SectionName));
 builder.Services.AddAppertureGovernance();
 builder.Services.AddKnownModules(
-    [new HelloWorldModule(), new FileImportModule(), new UnisaCampusNexusPaymentPlansModule(), new ProofCampusNexusStudentReviewModule()]);
+    [new HelloWorldModule(), new FileImportModule(), new ApiPollingModule(), new UnisaCampusNexusPaymentPlansModule(), new ProofCampusNexusStudentReviewModule()]);
 builder.Services.AddSampleFileImportRetryHandlers();
 builder.Services.AddAppertureRecovery();
 builder.Services.AddRuntimeSchedulerDispatch();
@@ -63,6 +65,9 @@ builder.Services.AddAppertureNotifications(builder.Configuration);
 builder.Services.AddAttentionIncidentObservation(builder.Configuration);
 builder.Services.AddApperturePlatformSettingsManagementHost(builder.Configuration);
 builder.Services.AddUnisaCampusNexusPaymentPlansIntegration(applyModulePersistenceMigrationsOnStartup: true);
+builder.Services.AddSampleApiPollingPersistence(
+    sp => sp.GetRequiredService<Apperture.Bootstrap.IBootstrapConnectionProfile>().ConnectionString,
+    applyMigrationsOnStartup: true);
 builder.Services.AddProofCampusNexusStudentReviewIntegration();
 builder.Services.AddSampleHelloWorldIntegration();
 builder.Services.AddAppertureAuthentication(builder.Configuration);

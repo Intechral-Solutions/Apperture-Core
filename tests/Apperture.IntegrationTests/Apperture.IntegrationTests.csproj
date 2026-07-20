@@ -26,6 +26,7 @@
     <ProjectReference Include="..\..\src\Apperture.Connectors\Apperture.Connectors.Sftp\Apperture.Connectors.Sftp.csproj" />
     <ProjectReference Include="..\..\src\Apperture.Modules\Proof.CampusNexus.StudentReview.Persistence\Proof.CampusNexus.StudentReview.Persistence.csproj" />
     <ProjectReference Include="..\..\src\Apperture.Modules\Unisa.CampusNexus.PaymentPlans.Persistence\Unisa.CampusNexus.PaymentPlans.Persistence.csproj" />
+    <ProjectReference Include="..\..\src\Apperture.Modules\Sample.ApiPolling\Sample.ApiPolling.Persistence\Sample.ApiPolling.Persistence.csproj" />
     <ProjectReference Include="..\..\src\Apperture.RuntimeHost\Apperture.RuntimeHost.Windows\Apperture.RuntimeHost.Windows.WorkerHost\Apperture.RuntimeHost.Windows.WorkerHost.csproj" />
   </ItemGroup>
 </Project>
