@@ -18,7 +18,9 @@ public sealed record DemoBusinessRecordProjection(
     int ConflictCount,
     DateTimeOffset? LastObservedAtUtc,
     IReadOnlyList<DemoBusinessRecordSourceObservation> Sources,
-    IReadOnlyList<DemoBusinessRecordConflict> Conflicts);
+    IReadOnlyList<DemoBusinessRecordConflict> Conflicts,
+    /// <summary>Short UI summary of the first conflict, if any (BDS-4).</summary>
+    string? PrimaryConflictSummary = null);
 
 public sealed record DemoBusinessRecordSourceObservation(
     string SourceKind,
@@ -34,7 +36,9 @@ public sealed record DemoBusinessRecordSourceObservation(
     string? Status,
     string? ChangeKind,
     DateTimeOffset ObservedAtUtc,
-    string ProvenanceLabel);
+    string ProvenanceLabel,
+    /// <summary>Human-facing label for <see cref="SourceKind"/> (BDS-4).</summary>
+    string SourceKindLabel = "");
 
 public sealed record DemoBusinessRecordConflict(
     string Field,
@@ -84,6 +88,15 @@ public static class DemoBusinessRecordSourceKinds
             return ApiPolling;
         return Unknown;
     }
+
+    /// <summary>Stable display labels for demo source kinds (BDS-4).</summary>
+    public static string ToDisplayLabel(string? sourceKind) =>
+        sourceKind?.Trim().ToLowerInvariant() switch
+        {
+            FileImport => "File import",
+            ApiPolling => "API polling",
+            _ => "Unknown",
+        };
 }
 
 /// <summary>Pure read-time projection builder (no I/O).</summary>
@@ -143,6 +156,11 @@ public static class DemoBusinessRecordProjector
         var sources = latestBySource.Select(ToSource).ToArray();
         var conflicts = DetectConflicts(sources);
         var primary = ChoosePrimary(sources);
+        var primaryConflictSummary = conflicts.Count == 0
+            ? null
+            : conflicts.Count == 1
+                ? conflicts[0].Message
+                : $"{conflicts[0].Message} (+{conflicts.Count - 1} more)";
 
         return new DemoBusinessRecordProjection(
             RecordType: OperationItemBusinessMetadataKeys.CustomerRecordType,
@@ -155,7 +173,8 @@ public static class DemoBusinessRecordProjector
             ConflictCount: conflicts.Count,
             LastObservedAtUtc: sources.Max(s => s.ObservedAtUtc),
             Sources: sources,
-            Conflicts: conflicts);
+            Conflicts: conflicts,
+            PrimaryConflictSummary: primaryConflictSummary);
     }
 
     public static DemoBusinessRecordListResult ApplyListQuery(
@@ -269,7 +288,8 @@ public static class DemoBusinessRecordProjector
     static DemoBusinessRecordSourceObservation ToSource(DemoBusinessRecordObservationInput o)
     {
         var kind = DemoBusinessRecordSourceKinds.FromModuleId(o.ModuleId);
-        var label = $"{kind} · item {o.OperationItemId} · run {o.RunId}";
+        var kindLabel = DemoBusinessRecordSourceKinds.ToDisplayLabel(kind);
+        var label = $"{kindLabel} · item {o.OperationItemId} · run {o.RunId}";
         return new DemoBusinessRecordSourceObservation(
             SourceKind: kind,
             ModuleId: o.ModuleId,
@@ -284,7 +304,8 @@ public static class DemoBusinessRecordProjector
             Status: o.Status,
             ChangeKind: o.ChangeKind,
             ObservedAtUtc: o.ObservedAtUtc,
-            ProvenanceLabel: label);
+            ProvenanceLabel: label,
+            SourceKindLabel: kindLabel);
     }
 
     static IReadOnlyList<DemoBusinessRecordConflict> DetectConflicts(
@@ -297,7 +318,9 @@ public static class DemoBusinessRecordProjector
         AddFieldConflict(conflicts, sources, "email", s => NormalizeEmail(s.Email));
         AddFieldConflict(conflicts, sources, "status", s => NormalizeToken(s.Status));
         AddFieldConflict(conflicts, sources, "displayName", s => NormalizeToken(s.DisplayName));
-        return conflicts;
+        return conflicts
+            .OrderBy(c => c.Field, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
     }
 
     static void AddFieldConflict(

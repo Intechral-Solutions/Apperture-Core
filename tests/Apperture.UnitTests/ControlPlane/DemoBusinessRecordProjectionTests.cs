@@ -44,8 +44,14 @@ public sealed class DemoBusinessRecordProjectionTests
         conflict.HasConflict.Should().BeTrue();
         conflict.Conflicts.Should().Contain(c => c.Field == "email");
         conflict.Conflicts.Should().Contain(c => c.Field == "status");
+        conflict.Conflicts.Select(c => c.Field).Should().BeInAscendingOrder(StringComparer.OrdinalIgnoreCase);
+        conflict.PrimaryConflictSummary.Should().NotBeNullOrWhiteSpace();
         conflict.Sources.Should().OnlyContain(s =>
-            !string.IsNullOrWhiteSpace(s.OperationItemId) && !string.IsNullOrWhiteSpace(s.RunId));
+            !string.IsNullOrWhiteSpace(s.OperationItemId)
+            && !string.IsNullOrWhiteSpace(s.RunId)
+            && !string.IsNullOrWhiteSpace(s.SourceKindLabel));
+        conflict.Sources.Should().Contain(s => s.SourceKindLabel == "File import");
+        conflict.Sources.Should().Contain(s => s.SourceKindLabel == "API polling");
     }
 
     [Fact]

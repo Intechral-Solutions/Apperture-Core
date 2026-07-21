@@ -281,8 +281,7 @@ Avoid designing APIs that assume System ids or panel-host contracts that do not 
 
 ### BDS-4 — Business Record Read APIs
 
-- Management API list/get (+ optional activity slice) for demo projections.
-- Authz consistent with other read surfaces; no writes.
+Complete — Management Client DTOs/methods + small API polish. See [bds4-demo-business-record-client-api-polish.md](./bds4-demo-business-record-client-api-polish.md).
 
 ### BDS-5 — Business Record Surface
 

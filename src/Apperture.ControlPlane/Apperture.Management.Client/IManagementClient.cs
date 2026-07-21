@@ -45,6 +45,22 @@ public interface IManagementClient
         string operationItemId,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Demo/sample customer business-record list (BDS-3/BDS-4). Requires <c>integration.read</c>.
+    /// Returns null on 401/403.
+    /// </summary>
+    Task<DemoCustomerRecordPageDto?> GetDemoCustomerRecordsAsync(
+        DemoCustomerRecordListFilter? filter = null,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Demo/sample customer business-record detail (BDS-3/BDS-4). Requires <c>integration.read</c>.
+    /// Returns null on 401/403/404.
+    /// </summary>
+    Task<DemoCustomerRecordDto?> GetDemoCustomerRecordAsync(
+        string businessKey,
+        CancellationToken cancellationToken = default);
+
     Task<IReadOnlyList<OperationDefinitionDto>> GetOperationsAsync(CancellationToken cancellationToken = default);
     Task<OperationDefinitionDto?> GetOperationAsync(string operationDefinitionId, CancellationToken cancellationToken = default);
     Task<StartOperationResult> StartOperationAsync(

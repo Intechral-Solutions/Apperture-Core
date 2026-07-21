@@ -55,4 +55,6 @@ Section title/empty copy reframed to **Affected records** (panel framework uncha
 
 **BDS-3 — Demo Business Record Projection** — complete: see [bds3-demo-business-record-projection.md](./bds3-demo-business-record-projection.md).
 
-**BDS-4 / BDS-5** — Management Client polish and Records UI surface.
+**BDS-4 — Demo Business Record Client & API Polish** — complete: see [bds4-demo-business-record-client-api-polish.md](./bds4-demo-business-record-client-api-polish.md).
+
+**BDS-5** — Demo Customers UI surface (business-first list/detail + drill-through).

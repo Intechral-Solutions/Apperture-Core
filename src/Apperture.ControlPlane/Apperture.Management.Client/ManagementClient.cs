@@ -189,6 +189,50 @@ public sealed class ManagementClient : IManagementClient
             .ConfigureAwait(false);
     }
 
+    public async Task<DemoCustomerRecordPageDto?> GetDemoCustomerRecordsAsync(
+        DemoCustomerRecordListFilter? filter = null,
+        CancellationToken cancellationToken = default)
+    {
+        filter ??= new DemoCustomerRecordListFilter();
+        var qs = new List<string>
+        {
+            $"skip={filter.Skip}",
+            $"take={filter.Take}",
+        };
+        if (!string.IsNullOrWhiteSpace(filter.Q))
+            qs.Add($"q={Uri.EscapeDataString(filter.Q.Trim())}");
+        if (!string.IsNullOrWhiteSpace(filter.SourceKind))
+            qs.Add($"sourceKind={Uri.EscapeDataString(filter.SourceKind.Trim())}");
+        if (filter.HasConflict is not null)
+            qs.Add($"hasConflict={filter.HasConflict.Value.ToString().ToLowerInvariant()}");
+
+        var path = $"demo/business-records/customers?{string.Join("&", qs)}";
+        using var response = await _http.GetAsync(path, cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
+            return null;
+        response.EnsureSuccessStatusCode();
+        return await response.Content
+            .ReadFromJsonAsync<DemoCustomerRecordPageDto>(ApiJsonReadOptions, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    public async Task<DemoCustomerRecordDto?> GetDemoCustomerRecordAsync(
+        string businessKey,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(businessKey))
+            throw new ArgumentException("Business key is required.", nameof(businessKey));
+
+        var path = $"demo/business-records/customers/{Uri.EscapeDataString(businessKey.Trim())}";
+        using var response = await _http.GetAsync(path, cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden or HttpStatusCode.NotFound)
+            return null;
+        response.EnsureSuccessStatusCode();
+        return await response.Content
+            .ReadFromJsonAsync<DemoCustomerRecordDto>(ApiJsonReadOptions, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
     private static string? TryReadApiErrorMessage(string? body)
     {
         if (string.IsNullOrWhiteSpace(body))
