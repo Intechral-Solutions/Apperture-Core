@@ -91,3 +91,15 @@ var retryExecution = await host.ExecuteRetryAsync(retryItem, parentGroup, "clien
 ```
 
 The toolkit validates module retry logic and start-plan semantics. It does not replace the platform tests that cover authorization, HTTP endpoints, SQL concurrency, or durable retry reconciliation.
+
+## Essential contract matrix
+
+Unit coverage for the reusable toolkit lives in `IntegrationProcedureTestHostToolkitContractMatrixTests` and includes:
+
+- procedure outcomes (success, failure, partial success, unexpected exceptions, cancellation)
+- event capture and run identity
+- operation groups/items and total-count invariants
+- item-level retry acceptance/rejection and retry outcomes
+- settings/secrets availability without leaking secret plaintext
+
+See also the SDK-6B closure record: `docs/audits/sdk6b-closure.md`.

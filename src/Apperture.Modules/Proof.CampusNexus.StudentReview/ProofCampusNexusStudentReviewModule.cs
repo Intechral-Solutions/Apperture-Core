@@ -68,6 +68,10 @@ public sealed class ProofCampusNexusStudentReviewModule : IModule, IModuleStepHa
 
     public void RegisterStepHandlers(IStepHandlerRegistry registry)
     {
+        // Worker Host registers modules as singletons for the lifetime of the worker process.
+        // Proof's persistence adapter is registered as SCOPED (it owns a scoped DB context / connection lifetime).
+        // To avoid capturing a scoped dependency inside a singleton step handler, we pass the root
+        // IServiceScopeFactory down and resolve the adapter inside SyncRecentStudentsStepHandler per execution.
         if (_scopeFactory is null)
             throw new InvalidOperationException("ProofCampusNexusStudentReviewModule requires IServiceScopeFactory when registering step handlers (worker host).");
 

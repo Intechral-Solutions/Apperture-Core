@@ -212,7 +212,7 @@ public sealed class IntegrationProcedureTestHost
             }
 
             return recorder.BuildExecution(
-                ProcedureExecutionOutcome.Succeeded(),
+                recorder.DeriveProcedureOutcome(),
                 lastResult);
         }
         catch (OperationCanceledException)
@@ -258,7 +258,7 @@ public sealed class IntegrationProcedureTestHost
             var result = await registry.Resolve(_module.GetManifest().Id, definition.Name)
                 .ExecuteAsync(recorder.Context, parameters, cancellationToken)
                 .ConfigureAwait(false);
-            return recorder.BuildExecution(ProcedureExecutionOutcome.Succeeded(), result);
+            return recorder.BuildExecution(recorder.DeriveProcedureOutcome(), result);
         }
         catch (OperationCanceledException)
         {
@@ -355,6 +355,34 @@ public sealed class IntegrationProcedureTestHost
 
         public TestStepExecutionContext Context { get; }
 
+        public ProcedureExecutionOutcome DeriveProcedureOutcome()
+        {
+            var groups = _operationItems.Groups;
+            if (groups.Count == 0)
+                return ProcedureExecutionOutcome.Succeeded();
+
+            var succeeded = groups.Sum(g => g.SucceededCount);
+            var failed = groups.Sum(g => g.FailedCount);
+            var skipped = groups.Sum(g => g.SkippedCount);
+            var total = succeeded + failed + skipped;
+            var totals = new OperationGroupTotals(total, succeeded, failed, skipped);
+            totals.EnsureInvariant();
+
+            if (groups.Any(g => string.Equals(g.Status, OperationGroupStatuses.Failed, StringComparison.Ordinal)))
+            {
+                return new ProcedureExecutionOutcome(
+                    ProcedureOutcomeKind.Failed,
+                    ErrorCode: "operation_group_failed",
+                    ErrorMessage: "One or more operation groups failed.",
+                    Totals: totals);
+            }
+
+            if (groups.Any(g => string.Equals(g.Status, OperationGroupStatuses.CompletedWithErrors, StringComparison.Ordinal)))
+                return ProcedureExecutionOutcome.PartialSuccess(totals);
+
+            return ProcedureExecutionOutcome.Succeeded();
+        }
+
         public IntegrationProcedureExecution BuildExecution(ProcedureExecutionOutcome outcome, object? result) =>
             new(
                 Context.Identity,
@@ -393,6 +421,7 @@ public sealed class IntegrationProcedureTestHost
         public string? CorrelationId => Identity.CorrelationId;
         public string? CausationId => Identity.RunId;
         public IStepExecutionSignals Signals { get; }
+        [Obsolete("Use Signals.Events (ADR-0038). PlatformEvents remains a compatibility alias only.")]
         public IModulePlatformEventEmitter PlatformEvents { get; }
 
         public ValueTask<T?> ResolveSlotAsync<T>(string slotName, CancellationToken cancellationToken = default)

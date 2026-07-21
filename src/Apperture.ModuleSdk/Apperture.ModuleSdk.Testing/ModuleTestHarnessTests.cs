@@ -115,7 +115,9 @@ public sealed class ModuleTestHarnessTests
         var context = harness.CreateStepContext("StepA");
 
         context.Signals.Should().NotBeNull();
+#pragma warning disable CS0618 // Intentionally assert PlatformEvents alias identity during deprecation window
         ReferenceEquals(context.PlatformEvents, context.Signals.Events).Should().BeTrue();
+#pragma warning restore CS0618
         context.Signals.Correlation.RunId.Should().Be("run-1");
 
         context.Signals.Logs.LogOperational(OperationalLogLevel.Information, "test.ok", "msg");

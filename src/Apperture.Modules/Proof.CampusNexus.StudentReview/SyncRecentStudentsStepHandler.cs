@@ -91,6 +91,8 @@ public sealed class SyncRecentStudentsStepHandler : IStepHandler
             }
         }
 
+        // Resolve the scoped persistence adapter in a fresh scope per execution.
+        // This ensures we never capture scoped lifetime dependencies (DbContext / connection) in a long-lived handler instance.
         using var scope = _scopeFactory.CreateScope();
         var persistence = scope.ServiceProvider.GetRequiredService<IProofStudentReviewPersistenceAdapter>();
         var persistedRun = await persistence.StartRunAsync(

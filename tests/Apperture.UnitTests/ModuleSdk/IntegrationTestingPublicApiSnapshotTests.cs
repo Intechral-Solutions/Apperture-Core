@@ -26,5 +26,10 @@ public sealed class IntegrationTestingPublicApiSnapshotTests
 
         var missing = ExpectedPublicTypes.Where(x => !exported.Contains(x)).ToList();
         Assert.True(missing.Count == 0, $"Missing exported integration testing types: {string.Join(", ", missing)}");
+
+        var unexpected = exported.Where(x => !ExpectedPublicTypes.Contains(x)).OrderBy(x => x).ToList();
+        Assert.True(
+            unexpected.Count == 0,
+            $"Unexpected exported integration testing types (update snapshot intentionally): {string.Join(", ", unexpected)}");
     }
 }

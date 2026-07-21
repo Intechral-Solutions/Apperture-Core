@@ -56,6 +56,7 @@ public sealed class HarnessStepExecutionContext : IStepExecutionContext
 
     public IStepExecutionSignals Signals { get; }
 
+    [Obsolete("Use Signals.Events (ADR-0038). PlatformEvents remains a compatibility alias only.")]
     public IModulePlatformEventEmitter PlatformEvents { get; }
 
     public ValueTask<T?> ResolveSlotAsync<T>(string slotName, CancellationToken cancellationToken = default)

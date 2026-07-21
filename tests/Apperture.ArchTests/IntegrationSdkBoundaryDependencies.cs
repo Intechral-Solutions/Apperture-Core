@@ -8,6 +8,9 @@ namespace Apperture.ArchTests;
 /// </summary>
 public sealed class IntegrationSdkBoundaryDependencies
 {
+    // Intentionally explicit: architecture tests must stay stable and must not rely on brittle
+    // build-output scanning or load-time heuristics. When adding a new integration module project
+    // that should be covered by this protection, update this list.
     private static readonly Type[] IntegrationModuleTypes =
     [
         typeof(Sample.HelloWorld.HelloWorldModule),
@@ -45,6 +48,39 @@ public sealed class IntegrationSdkBoundaryDependencies
 
     public static IEnumerable<object[]> GetIntegrationModuleTypes() =>
         IntegrationModuleTypes.Select(x => new object[] { x });
+
+    /// <summary>
+    /// Guardrail for the intentional explicit list: every referenced integration module assembly
+    /// under Apperture.Modules that exposes an IModule must appear in IntegrationModuleTypes.
+    /// Automatic directory scanning was rejected as brittle for this protection.
+    /// </summary>
+    [Fact]
+    public void Explicit_integration_module_list_covers_referenced_IModule_assemblies()
+    {
+        var listed = IntegrationModuleTypes
+            .Select(t => t.Assembly.GetName().Name!)
+            .ToHashSet(StringComparer.Ordinal);
+
+        var referencedModuleAssemblies = AppDomain.CurrentDomain.GetAssemblies()
+            .Where(a =>
+            {
+                var name = a.GetName().Name ?? "";
+                return name.StartsWith("Sample.", StringComparison.Ordinal)
+                    || name.StartsWith("Proof.", StringComparison.Ordinal)
+                    || name.StartsWith("Unisa.", StringComparison.Ordinal);
+            })
+            .Where(a => a.GetTypes().Any(t =>
+                typeof(Apperture.ModuleSdk.Abstractions.IModule).IsAssignableFrom(t)
+                && t is { IsClass: true, IsAbstract: false }))
+            .Select(a => a.GetName().Name!)
+            .ToHashSet(StringComparer.Ordinal);
+
+        var missing = referencedModuleAssemblies.Except(listed).OrderBy(x => x).ToList();
+        Assert.True(
+            missing.Count == 0,
+            "Add these integration modules to IntegrationSdkBoundaryDependencies.IntegrationModuleTypes: "
+            + string.Join(", ", missing));
+    }
 
     [Fact]
     public void ModuleSdk_Integration_Must_Not_Reference_EF_Core_Or_Persistence()

@@ -15,7 +15,10 @@ public interface IStepExecutionContext : IModulePlatformEmitContext
 
     /// <summary>
     /// Compatibility alias for <see cref="IStepExecutionSignals.Events"/> when the runtime registers an emitter; otherwise no-op.
+    /// Prefer <see cref="Signals"/>.<see cref="IStepExecutionSignals.Events"/>.
+    /// Retained for existing module/test call sites; new SDK authoring should not use this alias.
     /// </summary>
+    [Obsolete("Use Signals.Events (ADR-0038). PlatformEvents remains a compatibility alias only.")]
     IModulePlatformEventEmitter PlatformEvents { get; }
 
     /// <summary>

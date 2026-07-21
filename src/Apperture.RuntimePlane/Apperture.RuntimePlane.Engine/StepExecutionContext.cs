@@ -97,6 +97,7 @@ public sealed class StepExecutionContext : IStepExecutionContext
     public IStepExecutionSignals Signals { get; }
 
     /// <inheritdoc />
+    [Obsolete("Use Signals.Events (ADR-0038). PlatformEvents remains a compatibility alias only.")]
     public IModulePlatformEventEmitter PlatformEvents { get; }
 
     /// <inheritdoc />
