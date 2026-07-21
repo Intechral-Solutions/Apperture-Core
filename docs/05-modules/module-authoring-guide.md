@@ -11,7 +11,9 @@ This guide is for developers building **Apperture modules**: workflow-centric pa
 | [module-types.md](./module-types.md) | Module type taxonomy — placeholder |
 | [ADR-0038](../02-decisions/ADR-0038-platform-signals-sdk-conventions.md) | Platform signals taxonomy and conventions |
 | [Epic 103A plan](../02-decisions/Epic103A-Platform-Signals-SDK-Stabilization-Implementation-Plan.md) | Signals SDK implementation status |
-| [Epic 104](../02-decisions/Epic104-Module-Authoring-Documentation.md) | Guide rewrite (104A) and doc consistency closeout (104B) |
+| [SDK-6A design](../superpowers/specs/SDK-6A-Integration-Sdk-Contract-Consolidation.md) | Integration SDK contract boundary (`Apperture.ModuleSdk.Integration`) |
+| [SDK-6A inventory](../audits/sdk6a-integration-sdk-contract-inventory.md) | Contract inventory and platform leakage audit |
+| [integration-testing-guide.md](./integration-testing-guide.md) | Fast module procedure/workflow testing without full Aspire |
 | [platform-signal-catalog.md](../01-architecture/platform-signal-catalog.md) | Event types, implementation status, template allowlists |
 | [runtime-connection-resolution.md](../01-architecture/runtime-connection-resolution.md) | Slots, bindings, connection resolution |
 | [epic77-notification-system-backlog.md](../03-operations/epic77-notification-system-backlog.md) | Notification system limitations |
@@ -175,7 +177,10 @@ An Apperture **module** packages **workflow definitions** and **step implementat
 |---------|----------|------|
 | `{Name}.Module` | Yes | `IModule`, handlers, manifest |
 | `{Name}.Contracts` | Optional | Shared DTOs/constants |
+| `{Name}.Persistence` | Optional | Module-owned SQL/EF adapters kept out of the integration-authoring assembly |
 | `{Name}.Ui` | Optional | Placeholder only today — not composed into Management UI |
+
+**SDK boundary rule:** Integration-authoring projects should reference `Apperture.ModuleSdk.Integration` and `Apperture.ModuleSdk.Abstractions`, not `Apperture.Core.Application`, EF Core packages, `AppertureDbContext`, or platform host implementations. Proof and Unisa now follow this split by keeping worker-facing authoring code in the module project and SQL adapters in their `.Persistence` projects.
 
 ### Module class
 
@@ -315,6 +320,8 @@ JSON object with a `fields` array. Supported per-field keys for platform forms a
 ---
 
 ## 4. Execution model
+
+**SDK boundary (SDK-6A):** Reference `Apperture.ModuleSdk.Integration` for step handlers, operation itemization, retry handlers, and integration setting contributors. Do **not** reference `Apperture.Core.Application`, persistence, or Management API from module projects. Platform runtime adapters translate SDK writes into durable stores.
 
 Orchestration is **workflow-centric**: the runtime invokes registered step handlers in definition order. Modules do not enqueue arbitrary steps or bypass the executor.
 

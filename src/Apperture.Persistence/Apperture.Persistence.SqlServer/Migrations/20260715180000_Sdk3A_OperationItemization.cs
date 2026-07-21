@@ -31,7 +31,8 @@ public partial class Sdk3A_OperationItemization : Migration
                 StartedAtUtc = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: false),
                 CompletedAtUtc = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: true),
                 SummaryJson = table.Column<string>(type: "nvarchar(2048)", maxLength: 2048, nullable: true),
-                MetadataJson = table.Column<string>(type: "nvarchar(4096)", maxLength: 4096, nullable: true),
+                // SQL Server: nvarchar(n) allows n <= 4000; use max for 4096 logical app cap.
+                MetadataJson = table.Column<string>(type: "nvarchar(max)", maxLength: 4096, nullable: true),
                 CreatedAtUtc = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: false),
                 UpdatedAtUtc = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: false),
             },
@@ -58,7 +59,8 @@ public partial class Sdk3A_OperationItemization : Migration
                 LastAttemptedAtUtc = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: true),
                 CompletedAtUtc = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: true),
                 ChangeSummaryJson = table.Column<string>(type: "nvarchar(2048)", maxLength: 2048, nullable: true),
-                MetadataJson = table.Column<string>(type: "nvarchar(4096)", maxLength: 4096, nullable: true),
+                // SQL Server: nvarchar(n) allows n <= 4000; use max for 4096 logical app cap.
+                MetadataJson = table.Column<string>(type: "nvarchar(max)", maxLength: 4096, nullable: true),
                 CreatedAtUtc = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: false),
                 UpdatedAtUtc = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: false),
             },

@@ -38,14 +38,15 @@ public sealed class ApiPollingCompleteStepHandler : IStepHandler
         }
 
         var classifications = _store.GetClassifications(open.SyncBatchId);
+        var aggregator = ApiPollingOperationItemization.AggregateClassifications(classifications);
+        var totals = aggregator.ToTotals();
         var newCount = classifications.Count(c => c.ChangeKind == ApiPollingChangeKinds.New);
         var updatedCount = classifications.Count(c => c.ChangeKind == ApiPollingChangeKinds.Updated);
         var unchangedCount = classifications.Count(c => c.ChangeKind == ApiPollingChangeKinds.Unchanged);
         var deletedCount = classifications.Count(c => c.ChangeKind == ApiPollingChangeKinds.Deleted);
-        var failed = classifications.Count(c => c.ChangeKind == ApiPollingChangeKinds.Failed);
-        var skipped = classifications.Count(c => c.ChangeKind == ApiPollingChangeKinds.Skipped);
-        var succeeded = newCount + updatedCount + unchangedCount + deletedCount;
-        var total = classifications.Count;
+        var failed = totals.FailedCount;
+        var skipped = totals.SkippedCount;
+        var succeeded = totals.SucceededCount;
 
         var strictMode = ApiPollingParameterReader.ResolveStrictMode(parameters);
         var failOnRecordError = ApiPollingParameterReader.ResolveFailOnRecordError(parameters);
@@ -68,10 +69,10 @@ public sealed class ApiPollingCompleteStepHandler : IStepHandler
                 new CompleteOperationGroupRequest(
                     open.OperationGroupId!,
                     groupStatus,
-                    total,
-                    succeeded,
-                    failed,
-                    skipped,
+                    totals.TotalCount,
+                    totals.SucceededCount,
+                    totals.FailedCount,
+                    totals.SkippedCount,
                     SummaryJson: ApiPollingOperationItemization.BuildGroupSummaryJson(
                         open.SnapshotId,
                         open.SyncBatchId,
@@ -98,7 +99,7 @@ public sealed class ApiPollingCompleteStepHandler : IStepHandler
         var batch = _store.CompleteSync(
             open.SyncBatchId,
             status,
-            total,
+            totals.TotalCount,
             newCount,
             updatedCount,
             unchangedCount,

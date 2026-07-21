@@ -3,7 +3,7 @@ using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
-namespace Unisa.CampusNexus.PaymentPlans;
+namespace Unisa.CampusNexus.PaymentPlans.Persistence;
 
 /// <summary>
 /// Reads/writes <c>UnisaPaymentPlanArrangements</c> and related UNISA integration tables via <see cref="IDbConnection"/>.
@@ -104,3 +104,4 @@ public sealed class UnisaPaymentPlanArrangementRepository
             r.GetString(r.GetOrdinal("SourceKind")),
             r.GetBoolean(r.GetOrdinal("IsCurrent")));
 }
+

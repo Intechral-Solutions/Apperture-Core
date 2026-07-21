@@ -139,10 +139,3 @@ public static class OperationItemizationValidation
         }
     }
 }
-
-public sealed class OperationItemizationException : InvalidOperationException
-{
-    public OperationItemizationException(string message) : base(message) { }
-
-    public OperationItemizationException(string message, Exception inner) : base(message, inner) { }
-}

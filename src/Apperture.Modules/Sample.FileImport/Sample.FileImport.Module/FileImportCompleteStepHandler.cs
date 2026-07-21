@@ -38,15 +38,17 @@ public sealed class FileImportCompleteStepHandler : IStepHandler
         }
 
         var outcomes = _store.GetOutcomesByBatchId(open.BatchId);
-        var succeeded = outcomes.Count(o => o.Status == ImportRowStatus.Succeeded);
-        var failed = outcomes.Count(o => o.Status == ImportRowStatus.Failed);
-        var skipped = outcomes.Count(o => o.Status == ImportRowStatus.Skipped);
-        var total = outcomes.Count;
+        var aggregator = FileImportOperationItemization.AggregateOutcomes(outcomes);
+        var totals = aggregator.ToTotals();
 
         var strictMode = FileImportParameterReader.ResolveStrictMode(parameters);
         var failOnFirst = FileImportParameterReader.ResolveFailOnFirstError(parameters);
         var maxRows = FileImportParameterReader.ResolveMaxRows(parameters);
-        var status = FileImportRowProcessor.ResolveBatchStatus(succeeded, failed, skipped, strictMode);
+        var status = FileImportRowProcessor.ResolveBatchStatus(
+            totals.SucceededCount,
+            totals.FailedCount,
+            totals.SkippedCount,
+            strictMode);
         var groupStatus = FileImportOperationItemization.MapGroupStatus(status);
 
         try
@@ -55,10 +57,10 @@ public sealed class FileImportCompleteStepHandler : IStepHandler
                 new CompleteOperationGroupRequest(
                     open.OperationGroupId!,
                     groupStatus,
-                    total,
-                    succeeded,
-                    failed,
-                    skipped,
+                    totals.TotalCount,
+                    totals.SucceededCount,
+                    totals.FailedCount,
+                    totals.SkippedCount,
                     SummaryJson: FileImportOperationItemization.BuildGroupSummaryJson(
                         open.FixtureId,
                         open.BatchId,
@@ -73,7 +75,13 @@ public sealed class FileImportCompleteStepHandler : IStepHandler
                 "Sample.FileImport could not complete platform operation group: " + ex.Message);
         }
 
-        var batch = _store.CompleteBatch(open.BatchId, status, total, succeeded, failed, skipped);
+        var batch = _store.CompleteBatch(
+            open.BatchId,
+            status,
+            totals.TotalCount,
+            totals.SucceededCount,
+            totals.FailedCount,
+            totals.SkippedCount);
 
         var signal = FileImportRowProcessor.SignalForBatchStatus(status);
         var payload = new Dictionary<string, object?>

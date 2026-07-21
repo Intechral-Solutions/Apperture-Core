@@ -1,4 +1,3 @@
-using System.Text.Json;
 using Apperture.Core.Application.OperationItems;
 using Sample.ApiPolling.Contracts;
 
@@ -8,11 +7,6 @@ public static class ApiPollingOperationItemization
 {
     public const string OperationKind = "api_poll";
     public const string RetryOperationKind = "api_poll_retry";
-
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-    };
 
     public static string MapGroupStatus(SyncBatchStatus status) =>
         status switch
@@ -41,28 +35,34 @@ public static class ApiPollingOperationItemization
         int deletedCount,
         int failedCount,
         int skippedCount) =>
-        JsonSerializer.Serialize(
-            new
-            {
-                snapshotId,
-                syncBatchId,
-                resetState,
-                strictMode,
-                failOnRecordError,
-                includeDeleted,
-                pageSize,
-                maxRecords,
-                newCount,
-                updatedCount,
-                unchangedCount,
-                deletedCount,
-                failedCount,
-                skippedCount,
-            },
-            JsonOptions);
+        OperationItemReporting.SerializeMetadata(new
+        {
+            snapshotId,
+            syncBatchId,
+            resetState,
+            strictMode,
+            failOnRecordError,
+            includeDeleted,
+            pageSize,
+            maxRecords,
+            newCount,
+            updatedCount,
+            unchangedCount,
+            deletedCount,
+            failedCount,
+            skippedCount,
+        });
 
     public static string BuildGroupMetadataJson(string snapshotId, int recordCount, bool resetState) =>
-        JsonSerializer.Serialize(new { snapshotId, recordCount, resetState }, JsonOptions);
+        OperationItemReporting.SerializeMetadata(new { snapshotId, recordCount, resetState });
+
+    public static OperationGroupAggregator AggregateClassifications(IReadOnlyList<RecordClassification> classifications)
+    {
+        var aggregator = new OperationGroupAggregator();
+        foreach (var classification in classifications)
+            aggregator.Record(classification.ItemStatus);
+        return aggregator;
+    }
 
     public static AppendOperationItemRequest ToAppendRequest(
         string operationGroupId,
@@ -76,15 +76,6 @@ public static class ApiPollingOperationItemization
         var displayLabel = !string.IsNullOrWhiteSpace(classification.DisplayName)
             ? classification.DisplayName!.Trim()
             : classification.ExternalId ?? $"seq {classification.Sequence}";
-
-        var changeSummaryJson = JsonSerializer.Serialize(
-            new
-            {
-                changeKind = classification.ChangeKind,
-                summary = classification.ChangeSummary,
-                changedFields = classification.ChangedFields,
-            },
-            JsonOptions);
 
         object metadata = string.IsNullOrWhiteSpace(retryAttemptId)
             ? new
@@ -114,22 +105,23 @@ public static class ApiPollingOperationItemization
                 parentOperationItemId,
             };
 
-        var metadataJson = JsonSerializer.Serialize(metadata, JsonOptions);
-
-        return new AppendOperationItemRequest(
-            OperationGroupId: operationGroupId,
-            RunId: runId,
-            Sequence: classification.Sequence,
-            Status: classification.ItemStatus,
-            SubjectKey: classification.ExternalId,
-            DisplayLabel: displayLabel,
-            ErrorCode: classification.ErrorCode,
-            ErrorMessage: classification.ErrorMessage,
-            IsRetryable: IsRetryable(classification),
-            RetryCount: 0,
-            LastAttemptedAtUtc: classification.CreatedAtUtc,
-            CompletedAtUtc: classification.CreatedAtUtc,
-            ChangeSummaryJson: changeSummaryJson,
-            MetadataJson: metadataJson);
+        return OperationItemReporting.BuildAppendRequest(
+            operationGroupId,
+            runId,
+            classification.Sequence,
+            classification.ItemStatus,
+            classification.ExternalId,
+            displayLabel,
+            classification.ErrorCode,
+            classification.ErrorMessage,
+            IsRetryable(classification),
+            new
+            {
+                changeKind = classification.ChangeKind,
+                summary = classification.ChangeSummary,
+                changedFields = classification.ChangedFields,
+            },
+            metadata,
+            classification.CreatedAtUtc);
     }
 }

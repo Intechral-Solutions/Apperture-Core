@@ -14,4 +14,7 @@
     <PackageReference Include="Microsoft.Extensions.Configuration.Json" />
     <PackageReference Include="Microsoft.Extensions.Configuration.EnvironmentVariables" />
   </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Proof.CampusNexus.StudentReview\Proof.CampusNexus.StudentReview.csproj" />
+  </ItemGroup>
 </Project>

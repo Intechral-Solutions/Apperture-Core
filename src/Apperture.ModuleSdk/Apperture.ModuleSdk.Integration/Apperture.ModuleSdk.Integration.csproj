@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Apperture.ModuleSdk.Integration</RootNamespace>
+    <Nullable>enable</Nullable>
+    <Description>Public integration SDK contracts for procedure execution, operation itemization, and per-item retry (SDK-6A).</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Apperture.ModuleSdk.Abstractions\Apperture.ModuleSdk.Abstractions.csproj" />
+    <ProjectReference Include="..\..\Apperture.RuntimePlane\Apperture.RuntimePlane.Abstractions\Apperture.RuntimePlane.Abstractions.csproj" />
+  </ItemGroup>
+</Project>

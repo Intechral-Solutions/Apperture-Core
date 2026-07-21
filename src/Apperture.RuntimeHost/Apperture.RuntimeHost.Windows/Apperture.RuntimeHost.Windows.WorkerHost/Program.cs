@@ -20,6 +20,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Proof.CampusNexus.StudentReview;
+using Proof.CampusNexus.StudentReview.Persistence;
 using Sample.ApiPolling;
 using Sample.ApiPolling.Persistence;
 using Sample.FileImport;
@@ -108,7 +109,9 @@ builder.Services.AddWorkerHostIntegrationRepository();
     builder.Services.AddPlatformSqlConnector();
     builder.Services.AddAppertureCampusNexusConnector();
     builder.Services.AddAppertureSftpConnector();
+    builder.Services.AddUnisaCampusNexusPaymentPlansPersistenceAdapters();
     builder.Services.AddUnisaCampusNexusPaymentPlansIntegration(registerCapabilitySlotBootstrap: false);
+    builder.Services.AddProofStudentReviewPersistenceAdapter();
     builder.Services.AddProofCampusNexusStudentReviewIntegration(registerCapabilitySlotBootstrap: false);
 
 // Known modules (explicit host-controlled DI list; may include multiple modules for dev/testing and constrained composition).
@@ -120,7 +123,9 @@ builder.Services.AddWorkerHostIntegrationRepository();
     builder.Services.AddSampleApiPolling();
     builder.Services.AddSingleton<HelloWorldModule>();
     builder.Services.AddSingleton(sp => new UnisaCampusNexusPaymentPlansModule(sp.GetRequiredService<IServiceScopeFactory>()));
-    builder.Services.AddSingleton(sp => new ProofCampusNexusStudentReviewModule(sp.GetRequiredService<ILoggerFactory>()));
+    builder.Services.AddSingleton(sp => new ProofCampusNexusStudentReviewModule(
+        sp.GetRequiredService<IServiceScopeFactory>(),
+        sp.GetRequiredService<ILoggerFactory>()));
     builder.Services.AddSingleton<IEnumerable<IModule>>(sp => new IModule[]
     {
         sp.GetRequiredService<HelloWorldModule>(),

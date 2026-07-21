@@ -22,6 +22,13 @@
     <ProjectReference Include="..\..\src\Apperture.RuntimePlane\Apperture.RuntimePlane.DurableFunctions\Apperture.RuntimePlane.DurableFunctions.csproj" />
     <ProjectReference Include="..\..\src\Apperture.Shared\Apperture.Shared.Kernel\Apperture.Shared.Kernel.csproj" />
     <ProjectReference Include="..\..\src\Apperture.ModuleSdk\Apperture.ModuleSdk.Abstractions\Apperture.ModuleSdk.Abstractions.csproj" />
+    <ProjectReference Include="..\..\src\Apperture.ModuleSdk\Apperture.ModuleSdk.Integration\Apperture.ModuleSdk.Integration.csproj" />
+    <ProjectReference Include="..\..\src\Apperture.ModuleSdk\Apperture.ModuleSdk.Integration.Testing\Apperture.ModuleSdk.Integration.Testing.csproj" />
+    <ProjectReference Include="..\..\src\Apperture.Modules\Sample.HelloWorld\Sample.HelloWorld.Module\Sample.HelloWorld.Module.csproj" />
+    <ProjectReference Include="..\..\src\Apperture.Modules\Sample.FileImport\Sample.FileImport.Module\Sample.FileImport.Module.csproj" />
+    <ProjectReference Include="..\..\src\Apperture.Modules\Sample.ApiPolling\Sample.ApiPolling.Module\Sample.ApiPolling.Module.csproj" />
+    <ProjectReference Include="..\..\src\Apperture.Modules\Proof.CampusNexus.StudentReview\Proof.CampusNexus.StudentReview.csproj" />
+    <ProjectReference Include="..\..\src\Apperture.Modules\Unisa.CampusNexus.PaymentPlans\Unisa.CampusNexus.PaymentPlans.csproj" />
     <ProjectReference Include="..\..\src\Apperture.RuntimeHost\Apperture.RuntimeHost.Windows\Apperture.RuntimeHost.Windows.WorkerHost\Apperture.RuntimeHost.Windows.WorkerHost.csproj" />
   </ItemGroup>
 </Project>

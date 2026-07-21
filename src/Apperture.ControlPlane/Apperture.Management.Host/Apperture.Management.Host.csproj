@@ -32,7 +32,9 @@
     <ProjectReference Include="..\..\Apperture.Modules\Sample.ApiPolling\Sample.ApiPolling.Module\Sample.ApiPolling.Module.csproj" />
     <ProjectReference Include="..\..\Apperture.Modules\Sample.ApiPolling\Sample.ApiPolling.Persistence\Sample.ApiPolling.Persistence.csproj" />
     <ProjectReference Include="..\..\Apperture.Modules\Unisa.CampusNexus.PaymentPlans\Unisa.CampusNexus.PaymentPlans.csproj" />
+    <ProjectReference Include="..\..\Apperture.Modules\Unisa.CampusNexus.PaymentPlans.Persistence\Unisa.CampusNexus.PaymentPlans.Persistence.csproj" />
     <ProjectReference Include="..\..\Apperture.Modules\Proof.CampusNexus.StudentReview\Proof.CampusNexus.StudentReview.csproj" />
+    <ProjectReference Include="..\..\Apperture.Modules\Proof.CampusNexus.StudentReview.Persistence\Proof.CampusNexus.StudentReview.Persistence.csproj" />
   </ItemGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="Apperture.UnitTests" />

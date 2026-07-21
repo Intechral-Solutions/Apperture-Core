@@ -4,6 +4,7 @@ using Apperture.Core.Domain.Procedures;
 using Apperture.ModuleSdk.Abstractions;
 using Apperture.RuntimePlane.Abstractions;
 using Apperture.Shared.Kernel;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -12,10 +13,16 @@ namespace Proof.CampusNexus.StudentReview;
 public sealed class ProofCampusNexusStudentReviewModule : IModule, IModuleStepHandlerRegistrar
 {
     private static readonly WorkflowDefinitionId DefinitionId = new(ProofCampusNexusStudentReviewConstants.WorkflowDefinitionIdValue);
+    private readonly IServiceScopeFactory? _scopeFactory;
     private readonly ILoggerFactory? _loggerFactory;
 
-    public ProofCampusNexusStudentReviewModule(ILoggerFactory? loggerFactory = null) =>
+    public ProofCampusNexusStudentReviewModule(
+        IServiceScopeFactory? scopeFactory = null,
+        ILoggerFactory? loggerFactory = null)
+    {
+        _scopeFactory = scopeFactory;
         _loggerFactory = loggerFactory;
+    }
 
     public ModuleManifest GetManifest() => new(
         ProofCampusNexusStudentReviewConstants.ModuleId,
@@ -61,11 +68,14 @@ public sealed class ProofCampusNexusStudentReviewModule : IModule, IModuleStepHa
 
     public void RegisterStepHandlers(IStepHandlerRegistry registry)
     {
+        if (_scopeFactory is null)
+            throw new InvalidOperationException("ProofCampusNexusStudentReviewModule requires IServiceScopeFactory when registering step handlers (worker host).");
+
         var mid = ProofCampusNexusStudentReviewConstants.ModuleId;
         var syncLogger = _loggerFactory?.CreateLogger<SyncRecentStudentsStepHandler>()
             ?? NullLogger<SyncRecentStudentsStepHandler>.Instance;
         registry.Register(mid, "Validate", new ValidateProofStudentReviewStepHandler());
-        registry.Register(mid, "SyncRecentStudents", new SyncRecentStudentsStepHandler(syncLogger));
+        registry.Register(mid, "SyncRecentStudents", new SyncRecentStudentsStepHandler(_scopeFactory, syncLogger));
         registry.Register(mid, "Complete", new CompleteProofStudentReviewStepHandler());
     }
 }

@@ -2,6 +2,7 @@
 
 **Full guide:** [module-authoring-guide.md](../../docs/05-modules/module-authoring-guide.md)  
 **Manifest reference:** [module-manifest-spec.md](../../docs/05-modules/module-manifest-spec.md)  
+**Integration SDK (SDK-6A):** [SDK-6A spec](../../docs/superpowers/specs/SDK-6A-Integration-Sdk-Contract-Consolidation.md) · [contract inventory](../../docs/audits/sdk6a-integration-sdk-contract-inventory.md)  
 **Signals conventions:** [ADR-0038](../../docs/02-decisions/ADR-0038-platform-signals-sdk-conventions.md)  
 **Handler snippets:** [execution-contract-handler-patterns.md](../../docs/05-modules/execution-contract-handler-patterns.md)
 
@@ -9,7 +10,7 @@
 
 A module provides:
 
-- Workflow definitions and step handlers (`IModule`, `IModuleStepHandlerRegistrar`)
+- Workflow definitions and step handlers (`IModule`, `IModuleStepHandlerRegistrar`) from **`Apperture.ModuleSdk.Integration`** (not Core.Application)
 - Optional operations (`IOperationDefinitionProvider`) and manifest **procedures**
 - Manifest: permissions, **signals**, governance, connector documentation
 - Optional menu links (`IModuleNavigationProvider`)

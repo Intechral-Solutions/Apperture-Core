@@ -48,6 +48,11 @@
     <ProjectReference Include="..\..\src\Apperture.Modules\Sample.ApiPolling\Sample.ApiPolling.Contracts\Sample.ApiPolling.Contracts.csproj" />
     <ProjectReference Include="..\..\src\Apperture.Modules\Sample.ApiPolling\Sample.ApiPolling.Module\Sample.ApiPolling.Module.csproj" />
     <ProjectReference Include="..\..\src\Apperture.Modules\Sample.ApiPolling\Sample.ApiPolling.Persistence\Sample.ApiPolling.Persistence.csproj" />
+    <ProjectReference Include="..\..\src\Apperture.Modules\Unisa.CampusNexus.PaymentPlans\Unisa.CampusNexus.PaymentPlans.csproj" />
+    <ProjectReference Include="..\..\src\Apperture.Modules\Unisa.CampusNexus.PaymentPlans.Persistence\Unisa.CampusNexus.PaymentPlans.Persistence.csproj" />
+    <ProjectReference Include="..\..\src\Apperture.Modules\Proof.CampusNexus.StudentReview.Persistence\Proof.CampusNexus.StudentReview.Persistence.csproj" />
+    <ProjectReference Include="..\..\src\Apperture.ModuleSdk\Apperture.ModuleSdk.Integration\Apperture.ModuleSdk.Integration.csproj" />
+    <ProjectReference Include="..\..\src\Apperture.ModuleSdk\Apperture.ModuleSdk.Integration.Testing\Apperture.ModuleSdk.Integration.Testing.csproj" />
     <ProjectReference Include="..\..\src\Apperture.ModuleSdk\Apperture.ModuleSdk.Testing\Apperture.ModuleSdk.Testing.csproj" />
     <ProjectReference Include="..\..\src\Apperture.RuntimeHost\Apperture.RuntimeHost.Windows\Apperture.RuntimeHost.Windows.WorkerHost\Apperture.RuntimeHost.Windows.WorkerHost.csproj" />
   </ItemGroup>

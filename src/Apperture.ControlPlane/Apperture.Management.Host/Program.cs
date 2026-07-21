@@ -8,6 +8,7 @@ using Apperture.RuntimePlane.Dispatch.SqlServer;
 using Apperture.Management.Host;
 using Apperture.Persistence.SqlServer;
 using Proof.CampusNexus.StudentReview;
+using Proof.CampusNexus.StudentReview.Persistence;
 using Sample.HelloWorld;
 using Sample.FileImport;
 using Sample.ApiPolling;
@@ -65,10 +66,12 @@ builder.Services.AddApperturePlatformEvents(builder.Configuration);
 builder.Services.AddAppertureNotifications(builder.Configuration);
 builder.Services.AddAttentionIncidentObservation(builder.Configuration);
 builder.Services.AddApperturePlatformSettingsManagementHost(builder.Configuration);
-builder.Services.AddUnisaCampusNexusPaymentPlansIntegration(applyModulePersistenceMigrationsOnStartup: true);
+builder.Services.AddUnisaCampusNexusPaymentPlansPersistenceAdapters(applyModulePersistenceMigrationsOnStartup: true);
+builder.Services.AddUnisaCampusNexusPaymentPlansIntegration();
 builder.Services.AddSampleApiPollingPersistence(
     sp => sp.GetRequiredService<Apperture.Bootstrap.IBootstrapConnectionProfile>().ConnectionString,
     applyMigrationsOnStartup: true);
+builder.Services.AddProofStudentReviewPersistenceAdapter();
 builder.Services.AddProofCampusNexusStudentReviewIntegration();
 builder.Services.AddSampleHelloWorldIntegration();
 builder.Services.AddAppertureAuthentication(builder.Configuration);

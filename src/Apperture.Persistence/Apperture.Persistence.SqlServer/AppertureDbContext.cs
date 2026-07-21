@@ -929,7 +929,8 @@ public class AppertureDbContext : DbContext
             e.Property(x => x.SourceLabel).HasMaxLength(256);
             e.Property(x => x.Status).HasMaxLength(32).IsRequired();
             e.Property(x => x.SummaryJson).HasMaxLength(2048);
-            e.Property(x => x.MetadataJson).HasMaxLength(4096);
+            // SQL Server: nvarchar(n) allows n <= 4000; use max for 4096 logical cap.
+            e.Property(x => x.MetadataJson).HasMaxLength(4096).HasColumnType("nvarchar(max)");
             e.HasIndex(x => x.RunId);
             e.HasMany(x => x.Items)
                 .WithOne(x => x.Group!)
@@ -950,7 +951,8 @@ public class AppertureDbContext : DbContext
             e.Property(x => x.ErrorCode).HasMaxLength(64);
             e.Property(x => x.ErrorMessage).HasMaxLength(1024);
             e.Property(x => x.ChangeSummaryJson).HasMaxLength(2048);
-            e.Property(x => x.MetadataJson).HasMaxLength(4096);
+            // SQL Server: nvarchar(n) allows n <= 4000; use max for 4096 logical cap.
+            e.Property(x => x.MetadataJson).HasMaxLength(4096).HasColumnType("nvarchar(max)");
             e.HasIndex(x => x.RunId);
             e.HasIndex(x => new { x.RunId, x.Status });
             e.HasIndex(x => new { x.OperationGroupId, x.Sequence });

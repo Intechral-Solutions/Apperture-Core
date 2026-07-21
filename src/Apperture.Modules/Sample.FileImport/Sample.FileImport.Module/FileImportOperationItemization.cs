@@ -1,20 +1,14 @@
-using System.Text.Json;
 using Apperture.Core.Application.OperationItems;
 using Sample.FileImport.Contracts;
 
 namespace Sample.FileImport;
 
 /// <summary>
-/// Maps SDK-2 process-local import outcomes to SDK-3A durable operation groups/items.
+/// Maps SDK-2 process-local import outcomes to SDK-3A durable operation groups/items (SDK-6A shared reporting).
 /// </summary>
 internal static class FileImportOperationItemization
 {
     public const string OperationKind = "file_import";
-
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-    };
 
     public static string MapGroupStatus(ImportBatchStatus status) =>
         status switch
@@ -34,9 +28,6 @@ internal static class FileImportOperationItemization
             _ => throw new ArgumentOutOfRangeException(nameof(status), status, "Unknown row status."),
         };
 
-    /// <summary>
-    /// Row validation/process failures are retry-ready; control-flow skips are not.
-    /// </summary>
     public static bool IsRetryable(ImportRowOutcome outcome) =>
         outcome.Status == ImportRowStatus.Failed;
 
@@ -46,19 +37,25 @@ internal static class FileImportOperationItemization
         bool strictMode,
         bool failOnFirstError,
         int maxRows) =>
-        JsonSerializer.Serialize(
-            new
-            {
-                fixtureId,
-                batchId,
-                strictMode,
-                failOnFirstError,
-                maxRows,
-            },
-            JsonOptions);
+        OperationItemReporting.SerializeMetadata(new
+        {
+            fixtureId,
+            batchId,
+            strictMode,
+            failOnFirstError,
+            maxRows,
+        });
 
     public static string BuildGroupMetadataJson(string fixtureId, int parsedRowCount) =>
-        JsonSerializer.Serialize(new { fixtureId, parsedRowCount }, JsonOptions);
+        OperationItemReporting.SerializeMetadata(new { fixtureId, parsedRowCount });
+
+    public static OperationGroupAggregator AggregateOutcomes(IReadOnlyList<ImportRowOutcome> outcomes)
+    {
+        var aggregator = new OperationGroupAggregator();
+        foreach (var outcome in outcomes)
+            aggregator.Record(MapItemStatus(outcome.Status));
+        return aggregator;
+    }
 
     public static AppendOperationItemRequest ToAppendRequest(
         string operationGroupId,
@@ -68,14 +65,9 @@ internal static class FileImportOperationItemization
         string? retryAttemptId = null,
         string? parentOperationItemId = null)
     {
-        // Prefer business key; fall back to compact row label (no silent truncation of large payloads).
         var displayLabel = !string.IsNullOrWhiteSpace(outcome.SourceKey)
             ? outcome.SourceKey!.Trim()
             : $"row {outcome.RowNumber}";
-
-        var changeSummaryJson = JsonSerializer.Serialize(
-            new { summary = outcome.SafeRowSummary },
-            JsonOptions);
 
         object metadata = string.IsNullOrWhiteSpace(retryAttemptId)
             ? new
@@ -93,22 +85,18 @@ internal static class FileImportOperationItemization
                 parentOperationItemId,
             };
 
-        var metadataJson = JsonSerializer.Serialize(metadata, JsonOptions);
-
-        return new AppendOperationItemRequest(
-            OperationGroupId: operationGroupId,
-            RunId: runId,
-            Sequence: outcome.RowNumber,
-            Status: MapItemStatus(outcome.Status),
-            SubjectKey: outcome.SourceKey,
-            DisplayLabel: displayLabel,
-            ErrorCode: outcome.ErrorCode,
-            ErrorMessage: outcome.ErrorMessage,
-            IsRetryable: IsRetryable(outcome),
-            RetryCount: 0,
-            LastAttemptedAtUtc: outcome.CreatedAtUtc,
-            CompletedAtUtc: outcome.CreatedAtUtc,
-            ChangeSummaryJson: changeSummaryJson,
-            MetadataJson: metadataJson);
+        return OperationItemReporting.BuildAppendRequest(
+            operationGroupId,
+            runId,
+            outcome.RowNumber,
+            MapItemStatus(outcome.Status),
+            outcome.SourceKey,
+            displayLabel,
+            outcome.ErrorCode,
+            outcome.ErrorMessage,
+            IsRetryable(outcome),
+            new { summary = outcome.SafeRowSummary },
+            metadata,
+            outcome.CreatedAtUtc);
     }
 }

@@ -52,6 +52,8 @@
   </Folder>
   <Folder Name="/src/Apperture.ModuleSdk/">
     <Project Path="src/Apperture.ModuleSdk/Apperture.ModuleSdk.Abstractions/Apperture.ModuleSdk.Abstractions.csproj" />
+    <Project Path="src/Apperture.ModuleSdk/Apperture.ModuleSdk.Integration/Apperture.ModuleSdk.Integration.csproj" />
+    <Project Path="src/Apperture.ModuleSdk/Apperture.ModuleSdk.Integration.Testing/Apperture.ModuleSdk.Integration.Testing.csproj" />
     <Project Path="src/Apperture.ModuleSdk/Apperture.ModuleSdk.Testing/Apperture.ModuleSdk.Testing.csproj" />
     <Project Path="src/Apperture.ModuleSdk/Apperture.ModuleSdk/Apperture.ModuleSdk.csproj" />
   </Folder>
