@@ -48,7 +48,9 @@ This guide is for developers building **Apperture modules**: workflow-centric pa
 **Outcome stores:**
 
 * `IImportOutcomeStore` (in-memory) — **process-local** inspection aid; not restart-durable.
-* Platform `context.Signals.OperationItems` — durable run-attached `OperationGroup` / `OperationItem` for SDK-3B APIs and SDK-3D UI. `operationKind=file_import`; failed rows set `isRetryable` with safe metadata (`fixtureId`, `rowNumber`) for SDK-4A retry.
+* Platform `context.Signals.OperationItems` — durable run-attached `OperationGroup` / `OperationItem` for SDK-3B APIs and SDK-3D UI. `operationKind=file_import`; failed rows set `isRetryable` with safe metadata (`fixtureId`, `rowNumber`) for SDK-4A retry. **BDS-2:** items also emit aligned business metadata (`recordType=customer`, `businessKey`, `displayName`, `changeKind`, `observedAt`); `SubjectKey` = external id, `DisplayLabel` = human name (else email/id).
+
+**Demo keys (BDS-2):** Shared `C-*` customer keys with `Sample.ApiPolling` (`C-001`/`C-002` overlap; `C-003` FileImport-only; `C-100` intentional email/status conflict vs ApiPolling; see [bds2-closure](../audits/bds2-closure.md)).
 
 **Notification seed:** Built-in definition for `import.completed.with.errors` (HelloWorld-sized). Subscribe to validate partial-failure → notification path.
 
@@ -77,7 +79,9 @@ This guide is for developers building **Apperture modules**: workflow-centric pa
 * `IApiPollingDurableLastSeenStore` / SQL (`Sample.ApiPolling.Persistence`) — **restart-durable** last-seen fingerprints + sync summary, scoped by integration id. Tables `ApiPollingSyncStates` / `ApiPollingKnownRecords`. This is a **sync watermark**, not a business entity store.
 * `HybridApiPollingStateStore` (Worker Host) — durable last-seen + process-local in-flight batch/classifications.
 * `InMemoryApiPollingStateStore` — harness/unit tests (full process-local).
-* Platform `context.Signals.OperationItems` — durable per-run history (`operationKind=api_poll`).
+* Platform `context.Signals.OperationItems` — durable per-run history (`operationKind=api_poll`). **BDS-2:** items emit aligned business metadata (`recordType=customer`, `businessKey`, `displayName`, `changeKind` from classification, `observedAt`).
+
+**Demo keys (BDS-2):** Snapshots use shared `C-*` keys with FileImport (`C-001`/`C-002` overlap; `C-400` ApiPolling-only; `C-100` intentional conflict vs FileImport `customers-mixed`). Sync watermark remains **not** a business entity store.
 
 **Watermark commit rule:** ProcessChanges stages last-seen mutations; Complete **commits** only for `Succeeded` / `CompletedWithErrors`, and **discards** on `Failed` (strict / all-failed) so failures do not poison incremental state.
 
@@ -98,6 +102,8 @@ This guide is for developers building **Apperture modules**: workflow-centric pa
 1. `BeginGroupAsync(operationKind, sourceLabel?)` — requires platform `RunId` on the step context  
 2. `AppendItemAsync(...)` — subject key, display label, status, bounded change summary / metadata  
 3. `CompleteGroupAsync(...)` — terminal group status + counts (`Succeeded` / `CompletedWithErrors` / `Failed`)
+
+**Business metadata convention (BDS-2):** Sample modules should emit camelCase item metadata keys defined by `OperationItemBusinessMetadataKeys`: `recordType`, `businessKey` (same as `SubjectKey`), `displayName`, `changeKind`, `observedAt` (align with `CompletedAtUtc`). Prefer human-facing `DisplayLabel` (name) with opaque `SubjectKey` (external id). This is **metadata alignment only** — not a platform `BusinessRecord` entity. Demo projection follows in BDS-3 ([bds1 audit](../audits/bds1-business-data-surface-design-audit.md), [bds2 closure](../audits/bds2-closure.md)).
 
 **Safety rules:** No secrets; no raw files; no silent truncation; JSON fields bounded (see `OperationItemizationBounds`). Missing `RunId` or unregistered store fails loudly.
 
@@ -128,7 +134,7 @@ Same run-read authorization as run detail/timeline. Missing run → 404; no grou
 
 **Deferred:** Retry-all / batch retry / policies / scheduled retry. **SDK-5C:** `Sample.ApiPolling` also registers `ApiPollingOperationItemRetryHandler` — retries one failed record by `snapshotId` + `sequence` (reload embedded snapshot); child group `api_poll_retry`; durable watermark updates **that one record only** on success.
 
-**Run Detail panel (SDK-3D + SDK-4C):** Management UI hosts `RunOperationItemizationPanel` on `/runs/{runId}` below the run summary band and above forensics. Operators see group kind/source/status/counts, expand to paged items (default page size 50), status filters (All / Failed / Succeeded / Skipped), failed-first ordering when viewing All, metadata behind disclosure, and per-item retry for eligible failures. Empty state when no groups. Section-level errors do not break the rest of Run Detail.
+**Run Detail panel (SDK-3D + SDK-4C + BDS-2):** Management UI hosts `RunOperationItemizationPanel` on `/runs/{runId}` below the run summary band and above forensics. Section title: **Affected records**. Operators see group kind/source/status/counts, expand to paged items (default page size 50), status filters (All / Failed / Succeeded / Skipped), failed-first ordering when viewing All, metadata behind disclosure, and per-item retry for eligible failures. Empty state when no groups. Section-level errors do not break the rest of Run Detail.
 
 **Audit:** [sdk3-itemized-operation-model-design-audit.md](../audits/sdk3-itemized-operation-model-design-audit.md) · [sdk4-per-item-retry-design-audit.md](../audits/sdk4-per-item-retry-design-audit.md)  
 **Plans:** [SDK-3B](../superpowers/plans/2026-07-15-sdk3b-operation-itemization-read-apis.md) · [SDK-3C](../superpowers/plans/2026-07-15-sdk3c-fileimport-operation-itemization.md) · [SDK-3D](../superpowers/plans/2026-07-15-sdk3d-run-detail-operation-itemization-panel.md) · [SDK-4A](../superpowers/plans/2026-07-16-sdk4a-operation-item-retry-dispatch.md) · [SDK-4B](../superpowers/plans/2026-07-17-sdk4b-retry-attempt-outcome-reconciliation.md) · [SDK-4C](../superpowers/plans/2026-07-17-sdk4c-run-detail-per-item-retry-ui.md)

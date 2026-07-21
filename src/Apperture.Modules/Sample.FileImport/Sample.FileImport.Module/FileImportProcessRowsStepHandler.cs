@@ -135,7 +135,8 @@ public sealed class FileImportProcessRowsStepHandler : IStepHandler
                     ImportRowErrorCodes.SkippedFailOnFirstError,
                     "Skipped because failOnFirstError stopped processing after an earlier failure.",
                     FileImportRowProcessor.BuildSafeSummary(row),
-                    now);
+                    now,
+                    FileImportRowProcessor.BuildDisplayName(row));
             }
             else if (i >= maxRows)
             {
@@ -147,7 +148,8 @@ public sealed class FileImportProcessRowsStepHandler : IStepHandler
                     ImportRowErrorCodes.SkippedMaxRows,
                     $"Skipped because maxRowsPerImport={maxRows}.",
                     FileImportRowProcessor.BuildSafeSummary(row),
-                    now);
+                    now,
+                    FileImportRowProcessor.BuildDisplayName(row));
             }
             else
             {

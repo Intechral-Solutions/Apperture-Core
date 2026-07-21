@@ -23,7 +23,9 @@ public sealed record ImportRowOutcome(
     string? ErrorCode,
     string? ErrorMessage,
     string SafeRowSummary,
-    DateTimeOffset CreatedAtUtc);
+    DateTimeOffset CreatedAtUtc,
+    /// <summary>Human-facing label for operation items (name, else email, else key).</summary>
+    string? DisplayName = null);
 
 public sealed record ImportBatchCreateRequest(
     string FixtureId,
@@ -31,3 +33,11 @@ public sealed record ImportBatchCreateRequest(
     string? CorrelationId,
     DateTimeOffset? StartedAtUtc = null,
     string? OperationGroupId = null);
+
+/// <summary>FileImport change kinds for shared business metadata (BDS-2).</summary>
+public static class FileImportChangeKinds
+{
+    public const string Imported = "imported";
+    public const string Failed = "failed";
+    public const string Skipped = "skipped";
+}

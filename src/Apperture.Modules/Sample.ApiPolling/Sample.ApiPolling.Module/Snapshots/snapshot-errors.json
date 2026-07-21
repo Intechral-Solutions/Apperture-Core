@@ -3,11 +3,11 @@
   "fetchedAtUtc": "2026-07-18T13:00:00Z",
   "records": [
     {
-      "externalId": "A-100",
-      "displayName": "Acme Retail",
-      "email": "ops@acme.example",
+      "externalId": "C-001",
+      "displayName": "Ada Lovelace",
+      "email": "ada@example.com",
       "status": "Active",
-      "tier": "Standard",
+      "tier": "Premium",
       "updatedAtUtc": "2026-07-01T08:00:00Z",
       "version": 1,
       "isDeleted": false
@@ -23,7 +23,7 @@
       "isDeleted": false
     },
     {
-      "externalId": "A-610",
+      "externalId": "C-610",
       "displayName": "Bad Email Co",
       "email": "not-an-email",
       "status": "Active",
@@ -33,7 +33,7 @@
       "isDeleted": false
     },
     {
-      "externalId": "A-620",
+      "externalId": "C-620",
       "displayName": "Bad Status Co",
       "email": "ok@badstatus.example",
       "status": "Unknown",
@@ -43,7 +43,7 @@
       "isDeleted": false
     },
     {
-      "externalId": "A-630",
+      "externalId": "C-630",
       "displayName": "Bad Date Co",
       "email": "ok@baddate.example",
       "status": "Active",
@@ -53,17 +53,17 @@
       "isDeleted": false
     },
     {
-      "externalId": "A-100",
-      "displayName": "Acme Duplicate",
-      "email": "dup@acme.example",
+      "externalId": "C-001",
+      "displayName": "Ada Duplicate",
+      "email": "dup@ada.example",
       "status": "Active",
-      "tier": "Standard",
+      "tier": "Premium",
       "updatedAtUtc": "2026-07-05T11:00:00Z",
       "version": 1,
       "isDeleted": false
     },
     {
-      "externalId": "A-700",
+      "externalId": "C-700",
       "displayName": "Valid Extra",
       "email": "valid@extra.example",
       "status": "Active",

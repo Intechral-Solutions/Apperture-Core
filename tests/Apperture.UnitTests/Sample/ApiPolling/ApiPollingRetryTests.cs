@@ -148,7 +148,7 @@ public sealed class ApiPollingRetryTests
             opStore: opStore);
 
         summary.Signal.Should().Be("sync.completed.with.changes");
-        durable.GetLastSeen(durable.ResolveScopeKey("int-ap")).Should().ContainKey("A-100");
+        durable.GetLastSeen(durable.ResolveScopeKey("int-ap")).Should().ContainKey("C-001");
         durable.GetLastSeen(durable.ResolveScopeKey("int-ap")).Should().ContainKey("A-999");
         durable.GetLastSeen(durable.ResolveScopeKey("int-ap")).Should().HaveCount(2);
 

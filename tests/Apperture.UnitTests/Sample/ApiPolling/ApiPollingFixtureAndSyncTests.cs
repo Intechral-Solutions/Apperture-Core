@@ -68,8 +68,8 @@ public sealed class ApiPollingFixtureAndSyncTests
         store.ResolveScopeKey(null).Should().Be(InMemoryApiPollingStateStore.FallbackScopeKey);
 
         var now = DateTimeOffset.UtcNow;
-        store.UpsertLastSeen(scopeA, [new SeenAccountFingerprint("A-100", "Acme", "a@x", "Active", "Standard", "2026-01-01", 1, false, now)]);
-        store.GetLastSeen(scopeA).Should().ContainKey("A-100");
+        store.UpsertLastSeen(scopeA, [new SeenAccountFingerprint("C-001", "Ada", "a@x", "Active", "Standard", "2026-01-01", 1, false, now)]);
+        store.GetLastSeen(scopeA).Should().ContainKey("C-001");
         store.GetLastSeen(scopeB).Should().BeEmpty();
 
         store.ResetScope(scopeA);
@@ -106,7 +106,11 @@ public sealed class ApiPollingFixtureAndSyncTests
         items.Should().OnlyContain(i => i.MetadataJson != null && i.MetadataJson.Contains("\"changeKind\":\"new\""));
         foreach (var item in items)
         {
-            item.MetadataJson.Should().NotContain("ops@acme.example");
+            item.MetadataJson.Should().NotContain("ada@example.com");
+            item.MetadataJson.Should().Contain("\"recordType\":\"customer\"");
+            item.MetadataJson.Should().Contain("\"businessKey\"");
+            item.MetadataJson.Should().Contain("\"displayName\"");
+            item.MetadataJson.Should().Contain("\"observedAt\"");
             (item.ChangeSummaryJson is null || item.ChangeSummaryJson.Length < 500).Should().BeTrue();
         }
 
@@ -140,11 +144,11 @@ public sealed class ApiPollingFixtureAndSyncTests
         harness.PlatformEvents.EmittedEvents.Should().ContainSingle();
 
         var classifications = store.GetClassifications(summary.SyncBatchId);
-        classifications.Should().Contain(c => c.ChangeKind == ApiPollingChangeKinds.New && c.ExternalId == "A-500");
-        classifications.Should().Contain(c => c.ChangeKind == ApiPollingChangeKinds.Updated && c.ExternalId == "A-100");
-        classifications.Should().Contain(c => c.ChangeKind == ApiPollingChangeKinds.Updated && c.ExternalId == "A-300");
-        classifications.Should().Contain(c => c.ChangeKind == ApiPollingChangeKinds.Unchanged && c.ExternalId == "A-200");
-        classifications.Should().Contain(c => c.ChangeKind == ApiPollingChangeKinds.Unchanged && c.ExternalId == "A-400");
+        classifications.Should().Contain(c => c.ChangeKind == ApiPollingChangeKinds.New && c.ExternalId == "C-500");
+        classifications.Should().Contain(c => c.ChangeKind == ApiPollingChangeKinds.Updated && c.ExternalId == "C-001");
+        classifications.Should().Contain(c => c.ChangeKind == ApiPollingChangeKinds.Updated && c.ExternalId == "C-100");
+        classifications.Should().Contain(c => c.ChangeKind == ApiPollingChangeKinds.Unchanged && c.ExternalId == "C-002");
+        classifications.Should().Contain(c => c.ChangeKind == ApiPollingChangeKinds.Unchanged && c.ExternalId == "C-400");
 
         var items = await opStore.GetItemsByGroupAsync(
             (await opStore.GetGroupsByRunAsync("run-changes")).Single().OperationGroupId);
@@ -254,11 +258,11 @@ public sealed class ApiPollingFixtureAndSyncTests
 
         summary.Signal.Should().Be("sync.completed.with.changes");
         var classifications = store.GetClassifications(summary.SyncBatchId);
-        classifications.Should().Contain(c => c.ExternalId == "A-200" && c.ChangeKind == ApiPollingChangeKinds.Deleted);
-        classifications.Should().Contain(c => c.ExternalId == "A-300" && c.ChangeKind == ApiPollingChangeKinds.Deleted);
-        store.GetLastSeen(store.ResolveScopeKey("int-ap")).Keys.Should().NotContain("A-200");
-        store.GetLastSeen(store.ResolveScopeKey("int-ap")).Keys.Should().NotContain("A-300");
-        store.GetLastSeen(store.ResolveScopeKey("int-ap")).Keys.Should().Contain("A-100");
+        classifications.Should().Contain(c => c.ExternalId == "C-002" && c.ChangeKind == ApiPollingChangeKinds.Deleted);
+        classifications.Should().Contain(c => c.ExternalId == "C-100" && c.ChangeKind == ApiPollingChangeKinds.Deleted);
+        store.GetLastSeen(store.ResolveScopeKey("int-ap")).Keys.Should().NotContain("C-002");
+        store.GetLastSeen(store.ResolveScopeKey("int-ap")).Keys.Should().NotContain("C-100");
+        store.GetLastSeen(store.ResolveScopeKey("int-ap")).Keys.Should().Contain("C-001");
     }
 
     [Fact]
@@ -357,7 +361,7 @@ public sealed class ApiPollingFixtureAndSyncTests
         classifications.Should().Contain(c => c.ChangeKind == ApiPollingChangeKinds.Updated);
         classifications.Should().Contain(c => c.ChangeKind == ApiPollingChangeKinds.Unchanged);
         classifications.Should().Contain(c => c.ChangeKind == ApiPollingChangeKinds.New);
-        durable.GetLastSeen(durable.ResolveScopeKey("int-ap")).Should().ContainKey("A-500");
+        durable.GetLastSeen(durable.ResolveScopeKey("int-ap")).Should().ContainKey("C-500");
     }
 
     [Fact]

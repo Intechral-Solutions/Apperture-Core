@@ -3,19 +3,19 @@
   "fetchedAtUtc": "2026-07-18T10:00:00Z",
   "records": [
     {
-      "externalId": "A-100",
-      "displayName": "Acme Retail",
-      "email": "ops@acme.example",
+      "externalId": "C-001",
+      "displayName": "Ada Lovelace",
+      "email": "ada@example.com",
       "status": "Active",
-      "tier": "Standard",
+      "tier": "Premium",
       "updatedAtUtc": "2026-07-01T08:00:00Z",
       "version": 1,
       "isDeleted": false
     },
     {
-      "externalId": "A-200",
-      "displayName": "Beta Foods",
-      "email": "hello@betafoods.example",
+      "externalId": "C-002",
+      "displayName": "Alan Turing",
+      "email": "alan@example.com",
       "status": "Active",
       "tier": "Standard",
       "updatedAtUtc": "2026-07-02T09:00:00Z",
@@ -23,17 +23,17 @@
       "isDeleted": false
     },
     {
-      "externalId": "A-300",
-      "displayName": "Gamma Labs",
-      "email": "contact@gammalabs.example",
-      "status": "Active",
-      "tier": "Premium",
+      "externalId": "C-100",
+      "displayName": "Valid One",
+      "email": "conflict.c100@apipolling.example",
+      "status": "Inactive",
+      "tier": "Standard",
       "updatedAtUtc": "2026-07-03T10:00:00Z",
       "version": 1,
       "isDeleted": false
     },
     {
-      "externalId": "A-400",
+      "externalId": "C-400",
       "displayName": "Delta Media",
       "email": "team@deltamedia.example",
       "status": "Inactive",

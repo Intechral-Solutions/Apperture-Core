@@ -68,8 +68,16 @@ public sealed class FileImportFixtureAndImportTests
         var items = await opStore.GetItemsByGroupAsync(groups[0].OperationGroupId);
         items.Should().HaveCount(3);
         items.Should().OnlyContain(i => i.Status == OperationItemStatuses.Succeeded && !i.IsRetryable);
+        items.Should().Contain(i => i.SubjectKey == "C-001" && i.DisplayLabel == "Ada Lovelace");
+        items.Should().Contain(i => i.SubjectKey == "C-002" && i.DisplayLabel == "Alan Turing");
+        items.Should().Contain(i => i.SubjectKey == "C-003" && i.DisplayLabel == "Grace Hopper");
         foreach (var item in items)
         {
+            item.MetadataJson.Should().Contain("\"recordType\":\"customer\"");
+            item.MetadataJson.Should().Contain($"\"businessKey\":\"{item.SubjectKey}\"");
+            item.MetadataJson.Should().Contain("\"changeKind\":\"imported\"");
+            item.MetadataJson.Should().Contain("\"observedAt\"");
+            item.DisplayLabel.Should().NotBe(item.SubjectKey);
             (item.ChangeSummaryJson is null || !item.ChangeSummaryJson.Contains("ExternalId,Name")).Should().BeTrue();
         }
     }

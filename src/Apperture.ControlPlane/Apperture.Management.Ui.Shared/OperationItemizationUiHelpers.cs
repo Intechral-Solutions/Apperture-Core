@@ -8,15 +8,15 @@ public static class OperationItemizationUiHelpers
 {
     public const int DefaultItemPageSize = 50;
 
-    public const string EmptyTitle = "No itemized operation history";
+    public const string EmptyTitle = "No affected records";
 
     public const string EmptyMessage =
-        "No itemized operation history was recorded for this run. Only modules that write through the platform operation item writer produce this history.";
+        "No affected records were recorded for this run. Only modules that write through the platform operation item writer produce this history.";
 
-    public const string SectionTitle = "Itemized operation history";
+    public const string SectionTitle = "Affected records";
 
     public const string SectionSubtitle =
-        "Business-facing groups and items for this run (rows, records, files). Platform steps and diagnostics remain below.";
+        "Business-facing records and operation items for this run (rows, customers, files). Platform steps and diagnostics remain below.";
 
     public const string StatusFilterAll = "";
     public const string StatusFilterFailed = "Failed";

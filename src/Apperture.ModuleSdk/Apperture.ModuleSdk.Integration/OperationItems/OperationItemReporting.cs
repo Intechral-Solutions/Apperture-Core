@@ -78,6 +78,24 @@ public static class OperationItemRetryMetadataKeys
     public const string ParentOperationItemId = "parentOperationItemId";
 }
 
+/// <summary>
+/// Well-known business-facing metadata keys for operation items (BDS-2).
+/// Prefer these camelCase JSON properties in item <c>MetadataJson</c>.
+/// <c>observedAt</c> should match item <c>CompletedAtUtc</c> when both are set.
+/// This is a metadata convention only — not a platform <c>BusinessRecord</c> entity.
+/// </summary>
+public static class OperationItemBusinessMetadataKeys
+{
+    public const string RecordType = "recordType";
+    public const string BusinessKey = "businessKey";
+    public const string DisplayName = "displayName";
+    public const string ChangeKind = "changeKind";
+    public const string ObservedAt = "observedAt";
+
+    /// <summary>Canonical demo / sample record type for FileImport and ApiPolling.</summary>
+    public const string CustomerRecordType = "customer";
+}
+
 /// <summary>Well-known retry-mode procedure parameter keys (SDK-4/6).</summary>
 public static class OperationItemRetryParameterKeys
 {

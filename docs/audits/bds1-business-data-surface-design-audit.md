@@ -1,7 +1,7 @@
 # BDS-1 — Business Data Surface Design Audit
 
 **Date:** 2026-07-21  
-**Status:** Audit complete — no code in this pass; implementation starts at BDS-2  
+**Status:** Audit complete — BDS-2 implemented (`docs/audits/bds2-closure.md`); next is BDS-3 demo projection  
 **Prior closed tracks:** S1–S13; SWM-1–SWM-12; PFB-1; SDK-1–SDK-6D; FileImport itemization/retry; ApiPolling sync/retry; SDK-6D readiness UX  
 **Non-goals this pass:** code, Systems/Services build, platform-wide entity model, UI overhaul, cross-integration writes, Azure/live deps, removal of run/item surfaces
 

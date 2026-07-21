@@ -122,7 +122,9 @@ public sealed class Sdk3DOperationItemizationPanelTests
     public void Empty_copy_is_not_an_error()
     {
         OperationItemizationUiHelpers.EmptyMessage.Should().Contain("operation item writer");
-        OperationItemizationUiHelpers.EmptyTitle.Should().Contain("No itemized");
+        OperationItemizationUiHelpers.EmptyTitle.Should().Contain("No affected");
+        OperationItemizationUiHelpers.SectionTitle.Should().Be("Affected records");
+        OperationItemizationUiHelpers.SectionSubtitle.Should().Contain("Business-facing records");
     }
 
     [Fact]

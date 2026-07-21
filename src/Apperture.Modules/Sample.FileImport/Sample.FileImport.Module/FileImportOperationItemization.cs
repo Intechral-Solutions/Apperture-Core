@@ -5,8 +5,9 @@ namespace Sample.FileImport;
 
 /// <summary>
 /// Maps SDK-2 process-local import outcomes to SDK-3A durable operation groups/items (SDK-6A shared reporting).
+/// BDS-2: emits aligned business metadata for future demo record projection.
 /// </summary>
-internal static class FileImportOperationItemization
+public static class FileImportOperationItemization
 {
     public const string OperationKind = "file_import";
 
@@ -25,6 +26,15 @@ internal static class FileImportOperationItemization
             ImportRowStatus.Succeeded => OperationItemStatuses.Succeeded,
             ImportRowStatus.Failed => OperationItemStatuses.Failed,
             ImportRowStatus.Skipped => OperationItemStatuses.Skipped,
+            _ => throw new ArgumentOutOfRangeException(nameof(status), status, "Unknown row status."),
+        };
+
+    public static string MapChangeKind(ImportRowStatus status) =>
+        status switch
+        {
+            ImportRowStatus.Succeeded => FileImportChangeKinds.Imported,
+            ImportRowStatus.Failed => FileImportChangeKinds.Failed,
+            ImportRowStatus.Skipped => FileImportChangeKinds.Skipped,
             _ => throw new ArgumentOutOfRangeException(nameof(status), status, "Unknown row status."),
         };
 
@@ -65,19 +75,30 @@ internal static class FileImportOperationItemization
         string? retryAttemptId = null,
         string? parentOperationItemId = null)
     {
-        var displayLabel = !string.IsNullOrWhiteSpace(outcome.SourceKey)
-            ? outcome.SourceKey!.Trim()
-            : $"row {outcome.RowNumber}";
+        var businessKey = NormalizeBusinessKey(outcome.SourceKey);
+        var changeKind = MapChangeKind(outcome.Status);
+        var displayName = ResolveDisplayName(outcome, businessKey);
+        var displayLabel = displayName;
 
         object metadata = string.IsNullOrWhiteSpace(retryAttemptId)
             ? new
             {
+                recordType = OperationItemBusinessMetadataKeys.CustomerRecordType,
+                businessKey,
+                displayName,
+                changeKind,
+                observedAt = outcome.CreatedAtUtc,
                 fixtureId,
                 rowNumber = outcome.RowNumber,
                 errorCode = outcome.ErrorCode,
             }
             : new
             {
+                recordType = OperationItemBusinessMetadataKeys.CustomerRecordType,
+                businessKey,
+                displayName,
+                changeKind,
+                observedAt = outcome.CreatedAtUtc,
                 fixtureId,
                 rowNumber = outcome.RowNumber,
                 errorCode = outcome.ErrorCode,
@@ -90,13 +111,25 @@ internal static class FileImportOperationItemization
             runId,
             outcome.RowNumber,
             MapItemStatus(outcome.Status),
-            outcome.SourceKey,
+            businessKey,
             displayLabel,
             outcome.ErrorCode,
             outcome.ErrorMessage,
             IsRetryable(outcome),
-            new { summary = outcome.SafeRowSummary },
+            new { changeKind, summary = outcome.SafeRowSummary },
             metadata,
             outcome.CreatedAtUtc);
+    }
+
+    public static string? NormalizeBusinessKey(string? sourceKey) =>
+        string.IsNullOrWhiteSpace(sourceKey) ? null : sourceKey.Trim();
+
+    static string ResolveDisplayName(ImportRowOutcome outcome, string? businessKey)
+    {
+        if (!string.IsNullOrWhiteSpace(outcome.DisplayName))
+            return outcome.DisplayName.Trim();
+        if (!string.IsNullOrWhiteSpace(businessKey))
+            return businessKey;
+        return $"row {outcome.RowNumber}";
     }
 }

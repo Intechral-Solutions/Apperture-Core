@@ -77,8 +77,11 @@ This is **not** a release-candidate plan. Completing a row does not make Appertu
 
 ## Track 5 — Business Data & Cross-Integration Records
 
-- Shared entity / record model
-- Business data surfaces
+- Shared entity / record model *(deferred — demo projection first)*
+- **BDS-1** Design audit — complete (`docs/audits/bds1-business-data-surface-design-audit.md`)
+- **BDS-2** Business metadata alignment for sample modules — complete (`docs/audits/bds2-closure.md`)
+- **BDS-3** Demo business record projection *(next)*
+- Business data surfaces / read APIs (BDS-4/5)
 - Integration-owned projections
 - Cross-integration lookup
 - Record detail pages

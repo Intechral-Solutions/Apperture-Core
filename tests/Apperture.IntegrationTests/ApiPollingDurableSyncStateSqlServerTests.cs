@@ -59,8 +59,8 @@ public sealed class ApiPollingDurableSyncStateSqlServerTests
 
             store.UpsertLastSeen(scopeA,
             [
-                new SeenAccountFingerprint("A-100", "Acme", "a@x.example", "Active", "Standard", "2026-07-01T00:00:00Z", 1, false, now),
-                new SeenAccountFingerprint("A-200", "Beta", "b@x.example", "Active", "Standard", "2026-07-02T00:00:00Z", 1, false, now),
+                new SeenAccountFingerprint("C-001", "Acme", "a@x.example", "Active", "Standard", "2026-07-01T00:00:00Z", 1, false, now),
+                new SeenAccountFingerprint("C-002", "Beta", "b@x.example", "Active", "Standard", "2026-07-02T00:00:00Z", 1, false, now),
             ]);
 
             store.GetLastSeen(scopeA).Should().HaveCount(2);
@@ -68,13 +68,13 @@ public sealed class ApiPollingDurableSyncStateSqlServerTests
 
             store.UpsertLastSeen(scopeA,
             [
-                new SeenAccountFingerprint("A-100", "Acme", "billing@x.example", "Active", "Standard", "2026-07-10T00:00:00Z", 2, false, now),
+                new SeenAccountFingerprint("C-001", "Acme", "billing@x.example", "Active", "Standard", "2026-07-10T00:00:00Z", 2, false, now),
             ]);
-            store.GetLastSeen(scopeA)["A-100"].Version.Should().Be(2);
-            store.GetLastSeen(scopeA)["A-100"].Email.Should().Be("billing@x.example");
+            store.GetLastSeen(scopeA)["C-001"].Version.Should().Be(2);
+            store.GetLastSeen(scopeA)["C-001"].Email.Should().Be("billing@x.example");
 
-            store.RemoveLastSeen(scopeA, ["A-200"]);
-            store.GetLastSeen(scopeA).Keys.Should().BeEquivalentTo(["A-100"]);
+            store.RemoveLastSeen(scopeA, ["C-002"]);
+            store.GetLastSeen(scopeA).Keys.Should().BeEquivalentTo(["C-001"]);
 
             store.SetLastSummary(scopeA, new SyncSummary(
                 "snapshot-changes",
@@ -86,8 +86,8 @@ public sealed class ApiPollingDurableSyncStateSqlServerTests
 
             // Restart-like: new store instance over same DB
             IApiPollingDurableLastSeenStore store2 = new SqlApiPollingDurableLastSeenStore(factory);
-            store2.GetLastSeen(scopeA).Should().ContainKey("A-100");
-            store2.GetLastSeen(scopeA).Should().NotContainKey("A-200");
+            store2.GetLastSeen(scopeA).Should().ContainKey("C-001");
+            store2.GetLastSeen(scopeA).Should().NotContainKey("C-002");
 
             store2.ResetScope(scopeA);
             store2.GetLastSeen(scopeA).Should().BeEmpty();
@@ -114,7 +114,7 @@ public sealed class ApiPollingDurableSyncStateSqlServerTests
 
             store.UpsertLastSeen(scope,
             [
-                new SeenAccountFingerprint("A-100", "Acme", "ops@acme.example", "Active", "Standard", "2026-07-01T00:00:00Z", 1, false, now),
+                new SeenAccountFingerprint("C-001", "Acme", "ops@acme.example", "Active", "Standard", "2026-07-01T00:00:00Z", 1, false, now),
             ]);
 
             var stateId = await db.ApiPollingSyncStates.AsNoTracking()
@@ -122,7 +122,7 @@ public sealed class ApiPollingDurableSyncStateSqlServerTests
                 .Select(s => s.StateId)
                 .SingleAsync();
             var record = await db.ApiPollingKnownRecords.AsNoTracking()
-                .SingleAsync(r => r.StateId == stateId && r.ExternalId == "A-100");
+                .SingleAsync(r => r.StateId == stateId && r.ExternalId == "C-001");
 
             record.RecordHash.Should().HaveLength(64);
             record.MetadataJson.Should().BeNull();

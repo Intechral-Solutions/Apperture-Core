@@ -3,6 +3,10 @@ using Sample.ApiPolling.Contracts;
 
 namespace Sample.ApiPolling;
 
+/// <summary>
+/// Maps ApiPolling classifications to durable operation groups/items.
+/// BDS-2: emits aligned business metadata for future demo record projection.
+/// </summary>
 public static class ApiPollingOperationItemization
 {
     public const string OperationKind = "api_poll";
@@ -73,18 +77,23 @@ public static class ApiPollingOperationItemization
         string? retryAttemptId = null,
         string? parentOperationItemId = null)
     {
-        var displayLabel = !string.IsNullOrWhiteSpace(classification.DisplayName)
-            ? classification.DisplayName!.Trim()
-            : classification.ExternalId ?? $"seq {classification.Sequence}";
+        var businessKey = NormalizeBusinessKey(classification.ExternalId);
+        var changeKind = classification.ChangeKind;
+        var displayName = ResolveDisplayName(classification, businessKey);
+        var displayLabel = displayName;
 
         object metadata = string.IsNullOrWhiteSpace(retryAttemptId)
             ? new
             {
+                recordType = OperationItemBusinessMetadataKeys.CustomerRecordType,
+                businessKey,
+                displayName,
+                changeKind,
+                observedAt = classification.CreatedAtUtc,
                 snapshotId,
                 sequence = classification.Sequence,
                 includeDeleted,
-                changeKind = classification.ChangeKind,
-                externalId = classification.ExternalId,
+                externalId = businessKey,
                 version = classification.Version,
                 status = classification.Status,
                 tier = classification.Tier,
@@ -92,11 +101,15 @@ public static class ApiPollingOperationItemization
             }
             : new
             {
+                recordType = OperationItemBusinessMetadataKeys.CustomerRecordType,
+                businessKey,
+                displayName,
+                changeKind,
+                observedAt = classification.CreatedAtUtc,
                 snapshotId,
                 sequence = classification.Sequence,
                 includeDeleted,
-                changeKind = classification.ChangeKind,
-                externalId = classification.ExternalId,
+                externalId = businessKey,
                 version = classification.Version,
                 status = classification.Status,
                 tier = classification.Tier,
@@ -110,18 +123,30 @@ public static class ApiPollingOperationItemization
             runId,
             classification.Sequence,
             classification.ItemStatus,
-            classification.ExternalId,
+            businessKey,
             displayLabel,
             classification.ErrorCode,
             classification.ErrorMessage,
             IsRetryable(classification),
             new
             {
-                changeKind = classification.ChangeKind,
+                changeKind,
                 summary = classification.ChangeSummary,
                 changedFields = classification.ChangedFields,
             },
             metadata,
             classification.CreatedAtUtc);
+    }
+
+    public static string? NormalizeBusinessKey(string? externalId) =>
+        string.IsNullOrWhiteSpace(externalId) ? null : externalId.Trim();
+
+    static string ResolveDisplayName(RecordClassification classification, string? businessKey)
+    {
+        if (!string.IsNullOrWhiteSpace(classification.DisplayName))
+            return classification.DisplayName.Trim();
+        if (!string.IsNullOrWhiteSpace(businessKey))
+            return businessKey;
+        return $"seq {classification.Sequence}";
     }
 }
