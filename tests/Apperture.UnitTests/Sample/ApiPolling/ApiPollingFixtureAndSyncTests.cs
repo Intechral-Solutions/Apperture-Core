@@ -106,11 +106,11 @@ public sealed class ApiPollingFixtureAndSyncTests
         items.Should().OnlyContain(i => i.MetadataJson != null && i.MetadataJson.Contains("\"changeKind\":\"new\""));
         foreach (var item in items)
         {
-            item.MetadataJson.Should().NotContain("ada@example.com");
             item.MetadataJson.Should().Contain("\"recordType\":\"customer\"");
             item.MetadataJson.Should().Contain("\"businessKey\"");
             item.MetadataJson.Should().Contain("\"displayName\"");
             item.MetadataJson.Should().Contain("\"observedAt\"");
+            item.MetadataJson.Should().Contain("\"email\"");
             (item.ChangeSummaryJson is null || item.ChangeSummaryJson.Length < 500).Should().BeTrue();
         }
 

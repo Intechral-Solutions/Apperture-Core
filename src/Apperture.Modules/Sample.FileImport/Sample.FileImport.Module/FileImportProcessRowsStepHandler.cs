@@ -136,7 +136,9 @@ public sealed class FileImportProcessRowsStepHandler : IStepHandler
                     "Skipped because failOnFirstError stopped processing after an earlier failure.",
                     FileImportRowProcessor.BuildSafeSummary(row),
                     now,
-                    FileImportRowProcessor.BuildDisplayName(row));
+                    FileImportRowProcessor.BuildDisplayName(row),
+                    string.IsNullOrWhiteSpace(row.Email) ? null : row.Email.Trim(),
+                    string.IsNullOrWhiteSpace(row.Status) ? null : row.Status.Trim());
             }
             else if (i >= maxRows)
             {
@@ -149,7 +151,9 @@ public sealed class FileImportProcessRowsStepHandler : IStepHandler
                     $"Skipped because maxRowsPerImport={maxRows}.",
                     FileImportRowProcessor.BuildSafeSummary(row),
                     now,
-                    FileImportRowProcessor.BuildDisplayName(row));
+                    FileImportRowProcessor.BuildDisplayName(row),
+                    string.IsNullOrWhiteSpace(row.Email) ? null : row.Email.Trim(),
+                    string.IsNullOrWhiteSpace(row.Status) ? null : row.Status.Trim());
             }
             else
             {

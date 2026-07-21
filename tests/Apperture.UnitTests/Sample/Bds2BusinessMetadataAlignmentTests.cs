@@ -25,7 +25,9 @@ public sealed class Bds2BusinessMetadataAlignmentTests
             ErrorMessage: null,
             SafeRowSummary: "row=1; id=C-001; email=ada@example.com",
             CreatedAtUtc: observedAt,
-            DisplayName: "Ada Lovelace");
+            DisplayName: "Ada Lovelace",
+            Email: "ada@example.com",
+            SourceStatus: "Active");
 
         var request = FileImportOperationItemization.ToAppendRequest(
             "og-1",
@@ -45,7 +47,9 @@ public sealed class Bds2BusinessMetadataAlignmentTests
         root.GetProperty("displayName").GetString().Should().Be("Ada Lovelace");
         root.GetProperty("changeKind").GetString().Should().Be(FileImportChangeKinds.Imported);
         root.GetProperty("observedAt").GetDateTimeOffset().Should().Be(observedAt);
-        root.TryGetProperty("email", out _).Should().BeFalse();
+        root.GetProperty("email").GetString().Should().Be("ada@example.com");
+        root.GetProperty("status").GetString().Should().Be("Active");
+        root.TryGetProperty("rawCsv", out _).Should().BeFalse();
 
         using var summary = JsonDocument.Parse(request.ChangeSummaryJson!);
         summary.RootElement.GetProperty("changeKind").GetString().Should().Be(FileImportChangeKinds.Imported);

@@ -103,7 +103,7 @@ This guide is for developers building **Apperture modules**: workflow-centric pa
 2. `AppendItemAsync(...)` — subject key, display label, status, bounded change summary / metadata  
 3. `CompleteGroupAsync(...)` — terminal group status + counts (`Succeeded` / `CompletedWithErrors` / `Failed`)
 
-**Business metadata convention (BDS-2):** Sample modules should emit camelCase item metadata keys defined by `OperationItemBusinessMetadataKeys`: `recordType`, `businessKey` (same as `SubjectKey`), `displayName`, `changeKind`, `observedAt` (align with `CompletedAtUtc`). Prefer human-facing `DisplayLabel` (name) with opaque `SubjectKey` (external id). This is **metadata alignment only** — not a platform `BusinessRecord` entity. Demo projection follows in BDS-3 ([bds1 audit](../audits/bds1-business-data-surface-design-audit.md), [bds2 closure](../audits/bds2-closure.md)).
+**Business metadata convention (BDS-2/BDS-3):** Sample modules should emit camelCase item metadata keys defined by `OperationItemBusinessMetadataKeys`: `recordType`, `businessKey` (same as `SubjectKey`), `displayName`, `changeKind`, `observedAt` (align with `CompletedAtUtc`), plus safe business fields `email` / `status` when known. Prefer human-facing `DisplayLabel` (name) with opaque `SubjectKey` (external id). This is **metadata + demo projection only** — not a platform `BusinessRecord` entity. Demo read API: `GET /api/demo/business-records/customers` ([bds3](../audits/bds3-demo-business-record-projection.md)).
 
 **Safety rules:** No secrets; no raw files; no silent truncation; JSON fields bounded (see `OperationItemizationBounds`). Missing `RunId` or unregistered store fails loudly.
 

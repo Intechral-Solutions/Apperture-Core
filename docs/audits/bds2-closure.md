@@ -53,4 +53,6 @@ Section title/empty copy reframed to **Affected records** (panel framework uncha
 
 ## Next
 
-**BDS-3 — Demo Business Record Projection** — read-only sample projection correlating FileImport + ApiPolling by `recordType` + `businessKey`, with provenance to operation items/runs and soft conflict flags.
+**BDS-3 — Demo Business Record Projection** — complete: see [bds3-demo-business-record-projection.md](./bds3-demo-business-record-projection.md).
+
+**BDS-4 / BDS-5** — Management Client polish and Records UI surface.

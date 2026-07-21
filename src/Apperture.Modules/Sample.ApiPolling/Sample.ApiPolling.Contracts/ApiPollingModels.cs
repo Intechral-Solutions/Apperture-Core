@@ -80,7 +80,9 @@ public sealed record RecordClassification(
     string? Status,
     string? Tier,
     IReadOnlyList<string>? ChangedFields,
-    DateTimeOffset CreatedAtUtc);
+    DateTimeOffset CreatedAtUtc,
+    /// <summary>Business email when known (BDS-3 projection; not a secret).</summary>
+    string? Email = null);
 
 public sealed record SyncSummary(
     string SnapshotId,

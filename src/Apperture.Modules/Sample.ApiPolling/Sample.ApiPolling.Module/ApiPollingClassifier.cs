@@ -299,7 +299,8 @@ public static class ApiPollingClassifier
                 record.Status,
                 record.Tier,
                 ["isDeleted"],
-                nowUtc);
+                nowUtc,
+                record.Email);
         }
 
         if (!lastSeen.TryGetValue(externalId, out var prior))
@@ -318,7 +319,8 @@ public static class ApiPollingClassifier
                 record.Status,
                 record.Tier,
                 null,
-                nowUtc);
+                nowUtc,
+                record.Email);
         }
 
         var changedFields = DiffFields(prior, record);
@@ -338,7 +340,8 @@ public static class ApiPollingClassifier
                 record.Status,
                 record.Tier,
                 null,
-                nowUtc);
+                nowUtc,
+                record.Email);
         }
 
         return new RecordClassification(
@@ -355,7 +358,8 @@ public static class ApiPollingClassifier
             record.Status,
             record.Tier,
             changedFields,
-            nowUtc);
+            nowUtc,
+            record.Email);
     }
 
     public static SyncBatchStatus ResolveBatchStatus(int succeeded, int failed, int skipped, bool strictMode)
@@ -458,7 +462,8 @@ public static class ApiPollingClassifier
             record.Status,
             record.Tier,
             null,
-            nowUtc);
+            nowUtc,
+            record.Email);
 
     private static RecordClassification Skipped(
         string syncBatchId,
@@ -481,7 +486,8 @@ public static class ApiPollingClassifier
             record.Status,
             record.Tier,
             null,
-            nowUtc);
+            nowUtc,
+            record.Email);
 
     private static bool IsValidEmail(string? email)
     {

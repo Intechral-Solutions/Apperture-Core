@@ -80,8 +80,9 @@ This is **not** a release-candidate plan. Completing a row does not make Appertu
 - Shared entity / record model *(deferred — demo projection first)*
 - **BDS-1** Design audit — complete (`docs/audits/bds1-business-data-surface-design-audit.md`)
 - **BDS-2** Business metadata alignment for sample modules — complete (`docs/audits/bds2-closure.md`)
-- **BDS-3** Demo business record projection *(next)*
-- Business data surfaces / read APIs (BDS-4/5)
+- **BDS-3** Demo business record projection — complete (`docs/audits/bds3-demo-business-record-projection.md`)
+- **BDS-4** Business Record Read APIs polish / Management Client *(next)*
+- **BDS-5** Business Record Surface (UI)
 - Integration-owned projections
 - Cross-integration lookup
 - Record detail pages

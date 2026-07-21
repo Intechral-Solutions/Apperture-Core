@@ -25,7 +25,11 @@ public sealed record ImportRowOutcome(
     string SafeRowSummary,
     DateTimeOffset CreatedAtUtc,
     /// <summary>Human-facing label for operation items (name, else email, else key).</summary>
-    string? DisplayName = null);
+    string? DisplayName = null,
+    /// <summary>Business email when known (BDS-3 projection; not a secret).</summary>
+    string? Email = null,
+    /// <summary>Business status from the source row when known (BDS-3).</summary>
+    string? SourceStatus = null);
 
 public sealed record ImportBatchCreateRequest(
     string FixtureId,

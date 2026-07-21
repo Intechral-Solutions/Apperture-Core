@@ -88,7 +88,9 @@ public static class FileImportRowProcessor
                 row.ParseErrorMessage ?? "Row is not structurally parseable.",
                 BuildSafeSummary(row),
                 nowUtc,
-                BuildDisplayName(row));
+                BuildDisplayName(row),
+                string.IsNullOrWhiteSpace(row.Email) ? null : row.Email.Trim(),
+                string.IsNullOrWhiteSpace(row.Status) ? null : row.Status.Trim());
         }
 
         if (string.IsNullOrWhiteSpace(row.ExternalId))
@@ -101,7 +103,9 @@ public static class FileImportRowProcessor
                 "externalId is required.",
                 BuildSafeSummary(row),
                 nowUtc,
-                BuildDisplayName(row));
+                BuildDisplayName(row),
+                string.IsNullOrWhiteSpace(row.Email) ? null : row.Email.Trim(),
+                string.IsNullOrWhiteSpace(row.Status) ? null : row.Status.Trim());
         }
 
         if (!seenExternalIds.Add(row.ExternalId))
@@ -114,7 +118,9 @@ public static class FileImportRowProcessor
                 $"Duplicate externalId '{row.ExternalId}'.",
                 BuildSafeSummary(row),
                 nowUtc,
-                BuildDisplayName(row));
+                BuildDisplayName(row),
+                string.IsNullOrWhiteSpace(row.Email) ? null : row.Email.Trim(),
+                string.IsNullOrWhiteSpace(row.Status) ? null : row.Status.Trim());
         }
 
         if (!IsValidEmail(row.Email))
@@ -127,7 +133,9 @@ public static class FileImportRowProcessor
                 $"Invalid email '{row.Email}'.",
                 BuildSafeSummary(row),
                 nowUtc,
-                BuildDisplayName(row));
+                BuildDisplayName(row),
+                string.IsNullOrWhiteSpace(row.Email) ? null : row.Email.Trim(),
+                string.IsNullOrWhiteSpace(row.Status) ? null : row.Status.Trim());
         }
 
         if (string.IsNullOrWhiteSpace(row.Status) || !AllowedStatuses.Contains(row.Status))
@@ -140,7 +148,9 @@ public static class FileImportRowProcessor
                 $"Invalid status '{row.Status}'. Allowed: Active, Inactive, Pending.",
                 BuildSafeSummary(row),
                 nowUtc,
-                BuildDisplayName(row));
+                BuildDisplayName(row),
+                string.IsNullOrWhiteSpace(row.Email) ? null : row.Email.Trim(),
+                string.IsNullOrWhiteSpace(row.Status) ? null : row.Status.Trim());
         }
 
         if (!DateOnly.TryParse(row.EffectiveDate, CultureInfo.InvariantCulture, DateTimeStyles.None, out _))
@@ -153,7 +163,9 @@ public static class FileImportRowProcessor
                 $"Invalid effectiveDate '{row.EffectiveDate}'. Use yyyy-MM-dd.",
                 BuildSafeSummary(row),
                 nowUtc,
-                BuildDisplayName(row));
+                BuildDisplayName(row),
+                string.IsNullOrWhiteSpace(row.Email) ? null : row.Email.Trim(),
+                string.IsNullOrWhiteSpace(row.Status) ? null : row.Status.Trim());
         }
 
         return new ImportRowOutcome(
@@ -165,7 +177,9 @@ public static class FileImportRowProcessor
             null,
             BuildSafeSummary(row),
             nowUtc,
-            BuildDisplayName(row));
+            BuildDisplayName(row),
+            string.IsNullOrWhiteSpace(row.Email) ? null : row.Email.Trim(),
+            string.IsNullOrWhiteSpace(row.Status) ? null : row.Status.Trim());
     }
 
     public static ImportBatchStatus ResolveBatchStatus(int succeeded, int failed, int skipped, bool strictMode)
@@ -227,8 +241,10 @@ public static class FileImportRowProcessor
         string message,
         string summary,
         DateTimeOffset nowUtc,
-        string? displayName = null) =>
-        new(batchId, rowNumber, sourceKey, ImportRowStatus.Failed, code, message, summary, nowUtc, displayName);
+        string? displayName = null,
+        string? email = null,
+        string? sourceStatus = null) =>
+        new(batchId, rowNumber, sourceKey, ImportRowStatus.Failed, code, message, summary, nowUtc, displayName, email, sourceStatus);
 
     private static bool IsValidEmail(string? email)
     {
