@@ -76,25 +76,40 @@ public static class SqlServerTestConfiguration
 
     /// <summary>
     /// Connection string for general SqlServer integration tests (<see cref="DefaultIntegrationDatabase"/>).
+    /// Skips unreachable Aspire ephemeral endpoints and falls through to the next configured source.
     /// </summary>
     public static string? GetConnectionString() =>
-        ResolveConnectionString(DefaultIntegrationDatabase, allowGovernanceOverride: false);
+        ResolveConnectionString(
+            DefaultIntegrationDatabase,
+            allowGovernanceOverride: false,
+            requireReachable: !_skipReachabilityProbeForTests);
 
     /// <summary>
     /// Connection string for Management Host governance HTTP tests (<see cref="DefaultGovernanceDatabase"/>).
     /// </summary>
     public static string? GetGovernanceConnectionString() =>
-        ResolveConnectionString(DefaultGovernanceDatabase, allowGovernanceOverride: true);
+        ResolveConnectionString(
+            DefaultGovernanceDatabase,
+            allowGovernanceOverride: true,
+            requireReachable: !_skipReachabilityProbeForTests);
 
-    /// <summary>Returns <see cref="GetConnectionString"/> or throws with configuration guidance.</summary>
+    /// <summary>Returns a reachable connection string or throws with configuration guidance.</summary>
     public static string RequireConnectionString()
     {
-        var connectionString = GetConnectionString();
+        var connectionString = ResolveConnectionString(
+            DefaultIntegrationDatabase,
+            allowGovernanceOverride: false,
+            requireReachable: true);
         if (connectionString is null)
-            throw new InvalidOperationException(DescribeActiveConfiguration());
+            throw new InvalidOperationException(DescribeConnectionFailure());
 
         return connectionString;
     }
+
+    private static bool _skipReachabilityProbeForTests;
+
+    /// <summary>Test-only: prefer configured order without probing TCP (preference unit tests).</summary>
+    internal static void SetSkipReachabilityProbeForTests(bool skip) => _skipReachabilityProbeForTests = skip;
 
     /// <summary>Sanitized connection summary for diagnostics (no secrets).</summary>
     public static string DescribeConnectionSummary(string? connectionString)
@@ -154,7 +169,9 @@ public static class SqlServerTestConfiguration
         return
             $"{DescribeActiveConfiguration()} " +
             $"Connection failed ({endpoint}). " +
-            "Verify the endpoint, credentials, and that you are not pointing at a stale Docker container on port 1433.";
+            "Verify the endpoint, credentials, and that you are not pointing at a stale Aspire ephemeral SQL port " +
+            $"(clear or refresh {ExplicitConnectionStringVariable} / {DefaultConnectionStringVariable} after AppHost restart). " +
+            "Do not hard-code Aspire dynamic ports in .env.";
     }
 
     internal static bool TryParseEnvLine(string line, out string key, out string? value)
@@ -178,7 +195,10 @@ public static class SqlServerTestConfiguration
         return true;
     }
 
-    private static string? ResolveConnectionString(string targetDatabase, bool allowGovernanceOverride)
+    private static string? ResolveConnectionString(
+        string targetDatabase,
+        bool allowGovernanceOverride,
+        bool requireReachable)
     {
         EnsureEnvLoaded();
         LastResolutionSource = null;
@@ -186,38 +206,63 @@ public static class SqlServerTestConfiguration
         LastResolvedCatalog = null;
         LastResolvedAuthMode = null;
 
+        string? firstConfigured = null;
+        string? firstSource = null;
+
+        foreach (var candidate in EnumerateCandidates(targetDatabase, allowGovernanceOverride))
+        {
+            firstConfigured ??= candidate.ConnectionString;
+            firstSource ??= candidate.Source;
+
+            if (requireReachable && !TryOpenMaster(candidate.ConnectionString, out _))
+                continue;
+
+            LastResolutionSource = candidate.Source;
+            // Governance harness supplies a full connection string including catalog — do not rewrite.
+            var resolved = candidate.Source == GovernanceConnectionStringVariable
+                ? candidate.ConnectionString
+                : WithDatabase(candidate.ConnectionString, targetDatabase);
+            RecordConnectionMetadata(resolved);
+            return resolved;
+        }
+
+        if (firstConfigured is null)
+            return null;
+
+        // No reachable candidate: record the first configured endpoint for diagnostics.
+        LastResolutionSource = firstSource;
+        var fallback = WithDatabase(firstConfigured, targetDatabase);
+        RecordConnectionMetadata(fallback);
+        return requireReachable ? null : fallback;
+    }
+
+    private static IEnumerable<(string Source, string ConnectionString)> EnumerateCandidates(
+        string targetDatabase,
+        bool allowGovernanceOverride)
+    {
         if (allowGovernanceOverride)
         {
             var governance = Environment.GetEnvironmentVariable(GovernanceConnectionStringVariable);
             if (!string.IsNullOrWhiteSpace(governance))
-            {
-                LastResolutionSource = GovernanceConnectionStringVariable;
-                RecordConnectionMetadata(governance);
-                return governance.Trim();
-            }
+                yield return (GovernanceConnectionStringVariable, governance.Trim());
         }
 
         var explicitConnection = Environment.GetEnvironmentVariable(ExplicitConnectionStringVariable);
         if (!string.IsNullOrWhiteSpace(explicitConnection))
-        {
-            LastResolutionSource = ExplicitConnectionStringVariable;
-            var withDatabase = WithDatabase(explicitConnection, targetDatabase);
-            RecordConnectionMetadata(withDatabase);
-            return withDatabase;
-        }
+            yield return (ExplicitConnectionStringVariable, explicitConnection.Trim());
 
         var defaultConnection = Environment.GetEnvironmentVariable(DefaultConnectionStringVariable);
         if (!string.IsNullOrWhiteSpace(defaultConnection))
-        {
-            LastResolutionSource = DefaultConnectionStringVariable;
-            var withDatabase = WithDatabase(defaultConnection, targetDatabase);
-            RecordConnectionMetadata(withDatabase);
-            return withDatabase;
-        }
+            yield return (DefaultConnectionStringVariable, defaultConnection.Trim());
+
+        // Aspire / Manage.ps1 sometimes publish the live endpoint here after AppHost start.
+        var aspireEndpoint = TryReadAspireSqlEndpointFromRuntimeFiles();
+        if (!string.IsNullOrWhiteSpace(aspireEndpoint))
+            yield return ("aspire-runtime-endpoint", aspireEndpoint);
 
         var password = Environment.GetEnvironmentVariable("MSSQL_SA_PASSWORD");
         if (string.IsNullOrWhiteSpace(password))
-            return null;
+            yield break;
 
         var server = Environment.GetEnvironmentVariable("MSSQL_TEST_SERVER") ?? LegacyDefaultServer;
         var database = allowGovernanceOverride
@@ -225,10 +270,93 @@ public static class SqlServerTestConfiguration
             : Environment.GetEnvironmentVariable("MSSQL_TEST_DATABASE") ?? targetDatabase;
         var user = Environment.GetEnvironmentVariable("MSSQL_TEST_USER") ?? DefaultUser;
 
-        LastResolutionSource = $"legacy MSSQL_SA_PASSWORD (server {server})";
-        var legacy = $"Server={server};Database={database};User Id={user};Password={password};TrustServerCertificate=True;";
-        RecordConnectionMetadata(legacy);
-        return legacy;
+        yield return (
+            $"legacy MSSQL_SA_PASSWORD (server {server})",
+            $"Server={server};Database={database};User Id={user};Password={password};TrustServerCertificate=True;");
+    }
+
+    private static bool TryOpenMaster(string connectionString, out Exception? error)
+    {
+        error = null;
+        try
+        {
+            var builder = new SqlConnectionStringBuilder(connectionString)
+            {
+                InitialCatalog = "master",
+                ConnectTimeout = 3
+            };
+            using var conn = new SqlConnection(builder.ConnectionString);
+            conn.Open();
+            return true;
+        }
+        catch (Exception ex)
+        {
+            error = ex;
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Best-effort discovery of a live Aspire SQL endpoint written by local orchestration.
+    /// Never invents a hard-coded ephemeral port.
+    /// </summary>
+    private static string? TryReadAspireSqlEndpointFromRuntimeFiles()
+    {
+        try
+        {
+            var repoRoot = FindRepoRootDirectory();
+            if (repoRoot is null)
+                return null;
+
+            var candidates = new[]
+            {
+                Path.Combine(repoRoot, "scripts", ".runtime", "dev", "sql-connection.txt"),
+                Path.Combine(repoRoot, "scripts", ".runtime", "dev", "ConnectionStrings__DefaultConnection"),
+                Path.Combine(repoRoot, "artifacts", "dev", "sql-connection.txt"),
+            };
+
+            foreach (var path in candidates)
+            {
+                if (!File.Exists(path))
+                    continue;
+
+                var raw = File.ReadAllText(path).Trim();
+                if (raw.Length == 0)
+                    continue;
+
+                // Accept either a full connection string or host,port
+                if (raw.Contains('=', StringComparison.Ordinal))
+                    return raw;
+
+                var password = Environment.GetEnvironmentVariable("MSSQL_SA_PASSWORD");
+                if (string.IsNullOrWhiteSpace(password))
+                    continue;
+
+                return $"Server={raw};User Id=sa;Password={password};TrustServerCertificate=True;Initial Catalog=Apperture;";
+            }
+        }
+        catch
+        {
+            // Discovery is best-effort.
+        }
+
+        return null;
+    }
+
+    private static string? FindRepoRootDirectory()
+    {
+        foreach (var startDir in GetSearchRoots())
+        {
+            var dir = startDir;
+            for (var i = 0; i < 12 && dir is not null; i++)
+            {
+                if (LooksLikeRepoRoot(dir.FullName))
+                    return dir.FullName;
+                dir = dir.Parent;
+            }
+        }
+
+        return null;
     }
 
     private static string DescribeResolvedEndpoint()

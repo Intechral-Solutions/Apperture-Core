@@ -156,6 +156,7 @@ public sealed class SqlServerTestConfigurationTests
             File.WriteAllText(_isolatedEnvFile, string.Empty);
             SqlServerTestConfiguration.SetEnvFilePathOverrideForTests(_isolatedEnvFile);
             SqlServerTestConfiguration.ResetEnvLoadForTests();
+            SqlServerTestConfiguration.SetSkipReachabilityProbeForTests(true);
 
             Save(SqlServerTestConfiguration.ExplicitConnectionStringVariable);
             Save(SqlServerTestConfiguration.DefaultConnectionStringVariable);
@@ -173,6 +174,7 @@ public sealed class SqlServerTestConfigurationTests
                 Environment.SetEnvironmentVariable(key, value);
             SqlServerTestConfiguration.SetEnvFilePathOverrideForTests(null);
             SqlServerTestConfiguration.ResetEnvLoadForTests();
+            SqlServerTestConfiguration.SetSkipReachabilityProbeForTests(false);
             if (File.Exists(_isolatedEnvFile))
                 File.Delete(_isolatedEnvFile);
         }

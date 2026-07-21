@@ -292,6 +292,7 @@ public sealed class SchedulerOperationsSwm8Tests
         services.AddScoped<IOperationStartDispatchService, OperationStartDispatchService>();
         services.AddSingleton<ISchedulerHostIdentity>(new DefaultSchedulerHostIdentity(hostId));
         services.AddSingleton<ISchedulerClaimOptions>(new DefaultSchedulerClaimOptions(claimLeaseMinutes));
+        services.AddScheduleDispatchRunnerDependencies();
         services.AddScoped<IScheduleDispatchRunner, ScheduleDispatchRunner>();
         return services;
     }

@@ -1,6 +1,6 @@
 using Apperture.Core.Application.Execution;
-using Apperture.Core.Application.PlatformSettings;
 using Apperture.ModuleSdk.Abstractions;
+using Apperture.ModuleSdk.Integration.Configuration;
 using Apperture.ModuleSdk.Abstractions.Signals;
 using Apperture.RuntimePlane.Abstractions;
 using Apperture.Core.Domain.Governance;
@@ -10,7 +10,7 @@ using Apperture.Shared.Kernel;
 
 namespace Sample.HelloWorld;
 
-public sealed class HelloWorldModule : IModule, IModuleStepHandlerRegistrar, IOperationDefinitionProvider, IModuleIntegrationSettingDefinitionContributor
+public sealed class HelloWorldModule : IModule, IModuleStepHandlerRegistrar, IOperationDefinitionProvider, IIntegrationConfigurationContributor
 {
     private static readonly WorkflowDefinitionId DefinitionId = new("Sample.HelloWorld.HelloWorld");
     private static readonly OperationId OperationDefId = new("Sample.HelloWorld.DoWork");
@@ -98,6 +98,12 @@ public sealed class HelloWorldModule : IModule, IModuleStepHandlerRegistrar, IOp
         registry.Register(ModuleId, "Complete", new HelloWorldCompleteStepHandler());
     }
 
-    public IReadOnlyList<PlatformSettingDefinition> GetIntegrationSettingDefinitions() =>
-        HelloWorldDemoIntegrationSettingDefinitions.All;
+    public IReadOnlyList<IntegrationSettingDefinition> GetSettingDefinitions() =>
+        HelloWorldIntegrationConfiguration.Settings;
+
+    public IReadOnlyList<ConnectionRequirementDefinition> GetConnectionRequirements() =>
+        HelloWorldIntegrationConfiguration.Connections;
+
+    public IReadOnlyList<ProcedureRequirementSet> GetProcedureRequirements() =>
+        HelloWorldIntegrationConfiguration.Procedures;
 }

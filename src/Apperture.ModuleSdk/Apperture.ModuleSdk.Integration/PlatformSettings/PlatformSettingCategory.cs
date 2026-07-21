@@ -10,5 +10,8 @@ public enum PlatformSettingCategory
     Scheduling,
 
     /// <summary>Development-gated demo/gallery settings (Epic 120). Not production controls.</summary>
-    Demo
+    Demo,
+
+    /// <summary>Integration-instance settings contributed by modules (SDK-6C). Not platform-wide controls such as SMTP.</summary>
+    Integrations
 }

@@ -1,7 +1,9 @@
 using Apperture.Bootstrap;
 using Apperture.ControlPlane.Dashboard;
 using Apperture.ControlPlane.Security.Audit;
+using Apperture.Core.Application.Integration;
 using Apperture.Core.Application.PlatformSettings;
+using Apperture.ModuleSdk.Integration.Configuration;
 using Apperture.Core.Application.Scheduling;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Governance;
@@ -164,10 +166,9 @@ public static class ServiceCollectionExtensions
         var list = modules?.ToList() ?? [];
         services.AddSingleton<IEnumerable<IModule>>(list);
         foreach (var module in list)
-        {
-            if (module is IModuleIntegrationSettingDefinitionContributor contributor)
-                services.AddSingleton<IModuleIntegrationSettingDefinitionContributor>(contributor);
-        }
+            IntegrationConfigurationServiceCollectionExtensions.RegisterModuleIntegrationConfiguration(services, module);
+
+        services.AddSingleton<IIntegrationConfigurationRegistry, IntegrationConfigurationRegistry>();
 
         services.AddSingleton<IModuleManifestProvider, KnownModuleManifestProvider>();
         return services;

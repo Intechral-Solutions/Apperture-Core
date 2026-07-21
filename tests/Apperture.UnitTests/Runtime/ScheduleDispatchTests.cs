@@ -1,3 +1,4 @@
+using Apperture.Core.Application.Integration;
 using Apperture.Core.Application.RuntimeComposition;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Environment;
@@ -72,25 +73,7 @@ public sealed class ScheduleDispatchTests
             integrationId: null);
         await db.SaveChangesAsync();
 
-        var services = new ServiceCollection();
-        services.AddSingleton(db);
-        services.AddScoped<IScheduleRepository, SqlScheduleRepository>();
-        services.AddScoped<IIntegrationRepository, SqlIntegrationRepository>();
-        services.AddScoped<IScheduleEvaluator, CronScheduleEvaluator>();
-        services.AddScoped<IAuditService, SqlAuditService>();
-        var modules = new IModule[] { new HelloWorldModule() };
-        services.AddSingleton<IEnumerable<IModule>>(modules);
-        services.AddSingleton<IWorkflowDefinitionResolver>(sp =>
-            new WorkflowDefinitionResolver(sp.GetRequiredService<IEnumerable<IModule>>(), null));
-        services.AddSingleton<IOperationRegistryService>(sp =>
-            new OperationRegistryService(sp.GetRequiredService<IEnumerable<IModule>>(), null));
-        services.AddScoped<ISchedulerLifecycleGuard, SchedulerLifecycleGuard>();
-        services.AddScoped<IWorkflowPersistence, SqlWorkflowPersistence>();
-        services.AddScoped<IWorkflowStartDispatchService, WorkflowStartDispatchService>();
-        services.AddScoped<IOperationStartDispatchService, OperationStartDispatchService>();
-        services.AddSingleton<ISchedulerHostIdentity>(new DefaultSchedulerHostIdentity("test"));
-        services.AddSingleton<ISchedulerClaimOptions>(new DefaultSchedulerClaimOptions(5));
-        services.AddScoped<IScheduleDispatchRunner, ScheduleDispatchRunner>();
+        var services = BuildSchedulerServices(db, [new HelloWorldModule()], moduleEnabled: true);
 
         await using var scope = services.BuildServiceProvider().CreateAsyncScope();
         var runner = scope.ServiceProvider.GetRequiredService<IScheduleDispatchRunner>();
@@ -143,25 +126,7 @@ public sealed class ScheduleDispatchTests
             integrationId: "int1");
         await db.SaveChangesAsync();
 
-        var services = new ServiceCollection();
-        services.AddSingleton(db);
-        services.AddScoped<IScheduleRepository, SqlScheduleRepository>();
-        services.AddScoped<IIntegrationRepository, SqlIntegrationRepository>();
-        services.AddScoped<IScheduleEvaluator, CronScheduleEvaluator>();
-        services.AddScoped<IAuditService, SqlAuditService>();
-        var modules = new IModule[] { new HelloWorldModule() };
-        services.AddSingleton<IEnumerable<IModule>>(modules);
-        services.AddSingleton<IWorkflowDefinitionResolver>(sp =>
-            new WorkflowDefinitionResolver(sp.GetRequiredService<IEnumerable<IModule>>(), null));
-        services.AddSingleton<IOperationRegistryService>(sp =>
-            new OperationRegistryService(sp.GetRequiredService<IEnumerable<IModule>>(), null));
-        services.AddScoped<ISchedulerLifecycleGuard, SchedulerLifecycleGuard>();
-        services.AddScoped<IWorkflowPersistence, SqlWorkflowPersistence>();
-        services.AddScoped<IWorkflowStartDispatchService, WorkflowStartDispatchService>();
-        services.AddScoped<IOperationStartDispatchService, OperationStartDispatchService>();
-        services.AddSingleton<ISchedulerHostIdentity>(new DefaultSchedulerHostIdentity("test"));
-        services.AddSingleton<ISchedulerClaimOptions>(new DefaultSchedulerClaimOptions(5));
-        services.AddScoped<IScheduleDispatchRunner, ScheduleDispatchRunner>();
+        var services = BuildSchedulerServices(db, [new HelloWorldModule()], moduleEnabled: true);
 
         await using var scope = services.BuildServiceProvider().CreateAsyncScope();
         var runner = scope.ServiceProvider.GetRequiredService<IScheduleDispatchRunner>();
@@ -172,6 +137,45 @@ public sealed class ScheduleDispatchTests
         startRequestCount.Should().Be(0);
         run?.Outcome.Should().Be("BlockedByLifecycle");
         run?.OutcomeReason.Should().Contain("requires Active state");
+    }
+
+    [Fact]
+    public async Task RunCycleAsync_WhenIntegrationNotReady_BlocksDispatchWithReadinessEvidence()
+    {
+        var db = NewDb();
+        SeedIntegration(db, "int1", "Sample.HelloWorld", IntegrationState.Active);
+        SeedScheduleWithWorkflowTarget(
+            db,
+            "s1",
+            "a1",
+            "Sample.HelloWorld.HelloWorld",
+            "* * * * *",
+            "UTC",
+            lastAttemptedUtc: DeterministicLastAttemptedUtc,
+            integrationId: "int1");
+        await db.SaveChangesAsync();
+
+        var services = BuildSchedulerServices(db, [new HelloWorldModule()], moduleEnabled: true);
+
+        await using var scope = services.BuildServiceProvider().CreateAsyncScope();
+        var readiness = (TestDispatchReadinessEvaluator)scope.ServiceProvider.GetRequiredService<IIntegrationDispatchReadinessEvaluator>();
+        readiness.NextResult = new IntegrationReadinessProjection(
+            "int1",
+            "Sample.HelloWorld",
+            false,
+            1,
+            0,
+            [new IntegrationReadinessIssue("missing_slot_binding", "Required connection 'DirectoryApi' has no binding.", "DirectoryApi", null, null)]);
+
+        var runner = scope.ServiceProvider.GetRequiredService<IScheduleDispatchRunner>();
+        await runner.RunCycleAsync(new RuntimePlaneId("local"), DeterministicAsOfUtc);
+
+        var ctx = scope.ServiceProvider.GetRequiredService<AppertureDbContext>();
+        var startRequestCount = await ctx.WorkflowStartRequests.AsNoTracking().CountAsync();
+        var run = await ctx.ScheduleRuns.AsNoTracking().FirstOrDefaultAsync();
+        startRequestCount.Should().Be(0);
+        run?.Outcome.Should().Be("BlockedByReadiness");
+        run?.OutcomeReason.Should().Contain("DirectoryApi");
     }
 
     /// <summary>
@@ -189,25 +193,7 @@ public sealed class ScheduleDispatchTests
         // 14:03Z → lookback from 13:58Z includes the 14:00 hourly tick (deterministic; avoids wall-clock flakiness).
         var asOfUtc = new DateTimeOffset(2025, 6, 15, 14, 3, 0, 0, TimeSpan.Zero);
 
-        var services = new ServiceCollection();
-        services.AddSingleton(db);
-        services.AddScoped<IScheduleRepository, SqlScheduleRepository>();
-        services.AddScoped<IIntegrationRepository, SqlIntegrationRepository>();
-        services.AddScoped<IScheduleEvaluator, CronScheduleEvaluator>();
-        services.AddScoped<IAuditService, SqlAuditService>();
-        var modules = new IModule[] { new HelloWorldModule() };
-        services.AddSingleton<IEnumerable<IModule>>(modules);
-        services.AddSingleton<IWorkflowDefinitionResolver>(sp =>
-            new WorkflowDefinitionResolver(sp.GetRequiredService<IEnumerable<IModule>>(), null));
-        services.AddSingleton<IOperationRegistryService>(sp =>
-            new OperationRegistryService(sp.GetRequiredService<IEnumerable<IModule>>(), null));
-        services.AddScoped<ISchedulerLifecycleGuard, SchedulerLifecycleGuard>();
-        services.AddScoped<IWorkflowPersistence, SqlWorkflowPersistence>();
-        services.AddScoped<IWorkflowStartDispatchService, WorkflowStartDispatchService>();
-        services.AddScoped<IOperationStartDispatchService, OperationStartDispatchService>();
-        services.AddSingleton<ISchedulerHostIdentity>(new DefaultSchedulerHostIdentity("test"));
-        services.AddSingleton<ISchedulerClaimOptions>(new DefaultSchedulerClaimOptions(5));
-        services.AddScoped<IScheduleDispatchRunner, ScheduleDispatchRunner>();
+        var services = BuildSchedulerServices(db, [new HelloWorldModule()], moduleEnabled: true);
 
         await using (var scope = services.BuildServiceProvider().CreateAsyncScope())
         {
@@ -316,38 +302,59 @@ public sealed class ScheduleDispatchTests
         }
     }
 
-    private static async Task<(int StartRequestCount, string RunOutcome)> RunSchedulerCycleAndGetResultsAsync(bool moduleEnabled, string? workflowDefinitionId)
+    private static ServiceCollection BuildSchedulerServices(AppertureDbContext db, IModule[] modules, bool moduleEnabled)
     {
-        var db = NewDb();
-        // Every-minute cron + state: exactly one tick in (lastAttempted+1s, asOfUtc] (see Deterministic* constants).
-        SeedScheduleWithWorkflowTarget(db, "s1", "a1", workflowDefinitionId, "* * * * *", "UTC", lastAttemptedUtc: DeterministicLastAttemptedUtc);
-        await db.SaveChangesAsync();
-
         var services = new ServiceCollection();
         services.AddSingleton(db);
-
         services.AddScoped<IScheduleRepository, SqlScheduleRepository>();
         services.AddScoped<IIntegrationRepository, SqlIntegrationRepository>();
         services.AddScoped<IScheduleEvaluator, CronScheduleEvaluator>();
         services.AddScoped<IAuditService, SqlAuditService>();
 
-        var helloWorld = new HelloWorldModule();
-        var modules = new IModule[] { helloWorld };
-        var filter = moduleEnabled
-            ? (IModuleActivationFilter?)null
-            : new DenyAllSchedulerActivationFilter();
+        var filter = moduleEnabled ? (IModuleActivationFilter?)null : new DenyAllSchedulerActivationFilter();
         services.AddSingleton<IEnumerable<IModule>>(modules);
         services.AddSingleton<IWorkflowDefinitionResolver>(sp =>
             new WorkflowDefinitionResolver(sp.GetRequiredService<IEnumerable<IModule>>(), filter));
         services.AddSingleton<IOperationRegistryService>(sp =>
             new OperationRegistryService(sp.GetRequiredService<IEnumerable<IModule>>(), filter));
+        services.AddSingleton<IProcedureRegistryService>(sp =>
+            new ProcedureRegistryService(sp.GetRequiredService<IEnumerable<IModule>>(), filter));
         services.AddScoped<ISchedulerLifecycleGuard, SchedulerLifecycleGuard>();
         services.AddScoped<IWorkflowPersistence, SqlWorkflowPersistence>();
         services.AddScoped<IWorkflowStartDispatchService, WorkflowStartDispatchService>();
         services.AddScoped<IOperationStartDispatchService, OperationStartDispatchService>();
         services.AddSingleton<ISchedulerHostIdentity>(new DefaultSchedulerHostIdentity("test"));
         services.AddSingleton<ISchedulerClaimOptions>(new DefaultSchedulerClaimOptions(5));
+        services.AddScoped<IIntegrationDispatchReadinessEvaluator, TestDispatchReadinessEvaluator>();
         services.AddScoped<IScheduleDispatchRunner, ScheduleDispatchRunner>();
+        return services;
+    }
+
+    private sealed class TestDispatchReadinessEvaluator : IIntegrationDispatchReadinessEvaluator
+    {
+        public IntegrationReadinessProjection? NextResult { get; set; }
+
+        public ValueTask<IntegrationReadinessProjection?> EvaluateForDispatchAsync(
+            IntegrationId integrationId,
+            string? procedureId,
+            CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(NextResult ?? new IntegrationReadinessProjection(
+                integrationId.Value,
+                "Sample.HelloWorld",
+                true,
+                0,
+                0,
+                Array.Empty<IntegrationReadinessIssue>()));
+    }
+
+    private static async Task<(int StartRequestCount, string RunOutcome)> RunSchedulerCycleAndGetResultsAsync(bool moduleEnabled, string? workflowDefinitionId)
+    {
+        var db = NewDb();
+        SeedScheduleWithWorkflowTarget(db, "s1", "a1", workflowDefinitionId, "* * * * *", "UTC", lastAttemptedUtc: DeterministicLastAttemptedUtc);
+        await db.SaveChangesAsync();
+
+        var helloWorld = new HelloWorldModule();
+        var services = BuildSchedulerServices(db, [helloWorld], moduleEnabled);
 
         await using (var scope = services.BuildServiceProvider().CreateAsyncScope())
         {
@@ -367,28 +374,8 @@ public sealed class ScheduleDispatchTests
         SeedScheduleWithOperationTarget(db, "s1", "a1", operationDefinitionId, "* * * * *", "UTC", lastAttemptedUtc: DeterministicLastAttemptedUtc);
         await db.SaveChangesAsync();
 
-        var services = new ServiceCollection();
-        services.AddSingleton(db);
-        services.AddScoped<IScheduleRepository, SqlScheduleRepository>();
-        services.AddScoped<IIntegrationRepository, SqlIntegrationRepository>();
-        services.AddScoped<IScheduleEvaluator, CronScheduleEvaluator>();
-        services.AddScoped<IAuditService, SqlAuditService>();
-
         var helloWorld = new HelloWorldModule();
-        var modules = new IModule[] { helloWorld };
-        var filter = moduleEnabled ? (IModuleActivationFilter?)null : new DenyAllSchedulerActivationFilter();
-        services.AddSingleton<IEnumerable<IModule>>(modules);
-        services.AddSingleton<IWorkflowDefinitionResolver>(sp =>
-            new WorkflowDefinitionResolver(sp.GetRequiredService<IEnumerable<IModule>>(), filter));
-        services.AddSingleton<IOperationRegistryService>(sp =>
-            new OperationRegistryService(sp.GetRequiredService<IEnumerable<IModule>>(), filter));
-        services.AddScoped<ISchedulerLifecycleGuard, SchedulerLifecycleGuard>();
-        services.AddScoped<IWorkflowPersistence, SqlWorkflowPersistence>();
-        services.AddScoped<IWorkflowStartDispatchService, WorkflowStartDispatchService>();
-        services.AddScoped<IOperationStartDispatchService, OperationStartDispatchService>();
-        services.AddSingleton<ISchedulerHostIdentity>(new DefaultSchedulerHostIdentity("test"));
-        services.AddSingleton<ISchedulerClaimOptions>(new DefaultSchedulerClaimOptions(5));
-        services.AddScoped<IScheduleDispatchRunner, ScheduleDispatchRunner>();
+        var services = BuildSchedulerServices(db, [helloWorld], moduleEnabled);
 
         await using (var scope = services.BuildServiceProvider().CreateAsyncScope())
         {

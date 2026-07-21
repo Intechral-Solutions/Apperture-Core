@@ -70,10 +70,14 @@ public sealed class IntegrationProcedureService : IIntegrationProcedureService
         var list = new List<IntegrationProcedureSummaryDto>();
         foreach (var p in moduleProcedures.OrderBy(x => x.Id, StringComparer.Ordinal))
         {
+            var procedureReadiness = await _readiness.GetProcedureReadinessAsync(id, p.Id, cancellationToken);
             var targetOk = await IsTargetExecutableAsync(p, cancellationToken).ConfigureAwait(false);
             var permOk = await HasProcedurePermissionsAsync(p, cancellationToken).ConfigureAwait(false);
             var executionStartOk = !targetOk || await HasExecutionStartPermissionAsync(p, cancellationToken).ConfigureAwait(false);
-            var blocked = BuildBlockedCodes(integrationBlockedReason, targetOk, permOk, executionStartOk, p.LaunchKind);
+            var procedureBlockedReason = procedureReadiness is null
+                ? integrationBlockedReason
+                : ResolveIntegrationBlockedReason(procedureReadiness);
+            var blocked = BuildBlockedCodes(procedureBlockedReason, targetOk, permOk, executionStartOk, p.LaunchKind);
             list.Add(ToSummary(p, blocked.Count == 0, blocked));
         }
 
@@ -88,7 +92,7 @@ public sealed class IntegrationProcedureService : IIntegrationProcedureService
         if (integration is null)
             return null;
 
-        var readiness = await _readiness.GetReadinessAsync(id, cancellationToken);
+        var readiness = await _readiness.GetProcedureReadinessAsync(id, procedureId, cancellationToken);
         if (readiness is null)
             return null;
 
@@ -128,7 +132,7 @@ public sealed class IntegrationProcedureService : IIntegrationProcedureService
                 IntegrationProcedureLaunchErrorCode.IntegrationNotFound,
                 $"Integration '{integrationId}' was not found.");
 
-        var readiness = await _readiness.GetReadinessAsync(id, cancellationToken);
+        var readiness = await _readiness.GetProcedureReadinessAsync(id, procedureId, cancellationToken);
         if (readiness is null)
             return new IntegrationProcedureLaunchOutcome.Failed(
                 IntegrationProcedureLaunchErrorCode.IntegrationReadinessUnavailable,

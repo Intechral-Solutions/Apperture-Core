@@ -325,6 +325,7 @@ public sealed class Epic36MultiHostSchedulerTests
         services.AddScoped<IOperationStartDispatchService, OperationStartDispatchService>();
         services.AddSingleton<ISchedulerHostIdentity>(new DefaultSchedulerHostIdentity(hostId));
         services.AddSingleton<ISchedulerClaimOptions>(new DefaultSchedulerClaimOptions(claimLeaseMinutes));
+        services.AddScheduleDispatchRunnerDependencies(modules);
         services.AddScoped<IScheduleDispatchRunner, ScheduleDispatchRunner>();
         return services;
     }

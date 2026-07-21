@@ -58,10 +58,9 @@ public sealed class IntegrationProcedureServiceTests
             .ReturnsAsync(integration);
 
         var readiness = new Mock<IIntegrationReadinessService>();
-        readiness
-            .Setup(s => s.GetReadinessAsync(It.IsAny<IntegrationId>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(
-                new IntegrationReadinessProjection(IntegrationKey, ModuleId, true, 0, 0, Array.Empty<IntegrationReadinessIssue>()));
+        SetupProcedureReadiness(
+            readiness,
+            new IntegrationReadinessProjection(IntegrationKey, ModuleId, true, 0, 0, Array.Empty<IntegrationReadinessIssue>()));
 
         var procedure = new ProcedureDefinition(
             ProcedureId,
@@ -139,8 +138,7 @@ public sealed class IntegrationProcedureServiceTests
             .ReturnsAsync(integration);
 
         var readiness = new Mock<IIntegrationReadinessService>();
-        readiness.Setup(s => s.GetReadinessAsync(It.IsAny<IntegrationId>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new IntegrationReadinessProjection(
+        SetupProcedureReadiness(readiness, new IntegrationReadinessProjection(
                 IntegrationKey,
                 ModuleId,
                 false,
@@ -178,8 +176,7 @@ public sealed class IntegrationProcedureServiceTests
             .ReturnsAsync(integration);
 
         var readiness = new Mock<IIntegrationReadinessService>();
-        readiness.Setup(s => s.GetReadinessAsync(It.IsAny<IntegrationId>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new IntegrationReadinessProjection(
+        SetupProcedureReadiness(readiness, new IntegrationReadinessProjection(
                 IntegrationKey,
                 ModuleId,
                 false,
@@ -217,8 +214,7 @@ public sealed class IntegrationProcedureServiceTests
             .ReturnsAsync(integration);
 
         var readiness = new Mock<IIntegrationReadinessService>();
-        readiness.Setup(s => s.GetReadinessAsync(It.IsAny<IntegrationId>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new IntegrationReadinessProjection(
+        SetupProcedureReadiness(readiness, new IntegrationReadinessProjection(
                 IntegrationKey,
                 ModuleId,
                 true,
@@ -260,8 +256,7 @@ public sealed class IntegrationProcedureServiceTests
             .ReturnsAsync(integration);
 
         var readiness = new Mock<IIntegrationReadinessService>();
-        readiness.Setup(s => s.GetReadinessAsync(It.IsAny<IntegrationId>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new IntegrationReadinessProjection(IntegrationKey, ModuleId, true, 0, 0, Array.Empty<IntegrationReadinessIssue>()));
+        SetupProcedureReadiness(readiness, new IntegrationReadinessProjection(IntegrationKey, ModuleId, true, 0, 0, Array.Empty<IntegrationReadinessIssue>()));
 
         var procedure = new ProcedureDefinition(
             "Sample.HelloWorld.procedures.opPing",
@@ -326,6 +321,15 @@ public sealed class IntegrationProcedureServiceTests
         captured.Should().NotBeNull();
         captured!.IntegrationId.Should().Be(IntegrationKey);
         captured.ProcedureId.Should().Be(procedure.Id);
+    }
+
+    private static void SetupProcedureReadiness(
+        Mock<IIntegrationReadinessService> readiness,
+        IntegrationReadinessProjection projection)
+    {
+        readiness
+            .Setup(s => s.GetProcedureReadinessAsync(It.IsAny<IntegrationId>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(projection);
     }
 
     private static IntegrationProcedureService CreateSut(

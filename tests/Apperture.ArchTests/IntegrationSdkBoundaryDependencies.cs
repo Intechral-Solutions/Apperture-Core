@@ -28,6 +28,7 @@ public sealed class IntegrationSdkBoundaryDependencies
         "Apperture.Management.Client",
         "Apperture.RuntimeHost.Windows.WorkerHost",
         "Microsoft.EntityFrameworkCore",
+        "Microsoft.Data.SqlClient",
     ];
 
     [Theory]
@@ -122,5 +123,19 @@ public sealed class IntegrationSdkBoundaryDependencies
         Assert.DoesNotContain("Apperture.Management.Api", referenced);
         Assert.DoesNotContain("Apperture.Management.Host", referenced);
         Assert.DoesNotContain("Apperture.RuntimePlane.Engine", referenced);
+    }
+
+    [Fact]
+    public void Runtime_engine_adapters_may_reference_persistence_but_modules_may_not()
+    {
+        var engineAssembly = typeof(Apperture.RuntimePlane.Engine.Integration.IntegrationSettingsAccessor).Assembly;
+        var engineRefs = engineAssembly.GetReferencedAssemblies().Select(a => a.Name).ToHashSet(StringComparer.Ordinal);
+        Assert.Contains("Apperture.Persistence.SqlServer", engineRefs);
+
+        foreach (var moduleType in IntegrationModuleTypes)
+        {
+            var moduleRefs = moduleType.Assembly.GetReferencedAssemblies().Select(a => a.Name).ToHashSet(StringComparer.Ordinal);
+            Assert.DoesNotContain("Apperture.Persistence.SqlServer", moduleRefs);
+        }
     }
 }

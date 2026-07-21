@@ -199,6 +199,7 @@ public sealed class ScheduleMinuteFireIdempotencyTests
         services.AddScoped<IOperationStartDispatchService, OperationStartDispatchService>();
         services.AddSingleton<ISchedulerHostIdentity>(new DefaultSchedulerHostIdentity(hostId));
         services.AddSingleton<ISchedulerClaimOptions>(new DefaultSchedulerClaimOptions(5));
+        services.AddScheduleDispatchRunnerDependencies();
         services.AddScoped<IScheduleDispatchRunner, ScheduleDispatchRunner>();
         return services;
     }

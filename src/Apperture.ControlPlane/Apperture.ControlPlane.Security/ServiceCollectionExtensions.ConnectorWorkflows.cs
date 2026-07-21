@@ -1,5 +1,5 @@
-using Apperture.Core.Application.Services;
 using Apperture.Core.Application.Integration;
+using Apperture.Core.Application.Services;
 using Apperture.Persistence.SqlServer;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -18,12 +18,13 @@ public static class ConnectorWorkflowServiceCollectionExtensions
     {
         services.AddScoped<IConnectionRepository, SqlConnectionRepository>();
         services.AddScoped<IBindingRepository, SqlBindingRepository>();
-        services.AddSingleton<IModuleSlotRegistry, StubModuleSlotRegistry>();
+        services.AddSingleton<IModuleSlotRegistry, InMemoryModuleSlotRegistry>();
+        services.AddHostedService<IntegrationConfigurationSlotRegistrationHostedService>();
         services.AddScoped<IBindingEligibilityService, BindingEligibilityService>();
         services.AddScoped<ConnectionSecretMaterialProvisioner>();
         services.AddScoped<IConnectionManagementService, ConnectionManagementService>();
         services.AddScoped<IConnectionVerificationService, ConnectionVerificationService>();
-        services.AddScoped<IConnectionVerificationReadinessPolicy, AdvisoryConnectionVerificationReadinessPolicy>();
+        services.AddAdvisoryConnectionVerificationReadinessPolicy();
         services.AddScoped<IBindingService, BindingService>();
         services.AddScoped<IConnectorDefinitionCatalogReadService, ConnectorDefinitionCatalogReadService>();
         return services;

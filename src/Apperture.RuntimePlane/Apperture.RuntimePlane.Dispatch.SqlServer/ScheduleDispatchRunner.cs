@@ -1,10 +1,12 @@
 using System.Text.Json;
+using Apperture.Core.Application.Integration;
 using Apperture.Core.Application.RuntimeComposition;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Audit;
 using Apperture.Core.Domain.Environment;
 using Apperture.Core.Domain.Integration;
 using Apperture.Core.Domain.Operations;
+using Apperture.Core.Domain.Procedures;
 using Apperture.Core.Domain.Scheduling;
 using Apperture.Core.Domain.Workflow;
 using Apperture.RuntimePlane.Abstractions;
@@ -24,6 +26,8 @@ public sealed class ScheduleDispatchRunner : IScheduleDispatchRunner
     private readonly IIntegrationRepository _integrations;
     private readonly IWorkflowStartDispatchService _workflowDispatch;
     private readonly IOperationStartDispatchService _operationDispatch;
+    private readonly IIntegrationDispatchReadinessEvaluator _readiness;
+    private readonly IProcedureRegistryService _procedures;
     private readonly IAuditService _audit;
     private readonly ISchedulerHostIdentity _hostIdentity;
     private readonly ISchedulerClaimOptions _claimOptions;
@@ -35,6 +39,8 @@ public sealed class ScheduleDispatchRunner : IScheduleDispatchRunner
         IIntegrationRepository integrations,
         IWorkflowStartDispatchService workflowDispatch,
         IOperationStartDispatchService operationDispatch,
+        IIntegrationDispatchReadinessEvaluator readiness,
+        IProcedureRegistryService procedures,
         IAuditService audit,
         ISchedulerHostIdentity hostIdentity,
         ISchedulerClaimOptions claimOptions)
@@ -45,6 +51,8 @@ public sealed class ScheduleDispatchRunner : IScheduleDispatchRunner
         _integrations = integrations;
         _workflowDispatch = workflowDispatch;
         _operationDispatch = operationDispatch;
+        _readiness = readiness;
+        _procedures = procedures;
         _audit = audit;
         _hostIdentity = hostIdentity;
         _claimOptions = claimOptions;
@@ -226,6 +234,10 @@ public sealed class ScheduleDispatchRunner : IScheduleDispatchRunner
             return CycleCandidateOutcome.Claimed;
         }
 
+        var procedureId = await ResolveProcedureIdAsync(definition, ProcedureLaunchKind.Workflow, workflowId.Value, ct).ConfigureAwait(false);
+        if (!await EnsureIntegrationReadyForDispatchAsync(definition.IntegrationId, procedureId, candidate, ct).ConfigureAwait(false))
+            return CycleCandidateOutcome.Claimed;
+
         var canDispatch = await _guard.CanDispatchWorkflowAsync(workflowId, ct);
         if (!canDispatch)
         {
@@ -255,7 +267,7 @@ public sealed class ScheduleDispatchRunner : IScheduleDispatchRunner
             CorrelationId: $"schedule:{candidate.ScheduleId}",
             RetryOfRunId: null,
             IntegrationId: definition.IntegrationId?.Value,
-            ProcedureId: null,
+            ProcedureId: procedureId,
             ExecutionOrigin: RunExecutionOriginNames.Schedule);
 
         var result = await _workflowDispatch.StartAsync(request, ct);
@@ -321,6 +333,10 @@ public sealed class ScheduleDispatchRunner : IScheduleDispatchRunner
             return CycleCandidateOutcome.Claimed;
         }
 
+        var procedureId = await ResolveProcedureIdAsync(definition, ProcedureLaunchKind.Operation, operationId.Value, ct).ConfigureAwait(false);
+        if (!await EnsureIntegrationReadyForDispatchAsync(definition.IntegrationId, procedureId, candidate, ct).ConfigureAwait(false))
+            return CycleCandidateOutcome.Claimed;
+
         var canDispatch = await _guard.CanDispatchOperationAsync(operationId, ct);
         if (!canDispatch)
         {
@@ -349,7 +365,7 @@ public sealed class ScheduleDispatchRunner : IScheduleDispatchRunner
             IdempotencyKey: $"schedule:{candidate.ScheduleId}:{candidate.FireTimeUtc:O}",
             CorrelationId: $"schedule:{candidate.ScheduleId}",
             IntegrationId: definition.IntegrationId?.Value,
-            ProcedureId: null,
+            ProcedureId: procedureId,
             ExecutionOrigin: RunExecutionOriginNames.Schedule);
 
         var result = await _operationDispatch.StartAsync(request, ct);
@@ -401,6 +417,92 @@ public sealed class ScheduleDispatchRunner : IScheduleDispatchRunner
             LastSuccessfulDispatchUtc: now
         ), ct);
         return CycleCandidateOutcome.Dispatched;
+    }
+
+    private async Task<bool> EnsureIntegrationReadyForDispatchAsync(
+        IntegrationId? integrationId,
+        string? procedureId,
+        ScheduleFireCandidate candidate,
+        CancellationToken ct)
+    {
+        if (integrationId is null)
+            return true;
+
+        var readiness = await _readiness
+            .EvaluateForDispatchAsync(integrationId, procedureId, ct)
+            .ConfigureAwait(false);
+        if (readiness is null)
+        {
+            var missingReason = $"Integration '{integrationId.Value}' was not found.";
+            await CompleteWithOutcomeAsync(candidate, "BlockedByReadiness", missingReason, null, ct);
+            await AuditBlockedByReadinessAsync(candidate, missingReason, ct).ConfigureAwait(false);
+            return false;
+        }
+
+        if (readiness.IsRunnable)
+            return true;
+
+        var reason = FormatReadinessBlockReason(readiness, procedureId);
+        await CompleteWithOutcomeAsync(candidate, "BlockedByReadiness", reason, null, ct);
+        await AuditBlockedByReadinessAsync(candidate, reason, ct).ConfigureAwait(false);
+        return false;
+    }
+
+    private async Task AuditBlockedByReadinessAsync(ScheduleFireCandidate candidate, string reason, CancellationToken ct)
+    {
+        try
+        {
+            await _audit.AppendAsync(new AuditRecord(
+                new AuditRecordId(Guid.NewGuid().ToString("N")),
+                new ActorId("system:scheduler"),
+                SchedulerAuditActionNames.BlockedByReadiness,
+                Resource: null,
+                Outcome: "blocked",
+                Timestamp: DateTimeOffset.UtcNow,
+                new CorrelationId($"schedule:{candidate.ScheduleId}:{candidate.FireTimeUtc:O}"),
+                Details: $"schedule:{candidate.ScheduleId};{reason}",
+                ScheduleId: candidate.ScheduleId
+            ), ct).ConfigureAwait(false);
+        }
+        catch
+        {
+            // best-effort audit
+        }
+    }
+
+    private static string FormatReadinessBlockReason(IntegrationReadinessProjection readiness, string? procedureId)
+    {
+        var scope = string.IsNullOrWhiteSpace(procedureId)
+            ? "integration readiness"
+            : $"procedure '{procedureId}' readiness";
+        var blocking = readiness.Issues
+            .Where(i => string.Equals(i.Severity, IntegrationReadinessIssueSeverity.Blocking.ToString(), StringComparison.Ordinal))
+            .Take(3)
+            .Select(i => i.Message)
+            .ToList();
+        if (blocking.Count == 0)
+            return $"Schedule dispatch blocked: {scope} is not satisfied.";
+
+        return $"Schedule dispatch blocked ({scope}): {string.Join("; ", blocking)}";
+    }
+
+    private async Task<string?> ResolveProcedureIdAsync(
+        ScheduleDefinition definition,
+        ProcedureLaunchKind launchKind,
+        string targetDefinitionId,
+        CancellationToken ct)
+    {
+        if (definition.IntegrationId is null)
+            return null;
+
+        var integration = await _integrations.GetByIdAsync(definition.IntegrationId, ct).ConfigureAwait(false);
+        if (integration is null)
+            return null;
+
+        var procedure = await _procedures
+            .FindByTargetAsync(integration.ModuleId, launchKind, targetDefinitionId, ct)
+            .ConfigureAwait(false);
+        return procedure?.Id;
     }
 
     private async Task<bool> EnsureIntegrationOperationalAsync(IntegrationId? integrationId, ScheduleFireCandidate candidate, CancellationToken ct)

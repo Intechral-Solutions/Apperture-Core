@@ -3,9 +3,11 @@ using System.Linq;
 using Apperture.Connectors.CampusNexus;
 using Apperture.Connectors.Sftp;
 using Apperture.ConnectorResolution;
+using Apperture.Core.Application.Integration;
 using Apperture.Core.Application.RuntimeComposition;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Connector;
+using Apperture.Core.Domain.Integration;
 using Apperture.IntegrationTests.ManagementHost;
 using Apperture.ModuleSdk.Abstractions;
 using Apperture.Persistence.SqlServer;
@@ -143,6 +145,9 @@ public sealed class Epic73SqlSeamsIntegrationTests
             services.AddSingleton<ISchedulerHostIdentity>(new DefaultSchedulerHostIdentity("epic73-sql-seams"));
             services.AddSingleton<ISchedulerClaimOptions>(new DefaultSchedulerClaimOptions(5));
             services.AddWorkerHostIntegrationRepository();
+            services.AddScoped<IIntegrationDispatchReadinessEvaluator, Epic73AlwaysRunnableReadiness>();
+            services.AddSingleton<IProcedureRegistryService>(sp =>
+                new ProcedureRegistryService(sp.GetRequiredService<IEnumerable<IModule>>(), null));
             services.AddScoped<IScheduleDispatchRunner, ScheduleDispatchRunner>();
 
             await using (var provider = services.BuildServiceProvider())
@@ -156,5 +161,20 @@ public sealed class Epic73SqlSeamsIntegrationTests
         {
             await platform.DisposeAsync();
         }
+    }
+
+    private sealed class Epic73AlwaysRunnableReadiness : IIntegrationDispatchReadinessEvaluator
+    {
+        public ValueTask<IntegrationReadinessProjection?> EvaluateForDispatchAsync(
+            IntegrationId integrationId,
+            string? procedureId,
+            CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult<IntegrationReadinessProjection?>(new IntegrationReadinessProjection(
+                integrationId.Value,
+                "test.module",
+                true,
+                0,
+                0,
+                Array.Empty<IntegrationReadinessIssue>()));
     }
 }

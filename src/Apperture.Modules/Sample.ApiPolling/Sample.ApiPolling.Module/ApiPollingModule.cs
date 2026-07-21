@@ -1,6 +1,6 @@
 using Apperture.Core.Application.Execution;
-using Apperture.Core.Application.PlatformSettings;
 using Apperture.Core.Domain.Governance;
+using Apperture.ModuleSdk.Integration.Configuration;
 using Apperture.Core.Domain.Procedures;
 using Apperture.ModuleSdk.Abstractions;
 using Apperture.ModuleSdk.Abstractions.Signals;
@@ -10,7 +10,7 @@ using Sample.ApiPolling.Contracts;
 
 namespace Sample.ApiPolling;
 
-public sealed class ApiPollingModule : IModule, IModuleStepHandlerRegistrar, IModuleIntegrationSettingDefinitionContributor
+public sealed class ApiPollingModule : IModule, IModuleStepHandlerRegistrar, IIntegrationConfigurationContributor
 {
     public static readonly WorkflowDefinitionId DefinitionId = new("Sample.ApiPolling.Poll");
     public const string ModuleIdValue = "Sample.ApiPolling";
@@ -117,6 +117,12 @@ public sealed class ApiPollingModule : IModule, IModuleStepHandlerRegistrar, IMo
         registry.Register(ModuleIdValue, "Complete", new ApiPollingCompleteStepHandler(_store));
     }
 
-    public IReadOnlyList<PlatformSettingDefinition> GetIntegrationSettingDefinitions() =>
-        ApiPollingIntegrationSettingDefinitions.All;
+    public IReadOnlyList<IntegrationSettingDefinition> GetSettingDefinitions() =>
+        ApiPollingIntegrationConfiguration.Settings;
+
+    public IReadOnlyList<ConnectionRequirementDefinition> GetConnectionRequirements() =>
+        ApiPollingIntegrationConfiguration.Connections;
+
+    public IReadOnlyList<ProcedureRequirementSet> GetProcedureRequirements() =>
+        ApiPollingIntegrationConfiguration.Procedures;
 }

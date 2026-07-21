@@ -22,6 +22,7 @@ public sealed class DefaultWorkflowExecutor : IWorkflowExecutor
     private readonly IModuleTelemetry _moduleTelemetry;
     private readonly ILoggerFactory _loggerFactory;
     private readonly IOperationItemStore? _operationItemStore;
+    private readonly IIntegrationExecutionScopeAccessor? _executionScope;
 
     public DefaultWorkflowExecutor(
         IRuntimeSlotResolver resolver,
@@ -33,7 +34,8 @@ public sealed class DefaultWorkflowExecutor : IWorkflowExecutor
             NullModuleOperationalLogger.Instance,
             NoOpModuleTelemetry.Instance,
             NullLoggerFactory.Instance,
-            operationItemStore: null)
+            operationItemStore: null,
+            executionScope: null)
     {
     }
 
@@ -48,7 +50,8 @@ public sealed class DefaultWorkflowExecutor : IWorkflowExecutor
             NullModuleOperationalLogger.Instance,
             NoOpModuleTelemetry.Instance,
             NullLoggerFactory.Instance,
-            operationItemStore: null)
+            operationItemStore: null,
+            executionScope: null)
     {
     }
 
@@ -60,6 +63,27 @@ public sealed class DefaultWorkflowExecutor : IWorkflowExecutor
         IModuleTelemetry moduleTelemetry,
         ILoggerFactory loggerFactory,
         IOperationItemStore? operationItemStore = null)
+        : this(
+            resolver,
+            registry,
+            modulePlatformEvents,
+            operationalLogger,
+            moduleTelemetry,
+            loggerFactory,
+            operationItemStore,
+            executionScope: null)
+    {
+    }
+
+    public DefaultWorkflowExecutor(
+        IRuntimeSlotResolver resolver,
+        IStepHandlerRegistry registry,
+        IModulePlatformEventEmitter modulePlatformEvents,
+        IModuleOperationalLogger operationalLogger,
+        IModuleTelemetry moduleTelemetry,
+        ILoggerFactory loggerFactory,
+        IOperationItemStore? operationItemStore,
+        IIntegrationExecutionScopeAccessor? executionScope)
     {
         _resolver = resolver ?? throw new ArgumentNullException(nameof(resolver));
         _registry = registry ?? throw new ArgumentNullException(nameof(registry));
@@ -68,6 +92,7 @@ public sealed class DefaultWorkflowExecutor : IWorkflowExecutor
         _moduleTelemetry = moduleTelemetry ?? throw new ArgumentNullException(nameof(moduleTelemetry));
         _loggerFactory = loggerFactory ?? throw new ArgumentNullException(nameof(loggerFactory));
         _operationItemStore = operationItemStore;
+        _executionScope = executionScope;
     }
 
     /// <inheritdoc />
@@ -115,6 +140,7 @@ public sealed class DefaultWorkflowExecutor : IWorkflowExecutor
             stepName,
             _operationItemStore);
         var parametersDict = parameters ?? new Dictionary<string, object?>();
+        using var scope = _executionScope?.BeginScope(definition.ModuleId, integrationId);
         return await handler.ExecuteAsync(context, parametersDict, cancellationToken);
     }
 }

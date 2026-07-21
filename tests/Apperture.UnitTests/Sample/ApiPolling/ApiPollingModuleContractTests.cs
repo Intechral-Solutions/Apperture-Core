@@ -43,7 +43,7 @@ public sealed class ApiPollingModuleContractTests
     public void Settings_contributor_registers_five_keys_with_defaults()
     {
         var module = new ApiPollingModule();
-        var settings = module.GetIntegrationSettingDefinitions();
+        var settings = module.GetSettingDefinitions();
 
         settings.Select(s => s.Key).Should().BeEquivalentTo(
             ApiPollingSettingKeys.PageSize,
@@ -51,6 +51,8 @@ public sealed class ApiPollingModuleContractTests
             ApiPollingSettingKeys.IncludeDeleted,
             ApiPollingSettingKeys.FailOnRecordError,
             ApiPollingSettingKeys.StrictModeDefault);
+
+        settings.Should().OnlyContain(s => !s.IsRequired);
 
         settings.Single(s => s.Key == ApiPollingSettingKeys.PageSize).DefaultValue
             .Should().Be(ApiPollingSettingDefaults.PageSize);
@@ -62,6 +64,18 @@ public sealed class ApiPollingModuleContractTests
             .Should().Be(ApiPollingSettingDefaults.FailOnRecordError);
         settings.Single(s => s.Key == ApiPollingSettingKeys.StrictModeDefault).DefaultValue
             .Should().Be(ApiPollingSettingDefaults.StrictModeDefault);
+    }
+
+    [Fact]
+    public void Configuration_contributor_declares_directory_api_connection()
+    {
+        var module = new ApiPollingModule();
+        var connections = module.GetConnectionRequirements();
+
+        connections.Should().ContainSingle(c => c.Key == ApiPollingConnectionKeys.DirectoryApi);
+        connections.Single(c => c.Key == ApiPollingConnectionKeys.DirectoryApi).IsRequired.Should().BeTrue();
+        connections.Single(c => c.Key == ApiPollingConnectionKeys.DirectoryApi).CapabilityContractType
+            .Should().Be(typeof(ISampleDirectoryApiClient).FullName);
     }
 
     [Fact]

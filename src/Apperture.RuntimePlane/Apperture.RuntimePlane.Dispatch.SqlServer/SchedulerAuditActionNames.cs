@@ -13,6 +13,7 @@ public static class SchedulerAuditActionNames
 {
     public const string Dispatched = "scheduler.schedule.dispatched";
     public const string BlockedByLifecycle = "scheduler.schedule.blocked_by_lifecycle";
+    public const string BlockedByReadiness = "scheduler.schedule.blocked_by_readiness";
     public const string Failed = "scheduler.schedule.failed";
     public const string LegacyScheduleWithoutIntegration = "scheduler.schedule.legacy_without_integration";
 

@@ -74,7 +74,7 @@ public sealed class ScheduleRunExistsSqlServerTests
 
         var existsOffsetEquivalent = await repo.RunExistsAsync(
             scheduleId,
-            new DateTimeOffset(FireUtc.UtcDateTime.AddHours(2), TimeSpan.FromHours(2)));
+            FireUtc.ToOffset(TimeSpan.FromHours(2)));
         existsOffsetEquivalent.Should().BeTrue();
 
         (await repo.TryClaimFireAsync(scheduleId, FireUtc, "a-swm2", "other-host")).Should().BeFalse();

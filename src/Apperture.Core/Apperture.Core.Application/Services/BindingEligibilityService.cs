@@ -2,7 +2,7 @@ using System.Linq;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Connector;
 
-namespace Apperture.ControlPlane.Security;
+namespace Apperture.Core.Application.Services;
 
 /// <summary>
 /// Evaluates connection eligibility for slot binding. Filters by active state and connector/contract compatibility.

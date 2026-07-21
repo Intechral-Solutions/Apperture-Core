@@ -39,12 +39,14 @@ public sealed class FileImportModuleContractTests
     public void Settings_contributor_registers_three_keys_with_defaults()
     {
         var module = new FileImportModule();
-        var settings = module.GetIntegrationSettingDefinitions();
+        var settings = module.GetSettingDefinitions();
 
         settings.Select(s => s.Key).Should().BeEquivalentTo(
             FileImportSettingKeys.StrictModeDefault,
             FileImportSettingKeys.MaxRowsPerImport,
             FileImportSettingKeys.FailOnFirstError);
+
+        settings.Should().OnlyContain(s => !s.IsRequired);
 
         settings.Single(s => s.Key == FileImportSettingKeys.StrictModeDefault).DefaultValue
             .Should().Be(FileImportSettingDefaults.StrictModeDefault);

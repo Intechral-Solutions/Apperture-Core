@@ -14,6 +14,8 @@ public sealed class IntegrationTestingPublicApiSnapshotTests
         nameof(TestTimeProvider),
         nameof(CapturedPlatformEvent),
         nameof(CapturedOperationalLog),
+        nameof(IntegrationConfigurationTestContext),
+        nameof(SecretLeakageAssertions),
     ];
 
     [Fact]

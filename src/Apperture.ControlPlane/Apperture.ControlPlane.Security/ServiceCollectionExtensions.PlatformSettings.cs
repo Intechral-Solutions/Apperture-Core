@@ -1,3 +1,4 @@
+using Apperture.Core.Application.Integration;
 using Apperture.Core.Application.Notifications;
 using Apperture.Core.Application.Notifications.Delivery;
 using Apperture.Core.Application.Notifications.Instances;
@@ -36,6 +37,7 @@ public static class PlatformSettingsServiceCollectionExtensions
         services.AddApperturePlatformSettingsCore();
         services.AddSingleton<IPlatformSettingDefinitionRegistry, GatedPlatformSettingDefinitionRegistry>();
         services.AddSingleton<IntegrationSettingDefinitionRegistry>();
+        services.AddSingleton<IIntegrationConfigurationRegistry, IntegrationConfigurationRegistry>();
         services.AddSingleton<IIntegrationSettingDefinitionRegistry>(sp =>
             new CompositeIntegrationSettingDefinitionRegistry(
                 sp.GetRequiredService<IntegrationSettingDefinitionRegistry>(),

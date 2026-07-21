@@ -2,6 +2,7 @@ using Apperture.Core.Application.Execution;
 using Apperture.Core.Domain.Governance;
 using Apperture.Core.Domain.Procedures;
 using Apperture.ModuleSdk.Abstractions;
+using Apperture.ModuleSdk.Integration.Configuration;
 using Apperture.RuntimePlane.Abstractions;
 using Apperture.Shared.Kernel;
 using Microsoft.Extensions.DependencyInjection;
@@ -10,7 +11,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Proof.CampusNexus.StudentReview;
 
-public sealed class ProofCampusNexusStudentReviewModule : IModule, IModuleStepHandlerRegistrar
+public sealed class ProofCampusNexusStudentReviewModule : IModule, IModuleStepHandlerRegistrar, IIntegrationConfigurationContributor
 {
     private static readonly WorkflowDefinitionId DefinitionId = new(ProofCampusNexusStudentReviewConstants.WorkflowDefinitionIdValue);
     private readonly IServiceScopeFactory? _scopeFactory;
@@ -82,4 +83,13 @@ public sealed class ProofCampusNexusStudentReviewModule : IModule, IModuleStepHa
         registry.Register(mid, "SyncRecentStudents", new SyncRecentStudentsStepHandler(_scopeFactory, syncLogger));
         registry.Register(mid, "Complete", new CompleteProofStudentReviewStepHandler());
     }
+
+    public IReadOnlyList<IntegrationSettingDefinition> GetSettingDefinitions() =>
+        ProofIntegrationConfiguration.Settings;
+
+    public IReadOnlyList<ConnectionRequirementDefinition> GetConnectionRequirements() =>
+        ProofIntegrationConfiguration.Connections;
+
+    public IReadOnlyList<ProcedureRequirementSet> GetProcedureRequirements() =>
+        ProofIntegrationConfiguration.Procedures;
 }

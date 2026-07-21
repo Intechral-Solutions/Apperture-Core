@@ -56,6 +56,7 @@ public sealed class WorkerHostStartupDiTests
         // WorkerHost must do that via its helper.
         services.AddWorkerHostIntegrationRepository();
 
+        services.AddScheduleDispatchRunnerDependencies();
         services.AddScoped<IScheduleDispatchRunner, ScheduleDispatchRunner>();
 
         var provider = services.BuildServiceProvider();

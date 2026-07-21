@@ -1,15 +1,14 @@
 using System.Collections.Concurrent;
-using Apperture.Core.Application.Services;
 using Apperture.ModuleSdk.Abstractions;
 
-namespace Apperture.ControlPlane.Security;
+namespace Apperture.Core.Application.Services;
 
 /// <summary>
-/// In-memory module slot registry. For wiring and tests; replace when module manifests provide slots.
+/// In-memory module slot registry for runtime hosts and tests.
 /// </summary>
-public sealed class StubModuleSlotRegistry : IModuleSlotRegistry
+public sealed class InMemoryModuleSlotRegistry : IModuleSlotRegistry
 {
-    private readonly ConcurrentDictionary<string, List<ICapabilitySlot>> _byModule = new();
+    private readonly ConcurrentDictionary<string, List<ICapabilitySlot>> _byModule = new(StringComparer.Ordinal);
 
     /// <inheritdoc />
     public void RegisterSlot(ICapabilitySlot slot)
@@ -30,10 +29,6 @@ public sealed class StubModuleSlotRegistry : IModuleSlotRegistry
     }
 
     /// <inheritdoc />
-    public IReadOnlyList<ICapabilitySlot> GetSlotsForModule(string moduleId)
-    {
-        return _byModule.TryGetValue(moduleId, out var slots)
-            ? slots
-            : [];
-    }
+    public IReadOnlyList<ICapabilitySlot> GetSlotsForModule(string moduleId) =>
+        _byModule.TryGetValue(moduleId, out var slots) ? slots : [];
 }

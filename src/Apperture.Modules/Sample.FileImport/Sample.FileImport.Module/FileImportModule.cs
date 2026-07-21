@@ -1,6 +1,6 @@
 using Apperture.Core.Application.Execution;
-using Apperture.Core.Application.PlatformSettings;
 using Apperture.Core.Domain.Governance;
+using Apperture.ModuleSdk.Integration.Configuration;
 using Apperture.Core.Domain.Procedures;
 using Apperture.ModuleSdk.Abstractions;
 using Apperture.ModuleSdk.Abstractions.Signals;
@@ -10,7 +10,7 @@ using Sample.FileImport.Contracts;
 
 namespace Sample.FileImport;
 
-public sealed class FileImportModule : IModule, IModuleStepHandlerRegistrar, IModuleIntegrationSettingDefinitionContributor
+public sealed class FileImportModule : IModule, IModuleStepHandlerRegistrar, IIntegrationConfigurationContributor
 {
     public static readonly WorkflowDefinitionId DefinitionId = new("Sample.FileImport.Import");
     public const string ModuleIdValue = "Sample.FileImport";
@@ -95,6 +95,12 @@ public sealed class FileImportModule : IModule, IModuleStepHandlerRegistrar, IMo
         registry.Register(ModuleIdValue, "Complete", new FileImportCompleteStepHandler(_store));
     }
 
-    public IReadOnlyList<PlatformSettingDefinition> GetIntegrationSettingDefinitions() =>
-        FileImportIntegrationSettingDefinitions.All;
+    public IReadOnlyList<IntegrationSettingDefinition> GetSettingDefinitions() =>
+        FileImportIntegrationConfiguration.Settings;
+
+    public IReadOnlyList<ConnectionRequirementDefinition> GetConnectionRequirements() =>
+        FileImportIntegrationConfiguration.Connections;
+
+    public IReadOnlyList<ProcedureRequirementSet> GetProcedureRequirements() =>
+        FileImportIntegrationConfiguration.Procedures;
 }

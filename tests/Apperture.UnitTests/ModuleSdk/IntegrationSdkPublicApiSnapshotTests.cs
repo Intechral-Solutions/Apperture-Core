@@ -2,6 +2,8 @@ using System.Reflection;
 using Apperture.Core.Application.Execution;
 using Apperture.Core.Application.OperationItems;
 using Apperture.Core.Application.PlatformSettings;
+using Apperture.ModuleSdk.Integration.Configuration;
+using Apperture.ModuleSdk.Integration.Readiness;
 using Xunit;
 
 namespace Apperture.UnitTests.ModuleSdk;
@@ -35,6 +37,15 @@ public sealed class IntegrationSdkPublicApiSnapshotTests
       // Settings
       nameof(IModuleIntegrationSettingDefinitionContributor),
       nameof(PlatformSettingDefinition),
+      // Configuration (SDK-6C)
+      nameof(IIntegrationConfigurationContributor),
+      nameof(IIntegrationSettingsAccessor),
+      nameof(IIntegrationConnectionAccessor),
+      nameof(IntegrationSettingDefinition),
+      nameof(ConnectionRequirementDefinition),
+      nameof(ProcedureRequirementSet),
+      nameof(ConfigurationReadinessEvaluator),
+      nameof(ConfigurationEvidenceSnapshot),
   ];
 
     [Fact]

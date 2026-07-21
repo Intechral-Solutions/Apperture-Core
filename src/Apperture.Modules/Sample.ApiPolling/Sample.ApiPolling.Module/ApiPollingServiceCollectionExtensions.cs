@@ -14,7 +14,8 @@ public static class ApiPollingServiceCollectionExtensions
     /// </summary>
     public static IServiceCollection AddSampleApiPolling(this IServiceCollection services)
     {
-        services.AddSingleton<ISampleDirectoryApiClient, EmbeddedSampleDirectoryApiClient>();
+        services.AddSingleton<EmbeddedSampleDirectoryApiClient>();
+        services.AddSingleton<ISampleDirectoryApiClient, ConnectionBackedSampleDirectoryApiClient>();
         services.AddSingleton<IApiPollingStateStore>(sp =>
         {
             var durable = sp.GetService<IApiPollingDurableLastSeenStore>();

@@ -5,6 +5,8 @@ using Apperture.ConnectorResolution;
 using Apperture.RuntimePlane.Dispatch.SqlServer;
 using Apperture.Core.Application.Execution;
 using Apperture.Core.Application.PlatformEvents;
+using Apperture.Core.Application.Execution;
+using Apperture.Core.Application.Integration;
 using Apperture.Core.Application.PlatformSettings;
 using Apperture.Core.Application.Services;
 using Apperture.ModuleSdk.Abstractions;
@@ -89,6 +91,11 @@ builder.Services.AddWorkerHostIntegrationRepository();
     builder.Services.AddConnectorRepositories();
     builder.Services.AddConnectorResolution();
     builder.Services.AddSchedulePersistence();
+    builder.Services.AddSingleton<IModuleSlotRegistry, InMemoryModuleSlotRegistry>();
+    builder.Services.AddHostedService<IntegrationConfigurationSlotRegistrationHostedService>();
+    builder.Services.AddScoped<IBindingEligibilityService, BindingEligibilityService>();
+    builder.Services.AddAdvisoryConnectionVerificationReadinessPolicy();
+    builder.Services.AddIntegrationDispatchReadiness();
     builder.Services.Configure<ScheduleDispatchOptions>(builder.Configuration.GetSection(ScheduleDispatchOptions.SectionName));
     // SWM-1: schedule plane is independent of APERTURE_RUNTIME_ID (host/claim identity).
     // Default plane "local" matches SchedulesController / IntegrationSchedulesController assignment defaults.
@@ -134,6 +141,14 @@ builder.Services.AddWorkerHostIntegrationRepository();
         sp.GetRequiredService<UnisaCampusNexusPaymentPlansModule>(),
         sp.GetRequiredService<ProofCampusNexusStudentReviewModule>()
     });
+    builder.Services.AddIntegrationConfigurationBinding<HelloWorldModule>();
+    builder.Services.AddIntegrationConfigurationBinding<FileImportModule>();
+    builder.Services.AddIntegrationConfigurationBinding<ApiPollingModule>();
+    builder.Services.AddIntegrationConfigurationBinding<UnisaCampusNexusPaymentPlansModule>();
+    builder.Services.AddIntegrationConfigurationBinding<ProofCampusNexusStudentReviewModule>();
+
+    builder.Services.AddAppertureIntegrationRuntimeSettings();
+    builder.Services.AddAppertureIntegrationRuntimeAccessors();
 
     builder.Services.AddRuntimePlatformEvents(builder.Configuration);
     builder.Services.AddSingleton<IPlatformSettingDefinitionRegistry, PlatformSettingDefinitionRegistry>();
@@ -169,7 +184,8 @@ builder.Services.AddWorkerHostIntegrationRepository();
         sp.GetRequiredService<IModuleOperationalLogger>(),
         sp.GetRequiredService<IModuleTelemetry>(),
         sp.GetRequiredService<ILoggerFactory>(),
-        sp.GetService<Apperture.Core.Application.OperationItems.IOperationItemStore>()));
+        sp.GetService<Apperture.Core.Application.OperationItems.IOperationItemStore>(),
+        sp.GetRequiredService<IIntegrationExecutionScopeAccessor>()));
 
     builder.Services.AddHostedService<StartRequestWorker>();
     builder.Services.AddHostedService<ScheduleDispatchBackgroundService>();

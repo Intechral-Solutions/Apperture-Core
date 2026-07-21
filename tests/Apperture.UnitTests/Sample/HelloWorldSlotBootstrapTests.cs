@@ -15,7 +15,7 @@ public sealed class HelloWorldSlotBootstrapTests
     public async Task Slot_bootstrap_registers_Db_slot_for_Sample_HelloWorld()
     {
         var services = new ServiceCollection();
-        services.AddSingleton<IModuleSlotRegistry, StubModuleSlotRegistry>();
+        services.AddSingleton<IModuleSlotRegistry, InMemoryModuleSlotRegistry>();
         services.AddSampleHelloWorldIntegration();
 
         await using var provider = services.BuildServiceProvider();

@@ -1,6 +1,7 @@
 using Apperture.Core.Application.Integration;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Integration;
+using Apperture.Management.Api.Models;
 using Apperture.Management.Client;
 using DomainIntegration = Apperture.Core.Domain.Integration.Integration;
 using Microsoft.AspNetCore.Authorization;
@@ -18,6 +19,7 @@ public sealed class IntegrationsController : ControllerBase
 {
     private readonly IIntegrationManagementService _integrationService;
     private readonly IIntegrationReadinessService _readinessService;
+    private readonly IIntegrationConfigurationRegistry _configurationRegistry;
     private readonly IIntegrationScheduleDiagnosticsService _scheduleDiagnostics;
     private readonly IAttentionIncidentTracker _attentionIncidentTracker;
     private readonly IAttentionRoutingManagementService _attentionRoutingManagement;
@@ -27,6 +29,7 @@ public sealed class IntegrationsController : ControllerBase
     public IntegrationsController(
         IIntegrationManagementService integrationService,
         IIntegrationReadinessService readinessService,
+        IIntegrationConfigurationRegistry configurationRegistry,
         IIntegrationScheduleDiagnosticsService scheduleDiagnostics,
         IAttentionIncidentTracker attentionIncidentTracker,
         IAttentionRoutingManagementService attentionRoutingManagement,
@@ -35,6 +38,7 @@ public sealed class IntegrationsController : ControllerBase
     {
         _integrationService = integrationService;
         _readinessService = readinessService;
+        _configurationRegistry = configurationRegistry;
         _scheduleDiagnostics = scheduleDiagnostics;
         _attentionIncidentTracker = attentionIncidentTracker;
         _attentionRoutingManagement = attentionRoutingManagement;
@@ -117,6 +121,53 @@ public sealed class IntegrationsController : ControllerBase
             if (projection is null)
                 return NotFound();
             return Ok(projection);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return Forbid();
+        }
+    }
+
+    /// <summary>
+    /// SDK-6C: module-authored setting and connection requirement declarations for this integration's module.
+    /// </summary>
+    [HttpGet("{id}/configuration/declarations")]
+    public async Task<ActionResult<IntegrationConfigurationDeclarationsDto>> GetConfigurationDeclarations(
+        string id,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var integration = await _integrationService.GetIntegrationAsync(new IntegrationId(id), cancellationToken);
+            if (integration is null)
+                return NotFound();
+
+            if (!_configurationRegistry.TryGetModuleConfiguration(integration.ModuleId, out var configuration))
+                return NotFound(new { error = $"Module '{integration.ModuleId}' has no SDK configuration declarations." });
+
+            return Ok(IntegrationConfigurationDtoMapper.ToDto(configuration));
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return Forbid();
+        }
+    }
+
+    /// <summary>
+    /// SDK-6C: procedure-scoped readiness (requirement subset when declared).
+    /// </summary>
+    [HttpGet("{id}/procedures/{procedureId}/readiness")]
+    public async Task<ActionResult<IntegrationProcedureReadinessDto>> GetProcedureReadiness(
+        string id,
+        string procedureId,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var projection = await _readinessService.GetProcedureReadinessAsync(new IntegrationId(id), procedureId, cancellationToken);
+            if (projection is null)
+                return NotFound();
+            return Ok(IntegrationConfigurationDtoMapper.ToProcedureReadinessDto(projection));
         }
         catch (UnauthorizedAccessException)
         {
