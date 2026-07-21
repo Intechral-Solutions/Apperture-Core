@@ -105,6 +105,19 @@
                                 NextScheduleSummary="@NextScheduleSummary"
                                 ConnectionsSummary="@ConnectionsSummary" />
 
+        <IntegrationConfigurationOverview IntegrationId="@IntegrationId"
+                                          Readiness="@_readiness"
+                                          Declarations="@_declarations"
+                                          Bindings="@_bindingSummaries"
+                                          SettingRows="@_settingRows"
+                                          ProcedureList="@_procedureList"
+                                          Schedules="@_schedules"
+                                          ScheduleCount="@(_schedules?.Count ?? 0)"
+                                          ConnectionNames="@_connectionNames"
+                                          CanManageIntegrations="@(_capabilities?.CanManageIntegrations == true)"
+                                          OnBindRequirement="BindRequirementAsync"
+                                          OnUnbindBinding="UnbindSummaryBindingAsync" />
+
         @if (!string.IsNullOrEmpty(_actionMessage))
         {
             <ActionFeedback Kind="@_actionFeedbackKind" Message="@_actionMessage" />
@@ -309,7 +322,7 @@
                     {
                         <button type="button"
                                 class="rounded px-2 py-1 text-sm @(string.Equals(_selectedProcedureId, p.Id, StringComparison.Ordinal) ? "bg-body text-surface" : "bg-surface-muted text-body hover:bg-surface")"
-                                title="@(p.Launchable ? "Runnable" : ProcedureLaunchOperatorUiHelpers.DescribeBlockedReason(p.BlockedReasonCodes.FirstOrDefault() ?? "integration_not_ready"))"
+                                title="@(p.Launchable ? "Runnable" : ProcedureLaunchOperatorUiHelpers.DescribeLaunchAvailability(_procedureList.IntegrationReady, p.Launchable, p.BlockedReasonCodes, _readiness?.AdvisoryIssueCount ?? 0))"
                                 @onclick="() => SelectProcedureAsync(p.Id)">
                             @p.DisplayName
                             @if (p.Launchable)
@@ -318,7 +331,7 @@
                             }
                             else
                             {
-                                <span class="ml-1 text-warning" title="Blocked">●</span>
+                                <span class="ml-1 text-warning" title="@ProcedureLaunchOperatorUiHelpers.DescribeLaunchAvailability(_procedureList.IntegrationReady, p.Launchable, p.BlockedReasonCodes, _readiness?.AdvisoryIssueCount ?? 0)">●</span>
                             }
                         </button>
                     }
@@ -382,37 +395,37 @@
 
         @if (_readiness is not null && (!_readiness.IsRunnable || _readiness.Issues.Length > 0))
         {
-            <ManagementSection Title="Readiness issues"
+            <ManagementSection Title="Additional readiness detail"
                                Layer="ManagementSection.UiLayer.Detail"
-                               Help="Blocking and advisory issues derived from slots, bindings, connections, and schedules.">
+                               Help="Legacy readiness list — see Configuration &amp; readiness above for grouped remediation.">
                 <div class="mb-3 flex flex-wrap items-center gap-2">
                     <StatusPill Label="@(_readiness.IsRunnable ? "Runnable" : "Not runnable")"
                                 Semantic="@(_readiness.IsRunnable ? ManagementStatusSemantic.Success : ManagementStatusSemantic.Warning)" />
                     <span class="text-xs text-muted">
                         Blocking: @_readiness.BlockingIssueCount · Advisory: @_readiness.AdvisoryIssueCount
                     </span>
+                    <DrillInLink Href="@IntegrationConfigurationOperatorUiHelpers.BuildConfigurationOverviewHref(IntegrationId)">
+                        Configuration overview
+                    </DrillInLink>
                 </div>
                 <ul class="space-y-2 text-sm text-body">
                     @foreach (var issue in _readiness.Issues)
                     {
+                        var mapped = IntegrationConfigurationOperatorUiHelpers.MapReadinessIssue(issue, IntegrationId);
                         <li class="rounded border border-default bg-surface-muted/30 p-2">
                             <div>
-                                <AttentionPill Label="@issue.Severity" Semantic="@MapIssueSeverity(issue.Severity)" />
-                                <span class="ml-1">@issue.Message</span>
+                                <AttentionPill Label="@mapped.SeverityLabel" Semantic="@MapIssueSeverity(issue.Severity)" />
+                                <span class="ml-1 font-medium">@mapped.Title</span>
+                                <span class="ml-1 text-muted">— @mapped.Explanation</span>
                             </div>
                             <details class="mt-1 text-xs text-muted">
                                 <summary class="cursor-pointer">Technical code</summary>
                                 <span class="font-mono">@issue.Code</span>
                             </details>
-                            <div class="mt-1 text-xs text-muted">@ReadinessRemediationCue(issue)</div>
-                            @if (_capabilities?.CanManageIntegrations == true)
+                            @if (!string.IsNullOrWhiteSpace(mapped.RemediationHref))
                             {
                                 <div class="mt-2">
-                                    <button type="button"
-                                            class="rounded bg-surface-muted px-2 py-0.5 text-xs text-body hover:bg-surface"
-                                            @onclick="() => RemediateReadinessIssueAsync(issue)">
-                                        Fix now
-                                    </button>
+                                    <DrillInLink Href="@mapped.RemediationHref">Fix now</DrillInLink>
                                 </div>
                             }
                         </li>
@@ -437,8 +450,8 @@
                         {
                             var bound = _bindings?.Any(b => string.Equals(b.SlotName, slot.SlotName, StringComparison.Ordinal) && string.Equals(b.State, "Active", StringComparison.OrdinalIgnoreCase)) == true;
                             <li class="flex justify-between gap-2">
-                                <span class="font-mono">@slot.SlotName</span>
-                                <span class="text-muted text-xs">@slot.ContractType</span>
+                                <span>@slot.SlotName</span>
+                                <span class="text-muted text-xs">@IntegrationConfigurationOperatorUiHelpers.FormatCapabilityLabel(null, slot.ContractType)</span>
                                 <StatusPill Label="@(bound ? "Bound" : "Unbound")"
                                             Semantic="@(bound ? ManagementStatusSemantic.Success : ManagementStatusSemantic.Warning)" />
                             </li>
@@ -507,13 +520,16 @@
                             <li class="flex items-center justify-between gap-2">
                                 <div>
                                     <DrillInLink Href="@("/connections/" + Uri.EscapeDataString(b.ConnectionId ?? ""))">@b.SlotName</DrillInLink>
-                                    <span class="text-muted text-xs ml-1">@b.ContractType</span>
+                                    <span class="text-muted text-xs ml-1">@IntegrationConfigurationOperatorUiHelpers.FormatCapabilityLabel(null, b.ContractType)</span>
                                     @if (!string.IsNullOrEmpty(b.ConnectionId))
                                     {
-                                        <span class="text-muted text-xs">→ @b.ConnectionId</span>
+                                        @if (_connectionNames.TryGetValue(b.ConnectionId, out var connName))
+                                        {
+                                            <span class="text-muted text-xs">→ @connName</span>
+                                        }
                                         @if (_bindingVerificationByConnectionId.TryGetValue(b.ConnectionId, out var verificationState))
                                         {
-                                            <span class="text-muted text-xs">· Verify: @verificationState</span>
+                                            <span class="text-muted text-xs">· @IntegrationConfigurationOperatorUiHelpers.FormatVerificationStatusLabel(verificationState)</span>
                                         }
                                     }
                                 </div>
@@ -546,7 +562,7 @@
                                     {
                                         @foreach (var s in _moduleSlots)
                                         {
-                                            <option value="@s.SlotName">@s.SlotName (@s.ContractType)</option>
+                                            <option value="@s.SlotName">@s.SlotName (@IntegrationConfigurationOperatorUiHelpers.FormatCapabilityLabel(null, s.ContractType))</option>
                                         }
                                     }
                                 </select>
@@ -728,6 +744,10 @@
     private IReadOnlyList<IntegrationBindingDto>? _bindings;
     private IReadOnlyList<ScheduleDto>? _schedules;
     private IntegrationReadinessDto? _readiness;
+    private IntegrationConfigurationDeclarationsDto? _declarations;
+    private IReadOnlyList<PlatformSettingResolvedDto>? _settingRows;
+    private IntegrationBindingSummaryDto[]? _bindingSummaries;
+    private readonly Dictionary<string, string> _connectionNames = new(StringComparer.Ordinal);
     private IntegrationModuleSlotSummaryDto[]? _requiredSlots;
     private IReadOnlyList<ModuleSlotDto>? _moduleSlots;
     private IReadOnlyList<EligibleConnectionDto>? _eligibleConnections;
@@ -912,6 +932,10 @@
         _bindings = null;
         _schedules = null;
         _readiness = null;
+        _declarations = null;
+        _settingRows = null;
+        _bindingSummaries = null;
+        _connectionNames.Clear();
         _error = null;
 
         try
@@ -992,6 +1016,7 @@
                     detail.UpdatedAt);
                 _readiness = detail.Readiness;
                 _requiredSlots = detail.RequiredSlots;
+                _bindingSummaries = detail.Bindings;
                 _bindings = detail.Bindings.Select(b => new IntegrationBindingDto(
                     b.Id,
                     integrationId,
@@ -1058,6 +1083,9 @@
 
                 if (_loadGuard.IsCurrent(generation))
                     await LoadRecentActivityAsync(generation, integrationId, detail.ModuleId, cancellationToken);
+
+                if (_loadGuard.IsCurrent(generation))
+                    await LoadConfigurationContextAsync(generation, integrationId, cancellationToken);
             }
         }
         catch (OperationCanceledException)
@@ -1086,6 +1114,79 @@
             Nav,
             EntityShellTitles.Detail(_integration?.DisplayName, "Integration"),
             SummarySubtitle);
+
+    private async Task LoadConfigurationContextAsync(int generation, string integrationId, CancellationToken cancellationToken)
+    {
+        if (!_loadGuard.IsCurrent(generation))
+            return;
+
+        _declarations = null;
+        _settingRows = null;
+        _connectionNames.Clear();
+
+        try
+        {
+            if (_loadGuard.IsCurrent(generation))
+                _declarations = await Client.GetIntegrationConfigurationDeclarationsAsync(integrationId, cancellationToken);
+        }
+        catch (HttpRequestException)
+        {
+            // Module may not declare SDK configuration; overview degrades gracefully.
+        }
+
+        try
+        {
+            if (_loadGuard.IsCurrent(generation))
+                _settingRows = await Client.ListIntegrationSettingsAsync(integrationId, cancellationToken);
+        }
+        catch (HttpRequestException)
+        {
+            // Settings list optional for overview counts.
+        }
+
+        var connectionIds = (_bindingSummaries ?? [])
+            .Select(b => b.ConnectionId)
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+
+        if (connectionIds.Count == 0 || !_loadGuard.IsCurrent(generation))
+            return;
+
+        try
+        {
+            var connections = await Client.GetConnectionsAsync(cancellationToken);
+            if (!_loadGuard.IsCurrent(generation))
+                return;
+
+            foreach (var id in connectionIds)
+            {
+                var match = connections.FirstOrDefault(c => string.Equals(c.Id, id, StringComparison.Ordinal));
+                if (match is not null)
+                    _connectionNames[id!] = match.Name;
+            }
+        }
+        catch (HttpRequestException)
+        {
+            // Connection names are cosmetic; IDs remain in technical details only.
+        }
+    }
+
+    private async Task BindRequirementAsync(string requirementKey)
+    {
+        await StartAddBinding();
+        _bindingSlot = requirementKey;
+        await OnBindingSlotChanged();
+        _wizard.NavigateTo(WizardStepBindings);
+        RecomputeWizardStates();
+    }
+
+    private async Task UnbindSummaryBindingAsync(IntegrationBindingSummaryDto binding)
+    {
+        var dto = _bindings?.FirstOrDefault(b => string.Equals(b.Id, binding.Id, StringComparison.Ordinal));
+        if (dto is not null)
+            await RemoveBindingAsync(dto);
+    }
 
     private async Task LoadRecentActivityAsync(int generation, string integrationId, string moduleId, CancellationToken cancellationToken)
     {

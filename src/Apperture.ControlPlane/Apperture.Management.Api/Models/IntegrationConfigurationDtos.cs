@@ -21,7 +21,9 @@ public sealed record IntegrationConnectionRequirementDto(
     string DisplayName,
     string Description,
     bool IsRequired,
-    string CapabilityContractType,
+    string? CapabilityKind,
+    string CapabilityLabel,
+    string TechnicalContractType,
     string VerificationExpectation,
     bool AllowMultipleBindings);
 

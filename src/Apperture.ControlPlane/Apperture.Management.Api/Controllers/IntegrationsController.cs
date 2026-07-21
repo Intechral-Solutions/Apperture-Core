@@ -132,7 +132,7 @@ public sealed class IntegrationsController : ControllerBase
     /// SDK-6C: module-authored setting and connection requirement declarations for this integration's module.
     /// </summary>
     [HttpGet("{id}/configuration/declarations")]
-    public async Task<ActionResult<IntegrationConfigurationDeclarationsDto>> GetConfigurationDeclarations(
+    public async Task<ActionResult<Models.IntegrationConfigurationDeclarationsDto>> GetConfigurationDeclarations(
         string id,
         CancellationToken cancellationToken)
     {
@@ -157,7 +157,7 @@ public sealed class IntegrationsController : ControllerBase
     /// SDK-6C: procedure-scoped readiness (requirement subset when declared).
     /// </summary>
     [HttpGet("{id}/procedures/{procedureId}/readiness")]
-    public async Task<ActionResult<IntegrationProcedureReadinessDto>> GetProcedureReadiness(
+    public async Task<ActionResult<Models.IntegrationProcedureReadinessDto>> GetProcedureReadiness(
         string id,
         string procedureId,
         CancellationToken cancellationToken)

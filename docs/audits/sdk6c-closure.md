@@ -99,3 +99,13 @@ Operator API smoke for declarations/procedure readiness was validated via automa
 ## Explicit non-goals (honored)
 
 SMTP redesign, notification-provider redesign, packaging, marketplace, codegen, shared entities, workflow composition, module UI contribution, scheduler redesign, WorkerHost lifecycle redesign.
+
+## Clarification addendum (SDK-6D carry-forward)
+
+These points are part of the SDK-6C closure contract and must be preserved by SDK-6D:
+
+1. **Non-sensitive settings may persist normally.** The security guarantee is that *sensitive* values and secrets are not persisted or returned as plaintext. Ordinary integration setting values are stored in integration-scoped settings tables as designed.
+2. **Existing APIs are in-scope for the workflow.** Settings CRUD, secret replace/clear, connection instances, bind/unbind, and verification endpoints from prior epics remain the operational surface. SDK-6C added declarations and procedure-readiness routes on top of that workflow — it did not replace those APIs.
+3. **ApiPolling must not silently bypass readiness.** Embedded or fake local directory-API behavior is allowed only through an explicit development/testing path. Production readiness for the required `DirectoryApi` binding cannot be skipped by falling back to an in-process fake without designation.
+4. **Canonical string persistence is acceptable for typed logical kinds.** Decimal, URI, duration, and time-zone values may be stored as culture-invariant strings when SDK accessors validate and return typed values deterministically. Dedicated SQL columns are not required unless evidence shows string persistence is insufficient.
+5. **SDK-6D owns operator workflow depth.** SDK-6D must not replace the SDK-6C configuration architecture; it builds the coherent operator experience on top of it.

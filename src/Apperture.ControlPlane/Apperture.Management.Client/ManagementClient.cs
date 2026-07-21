@@ -734,6 +734,52 @@ public sealed class ManagementClient : IManagementClient
         return await response.Content.ReadFromJsonAsync<IntegrationOperatorDetailDto>(ApiJsonReadOptions, cancellationToken).ConfigureAwait(false);
     }
 
+    public async Task<IntegrationConfigurationDeclarationsDto?> GetIntegrationConfigurationDeclarationsAsync(
+        string integrationId,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.GetAsync(
+            $"integrations/{Uri.EscapeDataString(integrationId)}/configuration/declarations",
+            cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
+            return null;
+        await EnsureSuccessOrThrowAsync(response, cancellationToken).ConfigureAwait(false);
+        return await response.Content.ReadFromJsonAsync<IntegrationConfigurationDeclarationsDto>(
+            ApiJsonReadOptions,
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<IntegrationReadinessDto?> GetIntegrationReadinessAsync(
+        string integrationId,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.GetAsync(
+            $"integrations/{Uri.EscapeDataString(integrationId)}/readiness",
+            cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
+            return null;
+        await EnsureSuccessOrThrowAsync(response, cancellationToken).ConfigureAwait(false);
+        return await response.Content.ReadFromJsonAsync<IntegrationReadinessDto>(
+            ApiJsonReadOptions,
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<IntegrationProcedureReadinessDto?> GetIntegrationProcedureReadinessAsync(
+        string integrationId,
+        string procedureId,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.GetAsync(
+            $"integrations/{Uri.EscapeDataString(integrationId)}/procedures/{Uri.EscapeDataString(procedureId)}/readiness",
+            cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
+            return null;
+        await EnsureSuccessOrThrowAsync(response, cancellationToken).ConfigureAwait(false);
+        return await response.Content.ReadFromJsonAsync<IntegrationProcedureReadinessDto>(
+            ApiJsonReadOptions,
+            cancellationToken).ConfigureAwait(false);
+    }
+
     public async Task<IntegrationProcedureListDto?> GetIntegrationProceduresAsync(string integrationId, CancellationToken cancellationToken = default)
     {
         var response = await _http.GetAsync(

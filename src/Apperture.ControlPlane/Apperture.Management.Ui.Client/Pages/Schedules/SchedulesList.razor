@@ -97,6 +97,7 @@
                         <tr>
                             <th class="px-3 py-2">Schedule</th>
                             <th class="px-3 py-2">State</th>
+                            <th class="px-3 py-2">Execution</th>
                             <th class="px-3 py-2">Health</th>
                             <th class="px-3 py-2">Next fire</th>
                             <th class="px-3 py-2">Target</th>
@@ -110,6 +111,8 @@
                         {
                             var healthLabel = RunScheduleOperatorUiHelpers.FormatScheduleHealthLabel(s.HealthStatus, s.Enabled);
                             var primaryReason = RunScheduleOperatorUiHelpers.FormatPrimaryStatusReason(s.StatusReasons);
+                            var integrationRunnable = GetIntegrationRunnable(s.IntegrationId);
+                            var executionPill = IntegrationConfigurationOperatorUiHelpers.BuildScheduleExecutionPill(s.Enabled, integrationRunnable, s.IntegrationId);
                             <tr class="border-b border-default hover:bg-surface-muted cursor-pointer"
                                 @onclick="@(() => Nav.NavigateTo("/schedules/" + Uri.EscapeDataString(s.Id)))">
                                 <td class="px-3 py-2">
@@ -127,6 +130,15 @@
                                 <td class="px-3 py-2">
                                     <StatusPill Label="@(s.Enabled ? "Enabled" : "Disabled")"
                                                 Semantic="@(s.Enabled ? ManagementStatusSemantic.Success : ManagementStatusSemantic.Neutral)" />
+                                </td>
+                                <td class="px-3 py-2">
+                                    <StatusPill Label="@executionPill.Label" Semantic="@executionPill.Semantic" />
+                                    @if (!string.IsNullOrWhiteSpace(executionPill.RemediationHref))
+                                    {
+                                        <div class="mt-1">
+                                            <DrillInLink Href="@executionPill.RemediationHref" @onclick:stopPropagation="true">Fix configuration</DrillInLink>
+                                        </div>
+                                    }
                                 </td>
                                 <td class="px-3 py-2">
                                     <StatusPill Label="@healthLabel"
@@ -190,6 +202,7 @@
 @code {
     private IReadOnlyList<ScheduleDto>? _schedules;
     private OperatorCapabilitiesDto? _capabilities;
+    private readonly Dictionary<string, bool> _integrationRunnableById = new(StringComparer.Ordinal);
     private bool _loading;
     private bool _showNeedsAttentionOnly;
     private string? _error;
@@ -229,6 +242,7 @@
         try
         {
             _schedules = await Client.GetSchedulesAsync();
+            await LoadIntegrationReadinessCacheAsync();
         }
         catch (HttpRequestException ex)
         {
@@ -237,6 +251,38 @@
         finally
         {
             _loading = false;
+        }
+    }
+
+    private bool? GetIntegrationRunnable(string? integrationId)
+    {
+        if (string.IsNullOrWhiteSpace(integrationId))
+            return null;
+
+        return _integrationRunnableById.TryGetValue(integrationId, out var runnable) ? runnable : null;
+    }
+
+    private async Task LoadIntegrationReadinessCacheAsync()
+    {
+        _integrationRunnableById.Clear();
+        if (_schedules is null)
+            return;
+
+        foreach (var integrationId in _schedules
+                     .Select(s => s.IntegrationId)
+                     .Where(id => !string.IsNullOrWhiteSpace(id))
+                     .Distinct(StringComparer.Ordinal))
+        {
+            try
+            {
+                var readiness = await Client.GetIntegrationReadinessAsync(integrationId!);
+                if (readiness is not null)
+                    _integrationRunnableById[integrationId!] = readiness.IsRunnable;
+            }
+            catch (HttpRequestException)
+            {
+                // Leave uncached; pill shows pending check.
+            }
         }
     }
 }

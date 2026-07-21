@@ -254,6 +254,22 @@ public interface IManagementClient
     /// </summary>
     Task<IntegrationOperatorDetailDto?> GetIntegrationOperatorDetailAsync(string id, CancellationToken cancellationToken = default);
 
+    /// <summary>SDK-6C/6D: module-authored setting and connection requirement declarations.</summary>
+    Task<IntegrationConfigurationDeclarationsDto?> GetIntegrationConfigurationDeclarationsAsync(
+        string integrationId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>SDK-6C/6D: integration-wide readiness from GET integrations/{id}/readiness.</summary>
+    Task<IntegrationReadinessDto?> GetIntegrationReadinessAsync(
+        string integrationId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>SDK-6C/6D: procedure-scoped readiness when requirement sets are declared.</summary>
+    Task<IntegrationProcedureReadinessDto?> GetIntegrationProcedureReadinessAsync(
+        string integrationId,
+        string procedureId,
+        CancellationToken cancellationToken = default);
+
     /// <summary>
     /// Lists module procedures for an integration with server-owned launchability (ADR-0029, Epic 56A).
     /// </summary>

@@ -62,6 +62,21 @@
     }
     else
     {
+        @if (_readiness is not null)
+        {
+            var readinessPill = IntegrationConfigurationOperatorUiHelpers.BuildOverallReadinessPill(_readiness);
+            <PageMessage Kind="@(readinessPill.Semantic == ManagementStatusSemantic.Success ? PageMessageKind.Info : PageMessageKind.Warning)"
+                         Class="mt-4 max-w-3xl"
+                         Title="Integration readiness"
+                         Message="@($"{readinessPill.Label}. Changes here affect whether schedules and procedures can run.")">
+                <ChildContent>
+                    <DrillInLink Href="@IntegrationConfigurationOperatorUiHelpers.BuildConfigurationOverviewHref(IntegrationId)">
+                        View configuration overview
+                    </DrillInLink>
+                </ChildContent>
+            </PageMessage>
+        }
+
         <PageMessage Kind="PageMessageKind.Info"
                      Class="mt-4 max-w-3xl"
                      Title="How integration settings work"
@@ -80,6 +95,7 @@
                                     ActiveCategoryChanged="OnActiveCategoryChanged"
                                     CanManage="_canManage"
                                     SavingKey="_savingKey"
+                                    RequiredSettingKeys="@_requiredSettingKeys"
                                     GetEditValue="GetEditValue"
                                     GetEditValues="GetEditValues"
                                     GetError="GetError"
@@ -110,6 +126,8 @@
   private string? _savingKey;
   private string _activeCategory = string.Empty;
   private List<PlatformSettingResolvedDto> _rows = [];
+  private readonly HashSet<string> _requiredSettingKeys = new(StringComparer.Ordinal);
+  private IntegrationReadinessDto? _readiness;
   private readonly Dictionary<string, string> _editValues = new(StringComparer.Ordinal);
   private readonly Dictionary<string, List<string>> _editArrayValues = new(StringComparer.Ordinal);
   private readonly Dictionary<string, string?> _errors = new(StringComparer.Ordinal);
@@ -146,6 +164,31 @@
       }
 
       _integrationName = integration.DisplayName;
+
+      try
+      {
+        var declarations = await Client.GetIntegrationConfigurationDeclarationsAsync(IntegrationId);
+        _requiredSettingKeys.Clear();
+        if (declarations?.Settings is not null)
+        {
+          foreach (var setting in declarations.Settings.Where(s => s.IsRequired))
+            _requiredSettingKeys.Add(setting.Key);
+        }
+      }
+      catch
+      {
+        _requiredSettingKeys.Clear();
+      }
+
+      try
+      {
+        var detail = await Client.GetIntegrationOperatorDetailAsync(IntegrationId);
+        _readiness = detail?.Readiness;
+      }
+      catch
+      {
+        _readiness = null;
+      }
 
       var rows = await Client.ListIntegrationSettingsAsync(IntegrationId);
       if (rows is null)
@@ -266,6 +309,7 @@
       }
 
       ReplaceRow(updated);
+      await RefreshReadinessAsync();
       Toasts.Show(ToastSeverity.Success, $"Saved {row.DisplayName}.");
     }
     catch (HttpRequestException ex)
@@ -283,9 +327,12 @@
     if (!row.HasPlatformOverride && !PlatformSettingUiHelpers.IsScopedOverride(row.Source))
       return;
 
-    var confirmed = await JSRuntime.InvokeAsync<bool>(
-        "confirm",
-        $"Clear \"{row.DisplayName}\"? This removes the integration override and disables the managed secret when owned by this setting.");
+    var isRequired = _requiredSettingKeys.Contains(row.Key);
+    var confirmMessage = isRequired
+        ? $"Clear \"{row.DisplayName}\"? This is a required setting — clearing may block integration readiness, schedules, and procedure launches."
+        : $"Clear \"{row.DisplayName}\"? This removes the integration override and disables the managed secret when owned by this setting.";
+
+    var confirmed = await JSRuntime.InvokeAsync<bool>("confirm", confirmMessage);
     if (!confirmed)
       return;
 
@@ -300,6 +347,7 @@
               RowVersionBase64: row.RowVersionBase64,
               SecretOperation: PlatformSettingUiHelpers.SecretOperationClear));
       ReplaceRow(updated);
+      await RefreshReadinessAsync();
       Toasts.Show(ToastSeverity.Success, $"Cleared {row.DisplayName}.");
     }
     catch (HttpRequestException ex)
@@ -335,6 +383,7 @@
       }
 
       ReplaceRow(updated);
+      await RefreshReadinessAsync();
       Toasts.Show(ToastSeverity.Success, $"Reset {row.DisplayName} to definition default.");
     }
     catch (HttpRequestException ex)
@@ -344,6 +393,19 @@
     finally
     {
       _savingKey = null;
+    }
+  }
+
+  private async Task RefreshReadinessAsync()
+  {
+    try
+    {
+      var detail = await Client.GetIntegrationOperatorDetailAsync(IntegrationId);
+      _readiness = detail?.Readiness;
+    }
+    catch
+    {
+      _readiness = null;
     }
   }
 

@@ -38,6 +38,7 @@ else
                 <PlatformSettingRow Row="row"
                                     IntegrationId="@IntegrationId"
                                     IntegrationScope="@IntegrationScope"
+                                    IsRequired="@IsSettingRequired(row.Key)"
                                     CanManage="CanManage"
                                     EditValue="@GetEditValue(row.Key)"
                                     EditValues="@GetEditValues(row)"
@@ -84,6 +85,8 @@ else
 
     [Parameter] public bool IntegrationScope { get; set; }
 
+    [Parameter] public IReadOnlySet<string>? RequiredSettingKeys { get; set; }
+
     [Parameter] public RenderFragment? ChildContent { get; set; }
 
     private IReadOnlyList<string> _categories = Array.Empty<string>();
@@ -111,4 +114,7 @@ else
 
     private Task OnActiveCategoryChanged(string category) =>
         ActiveCategoryChanged.InvokeAsync(category);
+
+    private bool IsSettingRequired(string key) =>
+        RequiredSettingKeys?.Contains(key) == true;
 }

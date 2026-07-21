@@ -36,9 +36,20 @@ internal static class IntegrationConfigurationDtoMapper
             c.DisplayName,
             c.Description,
             c.IsRequired,
+            c.CapabilityKind,
+            ResolveCapabilityLabel(c),
             c.CapabilityContractType,
             c.VerificationExpectation.ToString(),
             c.AllowMultipleBindings);
+
+    internal static string ResolveCapabilityLabel(ConnectionRequirementDefinition requirement) =>
+        requirement.CapabilityKind switch
+        {
+            ConnectionCapabilityKinds.HttpApi => "HTTP API",
+            ConnectionCapabilityKinds.RelationalDb => "Relational database",
+            ConnectionCapabilityKinds.Sftp => "SFTP",
+            _ => requirement.DisplayName,
+        };
 
     private static IntegrationProcedureRequirementDto ToProcedureDto(ProcedureRequirementSet p) =>
         new(p.ProcedureId, p.RequiredSettingKeys, p.RequiredConnectionKeys);

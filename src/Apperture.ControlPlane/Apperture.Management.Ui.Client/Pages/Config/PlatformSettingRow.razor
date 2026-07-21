@@ -11,10 +11,14 @@
     var isSecret = PlatformSettingUiHelpers.IsSecret(Row.InputKind, Row.IsSensitive);
 }
 
-<div class="border-b border-default py-2 last:border-b-0">
+<div id="@Row.Key" class="border-b border-default py-2 last:border-b-0">
     <div class="flex flex-wrap items-center gap-2 gap-y-1">
         <div class="flex min-w-0 flex-1 items-center gap-1.5">
             <span class="font-medium text-heading text-sm truncate" title="@Row.DisplayName">@Row.DisplayName</span>
+            @if (IsRequired)
+            {
+                <span class="text-xs text-warning shrink-0" title="Required by module declaration">Required</span>
+            }
             <SettingInfoAffordance Tooltip="@helpTooltip" />
             @if (Row.RequiresRestart)
             {
@@ -27,9 +31,9 @@
                         Semantic="@PlatformSettingUiHelpers.GetSourceSemantic(Row.Source)" />
             @if (isSecret)
             {
-                <StatusPill Label="@PlatformSettingUiHelpers.GetSecretConfiguredLabel(Row.IsSecretConfigured)"
+                <StatusPill Label="@IntegrationConfigurationOperatorUiHelpers.FormatSecretPresenceLabel(true, Row.IsSecretConfigured)"
                             Title="@(Row.IsSecretConfigured ? "A secret is configured for this setting. The value is never shown." : "No secret is configured.")"
-                            Semantic="@PlatformSettingUiHelpers.GetSecretConfiguredSemantic(Row.IsSecretConfigured)" />
+                            Semantic="@IntegrationConfigurationOperatorUiHelpers.MapSecretPresenceSemantic(Row.IsSecretConfigured)" />
             }
             @if (IsDirty)
             {
@@ -111,9 +115,14 @@
                     <input class="rounded border border-default px-2 py-1 text-sm min-w-48 font-mono"
                            value="@EditValue"
                            disabled="@IsSaving"
-                           placeholder="@(string.Equals(Row.InputKind, PlatformSettingUiHelpers.InputKindDuration, StringComparison.OrdinalIgnoreCase) ? "00:05:00" : null)"
-                           title="@(Row.MinDurationIso is not null ? $"ISO 8601; min {Row.MinDurationIso}" : null)"
+                           placeholder="@GetTextInputPlaceholder()"
+                           title="@GetTextInputTitle()"
+                           aria-label="@Row.DisplayName"
                            @onchange="OnTextInput" />
+                    @if (!string.IsNullOrWhiteSpace(GetInputHint()))
+                    {
+                        <span class="text-xs text-muted">@GetInputHint()</span>
+                    }
                 }
             </div>
             <div class="flex shrink-0 items-center gap-1">
@@ -231,6 +240,8 @@
     [Parameter] public string? IntegrationId { get; set; }
 
     [Parameter] public bool IntegrationScope { get; set; }
+
+    [Parameter] public bool IsRequired { get; set; }
 
     private IReadOnlyList<PlatformSettingAllowedValueDto>? _providerOptions;
     private bool _loadingProviderOptions;
@@ -381,5 +392,42 @@
         }
 
         await EditValuesChanged.InvokeAsync(next);
+    }
+
+    private string? GetTextInputPlaceholder()
+    {
+        if (string.Equals(Row.InputKind, PlatformSettingUiHelpers.InputKindDuration, StringComparison.OrdinalIgnoreCase))
+            return "00:05:00";
+        if (string.Equals(Row.ValueType, "Decimal", StringComparison.OrdinalIgnoreCase))
+            return "0.00";
+        if (Row.Key.Contains("TimeZone", StringComparison.OrdinalIgnoreCase)
+            || Row.Key.Contains("Timezone", StringComparison.OrdinalIgnoreCase))
+            return "America/Los_Angeles";
+        if (Row.Key.Contains("Uri", StringComparison.OrdinalIgnoreCase)
+            || Row.Key.Contains("Url", StringComparison.OrdinalIgnoreCase))
+            return "https://";
+        return null;
+    }
+
+    private string? GetTextInputTitle()
+    {
+        if (Row.MinDurationIso is not null)
+            return $"ISO 8601 duration; min {Row.MinDurationIso}";
+        if (string.Equals(Row.ValueType, "Decimal", StringComparison.OrdinalIgnoreCase))
+            return "Decimal number";
+        return null;
+    }
+
+    private string? GetInputHint()
+    {
+        if (string.Equals(Row.ValueType, "Decimal", StringComparison.OrdinalIgnoreCase))
+            return "Decimal value";
+        if (Row.Key.Contains("TimeZone", StringComparison.OrdinalIgnoreCase)
+            || Row.Key.Contains("Timezone", StringComparison.OrdinalIgnoreCase))
+            return "IANA time zone id (e.g. UTC, America/Los_Angeles)";
+        if (Row.Key.Contains("Uri", StringComparison.OrdinalIgnoreCase)
+            || Row.Key.Contains("Url", StringComparison.OrdinalIgnoreCase))
+            return "Absolute URI including scheme";
+        return null;
     }
 }

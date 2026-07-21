@@ -104,6 +104,11 @@
             <div class="flex flex-wrap items-center gap-2">
                 <StatusPill Label="@(_detail.Enabled ? "Enabled" : "Disabled")"
                             Semantic="@(_detail.Enabled ? ManagementStatusSemantic.Success : ManagementStatusSemantic.Neutral)" />
+                @{
+                    var executionPill = IntegrationConfigurationOperatorUiHelpers.BuildScheduleExecutionPill(
+                        _detail.Enabled, _integrationRunnable, _detail.IntegrationId);
+                }
+                <StatusPill Label="@executionPill.Label" Semantic="@executionPill.Semantic" />
                 <StatusPill Label="@RunScheduleOperatorUiHelpers.FormatScheduleHealthLabel(_detail.HealthStatus, _detail.Enabled)"
                             Semantic="@RunScheduleOperatorUiHelpers.MapScheduleHealthSemantic(_detail.HealthStatus)" />
                 <StatusPill Label="@GetTargetKind(_detail.TargetJobType)" Semantic="@ManagementStatusSemantic.Neutral" />
@@ -117,6 +122,36 @@
                     <AttentionPill Label="Stale claim" Semantic="@ManagementAttentionSemantic.Warning" />
                 }
             </div>
+
+            @if (!string.IsNullOrWhiteSpace(executionPill.RemediationHref))
+            {
+                <div class="mt-2">
+                    <PageMessage Kind="PageMessageKind.Warning"
+                                 Message="This schedule is enabled but blocked by integration configuration. Fix readiness before the next due fire can dispatch.">
+                        <DrillInLink Href="@executionPill.RemediationHref">Open configuration overview</DrillInLink>
+                    </PageMessage>
+                </div>
+            }
+
+            @{
+                var blockedSummary = IntegrationConfigurationOperatorUiHelpers.FormatBlockedByReadinessSummary(
+                    _detail.LastOutcome, _detail.LastOutcomeReason);
+            }
+            @if (!string.IsNullOrWhiteSpace(blockedSummary))
+            {
+                <div class="mt-2 rounded border border-default bg-surface-muted p-3 text-sm text-body">
+                    <div class="font-semibold">Last blocked dispatch</div>
+                    <div class="mt-1 text-xs text-muted">@blockedSummary</div>
+                    @if (!string.IsNullOrWhiteSpace(_detail.IntegrationId))
+                    {
+                        <div class="mt-2">
+                            <DrillInLink Href="@IntegrationConfigurationOperatorUiHelpers.BuildConfigurationOverviewHref(_detail.IntegrationId)">
+                                Fix integration configuration
+                            </DrillInLink>
+                        </div>
+                    }
+                </div>
+            }
 
             <div class="mt-3">
                 <MetadataGrid ThreeColumn="true">
@@ -319,6 +354,7 @@
     private ScheduleDetailDto? _detail;
     private OperatorCapabilitiesDto? _capabilities;
     private SchedulerStatusSnapshotDto? _schedulerStatus;
+    private bool? _integrationRunnable;
     private bool _loading;
     private string? _error;
     private string? _actionMessage;
@@ -429,6 +465,20 @@
         try
         {
             _detail = await Client.GetScheduleAsync(ScheduleId);
+            _integrationRunnable = null;
+            if (!string.IsNullOrWhiteSpace(_detail?.IntegrationId))
+            {
+                try
+                {
+                    var readiness = await Client.GetIntegrationReadinessAsync(_detail.IntegrationId);
+                    _integrationRunnable = readiness?.IsRunnable;
+                }
+                catch (HttpRequestException)
+                {
+                    _integrationRunnable = null;
+                }
+            }
+
             if (_capabilities?.CanViewRuntimeHealth == true)
             {
                 try

@@ -30,5 +30,7 @@
     <ProjectReference Include="..\..\src\Apperture.Modules\Proof.CampusNexus.StudentReview\Proof.CampusNexus.StudentReview.csproj" />
     <ProjectReference Include="..\..\src\Apperture.Modules\Unisa.CampusNexus.PaymentPlans\Unisa.CampusNexus.PaymentPlans.csproj" />
     <ProjectReference Include="..\..\src\Apperture.RuntimeHost\Apperture.RuntimeHost.Windows\Apperture.RuntimeHost.Windows.WorkerHost\Apperture.RuntimeHost.Windows.WorkerHost.csproj" />
+    <ProjectReference Include="..\..\src\Apperture.ControlPlane\Apperture.Management.Ui.Client\Apperture.Management.Ui.Client.csproj" />
+    <ProjectReference Include="..\..\src\Apperture.ControlPlane\Apperture.Management.Ui.Shared\Apperture.Management.Ui.Shared.csproj" />
   </ItemGroup>
 </Project>

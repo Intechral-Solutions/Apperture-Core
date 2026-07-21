@@ -20,6 +20,47 @@ public static class ProcedureLaunchOperatorUiHelpers
             _ => "See readiness issues or contact an administrator."
         };
 
+    /// <summary>Distinguishes hard-blocked launches from degraded/advisory-only states for operator messaging.</summary>
+    public static string DescribeLaunchAvailability(
+        bool integrationReady,
+        bool launchable,
+        IReadOnlyList<string>? blockedReasonCodes,
+        int advisoryIssueCount = 0)
+    {
+        if (launchable)
+        {
+            return advisoryIssueCount > 0
+                ? $"Runnable with {advisoryIssueCount} advisory readiness issue(s)."
+                : "Ready to launch.";
+        }
+
+        if (!integrationReady && blockedReasonCodes is { Count: > 0 })
+        {
+            var code = blockedReasonCodes[0].Trim().ToLowerInvariant();
+            if (code is "integration_hard_blocked" or "integration_not_ready")
+                return DescribeBlockedReason(code);
+        }
+
+        if (blockedReasonCodes is { Count: > 0 })
+            return DescribeBlockedReason(blockedReasonCodes[0]);
+
+        return "Blocked — resolve configuration or permissions before launch.";
+    }
+
+    public static bool IsHardBlockedReason(string? code)
+    {
+        if (string.IsNullOrWhiteSpace(code))
+            return false;
+
+        return code.Trim().ToLowerInvariant() switch
+        {
+            "integration_hard_blocked" or "integration_not_ready" or "integration_inactive"
+                or "target_not_executable" or "insufficient_procedure_permission"
+                or "insufficient_workflow_permission" or "insufficient_operation_permission" => true,
+            _ => false
+        };
+    }
+
     public static string FormatLaunchError(string? errorCode, string? errorMessage)
     {
         if (string.IsNullOrWhiteSpace(errorCode))
