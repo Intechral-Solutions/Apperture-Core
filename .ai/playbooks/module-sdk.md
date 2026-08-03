@@ -76,6 +76,10 @@ See [module-manifest-spec.md](../../docs/05-modules/module-manifest-spec.md) and
 - **On-prem:** Compiled into worker host; explicit `IEnumerable<IModule>` registration. One module per process (intent).
 - **Cloud:** One module per Function App.
 
+## Runtime-visible naming
+
+Do not encode epic/track IDs in module, procedure, workflow, notification, or settings **display** strings. Prefer product-like names (`Sample File Import`, `Import completed with errors`). Planning labels stay in docs/ADRs/tests. See [anti-patterns](./anti-patterns.md) and [AGENTS.md](../../AGENTS.md).
+
 ## Signals backlog (not module SDK basics)
 
 Tracked in [Epic103A plan](../../docs/02-decisions/Epic103A-Platform-Signals-SDK-Stabilization-Implementation-Plan.md): OpenTelemetry adapter, log elevation, handler factory/DI, built-in module notification definitions in manifest, calendar/event SDK — **not available** for authors today.

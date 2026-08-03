@@ -78,6 +78,8 @@ Do not run Aspire and native script dev at the same time — both want Managemen
 
 Follow [AGENTS.md](AGENTS.md) and the playbooks in [.ai/playbooks/](.ai/playbooks/) (principles, anti-patterns, project map).
 
+**Runtime-visible naming:** Do not create integrations, seeds, notifications, settings, or UI labels that embed epic/track IDs (`Epic 121`, `SDK-5A`, `SWM-10`, `BDS-3`, etc.). Keep those in docs/ADRs/tests; use product-like names in operator-facing content. See anti-patterns → “Do not put internal development metadata in runtime-visible content”.
+
 ## Pull requests
 
 CI must pass before merge. The pipeline runs on push and pull requests to `main` (see [.github/workflows/ci.yml](.github/workflows/ci.yml)): restore, build in Release, and run all tests.

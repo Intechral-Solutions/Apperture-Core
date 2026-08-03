@@ -8,3 +8,4 @@ Role: Implement features, fix bugs, and write code in Apperture Core.
 2. Follow the project map and dependency rules in [.ai/playbooks/project-map.md](../playbooks/project-map.md).
 3. Keep the workflow model portable; backend-specific logic goes in adapters.
 4. Record significant decisions in `docs/02-decisions/` using the ADR template.
+5. Never put epic/track/agent planning labels into runtime-visible operator content (display names, seeds, notification copy, settings help, UI labels). Use product-like names; keep planning IDs in docs/tests/comments.

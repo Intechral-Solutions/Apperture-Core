@@ -71,7 +71,7 @@ public static class ExpectedRunMissingNotificationDefinitionSeed
         new(
             NotificationDefinitionId.From(NotificationDefinitionIds.PlatformScheduleExpectedRunMissing),
             "Expected run missing",
-            "Platform built-in for schedule expectation attention (Epic 69 parity).",
+            "Platform built-in for schedule expectation attention.",
             NotificationSourceKinds.PlatformEvent,
             NotificationDefinitionOrigins.PlatformBuiltIn,
             NotificationDefinitionScopes.Platform,

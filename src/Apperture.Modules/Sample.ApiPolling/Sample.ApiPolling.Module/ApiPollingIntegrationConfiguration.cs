@@ -34,7 +34,7 @@ internal static class ApiPollingIntegrationConfiguration
             Key = ApiPollingConnectionKeys.DirectoryApi,
             DisplayName = "Directory API",
             Description =
-                "Sample directory API client used to poll external account snapshots. Canonical SDK-6C connection-backed configuration sample.",
+                "Sample directory API client used to poll external account snapshots.",
             IsRequired = true,
             CapabilityContractType = typeof(ISampleDirectoryApiClient).FullName!,
             CapabilityKind = ConnectionCapabilityKinds.HttpApi,

@@ -26,6 +26,18 @@ This guide is for developers building **Apperture modules**: workflow-centric pa
 - `Sample.ApiPolling` — portable API-style sync demo (SDK-5A): embedded JSON snapshots, fake API client, process-local incremental state, durable operation items, sync.* signals. See [SDK-5A design](../superpowers/specs/SDK-5A-Sample-ApiPolling-Demo.md).
 - `Proof.CampusNexus.StudentReview` — integration-scoped slots (Campus Nexus + SQL), procedures, operational logs (no manifest signals)
 
+### Runtime-visible naming (sample/demo content)
+
+Engineering track IDs (`SDK-5A`, `BDS-3`, `Epic 121`, …) belong in docs, ADRs, audits, and this guide’s cross-references. They must **not** appear in:
+
+- Module / procedure / workflow **display names** shown in Management UI
+- Integration display names you create while demoing
+- Notification definition titles/descriptions/templates
+- Fixture business names and other seeded operator-visible strings
+- Settings labels/help text
+
+Prefer product-like names: `Sample File Import`, `Sample API Polling`, `Demo Customers`, `Customer Import`, `Import completed with errors`. See [AGENTS.md](../../AGENTS.md) non-negotiable #6 and [.ai/playbooks/anti-patterns.md](../../.ai/playbooks/anti-patterns.md).
+
 ### Sample.FileImport (SDK-2 + SDK-3C + SDK-4A)
 
 **Purpose:** Contract-validation sample for file-ingest modules. Proves fixture selection, multi-step import workflow, module-local per-row outcomes, fail-loud summary signals, and durable platform operation itemization (SDK-3C) without external files.
