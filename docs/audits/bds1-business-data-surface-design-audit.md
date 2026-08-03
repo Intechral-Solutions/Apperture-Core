@@ -285,8 +285,7 @@ Complete — Management Client DTOs/methods + small API polish. See [bds4-demo-b
 
 ### BDS-5 — Business Record Surface
 
-- Records list/detail UI; drill-through to item/run/integration.
-- Nav entry; keep Runs/itemization.
+Complete — Demo Customers list/detail under Developer & internal. See [bds5-demo-customers-surface.md](./bds5-demo-customers-surface.md).
 
 ### Later (ordered)
 

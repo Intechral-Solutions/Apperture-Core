@@ -56,8 +56,9 @@ List empty shape unchanged: `items=[]`, `totalCount=0`, echoed `skip`/`take`.
 
 ## Next
 
-- **BDS-5** — Demo Customers UI (list/detail, business-first, drill-through to Affected records / runs)
-- Still no platform entity model, Systems/Services, or conflict resolution
+- **BDS-5** — complete: [bds5-demo-customers-surface.md](./bds5-demo-customers-surface.md)
+- **BDS-6 (optional)** — Operation Item Explorer / finer Affected-record anchors
+- Later: Systems/Services design, UI overhaul, platform entity promotion only after demo value is proven
 
 ## Implementation anchors
 

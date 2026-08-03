@@ -82,7 +82,8 @@ This is **not** a release-candidate plan. Completing a row does not make Appertu
 - **BDS-2** Business metadata alignment for sample modules — complete (`docs/audits/bds2-closure.md`)
 - **BDS-3** Demo business record projection — complete (`docs/audits/bds3-demo-business-record-projection.md`)
 - **BDS-4** Demo business record client & API polish — complete (`docs/audits/bds4-demo-business-record-client-api-polish.md`)
-- **BDS-5** Business Record Surface (UI) *(next)*
+- **BDS-5** Demo Customers business record surface — complete (`docs/audits/bds5-demo-customers-surface.md`)
+- **BDS-6 (optional)** Operation Item Explorer / finer Affected-record anchors *(next)*
 - Integration-owned projections
 - Cross-integration lookup
 - Record detail pages

@@ -93,4 +93,4 @@ Requires authenticated actor with **`integration.read`** at **instance** scope (
 ## Next
 
 - **BDS-4** — complete: [bds4-demo-business-record-client-api-polish.md](./bds4-demo-business-record-client-api-polish.md)
-- **BDS-5** — Business Record Surface (list/detail UI, drill-through to Affected records / runs)
+- **BDS-5** — complete: [bds5-demo-customers-surface.md](./bds5-demo-customers-surface.md)

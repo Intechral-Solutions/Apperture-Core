@@ -73,6 +73,8 @@ public static class ManagementBreadcrumbResolver
         MatchDashboardManage,
         MatchDashboardDelete,
         MatchDashboardHome,
+        MatchDemoCustomerDetail,
+        MatchDemoCustomersList,
         MatchConfigLanding,
         MatchIntegrationsList,
         MatchRuntimeShutdownRequestDetail,
@@ -140,12 +142,17 @@ public static class ManagementBreadcrumbResolver
             return "Authentication, governance, notifications, attention, and platform maintenance.";
         if (p.Equals("/execute", StringComparison.OrdinalIgnoreCase))
             return "Start operations and workflows.";
+        if (p.Equals(DemoCustomerUiRoutes.List, StringComparison.OrdinalIgnoreCase)
+            || NavPathMatching.IsPathUnder(p, DemoCustomerUiRoutes.List))
+            return DemoCustomerUiHelpers.PageSubtitle;
         return null;
     }
 
     private static bool IsExcludedPath(string[] segments) =>
         segments[0].Equals("login", StringComparison.OrdinalIgnoreCase)
-        || segments[0].Equals("demo", StringComparison.OrdinalIgnoreCase);
+        || (segments[0].Equals("demo", StringComparison.OrdinalIgnoreCase)
+            && segments.Length >= 2
+            && segments[1].Equals("nested-nav", StringComparison.OrdinalIgnoreCase));
 
     private static string[] SplitPath(string path)
     {
@@ -882,6 +889,36 @@ public static class ManagementBreadcrumbResolver
         if (!Matches(s, "dashboard"))
             return false;
         c = Trail(("Dashboard", null));
+        return true;
+    }
+
+    // --- Demo customers (BDS-5) ---
+
+    private static bool MatchDemoCustomerDetail(string[] s, out IReadOnlyList<BreadcrumbItem>? c)
+    {
+        c = null;
+        if (s.Length != 3
+            || !s[0].Equals("demo", StringComparison.OrdinalIgnoreCase)
+            || !s[1].Equals("customers", StringComparison.OrdinalIgnoreCase)
+            || string.IsNullOrWhiteSpace(s[2]))
+            return false;
+        c = Trail(
+            ("Config", ShellSectionRoutes.ConfigHome),
+            ("Developer & internal", ShellSectionRoutes.DeveloperTasks),
+            ("Demo Customers", DemoCustomerUiRoutes.List),
+            (s[2], null));
+        return true;
+    }
+
+    private static bool MatchDemoCustomersList(string[] s, out IReadOnlyList<BreadcrumbItem>? c)
+    {
+        c = null;
+        if (!Matches(s, "demo", "customers"))
+            return false;
+        c = Trail(
+            ("Config", ShellSectionRoutes.ConfigHome),
+            ("Developer & internal", ShellSectionRoutes.DeveloperTasks),
+            ("Demo Customers", null));
         return true;
     }
 

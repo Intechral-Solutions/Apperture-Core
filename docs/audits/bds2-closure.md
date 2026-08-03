@@ -57,4 +57,6 @@ Section title/empty copy reframed to **Affected records** (panel framework uncha
 
 **BDS-4 — Demo Business Record Client & API Polish** — complete: see [bds4-demo-business-record-client-api-polish.md](./bds4-demo-business-record-client-api-polish.md).
 
-**BDS-5** — Demo Customers UI surface (business-first list/detail + drill-through).
+**BDS-5 — Demo Customers Business Record Surface** — complete: see [bds5-demo-customers-surface.md](./bds5-demo-customers-surface.md).
+
+**BDS-6 (optional)** — finer Affected-record anchors / Operation Item Explorer.
