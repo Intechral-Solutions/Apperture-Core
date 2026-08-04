@@ -12,13 +12,21 @@ public static class EntityShellTitles
         string.IsNullOrWhiteSpace(displayName) ? sectionLabel : displayName.Trim();
 
     /// <summary>
-    /// Normalizes a request path for shell context matching (trim, drop trailing slash).
+    /// Normalizes a request path for shell context matching (trim, drop query/fragment, drop trailing slash).
     /// </summary>
     public static string NormalizePath(string path)
     {
         var p = path.Trim();
         if (p.Length == 0)
             return "/";
+
+        var query = p.IndexOf('?', StringComparison.Ordinal);
+        if (query >= 0)
+            p = p[..query];
+        var fragment = p.IndexOf('#', StringComparison.Ordinal);
+        if (fragment >= 0)
+            p = p[..fragment];
+
         p = p.TrimEnd('/');
         return p.Length == 0 ? "/" : p;
     }

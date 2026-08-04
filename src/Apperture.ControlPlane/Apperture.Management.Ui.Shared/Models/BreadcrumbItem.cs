@@ -9,4 +9,19 @@ namespace Apperture.Management.Ui.Shared.Models;
 public sealed record BreadcrumbItem(
     string Label,
     string? Href = null,
-    bool IsCurrent = false);
+    bool IsCurrent = false)
+{
+    /// <summary>
+    /// True when this crumb should render as a navigable anchor (parent with a non-empty href).
+    /// </summary>
+    public bool IsLinked =>
+        !IsCurrent && !string.IsNullOrWhiteSpace(Href);
+
+    /// <summary>
+    /// Stable identity for Blazor <c>@key</c> when the trail is re-rendered after navigation.
+    /// </summary>
+    public string StableKey =>
+        IsCurrent
+            ? $"current:{Label}"
+            : $"link:{Href ?? ""}:{Label}";
+}

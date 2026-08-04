@@ -17,19 +17,33 @@ public sealed class ShellOrientationService
 
     public void SetPageContext(string path, string? title, string? subtitle)
     {
-        ContextPath = EntityShellTitles.NormalizePath(path);
-        PageTitle = string.IsNullOrWhiteSpace(title) ? null : title.Trim();
-        PageSubtitle = string.IsNullOrWhiteSpace(subtitle) ? null : subtitle.Trim();
+        var nextPath = EntityShellTitles.NormalizePath(path);
+        var nextTitle = string.IsNullOrWhiteSpace(title) ? null : title.Trim();
+        var nextSubtitle = string.IsNullOrWhiteSpace(subtitle) ? null : subtitle.Trim();
+
+        if (string.Equals(ContextPath, nextPath, StringComparison.Ordinal)
+            && string.Equals(PageTitle, nextTitle, StringComparison.Ordinal)
+            && string.Equals(PageSubtitle, nextSubtitle, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        ContextPath = nextPath;
+        PageTitle = nextTitle;
+        PageSubtitle = nextSubtitle;
         Changed?.Invoke();
     }
 
-    /// <summary>Clears page overrides and notifies listeners (e.g. on route change).</summary>
+    /// <summary>
+    /// Clears page overrides after a route change.
+    /// Does not raise <see cref="Changed"/> — the shell location handler schedules a single re-render
+    /// so route-derived orientation and cleared overrides apply together (avoids mid-navigation double render).
+    /// </summary>
     public void ResetPageContext()
     {
         ContextPath = null;
         PageTitle = null;
         PageSubtitle = null;
-        Changed?.Invoke();
     }
 
     public bool AppliesTo(string currentPath) =>

@@ -12,7 +12,7 @@ The Control Panel UI provides the navigation shell for the Apperture Management 
 
 - **Content area** — Shifts horizontally based on panel state: `ml-17` when closed, `ml-70` when open.
 
-- **Top bar** — Hamburger, **orientation area** (breadcrumb trail; optional future title row), theme and account menus (right). Parent crumbs are navigable links; current crumb is text. See [Epic 101](../02-decisions/Epic101-Top-Bar-Breadcrumbs-and-Parent-Context-Links.md).
+- **Top bar** — Hamburger, **orientation area** (breadcrumb trail; optional future title row), theme and account menus (right). Parent crumbs are navigable plain `<a href>` links; current crumb is text. See [Epic 101](../02-decisions/Epic101-Top-Bar-Breadcrumbs-and-Parent-Context-Links.md) and [UIX-2 stabilization](../audits/uix2-breadcrumb-shell-stabilization.md).
 
 ## Terminology
 
@@ -65,6 +65,6 @@ Page archetypes, summary/detail/advanced layering, drill-in rules, and pilot rec
 
 **Navigation audit (Epic 98):** Full route/menu inventory, information-flow journeys, hub/detail model, and recommended future domain structure — [Epic 98 — Navigation and information-flow audit](../02-decisions/Epic98-Management-UI-Navigation-and-Information-Flow-Audit.md).
 
-**Top-bar breadcrumbs (Epic 101):** Route-aware parent context in the shell top bar — [Epic 101](../02-decisions/Epic101-Top-Bar-Breadcrumbs-and-Parent-Context-Links.md).
+**Top-bar breadcrumbs (Epic 101 / UIX-2):** Route-aware parent context in the shell top bar — [Epic 101](../02-decisions/Epic101-Top-Bar-Breadcrumbs-and-Parent-Context-Links.md); renderer stabilization — [UIX-2](../audits/uix2-breadcrumb-shell-stabilization.md).
 
 **Stylesheets:** The dev host shell (`Apperture.Management.Ui.Server/Pages/_Layout.cshtml`) must load `css/management-ui-primitives.css` after `css/app.css` (same as WASM `index.html`). See Epic 97 toolbar corrective ADR.

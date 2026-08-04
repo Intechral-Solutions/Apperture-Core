@@ -16,8 +16,9 @@
         </div>
 
         <div class="ui-topbar__orientation flex min-w-0 flex-1 flex-col justify-center">
-            <TopBarOrientation @key="@_orientationKey"
-                               Parents="@RouteOrientation.Parents"
+            @* UIX-2: do not @key-remount orientation on every path change — remounting during
+               breadcrumb navigation desynchronized the Blazor render tree from the DOM. *@
+            <TopBarOrientation Parents="@RouteOrientation.Parents"
                                Title="@DisplayTitle"
                                Subtitle="@DisplaySubtitle" />
         </div>
@@ -35,7 +36,6 @@
     [Parameter] public bool IsControlPanelOpen { get; set; }
     [Parameter] public EventCallback<bool> OnHamburgerClick { get; set; }
 
-    private string _orientationKey = "/";
     private bool _disposed;
 
     private string CurrentPath =>
@@ -76,11 +76,7 @@
     {
         ShellOrientation.Changed += OnShellOrientationChanged;
         Nav.LocationChanged += OnLocationChanged;
-        SyncOrientationKey();
     }
-
-    protected override void OnParametersSet() =>
-        SyncOrientationKey();
 
     public void Dispose()
     {
@@ -96,17 +92,27 @@
         if (_disposed)
             return;
 
-        _ = InvokeAsync(StateHasChanged);
+        _ = InvokeAsync(() =>
+        {
+            if (_disposed)
+                return;
+            StateHasChanged();
+        });
     }
 
     private void OnLocationChanged(object? sender, LocationChangedEventArgs e)
     {
-        ShellOrientation.ResetPageContext();
-        SyncOrientationKey();
-        _ = InvokeAsync(StateHasChanged);
-    }
+        if (_disposed)
+            return;
 
-    private void SyncOrientationKey() =>
-        _orientationKey = CurrentPath;
+        // Clears page overrides without double-notifying when already empty.
+        ShellOrientation.ResetPageContext();
+
+        _ = InvokeAsync(() =>
+        {
+            if (_disposed)
+                return;
+            StateHasChanged();
+        });
+    }
 }
-

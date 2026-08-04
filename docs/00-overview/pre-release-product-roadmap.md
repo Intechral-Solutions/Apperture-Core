@@ -34,6 +34,24 @@ This is **not** a release-candidate plan. Completing a row does not make Appertu
 
 **Depends on:** Foundation shell (done). Benefits from demo modules for realistic content.
 
+### UIX arc (navigation / drill-through)
+
+```text
+UIX-1  Layered navigation and drill-through design audit
+UIX-2  Breadcrumb and shell rendering stabilization
+UIX-3  Affected-record anchors and return context
+UIX-4  Contextual breadcrumbs and link integrity
+UIX-5  Supporting panel and overlay pattern audit
+```
+
+| Epic | Status | Notes |
+|------|--------|--------|
+| **UIX-1** | Design audit (complete) | Layered navigation / drill-through intent; route-derived breadcrumbs as the normal spine. See BDS-1 §9 and related UI audits. |
+| **UIX-2** | Implemented | Breadcrumb/shell renderer stabilization — [`../audits/uix2-breadcrumb-shell-stabilization.md`](../audits/uix2-breadcrumb-shell-stabilization.md). |
+| **UIX-3** | Planned | Affected-record anchors and return context (URL params). |
+| **UIX-4** | Planned | Contextual breadcrumbs and link integrity. |
+| **UIX-5** | Planned | Supporting panel / overlay pattern audit. |
+
 ---
 
 ## Track 2 — User Profile & Preferences

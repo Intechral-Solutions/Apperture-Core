@@ -291,9 +291,12 @@ Complete — Demo Customers list/detail under Developer & internal. See [bds5-de
 
 - **BDS-6 (optional):** Operation Item Explorer as advanced cross-run activity filter (Option A), preferably scoped from a record or integration.
 - **SYS-1 — Systems/Services Model Design** (audit/design only until revisit triggers fire).
-- **UIX-1 — Layered Panel Navigation Design** (panel host, subordinate platform chrome, business-primary IA).
+- **UIX-1 — Layered navigation and drill-through design audit** (complete as design intent; route-derived breadcrumbs as the normal spine).
+- **UIX-2 — Breadcrumb and shell rendering stabilization** — [`uix2-breadcrumb-shell-stabilization.md`](./uix2-breadcrumb-shell-stabilization.md).
+- **UIX-3 — Affected-record anchors and return context** (planned).
+- **UIX-4 — Contextual breadcrumbs and link integrity** (planned).
+- **UIX-5 — Supporting panel and overlay pattern audit** (planned).
 - **Track 5 promotion:** only after demo projection proves value — consider promoting patterns into a platform entity model.
-
 ### Explicitly out of sequence until justified
 
 Platform `BusinessRecord` tables, cross-integration writes, live external systems, removing run/item UIs.

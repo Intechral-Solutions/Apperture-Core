@@ -86,9 +86,19 @@ public static class ManagementBreadcrumbResolver
     /// <summary>
     /// Resolves breadcrumbs for a request path (e.g. <see cref="Uri.AbsolutePath"/>).
     /// Returns an empty list when the path is excluded or unknown.
+    /// Deterministic from the URL only — no navigation history or async entity lookups.
     /// </summary>
     public static IReadOnlyList<BreadcrumbItem> Resolve(string path) =>
-        ResolveOrientation(path) switch
+        Resolve(path, ManagementBreadcrumbNavigationContext.None);
+
+    /// <summary>
+    /// Resolves breadcrumbs for a request path with an optional navigation context seam (UIX-3/4).
+    /// UIX-2 ignores <paramref name="navigationContext"/>; route rules alone determine the trail.
+    /// </summary>
+    public static IReadOnlyList<BreadcrumbItem> Resolve(
+        string path,
+        ManagementBreadcrumbNavigationContext? navigationContext) =>
+        ResolveOrientation(path, navigationContext) switch
         {
             { Title: not null } o => [.. o.Parents, new BreadcrumbItem(o.Title, IsCurrent: true)],
             _ => [],
@@ -97,8 +107,19 @@ public static class ManagementBreadcrumbResolver
     /// <summary>
     /// Resolves shell orientation: parent crumbs (all linkable), page title from the terminal segment, optional route subtitle.
     /// </summary>
-    public static ManagementShellOrientation ResolveOrientation(string path)
+    public static ManagementShellOrientation ResolveOrientation(string path) =>
+        ResolveOrientation(path, ManagementBreadcrumbNavigationContext.None);
+
+    /// <summary>
+    /// Resolves shell orientation with an optional navigation context seam (UIX-3/4).
+    /// UIX-2 ignores <paramref name="navigationContext"/>.
+    /// </summary>
+    public static ManagementShellOrientation ResolveOrientation(
+        string path,
+        ManagementBreadcrumbNavigationContext? navigationContext)
     {
+        _ = navigationContext; // reserved for validated drill-through context (UIX-3/4)
+
         var segments = SplitPath(path);
         if (segments.Length == 0 || IsExcludedPath(segments))
             return ManagementShellOrientation.Empty;
@@ -156,9 +177,25 @@ public static class ManagementBreadcrumbResolver
 
     private static string[] SplitPath(string path)
     {
-        var p = path.Trim();
-        if (p.Length == 0)
+        if (string.IsNullOrWhiteSpace(path))
             return [];
+
+        var p = path.Trim();
+
+        // Tolerate full URIs and query/fragment-bearing strings — breadcrumbs are path-only.
+        var query = p.IndexOf('?', StringComparison.Ordinal);
+        if (query >= 0)
+            p = p[..query];
+        var fragment = p.IndexOf('#', StringComparison.Ordinal);
+        if (fragment >= 0)
+            p = p[..fragment];
+
+        if (p.Contains("://", StringComparison.Ordinal))
+        {
+            if (Uri.TryCreate(p, UriKind.Absolute, out var absolute))
+                p = absolute.AbsolutePath;
+        }
+
         p = p.TrimEnd('/');
         if (p.Length == 0 || p == "/")
             return [];
