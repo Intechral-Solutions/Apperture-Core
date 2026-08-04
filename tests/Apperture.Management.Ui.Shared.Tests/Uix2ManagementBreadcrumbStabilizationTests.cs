@@ -58,7 +58,6 @@ public sealed class Uix2ManagementBreadcrumbStabilizationTests
     [InlineData("/schedules/%20bad")]
     public void Resolve_malformed_identifiers_still_match_detail_templates(string path)
     {
-        // Resolver uses segment shape, not GUID parse — must not throw.
         var act = () => ManagementBreadcrumbResolver.Resolve(path);
         act.Should().NotThrow();
         var crumbs = act();
@@ -109,17 +108,131 @@ public sealed class Uix2ManagementBreadcrumbStabilizationTests
     }
 
     [Fact]
-    public void ManagementBreadcrumbs_use_plain_anchors_with_stable_keys()
+    public void LocationState_initial_route_renders_expected_parents()
+    {
+        using var state = new ManagementBreadcrumbLocationState();
+        state.Initialize("https://app.local/runs/run-1");
+        state.Parents.Select(c => c.Label).Should().Equal("Automation", "Runs");
+        state.Orientation.Title.Should().Be("Run");
+    }
+
+    [Fact]
+    public void LocationState_navigating_to_second_route_updates_parents()
+    {
+        using var state = new ManagementBreadcrumbLocationState();
+        state.Initialize("https://app.local/dashboard");
+        state.TryApplyLocation("https://app.local/runs").Should().BeTrue();
+        state.Orientation.Title.Should().Be("Runs");
+        state.Parents.Should().ContainSingle(c => c.Label == "Automation");
+    }
+
+    [Fact]
+    public void LocationState_repeated_navigation_keeps_updating()
+    {
+        using var state = new ManagementBreadcrumbLocationState();
+        state.Initialize("https://app.local/dashboard");
+
+        state.TryApplyLocation("https://app.local/runs").Should().BeTrue();
+        state.Orientation.Title.Should().Be("Runs");
+
+        state.TryApplyLocation("https://app.local/integrations/int-1").Should().BeTrue();
+        state.Parents.Select(c => c.Label).Should().Equal("Integrations");
+        state.Orientation.Title.Should().Be("Integration");
+
+        state.TryApplyLocation("https://app.local/demo/customers/C-100").Should().BeTrue();
+        state.Parents.Select(c => c.Label).Should().Equal("Config", "Developer & internal", "Demo Customers");
+    }
+
+    [Fact]
+    public void LocationState_back_and_forward_style_uri_changes_update()
+    {
+        using var state = new ManagementBreadcrumbLocationState();
+        state.Initialize("https://app.local/runs");
+        state.TryApplyLocation("https://app.local/runs/run-1").Should().BeTrue();
+        state.TryApplyLocation("https://app.local/runs").Should().BeTrue(); // back
+        state.Orientation.Title.Should().Be("Runs");
+        state.TryApplyLocation("https://app.local/runs/run-1").Should().BeTrue(); // forward
+        state.Orientation.Title.Should().Be("Run");
+    }
+
+    [Fact]
+    public void LocationState_query_bearing_route_triggers_observation_without_stale_trail()
+    {
+        using var state = new ManagementBreadcrumbLocationState();
+        state.Initialize("https://app.local/runs/run-1");
+        state.TryApplyLocation("https://app.local/integrations/int-1?tab=bindings").Should().BeTrue();
+        state.ObservedPathAndQuery.Should().Be("/integrations/int-1?tab=bindings");
+        state.Parents.Select(c => c.Label).Should().Equal("Integrations");
+        state.Orientation.Title.Should().Be("Integration");
+    }
+
+    [Fact]
+    public void LocationState_same_observation_key_skips_rerender_signal()
+    {
+        using var state = new ManagementBreadcrumbLocationState();
+        state.Initialize("https://app.local/runs/run-1?tab=a");
+        state.TryApplyLocation("https://app.local/runs/run-1?tab=a").Should().BeFalse();
+        state.TryApplyLocation("https://app.local/runs/run-1?tab=b").Should().BeTrue();
+    }
+
+    [Fact]
+    public void LocationState_fragment_only_change_does_not_retrigger()
+    {
+        using var state = new ManagementBreadcrumbLocationState();
+        state.Initialize("https://app.local/runs/run-1#one");
+        state.TryApplyLocation("https://app.local/runs/run-1#two").Should().BeFalse();
+    }
+
+    [Fact]
+    public void LocationState_dispose_blocks_further_updates()
+    {
+        var state = new ManagementBreadcrumbLocationState();
+        state.Initialize("https://app.local/runs");
+        state.Dispose();
+        state.IsDisposed.Should().BeTrue();
+        state.TryApplyLocation("https://app.local/integrations").Should().BeFalse();
+        state.Refresh("https://app.local/integrations").Should().BeFalse();
+        state.Orientation.Title.Should().Be("Runs");
+    }
+
+    [Fact]
+    public void LocationState_callback_after_dispose_does_not_mutate()
+    {
+        var state = new ManagementBreadcrumbLocationState();
+        state.Initialize("https://app.local/dashboard");
+        var before = state.Orientation;
+        state.Dispose();
+
+        // Host pattern: guard before StateHasChanged equivalent.
+        var shouldRender = state.TryApplyLocation("https://app.local/runs");
+        shouldRender.Should().BeFalse();
+        state.Orientation.Should().BeSameAs(before);
+    }
+
+    [Fact]
+    public void Tracker_observation_key_includes_query_excludes_fragment()
+    {
+        ManagementShellOrientationTracker.GetObservationKey("https://app.local/runs/r1?from=x#frag")
+            .Should().Be("/runs/r1?from=x");
+        ManagementShellOrientationTracker.GetObservationKey("/runs/r1?from=x#frag")
+            .Should().Be("/runs/r1?from=x");
+    }
+
+    [Fact]
+    public void ManagementBreadcrumbs_are_location_aware_plain_anchors()
     {
         var content = File.ReadAllText(ClientPath("Molecules", "ManagementBreadcrumbs.razor"));
+        content.Should().Contain("@inject NavigationManager Nav");
+        content.Should().Contain("LocationChanged +=");
+        content.Should().Contain("LocationChanged -=");
+        content.Should().Contain("TryApplyLocation");
         content.Should().Contain("@key=\"item.StableKey\"");
-        content.Should().Contain("item.IsLinked");
         content.Should().Contain("href=\"@item.Href\"");
         content.Should().Contain("aria-current");
         content.Should().NotContain("@onclick");
         content.Should().NotContain("preventDefault");
         content.Should().NotContain("NavigateTo");
-        content.Should().NotContain("@inject NavigationManager");
+        content.Should().NotContain("[Parameter]");
     }
 
     [Fact]
@@ -129,19 +242,19 @@ public sealed class Uix2ManagementBreadcrumbStabilizationTests
         content.Should().Contain("<TopBarOrientation");
         content.Should().NotContain("@key=\"@_orientationKey\"");
         content.Should().NotContain("_orientationKey");
-        content.Should().Contain("LocationChanged");
-        content.Should().Contain("_disposed");
-        content.Should().Contain("ShellOrientation.Changed -=");
+        content.Should().Contain("ResetPageContext");
         content.Should().Contain("Nav.LocationChanged -=");
     }
 
     [Fact]
-    public void TopBarOrientation_renders_parents_only_without_duplicating_title_in_trail()
+    public void TopBarOrientation_is_location_aware_for_title_without_passing_parents()
     {
         var content = File.ReadAllText(ClientPath("Molecules", "TopBarOrientation.razor"));
-        content.Should().Contain("<ManagementBreadcrumbs Items=\"@Parents\"");
-        content.Should().Contain("Title");
-        content.Should().Contain("Subtitle");
+        content.Should().Contain("<ManagementBreadcrumbs");
+        content.Should().NotContain("Items=\"@Parents\"");
+        content.Should().Contain("LocationChanged +=");
+        content.Should().Contain("LocationChanged -=");
+        content.Should().Contain("ShellOrientation.Changed -=");
     }
 
     [Fact]

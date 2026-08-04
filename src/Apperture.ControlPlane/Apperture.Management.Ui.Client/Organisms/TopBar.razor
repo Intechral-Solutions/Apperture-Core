@@ -1,7 +1,5 @@
 @using Apperture.Management.Ui.Client.Molecules
 @using Apperture.Management.Ui.Client.Services
-@using Apperture.Management.Ui.Shared
-@using Apperture.Management.Ui.Shared.Models
 @implements IDisposable
 
 @inject NavigationManager Nav
@@ -16,11 +14,8 @@
         </div>
 
         <div class="ui-topbar__orientation flex min-w-0 flex-1 flex-col justify-center">
-            @* UIX-2: do not @key-remount orientation on every path change — remounting during
-               breadcrumb navigation desynchronized the Blazor render tree from the DOM. *@
-            <TopBarOrientation Parents="@RouteOrientation.Parents"
-                               Title="@DisplayTitle"
-                               Subtitle="@DisplaySubtitle" />
+            @* UIX-2: orientation owns location-aware refresh; do not @key-remount this subtree. *@
+            <TopBarOrientation />
         </div>
 
         <div class="ui-topbar__utilities flex shrink-0 items-center gap-2 md:gap-4">
@@ -38,43 +33,9 @@
 
     private bool _disposed;
 
-    private string CurrentPath =>
-        EntityShellTitles.NormalizePath(new Uri(Nav.Uri).AbsolutePath);
-
-    private ManagementShellOrientation RouteOrientation =>
-        ManagementBreadcrumbResolver.ResolveOrientation(CurrentPath);
-
-    private string? DisplayTitle => ResolveDisplayTitle();
-
-    private string? DisplaySubtitle => ResolveDisplaySubtitle();
-
-    private string? ResolveDisplayTitle()
-    {
-        if (ShellOrientation.AppliesTo(CurrentPath)
-            && !string.IsNullOrWhiteSpace(ShellOrientation.PageTitle)
-            && !EntityShellTitles.LooksLikeRouteKey(ShellOrientation.PageTitle, CurrentPath))
-        {
-            return ShellOrientation.PageTitle;
-        }
-
-        return RouteOrientation.Title;
-    }
-
-    private string? ResolveDisplaySubtitle()
-    {
-        if (ShellOrientation.AppliesTo(CurrentPath)
-            && !string.IsNullOrWhiteSpace(ShellOrientation.PageSubtitle)
-            && !EntityShellTitles.LooksLikeRouteKey(ShellOrientation.PageSubtitle, CurrentPath))
-        {
-            return ShellOrientation.PageSubtitle;
-        }
-
-        return RouteOrientation.Subtitle;
-    }
-
     protected override void OnInitialized()
     {
-        ShellOrientation.Changed += OnShellOrientationChanged;
+        // Clear page title overrides on navigation; orientation components re-resolve from the URI.
         Nav.LocationChanged += OnLocationChanged;
     }
 
@@ -83,21 +44,7 @@
         if (_disposed)
             return;
         _disposed = true;
-        ShellOrientation.Changed -= OnShellOrientationChanged;
         Nav.LocationChanged -= OnLocationChanged;
-    }
-
-    private void OnShellOrientationChanged()
-    {
-        if (_disposed)
-            return;
-
-        _ = InvokeAsync(() =>
-        {
-            if (_disposed)
-                return;
-            StateHasChanged();
-        });
     }
 
     private void OnLocationChanged(object? sender, LocationChangedEventArgs e)
@@ -105,14 +52,6 @@
         if (_disposed)
             return;
 
-        // Clears page overrides without double-notifying when already empty.
         ShellOrientation.ResetPageContext();
-
-        _ = InvokeAsync(() =>
-        {
-            if (_disposed)
-                return;
-            StateHasChanged();
-        });
     }
 }

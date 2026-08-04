@@ -1,27 +1,126 @@
+@using Apperture.Management.Ui.Client.Services
+@using Apperture.Management.Ui.Shared
 @using Apperture.Management.Ui.Shared.Models
+@implements IDisposable
+
+@inject NavigationManager Nav
+@inject ShellOrientationService ShellOrientation
 
 <div class="ui-topbar-orientation min-w-0">
-    @if (Parents.Count > 0)
-    {
-        <ManagementBreadcrumbs Items="@Parents" />
-    }
-    @if (!string.IsNullOrWhiteSpace(Title) || !string.IsNullOrWhiteSpace(Subtitle))
+    <ManagementBreadcrumbs />
+    @if (!string.IsNullOrWhiteSpace(_title) || !string.IsNullOrWhiteSpace(_subtitle))
     {
         <div class="ui-topbar__heading-line">
-            @if (!string.IsNullOrWhiteSpace(Title))
+            @if (!string.IsNullOrWhiteSpace(_title))
             {
-                <div class="ui-topbar__title truncate" role="heading" aria-level="1">@Title</div>
+                <div class="ui-topbar__title truncate" role="heading" aria-level="1">@_title</div>
             }
-            @if (!string.IsNullOrWhiteSpace(Subtitle))
+            @if (!string.IsNullOrWhiteSpace(_subtitle))
             {
-                <p class="ui-topbar__subtitle truncate">@Subtitle</p>
+                <p class="ui-topbar__subtitle truncate">@_subtitle</p>
             }
         </div>
     }
 </div>
 
 @code {
-    [Parameter] public IReadOnlyList<BreadcrumbItem> Parents { get; set; } = [];
-    [Parameter] public string? Title { get; set; }
-    [Parameter] public string? Subtitle { get; set; }
+    private readonly ManagementBreadcrumbLocationState _location = new();
+    private string? _title;
+    private string? _subtitle;
+    private bool _disposed;
+
+    protected override void OnInitialized()
+    {
+        ApplyFromUri(force: true);
+        Nav.LocationChanged += OnLocationChanged;
+        ShellOrientation.Changed += OnShellOrientationChanged;
+    }
+
+    public void Dispose()
+    {
+        if (_disposed)
+            return;
+
+        _disposed = true;
+        Nav.LocationChanged -= OnLocationChanged;
+        ShellOrientation.Changed -= OnShellOrientationChanged;
+        _location.Dispose();
+    }
+
+    private void OnLocationChanged(object? sender, LocationChangedEventArgs e)
+    {
+        if (_disposed)
+            return;
+
+        _ = InvokeAsync(() =>
+        {
+            if (_disposed)
+                return;
+
+            if (!ApplyFromUri(force: false))
+                return;
+
+            StateHasChanged();
+        });
+    }
+
+    private void OnShellOrientationChanged()
+    {
+        if (_disposed)
+            return;
+
+        _ = InvokeAsync(() =>
+        {
+            if (_disposed)
+                return;
+
+            // Title/subtitle overrides may change without a URI change (async page load).
+            if (!_location.Refresh(Nav.Uri))
+                return;
+
+            ApplyTitleSubtitle();
+            StateHasChanged();
+        });
+    }
+
+    private bool ApplyFromUri(bool force)
+    {
+        var changed = force
+            ? _location.Refresh(Nav.Uri)
+            : _location.TryApplyLocation(Nav.Uri);
+
+        if (!changed && !force)
+            return false;
+
+        ApplyTitleSubtitle();
+        return true;
+    }
+
+    private void ApplyTitleSubtitle()
+    {
+        var path = _location.CurrentPath;
+        var route = _location.Orientation;
+
+        if (ShellOrientation.AppliesTo(path)
+            && !string.IsNullOrWhiteSpace(ShellOrientation.PageTitle)
+            && !EntityShellTitles.LooksLikeRouteKey(ShellOrientation.PageTitle, path))
+        {
+            _title = ShellOrientation.PageTitle;
+        }
+        else
+        {
+            _title = route.Title;
+        }
+
+        if (ShellOrientation.AppliesTo(path)
+            && !string.IsNullOrWhiteSpace(ShellOrientation.PageSubtitle)
+            && !EntityShellTitles.LooksLikeRouteKey(ShellOrientation.PageSubtitle, path))
+        {
+            _subtitle = ShellOrientation.PageSubtitle;
+        }
+        else
+        {
+            _subtitle = route.Subtitle;
+        }
+    }
 }

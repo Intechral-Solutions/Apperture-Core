@@ -1,128 +1,124 @@
 # UIX-2 — Breadcrumb and shell rendering stabilization
 
-**Status:** Complete  
+**Status:** Complete (with corrective pass for stale trails)  
 **Date:** 2026-08-04  
 **Related:** [Epic 101](../02-decisions/Epic101-Top-Bar-Breadcrumbs-and-Parent-Context-Links.md), [pre-release product roadmap](../00-overview/pre-release-product-roadmap.md) Track 1 UIX arc
 
 ## Executive summary
 
-Ordinary route-derived breadcrumbs in the Management UI top bar were unreliable: clicks often failed and Blazor WebAssembly logged renderer exceptions (`Symbol()`, `parentNode`, then cascading “No element is currently associated with component”). UIX-2 restores plain URL-driven breadcrumb anchors, stops force-remounting the orientation subtree on every navigation, hardens shell lifecycle disposal, and documents a minimal resolver overload for later drill-through context — without introducing breadcrumb history or navigation-state stores.
+UIX-2 had two defects:
 
-## Original symptoms
+1. **Renderer desynchronization** — Epic 101 click-intercepted breadcrumb anchors plus a TopBar `@key` remount of the orientation subtree caused Blazor WASM `Symbol()` / `parentNode` / orphaned component errors.
+2. **Stale breadcrumbs after navigation** (operator smoke) — Removing the `@key` remount fixed the renderer, but the remount had been the only reliable way breadcrumbs re-initialized. With the subtree left mounted, trails stayed stuck on the first loaded route until an explicit location-change resolve path was added.
+
+The corrective pass makes breadcrumb (and title) resolution **location-aware** while keeping the shell mounted: no keyed remount, no click interception, no breadcrumb history store.
+
+## Original symptoms (pass 1)
 
 - Breadcrumb links only rarely navigated successfully.
-- Console on initial load and after breadcrumb clicks:
+- Console: `Symbol()`, `parentNode`, then cascading “No element is currently associated with component”.
 
-  - `TypeError: Cannot read properties of undefined (reading 'Symbol()')`
-  - `TypeError: Cannot read properties of undefined (reading 'parentNode')`
-  - Repeated `Error: No element is currently associated with component N`
+## Operator regression (pass 2)
 
-- Cascading association errors followed the first renderer failure (secondary).
+- Direct load showed the correct trail.
+- Client-side navigation updated page content correctly.
+- Breadcrumbs continued showing the **first** route’s trail.
 
-## Confirmed root cause
+## Confirmed root causes
 
-**Primary:** Epic 101’s corrective navigation pattern on `ManagementBreadcrumbs` — `@onclick` + `@onclick:preventDefault` + `NavigationManager.NavigateTo` on parent `<a href>` elements — combined with `TopBar` remounting `TopBarOrientation` via `@key="@_orientationKey"` on every path change.
+### Pass 1 — renderer / DOM desync
 
-Sequence:
+Epic 101’s `@onclick` + `@onclick:preventDefault` + `NavigateTo` on parent `<a href>` elements, combined with `TopBar` remounting `TopBarOrientation` via `@key="@_orientationKey"` on every path change, destroyed the orientation DOM mid-navigation and desynchronized the Blazor render tree.
 
-1. Operator clicks a breadcrumb `<a>`.
-2. Blazor intercepts the click (`preventDefault`), calls `NavigateTo`.
-3. `LocationChanged` clears shell page context and updates `_orientationKey`.
-4. `@key` destroys and recreates the orientation/breadcrumb subtree while the click/navigation event is still resolving.
-5. The renderer and browser DOM fall out of sync → `Symbol()` / `parentNode` → orphaned component IDs.
+### Pass 2 — stale trails after removing `@key`
 
-**Contributing:** `ShellOrientation.ResetPageContext()` raised `Changed` during `LocationChanged`, scheduling an extra `StateHasChanged` alongside the location handler’s own re-render.
+The `@key` remount had **masked** the absence of an explicit location-update path:
 
-Breadcrumb resolution itself (static `ManagementBreadcrumbResolver`) was not the failure source.
+- `ManagementBreadcrumbs` was a pure parameter sink (`Items`).
+- `TopBar` computed orientation only during its own render.
+- After removing `@key`, the breadcrumb subtree persisted across routes.
+- Without a dedicated `NavigationManager.LocationChanged` → re-resolve → `StateHasChanged` ownership on the breadcrumb/orientation components, trails did not refresh.
 
-## Why the renderer and DOM became unsynchronized
+**Do not restore the keyed remount.** Location observation is the correct fix.
 
-Blazor owns the DOM for the top-bar orientation region. Destroying that subtree mid-event (keyed remount) while also suppressing native anchor navigation left the framework tracking components whose DOM nodes were already gone or half-updated. Later updates then reported missing element associations.
+## Implementation (final)
 
-## Files and components involved
+### Pass 1 (retained)
 
-| Area | Path |
-|------|------|
-| Shell layout | `MainLayout.razor` |
-| Top bar | `Organisms/TopBar.razor` |
-| Orientation | `Molecules/TopBarOrientation.razor` |
-| Breadcrumbs | `Molecules/ManagementBreadcrumbs.razor` |
-| Resolver | `ManagementBreadcrumbResolver.cs` |
-| Models | `BreadcrumbItem.cs`, `ManagementBreadcrumbNavigationContext.cs` |
-| Page title publish | `ShellOrientationService.cs`, `PageHeader.razor` |
-| Schedule plane JS | `wwwroot/js/control-panel-resize.js` (panel width only; not breadcrumb DOM) |
+- Plain `<a href>` breadcrumb links (no click interception).
+- No `@key` remount of orientation.
+- `ShellOrientationService.ResetPageContext` clears silently on route change (TopBar).
+- Resolver strips query/fragment; optional `ManagementBreadcrumbNavigationContext` seam for UIX-3/4.
+- `BreadcrumbItem.IsLinked` / `StableKey`.
 
-## Implementation changes
+### Pass 2 (corrective)
 
-1. **`ManagementBreadcrumbs`** — Plain `<a href>` for linked parents; no `NavigationManager`, no `@onclick` / `preventDefault`. `@key="item.StableKey"`. `aria-current="page"` on current text segments. Uses `BreadcrumbItem.IsLinked`.
-2. **`TopBar`** — Removed `@key` remount of `TopBarOrientation`. Safer disposed guards on `LocationChanged` / `Changed` callbacks with unsubscribe on dispose.
-3. **`ShellOrientationService`** — `ResetPageContext` clears silently so route change does one coordinated re-render; `SetPageContext` still raises `Changed` and skips no-op publishes.
-4. **`ManagementBreadcrumbResolver`** — Strips query/fragment (and absolute URIs) in `SplitPath`. Overloads `Resolve` / `ResolveOrientation` accept optional `ManagementBreadcrumbNavigationContext` (ignored in UIX-2; seam for UIX-3/4).
-5. **`BreadcrumbItem`** — `IsLinked`, `StableKey` helpers.
-6. **`EntityShellTitles.NormalizePath`** — Strips query/fragment for shell matching.
+| Piece | Role |
+|-------|------|
+| `ManagementShellOrientationTracker` | Observes **path + query** (fragment ignored); resolver still path-only |
+| `ManagementBreadcrumbLocationState` | Initialize / TryApplyLocation / Refresh / Dispose guards |
+| `ManagementBreadcrumbs` | Subscribes to `LocationChanged`, re-resolves parents, `InvokeAsync` + disposed guards, unsubscribes on dispose |
+| `TopBarOrientation` | Location-aware title/subtitle (route + `ShellOrientation` overrides); hosts `<ManagementBreadcrumbs />` |
+| `TopBar` | Hosts orientation; on `LocationChanged` only resets page-context overrides |
+
+Observation includes query so future UIX-3/4 context-only query changes can trigger reevaluation; UIX-2 resolver rules still ignore query/fragment for the trail itself.
 
 ## Alternatives considered
 
 | Alternative | Why not |
 |-------------|---------|
-| Keep `NavigateTo` but drop `@key` | Still fights the router; epic requires no JS dependency for normal breadcrumb nav |
-| Keep `@key` but drop click intercept | Remount still unnecessary and riskier on fast nav |
-| Breadcrumb history service | Explicitly excluded; trails must stay URL-derived |
-| Full contextual crumb framework | Deferred to UIX-3/4 |
+| Restore `@key` remount | Reintroduces renderer desync risk; masks missing location ownership |
+| Keep `NavigateTo` click intercept | Fights the router; excluded by epic |
+| Breadcrumb history / per-page `Set` | Excluded; trails stay URL-derived |
+| Use domain-menu / orientation events as sole nav proxy | Fragile; location must be first-class |
 
-## Investigation checklist results
+## Investigation checklist
 
 | Check | Result |
 |-------|--------|
-| Manual `RenderTreeBuilder` / custom `BuildRenderTree` on shell path | Not present on breadcrumb path |
-| JS mutating top-bar / breadcrumb DOM | Ruled out — resize script only mutates panel CSS var / temporary measure node |
-| Framework package mismatch | `Microsoft.AspNetCore.Components.WebAssembly` **10.0.7** aligned with other AspNetCore 10.0.7 packages (central `Directory.Packages.props`) |
-| Browser extensions | Not runtime-verified in this pass; root cause reproduced from code path without requiring extension interference. Recommend smoke in Incognito when validating locally. |
-| Lifecycle unsubscribe | Present before; strengthened disposed guards |
+| JS mutating breadcrumb DOM | Ruled out |
+| Framework package mismatch | WASM / AspNetCore **10.0.7** aligned |
+| Browser extensions | Not required to explain either defect |
+| Keyed remount as refresh mechanism | Confirmed masking effect for stale trails |
 
 ## Test results
 
 ```text
-dotnet build src/Apperture.ControlPlane/Apperture.Management.Ui.Client/Apperture.Management.Ui.Client.csproj
-  → Build succeeded (0 errors; preexisting nullable warnings unrelated to UIX-2)
-
-dotnet test tests/Apperture.Management.Ui.Shared.Tests/Apperture.Management.Ui.Shared.Tests.csproj
-  → Passed: 419, Failed: 0
-
-dotnet test tests/Apperture.ArchTests/Apperture.ArchTests.csproj
+dotnet test ... --filter FullyQualifiedName~Uix2
   → Passed: 34, Failed: 0
+
+dotnet build ...Management.Ui.Client.csproj
+  → Build succeeded
 ```
 
-Coverage added in `Uix2ManagementBreadcrumbStabilizationTests.cs`: list/detail/nested routes, query/fragment ignore, malformed ids, incomplete/unknown fallbacks, navigation-context seam no-op, `StableKey`/`IsLinked`, source inspection that breadcrumbs stay plain anchors and TopBar does not key-remount orientation.
+`Uix2ManagementBreadcrumbStabilizationTests` covers resolver behavior, location-state init/nav/back-forward/query/dispose, and source inspection that breadcrumbs stay plain anchors, subscribe/unsubscribe to `LocationChanged`, and TopBar does not key-remount orientation.
 
 ## Runtime smoke-test results
 
-Automated/browser smoke against a live Aspire stack was **not fully executed in the agent environment** for this closure. Recommended operator checklist (post-deploy):
+**Pass 1:** Renderer errors addressed in code; full Aspire console smoke not completed in-agent.  
+**Pass 2:** Operator smoke discovered stale trails; corrective implemented. Re-validate locally with Preserve Log:
 
-| Route | Direct load | Breadcrumb click | Refresh | Back/forward |
-|-------|-------------|------------------|---------|--------------|
-| `/dashboard` | ☐ | ☐ | ☐ | ☐ |
-| `/runs` → `/runs/{id}` | ☐ | ☐ | ☐ | ☐ |
-| `/integrations` → detail | ☐ | ☐ | ☐ | ☐ |
-| `/schedules` → detail | ☐ | ☐ | ☐ | ☐ |
-| Config hub | ☐ | ☐ | ☐ | ☐ |
-| `/demo/customers` → detail | ☐ | ☐ | ☐ | ☐ |
-
-Pass criteria: no `Symbol()` / `parentNode` / “No element is currently associated” / “Unhandled exception rendering component” tied to top-bar breadcrumbs.
-
-Distinguish unrelated preexisting warnings (e.g. third-party or auth noise) from breadcrumb/shell failures.
+| Flow | Breadcrumbs update | No renderer errors |
+|------|--------------------|--------------------|
+| Dashboard → Runs | ☐ | ☐ |
+| Runs → Run detail | ☐ | ☐ |
+| Detail crumb → Runs | ☐ | ☐ |
+| Integrations → detail | ☐ | ☐ |
+| Config → nested | ☐ | ☐ |
+| Demo Customers → detail | ☐ | ☐ |
+| Back / Forward | ☐ | ☐ |
+| Refresh on detail | ☐ | ☐ |
+| Three+ areas repeatedly | ☐ | ☐ |
 
 ## Known limitations
 
-- Terminal page title still comes from resolver / `PageHeader` publish — not duplicated in the breadcrumb trail (by design).
-- `ManagementBreadcrumbNavigationContext` is a seam only; no query contracts yet.
-- Nav rail / control panel still use their own `preventDefault` + `NavigateTo` patterns (out of UIX-2 scope unless they prove to cause the same class of failure).
-- Capability-filtered crumbs and entity display names remain deferred (Epic 101 deferred list).
+- Terminal title remains outside the crumb trail (by design).
+- `ManagementBreadcrumbNavigationContext` is a seam only.
+- Nav rail / control panel may still use `preventDefault` + `NavigateTo` (out of scope).
+- In-agent Aspire smoke for pass 2 not recorded; operator re-validation required.
 
 ## Handoff — UIX-3 / UIX-4
 
-- **UIX-3:** Affected-record anchors and return context via URL parameters (`from` / similar). Feed validated context into `Resolve(path, navigationContext)` without a session stack.
-- **UIX-4:** Contextual breadcrumb replacement and link integrity; keep trails deterministic from URL + optional validated context.
-- **UIX-5:** Panel/overlay pattern audit — do not fold into breadcrumb state.
-
-Do **not** reintroduce click-intercepted breadcrumb anchors or keyed remount of the orientation subtree without a proven isolated DOM boundary.
+- Feed validated query context into `Resolve(path, navigationContext)`.
+- Observation already keys on path+query so context-only query changes can refresh.
+- Do **not** reintroduce click-intercepted crumbs or orientation `@key` remounts.
