@@ -3,9 +3,9 @@ using Apperture.Management.Ui.Shared.Models;
 namespace Apperture.Management.Ui.Shared;
 
 /// <summary>
-/// Tracks the observed navigation URI for shell orientation and resolves route-derived breadcrumbs.
-/// Observation includes path + query (so later contextual query changes can trigger reevaluation);
-/// the resolver still strips query/fragment for UIX-2 trail rules.
+/// Tracks the observed navigation URI for shell orientation and resolves breadcrumbs.
+/// Observation includes path + query so contextual query changes reevaluate (UIX-2/4).
+/// Path drives destination-local rules; query supplies typed navigation context only.
 /// </summary>
 public sealed class ManagementShellOrientationTracker
 {
@@ -46,8 +46,7 @@ public sealed class ManagementShellOrientationTracker
     public bool TryApply(string navigationUri, out ManagementShellOrientation orientation)
     {
         var key = GetObservationKey(navigationUri);
-        var path = EntityShellTitles.NormalizePath(key);
-        orientation = ManagementBreadcrumbResolver.ResolveOrientation(path);
+        orientation = ManagementBreadcrumbResolver.ResolveOrientationFromNavigationUri(navigationUri);
 
         if (string.Equals(key, _observedPathAndQuery, StringComparison.Ordinal))
             return false;
@@ -61,6 +60,6 @@ public sealed class ManagementShellOrientationTracker
     {
         var key = GetObservationKey(navigationUri);
         _observedPathAndQuery = key;
-        return ManagementBreadcrumbResolver.ResolveOrientation(EntityShellTitles.NormalizePath(key));
+        return ManagementBreadcrumbResolver.ResolveOrientationFromNavigationUri(navigationUri);
     }
 }

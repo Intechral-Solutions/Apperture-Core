@@ -8,7 +8,7 @@
 
 ## Executive summary
 
-UIX-3 connects Demo Customer provenance to Run Detail **Affected records** using typed URL query parameters. Operators can open a precise operation group/item and return to the originating demo customer via an in-page affordance. Top-bar breadcrumbs remain route-derived (UIX-4 deferred).
+UIX-3 connects Demo Customer provenance to Run Detail **Affected records** using typed URL query parameters. Operators can open a precise operation group/item and return to the originating demo customer via an in-page affordance. Top-bar breadcrumbs remained route-derived in UIX-3; contextual composition is UIX-4 ([`uix4-contextual-breadcrumbs-link-integrity.md`](./uix4-contextual-breadcrumbs-link-integrity.md)).
 
 ## Accepted BDS-6 decision
 
@@ -101,6 +101,6 @@ Operator checklist (Aspire + DevTools, Preserve Log): exact item, group-only, pa
 
 ## Deferred
 
-- **UIX-4:** contextual breadcrumb composition from validated return context
-- **BDS-6 (optional):** cross-run affected-record explorer
+- **UIX-4:** contextual breadcrumb composition from validated return context — **implemented** ([`uix4-contextual-breadcrumbs-link-integrity.md`](./uix4-contextual-breadcrumbs-link-integrity.md)). Historical note: UIX-3 intentionally left top-bar breadcrumbs route-derived.
+- **BDS-6:** cross-run business-record activity and lineage (after UIX-4)
 - **UIX-5:** panel/drawer framework

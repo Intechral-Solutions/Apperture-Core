@@ -92,8 +92,8 @@ public static class ManagementBreadcrumbResolver
         Resolve(path, ManagementBreadcrumbNavigationContext.None);
 
     /// <summary>
-    /// Resolves breadcrumbs for a request path with an optional navigation context seam (UIX-3/4).
-    /// UIX-2 ignores <paramref name="navigationContext"/>; route rules alone determine the trail.
+    /// Resolves breadcrumbs for a request path with optional validated navigation context (UIX-4).
+    /// When context is absent or unsupported, behavior matches route-derived trails.
     /// </summary>
     public static IReadOnlyList<BreadcrumbItem> Resolve(
         string path,
@@ -111,15 +111,25 @@ public static class ManagementBreadcrumbResolver
         ResolveOrientation(path, ManagementBreadcrumbNavigationContext.None);
 
     /// <summary>
-    /// Resolves shell orientation with an optional navigation context seam (UIX-3/4).
-    /// UIX-2 ignores <paramref name="navigationContext"/>.
+    /// Resolves shell orientation from a full navigation URI (path + query).
+    /// Query supplies typed context only; path still drives destination-local rules.
+    /// </summary>
+    public static ManagementShellOrientation ResolveOrientationFromNavigationUri(string navigationUri)
+    {
+        var key = ManagementShellOrientationTracker.GetObservationKey(navigationUri);
+        var path = EntityShellTitles.NormalizePath(key);
+        var context = ManagementNavigationContextCatalog.TryParseBreadcrumbContext(navigationUri);
+        return ResolveOrientation(path, context);
+    }
+
+    /// <summary>
+    /// Resolves shell orientation with optional validated navigation context (UIX-4).
+    /// Valid Demo Customer context on run detail replaces Automation/Runs with the context prefix.
     /// </summary>
     public static ManagementShellOrientation ResolveOrientation(
         string path,
         ManagementBreadcrumbNavigationContext? navigationContext)
     {
-        _ = navigationContext; // reserved for validated drill-through context (UIX-3/4)
-
         var segments = SplitPath(path);
         if (segments.Length == 0 || IsExcludedPath(segments))
             return ManagementShellOrientation.Empty;
@@ -135,10 +145,66 @@ public static class ManagementBreadcrumbResolver
                     .Select(c => new BreadcrumbItem(c.Label, c.Href, IsCurrent: false))
                     .ToList()
                 : (IReadOnlyList<BreadcrumbItem>)[];
-            return new ManagementShellOrientation(parents, title, ResolveRouteSubtitle(path));
+            var canonical = new ManagementShellOrientation(parents, title, ResolveRouteSubtitle(path));
+            return ComposeWithNavigationContext(segments, canonical, navigationContext);
         }
 
         return ManagementShellOrientation.Empty;
+    }
+
+    /// <summary>
+    /// Current-page convention (UIX-1/2/4): top-bar <c>Title</c> is the primary current-page heading;
+    /// breadcrumb <see cref="ManagementShellOrientation.Parents"/> are navigable ancestors only
+    /// (terminal segment is not duplicated as a current crumb in the top-bar trail).
+    /// <see cref="Resolve"/> still appends the terminal item with <c>IsCurrent</c> for full-trail consumers.
+    /// </summary>
+    private static ManagementShellOrientation ComposeWithNavigationContext(
+        string[] segments,
+        ManagementShellOrientation canonical,
+        ManagementBreadcrumbNavigationContext? navigationContext)
+    {
+        if (navigationContext is null || !navigationContext.HasValue)
+            return canonical;
+
+        if (!ManagementNavigationContextCatalog.TryResolve(
+                navigationContext.Type,
+                navigationContext.Key,
+                out var resolved))
+            return canonical;
+
+        // UIX-4: only Run destinations compose with Demo Customer (and future run-scoped) context.
+        if (!IsContextualizableRunPath(segments))
+            return canonical;
+
+        var localParents = StripAutomationRunsRoot(canonical.Parents);
+        var composed = new List<BreadcrumbItem>(resolved.BreadcrumbPrefix.Count + localParents.Count);
+        foreach (var item in resolved.BreadcrumbPrefix)
+            composed.Add(new BreadcrumbItem(item.Label, item.Href, IsCurrent: false));
+        composed.AddRange(localParents);
+
+        return new ManagementShellOrientation(composed, canonical.Title, canonical.Subtitle);
+    }
+
+    private static bool IsContextualizableRunPath(string[] segments) =>
+        segments.Length >= 2
+        && segments[0].Equals("runs", StringComparison.OrdinalIgnoreCase)
+        && !string.IsNullOrWhiteSpace(segments[1]);
+
+    /// <summary>
+    /// Removes the canonical Automation / Runs list spine so context replaces that root
+    /// instead of prepending to a false site hierarchy.
+    /// </summary>
+    private static IReadOnlyList<BreadcrumbItem> StripAutomationRunsRoot(
+        IReadOnlyList<BreadcrumbItem> parents)
+    {
+        var list = parents.ToList();
+        if (list.Count > 0 && list[0].Label.Equals("Automation", StringComparison.Ordinal))
+            list.RemoveAt(0);
+        if (list.Count > 0
+            && list[0].Label.Equals("Runs", StringComparison.Ordinal)
+            && string.Equals(list[0].Href, "/runs", StringComparison.OrdinalIgnoreCase))
+            list.RemoveAt(0);
+        return list;
     }
 
     private static string? ResolveRouteSubtitle(string path)

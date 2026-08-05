@@ -81,31 +81,66 @@ public static class AffectedRecordNavigation
         out ManagementNavigationReturnAffordance? affordance)
     {
         affordance = null;
-        if (context is null || !IsSupportedReturnContext(context.Type, context.Key))
+        if (context is null
+            || !ManagementNavigationContextCatalog.TryResolve(context.Type, context.Key, out var resolved))
             return false;
 
-        if (string.Equals(context.Type, ManagementNavigationReturnContext.DemoCustomerType, StringComparison.Ordinal))
-        {
-            var key = context.Key.Trim();
-            var href = DemoCustomerUiRoutes.Detail(key);
-            var label = $"Back to demo customer {key}";
-            affordance = new ManagementNavigationReturnAffordance(label, href, label);
-            return true;
-        }
-
-        return false;
+        affordance = new ManagementNavigationReturnAffordance(
+            resolved.ReturnLabel,
+            resolved.ReturnHref,
+            resolved.ReturnLabel);
+        return true;
     }
 
-    public static bool IsSupportedReturnContext(string? type, string? key)
+    public static bool IsSupportedReturnContext(string? type, string? key) =>
+        ManagementNavigationContextCatalog.TryResolve(type, key, out _);
+
+    /// <summary>Shared key validation for typed context definitions.</summary>
+    public static bool IsSafeContextKey(string? key) => IsSafeBusinessKey(key);
+
+    /// <summary>
+    /// Attach validated return context to a destination href (replaces any existing from/fromKey).
+    /// </summary>
+    public static string WithContext(string destinationHref, ManagementNavigationReturnContext? context)
     {
-        if (string.IsNullOrWhiteSpace(type) || string.IsNullOrWhiteSpace(key))
-            return false;
+        if (string.IsNullOrWhiteSpace(destinationHref))
+            return destinationHref;
 
-        if (string.Equals(type.Trim(), ManagementNavigationReturnContext.DemoCustomerType, StringComparison.Ordinal))
-            return IsSafeBusinessKey(key);
+        if (context is null || !IsSupportedReturnContext(context.Type, context.Key))
+            return WithoutContext(destinationHref);
 
-        return false;
+        if (!TryGetPathAndQuery(destinationHref, out var path, out var query))
+            return destinationHref;
+
+        query.Remove(FromParam);
+        query.Remove(FromKeyParam);
+        query[FromParam] = context.Type.Trim();
+        query[FromKeyParam] = context.Key.Trim();
+        return AppendQuery(path, query.Select(kv => (kv.Key, kv.Value)));
     }
+
+    /// <summary>Remove <c>from</c> and <c>fromKey</c> while preserving other destination query parameters.</summary>
+    public static string WithoutContext(string destinationHref)
+    {
+        if (string.IsNullOrWhiteSpace(destinationHref))
+            return destinationHref;
+
+        if (!TryGetPathAndQuery(destinationHref, out var path, out var query))
+            return destinationHref;
+
+        if (!query.ContainsKey(FromParam) && !query.ContainsKey(FromKeyParam))
+            return destinationHref;
+
+        query.Remove(FromParam);
+        query.Remove(FromKeyParam);
+        return AppendQuery(path, query.Select(kv => (kv.Key, kv.Value)));
+    }
+
+    /// <summary>Replace any existing context with a new validated context.</summary>
+    public static string ReplaceContext(
+        string destinationHref,
+        ManagementNavigationReturnContext newContext) =>
+        WithContext(destinationHref, newContext);
 
     /// <summary>
     /// Operator-facing link label for a Demo Customer source based on available identifiers.
@@ -155,21 +190,17 @@ public static class AffectedRecordNavigation
         string runHref,
         ManagementNavigationReturnContext? returnContext)
     {
-        if (returnContext is null || !IsSupportedReturnContext(returnContext.Type, returnContext.Key))
-            return runHref;
-
-        if (!TryGetPathAndQuery(runHref, out var path, out var query))
+        if (!TryGetPathAndQuery(runHref, out var path, out _))
             return runHref;
 
         // Only preserve on run-detail paths.
         if (!path.StartsWith("/runs/", StringComparison.OrdinalIgnoreCase))
             return runHref;
 
-        query.Remove(FromParam);
-        query.Remove(FromKeyParam);
-        query[FromParam] = returnContext.Type.Trim();
-        query[FromKeyParam] = returnContext.Key.Trim();
-        return AppendQuery(path, query.Select(kv => (kv.Key, kv.Value)));
+        if (returnContext is null || !IsSupportedReturnContext(returnContext.Type, returnContext.Key))
+            return runHref;
+
+        return WithContext(runHref, returnContext);
     }
 
     public static string FormatOperationItemElementId(string operationItemId) =>

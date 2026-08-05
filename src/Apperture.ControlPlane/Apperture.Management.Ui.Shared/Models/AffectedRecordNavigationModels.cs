@@ -2,7 +2,7 @@ namespace Apperture.Management.Ui.Shared.Models;
 
 /// <summary>
 /// URL-derived affected-record focus request for Run Detail (UIX-3).
-/// Does not alter route-derived breadcrumbs (UIX-4).
+/// Breadcrumb composition for the same URL context is handled by UIX-4.
 /// </summary>
 public sealed record AffectedRecordAnchor(
     string? OperationGroupId = null,
