@@ -232,6 +232,19 @@
                                                         }
                                                     </td>
                                                     <td class="px-2 py-2 text-xs align-top" style="min-width: 12rem;">
+                                                        @{
+                                                            SharedRecordLinkCatalog.TryResolve(item.MetadataJson, item.SubjectKey, out var sharedRecordLink);
+                                                        }
+                                                        @if (sharedRecordLink is not null)
+                                                        {
+                                                            <div class="mb-2">
+                                                                <a class="text-link text-xs"
+                                                                   href="@sharedRecordLink.Href"
+                                                                   data-testid="shared-record-link">
+                                                                    @sharedRecordLink.Label
+                                                                </a>
+                                                            </div>
+                                                        }
                                                         @if (showRetry)
                                                         {
                                                             @if (!formOpen)
