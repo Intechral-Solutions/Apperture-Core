@@ -123,7 +123,7 @@
                                     @if (!string.IsNullOrWhiteSpace(r.IntegrationId))
                                     {
                                         <DrillInLink Href="@Epic33UiDisplayHelpers.GetRunsListIntegrationFilterHref(r.IntegrationId)"
-                                                     @onclick:stopPropagation="true">
+                                                     StopClickPropagation="true">
                                             Integration @r.IntegrationId
                                         </DrillInLink>
                                     }
@@ -134,23 +134,23 @@
                                         @if (!string.IsNullOrWhiteSpace(r.IntegrationId))
                                         {
                                             <DrillInLink Href="@($"/integrations/{Uri.EscapeDataString(r.IntegrationId)}")"
-                                                         @onclick:stopPropagation="true">Integration</DrillInLink>
+                                                         StopClickPropagation="true">Integration</DrillInLink>
                                         }
                                         @if (!string.IsNullOrWhiteSpace(scheduleId))
                                         {
                                             <DrillInLink Href="@($"/schedules/{Uri.EscapeDataString(scheduleId)}")"
-                                                         @onclick:stopPropagation="true">Schedule</DrillInLink>
+                                                         StopClickPropagation="true">Schedule</DrillInLink>
                                         }
                                         @if (!string.IsNullOrWhiteSpace(r.CorrelationKey))
                                         {
                                             <DrillInLink Href="@Epic33UiDisplayHelpers.GetRunsListCorrelationFilterHref(r.CorrelationKey)"
-                                                         @onclick:stopPropagation="true">Correlation</DrillInLink>
+                                                         StopClickPropagation="true">Correlation</DrillInLink>
                                         }
                                     </div>
                                 </td>
                                 <td class="px-3 py-2">
                                     <DrillInLink Href="@($"/runs/{Uri.EscapeDataString(r.RunId)}")"
-                                                 @onclick:stopPropagation="true">Open</DrillInLink>
+                                                 StopClickPropagation="true">Open</DrillInLink>
                                 </td>
                             </tr>
                         }
