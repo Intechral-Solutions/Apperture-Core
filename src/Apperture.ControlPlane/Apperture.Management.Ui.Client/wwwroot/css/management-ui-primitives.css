@@ -271,6 +271,351 @@ button.ui-summary-card {
   color: var(--color-text-body);
 }
 
+/* --- UIX-6 interaction tokens and layering ---
+ * Layering model: page < control-panel(20) < nav-rail(40) < dropdown(50)
+ *                 < shell-topbar(60) < dialog-scrim(80) < dialog(81) < toast(100)
+ * Features must use these tokens instead of local overlay values.
+ */
+
+:root {
+  --z-dialog-scrim: 80;
+  --z-dialog: 81;
+  --z-toast: 100;
+
+  --interaction-duration: 150ms;
+  --interaction-easing: cubic-bezier(0.2, 0, 0.2, 1);
+
+  --dialog-radius: var(--radius-lg, 0.5rem);
+  --dialog-width-sm: 26rem;
+  --dialog-width-md: 34rem;
+  --dialog-width-lg: 46rem;
+  --dialog-margin: 1rem;
+  --dialog-scrim-color: color-mix(in oklch, var(--color-text-heading) 45%, transparent);
+
+  --disclosure-border: color-mix(in oklch, var(--color-border) 85%, var(--color-text-muted) 15%);
+  --disclosure-bg: color-mix(in oklch, var(--color-surface-muted) 88%, var(--color-surface) 12%);
+  --interaction-focus-ring: color-mix(in oklch, var(--color-primary) 55%, var(--color-border) 45%);
+}
+
+/* --- Disclosure (progressive disclosure primitive) --- */
+
+.ui-disclosure {
+  border-radius: var(--radius-md, 0.375rem);
+  border: 1px solid var(--disclosure-border);
+  background-color: var(--disclosure-bg);
+}
+
+.ui-disclosure__summary {
+  cursor: pointer;
+  list-style: none;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+
+.ui-disclosure__summary::-webkit-details-marker {
+  display: none;
+}
+
+.ui-disclosure__summary::before {
+  content: "▸ ";
+  display: inline-block;
+  transition: transform var(--interaction-duration) var(--interaction-easing);
+  color: var(--color-text-subtle);
+}
+
+.ui-disclosure[open] > .ui-disclosure__summary::before {
+  transform: rotate(90deg);
+}
+
+.ui-disclosure[open] > .ui-disclosure__summary {
+  color: var(--color-text-heading);
+}
+
+.ui-disclosure__summary:focus-visible {
+  outline: 2px solid var(--interaction-focus-ring);
+  outline-offset: -2px;
+}
+
+.ui-disclosure__body {
+  border-top: 1px dashed color-mix(in oklch, var(--color-border) 75%, transparent);
+  padding: 0.75rem;
+  font-size: 0.875rem;
+  line-height: 1.5;
+  color: var(--color-text-body);
+}
+
+.ui-disclosure--dense > .ui-disclosure__summary {
+  padding: 0.375rem 0.5rem;
+  font-size: 0.75rem;
+}
+
+.ui-disclosure--dense > .ui-disclosure__body {
+  padding: 0.5rem;
+  font-size: 0.75rem;
+}
+
+/* --- Technical details (identifiers, metadata, diagnostics) --- */
+
+.ui-technical-details__list {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.375rem;
+  margin: 0;
+}
+
+@media (min-width: 48rem) {
+  .ui-technical-details__list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.375rem 1rem;
+  }
+}
+
+.ui-technical-details__entry {
+  min-width: 0;
+}
+
+.ui-technical-details__label {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  color: var(--color-text-muted);
+}
+
+.ui-technical-details__value {
+  margin: 0;
+  font-size: 0.75rem;
+  line-height: 1.4;
+  color: var(--color-text-body);
+  overflow-wrap: anywhere;
+}
+
+.ui-technical-details__value--mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  word-break: break-all;
+  user-select: all;
+}
+
+.ui-technical-details__note {
+  margin-top: 0.5rem;
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+}
+
+/* --- Dialog (modal) --- */
+
+.ui-dialog-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-dialog-scrim);
+  background-color: var(--dialog-scrim-color);
+}
+
+.ui-dialog-layer {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-dialog);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: var(--dialog-margin);
+  overflow-y: auto;
+  pointer-events: none;
+}
+
+.ui-dialog {
+  pointer-events: auto;
+  margin: auto;
+  width: 100%;
+  max-width: var(--dialog-width-md);
+  max-height: calc(100vh - (2 * var(--dialog-margin)));
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--dialog-radius);
+  border: 1px solid var(--color-card-border);
+  background-color: var(--color-surface);
+  box-shadow: var(--shadow-elevated, 0 8px 30px rgba(0, 0, 0, 0.25));
+  animation: ui-dialog-enter var(--interaction-duration) var(--interaction-easing);
+}
+
+.ui-dialog--sm {
+  max-width: var(--dialog-width-sm);
+}
+
+.ui-dialog--md {
+  max-width: var(--dialog-width-md);
+}
+
+.ui-dialog--lg {
+  max-width: var(--dialog-width-lg);
+}
+
+.ui-dialog:focus-visible {
+  outline: 2px solid var(--interaction-focus-ring);
+  outline-offset: 2px;
+}
+
+.ui-dialog__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 1rem 1.125rem 0.5rem;
+}
+
+.ui-dialog__title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--color-text-heading);
+}
+
+.ui-dialog__close {
+  flex-shrink: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm, 0.25rem);
+  background: transparent;
+  padding: 0 0.375rem;
+  font-size: 1.125rem;
+  line-height: 1.5;
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+
+.ui-dialog__close:hover:not(:disabled) {
+  color: var(--color-text-heading);
+  border-color: var(--color-border);
+}
+
+.ui-dialog__close:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.ui-dialog__close:focus-visible {
+  outline: 2px solid var(--interaction-focus-ring);
+  outline-offset: 2px;
+}
+
+.ui-dialog__description {
+  margin: 0;
+  padding: 0 1.125rem;
+  font-size: 0.8125rem;
+  color: var(--color-text-muted);
+}
+
+.ui-dialog__body {
+  padding: 0.75rem 1.125rem 1rem;
+  overflow-y: auto;
+  font-size: 0.875rem;
+  line-height: 1.5;
+  color: var(--color-text-body);
+}
+
+.ui-dialog__consequence {
+  color: var(--color-text-body);
+}
+
+.ui-dialog__supporting {
+  margin-top: 0.625rem;
+  font-size: 0.8125rem;
+  color: var(--color-text-muted);
+}
+
+.ui-dialog__error {
+  margin-top: 0.75rem;
+}
+
+.ui-dialog__footer {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  padding: 0.75rem 1.125rem 1rem;
+  border-top: 1px solid color-mix(in oklch, var(--color-border) 65%, transparent);
+}
+
+.ui-dialog__confirm--caution {
+  border-color: color-mix(in oklch, var(--color-warning) 55%, var(--color-border) 45%);
+  background-color: color-mix(in oklch, var(--color-warning) 18%, var(--color-surface-muted));
+  color: var(--color-warning-dark);
+}
+
+.ui-dialog__focus-sentinel {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* --- Toast layer (uses the shared z token, not a local arbitrary value) --- */
+
+.ui-toast-layer {
+  position: fixed;
+  top: 5rem;
+  inset-inline-end: 1rem;
+  z-index: var(--z-toast);
+  display: flex;
+  max-width: 24rem;
+  flex-direction: column;
+  gap: 0.5rem;
+  pointer-events: none;
+}
+
+.ui-toast-region {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+/* Modal owns scroll; body is outside the Blazor render root. */
+body.apperture-modal-open {
+  overflow: hidden;
+}
+
+@keyframes ui-dialog-enter {
+  from {
+    opacity: 0;
+    transform: translateY(-0.25rem);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-dialog {
+    animation: none;
+  }
+
+  .ui-disclosure__summary::before {
+    transition: none;
+  }
+}
+
+@media (max-width: 30rem) {
+  .ui-dialog-layer {
+    padding: 0.5rem;
+  }
+
+  .ui-dialog {
+    max-width: none;
+    max-height: calc(100vh - 1rem);
+  }
+
+  .ui-dialog__footer {
+    justify-content: stretch;
+  }
+
+  .ui-dialog__footer > button {
+    flex: 1 1 auto;
+  }
+}
+
 /* --- Links --- */
 
 .ui-drill-in-link {

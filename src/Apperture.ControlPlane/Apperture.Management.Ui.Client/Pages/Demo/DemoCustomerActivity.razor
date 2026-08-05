@@ -145,17 +145,14 @@
                                 <p class="mt-2 text-sm text-body">@entry.ErrorMessage</p>
                             }
 
-                            <details class="mt-3 text-xs text-muted">
-                                <summary class="cursor-pointer select-none text-body">Technical details</summary>
-                                <dl class="mt-2 grid grid-cols-1 gap-1 font-mono md:grid-cols-2">
-                                    <div><dt class="inline text-muted">runId:</dt> <dd class="inline break-all">@entry.RunId</dd></div>
-                                    <div><dt class="inline text-muted">operationItemId:</dt> <dd class="inline break-all">@entry.OperationItemId</dd></div>
-                                    <div><dt class="inline text-muted">operationGroupId:</dt> <dd class="inline break-all">@entry.OperationGroupId</dd></div>
-                                    <div><dt class="inline text-muted">runStatus:</dt> <dd class="inline break-all">@(entry.RunStatus ?? "—")</dd></div>
-                                    <div><dt class="inline text-muted">integrationId:</dt> <dd class="inline break-all">@(entry.IntegrationId ?? "—")</dd></div>
-                                    <div><dt class="inline text-muted">changeKind:</dt> <dd class="inline break-all">@(entry.ChangeKind ?? "—")</dd></div>
-                                </dl>
-                            </details>
+                            <TechnicalDetails Class="mt-3" Dense="true">
+                                <TechnicalDetail Label="Run ID" Value="@entry.RunId" />
+                                <TechnicalDetail Label="Operation item ID" Value="@entry.OperationItemId" />
+                                <TechnicalDetail Label="Operation group ID" Value="@entry.OperationGroupId" />
+                                <TechnicalDetail Label="Run status" Value="@entry.RunStatus" />
+                                <TechnicalDetail Label="Integration ID" Value="@entry.IntegrationId" />
+                                <TechnicalDetail Label="Change kind" Value="@entry.ChangeKind" />
+                            </TechnicalDetails>
                         </li>
                     }
                 </ul>

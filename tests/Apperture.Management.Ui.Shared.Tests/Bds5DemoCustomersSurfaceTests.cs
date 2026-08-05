@@ -91,12 +91,12 @@ public sealed class Bds5DemoCustomersSurfaceTests
         content.Should().Contain("ValuesBySource");
         content.Should().Contain("AffectedRecordNavigation.BuildDemoCustomerSourceHref");
         content.Should().Contain("TryGetIntegrationHref");
-        content.Should().Contain("<details");
-        content.Should().Contain("Platform identifiers");
-        content.Should().Contain("operationItemId");
-        content.Should().Contain("operationGroupId");
+        // UIX-6: platform ids moved from a raw <details> to the shared TechnicalDetails component.
+        content.Should().Contain("<TechnicalDetails");
+        content.Should().Contain("Operation item ID");
+        content.Should().Contain("Operation group ID");
         content.IndexOf("Customer")
-            .Should().BeLessThan(content.IndexOf("Platform identifiers"));
+            .Should().BeLessThan(content.IndexOf("<TechnicalDetails"));
         content.Should().Contain("TimestampDisplay");
         content.Should().NotContain("ToLocalTime()");
         content.Should().Contain("DemoScopeBanner");

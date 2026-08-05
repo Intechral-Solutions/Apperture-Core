@@ -63,9 +63,10 @@
             @if (_capabilities?.CanManageIntegrations == true && _integration is not null)
             {
                 <button type="button"
+                        id="integration-delete-trigger"
                         class="ui-toolbar-btn ui-toolbar-btn--danger"
                         disabled="@_deleting"
-                        @onclick="ConfirmDeleteAsync">
+                        @onclick="() => _confirmDeleteOpen = true">
                     Delete
                 </button>
             }
@@ -344,10 +345,11 @@
                         {
                             <div class="text-xs text-muted mt-1">@_selectedProcedureDetail.Description</div>
                         }
-                        <details class="mt-1 text-xs text-muted">
-                            <summary class="cursor-pointer">Technical identifiers</summary>
-                            <div class="font-mono">@_selectedProcedureDetail.Id · @_selectedProcedureDetail.LaunchKind → @_selectedProcedureDetail.TargetDefinitionId</div>
-                        </details>
+                        <TechnicalDetails Class="mt-1" Dense="true">
+                            <TechnicalDetail Label="Procedure ID" Value="@_selectedProcedureDetail.Id" />
+                            <TechnicalDetail Label="Launch kind" Value="@_selectedProcedureDetail.LaunchKind" />
+                            <TechnicalDetail Label="Target definition ID" Value="@_selectedProcedureDetail.TargetDefinitionId" />
+                        </TechnicalDetails>
                         @if (!_selectedProcedureDetail.Launchable && _selectedProcedureDetail.BlockedReasonCodes.Count > 0)
                         {
                             <ul class="mt-2 list-disc pl-5 text-xs text-body">
@@ -535,7 +537,7 @@
                                 </div>
                                 @if (_capabilities?.CanManageIntegrations == true)
                                 {
-                                    <button type="button" class="rounded bg-destructive/20 px-2 py-0.5 text-xs text-destructive-fg hover:bg-destructive/30" @onclick="() => RemoveBindingAsync(b)">Remove</button>
+                                    <button type="button" class="rounded bg-destructive/20 px-2 py-0.5 text-xs text-destructive-fg hover:bg-destructive/30" @onclick="() => RequestRemoveBinding(b)">Remove</button>
                                 }
                             </li>
                         }
@@ -712,8 +714,38 @@
     }
 </div>
 
+<ConfirmActionDialog IsOpen="@_confirmDeleteOpen"
+                     Title="Delete integration?"
+                     ConfirmLabel="Delete integration"
+                     Emphasis="ConfirmActionEmphasis.Destructive"
+                     OnConfirm="DeleteIntegrationAsync"
+                     OnConfirmed="() => _confirmDeleteOpen = false"
+                     OnCancel="() => _confirmDeleteOpen = false">
+    <ChildContent>
+        Deleting <strong>@(_integration?.DisplayName ?? "this integration")</strong> permanently removes its configuration. This cannot be undone.
+    </ChildContent>
+    <Details>
+        Bindings, schedules, and settings that belong to this integration are removed with it.
+    </Details>
+</ConfirmActionDialog>
+
+<ConfirmActionDialog IsOpen="@(_pendingBindingRemoval is not null)"
+                     Title="Remove binding?"
+                     ConfirmLabel="Remove binding"
+                     Emphasis="ConfirmActionEmphasis.Caution"
+                     OnConfirm="RemovePendingBindingAsync"
+                     OnConfirmed="() => _pendingBindingRemoval = null"
+                     OnCancel="() => _pendingBindingRemoval = null">
+    <ChildContent>
+        Slot <strong>@(_pendingBindingRemoval?.SlotName ?? "")</strong> will no longer resolve a connection until it is bound again.
+    </ChildContent>
+</ConfirmActionDialog>
+
 @code {
     [Parameter] public string IntegrationId { get; set; } = "";
+
+    private bool _confirmDeleteOpen;
+    private IntegrationBindingDto? _pendingBindingRemoval;
 
     private const string WizardStepBindings = "bindings";
     private const string WizardStepReadiness = "readiness";
@@ -1689,22 +1721,26 @@
         }
     }
 
+    private void RequestRemoveBinding(IntegrationBindingDto b)
+    {
+        if (_capabilities?.CanManageIntegrations != true) return;
+        _pendingBindingRemoval = b;
+    }
+
+    private async Task RemovePendingBindingAsync()
+    {
+        if (_pendingBindingRemoval is { } binding)
+            await RemoveBindingAsync(binding);
+    }
+
+    // UIX-6: failures propagate so the confirmation dialog stays open with the reason.
     private async Task RemoveBindingAsync(IntegrationBindingDto b)
     {
         if (_capabilities?.CanManageIntegrations != true) return;
-        if (!await JSRuntime.InvokeAsync<bool>("confirm", $"Remove binding for slot {b.SlotName}?")) return;
-        try
-        {
-            await Client.DeleteIntegrationBindingAsync(IntegrationId, b.Id);
-            SetActionFeedback("Binding removed.");
-            Toasts.Show(ToastSeverity.Success, "Binding removed.");
-            await ReloadAfterActionAsync();
-        }
-        catch (HttpRequestException ex)
-        {
-            SetActionFeedback(ex.Message, PageMessageKind.Error);
-            Toasts.Show(ToastSeverity.Error, ex.Message);
-        }
+        await Client.DeleteIntegrationBindingAsync(IntegrationId, b.Id);
+        SetActionFeedback("Binding removed.");
+        Toasts.Show(ToastSeverity.Success, "Binding removed.");
+        await ReloadAfterActionAsync();
     }
 
     private async Task StartAddSchedule()
@@ -1929,11 +1965,10 @@
         }
     }
 
-    private async Task ConfirmDeleteAsync()
+    // UIX-6: failures propagate so the confirmation dialog stays open with the reason.
+    private async Task DeleteIntegrationAsync()
     {
         if (_integration is null || _capabilities?.CanManageIntegrations != true) return;
-        if (!await JSRuntime.InvokeAsync<bool>("confirm", $"Delete integration \"{_integration.DisplayName}\"? This cannot be undone."))
-            return;
         _deleting = true;
         _error = null;
         try
@@ -1941,11 +1976,6 @@
             await Client.DeleteIntegrationAsync(IntegrationId);
             Toasts.Show(ToastSeverity.Success, "Integration deleted.");
             Nav.NavigateTo("/integrations");
-        }
-        catch (HttpRequestException ex)
-        {
-            SetActionFeedback(ex.Message, PageMessageKind.Error);
-            Toasts.Show(ToastSeverity.Error, ex.Message);
         }
         finally
         {

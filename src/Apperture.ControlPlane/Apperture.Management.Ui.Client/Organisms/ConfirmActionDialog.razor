@@ -1,0 +1,139 @@
+@*
+    UIX-6 — confirmation for destructive or consequential actions.
+    Replaces native window.confirm. The dialog stays open when the action fails.
+*@
+
+<ManagementDialog IsOpen="@IsOpen"
+                  Title="@Title"
+                  IsBusy="@_busy"
+                  Size="@Size"
+                  OnClose="CancelAsync">
+    <ChildContent>
+        @if (ChildContent is not null)
+        {
+            <div class="ui-dialog__consequence" data-testid="confirm-consequence">
+                @ChildContent
+            </div>
+        }
+
+        @if (Details is not null)
+        {
+            <div class="ui-dialog__supporting">
+                @Details
+            </div>
+        }
+
+        @if (!string.IsNullOrWhiteSpace(_error))
+        {
+            <PageMessage Kind="PageMessageKind.Error"
+                         Title="Action failed"
+                         Message="@_error"
+                         Class="ui-dialog__error" />
+        }
+    </ChildContent>
+    <Footer>
+        <button type="button"
+                class="ui-toolbar-btn"
+                data-testid="confirm-cancel"
+                disabled="@_busy"
+                @onclick="CancelAsync">
+            @ConfirmActionUiHelpers.ResolveCancelLabel(CancelLabel)
+        </button>
+        <button type="button"
+                class="@ConfirmActionUiHelpers.ConfirmButtonClass(Emphasis)"
+                data-testid="confirm-accept"
+                disabled="@(_busy || ConfirmDisabled)"
+                @onclick="ConfirmAsync">
+            @(_busy
+                ? ConfirmActionUiHelpers.ResolveBusyLabel(ConfirmLabel)
+                : ConfirmActionUiHelpers.ResolveConfirmLabel(ConfirmLabel))
+        </button>
+    </Footer>
+</ManagementDialog>
+
+@code {
+    private bool _busy;
+    private string? _error;
+    private bool _wasOpen;
+
+    [Parameter] public bool IsOpen { get; set; }
+
+    [Parameter] public string Title { get; set; } = "";
+
+    /// <summary>Consequence statement. Required for caution and destructive actions.</summary>
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    /// <summary>Optional supporting detail (affected names, counts, follow-up guidance).</summary>
+    [Parameter] public RenderFragment? Details { get; set; }
+
+    [Parameter] public string? ConfirmLabel { get; set; }
+
+    [Parameter] public string? CancelLabel { get; set; }
+
+    [Parameter] public ConfirmActionEmphasis Emphasis { get; set; } = ConfirmActionEmphasis.Standard;
+
+    [Parameter] public bool ConfirmDisabled { get; set; }
+
+    [Parameter] public string Size { get; set; } = "sm";
+
+    /// <summary>
+    /// Runs the action. Throw to keep the dialog open and show the failure;
+    /// complete normally to raise <see cref="OnConfirmed"/>.
+    /// </summary>
+    [Parameter] public Func<Task>? OnConfirm { get; set; }
+
+    /// <summary>Raised after <see cref="OnConfirm"/> completes successfully. Close the dialog here.</summary>
+    [Parameter] public EventCallback OnConfirmed { get; set; }
+
+    /// <summary>Raised for cancel, Escape, scrim, and the close control. Close the dialog here.</summary>
+    [Parameter] public EventCallback OnCancel { get; set; }
+
+    protected override void OnParametersSet()
+    {
+        if (IsOpen && !_wasOpen)
+        {
+            _error = null;
+            _busy = false;
+        }
+
+        _wasOpen = IsOpen;
+    }
+
+    private async Task ConfirmAsync()
+    {
+        if (_busy || ConfirmDisabled)
+            return;
+
+        _busy = true;
+        _error = null;
+
+        try
+        {
+            if (OnConfirm is not null)
+                await OnConfirm();
+
+            _busy = false;
+
+            if (OnConfirmed.HasDelegate)
+                await OnConfirmed.InvokeAsync();
+        }
+        catch (Exception ex)
+        {
+            _busy = false;
+            _error = string.IsNullOrWhiteSpace(ex.Message)
+                ? "The action could not be completed."
+                : ex.Message;
+        }
+    }
+
+    private async Task CancelAsync()
+    {
+        if (_busy)
+            return;
+
+        _error = null;
+
+        if (OnCancel.HasDelegate)
+            await OnCancel.InvokeAsync();
+    }
+}

@@ -8,7 +8,6 @@
 @inject NavigationManager Nav
 @inject ShellOrientationService ShellOrientation
 @inject IToastService Toasts
-@inject IJSRuntime JSRuntime
 @using Microsoft.AspNetCore.Components.Web
 
 <div class="p-4">
@@ -49,9 +48,10 @@
             @if (_capabilities?.CanRetireConnections == true && _connection is not null && !_editing && string.Equals(_connection.State, "Active", StringComparison.OrdinalIgnoreCase))
             {
                 <button type="button"
+                        id="connection-retire-trigger"
                         class="rounded bg-destructive px-3 py-2 text-sm text-destructive-fg hover:bg-destructive/90 disabled:opacity-50"
                         disabled="@_loading"
-                        @onclick="RetireAsync">
+                        @onclick="() => _confirmRetireOpen = true">
                     Retire
                 </button>
             }
@@ -208,8 +208,25 @@
     }
 </div>
 
+<ConfirmActionDialog IsOpen="@_confirmRetireOpen"
+                     Title="Retire connection?"
+                     ConfirmLabel="Retire connection"
+                     Emphasis="ConfirmActionEmphasis.Caution"
+                     OnConfirm="RetireAsync"
+                     OnConfirmed="() => _confirmRetireOpen = false"
+                     OnCancel="() => _confirmRetireOpen = false">
+    <ChildContent>
+        Retiring <strong>@(_connection?.Name ?? "this connection")</strong> stops it being eligible for new bindings.
+    </ChildContent>
+    <Details>
+        Existing bindings keep working until they are changed.
+    </Details>
+</ConfirmActionDialog>
+
 @code {
     [Parameter] public string ConnectionId { get; set; } = "";
+
+    private bool _confirmRetireOpen;
 
     private string ConnectionHeaderSubtitle =>
         _connection is null
@@ -353,11 +370,10 @@
         }
     }
 
+    // UIX-6: failures propagate so the confirmation dialog stays open with the reason.
     private async Task RetireAsync()
     {
         if (_connection is null || _capabilities?.CanRetireConnections != true) return;
-        if (!await JSRuntime.InvokeAsync<bool>("confirm", $"Retire connection \"{_connection.Name}\"? It will no longer be eligible for new bindings."))
-            return;
         _loading = true;
         _error = null;
         try
@@ -365,11 +381,6 @@
             await Client.RetireConnectionAsync(ConnectionId);
             Toasts.Show(ToastSeverity.Success, "Connection retired.");
             Nav.NavigateTo("/connections");
-        }
-        catch (HttpRequestException ex)
-        {
-            _error = ex.Message;
-            Toasts.Show(ToastSeverity.Error, ex.Message);
         }
         finally
         {

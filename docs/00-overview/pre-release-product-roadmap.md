@@ -42,7 +42,7 @@ UIX-2  Breadcrumb and shell rendering stabilization
 UIX-3  Affected-record anchors and return context
 UIX-4  Contextual breadcrumbs and link integrity
 UIX-5  Supporting surface and investigation pattern audit
-UIX-6  Technical disclosure and confirm-action consistency (next)
+UIX-6  Interaction and progressive disclosure system
 ```
 
 | Epic | Status | Notes |
@@ -51,8 +51,12 @@ UIX-6  Technical disclosure and confirm-action consistency (next)
 | **UIX-2** | Implemented | Breadcrumb/shell renderer stabilization — [`../audits/uix2-breadcrumb-shell-stabilization.md`](../audits/uix2-breadcrumb-shell-stabilization.md). |
 | **UIX-3** | Implemented | Affected-record anchors and typed return context — [`../audits/uix3-affected-record-anchors-return-context.md`](../audits/uix3-affected-record-anchors-return-context.md). |
 | **UIX-4** | Implemented | Contextual breadcrumbs and link integrity — [`../audits/uix4-contextual-breadcrumbs-link-integrity.md`](../audits/uix4-contextual-breadcrumbs-link-integrity.md). |
-| **UIX-5** | Audit complete | Supporting surface / investigation pattern audit — [`../audits/uix5-supporting-surface-pattern-audit.md`](../audits/uix5-supporting-surface-pattern-audit.md). **No shared panel yet**; next is UIX-6 consistency. |
-| **UIX-6** | Planned (next) | Technical disclosure (`TechnicalDetails`) + accessible confirm dialogs; not a drawer framework. |
+| **UIX-5** | Audit complete | Supporting surface / investigation pattern audit — [`../audits/uix5-supporting-surface-pattern-audit.md`](../audits/uix5-supporting-surface-pattern-audit.md). **No shared panel yet**. |
+| **UIX-6** | Implemented (operator smoke pending) | Interaction and progressive disclosure system — [`../audits/uix6-interaction-progressive-disclosure-system.md`](../audits/uix6-interaction-progressive-disclosure-system.md). `Disclosure`, `TechnicalDetails`, `ManagementDialog`, `ConfirmActionDialog`, interaction tokens; native `window.confirm` removed. Guide: [`../design-system/interaction-patterns.md`](../design-system/interaction-patterns.md). |
+
+**UIX arc note (2026-08):** the inspection panel, drawer, popover, and accordion remain deferred
+until the UIX-5 trigger criteria are met. Next UI step is the combined **BDS-6 + UIX-6 operator
+smoke**, not a new epic.
 
 ---
 

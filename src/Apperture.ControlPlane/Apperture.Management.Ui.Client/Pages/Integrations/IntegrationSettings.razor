@@ -7,7 +7,6 @@
 @inject IManagementClient Client
 @inject IOperatorCapabilitiesService Capabilities
 @inject IToastService Toasts
-@inject IJSRuntime JSRuntime
 
 <div class="p-4 ui-page-stack">
     <PageHeader @key="@IntegrationId"
@@ -102,8 +101,8 @@
                                     EditValueChanged="OnEditValueChanged"
                                     EditValuesChanged="OnEditValuesChanged"
                                     OnSave="SaveAsync"
-                                    OnClear="ClearAsync"
-                                    OnReset="ResetAsync" />
+                                    OnClear="RequestClearAsync"
+                                    OnReset="RequestResetAsync" />
         </div>
 
         <p class="mt-6 text-xs text-muted max-w-3xl">
@@ -112,8 +111,24 @@
     }
 </div>
 
+<ConfirmActionDialog IsOpen="@(_pendingSettingAction is not null)"
+                     Title="@PendingSettingTitle"
+                     ConfirmLabel="@PendingSettingConfirmLabel"
+                     Emphasis="@PendingSettingEmphasis"
+                     OnConfirm="RunPendingSettingActionAsync"
+                     OnConfirmed="ClearPendingSettingAction"
+                     OnCancel="ClearPendingSettingAction">
+    <ChildContent>
+        @PendingSettingConsequence
+    </ChildContent>
+</ConfirmActionDialog>
+
 @code {
   [Parameter] public string IntegrationId { get; set; } = "";
+
+  private enum PendingSettingActionKind { Clear, Reset }
+
+  private (PlatformSettingResolvedDto Row, PendingSettingActionKind Kind)? _pendingSettingAction;
 
   private bool _capabilitiesLoaded;
   private bool _canView;
@@ -322,20 +337,76 @@
     }
   }
 
-  private async Task ClearAsync(PlatformSettingResolvedDto row)
+  // UIX-6 — consequential setting changes confirm through ConfirmActionDialog.
+  private Task RequestClearAsync(PlatformSettingResolvedDto row)
   {
     if (!row.HasPlatformOverride && !PlatformSettingUiHelpers.IsScopedOverride(row.Source))
+      return Task.CompletedTask;
+
+    _pendingSettingAction = (row, PendingSettingActionKind.Clear);
+    return Task.CompletedTask;
+  }
+
+  private Task RequestResetAsync(PlatformSettingResolvedDto row)
+  {
+    // Only a scoped override is consequential; otherwise reset proceeds directly.
+    if (!PlatformSettingUiHelpers.IsScopedOverride(row.Source))
+      return ResetAsync(row);
+
+    _pendingSettingAction = (row, PendingSettingActionKind.Reset);
+    return Task.CompletedTask;
+  }
+
+  private void ClearPendingSettingAction() => _pendingSettingAction = null;
+
+  private async Task RunPendingSettingActionAsync()
+  {
+    if (_pendingSettingAction is not { } pending)
       return;
 
-    var isRequired = _requiredSettingKeys.Contains(row.Key);
-    var confirmMessage = isRequired
-        ? $"Clear \"{row.DisplayName}\"? This is a required setting — clearing may block integration readiness, schedules, and procedure launches."
-        : $"Clear \"{row.DisplayName}\"? This removes the integration override and disables the managed secret when owned by this setting.";
+    var succeeded = pending.Kind == PendingSettingActionKind.Clear
+        ? await ClearAsync(pending.Row)
+        : await ResetAsync(pending.Row);
 
-    var confirmed = await JSRuntime.InvokeAsync<bool>("confirm", confirmMessage);
-    if (!confirmed)
-      return;
+    // Keep the dialog open with the failure; the row also shows inline remediation.
+    if (!succeeded)
+      throw new InvalidOperationException(GetError(pending.Row.Key) ?? "The action could not be completed.");
+  }
 
+  private string PendingSettingTitle => _pendingSettingAction?.Kind == PendingSettingActionKind.Reset
+      ? "Reset setting?"
+      : "Clear setting?";
+
+  private string PendingSettingConfirmLabel => _pendingSettingAction?.Kind == PendingSettingActionKind.Reset
+      ? "Reset setting"
+      : "Clear setting";
+
+  private ConfirmActionEmphasis PendingSettingEmphasis =>
+      _pendingSettingAction is { Kind: PendingSettingActionKind.Clear, Row: var row }
+      && _requiredSettingKeys.Contains(row.Key)
+          ? ConfirmActionEmphasis.Destructive
+          : ConfirmActionEmphasis.Caution;
+
+  private string PendingSettingConsequence
+  {
+    get
+    {
+      if (_pendingSettingAction is not { } pending)
+        return "";
+
+      var name = pending.Row.DisplayName;
+      if (pending.Kind == PendingSettingActionKind.Reset)
+        return $"Resetting \"{name}\" removes the integration override and restores the definition default.";
+
+      return _requiredSettingKeys.Contains(pending.Row.Key)
+          ? $"\"{name}\" is required. Clearing it may block integration readiness, schedules, and procedure launches."
+          : $"Clearing \"{name}\" removes the integration override and disables the managed secret when owned by this setting.";
+    }
+  }
+
+  // UIX-6: returns false on failure so the confirmation dialog can stay open with the reason.
+  private async Task<bool> ClearAsync(PlatformSettingResolvedDto row)
+  {
     _errors.Remove(row.Key);
     _savingKey = row.Key;
     try
@@ -349,10 +420,12 @@
       ReplaceRow(updated);
       await RefreshReadinessAsync();
       Toasts.Show(ToastSeverity.Success, $"Cleared {row.DisplayName}.");
+      return true;
     }
     catch (HttpRequestException ex)
     {
       _errors[row.Key] = ex.Message;
+      return false;
     }
     finally
     {
@@ -360,17 +433,8 @@
     }
   }
 
-  private async Task ResetAsync(PlatformSettingResolvedDto row)
+  private async Task<bool> ResetAsync(PlatformSettingResolvedDto row)
   {
-    if (PlatformSettingUiHelpers.IsScopedOverride(row.Source))
-    {
-      var confirmed = await JSRuntime.InvokeAsync<bool>(
-          "confirm",
-          $"Reset \"{row.DisplayName}\"? This removes the integration override and restores the definition default.");
-      if (!confirmed)
-        return;
-    }
-
     _errors.Remove(row.Key);
     _savingKey = row.Key;
     try
@@ -379,16 +443,18 @@
       if (updated is null)
       {
         _errors[row.Key] = "Reset failed or setting was not found.";
-        return;
+        return false;
       }
 
       ReplaceRow(updated);
       await RefreshReadinessAsync();
       Toasts.Show(ToastSeverity.Success, $"Reset {row.DisplayName} to definition default.");
+      return true;
     }
     catch (HttpRequestException ex)
     {
       _errors[row.Key] = ex.Message;
+      return false;
     }
     finally
     {

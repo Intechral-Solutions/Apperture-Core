@@ -73,3 +73,24 @@ Internal planning labels (epic IDs, track names, agent notes) are useful for eng
 If a demo needs uniqueness, use business-context names (`Customer Import Demo`), not epic chronology. Do not rename stable technical IDs, route constants, or migration names just to satisfy this rule — only runtime-facing display values.
 
 Guardrail: `RuntimeVisibleDevMetadataGuardTests` scans curated seed/demo/menu/setting surfaces.
+
+## Do not improvise Management UI interaction surfaces
+
+The interaction vocabulary is defined in [docs/design-system/interaction-patterns.md](../../docs/design-system/interaction-patterns.md) (UIX-6). Use it instead of inventing per-page treatments.
+
+**Not allowed:**
+
+- `window.confirm` / `IJSRuntime.InvokeAsync<bool>("confirm", …)` — use `ConfirmActionDialog`
+- Raw `<details>` for identifiers and metadata — use `TechnicalDetails` / `TechnicalDetail`
+- New modal, drawer, or overlay markup — build on `ManagementDialog`
+- Arbitrary z-index values (`z-[100]`) — use the `--z-*` tokens and documented layering
+- Required operating instructions hidden in tooltips or disclosures
+- Dialog or disclosure state encoded in the URL
+- Nested overlays, or an inspection panel/drawer before the UIX-5 trigger criteria are met
+
+**Expected:** essential facts inline · secondary detail in `Disclosure` · identifiers in
+`TechnicalDetails` · blocking decisions in `ConfirmActionDialog` · transient outcomes as toasts
+(errors persist) · filtered/paged investigation on a dedicated route.
+
+Guardrail: `Uix6InteractionSystemTests` fails on native confirm usage, arbitrary z-index values,
+and reintroduced panel/drawer/popover/accordion components.

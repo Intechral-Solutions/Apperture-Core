@@ -45,7 +45,9 @@ public sealed class Epic111PlatformSettingsPageTests
         content.Should().Contain("ForbiddenState");
         content.Should().Contain("CanManagePlatformSettings");
         content.Should().Contain("read-only access");
-        content.Should().Contain("\"confirm\"");
+        // UIX-6: native window.confirm replaced by the accessible ConfirmActionDialog.
+        content.Should().Contain("<ConfirmActionDialog");
+        content.Should().NotContain("\"confirm\"");
         content.Should().Contain("IsPlatformOverride");
     }
 

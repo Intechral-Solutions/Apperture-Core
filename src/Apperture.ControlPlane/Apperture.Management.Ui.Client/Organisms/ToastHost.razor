@@ -3,10 +3,31 @@
 @implements IDisposable
 @inject IToastService Toasts
 
-<div class="fixed top-20 end-4 z-[100] flex max-w-sm flex-col gap-2 pointer-events-none print:hidden" aria-live="polite">
-    @foreach (var t in _snapshot)
-    {
-        <div class="@ToastClass(t.Severity) pointer-events-auto flex gap-2 rounded border border-default bg-surface px-3 py-2 text-sm text-body shadow-lg">
+@*
+    UIX-6 — transient outcome feedback.
+    Two live regions: errors are announced assertively and persist until dismissed;
+    everything else is polite and auto-dismisses (ToastPolicy).
+*@
+<div class="ui-toast-layer print:hidden">
+    <div class="ui-toast-region" aria-live="assertive" role="alert">
+        @foreach (var t in _snapshot.Where(t => t.Severity == ToastSeverity.Error))
+        {
+            @RenderToast(t)
+        }
+    </div>
+    <div class="ui-toast-region" aria-live="polite">
+        @foreach (var t in _snapshot.Where(t => t.Severity != ToastSeverity.Error))
+        {
+            @RenderToast(t)
+        }
+    </div>
+</div>
+
+@code {
+    private ToastItem[] _snapshot = Array.Empty<ToastItem>();
+
+    private RenderFragment RenderToast(ToastItem t) =>
+        @<div class="@ToastClass(t.Severity) pointer-events-auto flex gap-2 rounded border border-default bg-surface px-3 py-2 text-sm text-body shadow-lg">
             <div class="min-w-0 flex-1">
                 @if (!string.IsNullOrEmpty(t.Title))
                 {
@@ -20,12 +41,7 @@
                     @onclick="() => Toasts.Dismiss(t.Id)">
                 ×
             </button>
-        </div>
-    }
-</div>
-
-@code {
-    private ToastItem[] _snapshot = Array.Empty<ToastItem>();
+        </div>;
 
     protected override void OnInitialized() => Toasts.Changed += OnToastsChanged;
 

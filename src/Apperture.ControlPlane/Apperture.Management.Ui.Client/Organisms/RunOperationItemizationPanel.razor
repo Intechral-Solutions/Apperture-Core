@@ -91,25 +91,22 @@
                                     <span> · Completed <TimestampDisplay Value="@group.CompletedAtUtc" ShowUtcDetail="true" /></span>
                                 }
                             </div>
-                            <details class="mt-2">
-                                <summary class="cursor-pointer text-xs text-muted">Group technical details</summary>
-                                <div class="mt-1 space-y-1 rounded border border-default bg-surface-muted p-2 font-mono text-xs">
-                                    <div><span class="text-muted">Group id:</span> @group.OperationGroupId</div>
-                                    <div><span class="text-muted">Run id:</span> @group.RunId</div>
-                                    @if (!string.IsNullOrWhiteSpace(group.ModuleId))
-                                    {
-                                        <div><span class="text-muted">Module:</span> @group.ModuleId</div>
-                                    }
-                                    @if (!string.IsNullOrWhiteSpace(group.SummaryJson))
-                                    {
-                                        <div><span class="text-muted">Summary JSON:</span> @group.SummaryJson</div>
-                                    }
-                                    @if (!string.IsNullOrWhiteSpace(group.MetadataJson))
-                                    {
-                                        <div><span class="text-muted">Metadata:</span> @group.MetadataJson</div>
-                                    }
-                                </div>
-                            </details>
+                            <TechnicalDetails Class="mt-2" Summary="Group technical details" Dense="true">
+                                <TechnicalDetail Label="Group ID" Value="@group.OperationGroupId" />
+                                <TechnicalDetail Label="Run ID" Value="@group.RunId" />
+                                @if (!string.IsNullOrWhiteSpace(group.ModuleId))
+                                {
+                                    <TechnicalDetail Label="Module" Value="@group.ModuleId" />
+                                }
+                                @if (!string.IsNullOrWhiteSpace(group.SummaryJson))
+                                {
+                                    <TechnicalDetail Label="Summary JSON" Value="@group.SummaryJson" />
+                                }
+                                @if (!string.IsNullOrWhiteSpace(group.MetadataJson))
+                                {
+                                    <TechnicalDetail Label="Metadata" Value="@group.MetadataJson" />
+                                }
+                            </TechnicalDetails>
                         </div>
                         <button type="button"
                                 class="ui-toolbar-btn"
@@ -397,33 +394,30 @@
                                                         }
                                                     </td>
                                                     <td class="px-2 py-2 text-xs">
-                                                        <details>
-                                                            <summary class="cursor-pointer text-muted">Details</summary>
-                                                            <div class="mt-2 space-y-1 rounded border border-default bg-surface-muted p-2 font-mono text-xs">
-                                                                @{
-                                                                    var changeText = OperationItemizationUiHelpers.TryFormatChangeSummaryText(item.ChangeSummaryJson);
-                                                                }
-                                                                @if (!string.IsNullOrWhiteSpace(changeText))
-                                                                {
-                                                                    <div><span class="text-muted">Change:</span> @changeText</div>
-                                                                }
-                                                                @if (!string.IsNullOrWhiteSpace(item.ChangeSummaryJson) && string.IsNullOrWhiteSpace(changeText))
-                                                                {
-                                                                    <div><span class="text-muted">Change summary:</span> @item.ChangeSummaryJson</div>
-                                                                }
-                                                                @if (!string.IsNullOrWhiteSpace(item.MetadataJson))
-                                                                {
-                                                                    <div><span class="text-muted">Metadata:</span> @item.MetadataJson</div>
-                                                                }
-                                                                <div><span class="text-muted">Item id:</span> @item.OperationItemId</div>
-                                                                <div><span class="text-muted">Group id:</span> @item.OperationGroupId</div>
-                                                                <div><span class="text-muted">Run id:</span> @item.RunId</div>
-                                                                @if (item.RetryCount > 0)
-                                                                {
-                                                                    <div><span class="text-muted">Retry count:</span> @item.RetryCount</div>
-                                                                }
-                                                            </div>
-                                                        </details>
+                                                        @{
+                                                            var changeText = OperationItemizationUiHelpers.TryFormatChangeSummaryText(item.ChangeSummaryJson);
+                                                        }
+                                                        <TechnicalDetails Dense="true">
+                                                            @if (!string.IsNullOrWhiteSpace(changeText))
+                                                            {
+                                                                <TechnicalDetail Label="Change" Value="@changeText" Monospace="false" />
+                                                            }
+                                                            @if (!string.IsNullOrWhiteSpace(item.ChangeSummaryJson) && string.IsNullOrWhiteSpace(changeText))
+                                                            {
+                                                                <TechnicalDetail Label="Change summary" Value="@item.ChangeSummaryJson" />
+                                                            }
+                                                            @if (!string.IsNullOrWhiteSpace(item.MetadataJson))
+                                                            {
+                                                                <TechnicalDetail Label="Metadata" Value="@item.MetadataJson" />
+                                                            }
+                                                            <TechnicalDetail Label="Item ID" Value="@item.OperationItemId" />
+                                                            <TechnicalDetail Label="Group ID" Value="@item.OperationGroupId" />
+                                                            <TechnicalDetail Label="Run ID" Value="@item.RunId" />
+                                                            @if (item.RetryCount > 0)
+                                                            {
+                                                                <TechnicalDetail Label="Retry count" Value="@item.RetryCount.ToString()" />
+                                                            }
+                                                        </TechnicalDetails>
                                                     </td>
                                                 </tr>
                                             }

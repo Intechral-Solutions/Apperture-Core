@@ -48,6 +48,66 @@
                 return null;
             }
         },
+        /** UIX-6: id of the currently focused element, or null. Read-only. */
+        captureFocusedElementId: function () {
+            try {
+                var el = document.activeElement;
+                return el && el.id ? el.id : null;
+            } catch {
+                return null;
+            }
+        },
+        /** UIX-6: focus an element by id (focus restoration). No DOM mutation. */
+        focusElementById: function (elementId) {
+            if (!elementId) return false;
+            try {
+                var el = document.getElementById(elementId);
+                if (!el || typeof el.focus !== 'function') return false;
+                el.focus({ preventScroll: true });
+                return true;
+            } catch {
+                return false;
+            }
+        },
+        /**
+         * UIX-6: focus the first or last tabbable element inside a container (dialog focus wrap).
+         * Queries and focuses only; never reparents or rewrites Blazor-owned DOM.
+         */
+        focusEdgeIn: function (containerId, last) {
+            if (!containerId) return false;
+            try {
+                var root = document.getElementById(containerId);
+                if (!root) return false;
+                var candidates = root.querySelectorAll(
+                    'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),summary,[tabindex]:not([tabindex="-1"])');
+                var visible = [];
+                for (var i = 0; i < candidates.length; i++) {
+                    var el = candidates[i];
+                    if (el.offsetParent !== null || el === document.activeElement) visible.push(el);
+                }
+                if (visible.length === 0) return false;
+                var target = last ? visible[visible.length - 1] : visible[0];
+                target.focus({ preventScroll: true });
+                return true;
+            } catch {
+                return false;
+            }
+        },
+        /**
+         * UIX-6: modal scroll ownership. Toggles a class on document.body, which is outside
+         * the Blazor render root, so no Blazor-owned DOM is modified. Reference counted.
+         */
+        setModalOpen: function (open) {
+            try {
+                var count = window.appertureShell.__modalCount || 0;
+                count = open ? count + 1 : Math.max(0, count - 1);
+                window.appertureShell.__modalCount = count;
+                document.body.classList.toggle('apperture-modal-open', count > 0);
+                return count;
+            } catch {
+                return 0;
+            }
+        },
         /** UIX-3: scroll a rendered element into view by id (no Blazor DOM rewrite). */
         scrollElementIntoViewById: function (elementId) {
             if (!elementId) return false;

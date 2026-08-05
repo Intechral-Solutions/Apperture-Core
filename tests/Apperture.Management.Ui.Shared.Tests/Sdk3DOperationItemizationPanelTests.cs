@@ -36,7 +36,8 @@ public sealed class Sdk3DOperationItemizationPanelTests
         content.Should().Contain("Load more");
         content.Should().Contain("TimestampDisplay");
         content.Should().NotContain("ToLocalTime()");
-        content.Should().Contain("<details");
+        // UIX-6: group/item diagnostics use the shared TechnicalDetails disclosure.
+        content.Should().Contain("<TechnicalDetails");
         content.Should().Contain("failed first");
         content.Should().Contain("IsRetryable");
         content.Should().Contain("StatusFilterOptions");

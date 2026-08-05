@@ -1,0 +1,50 @@
+@*
+    UIX-6 — general-purpose progressive disclosure.
+    Semantic <details>/<summary>: keyboard operable, no JavaScript, no URL state.
+    Use for secondary content already loaded on the page.
+*@
+
+<details class="@RootClass" open="@InitiallyOpen">
+    <summary class="ui-disclosure__summary">
+        @if (SummaryContent is not null)
+        {
+            @SummaryContent
+        }
+        else
+        {
+            @Summary
+        }
+    </summary>
+    <div class="ui-disclosure__body">
+        @ChildContent
+    </div>
+</details>
+
+@code {
+    /// <summary>Summary text shown on the collapsed control.</summary>
+    [Parameter] public string Summary { get; set; } = "";
+
+    /// <summary>Optional structured summary (badges, counts) replacing <see cref="Summary"/>.</summary>
+    [Parameter] public RenderFragment? SummaryContent { get; set; }
+
+    /// <summary>Render expanded on first paint. Default is collapsed.</summary>
+    [Parameter] public bool InitiallyOpen { get; set; }
+
+    /// <summary>Compact spacing for dense contexts such as table rows.</summary>
+    [Parameter] public bool Dense { get; set; }
+
+    [Parameter] public string Class { get; set; } = "";
+
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    private string RootClass
+    {
+        get
+        {
+            var css = Dense
+                ? $"{ManagementInteractionSurfaces.DisclosureClass} ui-disclosure--dense"
+                : ManagementInteractionSurfaces.DisclosureClass;
+            return string.IsNullOrWhiteSpace(Class) ? css : $"{css} {Class}";
+        }
+    }
+}

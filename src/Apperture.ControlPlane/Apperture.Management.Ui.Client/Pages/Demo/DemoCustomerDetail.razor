@@ -223,20 +223,19 @@
                             </div>
                         </dl>
 
-                        <details class="mt-3 text-xs text-muted">
-                            <summary class="cursor-pointer select-none text-body">Platform identifiers</summary>
-                            <dl class="mt-2 grid grid-cols-1 gap-1 font-mono md:grid-cols-2">
-                                <div><dt class="inline text-muted">runId:</dt> <dd class="inline break-all">@source.RunId</dd></div>
-                                <div><dt class="inline text-muted">operationItemId:</dt> <dd class="inline break-all">@source.OperationItemId</dd></div>
-                                <div><dt class="inline text-muted">operationGroupId:</dt> <dd class="inline break-all">@source.OperationGroupId</dd></div>
-                                <div><dt class="inline text-muted">moduleId:</dt> <dd class="inline break-all">@source.ModuleId</dd></div>
-                                <div><dt class="inline text-muted">integrationId:</dt> <dd class="inline break-all">@(source.IntegrationId ?? "—")</dd></div>
-                                <div><dt class="inline text-muted">operationKind:</dt> <dd class="inline break-all">@(source.OperationKind ?? "—")</dd></div>
-                            </dl>
-                            <p class="mt-2">
+                        <TechnicalDetails Class="mt-3">
+                            <ChildContent>
+                                <TechnicalDetail Label="Run ID" Value="@source.RunId" />
+                                <TechnicalDetail Label="Operation item ID" Value="@source.OperationItemId" />
+                                <TechnicalDetail Label="Operation group ID" Value="@source.OperationGroupId" />
+                                <TechnicalDetail Label="Module ID" Value="@source.ModuleId" />
+                                <TechnicalDetail Label="Integration ID" Value="@source.IntegrationId" />
+                                <TechnicalDetail Label="Operation kind" Value="@source.OperationKind" />
+                            </ChildContent>
+                            <Note>
                                 Open affected record focuses the matching group and item on Run Detail when those identifiers are present.
-                            </p>
-                        </details>
+                            </Note>
+                        </TechnicalDetails>
                     </div>
                 }
             </div>

@@ -305,12 +305,17 @@ Only components with ≥2 real consumers or platform-wide behavior:
 - ControlPanel as **nav** only
 - UIX-2–4 shell and navigation contracts
 
-### Small consistency improvement → **UIX-6**
+### Small consistency improvement → **UIX-6** (delivered)
 
 - Introduce `TechnicalDetails`; migrate highest-traffic disclosures
 - Introduce `ConfirmActionDialog`; replace `IJSRuntime` `confirm` call sites
 - Align disclosure summary labels
 - Document “when to use which surface” in a short UI playbook snippet (optional)
+
+**Update (2026-08-05):** UIX-6 broadened this narrow recommendation into a full interaction and
+progressive-disclosure system — see [`uix6-interaction-progressive-disclosure-system.md`](./uix6-interaction-progressive-disclosure-system.md)
+and the [interaction pattern guide](../design-system/interaction-patterns.md). The scope
+boundary held: no inspection panel, drawer, popover, or accordion was introduced.
 
 ### Substantive follow-on epic
 
@@ -334,7 +339,8 @@ Only components with ≥2 real consumers or platform-wide behavior:
 [done] UIX-1 … UIX-4
 [done] BDS-1 … BDS-6 (+ shared-record reverse links)
 [done] UIX-5 — Supporting surface pattern audit (this report)
-[next] UIX-6 — Technical disclosure and confirm-action consistency
+[done] UIX-6 — Interaction and progressive disclosure system
+[next] Operator smoke closure for BDS-6 + UIX-6
 [later] Inspection panel — only if §6 triggers fire (e.g. with conflict resolution)
 [later] Broader entity-platform UI — after second business entity proves reuse
 ```

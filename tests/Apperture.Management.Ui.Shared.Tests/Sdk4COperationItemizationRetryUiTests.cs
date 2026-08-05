@@ -31,8 +31,9 @@ public sealed class Sdk4COperationItemizationRetryUiTests
         content.Should().Contain("OnRetryCompleted");
         content.Should().NotContain("Retry all");
         content.Should().NotContain("ToLocalTime()");
-        content.Should().Contain("Metadata:");
-        content.Should().Contain("<details");
+        // UIX-6: item diagnostics moved to the shared TechnicalDetails disclosure.
+        content.Should().Contain("Label=\"Metadata\"");
+        content.Should().Contain("<TechnicalDetails");
     }
 
     [Fact]

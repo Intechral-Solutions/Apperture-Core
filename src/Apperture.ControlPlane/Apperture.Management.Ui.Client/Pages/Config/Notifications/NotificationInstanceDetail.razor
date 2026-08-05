@@ -102,10 +102,9 @@
                 </dl>
                 @if (!string.IsNullOrWhiteSpace(_detail.RenderedBodyText))
                 {
-                    <details class="mt-2 text-xs" open>
-                        <summary class="cursor-pointer text-muted">Body</summary>
-                        <pre class="mt-1 bg-surface-muted p-2 rounded whitespace-pre-wrap">@_detail.RenderedBodyText</pre>
-                    </details>
+                    <Disclosure Summary="Body" InitiallyOpen="true" Dense="true" Class="mt-2">
+                        <pre class="bg-surface-muted p-2 rounded whitespace-pre-wrap">@_detail.RenderedBodyText</pre>
+                    </Disclosure>
                 }
             </section>
 
@@ -116,10 +115,9 @@
             </section>
 
             <section class="rounded border border-default bg-surface p-3">
-                <details class="text-xs">
-                    <summary class="cursor-pointer font-semibold text-heading">Render context JSON</summary>
-                    <pre class="mt-2 bg-surface-muted p-2 rounded overflow-x-auto max-h-64">@_detail.RenderContextJson</pre>
-                </details>
+                <Disclosure Summary="Render context JSON" Dense="true">
+                    <pre class="bg-surface-muted p-2 rounded overflow-x-auto max-h-64">@_detail.RenderContextJson</pre>
+                </Disclosure>
             </section>
 
             <section class="rounded border border-default bg-surface p-3">
