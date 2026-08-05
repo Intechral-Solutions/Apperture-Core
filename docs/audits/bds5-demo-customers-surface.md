@@ -55,10 +55,11 @@ Soft conflicts only (email / status / displayName). Informational — no edit, n
 
 | Link | Target |
 | --- | --- |
-| Open run | `/runs/{runId}` |
+| Open run / Open affected record | `/runs/{runId}` with optional `group`/`item`/`from`/`fromKey` (UIX-3) |
 | Open integration | `/integrations/{integrationId}` when present |
 
-Finer-grained anchors into Run Detail **Affected records** are deferred (open run, use that panel).
+**Historical (BDS-5):** Finer-grained anchors into Run Detail Affected records were deferred (open run, use that panel).  
+**Update (UIX-3):** Those in-run anchors are implemented — see [`uix3-affected-record-anchors-return-context.md`](./uix3-affected-record-anchors-return-context.md).
 
 ## Limitations
 
@@ -73,14 +74,17 @@ Finer-grained anchors into Run Detail **Affected records** are deferred (open ru
 
 | Piece | Path |
 | --- | --- |
-| Routes / helpers | `DemoCustomerUiRoutes`, `DemoCustomerUiHelpers` |
+| Routes / helpers | `DemoCustomerUiRoutes`, `DemoCustomerUiHelpers`, `AffectedRecordNavigation` |
 | List / detail | `Pages/Demo/DemoCustomersList.razor`, `DemoCustomerDetail.razor` |
 | Nav card | `Pages/Config/DeveloperTasks.razor` |
-| Tests | `Bds5DemoCustomersSurfaceTests` |
+| Tests | `Bds5DemoCustomersSurfaceTests`, `Uix3AffectedRecordNavigationTests` |
 
 ## Next
 
-- **BDS-6 (optional):** Operation Item Explorer / finer Affected-record anchors from a customer source
+- **UIX-3** — Affected-record anchors and return context — **implemented** ([`uix3-affected-record-anchors-return-context.md`](./uix3-affected-record-anchors-return-context.md))
+- **UIX-4** — Contextual breadcrumbs and link integrity (planned)
+- **BDS-6 (optional):** Cross-run affected-record explorer when no specific `RunId` is known — deferred; decision in [`uix3-readiness-bds6-decision.md`](./uix3-readiness-bds6-decision.md)
 - **SYS-1:** Systems/Services model design (when revisit triggers fire)
-- **UIX-1:** Layered panel navigation / business-primary IA
 - Promote patterns to a platform entity model only after demo value is proven
+
+**Historical note:** At BDS-5 closeout, this doc listed “finer Affected-record anchors” under optional BDS-6 and said Run Detail anchors were deferred. That deferred in-run anchoring is now UIX-3; BDS-6 is narrowed to cross-run exploration only.

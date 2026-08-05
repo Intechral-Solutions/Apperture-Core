@@ -286,6 +286,19 @@ button.ui-summary-card {
   color: var(--color-primary-dark);
 }
 
+/* UIX-3 — affected-record anchor highlight (not color-only). */
+.ui-operation-item-anchor {
+  outline: 2px solid var(--color-focus-ring, var(--color-focus, #2563eb));
+  outline-offset: 2px;
+  background-color: color-mix(in srgb, var(--color-primary, #2563eb) 12%, transparent);
+  box-shadow: inset 3px 0 0 var(--color-focus-ring, var(--color-focus, #2563eb));
+}
+
+.ui-operation-group-anchor {
+  outline: 1px solid var(--color-border-strong, var(--color-border));
+  box-shadow: inset 3px 0 0 var(--color-focus-ring, var(--color-focus, #2563eb));
+}
+
 /* --- Toolbar & actions --- */
 
 button.ui-toolbar-btn,

@@ -89,7 +89,7 @@ public sealed class Bds5DemoCustomersSurfaceTests
         content.Should().Contain("Conflicts");
         content.Should().Contain("SourceKindLabel");
         content.Should().Contain("ValuesBySource");
-        content.Should().Contain("GetRunDetailHref");
+        content.Should().Contain("AffectedRecordNavigation.BuildDemoCustomerSourceHref");
         content.Should().Contain("TryGetIntegrationHref");
         content.Should().Contain("<details");
         content.Should().Contain("Platform identifiers");
@@ -113,11 +113,12 @@ public sealed class Bds5DemoCustomersSurfaceTests
 
         var detail = File.ReadAllText(RepoPath(
             "src/Apperture.ControlPlane/Apperture.Management.Ui.Client/Pages/Demo/DemoCustomerDetail.razor"));
-        detail.Should().Contain("Open run");
-        detail.Should().Contain("GetRunDetailHref");
+        detail.Should().Contain("AffectedRecordNavigation.BuildDemoCustomerSourceHref");
+        detail.Should().Contain("Open affected record");
         detail.Should().Contain("Open integration");
         detail.Should().Contain("TryGetIntegrationHref");
         detail.Should().NotContain("/operation-items/");
+        detail.Should().NotContain("Finer-grained anchors into Affected records on Run Detail are deferred");
     }
 
     [Fact]

@@ -365,10 +365,12 @@ public sealed class Uix2ManagementBreadcrumbStabilizationTests
             FindRepoRoot(),
             "src", "Apperture.ControlPlane", "Apperture.Management.Ui.Server", "Pages", "_Host.cshtml"));
         // Pass 18: placeholder only — RootComponents.Add owns the single App mount.
+        // Guard against a live component tag; comment text must not contain "<component "
+        // or this NotContain check becomes a false positive against docs in the file.
         host.Should().NotContain("<component ");
         host.Should().NotContain("render-mode=\"WebAssemblyPrerendered\"");
         host.Should().NotContain("render-mode=\"WebAssembly\"");
-        host.Should().Contain("do not emit <component");
+        host.Should().Contain("do not emit a Razor component tag");
         host.Should().Contain("Loading…");
 
         var layout = File.ReadAllText(Path.Combine(

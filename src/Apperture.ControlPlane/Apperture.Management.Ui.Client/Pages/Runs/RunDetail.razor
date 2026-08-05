@@ -1,6 +1,7 @@
 @page "/runs/{RunId}"
 @using Apperture.Management.Client
 @using Apperture.Management.Ui.Shared
+@using Apperture.Management.Ui.Shared.Models
 @using System.Linq
 @using Apperture.Management.Ui.Client.Molecules
 @using Apperture.Management.Ui.Client.Organisms
@@ -73,10 +74,26 @@
                 @if (!string.IsNullOrEmpty(_newRunId))
                 {
                     <div class="mt-2">
-                        <DrillInLink Href="@($"/runs/{_newRunId}")">Open new run: @_newRunId</DrillInLink>
+                        <DrillInLink Href="@PreserveRunHref($"/runs/{_newRunId}")">Open new run: @_newRunId</DrillInLink>
                     </div>
                 }
             </ActionFeedback>
+        }
+
+        @if (_returnAffordance is not null)
+        {
+            <div class="flex flex-wrap items-center gap-3 text-sm">
+                <a class="ui-toolbar-btn"
+                   href="@_returnAffordance.Href"
+                   aria-label="@_returnAffordance.AriaLabel">
+                    @_returnAffordance.Label
+                </a>
+            </div>
+        }
+
+        @if (!string.IsNullOrEmpty(_anchorNotice))
+        {
+            <PageMessage Kind="PageMessageKind.Info" Message="@_anchorNotice" />
         }
 
         <RunSummaryBand Detail="@_detail"
@@ -86,7 +103,10 @@
 
         <RunOperationItemizationPanel RunId="@RunId"
                                       Summary="@_detail.OperationItemization"
-                                      OnRetryCompleted="RefreshAsync" />
+                                      Anchor="@_anchor"
+                                      ReturnContext="@_returnContext"
+                                      OnRetryCompleted="RefreshAsync"
+                                      OnAnchorNotice="OnAnchorNoticeAsync" />
 
         @if (_detail.ForensicContext is { } fxInv)
         {
@@ -609,10 +629,24 @@
     private PeriodicTimer? _timer;
     private CancellationTokenSource? _pollingCts;
     private string? _dataLoadKey;
+    private string? _navObservationKey;
+    private AffectedRecordAnchor _anchor = AffectedRecordAnchor.Empty;
+    private ManagementNavigationReturnContext? _returnContext;
+    private ManagementNavigationReturnAffordance? _returnAffordance;
+    private string? _anchorNotice;
+    private bool _listenToLocation;
+
+    protected override void OnInitialized()
+    {
+        ApplyNavigationContext();
+        _listenToLocation = true;
+        Nav.LocationChanged += OnLocationChanged;
+    }
 
     protected override async Task OnParametersSetAsync()
     {
         await base.OnParametersSetAsync();
+        ApplyNavigationContext();
         var key = RunId ?? "";
         if (key == _dataLoadKey)
             return;
@@ -620,6 +654,55 @@
         _detail = null;
         await LoadAsync();
     }
+
+    private void OnLocationChanged(object? sender, LocationChangedEventArgs e)
+    {
+        if (!_listenToLocation)
+            return;
+
+        _ = InvokeAsync(() =>
+        {
+            if (!_listenToLocation)
+                return;
+
+            if (!ApplyNavigationContext())
+                return;
+
+            StateHasChanged();
+        });
+    }
+
+    /// <summary>Returns true when observed path+query (or resolved context) changed.</summary>
+    private bool ApplyNavigationContext()
+    {
+        var key = ManagementShellOrientationTracker.GetObservationKey(Nav.Uri);
+        AffectedRecordNavigation.TryParseAffectedRecordNavigation(Nav.Uri, out var anchor, out var returnContext);
+        var affordance = AffectedRecordNavigation.TryResolveReturnAffordance(returnContext, out var resolved)
+            ? resolved
+            : null;
+
+        var changed = !string.Equals(key, _navObservationKey, StringComparison.Ordinal)
+                      || !Equals(anchor, _anchor)
+                      || !Equals(returnContext, _returnContext);
+
+        _navObservationKey = key;
+        _anchor = anchor;
+        _returnContext = returnContext;
+        _returnAffordance = affordance;
+        if (changed)
+            _anchorNotice = null;
+        return changed;
+    }
+
+    private Task OnAnchorNoticeAsync(string? message)
+    {
+        _anchorNotice = message;
+        return Task.CompletedTask;
+    }
+
+    private string PreserveRunHref(string href) =>
+        AffectedRecordNavigation.PreserveReturnContextOnRunHref(href, _returnContext);
+
     protected override Task OnAfterRenderAsync(bool firstRender)
     {
         if (_pollingEnabled && _pollingCts is null)
@@ -631,6 +714,8 @@
 
     public void Dispose()
     {
+        _listenToLocation = false;
+        Nav.LocationChanged -= OnLocationChanged;
         StopPolling();
     }
 

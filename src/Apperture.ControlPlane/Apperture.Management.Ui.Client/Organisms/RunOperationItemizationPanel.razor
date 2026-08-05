@@ -1,6 +1,10 @@
 @using System.Net
 @using Apperture.Management.Ui.Client.Atoms
+@using Apperture.Management.Ui.Shared
+@using Apperture.Management.Ui.Shared.Models
+@using Microsoft.JSInterop
 @inject IManagementClient Client
+@inject IJSRuntime Js
 
 <ManagementSection Title="@OperationItemizationUiHelpers.SectionTitle"
                    Subtitle="@OperationItemizationUiHelpers.SectionSubtitle"
@@ -52,9 +56,11 @@
             @foreach (var group in _groups)
             {
                 var expanded = string.Equals(_expandedGroupId, group.OperationGroupId, StringComparison.Ordinal);
-                <div class="rounded border border-default bg-surface p-3"
+                var groupAnchor = string.Equals(_highlightedGroupId, group.OperationGroupId, StringComparison.Ordinal);
+                <div class="@(groupAnchor ? "ui-operation-group-anchor " : "")rounded border border-default bg-surface p-3"
                      data-testid="operation-group"
-                     data-operation-group-id="@group.OperationGroupId">
+                     data-operation-group-id="@group.OperationGroupId"
+                     id="@($"operation-group-{Uri.EscapeDataString(group.OperationGroupId)}")">
                     <div class="flex flex-wrap items-start justify-between gap-2">
                         <div class="min-w-0">
                             <div class="flex flex-wrap items-center gap-2">
@@ -179,9 +185,17 @@
                                                 var notRetryable = OperationItemizationUiHelpers.IsFailedNotRetryable(item);
                                                 var formOpen = string.Equals(_retryFormItemId, item.OperationItemId, StringComparison.Ordinal);
                                                 var inFlight = string.Equals(_retryInFlightItemId, item.OperationItemId, StringComparison.Ordinal);
+                                                var isAnchored = string.Equals(_highlightedItemId, item.OperationItemId, StringComparison.Ordinal);
                                                 _retryErrors.TryGetValue(item.OperationItemId, out var itemError);
                                                 _retrySuccess.TryGetValue(item.OperationItemId, out var itemSuccess);
-                                                <tr class="@rowClass" data-testid="operation-item" data-status="@item.Status" data-retryable="@item.IsRetryable.ToString().ToLowerInvariant()">
+                                                <tr class="@rowClass @(isAnchored ? "ui-operation-item-anchor" : "")"
+                                                    id="@AffectedRecordNavigation.FormatOperationItemElementId(item.OperationItemId)"
+                                                    data-testid="operation-item"
+                                                    data-operation-item-id="@item.OperationItemId"
+                                                    data-status="@item.Status"
+                                                    data-retryable="@item.IsRetryable.ToString().ToLowerInvariant()"
+                                                    tabindex="@(isAnchored ? 0 : -1)"
+                                                    aria-current="@(isAnchored ? "true" : null)">
                                                     <td class="px-2 py-2 font-mono text-xs">@item.Sequence</td>
                                                     <td class="px-2 py-2 text-xs">@(item.DisplayLabel ?? "—")</td>
                                                     <td class="px-2 py-2 font-mono text-xs break-all">@(item.SubjectKey ?? "—")</td>
@@ -287,7 +301,7 @@
                                                                 @if (!string.IsNullOrWhiteSpace(childRunId))
                                                                 {
                                                                     <div class="mt-1">
-                                                                        <DrillInLink Href="@($"/runs/{Uri.EscapeDataString(childRunId)}")">
+                                                                        <DrillInLink Href="@PreserveRunHref($"/runs/{Uri.EscapeDataString(childRunId)}")">
                                                                             Open child run
                                                                         </DrillInLink>
                                                                     </div>
@@ -352,7 +366,7 @@
                                                                                     {
                                                                                         <div class="mt-1">
                                                                                             Child run:
-                                                                                            <DrillInLink Href="@($"/runs/{Uri.EscapeDataString(attempt.ChildRunId)}")">
+                                                                                            <DrillInLink Href="@PreserveRunHref($"/runs/{Uri.EscapeDataString(attempt.ChildRunId)}")">
                                                                                                 @attempt.ChildRunId
                                                                                             </DrillInLink>
                                                                                         </div>
@@ -433,9 +447,21 @@
     [Parameter]
     public RunOperationItemizationSummaryDto? Summary { get; set; }
 
+    /// <summary>UIX-3 URL-derived focus request (group/item/q).</summary>
+    [Parameter]
+    public AffectedRecordAnchor? Anchor { get; set; }
+
+    /// <summary>UIX-3 typed return context preserved on deeper run links within this panel.</summary>
+    [Parameter]
+    public ManagementNavigationReturnContext? ReturnContext { get; set; }
+
     /// <summary>SDK-4C — notify parent (Run Detail) to refresh summary after a successful retry.</summary>
     [Parameter]
     public EventCallback OnRetryCompleted { get; set; }
+
+    /// <summary>Optional soft notice when an anchor cannot be applied.</summary>
+    [Parameter]
+    public EventCallback<string?> OnAnchorNotice { get; set; }
 
     private string? _loadKey;
     private bool _groupsLoading;
@@ -443,7 +469,12 @@
     private IReadOnlyList<OperationGroupSummaryDto>? _groups;
 
     private string? _expandedGroupId;
+    private string? _highlightedGroupId;
+    private string? _highlightedItemId;
+    private string? _pendingFocusItemId;
+    private string? _appliedAnchorKey;
     private string _itemStatusFilter = OperationItemizationUiHelpers.StatusFilterAll;
+    private string? _itemSearchQuery;
     private readonly List<OperationItemSummaryDto> _items = new();
     private int _itemsTotalCount;
     private bool _itemsLoading;
@@ -466,16 +497,145 @@
             ? OperationItemizationUiHelpers.OrderItemsFailedFirst(_items)
             : _items.OrderBy(i => i.Sequence).ToArray();
 
+    private string PreserveRunHref(string href) =>
+        AffectedRecordNavigation.PreserveReturnContextOnRunHref(href, ReturnContext);
+
     protected override async Task OnParametersSetAsync()
     {
         await base.OnParametersSetAsync();
         var key = RunId?.Trim() ?? "";
-        if (string.IsNullOrEmpty(key) || key == _loadKey)
-            return;
-        _loadKey = key;
-        ClearRetryUiState();
-        await LoadGroupsAsync(resetExpanded: true);
+        if (!string.IsNullOrEmpty(key) && key != _loadKey)
+        {
+            _loadKey = key;
+            ClearRetryUiState();
+            _appliedAnchorKey = null;
+            await LoadGroupsAsync(resetExpanded: true);
+        }
+
+        await ApplyAnchorAsync();
     }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (string.IsNullOrWhiteSpace(_pendingFocusItemId))
+            return;
+
+        var elementId = AffectedRecordNavigation.FormatOperationItemElementId(_pendingFocusItemId);
+        try
+        {
+            var ok = await Js.InvokeAsync<bool>("appertureShell.scrollElementIntoViewById", elementId);
+            if (ok)
+                _pendingFocusItemId = null;
+        }
+        catch (JSDisconnectedException)
+        {
+            _pendingFocusItemId = null;
+        }
+        catch (InvalidOperationException)
+        {
+            // Circuit/prerender — retry on a later render while pending remains set.
+        }
+    }
+
+    private string BuildAnchorKey(AffectedRecordAnchor? anchor)
+    {
+        if (anchor is null || anchor.IsEmpty)
+            return "";
+        return string.Join('|',
+            RunId?.Trim() ?? "",
+            anchor.OperationGroupId ?? "",
+            anchor.OperationItemId ?? "",
+            anchor.SearchQuery ?? "");
+    }
+
+    private async Task ApplyAnchorAsync()
+    {
+        var anchor = Anchor ?? AffectedRecordAnchor.Empty;
+        var key = BuildAnchorKey(anchor);
+        if (string.Equals(key, _appliedAnchorKey, StringComparison.Ordinal))
+            return;
+
+        // Wait until groups have been loaded for this run.
+        if (_groups is null)
+            return;
+
+        _appliedAnchorKey = key;
+        _highlightedItemId = null;
+        _highlightedGroupId = null;
+        _pendingFocusItemId = null;
+        _itemSearchQuery = null;
+
+        if (anchor.IsEmpty)
+        {
+            await NotifyAnchorNoticeAsync(null);
+            return;
+        }
+
+        if (_groups.Count == 0)
+        {
+            await NotifyAnchorNoticeAsync("No affected records are available for this run.");
+            return;
+        }
+
+        if (anchor.HasGroup)
+        {
+            var group = _groups.FirstOrDefault(g =>
+                string.Equals(g.OperationGroupId, anchor.OperationGroupId, StringComparison.Ordinal));
+            if (group is null)
+            {
+                await NotifyAnchorNoticeAsync("The requested affected group is unavailable on this run.");
+                return;
+            }
+
+            _highlightedGroupId = group.OperationGroupId;
+            if (!string.Equals(_expandedGroupId, group.OperationGroupId, StringComparison.Ordinal))
+            {
+                _expandedGroupId = group.OperationGroupId;
+                _itemStatusFilter = OperationItemizationUiHelpers.StatusFilterAll;
+            }
+
+            if (anchor.HasItem)
+            {
+                _itemSearchQuery = anchor.OperationItemId;
+                await LoadItemsAsync(reset: true, searchOverride: anchor.OperationItemId);
+                var match = _items.FirstOrDefault(i =>
+                    string.Equals(i.OperationItemId, anchor.OperationItemId, StringComparison.Ordinal));
+                if (match is null)
+                {
+                    await NotifyAnchorNoticeAsync("The requested affected record was not found in this group.");
+                    return;
+                }
+
+                _highlightedItemId = match.OperationItemId;
+                _pendingFocusItemId = match.OperationItemId;
+                await NotifyAnchorNoticeAsync(null);
+                return;
+            }
+
+            if (anchor.HasSearch)
+            {
+                _itemSearchQuery = anchor.SearchQuery;
+                await LoadItemsAsync(reset: true, searchOverride: anchor.SearchQuery);
+                await NotifyAnchorNoticeAsync(_items.Count == 0
+                    ? "No affected records matched the requested search."
+                    : null);
+                return;
+            }
+
+            await LoadItemsAsync(reset: true);
+            await NotifyAnchorNoticeAsync(null);
+            return;
+        }
+
+        if (anchor.HasSearch)
+        {
+            // Without a group, search is not run-scoped in the current API — ignore softly.
+            await NotifyAnchorNoticeAsync("Affected-record search requires a group identifier.");
+        }
+    }
+
+    private Task NotifyAnchorNoticeAsync(string? message) =>
+        OnAnchorNotice.HasDelegate ? OnAnchorNotice.InvokeAsync(message) : Task.CompletedTask;
 
     private Task ReloadGroupsAsync() => LoadGroupsAsync(resetExpanded: false);
 
@@ -535,6 +695,7 @@
 
         _expandedGroupId = group.OperationGroupId;
         _itemStatusFilter = OperationItemizationUiHelpers.StatusFilterAll;
+        _itemSearchQuery = null;
         await LoadItemsAsync(reset: true);
     }
 
@@ -546,7 +707,7 @@
         await LoadItemsAsync(reset: true);
     }
 
-    private async Task LoadItemsAsync(bool reset)
+    private async Task LoadItemsAsync(bool reset, string? searchOverride = null)
     {
         if (string.IsNullOrWhiteSpace(RunId) || string.IsNullOrWhiteSpace(_expandedGroupId))
             return;
@@ -561,8 +722,10 @@
         _itemsLoading = true;
         try
         {
+            var search = searchOverride ?? _itemSearchQuery;
             var filter = new OperationItemListFilter(
                 Status: OperationItemizationUiHelpers.ToApiStatusFilter(_itemStatusFilter),
+                Q: string.IsNullOrWhiteSpace(search) ? null : search.Trim(),
                 Skip: _items.Count,
                 Take: OperationItemizationUiHelpers.DefaultItemPageSize);
 

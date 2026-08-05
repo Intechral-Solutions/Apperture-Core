@@ -3,7 +3,7 @@
     Layout = "_Layout";
 }
 @*
-  UIX-2 pass 18: do not emit <component render-mode="WebAssembly"> here.
+  UIX-2 pass 18: do not emit a Razor component tag with WebAssembly render-mode here.
   Client Program.cs already registers RootComponents.Add<App>("#app").
   Keeping both mounted App twice → parentNode / orphaned-component races.
   Placeholder only; WASM replaces #app contents after boot.

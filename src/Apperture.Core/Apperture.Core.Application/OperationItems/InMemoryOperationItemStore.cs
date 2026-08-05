@@ -223,8 +223,10 @@ public sealed class InMemoryOperationItemStore : IOperationItemStore
             if (!string.IsNullOrWhiteSpace(query.Q))
             {
                 var term = query.Q.Trim();
+                // UIX-3: exact OperationItemId match so anchors can retrieve an item outside the first page.
                 filtered = filtered.Where(i =>
-                    (i.SubjectKey is not null && i.SubjectKey.Contains(term, StringComparison.OrdinalIgnoreCase))
+                    string.Equals(i.OperationItemId, term, StringComparison.Ordinal)
+                    || (i.SubjectKey is not null && i.SubjectKey.Contains(term, StringComparison.OrdinalIgnoreCase))
                     || (i.DisplayLabel is not null && i.DisplayLabel.Contains(term, StringComparison.OrdinalIgnoreCase)));
             }
 

@@ -71,6 +71,21 @@ public sealed class OperationItemizationQueryServiceTests
         search!.TotalCount.Should().Be(1);
         search.Items[0].DisplayLabel.Should().Be("Customer C-1");
 
+        var byLabel = await svc.ListItemsByGroupAsync(
+            new OperationRunId("run-1"),
+            group.OperationGroupId,
+            new OperationItemQuery(Q: "Customer C-2"));
+        byLabel!.TotalCount.Should().Be(1);
+        byLabel.Items[0].SubjectKey.Should().Be("C-2");
+
+        var failedItemId = failedPage!.Items.Single().OperationItemId;
+        var byItemId = await svc.ListItemsByGroupAsync(
+            new OperationRunId("run-1"),
+            group.OperationGroupId,
+            new OperationItemQuery(Q: failedItemId, Take: 1));
+        byItemId!.TotalCount.Should().Be(1);
+        byItemId.Items.Single().OperationItemId.Should().Be(failedItemId);
+
         var page1 = await svc.ListItemsByGroupAsync(
             new OperationRunId("run-1"),
             group.OperationGroupId,

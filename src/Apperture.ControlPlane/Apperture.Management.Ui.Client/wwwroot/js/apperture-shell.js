@@ -48,27 +48,20 @@
                 return null;
             }
         },
-        // #region agent log
-        /** UIX-2 debug: POST NDJSON to local debug ingest (session 4bd3d8). */
-        debugLog: function (location, message, hypothesisId, data) {
+        /** UIX-3: scroll a rendered element into view by id (no Blazor DOM rewrite). */
+        scrollElementIntoViewById: function (elementId) {
+            if (!elementId) return false;
+            var el = document.getElementById(elementId);
+            if (!el || typeof el.scrollIntoView !== 'function') return false;
             try {
-                fetch('http://127.0.0.1:7502/ingest/d56ff1c3-6c46-43da-8333-b1782c5d1416', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-Debug-Session-Id': '4bd3d8'
-                    },
-                    body: JSON.stringify({
-                        sessionId: '4bd3d8',
-                        location: location || 'apperture-shell',
-                        message: message || '',
-                        hypothesisId: hypothesisId || '',
-                        data: data || {},
-                        timestamp: Date.now()
-                    })
-                }).catch(function () { });
-            } catch (e) { /* ignore */ }
+                el.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' });
+                if (typeof el.focus === 'function') {
+                    try { el.focus({ preventScroll: true }); } catch { el.focus(); }
+                }
+                return true;
+            } catch {
+                return false;
+            }
         }
-        // #endregion
     };
 })();

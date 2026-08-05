@@ -223,8 +223,10 @@ public sealed class SqlOperationItemStore : IOperationItemStore
         if (!string.IsNullOrWhiteSpace(query.Q))
         {
             var term = query.Q.Trim();
+            // UIX-3: exact item Id match so anchors can retrieve an item outside the first page.
             q = q.Where(i =>
-                (i.SubjectKey != null && i.SubjectKey.Contains(term))
+                i.Id == term
+                || (i.SubjectKey != null && i.SubjectKey.Contains(term))
                 || (i.DisplayLabel != null && i.DisplayLabel.Contains(term)));
         }
 

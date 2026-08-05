@@ -48,7 +48,7 @@ UIX-5  Supporting panel and overlay pattern audit
 |------|--------|--------|
 | **UIX-1** | Design audit (complete) | Layered navigation / drill-through intent; route-derived breadcrumbs as the normal spine. See BDS-1 §9 and related UI audits. |
 | **UIX-2** | Implemented | Breadcrumb/shell renderer stabilization — [`../audits/uix2-breadcrumb-shell-stabilization.md`](../audits/uix2-breadcrumb-shell-stabilization.md). |
-| **UIX-3** | Planned | Affected-record anchors and return context (URL params). |
+| **UIX-3** | Implemented | Affected-record anchors and typed return context — [`../audits/uix3-affected-record-anchors-return-context.md`](../audits/uix3-affected-record-anchors-return-context.md). |
 | **UIX-4** | Planned | Contextual breadcrumbs and link integrity. |
 | **UIX-5** | Planned | Supporting panel / overlay pattern audit. |
 
@@ -101,11 +101,13 @@ UIX-5  Supporting panel and overlay pattern audit
 - **BDS-3** Demo business record projection — complete (`docs/audits/bds3-demo-business-record-projection.md`)
 - **BDS-4** Demo business record client & API polish — complete (`docs/audits/bds4-demo-business-record-client-api-polish.md`)
 - **BDS-5** Demo Customers business record surface — complete (`docs/audits/bds5-demo-customers-surface.md`)
-- **BDS-6 (optional)** Operation Item Explorer / finer Affected-record anchors *(next)*
+- **BDS-6 (optional, deferred)** Cross-run affected-record explorer — retained as optional future work after UIX-3; not required for in-run anchors. See [`docs/audits/uix3-readiness-bds6-decision.md`](../audits/uix3-readiness-bds6-decision.md) (accepted) and [`docs/audits/uix3-affected-record-anchors-return-context.md`](../audits/uix3-affected-record-anchors-return-context.md).
 - Integration-owned projections
 - Cross-integration lookup
 - Record detail pages
 - Provenance / source tracking
+
+**Track 5 sequencing note (2026-08):** After BDS-5 and UIX-2, the next product step is **UIX-3** (affected-record anchors + return context on existing Run Detail). Prior roadmap wording that listed BDS-6 as *(next)* is superseded; BDS-6 remains optional for browsing items across runs when no specific `RunId` is known.
 
 ---
 

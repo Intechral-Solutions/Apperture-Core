@@ -140,10 +140,21 @@
                                 </div>
                             </div>
                             <div class="flex flex-wrap gap-2">
-                                <a class="text-link text-sm"
-                                   href="@DemoCustomerUiHelpers.GetRunDetailHref(source.RunId)">
-                                    Open run
-                                </a>
+                                @{
+                                    var affectedHref = AffectedRecordNavigation.BuildDemoCustomerSourceHref(
+                                        _record.BusinessKey,
+                                        source.RunId,
+                                        source.OperationGroupId,
+                                        source.OperationItemId);
+                                    var affectedLabel = AffectedRecordNavigation.ResolveDemoCustomerSourceLinkLabel(
+                                        source.RunId,
+                                        source.OperationGroupId,
+                                        source.OperationItemId);
+                                }
+                                @if (affectedHref is not null)
+                                {
+                                    <a class="text-link text-sm" href="@affectedHref">@affectedLabel</a>
+                                }
                                 @if (integrationHref is not null)
                                 {
                                     <a class="text-link text-sm" href="@integrationHref">Open integration</a>
@@ -189,7 +200,7 @@
                                 <div><dt class="inline text-muted">operationKind:</dt> <dd class="inline break-all">@(source.OperationKind ?? "—")</dd></div>
                             </dl>
                             <p class="mt-2">
-                                Finer-grained anchors into Affected records on Run Detail are deferred — open the run and use the Affected records panel.
+                                Open affected record focuses the matching group and item on Run Detail when those identifiers are present.
                             </p>
                         </details>
                     </div>
