@@ -295,7 +295,8 @@ Complete — Demo Customers list/detail under Developer & internal. See [bds5-de
 - **UIX-2 — Breadcrumb and shell rendering stabilization** — [`uix2-breadcrumb-shell-stabilization.md`](./uix2-breadcrumb-shell-stabilization.md).
 - **UIX-3 — Affected-record anchors and return context** — **implemented**.
 - **UIX-4 — Contextual breadcrumbs and link integrity** — **implemented**.
-- **UIX-5 — Supporting panel and overlay pattern audit** (next).
+- **UIX-5 — Supporting surface and investigation pattern audit** — **complete** ([`uix5-supporting-surface-pattern-audit.md`](./uix5-supporting-surface-pattern-audit.md)); no shared panel yet.
+- **UIX-6 — Technical disclosure and confirm-action consistency** (next).
 - **Track 5 promotion:** only after demo projection proves value — consider promoting patterns into a platform entity model.
 ### Explicitly out of sequence until justified
 

@@ -84,7 +84,8 @@ Soft conflicts only (email / status / displayName). Informational — no edit, n
 - **UIX-3** — Affected-record anchors and return context — **implemented** ([`uix3-affected-record-anchors-return-context.md`](./uix3-affected-record-anchors-return-context.md))
 - **UIX-4** — Contextual breadcrumbs — **implemented** ([`uix4-contextual-breadcrumbs-link-integrity.md`](./uix4-contextual-breadcrumbs-link-integrity.md))
 - **BDS-6** — Cross-run business-record activity and lineage — **implemented** ([`bds6-cross-run-business-record-activity-lineage.md`](./bds6-cross-run-business-record-activity-lineage.md))
-- **UIX-5** — Supporting panel / overlay pattern audit (next)
+- **UIX-5** — Supporting surface pattern audit — **complete** ([`uix5-supporting-surface-pattern-audit.md`](./uix5-supporting-surface-pattern-audit.md))
+- **UIX-6** — Technical disclosure and confirm-action consistency (next)
 - **SYS-1:** Systems/Services model design (when revisit triggers fire)
 - Promote patterns to a platform entity model only after demo value is proven
 

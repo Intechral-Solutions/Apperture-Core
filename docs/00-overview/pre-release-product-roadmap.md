@@ -41,7 +41,8 @@ UIX-1  Layered navigation and drill-through design audit
 UIX-2  Breadcrumb and shell rendering stabilization
 UIX-3  Affected-record anchors and return context
 UIX-4  Contextual breadcrumbs and link integrity
-UIX-5  Supporting panel and overlay pattern audit
+UIX-5  Supporting surface and investigation pattern audit
+UIX-6  Technical disclosure and confirm-action consistency (next)
 ```
 
 | Epic | Status | Notes |
@@ -50,7 +51,8 @@ UIX-5  Supporting panel and overlay pattern audit
 | **UIX-2** | Implemented | Breadcrumb/shell renderer stabilization — [`../audits/uix2-breadcrumb-shell-stabilization.md`](../audits/uix2-breadcrumb-shell-stabilization.md). |
 | **UIX-3** | Implemented | Affected-record anchors and typed return context — [`../audits/uix3-affected-record-anchors-return-context.md`](../audits/uix3-affected-record-anchors-return-context.md). |
 | **UIX-4** | Implemented | Contextual breadcrumbs and link integrity — [`../audits/uix4-contextual-breadcrumbs-link-integrity.md`](../audits/uix4-contextual-breadcrumbs-link-integrity.md). |
-| **UIX-5** | Planned (next after BDS-6) | Supporting panel / overlay pattern audit. |
+| **UIX-5** | Audit complete | Supporting surface / investigation pattern audit — [`../audits/uix5-supporting-surface-pattern-audit.md`](../audits/uix5-supporting-surface-pattern-audit.md). **No shared panel yet**; next is UIX-6 consistency. |
+| **UIX-6** | Planned (next) | Technical disclosure (`TechnicalDetails`) + accessible confirm dialogs; not a drawer framework. |
 
 ---
 
@@ -107,7 +109,7 @@ UIX-5  Supporting panel and overlay pattern audit
 - Record detail pages
 - Provenance / source tracking
 
-**Track 5 sequencing note (2026-08):** BDS-1–BDS-6 and UIX-1–UIX-4 are delivered for the Demo Customer arc. Next supporting UI audit is **UIX-5** (panel/overlay patterns). A generic Operation Item Explorer remains out of scope; BDS-6 is the customer-first cross-run activity surface.
+**Track 5 sequencing note (2026-08):** BDS-1–BDS-6 and UIX-1–UIX-5 are delivered for the Demo Customer investigation arc. UIX-5 concluded **no shared inspection panel yet**; next UI epic is **UIX-6** (technical disclosure + confirm-action consistency). A generic Operation Item Explorer and drawer framework remain out of scope.
 
 ---
 

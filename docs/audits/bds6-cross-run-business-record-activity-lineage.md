@@ -94,7 +94,7 @@ Operator checklist in epic DoD — **not executed in this agent session**.
 
 ## 15. UIX-5 handoff
 
-Activity rows may later benefit from inline expansion or a side panel for technical details; keep dedicated route for filtered histories. Do not introduce a drawer framework here.
+**UIX-5 complete** — [`uix5-supporting-surface-pattern-audit.md`](./uix5-supporting-surface-pattern-audit.md). Activity remains a dedicated route; no drawer framework. UIX-5 deferred shared panels; standardize technical `<details>` via UIX-6.
 
 ## 16. Longer-term opportunities
 

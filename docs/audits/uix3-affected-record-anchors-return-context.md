@@ -103,5 +103,5 @@ Operator checklist (Aspire + DevTools, Preserve Log): exact item, group-only, pa
 
 - **UIX-4:** contextual breadcrumb composition from validated return context — **implemented** ([`uix4-contextual-breadcrumbs-link-integrity.md`](./uix4-contextual-breadcrumbs-link-integrity.md)). Historical note: UIX-3 intentionally left top-bar breadcrumbs route-derived.
 - **BDS-6:** cross-run business-record activity and lineage — **implemented** ([`bds6-cross-run-business-record-activity-lineage.md`](./bds6-cross-run-business-record-activity-lineage.md))
-- **UIX-5:** supporting panel / overlay pattern audit (next)
-- **UIX-5:** panel/drawer framework
+- **UIX-5:** supporting surface pattern audit — **complete** ([`uix5-supporting-surface-pattern-audit.md`](./uix5-supporting-surface-pattern-audit.md)); no shared panel yet
+- **UIX-6:** technical disclosure and confirm-action consistency (next)

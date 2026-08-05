@@ -94,4 +94,4 @@ Operator checklist in epic DoD (canonical vs contextual, replace, clear via Runs
 
 ## 14. UIX-5 handoff
 
-**UIX-5 — Supporting panel and overlay pattern audit** is next after BDS-6.
+**UIX-5 — Supporting surface and investigation pattern audit** is **complete** — [`uix5-supporting-surface-pattern-audit.md`](./uix5-supporting-surface-pattern-audit.md). Recommendation: no shared panel yet; next implementation is **UIX-6** (technical disclosure + confirm dialogs).

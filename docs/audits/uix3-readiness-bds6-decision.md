@@ -140,7 +140,7 @@ Use **query parameters on existing routes** (not a history store). Names below a
 
 - Contextual breadcrumb replacement / enrichment via `ManagementBreadcrumbNavigationContext` fields.
 - Generalized module-contributed navigation contexts.
-- Panel/drawer navigation framework (UIX-5).
+- Panel/drawer navigation framework (deferred by UIX-5; see [`uix5-supporting-surface-pattern-audit.md`](./uix5-supporting-surface-pattern-audit.md)).
 - Broad link-integrity framework across the whole Management UI.
 - Unrelated Run Detail redesign.
 
@@ -225,7 +225,7 @@ Use **query parameters on existing routes** (not a history store). Names below a
 
 **Do not** keep BDS-6 merely as “finer anchors”—that work is UIX-3.
 
-**Roadmap resolution:** UIX-3 → UIX-4 → BDS-6 (customer activity) → UIX-5.
+**Roadmap resolution:** UIX-3 → UIX-4 → BDS-6 (customer activity) → UIX-5 (audit: no panel yet) → UIX-6 (disclosure + confirms).
 
 ---
 
@@ -240,7 +240,8 @@ Use **query parameters on existing routes** (not a history store). Names below a
 [done] UIX-3 — Affected-record anchors and return context
 [done] UIX-4 — Contextual breadcrumbs and link integrity
 [done] BDS-6 — Cross-run business-record activity and lineage (customer-first; not Operation Item Explorer)
-[next] UIX-5 — Supporting panel / overlay pattern audit
+[done] UIX-5 — Supporting surface pattern audit (no shared panel yet)
+[next] UIX-6 — Technical disclosure and confirm-action consistency
 ```
 
 Avoid lettered sub-epics unless a prerequisite grows into a separate durable API product (unlikely for GET-by-item-id).
