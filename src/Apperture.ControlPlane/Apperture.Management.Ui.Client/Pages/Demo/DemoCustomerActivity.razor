@@ -1,0 +1,320 @@
+@page "/demo/customers/{BusinessKey}/activity"
+@layout ConfigLayout
+@inject IManagementClient Client
+@inject IOperatorCapabilitiesService Capabilities
+
+<div class="p-4 ui-page-stack">
+    <PageHeader Title="@(_displayName ?? "Customer activity")"
+                Eyebrow="Developer · Demo data"
+                Subtitle="@DemoCustomerActivityUiHelpers.PageSubtitle">
+        <Toolbar>
+            <a href="@DemoCustomerUiRoutes.Detail(BusinessKey)" class="ui-toolbar-btn text-sm">← Customer</a>
+            <a href="@DemoCustomerUiRoutes.List" class="ui-toolbar-btn text-sm">Demo Customers</a>
+            <button type="button"
+                    class="ui-toolbar-btn text-sm"
+                    disabled="@_loading"
+                    @onclick="ReloadAsync">
+                Refresh
+            </button>
+        </Toolbar>
+    </PageHeader>
+
+    <PageMessage Kind="PageMessageKind.Info" Message="@DemoCustomerUiHelpers.DemoScopeBanner" />
+
+    @if (!_capabilitiesLoaded)
+    {
+        <LoadingState Message="Loading…" />
+    }
+    else if (!_canView)
+    {
+        <ForbiddenState Message="@DemoCustomerUiHelpers.ForbiddenMessage" />
+    }
+    else if (!string.IsNullOrEmpty(_loadError))
+    {
+        <ErrorState Message="@_loadError">
+            <button type="button" class="mt-3 ui-toolbar-btn" @onclick="ReloadAsync">Try again</button>
+        </ErrorState>
+    }
+    else if (_notFound)
+    {
+        <EmptyState Title="Customer not found" Message="@DemoCustomerUiHelpers.NotFoundMessage">
+            <a href="@DemoCustomerUiRoutes.List" class="mt-3 inline-block ui-toolbar-btn">Back to list</a>
+        </EmptyState>
+    }
+    else
+    {
+        <ManagementSection Title="Filters" Layer="@ManagementSection.UiLayer.Summary">
+            <div class="flex flex-wrap items-end gap-3">
+                <label class="text-sm">
+                    <span class="mb-1 block text-xs text-muted">Source</span>
+                    <select class="ui-input" @bind="_sourceKind" @bind:after="OnFilterChangedAsync">
+                        @foreach (var opt in DemoCustomerUiHelpers.SourceKindOptions)
+                        {
+                            <option value="@opt.Value">@opt.Label</option>
+                        }
+                    </select>
+                </label>
+                <label class="text-sm">
+                    <span class="mb-1 block text-xs text-muted">Outcome</span>
+                    <select class="ui-input" @bind="_status" @bind:after="OnFilterChangedAsync">
+                        @foreach (var opt in DemoCustomerActivityUiHelpers.StatusFilterOptions)
+                        {
+                            <option value="@opt.Value">@opt.Label</option>
+                        }
+                    </select>
+                </label>
+                <label class="text-sm">
+                    <span class="mb-1 block text-xs text-muted">Time range</span>
+                    <select class="ui-input" @bind="_lookbackDays" @bind:after="OnFilterChangedAsync">
+                        @foreach (var opt in DemoCustomerActivityUiHelpers.LookbackOptions)
+                        {
+                            <option value="@opt.Value">@opt.Label</option>
+                        }
+                    </select>
+                </label>
+                <label class="text-sm grow">
+                    <span class="mb-1 block text-xs text-muted">Search</span>
+                    <input class="ui-input w-full"
+                           @bind="_query"
+                           @bind:event="oninput"
+                           @bind:after="OnFilterChangedAsync"
+                           placeholder="Label, integration, operation…" />
+                </label>
+                <label class="flex items-center gap-2 text-sm">
+                    <input type="checkbox" @bind="_attentionOnly" @bind:after="OnFilterChangedAsync" />
+                    Needs attention
+                </label>
+                @if (_filtersActive)
+                {
+                    <button type="button" class="ui-toolbar-btn text-sm" @onclick="ResetFiltersAsync">Reset filters</button>
+                }
+            </div>
+        </ManagementSection>
+
+        <ManagementSection Title="@DemoCustomerActivityUiHelpers.SectionTitle" Layer="@ManagementSection.UiLayer.Summary">
+            @if (_loading && _items.Count == 0)
+            {
+                <LoadingState Message="Loading activity…" />
+            }
+            else if (_items.Count == 0)
+            {
+                var empty = DemoCustomerActivityUiHelpers.ResolveEmptyCopy(_filtersActive);
+                <EmptyState Title="@empty.Title" Message="@empty.Message">
+                    @if (_filtersActive)
+                    {
+                        <button type="button" class="mt-3 ui-toolbar-btn" @onclick="ResetFiltersAsync">Reset filters</button>
+                    }
+                </EmptyState>
+            }
+            else
+            {
+                <ul class="space-y-3">
+                    @foreach (var entry in _items)
+                    {
+                        var href = DemoCustomerActivityUiHelpers.BuildAffectedHref(BusinessKey, entry);
+                        var actionLabel = DemoCustomerActivityUiHelpers.ResolveActionLabel(entry);
+                        <li class="rounded border border-default p-3">
+                            <div class="flex flex-wrap items-start justify-between gap-2">
+                                <div class="min-w-0 space-y-1">
+                                    <div class="font-medium text-heading">@DemoCustomerActivityUiHelpers.FormatPrimaryLabel(entry)</div>
+                                    <div class="text-sm text-muted">
+                                        @entry.IntegrationLabel
+                                        <span>·</span>
+                                        @entry.SourceKindLabel
+                                    </div>
+                                    <div class="text-xs text-muted">
+                                        <TimestampDisplay Value="@entry.OccurredAtUtc" ShowUtcDetail="true" />
+                                    </div>
+                                </div>
+                                <div class="flex flex-wrap items-center gap-2">
+                                    <StatusPill Label="@DemoCustomerActivityUiHelpers.FormatOutcome(entry)"
+                                                Semantic="@DemoCustomerActivityUiHelpers.MapItemSemantic(entry.ItemStatus)" />
+                                    @if (entry.RequiresAttention)
+                                    {
+                                        <StatusPill Label="Needs attention" Semantic="ManagementStatusSemantic.Warning" />
+                                    }
+                                    @if (href is not null)
+                                    {
+                                        <a class="text-link text-sm" href="@href">@actionLabel</a>
+                                    }
+                                </div>
+                            </div>
+
+                            @if (!string.IsNullOrWhiteSpace(entry.ErrorMessage))
+                            {
+                                <p class="mt-2 text-sm text-body">@entry.ErrorMessage</p>
+                            }
+
+                            <details class="mt-3 text-xs text-muted">
+                                <summary class="cursor-pointer select-none text-body">Technical details</summary>
+                                <dl class="mt-2 grid grid-cols-1 gap-1 font-mono md:grid-cols-2">
+                                    <div><dt class="inline text-muted">runId:</dt> <dd class="inline break-all">@entry.RunId</dd></div>
+                                    <div><dt class="inline text-muted">operationItemId:</dt> <dd class="inline break-all">@entry.OperationItemId</dd></div>
+                                    <div><dt class="inline text-muted">operationGroupId:</dt> <dd class="inline break-all">@entry.OperationGroupId</dd></div>
+                                    <div><dt class="inline text-muted">runStatus:</dt> <dd class="inline break-all">@(entry.RunStatus ?? "—")</dd></div>
+                                    <div><dt class="inline text-muted">integrationId:</dt> <dd class="inline break-all">@(entry.IntegrationId ?? "—")</dd></div>
+                                    <div><dt class="inline text-muted">changeKind:</dt> <dd class="inline break-all">@(entry.ChangeKind ?? "—")</dd></div>
+                                </dl>
+                            </details>
+                        </li>
+                    }
+                </ul>
+
+                @if (_hasMore)
+                {
+                    <button type="button"
+                            class="mt-4 ui-toolbar-btn text-sm"
+                            disabled="@_loadingMore"
+                            @onclick="LoadMoreAsync">
+                        @(_loadingMore ? "Loading…" : "Load more")
+                    </button>
+                }
+            }
+        </ManagementSection>
+    }
+</div>
+
+@code {
+    [Parameter] public string BusinessKey { get; set; } = "";
+
+    private bool _capabilitiesLoaded;
+    private bool _canView;
+    private bool _loading = true;
+    private bool _loadingMore;
+    private bool _notFound;
+    private string? _loadError;
+    private string? _displayName;
+    private readonly List<DemoCustomerActivityEntryDto> _items = [];
+    private bool _hasMore;
+    private int _skip;
+
+    private string _sourceKind = DemoCustomerUiHelpers.SourceKindAll;
+    private string _status = OperationItemizationUiHelpers.StatusFilterAll;
+    private string _lookbackDays = "";
+    private string _query = "";
+    private bool _attentionOnly;
+
+    private bool _filtersActive =>
+        DemoCustomerActivityUiHelpers.FiltersActive(_sourceKind, _status, _attentionOnly, _query, _lookbackDays);
+
+    protected override async Task OnParametersSetAsync() => await ReloadAsync();
+
+    private async Task ReloadAsync()
+    {
+        _skip = 0;
+        _items.Clear();
+        _hasMore = false;
+        await LoadPageAsync(replace: true);
+    }
+
+    private async Task OnFilterChangedAsync()
+    {
+        _skip = 0;
+        _items.Clear();
+        await LoadPageAsync(replace: true);
+    }
+
+    private async Task ResetFiltersAsync()
+    {
+        _sourceKind = DemoCustomerUiHelpers.SourceKindAll;
+        _status = OperationItemizationUiHelpers.StatusFilterAll;
+        _lookbackDays = "";
+        _query = "";
+        _attentionOnly = false;
+        await OnFilterChangedAsync();
+    }
+
+    private async Task LoadMoreAsync()
+    {
+        if (!_hasMore || _loadingMore)
+            return;
+        _skip = _items.Count;
+        await LoadPageAsync(replace: false);
+    }
+
+    private async Task LoadPageAsync(bool replace)
+    {
+        if (replace)
+            _loading = true;
+        else
+            _loadingMore = true;
+
+        _loadError = null;
+        _notFound = false;
+
+        var caps = await Capabilities.GetCapabilitiesAsync();
+        _canView = caps.CanViewIntegrations;
+        _capabilitiesLoaded = true;
+        if (!_canView)
+        {
+            _loading = false;
+            _loadingMore = false;
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(BusinessKey))
+        {
+            _notFound = true;
+            _loading = false;
+            _loadingMore = false;
+            return;
+        }
+
+        try
+        {
+            if (replace || string.IsNullOrWhiteSpace(_displayName))
+            {
+                var customer = await Client.GetDemoCustomerRecordAsync(BusinessKey);
+                if (customer is null)
+                {
+                    _notFound = true;
+                    return;
+                }
+
+                _displayName = DemoCustomerUiHelpers.CustomerDisplayName(customer) + " · Activity";
+            }
+
+            var filter = DemoCustomerActivityUiHelpers.BuildFilter(
+                _sourceKind,
+                _status,
+                _attentionOnly,
+                _query,
+                _lookbackDays,
+                _skip);
+
+            var page = await Client.GetDemoCustomerActivityAsync(BusinessKey, filter);
+            if (page is null)
+            {
+                _notFound = true;
+                return;
+            }
+
+            if (replace)
+                _items.Clear();
+
+            foreach (var item in page.Items)
+            {
+                if (_items.Any(existing => existing.OperationItemId == item.OperationItemId))
+                    continue;
+                _items.Add(item);
+            }
+
+            _hasMore = page.HasMore;
+        }
+        catch (HttpRequestException ex)
+        {
+            _loadError = string.IsNullOrWhiteSpace(ex.Message)
+                ? DemoCustomerActivityUiHelpers.LoadErrorMessage
+                : ex.Message;
+        }
+        catch (Exception)
+        {
+            _loadError = DemoCustomerActivityUiHelpers.LoadErrorMessage;
+        }
+        finally
+        {
+            _loading = false;
+            _loadingMore = false;
+        }
+    }
+}

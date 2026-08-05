@@ -289,13 +289,13 @@ Complete — Demo Customers list/detail under Developer & internal. See [bds5-de
 
 ### Later (ordered)
 
-- **BDS-6 (optional):** Operation Item Explorer as advanced cross-run activity filter (Option A), preferably scoped from a record or integration.
+- **BDS-6** — Cross-run business-record activity and lineage — **implemented** ([`bds6-cross-run-business-record-activity-lineage.md`](./bds6-cross-run-business-record-activity-lineage.md)). Customer-first Demo Customer activity; **not** a generic Operation Item Explorer (historical Option A remains out of scope as a standalone explorer).
 - **SYS-1 — Systems/Services Model Design** (audit/design only until revisit triggers fire).
 - **UIX-1 — Layered navigation and drill-through design audit** (complete as design intent; route-derived breadcrumbs as the normal spine).
 - **UIX-2 — Breadcrumb and shell rendering stabilization** — [`uix2-breadcrumb-shell-stabilization.md`](./uix2-breadcrumb-shell-stabilization.md).
-- **UIX-3 — Affected-record anchors and return context** (planned).
-- **UIX-4 — Contextual breadcrumbs and link integrity** (planned).
-- **UIX-5 — Supporting panel and overlay pattern audit** (planned).
+- **UIX-3 — Affected-record anchors and return context** — **implemented**.
+- **UIX-4 — Contextual breadcrumbs and link integrity** — **implemented**.
+- **UIX-5 — Supporting panel and overlay pattern audit** (next).
 - **Track 5 promotion:** only after demo projection proves value — consider promoting patterns into a platform entity model.
 ### Explicitly out of sequence until justified
 

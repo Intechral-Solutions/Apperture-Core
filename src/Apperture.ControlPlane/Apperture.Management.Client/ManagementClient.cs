@@ -233,6 +233,59 @@ public sealed class ManagementClient : IManagementClient
             .ConfigureAwait(false);
     }
 
+    public async Task<DemoCustomerActivityPageDto?> GetDemoCustomerActivityAsync(
+        string businessKey,
+        DemoCustomerActivityFilter? filter = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(businessKey))
+            throw new ArgumentException("Business key is required.", nameof(businessKey));
+
+        filter ??= new DemoCustomerActivityFilter();
+        var qs = new List<string>
+        {
+            $"skip={Math.Max(0, filter.Skip)}",
+            $"take={(filter.Take <= 0 ? 25 : filter.Take)}",
+            $"attentionOnly={filter.AttentionOnly.ToString().ToLowerInvariant()}",
+        };
+        if (!string.IsNullOrWhiteSpace(filter.SourceKind))
+            qs.Add($"sourceKind={Uri.EscapeDataString(filter.SourceKind.Trim())}");
+        if (!string.IsNullOrWhiteSpace(filter.Status))
+            qs.Add($"status={Uri.EscapeDataString(filter.Status.Trim())}");
+        if (!string.IsNullOrWhiteSpace(filter.Q))
+            qs.Add($"q={Uri.EscapeDataString(filter.Q.Trim())}");
+        if (filter.LookbackDays is > 0)
+            qs.Add($"lookbackDays={filter.LookbackDays.Value}");
+
+        var path =
+            $"demo/business-records/customers/{Uri.EscapeDataString(businessKey.Trim())}/activity?{string.Join("&", qs)}";
+        using var response = await _http.GetAsync(path, cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden or HttpStatusCode.NotFound)
+            return null;
+        response.EnsureSuccessStatusCode();
+        return await response.Content
+            .ReadFromJsonAsync<DemoCustomerActivityPageDto>(ApiJsonReadOptions, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    public async Task<DemoCustomerActivitySummaryDto?> GetDemoCustomerActivitySummaryAsync(
+        string businessKey,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(businessKey))
+            throw new ArgumentException("Business key is required.", nameof(businessKey));
+
+        var path =
+            $"demo/business-records/customers/{Uri.EscapeDataString(businessKey.Trim())}/activity/summary";
+        using var response = await _http.GetAsync(path, cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden or HttpStatusCode.NotFound)
+            return null;
+        response.EnsureSuccessStatusCode();
+        return await response.Content
+            .ReadFromJsonAsync<DemoCustomerActivitySummaryDto>(ApiJsonReadOptions, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
     private static string? TryReadApiErrorMessage(string? body)
     {
         if (string.IsNullOrWhiteSpace(body))

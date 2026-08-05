@@ -90,8 +90,8 @@ Operator checklist in epic DoD (canonical vs contextual, replace, clear via Runs
 
 ## 13. BDS-6 handoff
 
-**BDS-6 — Cross-Run Business Record Activity and Lineage** (separate epic): discover related activity across runs/integrations without a known Run ID. Reuse UIX-3/4 typed context, breadcrumbs, affected-record links, return navigation, and integrity tests. Do not absorb cross-run queries into UIX-4.
+**BDS-6 — Cross-Run Business Record Activity and Lineage** is **implemented** — [`bds6-cross-run-business-record-activity-lineage.md`](./bds6-cross-run-business-record-activity-lineage.md). It reuses UIX-3/4 typed context, breadcrumbs, and affected-record links for Demo Customer activity.
 
 ## 14. UIX-5 handoff
 
-**UIX-5 — Supporting panel and overlay pattern audit** remains next for panel/drawer coherence; not started here.
+**UIX-5 — Supporting panel and overlay pattern audit** is next after BDS-6.

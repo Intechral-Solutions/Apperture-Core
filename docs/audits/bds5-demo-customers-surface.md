@@ -82,9 +82,10 @@ Soft conflicts only (email / status / displayName). Informational — no edit, n
 ## Next
 
 - **UIX-3** — Affected-record anchors and return context — **implemented** ([`uix3-affected-record-anchors-return-context.md`](./uix3-affected-record-anchors-return-context.md))
-- **UIX-4** — Contextual breadcrumbs and link integrity (planned)
-- **BDS-6 (optional):** Cross-run affected-record explorer when no specific `RunId` is known — deferred; decision in [`uix3-readiness-bds6-decision.md`](./uix3-readiness-bds6-decision.md)
+- **UIX-4** — Contextual breadcrumbs — **implemented** ([`uix4-contextual-breadcrumbs-link-integrity.md`](./uix4-contextual-breadcrumbs-link-integrity.md))
+- **BDS-6** — Cross-run business-record activity and lineage — **implemented** ([`bds6-cross-run-business-record-activity-lineage.md`](./bds6-cross-run-business-record-activity-lineage.md))
+- **UIX-5** — Supporting panel / overlay pattern audit (next)
 - **SYS-1:** Systems/Services model design (when revisit triggers fire)
 - Promote patterns to a platform entity model only after demo value is proven
 
-**Historical note:** At BDS-5 closeout, this doc listed “finer Affected-record anchors” under optional BDS-6 and said Run Detail anchors were deferred. That deferred in-run anchoring is now UIX-3; BDS-6 is narrowed to cross-run exploration only.
+**Historical note:** At BDS-5 closeout, this doc listed “finer Affected-record anchors” under optional BDS-6 and said Run Detail anchors were deferred. That deferred in-run anchoring is now UIX-3. BDS-6 was redefined as customer-first cross-run activity/lineage (not a generic Operation Item Explorer) and is now implemented.

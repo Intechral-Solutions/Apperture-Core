@@ -956,6 +956,8 @@ public class AppertureDbContext : DbContext
             e.HasIndex(x => x.RunId);
             e.HasIndex(x => new { x.RunId, x.Status });
             e.HasIndex(x => new { x.OperationGroupId, x.Sequence });
+            // BDS-6 — cross-run activity by SubjectKey (demo customer business key).
+            e.HasIndex(x => x.SubjectKey);
             e.HasMany(x => x.RetryAttempts)
                 .WithOne(x => x.Item!)
                 .HasForeignKey(x => x.OperationItemId)

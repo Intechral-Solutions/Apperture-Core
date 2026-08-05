@@ -49,8 +49,8 @@ UIX-5  Supporting panel and overlay pattern audit
 | **UIX-1** | Design audit (complete) | Layered navigation / drill-through intent; route-derived breadcrumbs as the normal spine. See BDS-1 §9 and related UI audits. |
 | **UIX-2** | Implemented | Breadcrumb/shell renderer stabilization — [`../audits/uix2-breadcrumb-shell-stabilization.md`](../audits/uix2-breadcrumb-shell-stabilization.md). |
 | **UIX-3** | Implemented | Affected-record anchors and typed return context — [`../audits/uix3-affected-record-anchors-return-context.md`](../audits/uix3-affected-record-anchors-return-context.md). |
-| **UIX-4** | Implemented (operator smoke pending) | Contextual breadcrumbs and link integrity — [`../audits/uix4-contextual-breadcrumbs-link-integrity.md`](../audits/uix4-contextual-breadcrumbs-link-integrity.md). |
-| **UIX-5** | Planned | Supporting panel / overlay pattern audit. |
+| **UIX-4** | Implemented | Contextual breadcrumbs and link integrity — [`../audits/uix4-contextual-breadcrumbs-link-integrity.md`](../audits/uix4-contextual-breadcrumbs-link-integrity.md). |
+| **UIX-5** | Planned (next after BDS-6) | Supporting panel / overlay pattern audit. |
 
 ---
 
@@ -101,13 +101,13 @@ UIX-5  Supporting panel and overlay pattern audit
 - **BDS-3** Demo business record projection — complete (`docs/audits/bds3-demo-business-record-projection.md`)
 - **BDS-4** Demo business record client & API polish — complete (`docs/audits/bds4-demo-business-record-client-api-polish.md`)
 - **BDS-5** Demo Customers business record surface — complete (`docs/audits/bds5-demo-customers-surface.md`)
-- **BDS-6 (next product epic after UIX-4)** Cross-run business-record activity and lineage — start from a business record and discover related activity across runs/integrations without already knowing a `RunId`. Reuses UIX-3/4 typed context, contextual breadcrumbs, and affected-record links. See [`docs/audits/uix4-contextual-breadcrumbs-link-integrity.md`](../audits/uix4-contextual-breadcrumbs-link-integrity.md) §13 and [`docs/audits/uix3-readiness-bds6-decision.md`](../audits/uix3-readiness-bds6-decision.md).
+- **BDS-6** Cross-run business-record activity and lineage — implemented (`docs/audits/bds6-cross-run-business-record-activity-lineage.md`); customer-first Demo Customer activity (not a generic Operation Item Explorer). Operator smoke pending.
 - Integration-owned projections
 - Cross-integration lookup
 - Record detail pages
 - Provenance / source tracking
 
-**Track 5 sequencing note (2026-08):** After BDS-5, UIX-2, UIX-3, and UIX-4, the next Track 5 product epic is **BDS-6** (cross-run business-record activity and lineage). In-run affected-record anchors and contextual breadcrumbs are delivered by UIX-3/UIX-4; BDS-6 is not required for those workflows.
+**Track 5 sequencing note (2026-08):** BDS-1–BDS-6 and UIX-1–UIX-4 are delivered for the Demo Customer arc. Next supporting UI audit is **UIX-5** (panel/overlay patterns). A generic Operation Item Explorer remains out of scope; BDS-6 is the customer-first cross-run activity surface.
 
 ---
 

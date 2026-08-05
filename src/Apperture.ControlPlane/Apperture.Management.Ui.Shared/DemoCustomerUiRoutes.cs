@@ -7,4 +7,8 @@ public static class DemoCustomerUiRoutes
 
     public static string Detail(string businessKey) =>
         $"{List}/{Uri.EscapeDataString(businessKey.Trim())}";
+
+    /// <summary>BDS-6 — cross-run activity for a demo customer.</summary>
+    public static string Activity(string businessKey) =>
+        $"{Detail(businessKey)}/activity";
 }

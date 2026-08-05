@@ -52,3 +52,52 @@ public sealed record DemoCustomerRecordListFilter(
     bool? HasConflict = null,
     int Skip = 0,
     int Take = 50);
+
+/// <summary>BDS-6 — cross-run activity for a demo customer.</summary>
+public sealed record DemoCustomerActivityPageDto(
+    IReadOnlyList<DemoCustomerActivityEntryDto> Items,
+    int TotalCount,
+    int Skip,
+    int Take,
+    bool HasMore);
+
+public sealed record DemoCustomerActivityEntryDto(
+    string BusinessKey,
+    DateTimeOffset OccurredAtUtc,
+    string RunId,
+    string? RunStatus,
+    string? IntegrationId,
+    string IntegrationLabel,
+    string SourceKind,
+    string SourceKindLabel,
+    string OperationGroupId,
+    string OperationItemId,
+    string? OperationKind,
+    string? OperationLabel,
+    string? SubjectKey,
+    string? DisplayLabel,
+    string ItemStatus,
+    string? ChangeKind,
+    string? ErrorCode,
+    string? ErrorMessage,
+    bool IsRetryable,
+    int RetryCount,
+    bool RequiresAttention,
+    bool WasRetried,
+    string? SourceLabel,
+    string? GroupStatus);
+
+public sealed record DemoCustomerActivitySummaryDto(
+    string BusinessKey,
+    int TotalCount,
+    int AttentionCount,
+    DateTimeOffset? LatestOccurredAtUtc);
+
+public sealed record DemoCustomerActivityFilter(
+    string? SourceKind = null,
+    string? Status = null,
+    bool AttentionOnly = false,
+    string? Q = null,
+    int? LookbackDays = null,
+    int Skip = 0,
+    int Take = 25);

@@ -215,30 +215,32 @@ Use **query parameters on existing routes** (not a history store). Names below a
 
 ## 6. BDS-6 recommendation
 
-**Retain as an optional future epic; do not implement before UIX-3; do not absorb into UIX-3.**
+**Historical decision (at UIX-3 readiness):** Retain as optional; do not implement before UIX-3; do not absorb into UIX-3.
 
-**Narrow definition (user redefine if kept on the roadmap):**
+**Accepted redefinition and delivery (2026-08):** BDS-6 is **Cross-Run Business Record Activity and Lineage**, customer-first — implemented in [`bds6-cross-run-business-record-activity-lineage.md`](./bds6-cross-run-business-record-activity-lineage.md). A generic Operation Item Explorer remains out of scope.
+
+**Narrow definition used at readiness time (superseded by customer-first activity):**
 
 > **BDS-6 — Cross-run affected-record explorer (optional):** From a demo customer (or integration), browse operation items **across multiple runs** with filters (time, status, module), without requiring the operator to already know a single `RunId`. Not required for deep-linking into a known run’s Affected records panel.
 
 **Do not** keep BDS-6 merely as “finer anchors”—that work is UIX-3.
 
-**Pending architectural review:** Roadmap Track 5 currently labels BDS-6 as *(next)*; Track 1 correctly lists UIX-3 as next after UIX-2. After review, Track 5 should say UIX-3 precedes optional BDS-6.
+**Roadmap resolution:** UIX-3 → UIX-4 → BDS-6 (customer activity) → UIX-5.
 
 ---
 
 ## 7. Roadmap update
 
-**Recommended next sequence (pending architectural review — do not treat as applied):**
+**Recommended sequence at readiness time (later applied, then BDS-6 redefined):**
 
 ```text
 [done] BDS-1 … BDS-5
 [done] UIX-1 (design intent)
 [done] UIX-2 (shell/breadcrumb stabilization + operator smoke)
-[next] UIX-3 — Affected-record anchors and return context (incl. small prerequisites in §5)
-[then] UIX-4 — Contextual breadcrumbs and link integrity
-[later] UIX-5 — Supporting panel / overlay pattern audit
-[optional] BDS-6 — Cross-run affected-record explorer (only if operators still need multi-run item browse after UIX-3/4)
+[done] UIX-3 — Affected-record anchors and return context
+[done] UIX-4 — Contextual breadcrumbs and link integrity
+[done] BDS-6 — Cross-run business-record activity and lineage (customer-first; not Operation Item Explorer)
+[next] UIX-5 — Supporting panel / overlay pattern audit
 ```
 
 Avoid lettered sub-epics unless a prerequisite grows into a separate durable API product (unlikely for GET-by-item-id).

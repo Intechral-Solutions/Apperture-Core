@@ -61,6 +61,23 @@ public interface IManagementClient
         string businessKey,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Cross-run activity for a demo customer (BDS-6). Requires <c>integration.read</c>.
+    /// Returns null on 401/403/404.
+    /// </summary>
+    Task<DemoCustomerActivityPageDto?> GetDemoCustomerActivityAsync(
+        string businessKey,
+        DemoCustomerActivityFilter? filter = null,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Activity summary for a demo customer (BDS-6). Requires <c>integration.read</c>.
+    /// Returns null on 401/403/404.
+    /// </summary>
+    Task<DemoCustomerActivitySummaryDto?> GetDemoCustomerActivitySummaryAsync(
+        string businessKey,
+        CancellationToken cancellationToken = default);
+
     Task<IReadOnlyList<OperationDefinitionDto>> GetOperationsAsync(CancellationToken cancellationToken = default);
     Task<OperationDefinitionDto?> GetOperationAsync(string operationDefinitionId, CancellationToken cancellationToken = default);
     Task<StartOperationResult> StartOperationAsync(

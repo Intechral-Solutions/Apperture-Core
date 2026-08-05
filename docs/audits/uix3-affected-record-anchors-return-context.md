@@ -13,7 +13,7 @@ UIX-3 connects Demo Customer provenance to Run Detail **Affected records** using
 ## Accepted BDS-6 decision
 
 Per [`uix3-readiness-bds6-decision.md`](./uix3-readiness-bds6-decision.md): **no separate BDS-6 epic before UIX-3**.  
-BDS-6 remains optional for **cross-run** item exploration when no specific `RunId` is known.
+BDS-6 remained optional for **cross-run** item exploration when no specific `RunId` is known. It was later redefined and implemented as customer-first activity/lineage — see [`bds6-cross-run-business-record-activity-lineage.md`](./bds6-cross-run-business-record-activity-lineage.md) (not a generic Operation Item Explorer).
 
 ## Final URL contract
 
@@ -102,5 +102,6 @@ Operator checklist (Aspire + DevTools, Preserve Log): exact item, group-only, pa
 ## Deferred
 
 - **UIX-4:** contextual breadcrumb composition from validated return context — **implemented** ([`uix4-contextual-breadcrumbs-link-integrity.md`](./uix4-contextual-breadcrumbs-link-integrity.md)). Historical note: UIX-3 intentionally left top-bar breadcrumbs route-derived.
-- **BDS-6:** cross-run business-record activity and lineage (after UIX-4)
+- **BDS-6:** cross-run business-record activity and lineage — **implemented** ([`bds6-cross-run-business-record-activity-lineage.md`](./bds6-cross-run-business-record-activity-lineage.md))
+- **UIX-5:** supporting panel / overlay pattern audit (next)
 - **UIX-5:** panel/drawer framework

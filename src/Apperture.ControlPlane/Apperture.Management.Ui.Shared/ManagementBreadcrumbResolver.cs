@@ -73,6 +73,7 @@ public static class ManagementBreadcrumbResolver
         MatchDashboardManage,
         MatchDashboardDelete,
         MatchDashboardHome,
+        MatchDemoCustomerActivity,
         MatchDemoCustomerDetail,
         MatchDemoCustomersList,
         MatchConfigLanding,
@@ -995,7 +996,25 @@ public static class ManagementBreadcrumbResolver
         return true;
     }
 
-    // --- Demo customers (BDS-5) ---
+    // --- Demo customers (BDS-5 / BDS-6) ---
+
+    private static bool MatchDemoCustomerActivity(string[] s, out IReadOnlyList<BreadcrumbItem>? c)
+    {
+        c = null;
+        if (s.Length != 4
+            || !s[0].Equals("demo", StringComparison.OrdinalIgnoreCase)
+            || !s[1].Equals("customers", StringComparison.OrdinalIgnoreCase)
+            || string.IsNullOrWhiteSpace(s[2])
+            || !s[3].Equals("activity", StringComparison.OrdinalIgnoreCase))
+            return false;
+        c = Trail(
+            ("Config", ShellSectionRoutes.ConfigHome),
+            ("Developer & internal", ShellSectionRoutes.DeveloperTasks),
+            ("Demo Customers", DemoCustomerUiRoutes.List),
+            (s[2], DemoCustomerUiRoutes.Detail(s[2])),
+            ("Activity", null));
+        return true;
+    }
 
     private static bool MatchDemoCustomerDetail(string[] s, out IReadOnlyList<BreadcrumbItem>? c)
     {

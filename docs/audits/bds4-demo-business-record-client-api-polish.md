@@ -57,7 +57,7 @@ List empty shape unchanged: `items=[]`, `totalCount=0`, echoed `skip`/`take`.
 ## Next
 
 - **BDS-5** — complete: [bds5-demo-customers-surface.md](./bds5-demo-customers-surface.md)
-- **BDS-6 (optional)** — Operation Item Explorer / finer Affected-record anchors
+- **BDS-6** — Cross-run business-record activity and lineage — **implemented** ([`bds6-cross-run-business-record-activity-lineage.md`](./bds6-cross-run-business-record-activity-lineage.md)); not a generic Operation Item Explorer. Finer in-run anchors landed in UIX-3.
 - Later: Systems/Services design, UI overhaul, platform entity promotion only after demo value is proven
 
 ## Implementation anchors
