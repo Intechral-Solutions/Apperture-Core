@@ -148,9 +148,9 @@ public static class ManagementBreadcrumbResolver
             p = "/";
 
         if (NavPathMatching.IsPathUnder(p, "/control/center"))
-            return "What needs attention — blocked work, failures, and recent outcomes.";
+            return "What needs attention now — blocked work, failures, and recent outcomes. Use Dashboard for a cross-domain summary.";
         if (p.Equals("/dashboard", StringComparison.OrdinalIgnoreCase))
-            return "Operator summary: health, attention, runs, and quick links.";
+            return "What is healthy, what needs attention, and where to act next. For live triage, open Control Center.";
         if (p.Equals("/runs", StringComparison.OrdinalIgnoreCase))
             return "Automation run history.";
         if (p.Equals("/schedules", StringComparison.OrdinalIgnoreCase))

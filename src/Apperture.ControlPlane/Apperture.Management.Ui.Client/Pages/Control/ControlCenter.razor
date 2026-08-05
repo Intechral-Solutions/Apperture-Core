@@ -638,12 +638,30 @@
     private readonly NavigationLoadGuard _loadGuard = new();
     private CancellationTokenSource? _loadCts;
 
-    protected override async Task OnInitializedAsync()
+    private bool _loadKickoffStarted;
+
+    protected override void OnInitialized()
     {
         DisplayTimeZone.Changed += OnDisplayZoneChanged;
+    }
+
+    // UIX-2: do not await HTTP in OnInitializedAsync — races MainLayout/TopBar LocationChanged SHC
+    // during click navigation (orphaned components / parentNode).
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (!firstRender || _loadKickoffStarted)
+            return;
+
+        _loadKickoffStarted = true;
+        _ = KickoffLoadAsync();
+    }
+
+    private async Task KickoffLoadAsync()
+    {
         await DisplayTimeZone.EnsureResolvedAsync();
         await LoadCapabilitiesAsync();
         await LoadAsync();
+        await InvokeAsync(StateHasChanged);
     }
 
     private void OnDisplayZoneChanged() => _ = InvokeAsync(StateHasChanged);

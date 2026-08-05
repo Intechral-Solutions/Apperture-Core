@@ -1,11 +1,13 @@
 @using Apperture.Management.Ui.Client.Services
 @using Apperture.Management.Ui.Shared
+@using Apperture.Management.Ui.Shared.Auth
 @inherits LayoutComponentBase
 @implements IDisposable
 
 @inject DomainMenuService DomainMenuService
 @inject NavigationManager NavManager
 @inject SessionStateService SessionState
+@inject IJSRuntime Js
 
 <div id="main" class="flex h-screen bg-shell">
     <NavRail IsControlPanelOpen="@isControlPanelOpen"
@@ -27,7 +29,16 @@
         <ToastHost />
         <div id="content-wrapper" class="flex-1 overflow-y-auto">
             <main class="px-1">
-                @Body
+                @* UIX-2 option C: chrome-first. Do not invoke @Body until menus settle so
+                   Dashboard/PageHeader cannot race NavRail/TopBar first paint (parentNode). *@
+                @if (_bodyReady)
+                {
+                    @Body
+                }
+                else
+                {
+                    <p class="p-4 text-sm text-muted">Loading…</p>
+                }
             </main>
         </div>
     </div>
@@ -37,16 +48,105 @@
     private bool isControlPanelOpen;
     private bool isControlPanelLocked;
     private string currentDomainName = "";
+    private bool _menusKickoffStarted;
+    private bool _bodyReady;
+    private bool _disposed;
 
-    protected override async Task OnInitializedAsync()
+    protected override void OnInitialized()
     {
         SessionState.Changed += OnSessionChanged;
-        await DomainMenuService.LoadMenusAsync();
-        ResolveAndUpdateCurrentDomain();
         NavManager.LocationChanged += OnLocationChanged;
+        // UIX-2: NavRail alone rebuilds on menu Changed. Dual layout+rail SHC after
+        // menus arrived orphaned components while Body/dashboard still rendered.
+        _lastSessionStateForRender = SessionState.State;
+        ResolveAndUpdateCurrentDomain();
+        // #region agent log
+        _ = LogDebugAsync("MainLayout.razor:OnInitialized", "layout-init", "H3", new Dictionary<string, object?>
+        {
+            ["runId"] = "post-fix",
+            ["instanceId"] = GetHashCode(),
+            ["bodyReady"] = _bodyReady,
+            ["domain"] = currentDomainName
+        });
+        // #endregion
     }
 
-    private bool _disposed;
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (!firstRender || _disposed || _menusKickoffStarted)
+            return;
+
+        // UIX-2: kick menus without awaiting inside OnAfterRender — holding the callback across
+        // HTTP left the layout mid-lifecycle while Body/TopBar SHC → parentNode / orphans.
+        _menusKickoffStarted = true;
+        if (!AuthShellAccess.MayLoadAuthenticatedShellData(SessionState.State))
+        {
+            _ = RevealBodyAsync();
+            return;
+        }
+
+        _ = KickoffMenusThenBodyAsync();
+    }
+
+    private async Task KickoffMenusThenBodyAsync()
+    {
+        // One frame for chrome-only paint (NavRail/TopBar) before Body exists.
+        await Task.Yield();
+        if (_disposed)
+            return;
+
+        // #region agent log
+        await LogDebugAsync("MainLayout.razor:KickoffMenus", "menus-load-start", "H5", new Dictionary<string, object?>
+        {
+            ["bodyReady"] = _bodyReady
+        });
+        // #endregion
+
+        await DomainMenuService.LoadMenusAsync();
+        if (_disposed)
+            return;
+
+        // #region agent log
+        await LogDebugAsync("MainLayout.razor:KickoffMenus", "menus-load-done", "H5", new Dictionary<string, object?>
+        {
+            ["bodyReady"] = _bodyReady
+        });
+        // #endregion
+
+        // Update domain field only — do not StateHasChanged yet (Body reveal is the SHC).
+        ResolveAndUpdateCurrentDomain();
+        await RevealBodyAsync();
+    }
+
+    private async Task RevealBodyAsync()
+    {
+        await Task.Yield();
+        if (_disposed || _bodyReady)
+            return;
+
+        _bodyReady = true;
+        // #region agent log
+        await LogDebugAsync("MainLayout.razor:RevealBody", "body-revealed", "H3", new Dictionary<string, object?>
+        {
+            ["bodyReady"] = true
+        });
+        // #endregion
+        await InvokeAsync(StateHasChanged);
+    }
+
+    // #region agent log
+    private async Task LogDebugAsync(string location, string message, string hypothesisId, Dictionary<string, object?> data)
+    {
+        try
+        {
+            await Js.InvokeVoidAsync("appertureShell.debugLog", location, message, hypothesisId, data);
+        }
+        catch
+        {
+            /* ignore */
+        }
+    }
+    // #endregion
 
     public void Dispose()
     {
@@ -57,23 +157,35 @@
         NavManager.LocationChanged -= OnLocationChanged;
     }
 
+    private SessionLoadState _lastSessionStateForRender;
+
     private void OnSessionChanged() =>
         _ = InvokeAsync(() =>
         {
             if (_disposed)
                 return;
-            StateHasChanged();
+
+            // Only re-render for banner-relevant session transitions (ForbiddenUnlinked strip).
+            var next = SessionState.State;
+            if (next == _lastSessionStateForRender)
+                return;
+
+            var bannerRelevant =
+                next == SessionLoadState.ForbiddenUnlinked
+                || _lastSessionStateForRender == SessionLoadState.ForbiddenUnlinked;
+            _lastSessionStateForRender = next;
+            if (bannerRelevant)
+                StateHasChanged();
         });
 
     private void OnLocationChanged(object? sender, LocationChangedEventArgs e)
     {
+        if (_disposed)
+            return;
+
+        // UIX-2: never StateHasChanged the layout on navigation. Router swaps @Body;
+        // NavRail resolves ActiveDomain from the URI. Layout SHC during click → orphans.
         ResolveAndUpdateCurrentDomain();
-        _ = InvokeAsync(() =>
-        {
-            if (_disposed)
-                return;
-            StateHasChanged();
-        });
     }
 
     private void ResolveAndUpdateCurrentDomain()

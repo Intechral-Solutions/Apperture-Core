@@ -5,6 +5,7 @@
 @inject IManagementClient Client
 @inject NavigationManager Nav
 @inject SessionStateService Session
+@inject DomainMenuService DomainMenuService
 @implements IDisposable
 
 <div class="relative" @onclick:stopPropagation="true">
@@ -72,13 +73,35 @@
     private bool _open;
     private bool _loading;
     private bool _busy;
+    private bool _countKickoffStarted;
     private int _unreadCount;
     private List<PersonalNotificationInboxItemDto> _items = [];
 
-    protected override async Task OnInitializedAsync()
+    protected override void OnInitialized()
     {
         Session.Changed += OnSessionChanged;
+    }
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (!firstRender || _countKickoffStarted)
+            return;
+
+        // UIX-2: do not await HTTP inside OnAfterRenderAsync during shell first paint.
+        _countKickoffStarted = true;
+        _ = RefreshCountAndRenderAsync();
+    }
+
+    private async Task RefreshCountAndRenderAsync()
+    {
+        await DomainMenuService.WhenFetchedAsync();
+
+        var previous = _unreadCount;
         await RefreshCountAsync();
+        if (previous == _unreadCount)
+            return;
+
+        await InvokeAsync(StateHasChanged);
     }
 
     private async void OnSessionChanged()
@@ -107,9 +130,9 @@
         _loading = true;
         try
         {
-            _items = (await Client.GetMyNotificationsAsync(readFilter: "all", take: 15).ConfigureAwait(false)).ToList();
-            await Client.RecordMyNotificationsMenuViewedAsync(take: 15).ConfigureAwait(false);
-            _unreadCount = (await Client.GetMyUnreadNotificationCountAsync().ConfigureAwait(false)).UnreadCount;
+            _items = (await Client.GetMyNotificationsAsync(readFilter: "all", take: 15)).ToList();
+            await Client.RecordMyNotificationsMenuViewedAsync(take: 15);
+            _unreadCount = (await Client.GetMyUnreadNotificationCountAsync()).UnreadCount;
         }
         catch
         {
@@ -131,7 +154,7 @@
 
         try
         {
-            _unreadCount = (await Client.GetMyUnreadNotificationCountAsync().ConfigureAwait(false)).UnreadCount;
+            _unreadCount = (await Client.GetMyUnreadNotificationCountAsync()).UnreadCount;
         }
         catch
         {
@@ -144,7 +167,7 @@
         _busy = true;
         try
         {
-            await Client.MarkMyNotificationReadAsync(item.Id).ConfigureAwait(false);
+            await Client.MarkMyNotificationReadAsync(item.Id);
             _open = false;
             await RefreshCountAsync();
             var target = PersonalNotificationUiRoutes.ResolveOpenTarget(item, item.CanOpenAdminInstanceDetail);
@@ -165,7 +188,7 @@
         _busy = true;
         try
         {
-            await Client.MarkAllMyNotificationsReadAsync().ConfigureAwait(false);
+            await Client.MarkAllMyNotificationsReadAsync();
             await LoadMenuAsync();
             await RefreshCountAsync();
         }

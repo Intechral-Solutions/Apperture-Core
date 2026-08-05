@@ -55,6 +55,35 @@ builder.Services.AddScoped<IOperatorCapabilitiesService, OperatorCapabilitiesSer
 builder.Services.AddAppertureShellServices();
 
 var app = builder.Build();
+
+// #region agent log
+try
+{
+    var hostPath = Path.Combine(app.Environment.ContentRootPath, "Pages", "_Host.cshtml");
+    var hostText = File.Exists(hostPath) ? File.ReadAllText(hostPath) : "";
+    var payload = System.Text.Json.JsonSerializer.Serialize(new
+    {
+        sessionId = "4bd3d8",
+        hypothesisId = "H1",
+        location = "Program.cs:startup",
+        message = "ui-server-start-host-file",
+        data = new
+        {
+            hostPath,
+            hasWebAssemblyPrerenderedAttr = hostText.Contains("render-mode=\"WebAssemblyPrerendered\"", StringComparison.Ordinal),
+            hasComponentTag = hostText.Contains("<component ", StringComparison.Ordinal),
+            hasWebAssemblyAttr = hostText.Contains("render-mode=\"WebAssembly\"", StringComparison.Ordinal),
+            singleRootClientMount = hostText.Contains("RootComponents.Add", StringComparison.Ordinal)
+                || hostText.Contains("do not emit <component", StringComparison.OrdinalIgnoreCase),
+            hostHead = hostText.Length > 280 ? hostText[..280] : hostText
+        },
+        timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
+    });
+    await File.AppendAllTextAsync(@"f:\Code\Apperture\Apperture-Core\debug-4bd3d8.log", payload + Environment.NewLine);
+}
+catch { /* debug ingest best-effort */ }
+// #endregion
+
 if (!app.Environment.IsDevelopment())
 {
     app.UseExceptionHandler("/Error");

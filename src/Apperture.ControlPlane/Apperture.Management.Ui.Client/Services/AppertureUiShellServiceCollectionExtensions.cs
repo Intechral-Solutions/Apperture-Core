@@ -14,6 +14,7 @@ public static class AppertureUiShellServiceCollectionExtensions
         services.AddSingleton<IToastService, ToastService>();
         services.AddScoped<SessionStateService>();
         services.AddScoped<AuthSignInOptionsService>();
+        services.AddScoped<ShellBootstrapState>();
         services.AddScoped<ShellHostNavigation>();
         services.AddScoped<ShellOrientationService>();
         services.AddScoped<IOperatorDisplayTimeZone, OperatorDisplayTimeZoneService>();

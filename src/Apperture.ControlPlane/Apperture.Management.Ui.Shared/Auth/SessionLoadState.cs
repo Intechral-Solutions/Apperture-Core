@@ -1,5 +1,6 @@
-namespace Apperture.Management.Ui.Client.Services;
+namespace Apperture.Management.Ui.Shared.Auth;
 
+/// <summary>Session bootstrap state for the Management UI WASM shell.</summary>
 public enum SessionLoadState
 {
     Unknown,

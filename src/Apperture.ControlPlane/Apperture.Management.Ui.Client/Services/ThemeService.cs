@@ -22,12 +22,14 @@ public sealed class ThemeService : IDisposable
             return;
         _initialized = true;
 
-        var raw = await _js.InvokeAsync<string>("appertureShell.getPreference").ConfigureAwait(false);
+        // Stay on the Blazor sync context: App.BootstrapAsync continues into Session.RefreshAsync
+        // after this method; ConfigureAwait(false) here caused off-context Notify/parentNode.
+        var raw = await _js.InvokeAsync<string>("appertureShell.getPreference");
         Current = ThemePreferenceParser.ParseOrDefault(raw);
-        await _js.InvokeVoidAsync("appertureShell.apply", ThemePreferenceParser.ToStorageValue(Current)).ConfigureAwait(false);
+        await _js.InvokeVoidAsync("appertureShell.apply", ThemePreferenceParser.ToStorageValue(Current));
 
         _dotNetRef = DotNetObjectReference.Create(this);
-        await _js.InvokeVoidAsync("appertureShell.subscribeSystemTheme", _dotNetRef).ConfigureAwait(false);
+        await _js.InvokeVoidAsync("appertureShell.subscribeSystemTheme", _dotNetRef);
     }
 
     public async Task SetPreferenceAsync(ThemePreference preference)

@@ -47,7 +47,7 @@ public sealed class OperatorDisplayTimeZoneService : IOperatorDisplayTimeZone
             capture = _browserCaptureTask;
         }
 
-        await capture.ConfigureAwait(false);
+        await capture;
         ApplyCandidates();
     }
 
@@ -56,7 +56,7 @@ public sealed class OperatorDisplayTimeZoneService : IOperatorDisplayTimeZone
         string? browserId = null;
         try
         {
-            browserId = await _js.InvokeAsync<string?>("appertureShell.getTimeZone").ConfigureAwait(false);
+            browserId = await _js.InvokeAsync<string?>("appertureShell.getTimeZone");
         }
         catch (JSException)
         {

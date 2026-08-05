@@ -6,8 +6,20 @@ public static class LoginRouteHelper
 
     public static bool IsPublicPath(string absolutePath)
     {
-        var path = absolutePath.TrimEnd('/') == "" ? "/" : absolutePath.TrimEnd('/');
+        var path = NormalizeAbsolutePath(absolutePath);
         return PublicPaths.Any(p => string.Equals(path, p, StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>
+    /// App root only bounces into the platform (dashboard or login). Never mount MainLayout here.
+    /// </summary>
+    public static bool IsRootBootstrapPath(string absolutePath) =>
+        NormalizeAbsolutePath(absolutePath) == "/";
+
+    public static string NormalizeAbsolutePath(string absolutePath)
+    {
+        var path = absolutePath.TrimEnd('/');
+        return path == "" ? "/" : path;
     }
 
     /// <summary>Returns a relative path safe for same-app navigation, or null if untrusted.</summary>

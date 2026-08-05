@@ -1,11 +1,9 @@
 @using System.Net.Http
 @using Apperture.Management.Client
 @using Apperture.Management.Ui.Client.Organisms
-@using Apperture.Management.Ui.Client.Services
 @using Apperture.Management.Ui.Shared.Auth
 @using Microsoft.AspNetCore.Components.Forms
 @inject IManagementClient Client
-@inject SessionStateService Session
 @inject NavigationManager Nav
 
 <div class="space-y-4">
@@ -44,9 +42,9 @@
         try
         {
             await Client.LocalLoginAsync(new LocalLoginRequest(_model.Username.Trim(), _model.Password));
-            await Session.RefreshAsync();
             var safe = LoginRouteHelper.NormalizeReturnUrl(ReturnPath) ?? LoginRouteHelper.DefaultPostLoginPath;
-            // Full load matches credentialed fetch + location.reload(): fresh WASM scope and cookie jar for API :9000.
+            // Full reload for a fresh WASM circuit + cookie jar. Do not warm session on this circuit first:
+            // that would let AuthRouteGate SPA-navigate into MainLayout, then forceLoad tear it down mid-mount.
             Nav.NavigateTo(safe, forceLoad: true);
         }
         catch (HttpRequestException)

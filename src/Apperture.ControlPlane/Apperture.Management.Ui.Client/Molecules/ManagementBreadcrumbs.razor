@@ -1,16 +1,13 @@
-@using Apperture.Management.Ui.Shared
 @using Apperture.Management.Ui.Shared.Models
-@implements IDisposable
 
-@inject NavigationManager Nav
-
-@if (_parents.Count > 0)
+@* Presentational only — TopBarOrientation owns URI observation and passes Items. *@
+@if (Items.Count > 0)
 {
     <nav class="ui-breadcrumbs min-w-0" aria-label="Breadcrumb">
         <ol class="ui-breadcrumbs__list m-0 flex min-w-0 list-none items-center gap-0 p-0">
-            @for (var i = 0; i < _parents.Count; i++)
+            @for (var i = 0; i < Items.Count; i++)
             {
-                var item = _parents[i];
+                var item = Items[i];
                 <li @key="item.StableKey" class="ui-breadcrumbs__item flex min-w-0 max-w-full shrink items-center">
                     @if (item.IsLinked)
                     {
@@ -21,7 +18,7 @@
                         <span class="ui-breadcrumbs__segment truncate text-muted"
                               aria-current="@(item.IsCurrent ? "page" : null)">@item.Label</span>
                     }
-                    @if (i < _parents.Count - 1)
+                    @if (i < Items.Count - 1)
                     {
                         <span class="ui-breadcrumbs__sep shrink-0" aria-hidden="true">/</span>
                     }
@@ -32,42 +29,5 @@
 }
 
 @code {
-    private readonly ManagementBreadcrumbLocationState _location = new();
-    private IReadOnlyList<BreadcrumbItem> _parents = [];
-    private bool _disposed;
-
-    protected override void OnInitialized()
-    {
-        _location.Initialize(Nav.Uri);
-        _parents = _location.Parents;
-        Nav.LocationChanged += OnLocationChanged;
-    }
-
-    public void Dispose()
-    {
-        if (_disposed)
-            return;
-
-        _disposed = true;
-        Nav.LocationChanged -= OnLocationChanged;
-        _location.Dispose();
-    }
-
-    private void OnLocationChanged(object? sender, LocationChangedEventArgs e)
-    {
-        if (_disposed)
-            return;
-
-        _ = InvokeAsync(() =>
-        {
-            if (_disposed)
-                return;
-
-            if (!_location.TryApplyLocation(Nav.Uri))
-                return;
-
-            _parents = _location.Parents;
-            StateHasChanged();
-        });
-    }
+    [Parameter] public IReadOnlyList<BreadcrumbItem> Items { get; set; } = [];
 }

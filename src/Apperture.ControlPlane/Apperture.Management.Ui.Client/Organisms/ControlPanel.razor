@@ -80,9 +80,14 @@
 
     private void OnLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
     {
-        _ = InvokeAsync(() =>
+        if (_disposed || !IsOpen)
+            return;
+
+        _ = InvokeAsync(async () =>
         {
-            if (_disposed) return;
+            await Task.Yield();
+            if (_disposed || !IsOpen)
+                return;
             StateHasChanged();
         });
     }

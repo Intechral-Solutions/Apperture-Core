@@ -110,10 +110,15 @@
   transition: border-color 150ms ease, box-shadow 150ms ease, transform 150ms ease;
 }
 
-a.ui-summary-card:hover {
+a.ui-summary-card:hover,
+button.ui-summary-card:hover {
   border-color: color-mix(in oklch, var(--color-card-border) 55%, var(--color-primary) 45%);
   box-shadow: 0 2px 8px color-mix(in oklch, var(--color-text-heading) 8%, transparent);
   transform: translateY(-1px);
+}
+
+button.ui-summary-card {
+  font: inherit;
 }
 
 .ui-summary-card--static {

@@ -1,6 +1,12 @@
+@inject NavigationManager Nav
+@inject IJSRuntime Js
+
 @if (!string.IsNullOrWhiteSpace(Href))
 {
-    <a href="@Href" class="ui-summary-card @Class">
+    @* UIX-2: button (no href) avoids Blazor enhanced navigation racing NavigateTo. *@
+    <button type="button"
+            class="ui-summary-card @Class w-full cursor-pointer text-start"
+            @onclick="OnNavigateClick">
         <div class="flex items-start justify-between gap-2">
             <h2 class="text-base font-semibold text-heading">@Title</h2>
             @if (!string.IsNullOrWhiteSpace(Attention))
@@ -16,7 +22,7 @@
         {
             <div class="mt-3">@ChildContent</div>
         }
-    </a>
+    </button>
 }
 else
 {
@@ -46,4 +52,44 @@ else
     [Parameter] public string? Attention { get; set; }
     [Parameter] public string Class { get; set; } = "";
     [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    /// <summary>
+    /// Sync void so onGlobalEvent finishes. Schedule navigation on the renderer after a
+    /// macrotask — Task.Yield alone can still resume inside the click turn.
+    /// </summary>
+    private void OnNavigateClick()
+    {
+        var href = Href;
+        // #region agent log
+        _ = LogNavAsync("click-scheduled", href);
+        // #endregion
+        _ = InvokeAsync(async () =>
+        {
+            await Task.Delay(1);
+            // #region agent log
+            await LogNavAsync("navigate-before", href);
+            // #endregion
+            if (!string.IsNullOrWhiteSpace(href))
+                Nav.NavigateTo(href);
+            // #region agent log
+            await LogNavAsync("navigate-after", href);
+            // #endregion
+        });
+    }
+
+    // #region agent log
+    private async Task LogNavAsync(string message, string? href)
+    {
+        try
+        {
+            await Js.InvokeVoidAsync(
+                "appertureShell.debugLog",
+                "ManagementSummaryCard.razor:OnNavigateClick",
+                message,
+                "H4",
+                new Dictionary<string, object?> { ["href"] = href });
+        }
+        catch { /* ignore */ }
+    }
+    // #endregion
 }
