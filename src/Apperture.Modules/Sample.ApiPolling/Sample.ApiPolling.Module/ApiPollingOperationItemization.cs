@@ -4,8 +4,8 @@ using Sample.ApiPolling.Contracts;
 namespace Sample.ApiPolling;
 
 /// <summary>
-/// Maps ApiPolling classifications to durable operation groups/items.
-/// BDS-2: emits aligned business metadata for future demo record projection.
+/// Maps ApiPolling classifications to durable operation groups/items (SDK-6A / SDK-7).
+/// Shared customer identity is attached via <see cref="SharedRecordIdentity"/> — not handcrafted metadata keys.
 /// </summary>
 public static class ApiPollingOperationItemization
 {
@@ -81,12 +81,13 @@ public static class ApiPollingOperationItemization
         var changeKind = classification.ChangeKind;
         var displayName = ResolveDisplayName(classification, businessKey);
         var displayLabel = displayName;
+        var sharedRecord = businessKey is null
+            ? null
+            : new SharedRecordIdentity(SharedRecordTypes.Customer, businessKey);
 
         object metadata = string.IsNullOrWhiteSpace(retryAttemptId)
             ? new
             {
-                recordType = OperationItemBusinessMetadataKeys.CustomerRecordType,
-                businessKey,
                 displayName,
                 changeKind,
                 observedAt = classification.CreatedAtUtc,
@@ -102,8 +103,6 @@ public static class ApiPollingOperationItemization
             }
             : new
             {
-                recordType = OperationItemBusinessMetadataKeys.CustomerRecordType,
-                businessKey,
                 displayName,
                 changeKind,
                 observedAt = classification.CreatedAtUtc,
@@ -137,7 +136,8 @@ public static class ApiPollingOperationItemization
                 changedFields = classification.ChangedFields,
             },
             metadata,
-            classification.CreatedAtUtc);
+            classification.CreatedAtUtc,
+            sharedRecord);
     }
 
     public static string? NormalizeBusinessKey(string? externalId) =>

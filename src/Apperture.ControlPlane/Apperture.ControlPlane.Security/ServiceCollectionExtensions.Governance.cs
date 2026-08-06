@@ -124,6 +124,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IOperationItemRetryService, OperationItemRetryService>();
         services.AddScoped<IBulkOperationItemRetryService, BulkOperationItemRetryService>();
         services.AddScoped<IOperationItemAttentionService, OperationItemAttentionService>();
+        services.AddScoped<ISharedRecordReferenceQueryService, SharedRecordReferenceQueryService>();
         services.AddScoped<DemoBusinessRecords.IDemoBusinessRecordProjectionService, DemoBusinessRecords.DemoBusinessRecordProjectionService>();
         services.AddScoped<IModuleWorkflowListingService, ModuleWorkflowListingService>();
         services.AddScoped<IWorkflowStartAuthorizationService, WorkflowStartAuthorizationService>();

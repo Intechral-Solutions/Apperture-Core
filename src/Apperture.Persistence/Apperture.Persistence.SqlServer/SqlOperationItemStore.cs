@@ -80,6 +80,8 @@ public sealed class SqlOperationItemStore : IOperationItemStore
                              ?? (request.Status == OperationItemStatuses.Pending ? null : now),
             ChangeSummaryJson = request.ChangeSummaryJson,
             MetadataJson = request.MetadataJson,
+            SharedRecordType = request.SharedRecordType,
+            SharedBusinessKey = request.SharedBusinessKey,
             CreatedAtUtc = now,
             UpdatedAtUtc = now,
         };
@@ -310,5 +312,7 @@ public sealed class SqlOperationItemStore : IOperationItemStore
             e.ChangeSummaryJson,
             e.MetadataJson,
             e.CreatedAtUtc,
-            e.UpdatedAtUtc);
+            e.UpdatedAtUtc,
+            e.SharedRecordType,
+            e.SharedBusinessKey);
 }

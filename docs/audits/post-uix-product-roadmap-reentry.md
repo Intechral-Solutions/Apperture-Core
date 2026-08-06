@@ -4,7 +4,8 @@
 **Date:** 2026-08-05
 **Related:** [pre-release roadmap](../00-overview/pre-release-product-roadmap.md), [PFB-1](./pfb1-product-foundation-baseline-audit.md), [BDS-1](./bds1-business-data-surface-design-audit.md), [BDS-6](./bds6-cross-run-business-record-activity-lineage.md), [UIX-5](./uix5-supporting-surface-pattern-audit.md), [UIX-6](./uix6-interaction-progressive-disclosure-system.md), [SDK-3](./sdk3-itemized-operation-model-design-audit.md), [SDK-4](./sdk4-per-item-retry-design-audit.md), [SDK-6D closure](./sdk6d-closure.md), [JOB-1 closure](./job1-failed-work-resolution-bulk-retry.md)
 
-> **Supersession:** JOB-1 is implemented and Track 6 is marked complete. Historical recommendation text below is preserved.
+**Supersession:** JOB-1 is implemented and Track 6 is marked complete. Historical recommendation text below is preserved.  
+**Further supersession (2026-08-06):** **SDK-7** is implemented — see [`sdk7-cross-integration-shared-record-identity-lookup.md`](./sdk7-cross-integration-shared-record-identity-lookup.md). Next handoff: **AUP-1**. Platform `BusinessRecord` remains deferred.
 
 ---
 

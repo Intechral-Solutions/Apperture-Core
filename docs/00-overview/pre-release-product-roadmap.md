@@ -57,7 +57,7 @@ UIX-6  Interaction and progressive disclosure system
 **UIX arc note (2026-08):** the inspection panel, drawer, popover, and accordion remain deferred
 until the UIX-5 trigger criteria are met. **Supersession (2026-08-05):** UIX-6 and BDS-6 operator
 smoke are complete; Track 6 closed via JOB-1 — see [`../audits/job1-failed-work-resolution-bulk-retry.md`](../audits/job1-failed-work-resolution-bulk-retry.md).
-Next product handoff: SDK-7 shared-key contract or Track 2 preferences (not a new UIX epic by default).
+Next product handoff: **AUP-1** (Track 2 preferences) — SDK-7 delivered; not a new UIX epic by default.
 
 ---
 
@@ -84,9 +84,10 @@ Next product handoff: SDK-7 shared-key contract or Track 2 preferences (not a ne
 
 **PFB-1 recommendation (historical):** prioritize Track 3 next (see baseline audit §12).  
 **Supersession (2026-08-05):** SDK-1 through SDK-6D are complete. Track 6 closed by JOB-1.  
-Stale “Next epic: SDK-3A” language below is historical only.
+**Supersession (2026-08-06):** **SDK-7** shared-record identity + lookup delivered — [`sdk7-cross-integration-shared-record-identity-lookup.md`](../audits/sdk7-cross-integration-shared-record-identity-lookup.md). Platform `BusinessRecord` remains deferred.  
+**Next product epic:** **AUP-1 — Account, Profile, and Personal Preferences**.
 
-~~**Next epic:** **SDK-3A Operation Itemization Persistence & Writer**~~ — **superseded:** SDK-3A–3D, SDK-4A–4C, SDK-5*, SDK-6* delivered; JOB-1 closed Track 6. See [`sdk3-itemized-operation-model-design-audit.md`](../audits/sdk3-itemized-operation-model-design-audit.md) and [`job1-failed-work-resolution-bulk-retry.md`](../audits/job1-failed-work-resolution-bulk-retry.md).
+~~**Next epic:** **SDK-3A Operation Itemization Persistence & Writer**~~ — **superseded:** SDK-3A–3D, SDK-4A–4C, SDK-5*, SDK-6*, SDK-7 delivered; JOB-1 closed Track 6.
 
 ---
 

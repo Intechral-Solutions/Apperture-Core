@@ -39,6 +39,8 @@ public sealed class Bds2BusinessMetadataAlignmentTests
         request.DisplayLabel.Should().Be("Ada Lovelace");
         request.DisplayLabel.Should().NotBe(request.SubjectKey);
         request.CompletedAtUtc.Should().Be(observedAt);
+        request.SharedRecordType.Should().Be(SharedRecordTypes.Customer);
+        request.SharedBusinessKey.Should().Be("C-001");
 
         using var meta = JsonDocument.Parse(request.MetadataJson!);
         var root = meta.RootElement;
@@ -101,6 +103,8 @@ public sealed class Bds2BusinessMetadataAlignmentTests
         request.SubjectKey.Should().Be("C-001");
         request.DisplayLabel.Should().Be("Ada Lovelace");
         request.CompletedAtUtc.Should().Be(observedAt);
+        request.SharedRecordType.Should().Be(SharedRecordTypes.Customer);
+        request.SharedBusinessKey.Should().Be("C-001");
 
         using var meta = JsonDocument.Parse(request.MetadataJson!);
         var root = meta.RootElement;

@@ -955,11 +955,16 @@ public class AppertureDbContext : DbContext
             e.Property(x => x.ChangeSummaryJson).HasMaxLength(2048);
             // SQL Server: nvarchar(n) allows n <= 4000; use max for 4096 logical cap.
             e.Property(x => x.MetadataJson).HasMaxLength(4096).HasColumnType("nvarchar(max)");
+            e.Property(x => x.SharedRecordType).HasMaxLength(64);
+            e.Property(x => x.SharedBusinessKey).HasMaxLength(256);
             e.HasIndex(x => x.RunId);
             e.HasIndex(x => new { x.RunId, x.Status });
             e.HasIndex(x => new { x.OperationGroupId, x.Sequence });
             // BDS-6 — cross-run activity by SubjectKey (demo customer business key).
             e.HasIndex(x => x.SubjectKey);
+            // SDK-7 — cross-integration shared-record lookup.
+            e.HasIndex(x => new { x.SharedRecordType, x.SharedBusinessKey, x.CompletedAtUtc })
+                .HasDatabaseName("IX_OperationItems_SharedRecordType_SharedBusinessKey_CompletedAtUtc");
             e.HasMany(x => x.RetryAttempts)
                 .WithOne(x => x.Item!)
                 .HasForeignKey(x => x.OperationItemId)

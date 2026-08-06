@@ -49,6 +49,29 @@ public static class OperationItemizationValidation
         EnsureJsonField("ChangeSummaryJson", request.ChangeSummaryJson, OperationItemizationBounds.ChangeSummaryJsonMaxChars);
         EnsureJsonField("MetadataJson", request.MetadataJson, OperationItemizationBounds.MetadataJsonMaxChars);
         RejectObviousSecrets(request.ErrorMessage, request.ChangeSummaryJson, request.MetadataJson, request.DisplayLabel);
+
+        // SDK-7 — normalized shared identity columns (optional). When present, must be a valid pair.
+        var hasType = !string.IsNullOrWhiteSpace(request.SharedRecordType);
+        var hasKey = !string.IsNullOrWhiteSpace(request.SharedBusinessKey);
+        if (hasType != hasKey)
+        {
+            throw new OperationItemizationException(
+                "SharedRecordType and SharedBusinessKey must both be set or both omitted.");
+        }
+
+        if (hasType && hasKey)
+        {
+            var identity = SharedRecordIdentityRules.ValidateAndNormalize(
+                request.SharedRecordType,
+                request.SharedBusinessKey);
+            // Re-align SubjectKey when shared identity is present.
+            if (!string.IsNullOrWhiteSpace(request.SubjectKey)
+                && !SharedRecordIdentityRules.BusinessKeyComparer.Equals(request.SubjectKey.Trim(), identity.BusinessKey))
+            {
+                throw new OperationItemizationException(
+                    $"SubjectKey must match SharedBusinessKey '{identity.BusinessKey}'.");
+            }
+        }
     }
 
     public static void ValidateComplete(CompleteOperationGroupRequest request)

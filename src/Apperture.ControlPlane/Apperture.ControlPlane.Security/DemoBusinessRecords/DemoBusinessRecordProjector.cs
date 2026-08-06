@@ -226,23 +226,23 @@ public static class DemoBusinessRecordProjector
         DateTimeOffset? completedAtUtc,
         DateTimeOffset createdAtUtc)
     {
-        if (string.IsNullOrWhiteSpace(metadataJson))
+        if (string.IsNullOrWhiteSpace(metadataJson)
+            && string.IsNullOrWhiteSpace(subjectKey))
+            return null;
+
+        if (!SharedRecordIdentityCompatibility.TryReadCustomer(
+                sharedRecordType: null,
+                sharedBusinessKey: null,
+                metadataJson,
+                subjectKey,
+                out var identity)
+            || identity is null)
             return null;
 
         try
         {
-            using var doc = JsonDocument.Parse(metadataJson);
+            using var doc = JsonDocument.Parse(metadataJson ?? "{}");
             var root = doc.RootElement;
-            if (!root.TryGetProperty(OperationItemBusinessMetadataKeys.RecordType, out var rtEl))
-                return null;
-            var recordType = rtEl.GetString();
-            if (!string.Equals(recordType, OperationItemBusinessMetadataKeys.CustomerRecordType, StringComparison.OrdinalIgnoreCase))
-                return null;
-
-            var businessKey = ReadString(root, OperationItemBusinessMetadataKeys.BusinessKey)
-                              ?? (string.IsNullOrWhiteSpace(subjectKey) ? null : subjectKey.Trim());
-            if (string.IsNullOrWhiteSpace(businessKey))
-                return null;
 
             var displayName = ReadString(root, OperationItemBusinessMetadataKeys.DisplayName)
                               ?? (string.IsNullOrWhiteSpace(displayLabel) ? null : displayLabel.Trim());
@@ -265,8 +265,8 @@ public static class DemoBusinessRecordProjector
             }
 
             return new DemoBusinessRecordObservationInput(
-                RecordType: OperationItemBusinessMetadataKeys.CustomerRecordType,
-                BusinessKey: businessKey,
+                RecordType: SharedRecordTypes.Customer,
+                BusinessKey: identity.BusinessKey,
                 ModuleId: moduleId,
                 IntegrationId: integrationId,
                 OperationKind: operationKind,
@@ -281,7 +281,21 @@ public static class DemoBusinessRecordProjector
         }
         catch (JsonException)
         {
-            return null;
+            // Identity was readable; observation fields optional — still project with key only.
+            return new DemoBusinessRecordObservationInput(
+                RecordType: SharedRecordTypes.Customer,
+                BusinessKey: identity.BusinessKey,
+                ModuleId: moduleId,
+                IntegrationId: integrationId,
+                OperationKind: operationKind,
+                OperationItemId: operationItemId,
+                OperationGroupId: operationGroupId,
+                RunId: runId,
+                DisplayName: string.IsNullOrWhiteSpace(displayLabel) ? null : displayLabel.Trim(),
+                Email: null,
+                Status: null,
+                ChangeKind: null,
+                ObservedAtUtc: completedAtUtc ?? createdAtUtc);
         }
     }
 

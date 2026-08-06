@@ -60,7 +60,7 @@ Prefer product-like names: `Sample File Import`, `Sample API Polling`, `Demo Cus
 **Outcome stores:**
 
 * `IImportOutcomeStore` (in-memory) — **process-local** inspection aid; not restart-durable.
-* Platform `context.Signals.OperationItems` — durable run-attached `OperationGroup` / `OperationItem` for SDK-3B APIs and SDK-3D UI. `operationKind=file_import`; failed rows set `isRetryable` with safe metadata (`fixtureId`, `rowNumber`) for SDK-4A retry. **BDS-2:** items also emit aligned business metadata (`recordType=customer`, `businessKey`, `displayName`, `changeKind`, `observedAt`); `SubjectKey` = external id, `DisplayLabel` = human name (else email/id).
+* Platform `context.Signals.OperationItems` — durable run-attached `OperationGroup` / `OperationItem` for SDK-3B APIs and SDK-3D UI. `operationKind=file_import`; failed rows set `isRetryable` with safe metadata (`fixtureId`, `rowNumber`) for SDK-4A retry. **SDK-7 / BDS-2:** attach `SharedRecordIdentity(SharedRecordTypes.Customer, key)` via `OperationItemReporting.BuildAppendRequest(..., sharedRecord:)` — do **not** handcraft `recordType`/`businessKey`. Platform persists metadata + normalized columns. `SubjectKey` = external id, `DisplayLabel` = human name (else email/id).
 
 **Demo keys (BDS-2):** Shared `C-*` customer keys with `Sample.ApiPolling` (`C-001`/`C-002` overlap; `C-003` FileImport-only; `C-100` intentional email/status conflict vs ApiPolling; see [bds2-closure](../audits/bds2-closure.md)).
 
@@ -91,7 +91,7 @@ Prefer product-like names: `Sample File Import`, `Sample API Polling`, `Demo Cus
 * `IApiPollingDurableLastSeenStore` / SQL (`Sample.ApiPolling.Persistence`) — **restart-durable** last-seen fingerprints + sync summary, scoped by integration id. Tables `ApiPollingSyncStates` / `ApiPollingKnownRecords`. This is a **sync watermark**, not a business entity store.
 * `HybridApiPollingStateStore` (Worker Host) — durable last-seen + process-local in-flight batch/classifications.
 * `InMemoryApiPollingStateStore` — harness/unit tests (full process-local).
-* Platform `context.Signals.OperationItems` — durable per-run history (`operationKind=api_poll`). **BDS-2:** items emit aligned business metadata (`recordType=customer`, `businessKey`, `displayName`, `changeKind` from classification, `observedAt`).
+* Platform `context.Signals.OperationItems` — durable per-run history (`operationKind=api_poll`). **SDK-7 / BDS-2:** attach `SharedRecordIdentity(SharedRecordTypes.Customer, key)` via `BuildAppendRequest` (same contract as FileImport; modules do not reference each other).
 
 **Demo keys (BDS-2):** Snapshots use shared `C-*` keys with FileImport (`C-001`/`C-002` overlap; `C-400` ApiPolling-only; `C-100` intentional conflict vs FileImport `customers-mixed`). Sync watermark remains **not** a business entity store.
 
@@ -115,7 +115,7 @@ Prefer product-like names: `Sample File Import`, `Sample API Polling`, `Demo Cus
 2. `AppendItemAsync(...)` — subject key, display label, status, bounded change summary / metadata  
 3. `CompleteGroupAsync(...)` — terminal group status + counts (`Succeeded` / `CompletedWithErrors` / `Failed`)
 
-**Business metadata convention (BDS-2/BDS-3):** Sample modules should emit camelCase item metadata keys defined by `OperationItemBusinessMetadataKeys`: `recordType`, `businessKey` (same as `SubjectKey`), `displayName`, `changeKind`, `observedAt` (align with `CompletedAtUtc`), plus safe business fields `email` / `status` when known. Prefer human-facing `DisplayLabel` (name) with opaque `SubjectKey` (external id). This is **metadata + demo projection only** — not a platform `BusinessRecord` entity. Demo read API: `GET /api/demo/business-records/customers` ([bds3](../audits/bds3-demo-business-record-projection.md)). Management Client: `GetDemoCustomerRecordsAsync` / `GetDemoCustomerRecordAsync` ([bds4](../audits/bds4-demo-business-record-client-api-polish.md)). UI: `/demo/customers` ([bds5](../audits/bds5-demo-customers-surface.md)).
+**Shared-record identity (SDK-7) + business metadata (BDS-2/BDS-3):** Prefer typed `SharedRecordIdentity` / `SharedRecordTypes.Customer` on `BuildAppendRequest` — the platform validates, writes `recordType`/`businessKey` metadata, sets `SharedRecordType`/`SharedBusinessKey` columns, and aligns `SubjectKey`. Do not manually construct shared-identity metadata keys. Remaining camelCase keys (`displayName`, `changeKind`, `observedAt`, plus safe `email`/`status`) remain module metadata. Prefer human-facing `DisplayLabel` (name) with opaque `SubjectKey` (external id). Cross-integration lookup is application-internal (`ISharedRecordReferenceQueryService`) — not a Management API in SDK-7. This is **identity + demo projection only** — not a platform `BusinessRecord` entity ([sdk7](../audits/sdk7-cross-integration-shared-record-identity-lookup.md)). Demo read API: `GET /api/demo/business-records/customers` ([bds3](../audits/bds3-demo-business-record-projection.md)). Management Client: `GetDemoCustomerRecordsAsync` / `GetDemoCustomerRecordAsync` ([bds4](../audits/bds4-demo-business-record-client-api-polish.md)). UI: `/demo/customers` ([bds5](../audits/bds5-demo-customers-surface.md)).
 
 **Safety rules:** No secrets; no raw files; no silent truncation; JSON fields bounded (see `OperationItemizationBounds`). Missing `RunId` or unregistered store fails loudly.
 

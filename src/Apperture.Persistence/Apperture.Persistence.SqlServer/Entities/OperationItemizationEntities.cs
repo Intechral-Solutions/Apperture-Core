@@ -41,6 +41,10 @@ public sealed class OperationItemEntity
     public DateTimeOffset? CompletedAtUtc { get; set; }
     public string? ChangeSummaryJson { get; set; }
     public string? MetadataJson { get; set; }
+    /// <summary>SDK-7 — normalized shared record type (lowercase), when reported.</summary>
+    public string? SharedRecordType { get; set; }
+    /// <summary>SDK-7 — normalized shared business key, when reported.</summary>
+    public string? SharedBusinessKey { get; set; }
     public DateTimeOffset CreatedAtUtc { get; set; }
     public DateTimeOffset UpdatedAtUtc { get; set; }
 

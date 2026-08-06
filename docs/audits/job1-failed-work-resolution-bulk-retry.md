@@ -130,4 +130,5 @@ Track 6 is **complete** with JOB-1: itemization (SDK-3), per-item retry (SDK-4),
 
 ## 20. Next roadmap handoff
 
-Recommended next epic: **SDK-7 — Cross-integration shared-key contract** (per post-UIX reentry), or Track 2 profile/preferences / deferred UIX panel when criteria met. Do not reopen Track 6 for Explorer or drawer work.
+**Supersession (2026-08-06):** **SDK-7** delivered — [`sdk7-cross-integration-shared-record-identity-lookup.md`](./sdk7-cross-integration-shared-record-identity-lookup.md).  
+Recommended next epic: **AUP-1 — Account, Profile, and Personal Preferences**. Deferred UIX panel remains gated by UIX-5 criteria. Do not reopen Track 6 for Explorer or drawer work.

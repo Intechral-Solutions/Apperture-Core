@@ -79,7 +79,9 @@ public sealed class InMemoryOperationItemStore : IOperationItemStore
                 ChangeSummaryJson: request.ChangeSummaryJson,
                 MetadataJson: request.MetadataJson,
                 CreatedAtUtc: now,
-                UpdatedAtUtc: now);
+                UpdatedAtUtc: now,
+                SharedRecordType: request.SharedRecordType,
+                SharedBusinessKey: request.SharedBusinessKey);
 
             _items[request.OperationGroupId].Add(item);
             return Task.FromResult(item);

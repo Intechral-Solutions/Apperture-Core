@@ -13,13 +13,14 @@ public sealed record SharedRecordLink(
     string BusinessKey);
 
 /// <summary>
-/// Maps well-known operation-item <c>recordType</c> metadata to Management UI surfaces.
-/// Keys must stay aligned with <c>OperationItemBusinessMetadataKeys</c> (ModuleSdk).
-/// First registration: demo customers. Extend by adding types — do not SubjectKey-guess.
+/// Maps well-known shared-record types to Management UI surfaces (SDK-7).
+/// Identity extraction mirrors <c>SharedRecordIdentityCompatibility</c> in ModuleSdk
+/// (Ui.Shared cannot reference ModuleSdk.Integration — SDK-6D boundary).
+/// This catalog only maps destinations — modules do not declare URLs.
 /// </summary>
 public static class SharedRecordLinkCatalog
 {
-    // Keep in sync with OperationItemBusinessMetadataKeys (ModuleSdk.Integration).
+    // Keep in sync with SharedRecordTypes / OperationItemBusinessMetadataKeys (ModuleSdk).
     public const string RecordTypeMetadataKey = "recordType";
     public const string BusinessKeyMetadataKey = "businessKey";
     public const string CustomerRecordType = "customer";
@@ -29,7 +30,8 @@ public static class SharedRecordLinkCatalog
 
     /// <summary>
     /// Try to resolve a shared-record link from item metadata and optional subject key.
-    /// Business key: metadata <c>businessKey</c>, else <paramref name="subjectKey"/> (same as demo projector).
+    /// Requires explicit recordType; business key from metadata else subjectKey.
+    /// Never SubjectKey-guesses without a record type.
     /// </summary>
     public static bool TryResolve(string? metadataJson, string? subjectKey, out SharedRecordLink? link)
     {
@@ -52,7 +54,11 @@ public static class SharedRecordLinkCatalog
         return false;
     }
 
-    static bool TryReadRecordIdentity(
+    /// <summary>
+    /// Same rules as ModuleSdk <c>SharedRecordIdentityCompatibility.TryReadFromMetadata</c>.
+    /// Kept local because Management.Ui.Shared must not reference ModuleSdk.Integration.
+    /// </summary>
+    internal static bool TryReadRecordIdentity(
         string? metadataJson,
         string? subjectKey,
         out string recordType,
@@ -89,7 +95,7 @@ public static class SharedRecordLinkCatalog
             if (string.IsNullOrWhiteSpace(key))
                 return false;
 
-            recordType = type.Trim();
+            recordType = type.Trim().ToLowerInvariant();
             businessKey = key.Trim();
             return true;
         }

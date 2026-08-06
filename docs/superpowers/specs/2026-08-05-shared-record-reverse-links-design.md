@@ -4,6 +4,8 @@
 **Status:** Approved  
 **Related:** BDS-5/BDS-6 Demo Customers, UIX-3/4 navigation, `OperationItemBusinessMetadataKeys`
 
+**Supersession note (SDK-7, 2026-08-06):** Modules now author identity via typed `SharedRecordIdentity` (platform writes metadata + normalized columns). Reverse-link detection still uses metadata/`SubjectKey` compatibility rules in `SharedRecordLinkCatalog` (Ui.Shared cannot reference ModuleSdk.Integration). Cross-integration reference lookup is application-owned — see [`../../audits/sdk7-cross-integration-shared-record-identity-lookup.md`](../../audits/sdk7-cross-integration-shared-record-identity-lookup.md). Platform `BusinessRecord` remains deferred.
+
 ## Problem
 
 Operators see FileImport/ApiPolling affected records on Run Detail but cannot navigate to the Demo Customer hub. Reverse navigation (run item → shared record) is missing.
@@ -21,8 +23,10 @@ Operators see FileImport/ApiPolling affected records on Run Detail but cannot na
 ## Extension seam (later entity platform)
 
 ```text
-metadata (recordType + businessKey)
-  → SharedRecordLinkCatalog
+SDK SharedRecordIdentity
+  → persistence / compatibility reader
+  → SharedRecordReference lookup (application)
+  → SharedRecordLinkCatalog (UI destinations only)
   → Demo Customer detail today
   → future /records/{type}/{key} (or similar) later
 ```

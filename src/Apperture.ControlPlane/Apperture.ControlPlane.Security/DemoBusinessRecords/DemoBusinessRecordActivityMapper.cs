@@ -39,21 +39,20 @@ public static class DemoBusinessRecordActivityMapper
         if (string.IsNullOrWhiteSpace(metadataJson))
             return false;
 
-        // Prefer structured parse; fall back to substring for SQL prefilter alignment.
+        // Lightweight prefilter: confirmed customer recordType (business key may live on SubjectKey).
         try
         {
             using var doc = JsonDocument.Parse(metadataJson);
             if (!doc.RootElement.TryGetProperty(OperationItemBusinessMetadataKeys.RecordType, out var rt))
                 return false;
-            return string.Equals(
+            return SharedRecordIdentityRules.RecordTypeComparer.Equals(
                 rt.GetString(),
-                OperationItemBusinessMetadataKeys.CustomerRecordType,
-                StringComparison.OrdinalIgnoreCase);
+                SharedRecordTypes.Customer);
         }
         catch (JsonException)
         {
             return metadataJson.Contains(
-                $"\"{OperationItemBusinessMetadataKeys.RecordType}\":\"{OperationItemBusinessMetadataKeys.CustomerRecordType}\"",
+                MetadataContainsCustomerRecordLiteral,
                 StringComparison.OrdinalIgnoreCase);
         }
     }

@@ -2,6 +2,8 @@
 
 > **For agentic workers:** Implement tasks in order. Do not invent a platform entity model.
 
+**Supersession (SDK-7, 2026-08-06):** Authoring uses typed `SharedRecordIdentity`; see [`../../audits/sdk7-cross-integration-shared-record-identity-lookup.md`](../../audits/sdk7-cross-integration-shared-record-identity-lookup.md). This plan’s catalog + reverse-link UI remain valid.
+
 **Goal:** Affected-record items with `recordType=customer` link to Demo Customer detail via a reusable catalog.
 
 **Architecture:** `SharedRecordLinkCatalog` in `Apperture.Management.Ui.Shared` parses metadata and maps known types to href/label. Panel consumes `TryResolve`.

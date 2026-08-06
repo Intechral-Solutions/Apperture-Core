@@ -37,7 +37,9 @@ public sealed record OperationItem(
     string? ChangeSummaryJson,
     string? MetadataJson,
     DateTimeOffset CreatedAtUtc,
-    DateTimeOffset UpdatedAtUtc);
+    DateTimeOffset UpdatedAtUtc,
+    string? SharedRecordType = null,
+    string? SharedBusinessKey = null);
 
 public sealed record BeginOperationGroupRequest(
     string RunId,
@@ -64,7 +66,9 @@ public sealed record AppendOperationItemRequest(
     DateTimeOffset? LastAttemptedAtUtc = null,
     DateTimeOffset? CompletedAtUtc = null,
     string? ChangeSummaryJson = null,
-    string? MetadataJson = null);
+    string? MetadataJson = null,
+    string? SharedRecordType = null,
+    string? SharedBusinessKey = null);
 
 public sealed record CompleteOperationGroupRequest(
     string OperationGroupId,

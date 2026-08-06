@@ -1,10 +1,12 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 
 namespace Apperture.Core.Application.OperationItems;
 
 /// <summary>
-/// Shared helpers for building safe operation item append requests (SDK-6A).
+/// Shared helpers for building safe operation item append requests (SDK-6A / SDK-7).
 /// Domain modules supply values; platform persists via <see cref="IOperationItemWriter"/>.
+/// Prefer <see cref="SharedRecordIdentity"/> over manually writing recordType/businessKey metadata.
 /// </summary>
 public static class OperationItemReporting
 {
@@ -36,6 +38,11 @@ public static class OperationItemReporting
     public static string SerializeChangeSummary(object changeSummary) =>
         JsonSerializer.Serialize(changeSummary, JsonOptions);
 
+    /// <summary>
+    /// Builds an append request. When <paramref name="sharedRecord"/> is provided, the platform
+    /// validates it, writes recordType/businessKey into metadata, sets normalized columns,
+    /// and aligns SubjectKey with the business key.
+    /// </summary>
     public static AppendOperationItemRequest BuildAppendRequest(
         string operationGroupId,
         string runId,
@@ -48,9 +55,23 @@ public static class OperationItemReporting
         bool isRetryable,
         object? changeSummary,
         object metadata,
-        DateTimeOffset? completedAtUtc = null)
+        DateTimeOffset? completedAtUtc = null,
+        SharedRecordIdentity? sharedRecord = null)
     {
-        var metadataJson = SerializeMetadata(metadata);
+        SharedRecordIdentity? normalized = null;
+        string? effectiveSubject = subjectKey;
+        string? sharedType = null;
+        string? sharedKey = null;
+
+        if (sharedRecord is not null)
+        {
+            normalized = SharedRecordIdentityRules.ValidateAndNormalize(sharedRecord);
+            effectiveSubject = SharedRecordIdentityRules.AlignSubjectKey(subjectKey, normalized);
+            sharedType = normalized.RecordType;
+            sharedKey = normalized.BusinessKey;
+        }
+
+        var metadataJson = MergeSharedIdentityIntoMetadata(SerializeMetadata(metadata), normalized);
         var changeSummaryJson = changeSummary is null ? null : SerializeChangeSummary(changeSummary);
 
         return new AppendOperationItemRequest(
@@ -58,7 +79,7 @@ public static class OperationItemReporting
             RunId: runId,
             Sequence: sequence,
             Status: itemStatus,
-            SubjectKey: subjectKey,
+            SubjectKey: effectiveSubject,
             DisplayLabel: displayLabel,
             ErrorCode: errorCode,
             ErrorMessage: errorMessage,
@@ -67,7 +88,36 @@ public static class OperationItemReporting
             LastAttemptedAtUtc: completedAtUtc,
             CompletedAtUtc: completedAtUtc,
             ChangeSummaryJson: changeSummaryJson,
-            MetadataJson: metadataJson);
+            MetadataJson: metadataJson,
+            SharedRecordType: sharedType,
+            SharedBusinessKey: sharedKey);
+    }
+
+    /// <summary>
+    /// Ensures metadata JSON contains canonical recordType/businessKey for the shared identity.
+    /// Module-supplied conflicting values are overwritten by the validated identity.
+    /// </summary>
+    public static string MergeSharedIdentityIntoMetadata(string metadataJson, SharedRecordIdentity? identity)
+    {
+        if (identity is null)
+            return metadataJson;
+
+        JsonObject root;
+        if (string.IsNullOrWhiteSpace(metadataJson))
+        {
+            root = new JsonObject();
+        }
+        else
+        {
+            var node = JsonNode.Parse(metadataJson)
+                ?? throw new OperationItemizationException("MetadataJson must be valid JSON.");
+            root = node as JsonObject
+                ?? throw new OperationItemizationException("MetadataJson must be a JSON object when attaching a shared record identity.");
+        }
+
+        root[OperationItemBusinessMetadataKeys.RecordType] = identity.RecordType;
+        root[OperationItemBusinessMetadataKeys.BusinessKey] = identity.BusinessKey;
+        return root.ToJsonString(JsonOptions);
     }
 }
 
@@ -79,8 +129,9 @@ public static class OperationItemRetryMetadataKeys
 }
 
 /// <summary>
-/// Well-known business-facing metadata keys for operation items (BDS-2).
-/// Prefer these camelCase JSON properties in item <c>MetadataJson</c>.
+/// Well-known business-facing metadata keys for operation items (BDS-2 / SDK-7).
+/// Prefer attaching <see cref="SharedRecordIdentity"/> via <see cref="OperationItemReporting.BuildAppendRequest"/>
+/// rather than writing these keys manually. Constants remain for compatibility readers and unrelated metadata.
 /// <c>observedAt</c> should match item <c>CompletedAtUtc</c> when both are set.
 /// This is a metadata convention only — not a platform <c>BusinessRecord</c> entity.
 /// </summary>
