@@ -61,8 +61,10 @@ public sealed class RecoveryControllerTests
         var definitionKind = value.GetType().GetProperty("definitionKind")?.GetValue(value);
         definitionKind.Should().Be("operation");
         var message = value.GetType().GetProperty("message")?.GetValue(value) as string;
-        message.Should().Contain("inspectable", "response must tell operator that operation items are inspectable via GET blocked-work");
-        message.Should().Contain("not yet support operation retry", "response must explicitly state operation retry limitation");
+        message.Should().Contain("Affected records", "response must guide operators to item-level recovery");
+        message.Should().Contain("not offered", "response must state whole-operation retry is intentionally unsupported");
+        var finalDecision = value.GetType().GetProperty("finalDecision")?.GetValue(value);
+        finalDecision.Should().Be(true);
     }
 
     [Fact]

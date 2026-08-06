@@ -125,6 +125,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<Apperture.Core.Application.OperationItems.IOperationItemStore, SqlOperationItemStore>();
         services.AddScoped<Apperture.Core.Application.OperationItems.IOperationItemRetryAttemptStore, SqlOperationItemRetryAttemptStore>();
         services.AddScoped<Apperture.Core.Application.OperationItems.IOperationItemRetryReconciliationService, OperationItemRetryReconciliationService>();
+        services.AddScoped<Apperture.Core.Application.OperationItems.IOperationItemAttentionAcknowledgementStore, SqlOperationItemAttentionAcknowledgementStore>();
         return services;
     }
 }

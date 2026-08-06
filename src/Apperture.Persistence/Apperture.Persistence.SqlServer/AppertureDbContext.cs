@@ -69,6 +69,8 @@ public class AppertureDbContext : DbContext
     public DbSet<OperationGroupEntity> OperationGroups => Set<OperationGroupEntity>();
     public DbSet<OperationItemEntity> OperationItems => Set<OperationItemEntity>();
     public DbSet<OperationItemRetryAttemptEntity> OperationItemRetryAttempts => Set<OperationItemRetryAttemptEntity>();
+    public DbSet<OperationItemAttentionAcknowledgementEntity> OperationItemAttentionAcknowledgements =>
+        Set<OperationItemAttentionAcknowledgementEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -962,6 +964,10 @@ public class AppertureDbContext : DbContext
                 .WithOne(x => x.Item!)
                 .HasForeignKey(x => x.OperationItemId)
                 .OnDelete(DeleteBehavior.Cascade);
+            e.HasMany(x => x.AttentionAcknowledgements)
+                .WithOne(x => x.Item!)
+                .HasForeignKey(x => x.OperationItemId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<OperationItemRetryAttemptEntity>(e =>
@@ -986,6 +992,27 @@ public class AppertureDbContext : DbContext
             e.HasIndex(x => x.ChildRunId);
             e.HasIndex(x => x.Status);
             e.HasIndex(x => x.RunId);
+        });
+
+        modelBuilder.Entity<OperationItemAttentionAcknowledgementEntity>(e =>
+        {
+            e.ToTable("OperationItemAttentionAcknowledgements");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasMaxLength(64);
+            e.Property(x => x.OperationItemId).HasMaxLength(64).IsRequired();
+            e.Property(x => x.RunId).HasMaxLength(64).IsRequired();
+            e.Property(x => x.OperationGroupId).HasMaxLength(64).IsRequired();
+            e.Property(x => x.Disposition).HasMaxLength(64).IsRequired();
+            e.Property(x => x.Reason).HasMaxLength(512);
+            e.Property(x => x.AcknowledgedByUserId).HasMaxLength(128).IsRequired();
+            e.Property(x => x.ReopenedByUserId).HasMaxLength(128);
+            e.HasIndex(x => x.OperationItemId)
+                .IsUnique()
+                .HasFilter("[ReopenedAtUtc] IS NULL")
+                .HasDatabaseName("IX_OperationItemAttentionAcknowledgements_OperationItemId_Active");
+            e.HasIndex(x => x.RunId);
+            e.HasIndex(x => x.OperationGroupId);
+            e.HasIndex(x => x.AcknowledgedAtUtc);
         });
     }
 }

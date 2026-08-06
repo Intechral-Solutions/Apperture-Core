@@ -47,6 +47,8 @@ public sealed class OperationItemEntity
     public OperationGroupEntity? Group { get; set; }
 
     public List<OperationItemRetryAttemptEntity> RetryAttempts { get; set; } = [];
+
+    public List<OperationItemAttentionAcknowledgementEntity> AttentionAcknowledgements { get; set; } = [];
 }
 
 /// <summary>SDK-4A — durable append-only retry attempt for a failed operation item.</summary>

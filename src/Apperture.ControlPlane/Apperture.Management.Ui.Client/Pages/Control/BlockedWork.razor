@@ -224,7 +224,7 @@
             else
             {
                 _actionMessage = result.InspectionOnly
-                    ? "Operation retry is not supported. Inspection only."
+                    ? "Operation-level retry is not supported. Open the run’s Affected records to retry or acknowledge failed items."
                     : (result.ErrorMessage ?? "Retry failed.");
             }
         }

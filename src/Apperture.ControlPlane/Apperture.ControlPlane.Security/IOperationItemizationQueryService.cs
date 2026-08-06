@@ -61,7 +61,11 @@ public sealed record OperationItemSummaryDto(
     string? ChangeSummaryJson,
     string? MetadataJson,
     DateTimeOffset CreatedAtUtc,
-    DateTimeOffset UpdatedAtUtc);
+    DateTimeOffset UpdatedAtUtc,
+    bool NeedsAttention = false,
+    OperationItemAcknowledgementDto? ActiveAcknowledgement = null,
+    bool HasActiveRetry = false,
+    bool HasSucceededRetry = false);
 
 public sealed record OperationItemPageDto(
     IReadOnlyList<OperationItemSummaryDto> Items,
@@ -73,4 +77,6 @@ public sealed record RunOperationItemizationSummaryDto(
     int GroupCount,
     int FailedItemCount,
     int SkippedItemCount,
-    bool HasOperationItems);
+    bool HasOperationItems,
+    int ActiveAttentionCount = 0,
+    int AcknowledgedFailureCount = 0);

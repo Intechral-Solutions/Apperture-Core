@@ -95,4 +95,6 @@ public sealed record OperationItemizationRunSummary(
     int GroupCount,
     int FailedItemCount,
     int SkippedItemCount,
-    bool HasOperationItems);
+    bool HasOperationItems,
+    int ActiveAttentionCount = 0,
+    int AcknowledgedFailureCount = 0);

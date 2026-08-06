@@ -221,6 +221,10 @@ Canonical detail: [`docs/00-overview/pre-release-product-roadmap.md`](../00-over
 
 **Recommended next track: SDK & Demo Module Validation**
 
+> **Supersession (2026-08-05):** Track 3 (SDK-1…SDK-6D) and Track 6 (through JOB-1) are complete.
+> PFB-1’s SDK handoff is satisfied. See [`job1-failed-work-resolution-bulk-retry.md`](./job1-failed-work-resolution-bulk-retry.md)
+> and [`post-uix-product-roadmap-reentry.md`](./post-uix-product-roadmap-reentry.md).
+
 **Why (now):**
 
 1. S1–S13 / SWM-1–12 already delivered a **usable operator foundation** and HelloWorld proof path — the next risk is thin SDK/validation coverage for real integration shapes (import rows, files, API poll, events, cross-integration).

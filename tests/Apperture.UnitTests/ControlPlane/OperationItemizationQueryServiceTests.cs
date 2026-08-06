@@ -101,7 +101,7 @@ public sealed class OperationItemizationQueryServiceTests
         page2.Items[0].Sequence.Should().Be(3);
 
         var summary = await svc.GetRunSummaryAsync(new OperationRunId("run-1"));
-        summary.Should().BeEquivalentTo(new RunOperationItemizationSummaryDto(1, 1, 1, true));
+        summary.Should().BeEquivalentTo(new RunOperationItemizationSummaryDto(1, 1, 1, true, ActiveAttentionCount: 1, AcknowledgedFailureCount: 0));
     }
 
     [Fact]
@@ -141,6 +141,8 @@ public sealed class OperationItemizationQueryServiceTests
         var svc = new OperationItemizationQueryService(
             db,
             new SqlOperationItemStore(db),
+            new InMemoryOperationItemAttentionAcknowledgementStore(),
+            new InMemoryOperationItemRetryAttemptStore(),
             new RunKindResolver(db),
             new DenyWorkflowReadAuthz(),
             new AllowOperationReadAuthz());
@@ -161,13 +163,15 @@ public sealed class OperationItemizationQueryServiceTests
         groups.Should().NotBeNull().And.BeEmpty();
 
         var summary = await svc.GetRunSummaryAsync(new OperationRunId("run-empty"));
-        summary.Should().BeEquivalentTo(new RunOperationItemizationSummaryDto(0, 0, 0, false));
+        summary.Should().BeEquivalentTo(new RunOperationItemizationSummaryDto(0, 0, 0, false, 0, 0));
     }
 
     private static OperationItemizationQueryService NewService(AppertureDbContext db, IOperationItemStore store) =>
         new(
             db,
             store,
+            new InMemoryOperationItemAttentionAcknowledgementStore(),
+            new InMemoryOperationItemRetryAttemptStore(),
             new RunKindResolver(db),
             new AllowWorkflowReadAuthz(),
             new AllowOperationReadAuthz());

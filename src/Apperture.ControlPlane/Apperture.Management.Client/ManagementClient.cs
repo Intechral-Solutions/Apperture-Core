@@ -167,6 +167,72 @@ public sealed class ManagementClient : IManagementClient
             .ConfigureAwait(false);
     }
 
+    public async Task<BulkRetryOperationItemsResult?> BulkRetryOperationItemsAsync(
+        string runId,
+        string operationGroupId,
+        BulkRetryOperationItemsRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var response = await _http.PostAsJsonAsync(
+            $"runs/{Uri.EscapeDataString(runId)}/operation-groups/{Uri.EscapeDataString(operationGroupId)}/items/retry",
+            request,
+            cancellationToken).ConfigureAwait(false);
+        if (!response.IsSuccessStatusCode)
+        {
+            var body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            var message = TryReadApiErrorMessage(body)
+                          ?? $"Bulk retry failed ({(int)response.StatusCode}).";
+            throw new HttpRequestException(message, inner: null, statusCode: response.StatusCode);
+        }
+
+        return await response.Content.ReadFromJsonAsync<BulkRetryOperationItemsResult>(cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    public async Task<BulkAcknowledgeOperationItemsResult?> AcknowledgeOperationItemsAsync(
+        string runId,
+        string operationGroupId,
+        BulkAcknowledgeOperationItemsRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var response = await _http.PostAsJsonAsync(
+            $"runs/{Uri.EscapeDataString(runId)}/operation-groups/{Uri.EscapeDataString(operationGroupId)}/items/acknowledge",
+            request,
+            cancellationToken).ConfigureAwait(false);
+        if (!response.IsSuccessStatusCode)
+        {
+            var body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            var message = TryReadApiErrorMessage(body)
+                          ?? $"Acknowledge failed ({(int)response.StatusCode}).";
+            throw new HttpRequestException(message, inner: null, statusCode: response.StatusCode);
+        }
+
+        return await response.Content.ReadFromJsonAsync<BulkAcknowledgeOperationItemsResult>(cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    public async Task<BulkReopenOperationItemsResult?> ReopenOperationItemAttentionAsync(
+        string runId,
+        string operationGroupId,
+        BulkReopenOperationItemsRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var response = await _http.PostAsJsonAsync(
+            $"runs/{Uri.EscapeDataString(runId)}/operation-groups/{Uri.EscapeDataString(operationGroupId)}/items/reopen-attention",
+            request,
+            cancellationToken).ConfigureAwait(false);
+        if (!response.IsSuccessStatusCode)
+        {
+            var body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            var message = TryReadApiErrorMessage(body)
+                          ?? $"Reopen attention failed ({(int)response.StatusCode}).";
+            throw new HttpRequestException(message, inner: null, statusCode: response.StatusCode);
+        }
+
+        return await response.Content.ReadFromJsonAsync<BulkReopenOperationItemsResult>(cancellationToken)
+            .ConfigureAwait(false);
+    }
+
     public async Task<IReadOnlyList<OperationItemRetryAttemptDto>?> GetOperationItemRetriesAsync(
         string runId,
         string operationItemId,

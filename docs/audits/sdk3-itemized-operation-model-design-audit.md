@@ -412,3 +412,6 @@ Summarize schema, writer API, tests, docs, and recommended SDK-3B prompt.
 ---
 
 **SDK-3 status:** Design audit complete. Next implementation epic: **SDK-3A — Operation Itemization Persistence & Writer**.
+
+> **Supersession (2026-08-05):** SDK-3A–3D, SDK-4*, and JOB-1 are delivered. Track 6 is closed.
+> Do not treat this footer as the current next epic.

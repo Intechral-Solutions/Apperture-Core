@@ -52,11 +52,12 @@ UIX-6  Interaction and progressive disclosure system
 | **UIX-3** | Implemented | Affected-record anchors and typed return context — [`../audits/uix3-affected-record-anchors-return-context.md`](../audits/uix3-affected-record-anchors-return-context.md). |
 | **UIX-4** | Implemented | Contextual breadcrumbs and link integrity — [`../audits/uix4-contextual-breadcrumbs-link-integrity.md`](../audits/uix4-contextual-breadcrumbs-link-integrity.md). |
 | **UIX-5** | Audit complete | Supporting surface / investigation pattern audit — [`../audits/uix5-supporting-surface-pattern-audit.md`](../audits/uix5-supporting-surface-pattern-audit.md). **No shared panel yet**. |
-| **UIX-6** | Implemented (operator smoke pending) | Interaction and progressive disclosure system — [`../audits/uix6-interaction-progressive-disclosure-system.md`](../audits/uix6-interaction-progressive-disclosure-system.md). `Disclosure`, `TechnicalDetails`, `ManagementDialog`, `ConfirmActionDialog`, interaction tokens; native `window.confirm` removed. Guide: [`../design-system/interaction-patterns.md`](../design-system/interaction-patterns.md). |
+| **UIX-6** | Implemented (operator smoke complete) | Interaction and progressive disclosure system — [`../audits/uix6-interaction-progressive-disclosure-system.md`](../audits/uix6-interaction-progressive-disclosure-system.md). `Disclosure`, `TechnicalDetails`, `ManagementDialog`, `ConfirmActionDialog`, interaction tokens; native `window.confirm` removed. Guide: [`../design-system/interaction-patterns.md`](../design-system/interaction-patterns.md). |
 
 **UIX arc note (2026-08):** the inspection panel, drawer, popover, and accordion remain deferred
-until the UIX-5 trigger criteria are met. Next UI step is the combined **BDS-6 + UIX-6 operator
-smoke**, not a new epic.
+until the UIX-5 trigger criteria are met. **Supersession (2026-08-05):** UIX-6 and BDS-6 operator
+smoke are complete; Track 6 closed via JOB-1 — see [`../audits/job1-failed-work-resolution-bulk-retry.md`](../audits/job1-failed-work-resolution-bulk-retry.md).
+Next product handoff: SDK-7 shared-key contract or Track 2 preferences (not a new UIX epic by default).
 
 ---
 
@@ -81,10 +82,11 @@ smoke**, not a new epic.
 - Cross-integration demo
 - SDK contract validation against durable workflow + settings + scheduling interfaces
 
-**PFB-1 recommendation:** prioritize this track next (see baseline audit §12).
+**PFB-1 recommendation (historical):** prioritize Track 3 next (see baseline audit §12).  
+**Supersession (2026-08-05):** SDK-1 through SDK-6D are complete. Track 6 closed by JOB-1.  
+Stale “Next epic: SDK-3A” language below is historical only.
 
-**SDK-1 (closed):** strategy + capability map — [`docs/audits/sdk1-demo-module-strategy-and-sdk-contract-audit.md`](../audits/sdk1-demo-module-strategy-and-sdk-contract-audit.md).  
-**Next epic:** **SDK-3A Operation Itemization Persistence & Writer** (then 3B read APIs → 3C FileImport adapter → 3D run-detail panel → SDK-4 per-item retry). See [`sdk3-itemized-operation-model-design-audit.md`](../audits/sdk3-itemized-operation-model-design-audit.md).
+~~**Next epic:** **SDK-3A Operation Itemization Persistence & Writer**~~ — **superseded:** SDK-3A–3D, SDK-4A–4C, SDK-5*, SDK-6* delivered; JOB-1 closed Track 6. See [`sdk3-itemized-operation-model-design-audit.md`](../audits/sdk3-itemized-operation-model-design-audit.md) and [`job1-failed-work-resolution-bulk-retry.md`](../audits/job1-failed-work-resolution-bulk-retry.md).
 
 ---
 
@@ -107,23 +109,31 @@ smoke**, not a new epic.
 - **BDS-3** Demo business record projection — complete (`docs/audits/bds3-demo-business-record-projection.md`)
 - **BDS-4** Demo business record client & API polish — complete (`docs/audits/bds4-demo-business-record-client-api-polish.md`)
 - **BDS-5** Demo Customers business record surface — complete (`docs/audits/bds5-demo-customers-surface.md`)
-- **BDS-6** Cross-run business-record activity and lineage — implemented (`docs/audits/bds6-cross-run-business-record-activity-lineage.md`); customer-first Demo Customer activity (not a generic Operation Item Explorer). Operator smoke pending.
+- **BDS-6** Cross-run business-record activity and lineage — complete (`docs/audits/bds6-cross-run-business-record-activity-lineage.md`); customer-first Demo Customer activity (not a generic Operation Item Explorer). Operator smoke complete (2026-08). Historical “Operation Item Explorer” wording in older notes refers to a deferred product idea, not the shipped BDS-6 surface.
 - Integration-owned projections
 - Cross-integration lookup
 - Record detail pages
 - Provenance / source tracking
 
-**Track 5 sequencing note (2026-08):** BDS-1–BDS-6 and UIX-1–UIX-5 are delivered for the Demo Customer investigation arc. UIX-5 concluded **no shared inspection panel yet**; next UI epic is **UIX-6** (technical disclosure + confirm-action consistency). A generic Operation Item Explorer and drawer framework remain out of scope.
+**Track 5 sequencing note (2026-08):** BDS-1–BDS-6 and UIX-1–UIX-5 are delivered for the Demo Customer investigation arc. UIX-5 concluded **no shared inspection panel yet**.  
+**Supersession (2026-08-05):** UIX-6 is implemented with operator smoke complete. Panel/drawer remain deferred.
 
 ---
 
 ## Track 6 — Job Operation Itemization & Retry
 
-- Itemized run / job operations
-- Import row outcomes
-- Failed item diagnostics
-- Retry individual failed operations
-- Skip / ignore / resolve flows
+**Status: complete (2026-08-05)** via SDK-3/4 + JOB-1.
+
+- Itemized run / job operations — delivered (SDK-3)
+- Import row outcomes — delivered
+- Failed item diagnostics — delivered
+- Retry individual failed operations — delivered (SDK-4)
+- Selective / bulk retry within one operation group — delivered (JOB-1)
+- Acknowledge / reopen attention (resolve without rewriting outcomes) — delivered (JOB-1)
+- Operation blocked-work final decision (inspection-only) — delivered (JOB-1)
+
+**Closure:** [`../audits/job1-failed-work-resolution-bulk-retry.md`](../audits/job1-failed-work-resolution-bulk-retry.md)  
+**ADR:** [`../02-decisions/adr-operation-blocked-work-inspection-only.md`](../02-decisions/adr-operation-blocked-work-inspection-only.md)
 
 **Note:** Strongly informed by import / file demos from Track 3.
 

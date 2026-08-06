@@ -257,7 +257,7 @@ public sealed class DemoBusinessRecordProjectionService : IDemoBusinessRecordPro
         }
 
         if (query.AttentionOnly)
-            q = q.Where(x => x.ItemStatus == OperationItemStatuses.Failed || x.IsRetryable);
+            q = q.Where(x => x.ItemStatus == OperationItemStatuses.Failed);
 
         if (query.LookbackDays is > 0)
         {
@@ -266,6 +266,23 @@ public sealed class DemoBusinessRecordProjectionService : IDemoBusinessRecordPro
         }
 
         var raw = await q.ToListAsync(cancellationToken).ConfigureAwait(false);
+
+        var itemIds = raw.Select(r => r.Id).ToArray();
+        var activeAckIds = (await _db.OperationItemAttentionAcknowledgements.AsNoTracking()
+                .Where(a => itemIds.Contains(a.OperationItemId) && a.ReopenedAtUtc == null)
+                .Select(a => a.OperationItemId)
+                .ToListAsync(cancellationToken)
+                .ConfigureAwait(false))
+            .ToHashSet(StringComparer.Ordinal);
+
+        var succeededRetryIds = (await _db.OperationItemRetryAttempts.AsNoTracking()
+                .Where(a => itemIds.Contains(a.OperationItemId)
+                            && a.Status == OperationItemRetryAttemptStatuses.Succeeded)
+                .Select(a => a.OperationItemId)
+                .Distinct()
+                .ToListAsync(cancellationToken)
+                .ConfigureAwait(false))
+            .ToHashSet(StringComparer.Ordinal);
 
         var rows = new List<ActivityRow>(raw.Count);
         foreach (var row in raw)
@@ -300,6 +317,17 @@ public sealed class DemoBusinessRecordProjectionService : IDemoBusinessRecordPro
                 row.CreatedAtUtc,
                 row.MetadataJson);
 
+            var hasAck = activeAckIds.Contains(row.Id);
+            var hasSucceededRetry = succeededRetryIds.Contains(row.Id);
+            var requiresAttention = DemoBusinessRecordActivityMapper.IsAttentionItem(
+                row.ItemStatus,
+                row.IsRetryable,
+                hasAck,
+                hasSucceededRetry);
+
+            if (query.AttentionOnly && !requiresAttention)
+                continue;
+
             rows.Add(new ActivityRow(
                 BusinessKey: businessKey,
                 OccurredAtUtc: occurred,
@@ -326,9 +354,7 @@ public sealed class DemoBusinessRecordProjectionService : IDemoBusinessRecordPro
                 ErrorMessage: row.ErrorMessage,
                 IsRetryable: row.IsRetryable,
                 RetryCount: row.RetryCount,
-                RequiresAttention: DemoBusinessRecordActivityMapper.IsAttentionItem(
-                    row.ItemStatus,
-                    row.IsRetryable),
+                RequiresAttention: requiresAttention,
                 WasRetried: row.RetryCount > 0,
                 SourceLabel: row.SourceLabel,
                 GroupStatus: row.GroupStatus));

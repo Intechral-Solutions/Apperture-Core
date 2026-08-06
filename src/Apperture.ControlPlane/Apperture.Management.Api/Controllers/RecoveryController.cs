@@ -84,7 +84,7 @@ public sealed class RecoveryController : ControllerBase
 
     /// <summary>
     /// Retries a blocked workflow start. Returns 409 if still ineligible.
-    /// Operation blocked work is inspectable only; retry is not supported. Returns 400 with inspectionOnly.
+    /// Operation blocked work is inspectable only; whole-operation retry is intentionally unsupported (JOB-1 final decision).
     /// </summary>
     [HttpPost("blocked-work/{runId}/retry")]
     [ProducesResponseType(StatusCodes.Status202Accepted)]
@@ -107,11 +107,20 @@ public sealed class RecoveryController : ControllerBase
         {
             return BadRequest(new
             {
-                error = "Operation retry not yet supported.",
+                error = "Operation-level retry is not supported.",
                 runId,
                 definitionKind = "operation",
                 inspectionOnly = true,
-                message = "Operation blocked work is inspectable via GET blocked-work; platform recovery does not yet support operation retry."
+                finalDecision = true,
+                message =
+                    "Operation blocked work is inspectable only. Recover by opening the run’s Affected records, then retry or acknowledge individual failed items. Whole-operation retry is not offered because it would re-run successful work already completed in the same operation.",
+                recoveryGuidance = new
+                {
+                    openAffectedRecords = true,
+                    itemRetrySupported = true,
+                    acknowledgementSupported = true,
+                    operationRetrySupported = false,
+                },
             });
         }
 

@@ -11,6 +11,8 @@ public sealed class OperationItemizationQueryService : IOperationItemizationQuer
 {
     private readonly AppertureDbContext _db;
     private readonly IOperationItemStore _store;
+    private readonly IOperationItemAttentionAcknowledgementStore _acks;
+    private readonly IOperationItemRetryAttemptStore _attempts;
     private readonly IRunKindResolver _runKinds;
     private readonly IWorkflowRunReadAuthorizationService _workflowReadAuthz;
     private readonly IOperationRunReadAuthorizationService _operationReadAuthz;
@@ -18,12 +20,16 @@ public sealed class OperationItemizationQueryService : IOperationItemizationQuer
     public OperationItemizationQueryService(
         AppertureDbContext db,
         IOperationItemStore store,
+        IOperationItemAttentionAcknowledgementStore acks,
+        IOperationItemRetryAttemptStore attempts,
         IRunKindResolver runKinds,
         IWorkflowRunReadAuthorizationService workflowReadAuthz,
         IOperationRunReadAuthorizationService operationReadAuthz)
     {
         _db = db;
         _store = store;
+        _acks = acks;
+        _attempts = attempts;
         _runKinds = runKinds;
         _workflowReadAuthz = workflowReadAuthz;
         _operationReadAuthz = operationReadAuthz;
@@ -62,11 +68,26 @@ public sealed class OperationItemizationQueryService : IOperationItemizationQuer
         var page = await _store.QueryItemsByGroupAsync(group.OperationGroupId, query, cancellationToken)
             .ConfigureAwait(false);
 
-        return new OperationItemPageDto(
-            page.Items.Select(MapItem).ToArray(),
-            page.TotalCount,
-            page.Skip,
-            page.Take);
+        var itemIds = page.Items.Select(i => i.OperationItemId).ToArray();
+        var activeAcks = await _acks.GetActiveByItemIdsAsync(itemIds, cancellationToken).ConfigureAwait(false);
+
+        var retryFlags = new Dictionary<string, (bool Active, bool Succeeded)>(StringComparer.Ordinal);
+        foreach (var id in itemIds)
+        {
+            var attempts = await _attempts.ListByItemAsync(id, cancellationToken).ConfigureAwait(false);
+            var hasActive = attempts.Any(a => OperationItemAttentionRules.IsActiveRetryStatus(a.Status));
+            var hasSucceeded = attempts.Any(a => OperationItemAttentionRules.IsSucceededRetryStatus(a.Status));
+            retryFlags[id] = (hasActive, hasSucceeded);
+        }
+
+        var mapped = page.Items.Select(i =>
+        {
+            activeAcks.TryGetValue(i.OperationItemId, out var ack);
+            retryFlags.TryGetValue(i.OperationItemId, out var flags);
+            return MapItem(i, ack, flags.Active, flags.Succeeded);
+        }).ToArray();
+
+        return new OperationItemPageDto(mapped, page.TotalCount, page.Skip, page.Take);
     }
 
     public async Task<RunOperationItemizationSummaryDto?> GetRunSummaryAsync(
@@ -77,11 +98,34 @@ public sealed class OperationItemizationQueryService : IOperationItemizationQuer
             return null;
 
         var summary = await _store.GetRunSummaryAsync(runId.Value, cancellationToken).ConfigureAwait(false);
+        var acknowledged = await _acks.CountActiveAcknowledgedFailuresByRunAsync(runId.Value, cancellationToken)
+            .ConfigureAwait(false);
+
+        // Failed items without active acknowledgement and without a succeeded retry.
+        var failedItems = await _db.OperationItems.AsNoTracking()
+            .Where(i => i.RunId == runId.Value && i.Status == OperationItemStatuses.Failed)
+            .Select(i => i.Id)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        var activeAcks = await _acks.GetActiveByItemIdsAsync(failedItems, cancellationToken).ConfigureAwait(false);
+        var attention = 0;
+        foreach (var id in failedItems)
+        {
+            var hasAck = activeAcks.ContainsKey(id);
+            var attempts = await _attempts.ListByItemAsync(id, cancellationToken).ConfigureAwait(false);
+            var hasSucceeded = attempts.Any(a => OperationItemAttentionRules.IsSucceededRetryStatus(a.Status));
+            if (OperationItemAttentionRules.NeedsAttention(OperationItemStatuses.Failed, hasAck, hasSucceeded))
+                attention++;
+        }
+
         return new RunOperationItemizationSummaryDto(
             summary.GroupCount,
             summary.FailedItemCount,
             summary.SkippedItemCount,
-            summary.HasOperationItems);
+            summary.HasOperationItems,
+            attention,
+            acknowledged);
     }
 
     /// <summary>
@@ -130,8 +174,14 @@ public sealed class OperationItemizationQueryService : IOperationItemizationQuer
             g.SummaryJson,
             g.MetadataJson);
 
-    private static OperationItemSummaryDto MapItem(OperationItem i) =>
-        new(
+    private static OperationItemSummaryDto MapItem(
+        OperationItem i,
+        OperationItemAttentionAcknowledgement? ack,
+        bool hasActiveRetry,
+        bool hasSucceededRetry)
+    {
+        var hasAck = ack is { IsActive: true };
+        return new OperationItemSummaryDto(
             i.OperationItemId,
             i.OperationGroupId,
             i.RunId,
@@ -148,5 +198,10 @@ public sealed class OperationItemizationQueryService : IOperationItemizationQuer
             i.ChangeSummaryJson,
             i.MetadataJson,
             i.CreatedAtUtc,
-            i.UpdatedAtUtc);
+            i.UpdatedAtUtc,
+            OperationItemAttentionRules.NeedsAttention(i.Status, hasAck, hasSucceededRetry),
+            hasAck && ack is not null ? OperationItemAttentionService.MapAck(ack) : null,
+            hasActiveRetry,
+            hasSucceededRetry);
+    }
 }

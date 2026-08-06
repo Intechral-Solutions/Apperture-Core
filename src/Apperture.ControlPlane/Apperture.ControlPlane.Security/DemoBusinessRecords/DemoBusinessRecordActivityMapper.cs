@@ -16,9 +16,15 @@ public static class DemoBusinessRecordActivityMapper
 
     public static int ClampSkip(int skip) => Math.Max(0, skip);
 
-    public static bool IsAttentionItem(string status, bool isRetryable) =>
-        string.Equals(status, OperationItemStatuses.Failed, StringComparison.Ordinal)
-        || isRetryable;
+    public static bool IsAttentionItem(
+        string status,
+        bool isRetryable = false,
+        bool hasActiveAcknowledgement = false,
+        bool hasSucceededRetry = false)
+    {
+        _ = isRetryable; // retained for call-site compatibility; attention is outcome + ack + retry success.
+        return OperationItemAttentionRules.NeedsAttention(status, hasActiveAcknowledgement, hasSucceededRetry);
+    }
 
     public static string? ModuleIdForSourceKind(string? sourceKind) =>
         sourceKind?.Trim().ToLowerInvariant() switch

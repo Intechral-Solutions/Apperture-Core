@@ -77,7 +77,7 @@ public sealed class ManagementClientEpic33Tests
     [Fact]
     public async Task RetryBlockedWorkAsync_On400Operation_ReturnsInspectionOnly()
     {
-        var response = new { error = "Operation retry not yet supported.", runId = "r1", definitionKind = "operation", inspectionOnly = true, message = "Inspection only." };
+        var response = new { error = "Operation-level retry is not supported.", runId = "r1", definitionKind = "operation", inspectionOnly = true, finalDecision = true, message = "Inspection only." };
         var client = CreateClientWithResponse(HttpStatusCode.BadRequest, response, "control/recovery/blocked-work/r1/retry");
 
         var result = await client.RetryBlockedWorkAsync("r1");

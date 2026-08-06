@@ -242,7 +242,36 @@ public sealed class RunsControllerTests
             }),
             timeline ?? new StubRunTimelineQueryService(new RunTimelineDto("run-1", "workflow", Array.Empty<RunTimelineEventDto>())),
             operationItems ?? new StubOperationItemizationQueryService(),
-            itemRetry ?? new StubOperationItemRetryService());
+            itemRetry ?? new StubOperationItemRetryService(),
+            new StubBulkOperationItemRetryService(),
+            new StubOperationItemAttentionService());
+
+    private sealed class StubBulkOperationItemRetryService : IBulkOperationItemRetryService
+    {
+        public Task<BulkRetryOperationItemsResult?> BulkRetryAsync(
+            OperationRunId runId,
+            string operationGroupId,
+            BulkRetryOperationItemsRequest request,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult<BulkRetryOperationItemsResult?>(null);
+    }
+
+    private sealed class StubOperationItemAttentionService : IOperationItemAttentionService
+    {
+        public Task<BulkAcknowledgeOperationItemsResult?> AcknowledgeAsync(
+            OperationRunId runId,
+            string operationGroupId,
+            BulkAcknowledgeOperationItemsRequest request,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult<BulkAcknowledgeOperationItemsResult?>(null);
+
+        public Task<BulkReopenOperationItemsResult?> ReopenAttentionAsync(
+            OperationRunId runId,
+            string operationGroupId,
+            BulkReopenOperationItemsRequest request,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult<BulkReopenOperationItemsResult?>(null);
+    }
 
     private sealed class StubOperationItemRetryService : IOperationItemRetryService
     {

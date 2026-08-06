@@ -9,7 +9,7 @@
 <ManagementSection Title="@OperationItemizationUiHelpers.SectionTitle"
                    Subtitle="@OperationItemizationUiHelpers.SectionSubtitle"
                    Layer="ManagementSection.UiLayer.Detail"
-                   Help="Modules that emit affected records (operation items) can support per-item retry (SDK-4C). Retry starts a child run; the original item stays unchanged. Retry-all is deferred.">
+                   Help="Modules that emit affected records (operation items) can support retry. Retry starts a child run; the original item stays unchanged. Select multiple failed items in a group to retry or acknowledge them together.">
     <Toolbar>
         <button type="button"
                 class="ui-toolbar-btn"
@@ -47,6 +47,14 @@
         {
             <div class="mb-3 text-xs text-muted">
                 @Summary.GroupCount group(s) · @Summary.FailedItemCount failed item(s) · @Summary.SkippedItemCount skipped
+                @if (Summary.ActiveAttentionCount > 0)
+                {
+                    <span> · @Summary.ActiveAttentionCount needing attention</span>
+                }
+                @if (Summary.AcknowledgedFailureCount > 0)
+                {
+                    <span> · @Summary.AcknowledgedFailureCount acknowledged</span>
+                }
             </div>
         }
 
@@ -134,6 +142,47 @@
                                 }
                             </div>
 
+                            @if (_selectedItemIds.Count > 0)
+                            {
+                                <div class="mb-2 flex flex-wrap items-center gap-2 rounded border border-default bg-surface-muted p-2"
+                                     data-testid="bulk-action-bar">
+                                    <span class="text-xs font-semibold text-heading">
+                                        @OperationItemizationUiHelpers.FormatSelectionCount(_selectedItemIds.Count)
+                                    </span>
+                                    @if (SelectedRetryEligibleIds.Count > 0)
+                                    {
+                                        <button type="button"
+                                                class="ui-toolbar-btn"
+                                                data-testid="bulk-retry"
+                                                @onclick="OpenBulkRetryConfirm">
+                                            @OperationItemizationUiHelpers.RetrySelectedLabel
+                                        </button>
+                                    }
+                                    @if (SelectedAcknowledgeEligibleIds.Count > 0)
+                                    {
+                                        <button type="button"
+                                                class="ui-toolbar-btn"
+                                                data-testid="bulk-acknowledge"
+                                                @onclick="OpenBulkAcknowledgeConfirm">
+                                            @OperationItemizationUiHelpers.AcknowledgeSelectedLabel
+                                        </button>
+                                    }
+                                    <button type="button"
+                                            class="ui-toolbar-btn"
+                                            data-testid="bulk-clear"
+                                            @onclick="ClearSelection">
+                                        @OperationItemizationUiHelpers.ClearSelectionLabel
+                                    </button>
+                                </div>
+                            }
+
+                            @if (!string.IsNullOrWhiteSpace(_bulkActionMessage))
+                            {
+                                <PageMessage Kind="PageMessageKind.Info"
+                                             Message="@_bulkActionMessage"
+                                             Class="mb-2" />
+                            }
+
                             @if (_itemsLoading && _items.Count == 0)
                             {
                                 <LoadingState Message="Loading items…" />
@@ -161,6 +210,15 @@
                                     <table class="ui-data-table__table min-w-full text-left text-body">
                                         <thead class="border-b border-default text-xs text-muted">
                                             <tr>
+                                                <th class="px-2 py-2">
+                                                    <input type="checkbox"
+                                                           aria-label="Select all visible failed items"
+                                                           data-testid="operation-item-select-all"
+                                                           disabled="@(SelectableVisibleItems.Count == 0)"
+                                                           checked="@AllVisibleSelected"
+                                                           @onclick:stopPropagation="true"
+                                                           @onchange="ToggleSelectAllVisible" />
+                                                </th>
                                                 <th class="px-2 py-2">#</th>
                                                 <th class="px-2 py-2">Label</th>
                                                 <th class="px-2 py-2">Key</th>
@@ -193,12 +251,48 @@
                                                     data-retryable="@item.IsRetryable.ToString().ToLowerInvariant()"
                                                     tabindex="@(isAnchored ? 0 : -1)"
                                                     aria-current="@(isAnchored ? "true" : null)">
+                                                    <td class="px-2 py-2" @onclick:stopPropagation="true">
+                                                        @{
+                                                            var canSelectRow = OperationItemizationUiHelpers.CanSelectForRetry(item)
+                                                                || OperationItemizationUiHelpers.CanSelectForAcknowledge(item);
+                                                        }
+                                                        <input type="checkbox"
+                                                               aria-label="@($"Select item {item.Sequence}")"
+                                                               data-testid="operation-item-select"
+                                                               disabled="@(!canSelectRow)"
+                                                               checked="@_selectedItemIds.Contains(item.OperationItemId)"
+                                                               @onchange="e => ToggleSelectItem(item, e)" />
+                                                    </td>
                                                     <td class="px-2 py-2 font-mono text-xs">@item.Sequence</td>
                                                     <td class="px-2 py-2 text-xs">@(item.DisplayLabel ?? "—")</td>
                                                     <td class="px-2 py-2 font-mono text-xs break-all">@(item.SubjectKey ?? "—")</td>
                                                     <td class="px-2 py-2">
                                                         <StatusPill Label="@item.Status"
                                                                     Semantic="@OperationItemizationUiHelpers.MapItemStatusSemantic(item.Status)" />
+                                                        @if (item.HasActiveRetry)
+                                                        {
+                                                            <div class="mt-1 text-xs text-muted" data-testid="operation-item-retry-active">
+                                                                @OperationItemizationUiHelpers.RetryInProgressLabel
+                                                            </div>
+                                                        }
+                                                        else if (item.HasSucceededRetry)
+                                                        {
+                                                            <div class="mt-1 text-xs text-muted" data-testid="operation-item-retry-succeeded">
+                                                                @OperationItemizationUiHelpers.RetrySucceededLabel
+                                                            </div>
+                                                        }
+                                                        @if (OperationItemizationUiHelpers.IsAcknowledgedFailure(item))
+                                                        {
+                                                            <div class="mt-1" data-testid="operation-item-acknowledged-badge">
+                                                                <span class="rounded border border-default bg-surface-muted px-1.5 py-0.5 text-xs font-medium">
+                                                                    @OperationItemizationUiHelpers.AcknowledgedBadgeLabel
+                                                                    @if (item.ActiveAcknowledgement is not null)
+                                                                    {
+                                                                        <span> · @item.ActiveAcknowledgement.DispositionLabel</span>
+                                                                    }
+                                                                </span>
+                                                            </div>
+                                                        }
                                                     </td>
                                                     <td class="px-2 py-2 text-xs">
                                                         @if (!string.IsNullOrWhiteSpace(item.ErrorCode) || !string.IsNullOrWhiteSpace(item.ErrorMessage))
@@ -315,6 +409,32 @@
                                                                             Open child run
                                                                         </DrillInLink>
                                                                     </div>
+                                                                }
+                                                            </div>
+                                                        }
+
+                                                        @if (item.ActiveAcknowledgement is { } ack)
+                                                        {
+                                                            var reopenInFlight = string.Equals(_reopenInFlightItemId, item.OperationItemId, StringComparison.Ordinal);
+                                                            _reopenErrors.TryGetValue(item.OperationItemId, out var reopenError);
+                                                            <div class="mt-2 space-y-1" data-testid="operation-item-acknowledgement">
+                                                                <div class="text-xs text-muted">@OperationItemizationUiHelpers.FormatAcknowledgementMeta(ack)</div>
+                                                                @if (!string.IsNullOrWhiteSpace(ack.Reason))
+                                                                {
+                                                                    <TechnicalDetails Summary="Acknowledgement reason" Dense="true">
+                                                                        <TechnicalDetail Label="Reason" Value="@ack.Reason" Monospace="false" />
+                                                                    </TechnicalDetails>
+                                                                }
+                                                                <button type="button"
+                                                                        class="ui-toolbar-btn"
+                                                                        data-testid="operation-item-reopen-attention"
+                                                                        disabled="@(reopenInFlight || _reopenInFlightItemId is not null)"
+                                                                        @onclick="() => ReopenAttentionAsync(item)">
+                                                                    @(reopenInFlight ? "Reopening…" : OperationItemizationUiHelpers.ReopenAttentionLabel)
+                                                                </button>
+                                                                @if (!string.IsNullOrWhiteSpace(reopenError))
+                                                                {
+                                                                    <div class="text-xs text-message-error" data-testid="operation-item-reopen-error">@reopenError</div>
                                                                 }
                                                             </div>
                                                         }
@@ -446,6 +566,70 @@
     </ChildContent>
 </ManagementSection>
 
+<ConfirmActionDialog IsOpen="@_bulkRetryConfirmOpen"
+                     Title="@OperationItemizationUiHelpers.FormatBulkRetryConfirmTitle(SelectedRetryEligibleIds.Count)"
+                     ConfirmLabel="@OperationItemizationUiHelpers.FormatBulkRetryConfirmLabel(SelectedRetryEligibleIds.Count)"
+                     ConfirmDisabled="@(SelectedRetryEligibleIds.Count == 0)"
+                     OnConfirm="SubmitBulkRetryAsync"
+                     OnConfirmed="() => _bulkRetryConfirmOpen = false"
+                     OnCancel="() => _bulkRetryConfirmOpen = false">
+    <ChildContent>
+        @OperationItemizationUiHelpers.FormatBulkRetryConfirmBody(SelectedRetryEligibleIds.Count)
+    </ChildContent>
+    <Details>
+        @{
+            var bulkRetryLimitNote = OperationItemizationUiHelpers.FormatBulkLimitNote(SelectedRetryEligibleIds.Count);
+        }
+        @if (!string.IsNullOrWhiteSpace(bulkRetryLimitNote))
+        {
+            <div>@bulkRetryLimitNote</div>
+        }
+    </Details>
+</ConfirmActionDialog>
+
+<ConfirmActionDialog IsOpen="@_bulkAcknowledgeConfirmOpen"
+                     Title="Acknowledge selected failures?"
+                     ConfirmLabel="@OperationItemizationUiHelpers.AcknowledgeSelectedLabel"
+                     ConfirmDisabled="@(SelectedAcknowledgeEligibleIds.Count == 0 || string.IsNullOrWhiteSpace(_bulkAckDisposition))"
+                     OnConfirm="SubmitBulkAcknowledgeAsync"
+                     OnConfirmed="() => _bulkAcknowledgeConfirmOpen = false"
+                     OnCancel="() => _bulkAcknowledgeConfirmOpen = false">
+    <ChildContent>
+        <div>@OperationItemizationUiHelpers.AcknowledgeExplainer</div>
+        <div class="mt-2 space-y-2">
+            <label class="block text-xs text-heading">
+                Disposition
+                <select class="mt-1 block w-full rounded border border-default bg-surface px-2 py-1 text-xs"
+                        data-testid="bulk-acknowledge-disposition"
+                        @bind="_bulkAckDisposition">
+                    <option value="">— select —</option>
+                    @foreach (var opt in OperationItemizationUiHelpers.AcknowledgementDispositionOptions)
+                    {
+                        <option value="@opt.Value">@opt.Label</option>
+                    }
+                </select>
+            </label>
+            <label class="block text-xs text-heading">
+                Reason (optional)
+                <textarea class="mt-1 block w-full rounded border border-default bg-surface px-2 py-1 text-xs"
+                          rows="2"
+                          maxlength="@OperationItemizationUiHelpers.RetryReasonMaxLength"
+                          data-testid="bulk-acknowledge-reason"
+                          @bind="_bulkAckReason"></textarea>
+            </label>
+        </div>
+    </ChildContent>
+    <Details>
+        @{
+            var bulkAckLimitNote = OperationItemizationUiHelpers.FormatBulkLimitNote(SelectedAcknowledgeEligibleIds.Count);
+        }
+        @if (!string.IsNullOrWhiteSpace(bulkAckLimitNote))
+        {
+            <div>@bulkAckLimitNote</div>
+        }
+    </Details>
+</ConfirmActionDialog>
+
 @code {
     [Parameter, EditorRequired]
     public string RunId { get; set; } = "";
@@ -498,6 +682,39 @@
     private readonly Dictionary<string, string> _retryHistoryErrors = new(StringComparer.Ordinal);
     private readonly HashSet<string> _retryHistoryLoading = new(StringComparer.Ordinal);
     private readonly HashSet<string> _retryHistoryOpen = new(StringComparer.Ordinal);
+
+    private readonly HashSet<string> _selectedItemIds = new(StringComparer.Ordinal);
+    private string? _bulkActionMessage;
+
+    private bool _bulkRetryConfirmOpen;
+    private bool _bulkAcknowledgeConfirmOpen;
+    private bool _bulkActionBusy;
+    private string? _bulkAckDisposition;
+    private string? _bulkAckReason;
+
+    private string? _reopenInFlightItemId;
+    private readonly Dictionary<string, string> _reopenErrors = new(StringComparer.Ordinal);
+
+    private IReadOnlyList<OperationItemSummaryDto> SelectableVisibleItems =>
+        DisplayItems
+            .Where(i => OperationItemizationUiHelpers.CanSelectForRetry(i) || OperationItemizationUiHelpers.CanSelectForAcknowledge(i))
+            .ToArray();
+
+    private bool AllVisibleSelected =>
+        SelectableVisibleItems.Count > 0
+        && SelectableVisibleItems.All(i => _selectedItemIds.Contains(i.OperationItemId));
+
+    private IReadOnlyList<string> SelectedRetryEligibleIds =>
+        _items
+            .Where(i => _selectedItemIds.Contains(i.OperationItemId) && OperationItemizationUiHelpers.CanSelectForRetry(i))
+            .Select(i => i.OperationItemId)
+            .ToArray();
+
+    private IReadOnlyList<string> SelectedAcknowledgeEligibleIds =>
+        _items
+            .Where(i => _selectedItemIds.Contains(i.OperationItemId) && OperationItemizationUiHelpers.CanSelectForAcknowledge(i))
+            .Select(i => i.OperationItemId)
+            .ToArray();
 
     private IReadOnlyList<OperationItemSummaryDto> DisplayItems =>
         string.IsNullOrEmpty(_itemStatusFilter)
@@ -703,6 +920,7 @@
         _expandedGroupId = group.OperationGroupId;
         _itemStatusFilter = OperationItemizationUiHelpers.StatusFilterAll;
         _itemSearchQuery = null;
+        ClearSelection();
         await LoadItemsAsync(reset: true);
     }
 
@@ -711,6 +929,7 @@
         if (string.Equals(_itemStatusFilter, status, StringComparison.Ordinal))
             return;
         _itemStatusFilter = status ?? OperationItemizationUiHelpers.StatusFilterAll;
+        ClearSelection();
         await LoadItemsAsync(reset: true);
     }
 
@@ -724,6 +943,7 @@
             _items.Clear();
             _itemsTotalCount = 0;
             _itemsError = null;
+            ClearSelection();
         }
 
         _itemsLoading = true;
@@ -915,6 +1135,7 @@
         _itemsLoading = false;
         _itemStatusFilter = OperationItemizationUiHelpers.StatusFilterAll;
         CloseRetryForm();
+        ClearSelection();
     }
 
     private void ClearRetryUiState()
@@ -930,5 +1151,175 @@
         _retryHistoryErrors.Clear();
         _retryHistoryLoading.Clear();
         _retryHistoryOpen.Clear();
+        _reopenInFlightItemId = null;
+        _reopenErrors.Clear();
+        ClearSelection();
+    }
+
+    // --- Bulk selection (retry / acknowledge) ---
+
+    private void ClearSelection()
+    {
+        _selectedItemIds.Clear();
+        _bulkActionMessage = null;
+    }
+
+    private void ToggleSelectItem(OperationItemSummaryDto item, ChangeEventArgs e)
+    {
+        var isChecked = e.Value is bool b && b;
+        if (isChecked)
+            _selectedItemIds.Add(item.OperationItemId);
+        else
+            _selectedItemIds.Remove(item.OperationItemId);
+    }
+
+    private void ToggleSelectAllVisible(ChangeEventArgs e)
+    {
+        var selectAll = e.Value is bool b && b;
+        foreach (var item in SelectableVisibleItems)
+        {
+            if (selectAll)
+                _selectedItemIds.Add(item.OperationItemId);
+            else
+                _selectedItemIds.Remove(item.OperationItemId);
+        }
+    }
+
+    private void OpenBulkRetryConfirm()
+    {
+        if (SelectedRetryEligibleIds.Count == 0)
+            return;
+        _bulkActionMessage = null;
+        _bulkRetryConfirmOpen = true;
+    }
+
+    private void OpenBulkAcknowledgeConfirm()
+    {
+        if (SelectedAcknowledgeEligibleIds.Count == 0)
+            return;
+        _bulkActionMessage = null;
+        _bulkAckDisposition = null;
+        _bulkAckReason = null;
+        _bulkAcknowledgeConfirmOpen = true;
+    }
+
+    private async Task SubmitBulkRetryAsync()
+    {
+        if (_bulkActionBusy)
+            return;
+        if (string.IsNullOrWhiteSpace(_expandedGroupId))
+            throw new InvalidOperationException("No operation group is expanded.");
+
+        var ids = SelectedRetryEligibleIds;
+        if (ids.Count == 0)
+            throw new InvalidOperationException("No selected items are eligible for retry.");
+
+        _bulkActionBusy = true;
+        try
+        {
+            var request = new BulkRetryOperationItemsRequest(ids, OperationItemizationUiHelpers.NewBulkRequestId());
+            var result = await Client.BulkRetryOperationItemsAsync(RunId, _expandedGroupId, request);
+            if (result is null)
+                throw new InvalidOperationException("Bulk retry response was empty.");
+
+            var summary = OperationItemizationUiHelpers.FormatBulkRetryResultSummary(result);
+            _selectedItemIds.Clear();
+
+            await LoadGroupsAsync(resetExpanded: false);
+            await LoadItemsAsync(reset: true);
+            _bulkActionMessage = summary;
+
+            if (OnRetryCompleted.HasDelegate)
+                await OnRetryCompleted.InvokeAsync();
+        }
+        finally
+        {
+            _bulkActionBusy = false;
+        }
+    }
+
+    private async Task SubmitBulkAcknowledgeAsync()
+    {
+        if (_bulkActionBusy)
+            return;
+        if (string.IsNullOrWhiteSpace(_expandedGroupId))
+            throw new InvalidOperationException("No operation group is expanded.");
+        if (string.IsNullOrWhiteSpace(_bulkAckDisposition))
+            throw new InvalidOperationException("Select a disposition before acknowledging.");
+
+        var ids = SelectedAcknowledgeEligibleIds;
+        if (ids.Count == 0)
+            throw new InvalidOperationException("No selected items are eligible for acknowledgement.");
+
+        _bulkActionBusy = true;
+        try
+        {
+            var request = new BulkAcknowledgeOperationItemsRequest(
+                ids,
+                _bulkAckDisposition,
+                OperationItemizationUiHelpers.ClampRetryReason(_bulkAckReason));
+            var result = await Client.AcknowledgeOperationItemsAsync(RunId, _expandedGroupId, request);
+            if (result is null)
+                throw new InvalidOperationException("Acknowledge response was empty.");
+
+            var summary = OperationItemizationUiHelpers.FormatAcknowledgeResultSummary(result);
+            _selectedItemIds.Clear();
+            _bulkAckDisposition = null;
+            _bulkAckReason = null;
+
+            await LoadGroupsAsync(resetExpanded: false);
+            await LoadItemsAsync(reset: true);
+            _bulkActionMessage = summary;
+        }
+        finally
+        {
+            _bulkActionBusy = false;
+        }
+    }
+
+    private async Task ReopenAttentionAsync(OperationItemSummaryDto item)
+    {
+        if (_reopenInFlightItemId is not null)
+            return;
+        if (string.IsNullOrWhiteSpace(_expandedGroupId))
+            return;
+
+        _reopenInFlightItemId = item.OperationItemId;
+        _reopenErrors.Remove(item.OperationItemId);
+        try
+        {
+            var request = new BulkReopenOperationItemsRequest(new[] { item.OperationItemId });
+            var result = await Client.ReopenOperationItemAttentionAsync(RunId, _expandedGroupId, request);
+            if (result is null)
+            {
+                _reopenErrors[item.OperationItemId] = "Reopen response was empty.";
+                return;
+            }
+
+            if (result.ReopenedCount == 0)
+            {
+                _reopenErrors[item.OperationItemId] = "This item could not be reopened.";
+                return;
+            }
+
+            await LoadGroupsAsync(resetExpanded: false);
+            await LoadItemsAsync(reset: true);
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.Forbidden)
+        {
+            _reopenErrors[item.OperationItemId] = "Not authorized to reopen attention for this item (403).";
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
+        {
+            _reopenErrors[item.OperationItemId] = "Run or item was not found (404).";
+        }
+        catch (Exception ex)
+        {
+            _reopenErrors[item.OperationItemId] = ex.Message;
+        }
+        finally
+        {
+            _reopenInFlightItemId = null;
+        }
     }
 }

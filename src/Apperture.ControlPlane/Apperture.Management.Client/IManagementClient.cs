@@ -40,6 +40,24 @@ public interface IManagementClient
         RequestOperationItemRetryDto request,
         CancellationToken cancellationToken = default);
 
+    Task<BulkRetryOperationItemsResult?> BulkRetryOperationItemsAsync(
+        string runId,
+        string operationGroupId,
+        BulkRetryOperationItemsRequest request,
+        CancellationToken cancellationToken = default);
+
+    Task<BulkAcknowledgeOperationItemsResult?> AcknowledgeOperationItemsAsync(
+        string runId,
+        string operationGroupId,
+        BulkAcknowledgeOperationItemsRequest request,
+        CancellationToken cancellationToken = default);
+
+    Task<BulkReopenOperationItemsResult?> ReopenOperationItemAttentionAsync(
+        string runId,
+        string operationGroupId,
+        BulkReopenOperationItemsRequest request,
+        CancellationToken cancellationToken = default);
+
     Task<IReadOnlyList<OperationItemRetryAttemptDto>?> GetOperationItemRetriesAsync(
         string runId,
         string operationItemId,
@@ -1173,7 +1191,9 @@ public sealed record RunOperationItemizationSummaryDto(
     int GroupCount,
     int FailedItemCount,
     int SkippedItemCount,
-    bool HasOperationItems);
+    bool HasOperationItems,
+    int ActiveAttentionCount = 0,
+    int AcknowledgedFailureCount = 0);
 
 public sealed record OperationGroupSummaryDto(
     string OperationGroupId,
@@ -1210,7 +1230,22 @@ public sealed record OperationItemSummaryDto(
     string? ChangeSummaryJson,
     string? MetadataJson,
     DateTimeOffset CreatedAtUtc,
-    DateTimeOffset UpdatedAtUtc);
+    DateTimeOffset UpdatedAtUtc,
+    bool NeedsAttention = false,
+    OperationItemAcknowledgementDto? ActiveAcknowledgement = null,
+    bool HasActiveRetry = false,
+    bool HasSucceededRetry = false);
+
+public sealed record OperationItemAcknowledgementDto(
+    string AcknowledgementId,
+    string OperationItemId,
+    string Disposition,
+    string DispositionLabel,
+    string? Reason,
+    DateTimeOffset AcknowledgedAtUtc,
+    string AcknowledgedByUserId,
+    DateTimeOffset? ReopenedAtUtc,
+    string? ReopenedByUserId);
 
 public sealed record OperationItemPageDto(
     IReadOnlyList<OperationItemSummaryDto> Items,
@@ -1228,6 +1263,53 @@ public sealed record OperationItemListFilter(
 public sealed record RequestOperationItemRetryDto(
     string IdempotencyKey,
     string? Reason = null);
+
+public sealed record BulkRetryOperationItemsRequest(
+    IReadOnlyList<string> OperationItemIds,
+    string? RequestId = null,
+    string? Reason = null);
+
+public sealed record BulkRetryOperationItemsResult(
+    int RequestedCount,
+    int DispatchedCount,
+    int SkippedCount,
+    int FailedCount,
+    IReadOnlyList<BulkRetryOperationItemResult> Items);
+
+public sealed record BulkRetryOperationItemResult(
+    string OperationItemId,
+    string? DisplayLabel,
+    string Category,
+    string Message,
+    string? ChildRunId = null,
+    string? RetryAttemptId = null);
+
+public sealed record BulkAcknowledgeOperationItemsRequest(
+    IReadOnlyList<string> OperationItemIds,
+    string Disposition,
+    string? Reason = null);
+
+public sealed record BulkAcknowledgeOperationItemsResult(
+    int RequestedCount,
+    int AcknowledgedCount,
+    int SkippedCount,
+    IReadOnlyList<BulkAcknowledgeOperationItemResult> Items);
+
+public sealed record BulkAcknowledgeOperationItemResult(
+    string OperationItemId,
+    string? DisplayLabel,
+    string Category,
+    string Message,
+    OperationItemAcknowledgementDto? Acknowledgement = null);
+
+public sealed record BulkReopenOperationItemsRequest(
+    IReadOnlyList<string> OperationItemIds);
+
+public sealed record BulkReopenOperationItemsResult(
+    int RequestedCount,
+    int ReopenedCount,
+    int SkippedCount,
+    IReadOnlyList<BulkAcknowledgeOperationItemResult> Items);
 
 public sealed record OperationItemRetryAttemptDto(
     string OperationItemRetryAttemptId,
