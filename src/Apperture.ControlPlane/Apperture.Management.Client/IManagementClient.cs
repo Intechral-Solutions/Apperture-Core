@@ -706,6 +706,51 @@ public interface IManagementClient
         bool emailEnabled,
         CancellationToken cancellationToken = default);
 
+    // --- Account: profile, personal preferences, avatar (AUP-1) ---
+    // Every endpoint is scoped to the signed-in operator; none of them takes a user id.
+
+    Task<AccountProfileDto?> GetAccountProfileAsync(CancellationToken cancellationToken = default);
+
+    Task<AccountProfileDto> UpdateAccountProfileAsync(
+        string? displayName,
+        CancellationToken cancellationToken = default);
+
+    Task<UserPreferencesDto> GetAccountPreferencesAsync(CancellationToken cancellationToken = default);
+
+    Task<UserPreferencesDto> UpdateAccountPreferencesAsync(
+        UpdateUserPreferencesRequestDto request,
+        CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<AvatarOptionDto>> GetAvatarOptionsAsync(CancellationToken cancellationToken = default);
+
+    Task<AccountAvatarDto> SelectAvatarAsync(string optionId, CancellationToken cancellationToken = default);
+
+    /// <summary>Uploads an untrusted image for server-side normalization.</summary>
+    Task<AccountAvatarDto> UploadAvatarAsync(
+        byte[] content,
+        string fileName,
+        string contentType,
+        CancellationToken cancellationToken = default);
+
+    Task<AccountAvatarDto> ResetAvatarAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Reads the caller's own normalized avatar bytes. Fetching through the API client rather than a
+    /// bare image element keeps the request authenticated on cross-origin dev hosts.
+    /// </summary>
+    Task<AccountAvatarImageDto?> GetAccountAvatarImageAsync(
+        int size,
+        string? version,
+        CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<NotificationPreferenceDto>> GetAccountNotificationPreferencesAsync(
+        CancellationToken cancellationToken = default);
+
+    Task<NotificationPreferenceDto> SetAccountNotificationPreferenceAsync(
+        string definitionId,
+        bool emailEnabled,
+        CancellationToken cancellationToken = default);
+
     Task<NotificationDeliveryHealthSummaryDto> GetNotificationDeliveryHealthAsync(
         string? definitionId = null,
         int take = 50,
@@ -1529,9 +1574,16 @@ public sealed record MeResponse(
     [property: JsonPropertyName("localCredentialStatus")] string LocalCredentialStatus,
     [property: JsonPropertyName("roleNames")] IReadOnlyList<string> RoleNames,
     [property: JsonPropertyName("canChangeLocalPassword")] bool CanChangeLocalPassword,
-    [property: JsonPropertyName("deferred")] AccountDeferredFeaturesDto Deferred,
-    /// <summary>SWM-5: stored operator display timezone preference; null until profile overhaul sets it.</summary>
-    [property: JsonPropertyName("displayTimeZoneId")] string? DisplayTimeZoneId = null);
+    /// <summary>Account capabilities not yet available, or null when there are none.</summary>
+    [property: JsonPropertyName("deferred")] AccountDeferredFeaturesDto? Deferred,
+    /// <summary>Stored operator display timezone preference; null means follow the browser.</summary>
+    [property: JsonPropertyName("displayTimeZoneId")] string? DisplayTimeZoneId = null,
+    /// <summary>Current avatar selection, so the shell can render it without a second request.</summary>
+    [property: JsonPropertyName("avatar")] AccountAvatarDto? Avatar = null,
+    /// <summary>Stored clock preference (<c>System</c>, <c>Hour12</c>, <c>Hour24</c>).</summary>
+    [property: JsonPropertyName("timeFormat")] string? TimeFormat = null,
+    /// <summary>Stored appearance preference (<c>System</c>, <c>Light</c>, <c>Dark</c>); null when unset.</summary>
+    [property: JsonPropertyName("appearance")] string? Appearance = null);
 
 public sealed record AccountIdentityLinkDto(
     [property: JsonPropertyName("source")] string Source,

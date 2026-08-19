@@ -113,6 +113,40 @@ Resolution picks the **most specific applicable** value for the current context,
 
 **Phase 1 scope (implemented):** Only **Instance** scope is active (`ScopeKind = Instance`, `ScopeId = instance`). Persistence rows already carry scope columns for future module/integration/user scopes; Epic 112 `StringArray` values use the same model. Broader scoped resolution behavior remains deferred.
 
+## This registry is not the store for personal preferences
+
+Platform settings are **administrator-owned instance and integration configuration**. Per-operator
+preferences deliberately do **not** live here, and `PlatformSettingValueScopeKind` has no `User` member.
+
+AUP-1 established the ownership boundary explicitly:
+
+| Administrator-owned (this registry) | User-owned (account preferences) |
+|---|---|
+| SMTP host, port, credentials, from-address | Whether *I* receive email for a given notification |
+| Notification pipeline enable/disable toggles | My own opt-out |
+| Integration settings | — |
+| Scheduling defaults, including the default schedule timezone | My **display** timezone (presentation only) |
+| Secret-backed operational settings | — (personal preferences never hold secrets) |
+
+Per-operator values are stored in their own typed places instead:
+
+- **`UserPreferences` table** — appearance and clock format, one row per user; absence means platform
+  defaults, so no backfill is needed.
+- **`Users.DisplayTimeZoneId`** — the operator display timezone, reusing the column SWM-5 added rather
+  than creating a second timezone model.
+- **`Users.AvatarKind` / `AvatarOptionId` / `AvatarImageKey`** — avatar selection, which is profile
+  identity rather than configuration.
+- **`NotificationSubscriptions` / `NotificationSubscriptionUserOverrides`** — per-user notification
+  channel preferences, read directly by the delivery pipeline.
+
+Adding a `User` scope here would mean extending the scope enum, resolver, service, authorization, and UI
+for values that are not configuration and are not administrator-visible. Do not do it. If a new personal
+preference is needed, add a typed column to `UserPreferences` and expose it through
+`api/account/preferences`. There is deliberately **no generic per-user key-value store**, so preference
+keys cannot be supplied by a client.
+
+See [AUP-1 closure](../audits/aup1-account-profile-personal-preferences.md) §7 and §11.
+
 ## StringArray and static multi-select (Epic 112)
 
 ### Value type vs input kind

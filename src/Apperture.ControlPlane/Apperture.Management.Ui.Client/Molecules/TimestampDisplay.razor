@@ -42,7 +42,8 @@ else
             DisplayTimeZone.TimeZoneId,
             DisplayTimeZone.Source,
             showUtcDetail: true,
-            nullDisplay: NullDisplay);
+            nullDisplay: NullDisplay,
+            clockFormat: DisplayTimeZone.ClockFormat);
         _primary = result.Primary;
         _utcDetail = ShowUtcDetail ? result.UtcDetail : null;
     }

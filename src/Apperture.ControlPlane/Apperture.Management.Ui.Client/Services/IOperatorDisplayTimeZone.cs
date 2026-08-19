@@ -9,6 +9,12 @@ public interface IOperatorDisplayTimeZone
 
     OperatorDisplayTimeZoneSource Source { get; }
 
+    /// <summary>
+    /// Clock convention from the operator's account preference. Falls back to 24-hour, which is what
+    /// every surface rendered before the preference existed.
+    /// </summary>
+    OperatorClockFormat ClockFormat { get; }
+
     /// <summary>Raised when resolution completes or the effective zone changes.</summary>
     event Action? Changed;
 

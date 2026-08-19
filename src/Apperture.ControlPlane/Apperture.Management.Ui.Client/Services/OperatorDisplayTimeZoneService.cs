@@ -34,6 +34,8 @@ public sealed class OperatorDisplayTimeZoneService : IOperatorDisplayTimeZone
 
     public OperatorDisplayTimeZoneSource Source { get; private set; } = OperatorDisplayTimeZoneSource.UtcFallback;
 
+    public OperatorClockFormat ClockFormat { get; private set; } = OperatorClockFormat.Hour24;
+
     public event Action? Changed;
 
     private void OnSessionChanged() => ApplyCandidates();
@@ -98,14 +100,18 @@ public sealed class OperatorDisplayTimeZoneService : IOperatorDisplayTimeZone
         }
 
         var (effective, source) = OperatorDisplayTimeZoneResolution.FromCandidates(preference, browserId);
+        var clockFormat = OperatorTimestampFormat.ParseClockFormatOrDefault(_session.User?.TimeFormat);
 
         var changed = false;
         lock (_gate)
         {
-            if (!string.Equals(TimeZoneId, effective, StringComparison.Ordinal) || Source != source)
+            if (!string.Equals(TimeZoneId, effective, StringComparison.Ordinal)
+                || Source != source
+                || ClockFormat != clockFormat)
             {
                 TimeZoneId = effective;
                 Source = source;
+                ClockFormat = clockFormat;
                 changed = true;
             }
         }

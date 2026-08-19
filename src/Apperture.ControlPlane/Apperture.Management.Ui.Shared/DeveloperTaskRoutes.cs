@@ -14,7 +14,7 @@ public static class DeveloperTaskRoutes
     /// <summary>BDS-5 — demo customer business-record projection (not final Records nav).</summary>
     public const string DemoCustomers = DemoCustomerUiRoutes.List;
     public const string NotificationDiagnostics = "/config/notifications/diagnostics";
-    public const string Preferences = "/preferences";
+    public const string Preferences = AccountUiRoutes.Preferences;
     /// <summary>SWM-7: worker runtime visibility lives on Control Center (no duplicate Developer surface).</summary>
     public const string WorkerRuntimeControlCenter = "/control/center";
 

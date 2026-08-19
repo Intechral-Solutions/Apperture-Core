@@ -1,0 +1,63 @@
+@*
+    Renders the signed-in operator's avatar: their normalized photo when they have one, the selected
+    built-in illustration otherwise. Falls back to initials only when the session has not resolved,
+    so the shell never shows an empty circle.
+*@
+@implements IDisposable
+@using Apperture.Management.Client
+@using Apperture.Management.Ui.Client.Services
+@inject AccountAvatarService Avatars
+
+<span class="@ContainerClass" aria-hidden="true">
+    @if (Avatars.CustomImageDataUrl is { Length: > 0 } dataUrl)
+    {
+        @* Decorative: the operator's name is always rendered next to this, so alt text would be noise. *@
+        <img src="@dataUrl" alt="" class="h-full w-full rounded-full object-cover" />
+    }
+    else if (Avatars.Avatar is { } avatar && !avatar.IsCustom)
+    {
+        <BuiltInAvatarGlyph OptionId="@avatar.BuiltInOptionId" CssClass="h-full w-full rounded-full" />
+    }
+    else
+    {
+        <span class="text-xs font-medium text-heading">@Initials(DisplayName)</span>
+    }
+</span>
+
+@code {
+    /// <summary>Used only for the initials fallback before the avatar descriptor is known.</summary>
+    [Parameter] public string? DisplayName { get; set; }
+
+    /// <summary>Tailwind size utilities for the avatar circle.</summary>
+    [Parameter] public string SizeClass { get; set; } = "h-8 w-8";
+
+    private string ContainerClass =>
+        $"flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-surface-muted {SizeClass}";
+
+    protected override async Task OnInitializedAsync()
+    {
+        Avatars.Changed += OnAvatarChanged;
+        await Avatars.EnsureImageLoadedAsync();
+    }
+
+    private void OnAvatarChanged() => _ = InvokeAsync(async () =>
+    {
+        await Avatars.EnsureImageLoadedAsync();
+        StateHasChanged();
+    });
+
+    public static string Initials(string? name)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+            return "?";
+
+        var parts = name.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (parts.Length == 0)
+            return "?";
+        if (parts.Length == 1)
+            return parts[0].Length >= 2 ? parts[0][..2].ToUpperInvariant() : parts[0].ToUpperInvariant();
+        return string.Concat(parts[0].AsSpan(0, 1), parts[^1].AsSpan(0, 1)).ToUpperInvariant();
+    }
+
+    public void Dispose() => Avatars.Changed -= OnAvatarChanged;
+}

@@ -80,8 +80,13 @@ public static class ManagementBreadcrumbResolver
         MatchIntegrationsList,
         MatchRuntimeShutdownRequestDetail,
         MatchRuntimeShutdownRequestsList,
+        MatchAccountProfile,
+        MatchAccountNotifications,
+        MatchAccountPreferences,
+        MatchAccountSecurity,
         MatchAccount,
         MatchPreferences,
+        MatchPersonalNotificationInbox,
     ];
 
     /// <summary>
@@ -1080,6 +1085,46 @@ public static class ManagementBreadcrumbResolver
 
     // --- Account / preferences ---
 
+    /// <summary>Parent crumb shared by every account section, linking back to the account root.</summary>
+    private static IReadOnlyList<BreadcrumbItem> AccountTrail(string sectionLabel) =>
+        Trail(("Account", AccountUiRoutes.Root), (sectionLabel, null));
+
+    private static bool MatchAccountProfile(string[] s, out IReadOnlyList<BreadcrumbItem>? c)
+    {
+        c = null;
+        if (!Matches(s, "account", "profile"))
+            return false;
+        c = AccountTrail("Profile");
+        return true;
+    }
+
+    private static bool MatchAccountNotifications(string[] s, out IReadOnlyList<BreadcrumbItem>? c)
+    {
+        c = null;
+        if (!Matches(s, "account", "notifications"))
+            return false;
+        c = AccountTrail("Notifications");
+        return true;
+    }
+
+    private static bool MatchAccountPreferences(string[] s, out IReadOnlyList<BreadcrumbItem>? c)
+    {
+        c = null;
+        if (!Matches(s, "account", "preferences"))
+            return false;
+        c = AccountTrail("Appearance & regional");
+        return true;
+    }
+
+    private static bool MatchAccountSecurity(string[] s, out IReadOnlyList<BreadcrumbItem>? c)
+    {
+        c = null;
+        if (!Matches(s, "account", "security"))
+            return false;
+        c = AccountTrail("Security");
+        return true;
+    }
+
     private static bool MatchAccount(string[] s, out IReadOnlyList<BreadcrumbItem>? c)
     {
         c = null;
@@ -1089,12 +1134,23 @@ public static class ManagementBreadcrumbResolver
         return true;
     }
 
+    /// <summary>Legacy <c>/preferences</c> path, which now redirects into the account area.</summary>
     private static bool MatchPreferences(string[] s, out IReadOnlyList<BreadcrumbItem>? c)
     {
         c = null;
         if (!Matches(s, "preferences"))
             return false;
-        c = Trail(("Preferences", null));
+        c = AccountTrail("Appearance & regional");
+        return true;
+    }
+
+    /// <summary>Personal notification inbox. A separate surface from notification preferences.</summary>
+    private static bool MatchPersonalNotificationInbox(string[] s, out IReadOnlyList<BreadcrumbItem>? c)
+    {
+        c = null;
+        if (!Matches(s, "me", "notifications"))
+            return false;
+        c = Trail(("My notifications", null));
         return true;
     }
 }

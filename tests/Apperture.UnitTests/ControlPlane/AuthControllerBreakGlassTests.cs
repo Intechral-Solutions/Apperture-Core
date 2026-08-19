@@ -11,6 +11,8 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 using Xunit;
 
+using Apperture.UnitTests.Accounts;
+
 namespace Apperture.UnitTests.ControlPlane;
 
 public sealed class AuthControllerBreakGlassTests
@@ -63,6 +65,7 @@ public sealed class AuthControllerBreakGlassTests
             new StubPrincipalContext(),
             new StubPrincipalToUserResolver(),
             new StubRoleProvider(),
+            new InMemoryUserPreferencesRepository(),
             audit ?? new CapturingAuditService(),
             Options.Create(new LocalAuthOptions { Enabled = true }),
             Options.Create(new BreakGlassAuthOptions { Enabled = breakGlassEnabled }),

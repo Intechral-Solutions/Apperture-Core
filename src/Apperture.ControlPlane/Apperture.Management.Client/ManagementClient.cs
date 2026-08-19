@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Net;
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -2302,6 +2303,215 @@ public sealed class ManagementClient : IManagementClient
         return (await response.Content.ReadFromJsonAsync<PersonalNotificationEmailPreferenceDto>(ApiJsonReadOptions, cancellationToken)
             .ConfigureAwait(false))!;
     }
+
+    // --- Account: profile, personal preferences, avatar (AUP-1) ---
+
+    public async Task<AccountProfileDto?> GetAccountProfileAsync(CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.GetAsync("account/profile", cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
+            return null;
+
+        response.EnsureSuccessStatusCode();
+        return await response.Content
+            .ReadFromJsonAsync<AccountProfileDto>(ApiJsonReadOptions, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    public async Task<AccountProfileDto> UpdateAccountProfileAsync(
+        string? displayName,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.PutAsJsonAsync(
+                "account/profile",
+                new UpdateAccountProfileRequestDto { DisplayName = displayName },
+                ApiJsonWriteOptions,
+                cancellationToken)
+            .ConfigureAwait(false);
+        await EnsureAccountSuccessAsync(response, cancellationToken).ConfigureAwait(false);
+        return (await response.Content
+            .ReadFromJsonAsync<AccountProfileDto>(ApiJsonReadOptions, cancellationToken)
+            .ConfigureAwait(false))!;
+    }
+
+    public async Task<UserPreferencesDto> GetAccountPreferencesAsync(CancellationToken cancellationToken = default)
+    {
+        var dto = await _http
+            .GetFromJsonAsync<UserPreferencesDto>("account/preferences", ApiJsonReadOptions, cancellationToken)
+            .ConfigureAwait(false);
+        return dto ?? new UserPreferencesDto();
+    }
+
+    public async Task<UserPreferencesDto> UpdateAccountPreferencesAsync(
+        UpdateUserPreferencesRequestDto request,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await _http
+            .PutAsJsonAsync("account/preferences", request, ApiJsonWriteOptions, cancellationToken)
+            .ConfigureAwait(false);
+        await EnsureAccountSuccessAsync(response, cancellationToken).ConfigureAwait(false);
+        return (await response.Content
+            .ReadFromJsonAsync<UserPreferencesDto>(ApiJsonReadOptions, cancellationToken)
+            .ConfigureAwait(false))!;
+    }
+
+    public async Task<IReadOnlyList<AvatarOptionDto>> GetAvatarOptionsAsync(CancellationToken cancellationToken = default)
+    {
+        var list = await _http
+            .GetFromJsonAsync<AvatarOptionDto[]>("account/avatar/options", ApiJsonReadOptions, cancellationToken)
+            .ConfigureAwait(false);
+        return list ?? Array.Empty<AvatarOptionDto>();
+    }
+
+    public async Task<AccountAvatarDto> SelectAvatarAsync(
+        string optionId,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.PutAsJsonAsync(
+                "account/avatar/selection",
+                new SelectAvatarRequestDto { OptionId = optionId },
+                ApiJsonWriteOptions,
+                cancellationToken)
+            .ConfigureAwait(false);
+        await EnsureAccountSuccessAsync(response, cancellationToken).ConfigureAwait(false);
+        return (await response.Content
+            .ReadFromJsonAsync<AccountAvatarDto>(ApiJsonReadOptions, cancellationToken)
+            .ConfigureAwait(false))!;
+    }
+
+    public async Task<AccountAvatarDto> UploadAvatarAsync(
+        byte[] content,
+        string fileName,
+        string contentType,
+        CancellationToken cancellationToken = default)
+    {
+        using var form = new MultipartFormDataContent();
+        var fileContent = new ByteArrayContent(content);
+        if (!string.IsNullOrWhiteSpace(contentType)
+            && MediaTypeHeaderValue.TryParse(contentType, out var parsed))
+        {
+            fileContent.Headers.ContentType = parsed;
+        }
+
+        form.Add(fileContent, "file", fileName);
+
+        using var response = await _http.PostAsync("account/avatar", form, cancellationToken).ConfigureAwait(false);
+        await EnsureAccountSuccessAsync(response, cancellationToken).ConfigureAwait(false);
+        return (await response.Content
+            .ReadFromJsonAsync<AccountAvatarDto>(ApiJsonReadOptions, cancellationToken)
+            .ConfigureAwait(false))!;
+    }
+
+    public async Task<AccountAvatarDto> ResetAvatarAsync(CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.DeleteAsync("account/avatar", cancellationToken).ConfigureAwait(false);
+        await EnsureAccountSuccessAsync(response, cancellationToken).ConfigureAwait(false);
+        return (await response.Content
+            .ReadFromJsonAsync<AccountAvatarDto>(ApiJsonReadOptions, cancellationToken)
+            .ConfigureAwait(false))!;
+    }
+
+    public async Task<AccountAvatarImageDto?> GetAccountAvatarImageAsync(
+        int size,
+        string? version,
+        CancellationToken cancellationToken = default)
+    {
+        var path = $"account/avatar/image?size={size}";
+        if (!string.IsNullOrWhiteSpace(version))
+            path += $"&v={Uri.EscapeDataString(version)}";
+
+        using var response = await _http.GetAsync(path, cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode is HttpStatusCode.NotFound
+            or HttpStatusCode.Unauthorized
+            or HttpStatusCode.Forbidden)
+        {
+            return null;
+        }
+
+        response.EnsureSuccessStatusCode();
+        var bytes = await response.Content.ReadAsByteArrayAsync(cancellationToken).ConfigureAwait(false);
+        var mediaType = response.Content.Headers.ContentType?.MediaType ?? "image/png";
+        return new AccountAvatarImageDto(mediaType, bytes);
+    }
+
+    public async Task<IReadOnlyList<NotificationPreferenceDto>> GetAccountNotificationPreferencesAsync(
+        CancellationToken cancellationToken = default)
+    {
+        var list = await _http
+            .GetFromJsonAsync<NotificationPreferenceDto[]>(
+                "account/notification-preferences",
+                ApiJsonReadOptions,
+                cancellationToken)
+            .ConfigureAwait(false);
+        return list ?? Array.Empty<NotificationPreferenceDto>();
+    }
+
+    public async Task<NotificationPreferenceDto> SetAccountNotificationPreferenceAsync(
+        string definitionId,
+        bool emailEnabled,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.PutAsJsonAsync(
+                $"account/notification-preferences/{Uri.EscapeDataString(definitionId)}",
+                new SetNotificationPreferenceRequestDto { EmailEnabled = emailEnabled },
+                ApiJsonWriteOptions,
+                cancellationToken)
+            .ConfigureAwait(false);
+        await EnsureAccountSuccessAsync(response, cancellationToken).ConfigureAwait(false);
+        return (await response.Content
+            .ReadFromJsonAsync<NotificationPreferenceDto>(ApiJsonReadOptions, cancellationToken)
+            .ConfigureAwait(false))!;
+    }
+
+    /// <summary>
+    /// Surfaces the server's ProblemDetails message so account forms can show the actual validation
+    /// failure instead of a bare status code.
+    /// </summary>
+    private static async Task EnsureAccountSuccessAsync(
+        HttpResponseMessage response,
+        CancellationToken cancellationToken)
+    {
+        if (response.IsSuccessStatusCode)
+            return;
+
+        var message = await ReadProblemMessageAsync(response, cancellationToken).ConfigureAwait(false);
+        throw new HttpRequestException(message, null, response.StatusCode);
+    }
+
+    private static async Task<string> ReadProblemMessageAsync(
+        HttpResponseMessage response,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var problem = await response.Content
+                .ReadFromJsonAsync<ValidationProblemPayload>(ApiJsonReadOptions, cancellationToken)
+                .ConfigureAwait(false);
+
+            var fromErrors = problem?.Errors?
+                .SelectMany(e => e.Value ?? [])
+                .FirstOrDefault(m => !string.IsNullOrWhiteSpace(m));
+            if (!string.IsNullOrWhiteSpace(fromErrors))
+                return fromErrors!;
+
+            if (!string.IsNullOrWhiteSpace(problem?.Detail))
+                return problem!.Detail!;
+
+            if (!string.IsNullOrWhiteSpace(problem?.Title))
+                return problem!.Title!;
+        }
+        catch (Exception ex) when (ex is JsonException or NotSupportedException or HttpRequestException)
+        {
+            // Non-ProblemDetails body: fall through to the generic message below.
+        }
+
+        return $"The request failed with status {(int)response.StatusCode}.";
+    }
+
+    private sealed record ValidationProblemPayload(
+        string? Title,
+        string? Detail,
+        Dictionary<string, string[]?>? Errors);
 
     public async Task<PersonalNotificationUnreadCountDto> GetMyUnreadNotificationCountAsync(
         CancellationToken cancellationToken = default)

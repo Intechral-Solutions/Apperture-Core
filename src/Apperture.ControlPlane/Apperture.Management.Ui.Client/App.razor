@@ -3,6 +3,7 @@
 @inject ThemeService ThemeService
 @inject SessionStateService SessionStateService
 @inject AuthSignInOptionsService AuthSignInOptionsService
+@inject AppearancePreferenceCoordinator AppearancePreferences
 @inject IOperatorDisplayTimeZone OperatorDisplayTimeZone
 @inject ShellBootstrapState ShellBootstrap
 @inject IJSRuntime Js
@@ -55,6 +56,9 @@
 
         // SWM-5: Me (preference) before display-TZ resolve so stored DisplayTimeZoneId can win.
         await SessionStateService.RefreshAsync();
+        // AUP-1: the account appearance preference outranks the browser value the theme service
+        // booted with, so reconcile once the session is known.
+        await AppearancePreferences.ReconcileAsync();
         // SWM-4/5: non-blocking; pages may briefly show UTC then upgrade to pref/browser IANA.
         await OperatorDisplayTimeZone.EnsureResolvedAsync();
         await AuthSignInOptionsService.RefreshAsync();

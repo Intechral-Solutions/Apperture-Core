@@ -48,6 +48,8 @@ public class AppertureDbContext : DbContext
     public DbSet<RoleEntity> Roles => Set<RoleEntity>();
     public DbSet<UserRoleEntity> UserRoles => Set<UserRoleEntity>();
     public DbSet<LocalCredentialEntity> LocalCredentials => Set<LocalCredentialEntity>();
+    public DbSet<UserPreferenceEntity> UserPreferences => Set<UserPreferenceEntity>();
+    public DbSet<UserProfileImageEntity> UserProfileImages => Set<UserProfileImageEntity>();
     public DbSet<ModuleInstallationStateEntity> ModuleInstallationStates => Set<ModuleInstallationStateEntity>();
     public DbSet<ScheduleDefinitionEntity> ScheduleDefinitions => Set<ScheduleDefinitionEntity>();
     public DbSet<ScheduleAssignmentEntity> ScheduleAssignments => Set<ScheduleAssignmentEntity>();
@@ -601,7 +603,34 @@ public class AppertureDbContext : DbContext
             e.Property(x => x.DisplayName).HasMaxLength(256);
             e.Property(x => x.EmailAddress).HasMaxLength(512);
             e.Property(x => x.DisplayTimeZoneId).HasMaxLength(128);
+            e.Property(x => x.AvatarKind).HasMaxLength(32);
+            e.Property(x => x.AvatarOptionId).HasMaxLength(64);
+            e.Property(x => x.AvatarImageKey).HasMaxLength(64);
             e.Property<byte[]>("RowVersion").IsRowVersion();
+        });
+
+        modelBuilder.Entity<UserPreferenceEntity>(e =>
+        {
+            e.ToTable("UserPreferences");
+            e.HasKey(x => x.UserId);
+            e.Property(x => x.UserId).HasMaxLength(64);
+            e.Property(x => x.Appearance).HasMaxLength(32);
+            e.Property(x => x.TimeFormat).HasMaxLength(32);
+            e.Property<byte[]>("RowVersion").IsRowVersion();
+            e.HasOne<UserEntity>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<UserProfileImageEntity>(e =>
+        {
+            e.ToTable("UserProfileImages");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasMaxLength(64);
+            e.Property(x => x.UserId).HasMaxLength(64);
+            e.Property(x => x.ImageKey).HasMaxLength(64);
+            e.Property(x => x.ContentType).HasMaxLength(64);
+            e.Property(x => x.Content).HasColumnType("varbinary(max)");
+            e.HasIndex(x => new { x.UserId, x.ImageKey, x.Size }).IsUnique();
+            e.HasOne<UserEntity>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<IdentityLinkEntity>(e =>

@@ -25,6 +25,9 @@
     <PackageReference Include="Microsoft.Kiota.Serialization.Json" />
     <PackageReference Include="Microsoft.Kiota.Serialization.Multipart" />
     <PackageReference Include="Microsoft.Kiota.Serialization.Text" />
+    <!-- Avatar upload normalization: decode/crop/re-encode untrusted images. -->
+    <PackageReference Include="SkiaSharp" />
+    <PackageReference Include="SkiaSharp.NativeAssets.Linux" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Apperture.ControlPlane.Dashboard\Apperture.ControlPlane.Dashboard.csproj" />

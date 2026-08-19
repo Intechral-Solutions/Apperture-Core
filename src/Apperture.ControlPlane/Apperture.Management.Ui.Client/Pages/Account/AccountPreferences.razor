@@ -1,0 +1,327 @@
+@page "/account/preferences"
+@layout MainLayout
+@implements IDisposable
+@using System.Net.Http
+@using Apperture.Management.Client
+@using Apperture.Management.Ui.Client.Molecules
+@using Apperture.Management.Ui.Client.Organisms
+@using Apperture.Management.Ui.Client.Services
+@using Apperture.Management.Ui.Shared
+@inject SessionStateService Session
+@inject IManagementClient Client
+@inject ThemeService Theme
+@inject IOperatorDisplayTimeZone DisplayTimeZone
+@inject IToastService Toasts
+
+<div class="p-4 md:p-6">
+    <PageHeader Title="Appearance & regional"
+                Subtitle="Theme, timezone, and clock format. These settings apply to you only." />
+
+    <AccountSectionNav />
+
+    @if (_loading)
+    {
+        <p class="mt-6 text-sm text-muted" role="status">Loading your preferences…</p>
+    }
+    else if (_loadError is not null)
+    {
+        <div class="mt-6">
+            <ErrorState Message="@_loadError" />
+        </div>
+    }
+    else
+    {
+        <div class="mt-6 max-w-2xl space-y-6">
+            <section class="rounded border border-default bg-surface p-4" aria-labelledby="appearance-heading">
+                <h2 id="appearance-heading" class="text-base font-semibold text-heading">Appearance</h2>
+                <p class="mt-1 text-sm text-muted">
+                    Applies as soon as you choose it, and is saved to your account so it follows you to
+                    other browsers.
+                </p>
+
+                <fieldset class="mt-4">
+                    <legend class="sr-only">Appearance</legend>
+                    <div class="flex flex-wrap gap-2" role="radiogroup" aria-labelledby="appearance-heading">
+                        @foreach (var choice in AppearanceChoices)
+                        {
+                            var selected = _appearance == choice.Preference;
+                            var inputId = $"appearance-{choice.Preference}";
+                            <div>
+                                <input type="radio"
+                                       class="peer sr-only"
+                                       name="appearance"
+                                       id="@inputId"
+                                       checked="@selected"
+                                       disabled="@_saving"
+                                       @onchange="() => SetAppearanceAsync(choice.Preference)" />
+                                <label for="@inputId" class="@ChoiceClass(selected)">
+                                    <ThemePreferenceIcon Preference="choice.Preference" Class="h-4 w-4 shrink-0" />
+                                    <span>@choice.Label</span>
+                                    @if (selected)
+                                    {
+                                        <span class="text-[11px]">· Selected</span>
+                                    }
+                                </label>
+                            </div>
+                        }
+                    </div>
+                </fieldset>
+
+                <p class="mt-3 text-sm text-muted">
+                    <strong class="font-medium text-heading">System</strong> follows your device setting.
+                    Before you sign in, Apperture uses the theme last used in this browser.
+                </p>
+            </section>
+
+            <section class="rounded border border-default bg-surface p-4" aria-labelledby="regional-heading">
+                <h2 id="regional-heading" class="text-base font-semibold text-heading">Dates and times</h2>
+                <p class="mt-1 text-sm text-muted">
+                    Changes how timestamps are shown to you. It never changes when work runs — schedules
+                    and stored timestamps stay in UTC.
+                </p>
+
+                <div class="mt-4">
+                    <TimeZoneSelector Value="@_timeZoneId"
+                                      ValueChanged="OnTimeZoneChanged"
+                                      Disabled="@_saving"
+                                      IdPrefix="account-timezone" />
+                </div>
+
+                <fieldset class="mt-6">
+                    <legend class="text-sm font-medium text-heading">Clock</legend>
+                    <div class="mt-2 flex flex-wrap gap-2" role="radiogroup" aria-label="Clock format">
+                        @foreach (var choice in ClockChoices)
+                        {
+                            var selected = string.Equals(_timeFormat, choice.Value, StringComparison.Ordinal);
+                            var inputId = $"clock-{choice.Value}";
+                            <div>
+                                <input type="radio"
+                                       class="peer sr-only"
+                                       name="clock-format"
+                                       id="@inputId"
+                                       checked="@selected"
+                                       disabled="@_saving"
+                                       @onchange="() => SetTimeFormat(choice.Value)" />
+                                <label for="@inputId" class="@ChoiceClass(selected)">
+                                    <span>@choice.Label</span>
+                                    @if (selected)
+                                    {
+                                        <span class="text-[11px]">· Selected</span>
+                                    }
+                                </label>
+                            </div>
+                        }
+                    </div>
+                    <p class="mt-2 text-sm text-muted">Preview: <span class="text-body">@ClockPreview</span></p>
+                </fieldset>
+
+                <div class="mt-6 flex items-center gap-3">
+                    <button type="button"
+                            class="rounded bg-surface-muted px-4 py-2 text-sm font-medium text-heading hover:bg-surface disabled:opacity-50"
+                            disabled="@(_saving || !IsRegionalDirty)"
+                            @onclick="SaveRegionalAsync">
+                        @(_saving ? "Saving…" : "Save date and time settings")
+                    </button>
+                    @if (IsRegionalDirty && !_saving)
+                    {
+                        <button type="button"
+                                class="text-sm text-muted underline hover:text-heading"
+                                @onclick="DiscardRegional">
+                            Discard changes
+                        </button>
+                    }
+                </div>
+
+                @if (_saveError is not null)
+                {
+                    <p class="mt-3 text-sm text-message-error" role="alert">@_saveError</p>
+                }
+            </section>
+
+            <section class="rounded border border-default bg-surface p-4" aria-labelledby="platform-heading">
+                <h2 id="platform-heading" class="text-base font-semibold text-heading">Platform settings</h2>
+                <p class="mt-1 text-sm text-muted">
+                    Mail delivery, integration configuration, scheduling defaults, and other
+                    instance-wide settings are managed by administrators and are not personal
+                    preferences. They live under Configuration.
+                </p>
+            </section>
+        </div>
+    }
+</div>
+
+@code {
+    private sealed record AppearanceChoice(ThemePreference Preference, string Label);
+    private sealed record ClockChoice(string Value, string Label);
+
+    private static readonly AppearanceChoice[] AppearanceChoices =
+    [
+        new(ThemePreference.System, "System"),
+        new(ThemePreference.Light, "Light"),
+        new(ThemePreference.Dark, "Dark"),
+    ];
+
+    private static readonly ClockChoice[] ClockChoices =
+    [
+        new("System", "Platform default (24-hour)"),
+        new("Hour24", "24-hour"),
+        new("Hour12", "12-hour"),
+    ];
+
+    private bool _loading = true;
+    private bool _saving;
+    private string? _loadError;
+    private string? _saveError;
+
+    private ThemePreference _appearance = ThemePreference.System;
+    private string _timeFormat = "System";
+    private string? _timeZoneId;
+
+    private string _savedTimeFormat = "System";
+    private string? _savedTimeZoneId;
+
+    private bool IsRegionalDirty =>
+        !string.Equals(_timeFormat, _savedTimeFormat, StringComparison.Ordinal)
+        || !string.Equals(_timeZoneId ?? "", _savedTimeZoneId ?? "", StringComparison.Ordinal);
+
+    private string ClockPreview
+    {
+        get
+        {
+            var clock = OperatorTimestampFormat.ParseClockFormatOrDefault(_timeFormat);
+            var zone = string.IsNullOrWhiteSpace(_timeZoneId) ? DisplayTimeZone.TimeZoneId : _timeZoneId;
+            var source = string.IsNullOrWhiteSpace(_timeZoneId)
+                ? DisplayTimeZone.Source
+                : OperatorDisplayTimeZoneSource.UserPreference;
+            return OperatorTimestampFormat.FormatPrimary(
+                DateTimeOffset.UtcNow,
+                zone,
+                source,
+                showUtcDetail: false,
+                clockFormat: clock);
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        Session.Changed += OnSessionChanged;
+        await LoadAsync();
+    }
+
+    public void Dispose() => Session.Changed -= OnSessionChanged;
+
+    private void OnSessionChanged() => _ = InvokeAsync(StateHasChanged);
+
+    private async Task LoadAsync()
+    {
+        _loadError = null;
+        try
+        {
+            var preferences = await Client.GetAccountPreferencesAsync();
+            AppearancePreferenceResolution.TryParseExact(preferences.Appearance, out _appearance);
+            _timeFormat = preferences.TimeFormat;
+            _timeZoneId = preferences.TimeZoneId;
+            _savedTimeFormat = _timeFormat;
+            _savedTimeZoneId = _timeZoneId;
+        }
+        catch (HttpRequestException ex)
+        {
+            _loadError = ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    // Selection is shown with border, background, ring, and the word "Selected" together, so it is
+    // never conveyed by colour alone.
+    private static string ChoiceClass(bool selected) =>
+        "flex cursor-pointer items-center gap-2 rounded border px-3 py-2 text-sm peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 "
+        + (selected
+            ? "border-heading bg-surface-muted ring-2 ring-heading font-medium text-heading"
+            : "border-default text-muted hover:bg-surface-muted hover:text-heading");
+
+    private async Task SetAppearanceAsync(ThemePreference preference)
+    {
+        _appearance = preference;
+        _saveError = null;
+
+        // Apply locally first so the change is instant and the browser fallback stays in step, then
+        // persist. If the save fails the operator still sees what they picked and is told it did not stick.
+        await Theme.SetPreferenceAsync(preference);
+
+        _saving = true;
+        try
+        {
+            await Client.UpdateAccountPreferencesAsync(new UpdateUserPreferencesRequestDto
+            {
+                Appearance = preference.ToString(),
+                TimeFormat = _savedTimeFormat,
+                TimeZoneId = _savedTimeZoneId
+            });
+            await Session.RefreshAsync();
+            Toasts.Show(ToastSeverity.Success, "Appearance saved.");
+        }
+        catch (HttpRequestException ex)
+        {
+            _saveError = $"Appearance was applied in this browser but could not be saved to your account: {ex.Message}";
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private void SetTimeFormat(string value)
+    {
+        _timeFormat = value;
+        _saveError = null;
+    }
+
+    private void OnTimeZoneChanged(string? timeZoneId)
+    {
+        _timeZoneId = timeZoneId;
+        _saveError = null;
+    }
+
+    private void DiscardRegional()
+    {
+        _timeFormat = _savedTimeFormat;
+        _timeZoneId = _savedTimeZoneId;
+        _saveError = null;
+    }
+
+    private async Task SaveRegionalAsync()
+    {
+        _saving = true;
+        _saveError = null;
+        try
+        {
+            var saved = await Client.UpdateAccountPreferencesAsync(new UpdateUserPreferencesRequestDto
+            {
+                Appearance = _appearance.ToString(),
+                TimeFormat = _timeFormat,
+                TimeZoneId = _timeZoneId
+            });
+
+            _timeFormat = saved.TimeFormat;
+            _timeZoneId = saved.TimeZoneId;
+            _savedTimeFormat = _timeFormat;
+            _savedTimeZoneId = _timeZoneId;
+
+            // Session carries the timezone and clock preference the shell renders timestamps with.
+            await Session.RefreshAsync();
+            await DisplayTimeZone.EnsureResolvedAsync();
+            Toasts.Show(ToastSeverity.Success, "Date and time settings saved.");
+        }
+        catch (HttpRequestException ex)
+        {
+            _saveError = ex.Message;
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+}

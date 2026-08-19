@@ -1,6 +1,7 @@
 using Apperture.Bootstrap;
 using Apperture.ControlPlane.Dashboard;
 using Apperture.ControlPlane.Security.Audit;
+using Apperture.Core.Application.Accounts;
 using Apperture.Core.Application.Integration;
 using Apperture.Core.Application.PlatformSettings;
 using Apperture.ModuleSdk.Integration.Configuration;
@@ -64,6 +65,10 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IPostConfigureOptions<EntraAuthOptions>, EntraAuthOptionsDatabasePostConfigure>();
         services.AddScoped<IAuthenticationAdminOverviewService, AuthenticationAdminOverviewService>();
         services.AddScoped<IUserRepository, SqlUserRepository>();
+        services.AddScoped<IUserPreferencesRepository, SqlUserPreferencesRepository>();
+        services.AddScoped<IUserProfileImageStore, SqlUserProfileImageStore>();
+        services.AddSingleton<IProfileImageNormalizer, SkiaProfileImageNormalizer>();
+        services.AddScoped<IAccountProfileService, AccountProfileService>();
         services.AddScoped<IManagedContactRepository, SqlManagedContactRepository>();
         services.AddScoped<IManagedContactGroupRepository, SqlManagedContactGroupRepository>();
         services.AddScoped<IRoleRepository, SqlRoleRepository>();

@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using Apperture.ControlPlane.Security;
+using Apperture.Core.Application.Accounts;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Audit;
 using Apperture.Core.Domain.Identity;
@@ -35,6 +36,7 @@ public sealed class AuthController : ControllerBase
     private readonly IPrincipalContext _principalContext;
     private readonly IPrincipalToUserResolver _principalToUserResolver;
     private readonly IRoleProvider _roleProvider;
+    private readonly IUserPreferencesRepository _userPreferences;
     private readonly IAuditService _audit;
     private readonly LocalAuthOptions _localOptions;
     private readonly BreakGlassAuthOptions _breakGlassOptions;
@@ -48,6 +50,7 @@ public sealed class AuthController : ControllerBase
         IPrincipalContext principalContext,
         IPrincipalToUserResolver principalToUserResolver,
         IRoleProvider roleProvider,
+        IUserPreferencesRepository userPreferences,
         IAuditService audit,
         IOptions<LocalAuthOptions> localOptions,
         IOptions<BreakGlassAuthOptions> breakGlassOptions,
@@ -60,6 +63,7 @@ public sealed class AuthController : ControllerBase
         _principalContext = principalContext;
         _principalToUserResolver = principalToUserResolver;
         _roleProvider = roleProvider;
+        _userPreferences = userPreferences;
         _audit = audit;
         _localOptions = localOptions.Value;
         _breakGlassOptions = breakGlassOptions.Value;
@@ -125,6 +129,9 @@ public sealed class AuthController : ControllerBase
                 AccountMeSnapshotBuilder.FormatIdentityLinkLabel(l.Source, l.ExternalId),
                 l.LastAuthenticatedAt))
             .ToArray();
+        // Preferences ride along on the session response so the shell can apply appearance and clock
+        // format on first paint instead of after a second request.
+        var preferences = await _userPreferences.GetAsync(uid, cancellationToken);
         var deferred = AccountMeSnapshotBuilder.BuildDeferredFeatures();
         return Ok(new MeResponse(
             user.Id.Value,
@@ -136,12 +143,19 @@ public sealed class AuthController : ControllerBase
             localStatus,
             roles.Select(r => r.Name).ToArray(),
             AccountMeSnapshotBuilder.CanChangeLocalPassword(_localOptions.Enabled, localStatus),
-            new AccountDeferredFeaturesDto(
-                deferred.AvatarManagementDeferred,
-                deferred.ProfileEditDeferred,
-                deferred.NotificationSubscriptionsDeferred,
-                deferred.Message),
-            user.DisplayTimeZoneId));
+            deferred is null
+                ? null
+                : new AccountDeferredFeaturesDto(
+                    deferred.AvatarManagementDeferred,
+                    deferred.ProfileEditDeferred,
+                    deferred.NotificationSubscriptionsDeferred,
+                    deferred.Message),
+            user.DisplayTimeZoneId,
+            // Carried on the session response so the shell can paint the avatar on first render
+            // without a second round trip.
+            AccountAvatarDtoMapper.ToDto(user.EffectiveAvatar),
+            preferences?.TimeFormat.ToString(),
+            preferences?.Appearance.ToString()));
     }
 
     /// <summary>
@@ -480,9 +494,16 @@ public sealed record MeResponse(
     string LocalCredentialStatus,
     string[] RoleNames,
     bool CanChangeLocalPassword,
-    AccountDeferredFeaturesDto Deferred,
-    /// <summary>SWM-5: stored operator display timezone preference; null until profile overhaul sets it.</summary>
-    string? DisplayTimeZoneId = null);
+    /// <summary>Account capabilities not yet available, or null when there are none.</summary>
+    AccountDeferredFeaturesDto? Deferred,
+    /// <summary>Stored operator display timezone preference; null means follow the browser.</summary>
+    string? DisplayTimeZoneId = null,
+    /// <summary>Current avatar selection, so the shell can render it without a second request.</summary>
+    Apperture.Management.Client.AccountAvatarDto? Avatar = null,
+    /// <summary>Stored clock preference (<c>System</c>, <c>Hour12</c>, <c>Hour24</c>).</summary>
+    string? TimeFormat = null,
+    /// <summary>Stored appearance preference (<c>System</c>, <c>Light</c>, <c>Dark</c>); null when unset.</summary>
+    string? Appearance = null);
 
 public sealed record AccountIdentityLinkDto(
     string Source,

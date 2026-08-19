@@ -1,0 +1,25 @@
+@*
+    Keeps the older entry points working. The account root and the standalone /preferences path both
+    land on their current home, so existing links and bookmarks stay valid.
+*@
+@page "/account"
+@page "/preferences"
+@layout MainLayout
+@using Apperture.Management.Ui.Shared
+@inject NavigationManager Nav
+
+<div class="p-6">
+    <p class="text-sm text-muted" role="status">Opening your account…</p>
+</div>
+
+@code {
+    protected override void OnInitialized()
+    {
+        var path = new Uri(Nav.Uri).AbsolutePath.TrimEnd('/');
+        var target = string.Equals(path, AccountUiRoutes.LegacyPreferences, StringComparison.OrdinalIgnoreCase)
+            ? AccountUiRoutes.Preferences
+            : AccountUiRoutes.Profile;
+
+        Nav.NavigateTo(target, replace: true);
+    }
+}

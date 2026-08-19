@@ -26,9 +26,30 @@ Unknown or non-subscribable definitions return **404**.
 
 ## UI
 
-`/me/notifications` includes an **Email preferences** section with per-definition email toggles.
+~~`/me/notifications` includes an **Email preferences** section with per-definition email toggles.~~
 
-Account deferred-features flag `NotificationSubscriptionsDeferred` is **false**; preferences live on My notifications.
+**Superseded by AUP-1 (2026-08-18).** The preference controls moved to **Account → Notifications**
+(`/account/notifications`); `/me/notifications` remains the inbox and links to them. The subscription
+model, delivery gating, and the `api/me/notification-subscriptions` endpoints below are **unchanged** —
+the account page delegates to the same `IOperatorNotificationSubscriptionService`, so there is one source
+of truth and the page cannot advertise a preference the pipeline does not honour.
+
+What AUP-1 changed in the presentation:
+
+- **Channels are shown explicitly.** Each notification now shows both **In-app** and **Email**. In-app is
+  reported as `Enabled = true, Editable = false` with a stated reason, because inbox materialization
+  follows the deliverable recipient set and has no per-user switch. It is stated in prose rather than
+  rendered as a disabled checkbox, which would imply an editable preference that does not exist.
+- **Unbuilt capabilities are named as unavailable**, not rendered as controls: digest, quiet hours, and
+  non-email channels.
+- **Channel changes are audited** (`account.notification.email.opted_in` / `opted_out`), because opting
+  out changes who is told about operational problems. Presentation preferences are not audited.
+- A richer read model is available at `GET /api/account/notification-preferences` and
+  `PUT /api/account/notification-preferences/{definitionId}`. The `api/me/notification-subscriptions`
+  routes are retained unchanged.
+
+Account deferred-features flag `NotificationSubscriptionsDeferred` is **false**. As of AUP-1 the whole
+`deferred` block on `GET /api/auth/me` is `null`, since profile editing and avatar management also shipped.
 
 ## Delivery gating
 

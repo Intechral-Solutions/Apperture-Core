@@ -1,0 +1,151 @@
+@*
+    Searchable timezone picker. The list is built from the zones the host recognizes, so a selection
+    can never be rejected by the server. Browser detection is offered as a shortcut, not a default.
+*@
+@using Apperture.Management.Ui.Shared
+@inject IJSRuntime Js
+
+<div>
+    <label class="block text-sm font-medium text-heading" for="@SearchId">Timezone</label>
+    <p id="@HelpId" class="mt-1 text-sm text-muted">
+        Used to display dates and times to you. Schedules and stored timestamps always remain UTC.
+    </p>
+
+    <div class="mt-2 flex flex-wrap items-center gap-2">
+        <input id="@SearchId"
+               type="search"
+               class="w-full max-w-xs rounded border border-default bg-surface px-3 py-2 text-sm"
+               placeholder="Search timezones"
+               aria-describedby="@HelpId"
+               aria-controls="@ListId"
+               value="@_query"
+               disabled="@Disabled"
+               @oninput="OnQueryInput" />
+        <button type="button"
+                class="rounded border border-default px-3 py-2 text-sm hover:bg-surface-muted disabled:opacity-50"
+                disabled="@Disabled"
+                @onclick="DetectAsync">
+            Use this browser's timezone
+        </button>
+    </div>
+
+    @if (_detectError is not null)
+    {
+        <p class="mt-2 text-sm text-muted" role="status">@_detectError</p>
+    }
+
+    <label class="mt-3 block text-sm font-medium text-heading" for="@ListId">Available timezones</label>
+    <select id="@ListId"
+            class="mt-1 w-full max-w-md rounded border border-default bg-surface px-3 py-2 text-sm"
+            size="8"
+            aria-describedby="@HelpId"
+            disabled="@Disabled"
+            @onchange="OnSelectionChanged">
+        <option value="" selected="@(string.IsNullOrWhiteSpace(Value))">Follow this browser</option>
+        @foreach (var choice in _choices)
+        {
+            <option value="@choice.Id" selected="@(string.Equals(choice.Id, Value, StringComparison.OrdinalIgnoreCase))">
+                @choice.Label
+            </option>
+        }
+    </select>
+
+    @if (_choices.Count == 0 && !string.IsNullOrWhiteSpace(_query))
+    {
+        <p class="mt-2 text-sm text-muted" role="status">No timezone matches “@_query”.</p>
+    }
+
+    <p class="mt-2 text-sm text-muted">
+        Current selection: <span class="text-body">@OperatorTimeZoneCatalog.DescribeId(Value)</span>
+    </p>
+</div>
+
+@code {
+    /// <summary>Selected timezone id, or null to follow the browser.</summary>
+    [Parameter] public string? Value { get; set; }
+
+    [Parameter] public EventCallback<string?> ValueChanged { get; set; }
+
+    [Parameter] public bool Disabled { get; set; }
+
+    /// <summary>Distinguishes the control's ids when more than one is rendered on a page.</summary>
+    [Parameter] public string IdPrefix { get; set; } = "timezone";
+
+    private string _query = "";
+    private string? _detectError;
+    private List<OperatorTimeZoneChoice> _choices = [];
+
+    private string SearchId => $"{IdPrefix}-search";
+    private string ListId => $"{IdPrefix}-list";
+    private string HelpId => $"{IdPrefix}-help";
+
+    protected override void OnInitialized() => RebuildChoices();
+
+    private void OnQueryInput(ChangeEventArgs args)
+    {
+        _query = args.Value?.ToString() ?? "";
+        RebuildChoices();
+    }
+
+    private void RebuildChoices()
+    {
+        var results = OperatorTimeZoneCatalog.Search(_query).ToList();
+
+        // Keep the current selection visible even when it falls outside the filtered results,
+        // so the select never appears to have lost the operator's choice.
+        if (!string.IsNullOrWhiteSpace(Value)
+            && !results.Any(c => string.Equals(c.Id, Value, StringComparison.OrdinalIgnoreCase)))
+        {
+            var current = OperatorTimeZoneCatalog.All
+                .FirstOrDefault(c => string.Equals(c.Id, Value, StringComparison.OrdinalIgnoreCase));
+            if (current is not null)
+                results.Insert(0, current);
+        }
+
+        _choices = results;
+    }
+
+    private async Task OnSelectionChanged(ChangeEventArgs args)
+    {
+        var raw = args.Value?.ToString();
+        var next = string.IsNullOrWhiteSpace(raw) ? null : raw;
+        Value = next;
+        RebuildChoices();
+        await ValueChanged.InvokeAsync(next);
+    }
+
+    private async Task DetectAsync()
+    {
+        _detectError = null;
+        string? detected = null;
+        try
+        {
+            detected = await Js.InvokeAsync<string?>("appertureShell.getTimeZone");
+        }
+        catch (JSException)
+        {
+            // Interop unavailable (prerender or a restrictive browser): report and leave the choice alone.
+        }
+        catch (InvalidOperationException)
+        {
+            // JS runtime not ready yet.
+        }
+
+        if (string.IsNullOrWhiteSpace(detected))
+        {
+            _detectError = "This browser did not report a timezone. Choose one from the list instead.";
+            return;
+        }
+
+        if (!OperatorTimeZoneCatalog.IsKnown(detected))
+        {
+            _detectError = $"This browser reported “{detected}”, which this server does not recognize. Choose the closest match from the list.";
+            return;
+        }
+
+        Value = detected.Trim();
+        _query = "";
+        RebuildChoices();
+        await ValueChanged.InvokeAsync(Value);
+    }
+}

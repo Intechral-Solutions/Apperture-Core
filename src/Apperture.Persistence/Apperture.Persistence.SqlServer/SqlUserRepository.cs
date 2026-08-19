@@ -68,6 +68,7 @@ public sealed class SqlUserRepository : IUserRepository
             IsBreakGlassEligible = user.IsBreakGlassEligible,
             DisplayTimeZoneId = user.DisplayTimeZoneId
         };
+        ApplyAvatar(userEntity, user.Avatar);
         _db.Users.Add(userEntity);
 
         foreach (var link in user.IdentityLinks)
@@ -103,7 +104,22 @@ public sealed class SqlUserRepository : IUserRepository
         entity.DisplayName = user.DisplayName;
         entity.IsBreakGlassEligible = user.IsBreakGlassEligible;
         entity.DisplayTimeZoneId = user.DisplayTimeZoneId;
+        ApplyAvatar(entity, user.Avatar);
         await _db.SaveChangesAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// A null avatar means "caller did not express an avatar intent" (for example an admin updating
+    /// roles), so the persisted selection is left untouched rather than silently reset.
+    /// </summary>
+    private static void ApplyAvatar(UserEntity entity, UserAvatar? avatar)
+    {
+        if (avatar is null)
+            return;
+
+        entity.AvatarKind = avatar.StorageKind;
+        entity.AvatarOptionId = avatar.Kind == UserAvatarKind.BuiltIn ? avatar.BuiltInOptionId : null;
+        entity.AvatarImageKey = avatar.Kind == UserAvatarKind.Custom ? avatar.ImageKey : null;
     }
 
     /// <inheritdoc />
@@ -218,6 +234,10 @@ public sealed class SqlUserRepository : IUserRepository
             identityLinks,
             assignedRoleIds,
             userEntity.IsBreakGlassEligible,
-            userEntity.DisplayTimeZoneId);
+            userEntity.DisplayTimeZoneId,
+            UserAvatar.FromStorage(
+                userEntity.AvatarKind,
+                userEntity.AvatarOptionId,
+                userEntity.AvatarImageKey));
     }
 }

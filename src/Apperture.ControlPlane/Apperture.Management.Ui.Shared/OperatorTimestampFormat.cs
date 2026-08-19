@@ -1,4 +1,16 @@
+using System.Globalization;
+
 namespace Apperture.Management.Ui.Shared;
+
+/// <summary>
+/// Clock convention for the time portion of operator timestamps. <see cref="Hour24"/> is the platform
+/// default and the format every surface used before AUP-1 introduced the preference.
+/// </summary>
+public enum OperatorClockFormat
+{
+    Hour24 = 0,
+    Hour12 = 1
+}
 
 /// <summary>SWM-4: formatted operator-facing timestamp with explicit zone labeling.</summary>
 public sealed record OperatorTimestampFormatResult(
@@ -49,12 +61,25 @@ public static class OperatorTimestampFormat
         };
     }
 
+    /// <summary>Date is always ISO; only the clock portion follows the operator preference.</summary>
+    private const string DatePattern = "yyyy-MM-dd";
+
+    public static string ClockPattern(OperatorClockFormat clockFormat) =>
+        clockFormat == OperatorClockFormat.Hour12 ? "h:mm:ss tt" : "HH:mm:ss";
+
+    /// <summary>Maps the stored preference string onto the clock format, defaulting to 24-hour.</summary>
+    public static OperatorClockFormat ParseClockFormatOrDefault(string? storedTimeFormat) =>
+        string.Equals(storedTimeFormat?.Trim(), "Hour12", StringComparison.OrdinalIgnoreCase)
+            ? OperatorClockFormat.Hour12
+            : OperatorClockFormat.Hour24;
+
     public static OperatorTimestampFormatResult Format(
         DateTimeOffset? value,
         string timeZoneId,
         OperatorDisplayTimeZoneSource source,
         bool showUtcDetail = false,
-        string nullDisplay = "—")
+        string nullDisplay = "—",
+        OperatorClockFormat clockFormat = OperatorClockFormat.Hour24)
     {
         if (value is null)
             return new OperatorTimestampFormatResult(nullDisplay, null, FormatZoneLabel(timeZoneId, source), source);
@@ -74,10 +99,14 @@ public static class OperatorTimestampFormat
 
         var zoneLabel = FormatZoneLabel(effectiveId, effectiveSource);
         var converted = TimeZoneInfo.ConvertTime(value.Value, tz);
-        var primary = $"{converted:yyyy-MM-dd HH:mm:ss} {zoneLabel}";
+        var pattern = $"{DatePattern} {ClockPattern(clockFormat)}";
+        var primary = $"{converted.ToString(pattern, CultureInfo.InvariantCulture)} {zoneLabel}";
         string? utcDetail = null;
         if (showUtcDetail)
-            utcDetail = $"{value.Value.UtcDateTime:yyyy-MM-dd HH:mm:ss} UTC";
+        {
+            // The UTC detail line is the execution truth, so it stays 24-hour regardless of preference.
+            utcDetail = $"{value.Value.UtcDateTime.ToString($"{DatePattern} HH:mm:ss", CultureInfo.InvariantCulture)} UTC";
+        }
 
         return new OperatorTimestampFormatResult(primary, utcDetail, zoneLabel, effectiveSource);
     }
@@ -88,9 +117,10 @@ public static class OperatorTimestampFormat
         string timeZoneId,
         OperatorDisplayTimeZoneSource source,
         bool showUtcDetail = false,
-        string nullDisplay = "—")
+        string nullDisplay = "—",
+        OperatorClockFormat clockFormat = OperatorClockFormat.Hour24)
     {
-        var result = Format(value, timeZoneId, source, showUtcDetail, nullDisplay);
+        var result = Format(value, timeZoneId, source, showUtcDetail, nullDisplay, clockFormat);
         if (showUtcDetail && result.UtcDetail is not null && value is not null)
             return $"{result.Primary} ({result.UtcDetail})";
         return result.Primary;

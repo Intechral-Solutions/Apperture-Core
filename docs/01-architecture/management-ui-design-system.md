@@ -62,6 +62,31 @@ Related shell documentation: [control-panel-ui.md](control-panel-ui.md).
 | `MetadataGrid` / `MetadataItem` | Detail / summary | Repeated label/value facts (Epic 93); optional `ThreeColumn` on summary bands |
 | `SectionActions` | Section body | Save/cancel or routine button groups inside a `ManagementSection` (Epic 93) |
 
+### Account area components (AUP-1)
+
+Personal account surfaces. Routes and section metadata live in `AccountUiRoutes`.
+
+| Component | Tier | Use when |
+|-----------|------|----------|
+| `AccountSectionNav` | Molecule | Tab-style navigation across the four account sections. Real links, `aria-current="page"` on the active one. Currently the only tab pattern in the shell |
+| `AccountAvatar` | Atom | The signed-in operator's avatar. Renders the normalized photo, the chosen illustration, or initials while the session resolves. Size via `SizeClass` |
+| `BuiltInAvatarGlyph` | Atom | Platform-owned avatar artwork as inline SVG, themed through `currentColor`. Decorative unless given a `Title` |
+| `AvatarPicker` | Organism | Illustration `radiogroup` plus photo upload, preview, and confirmed removal |
+| `TimeZoneSelector` | Molecule | Searchable timezone picker built from zones the host recognizes, with browser detection |
+
+Conventions these establish, worth keeping when restyling:
+
+- **Selection state is carried by border, background, ring, and a text marker together** ("Selected",
+  "· Selected"). The redundancy is an accessibility requirement, not decoration — never let selection
+  depend on colour alone.
+- **An image is never the only label.** Every avatar option has visible text beside it.
+- **Avatar previews are decorative** (`alt=""`, `aria-hidden`) because the operator's name is always
+  rendered next to them; alt text would be noise.
+- **A channel or capability with no real control is stated in prose**, not rendered as a disabled input.
+  A disabled checkbox implies an editable preference that exists.
+- Validation stays inline and associated with its field (`aria-describedby`, `aria-invalid`,
+  `role="alert"`); toasts are for successful saves.
+
 ### Interaction CSS utilities (Epic 93)
 
 Defined in `management-ui-primitives.css`:
@@ -359,6 +384,13 @@ The pilot stack is now ready for these follow-on epics, but none are implemented
 - Layout grids: `grid-cols-1 md:grid-cols-2` for summary cards; sections stack on narrow viewports.
 - Focus: use `focus-ring` on interactive controls (buttons in `app.css`).
 - Theme: `ThemeService` + semantic CSS variables; primitives respect light/dark via `app.css` theme blocks.
+- Appearance precedence (AUP-1): **account preference → this browser's local value → platform default
+  (`System`)**. The operating system setting is not a separate tier — it is what `System` resolves to at
+  paint time. `AppearancePreferenceCoordinator` applies the account preference through `ThemeService`,
+  which also mirrors it into `localStorage`; that mirror is what the host page's pre-WebAssembly boot
+  script reads, and therefore what prevents a flash of the wrong theme on the next visit. Both the
+  header `ThemeMenu` and `/account/preferences` persist to the account. See
+  [`AppearancePreferenceResolution`](../audits/aup1-account-profile-personal-preferences.md) §8.
 
 ## CSS and tokens
 

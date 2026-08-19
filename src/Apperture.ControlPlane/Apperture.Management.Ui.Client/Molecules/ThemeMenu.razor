@@ -1,7 +1,11 @@
+@using System.Net.Http
+@using Apperture.Management.Client
 @using Apperture.Management.Ui.Client.Services
 @using Apperture.Management.Ui.Shared
 @implements IDisposable
 @inject ThemeService ThemeService
+@inject SessionStateService Session
+@inject IManagementClient Client
 
 <div class="relative" @onclick:stopPropagation="true">
     <button type="button"
@@ -61,7 +65,31 @@
     private async Task SelectAsync(ThemePreference p)
     {
         _open = false;
+
+        // Apply locally first so the theme switches immediately even if the account save is slow.
         await ThemeService.SetPreferenceAsync(p);
+
+        if (Session.State != SessionLoadState.Authenticated)
+            return;
+
+        // Signed in, so this becomes the account preference and follows the operator to other
+        // browsers. A failure here is silent: the theme is already applied and stored locally, and
+        // the header menu is not the place to report a background save problem.
+        try
+        {
+            var current = await Client.GetAccountPreferencesAsync();
+            await Client.UpdateAccountPreferencesAsync(new UpdateUserPreferencesRequestDto
+            {
+                Appearance = ThemePreferenceParser.ToStorageValue(p),
+                TimeFormat = current.TimeFormat,
+                TimeZoneId = current.TimeZoneId
+            });
+            await Session.RefreshAsync();
+        }
+        catch (HttpRequestException)
+        {
+            // Local preference stands; the account preferences page can save it explicitly.
+        }
     }
 
     public void Dispose() => ThemeService.Changed -= OnThemeChanged;

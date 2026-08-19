@@ -18,6 +18,8 @@ public static class AppertureUiShellServiceCollectionExtensions
         services.AddScoped<ShellHostNavigation>();
         services.AddScoped<ShellOrientationService>();
         services.AddScoped<IOperatorDisplayTimeZone, OperatorDisplayTimeZoneService>();
+        services.AddScoped<AccountAvatarService>();
+        services.AddScoped<AppearancePreferenceCoordinator>();
         return services;
     }
 }

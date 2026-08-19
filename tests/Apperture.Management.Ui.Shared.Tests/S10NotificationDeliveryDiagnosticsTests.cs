@@ -110,12 +110,13 @@ public sealed class S10NotificationDiagnosticsUiTests
     [Fact]
     public void Personal_email_preferences_explain_email_vs_in_app()
     {
+        // AUP-1 moved these controls to Account → Notifications; the explanation must travel with them.
         var content = ReadRepoFile(
-            "src/Apperture.ControlPlane/Apperture.Management.Ui.Client/Organisms/PersonalNotificationEmailPreferences.razor");
-        content.Should().Contain("Enabling email allows matching notifications");
-        content.Should().Contain("Disabling email suppresses email only");
-        content.Should().Contain("Administrators may still assign");
-        content.Should().Contain("Daily digest");
+            "src/Apperture.ControlPlane/Apperture.Management.Ui.Client/Pages/Account/AccountNotifications.razor");
+        content.Should().Contain("appear in your");
+        content.Should().Contain("turning email off suppresses your email only");
+        content.Should().Contain("Administrators decide which notifications exist");
+        content.Should().Contain("Digest summaries, quiet hours");
     }
 
     private static string ReadRepoFile(string relativePath)

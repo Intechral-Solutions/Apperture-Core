@@ -12,7 +12,10 @@
     <PageHeader Title="My notifications"
                 Subtitle="Notifications addressed to you. Opening this page does not mark items as read." />
 
-    <PersonalNotificationEmailPreferences />
+    <p class="mt-2 text-sm text-muted">
+        Choose which notifications reach you, and how, in
+        <a class="underline hover:text-heading" href="@AccountUiRoutes.Notifications">Account → Notifications</a>.
+    </p>
 
     <div class="mt-4 flex flex-wrap items-center gap-2">
         @foreach (var tab in _tabs)

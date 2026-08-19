@@ -13,6 +13,8 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 using Xunit;
 
+using Apperture.UnitTests.Accounts;
+
 namespace Apperture.UnitTests.ControlPlane;
 
 public sealed class AuthControllerAccountTests
@@ -72,8 +74,59 @@ public sealed class AuthControllerAccountTests
         body.Roles.Should().Equal("rol_platform_admin");
         body.IdentityLinks.Should().ContainSingle(l =>
             l.Source == "Local" && l.DisplayLabel == LocalUsername);
-        body.Deferred.AvatarManagementDeferred.Should().BeTrue();
+        // Profile editing, avatar management, and notification preferences all ship in AUP-1, so the
+        // session response no longer announces any deferred account capability.
+        body.Deferred.Should().BeNull();
         body.DisplayTimeZoneId.Should().BeNull();
+        // A user who has chosen nothing still gets the neutral built-in avatar, so the shell always
+        // has something to draw.
+        body.Avatar.Should().NotBeNull();
+        body.Avatar!.Kind.Should().Be(UserAvatarStorageKinds.BuiltIn);
+        body.Avatar.BuiltInOptionId.Should().Be(BuiltInAvatarCatalog.DefaultOptionId);
+        body.Avatar.ImageUrl.Should().BeNull("built-in artwork is drawn by the client, not fetched");
+    }
+
+    [Fact]
+    public async Task Me_reports_stored_appearance_and_clock_preferences()
+    {
+        var preferences = new InMemoryUserPreferencesRepository();
+        preferences.Seed(TestUserId.Value, new UserPreferences(AppearancePreference.Dark, TimeFormatPreference.Hour12));
+
+        var controller = NewController(
+            actor: new HumanActor(new ActorId(LocalUsername), LocalUsername, isBreakGlassSession: false),
+            resolvedUserId: TestUserId,
+            user: SampleUser(),
+            credential: new LocalCredentialData(TestUserId, "hash", "salt", "stub", IsDisabled: false),
+            preferences: preferences);
+
+        var result = await controller.Me(CancellationToken.None);
+
+        var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var body = ok.Value.Should().BeOfType<MeResponse>().Subject;
+        body.Appearance.Should().Be("Dark");
+        body.TimeFormat.Should().Be("Hour12");
+    }
+
+    [Fact]
+    public async Task Me_reports_custom_avatar_with_a_fetchable_versioned_url()
+    {
+        var user = SampleUser() with { Avatar = UserAvatar.ForCustomImage("avt_abcdef0123456789") };
+
+        var controller = NewController(
+            actor: new HumanActor(new ActorId(LocalUsername), LocalUsername, isBreakGlassSession: false),
+            resolvedUserId: TestUserId,
+            user: user,
+            credential: new LocalCredentialData(TestUserId, "hash", "salt", "stub", IsDisabled: false));
+
+        var result = await controller.Me(CancellationToken.None);
+
+        var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var body = ok.Value.Should().BeOfType<MeResponse>().Subject;
+        body.Avatar!.Kind.Should().Be(UserAvatarStorageKinds.Custom);
+        body.Avatar.Version.Should().Be("avt_abcdef0123456789");
+        // The URL carries the version so a replaced avatar cannot be served from cache, and it never
+        // exposes a storage location.
+        body.Avatar.ImageUrl.Should().Be("api/account/avatar/image?size=128&v=avt_abcdef0123456789");
     }
 
     [Fact]
@@ -254,7 +307,8 @@ public sealed class AuthControllerAccountTests
         ILocalPasswordHasher? passwordHasher = null,
         CapturingAuditService? audit = null,
         LocalAuthOptions? localOptions = null,
-        HttpContext? httpContext = null)
+        HttpContext? httpContext = null,
+        InMemoryUserPreferencesRepository? preferences = null)
     {
         var controller = new AuthController(
             new ConfigurableUserRepository(user),
@@ -263,6 +317,7 @@ public sealed class AuthControllerAccountTests
             new ConfigurablePrincipalContext(actor),
             new ConfigurablePrincipalToUserResolver(resolvedUserId),
             new ConfigurableRoleProvider(roles ?? []),
+            preferences ?? new InMemoryUserPreferencesRepository(),
             audit ?? new CapturingAuditService(),
             Options.Create(localOptions ?? new LocalAuthOptions { Enabled = true, MinPasswordLength = 8 }),
             Options.Create(new BreakGlassAuthOptions()),

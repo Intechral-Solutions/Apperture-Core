@@ -48,12 +48,13 @@ public static class AccountMeSnapshotBuilder
         return externalId;
     }
 
-    public static AccountDeferredFeaturesSnapshot BuildDeferredFeatures() =>
-        new(
-            AvatarManagementDeferred: true,
-            ProfileEditDeferred: true,
-            NotificationSubscriptionsDeferred: false,
-            Message: "Avatar and profile editing are not available in this release. Manage email notification preferences from My notifications.");
+    /// <summary>
+    /// Account capabilities that are still unavailable. Profile editing, avatar management, and
+    /// notification preferences are all live now, so this returns null and the account surface
+    /// renders no "coming later" section. The shape is retained so a future gap can be announced
+    /// without another contract change.
+    /// </summary>
+    public static AccountDeferredFeaturesSnapshot? BuildDeferredFeatures() => null;
 }
 
 public sealed record AccountDeferredFeaturesSnapshot(

@@ -4,8 +4,13 @@ namespace Apperture.Core.Domain.Identity;
 /// Human operator identity. Aggregate root.
 /// </summary>
 /// <param name="DisplayTimeZoneId">
-/// SWM-5: optional IANA/Windows timezone id for operator timestamp display.
-/// Null means no preference (UI falls back to browser → UTC). Setting via profile overhaul later.
+/// Optional IANA/Windows timezone id for operator timestamp display. Null means no preference
+/// (display falls back to browser → UTC). This is a display concern only; scheduling and storage
+/// remain UTC.
+/// </param>
+/// <param name="Avatar">
+/// Presentation-only avatar selection. Null on records loaded before AUP-1 and treated as the
+/// neutral built-in default by <see cref="EffectiveAvatar"/>.
 /// </param>
 public sealed record User(
     UserId Id,
@@ -13,4 +18,8 @@ public sealed record User(
     IReadOnlyList<IdentityLink> IdentityLinks,
     IReadOnlyList<RoleId> AssignedRoleIds,
     bool IsBreakGlassEligible,
-    string? DisplayTimeZoneId = null);
+    string? DisplayTimeZoneId = null,
+    UserAvatar? Avatar = null)
+{
+    public UserAvatar EffectiveAvatar => Avatar ?? UserAvatar.Default;
+}

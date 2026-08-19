@@ -65,7 +65,11 @@ public sealed class ManagementHostAccountHttpTests
         body.LocalCredentialStatus.Should().Be(AccountMeSnapshotBuilder.LocalCredentialStatusActive);
         body.CanChangeLocalPassword.Should().BeTrue();
         body.IdentityLinks.Should().Contain(l => l.Source == "Local" && l.DisplayLabel == username);
-        body.Deferred.AvatarManagementDeferred.Should().BeTrue();
+        // Profile editing, avatar management, and notification preferences all ship now, so nothing is
+        // announced as deferred and the shell always receives an avatar to draw.
+        body.Deferred.Should().BeNull();
+        body.Avatar.Should().NotBeNull();
+        body.Avatar!.Kind.Should().Be("builtIn");
     }
 
     [Fact]

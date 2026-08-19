@@ -1,0 +1,283 @@
+@page "/account/profile"
+@layout MainLayout
+@implements IDisposable
+@using System.Net.Http
+@using Apperture.Management.Client
+@using Apperture.Management.Ui.Client.Molecules
+@using Apperture.Management.Ui.Client.Organisms
+@using Apperture.Management.Ui.Client.Services
+@using Apperture.Management.Ui.Shared
+@inject SessionStateService Session
+@inject IManagementClient Client
+@inject AccountAvatarService Avatars
+@inject IToastService Toasts
+
+<div class="p-4 md:p-6">
+    <PageHeader Title="Profile"
+                Subtitle="Your name, photo, and the identity you sign in with." />
+
+    <AccountSectionNav />
+
+    @if (Session.State is SessionLoadState.Unknown or SessionLoadState.Loading)
+    {
+        <p class="mt-6 text-sm text-muted" role="status">Loading your profile…</p>
+    }
+    else if (Session.State == SessionLoadState.ForbiddenUnlinked)
+    {
+        <div class="mt-6 max-w-2xl">
+            <PageMessage Kind="PageMessageKind.Warning"
+                         Title="Account not linked"
+                         Message="You are signed in with an organizational identity that is not linked to a platform user. Contact an administrator to link your account before using management features." />
+        </div>
+    }
+    else if (_loadError is not null)
+    {
+        <div class="mt-6">
+            <ErrorState Message="@_loadError" />
+        </div>
+    }
+    else if (_profile is null)
+    {
+        <p class="mt-6 text-sm text-muted">Sign in to view your profile.</p>
+    }
+    else
+    {
+        <div class="mt-6 max-w-2xl space-y-6">
+            <section class="rounded border border-default bg-surface p-4" aria-labelledby="display-name-heading">
+                <h2 id="display-name-heading" class="text-base font-semibold text-heading">Display name</h2>
+                <p class="mt-1 text-sm text-muted">
+                    How your name appears throughout the platform. Apperture stores this name and does
+                    not overwrite it from your identity provider.
+                </p>
+
+                <form class="mt-4" @onsubmit="SaveDisplayNameAsync" @onsubmit:preventDefault="true">
+                    <label class="block text-sm font-medium text-heading" for="display-name">Display name</label>
+                    <input id="display-name"
+                           type="text"
+                           maxlength="128"
+                           autocomplete="name"
+                           class="mt-1 w-full max-w-md rounded border border-default bg-surface px-3 py-2 text-sm"
+                           aria-describedby="@(_displayNameError is null ? null : "display-name-error")"
+                           aria-invalid="@(_displayNameError is not null ? "true" : null)"
+                           value="@_displayNameDraft"
+                           disabled="@_savingName"
+                           @oninput="OnDisplayNameInput" />
+
+                    @if (_displayNameError is not null)
+                    {
+                        <p id="display-name-error" class="mt-2 text-sm text-message-error" role="alert">@_displayNameError</p>
+                    }
+
+                    <div class="mt-3 flex items-center gap-3">
+                        <button type="submit"
+                                class="rounded bg-surface-muted px-4 py-2 text-sm font-medium text-heading hover:bg-surface disabled:opacity-50"
+                                disabled="@(_savingName || !IsNameDirty)">
+                            @(_savingName ? "Saving…" : "Save name")
+                        </button>
+                        @if (IsNameDirty && !_savingName)
+                        {
+                            <button type="button"
+                                    class="text-sm text-muted underline hover:text-heading"
+                                    @onclick="ResetDisplayName">
+                                Discard change
+                            </button>
+                        }
+                    </div>
+                </form>
+            </section>
+
+            <AvatarPicker DisplayName="@_profile.DisplayName" OnChanged="OnAvatarChangedAsync" />
+
+            <section class="rounded border border-default bg-surface p-4" aria-labelledby="identity-heading">
+                <h2 id="identity-heading" class="text-base font-semibold text-heading">Identity</h2>
+                <p class="mt-1 text-sm text-muted">
+                    These values come from the identity provider you sign in with, so they cannot be
+                    edited here.
+                </p>
+
+                <dl class="mt-4 grid gap-2 text-sm sm:grid-cols-[minmax(9rem,auto)_1fr]">
+                    <dt class="text-muted">Sign-in method</dt>
+                    <dd class="text-body">@FormatSignInSource(_profile.SignInSource)</dd>
+
+                    @if (!string.IsNullOrWhiteSpace(_profile.EmailAddress))
+                    {
+                        <dt class="text-muted">Email</dt>
+                        <dd class="text-body">@_profile.EmailAddress</dd>
+                    }
+
+                    @if (!string.IsNullOrWhiteSpace(_profile.UserPrincipal))
+                    {
+                        <dt class="text-muted">Principal</dt>
+                        <dd class="text-body">@_profile.UserPrincipal</dd>
+                    }
+
+                    <dt class="text-muted">Display timezone</dt>
+                    <dd class="text-body">
+                        @OperatorTimeZoneCatalog.DescribeId(_profile.TimeZoneId)
+                        <a class="ml-2 text-sm text-muted underline hover:text-heading"
+                           href="@AccountUiRoutes.Preferences">Change</a>
+                    </dd>
+                </dl>
+
+                <Disclosure Summary="Roles and linked sign-in methods" Dense="true" Class="mt-4">
+                    <div class="space-y-4">
+                        <div>
+                            <h3 class="text-sm font-medium text-heading">Roles</h3>
+                            @if (_profile.RoleNames.Count == 0)
+                            {
+                                <p class="mt-1 text-sm text-muted">No roles assigned.</p>
+                            }
+                            else
+                            {
+                                <ul class="mt-2 flex flex-wrap gap-2">
+                                    @foreach (var name in _profile.RoleNames)
+                                    {
+                                        <li class="rounded bg-surface-muted px-2 py-1 text-xs text-body">@name</li>
+                                    }
+                                </ul>
+                            }
+                        </div>
+                        <div>
+                            <h3 class="text-sm font-medium text-heading">Linked sign-in methods</h3>
+                            @if (_profile.IdentityLinks.Count == 0)
+                            {
+                                <p class="mt-1 text-sm text-muted">No linked identities recorded.</p>
+                            }
+                            else
+                            {
+                                <ul class="mt-2 divide-y divide-default text-sm">
+                                    @foreach (var link in _profile.IdentityLinks)
+                                    {
+                                        <li class="flex flex-wrap items-baseline justify-between gap-2 py-2">
+                                            <span class="text-body">@link.DisplayLabel</span>
+                                            <span class="text-xs text-muted">@link.Source</span>
+                                        </li>
+                                    }
+                                </ul>
+                            }
+                            <p class="mt-2 text-sm text-muted">
+                                Manage sign-in methods from
+                                <a class="underline hover:text-heading" href="@AccountUiRoutes.Security">Security</a>.
+                            </p>
+                        </div>
+                    </div>
+                </Disclosure>
+
+                <TechnicalDetails Summary="Technical details" Dense="true" Class="mt-4">
+                    <TechnicalDetail Label="User id" Value="@_profile.UserId" />
+                    @foreach (var link in _profile.IdentityLinks)
+                    {
+                        <TechnicalDetail Label="@($"{link.Source} object id")" Value="@link.ExternalId" />
+                    }
+                </TechnicalDetails>
+            </section>
+        </div>
+    }
+</div>
+
+@code {
+    private AccountProfileDto? _profile;
+    private string? _loadError;
+    private string _displayNameDraft = "";
+    private string? _displayNameError;
+    private bool _savingName;
+
+    private bool IsNameDirty =>
+        _profile is not null
+        && !string.Equals(_displayNameDraft.Trim(), _profile.DisplayName, StringComparison.Ordinal);
+
+    protected override async Task OnInitializedAsync()
+    {
+        Session.Changed += OnSessionChanged;
+        await LoadAsync();
+    }
+
+    public void Dispose() => Session.Changed -= OnSessionChanged;
+
+    private void OnSessionChanged() => _ = InvokeAsync(LoadAsync);
+
+    private async Task LoadAsync()
+    {
+        if (Session.State is SessionLoadState.Unknown or SessionLoadState.Loading or SessionLoadState.ForbiddenUnlinked)
+            return;
+
+        _loadError = null;
+        try
+        {
+            _profile = await Client.GetAccountProfileAsync();
+            _displayNameDraft = _profile?.DisplayName ?? "";
+        }
+        catch (HttpRequestException ex)
+        {
+            _loadError = ex.Message;
+            _profile = null;
+        }
+    }
+
+    private void OnDisplayNameInput(ChangeEventArgs args)
+    {
+        _displayNameDraft = args.Value?.ToString() ?? "";
+        _displayNameError = null;
+    }
+
+    private void ResetDisplayName()
+    {
+        _displayNameDraft = _profile?.DisplayName ?? "";
+        _displayNameError = null;
+    }
+
+    private async Task SaveDisplayNameAsync()
+    {
+        if (_profile is null)
+            return;
+
+        _displayNameError = null;
+
+        var candidate = _displayNameDraft.Trim();
+        if (candidate.Length == 0)
+        {
+            _displayNameError = "Display name is required.";
+            return;
+        }
+
+        _savingName = true;
+        try
+        {
+            _profile = await Client.UpdateAccountProfileAsync(candidate);
+            _displayNameDraft = _profile.DisplayName;
+
+            // Refresh the session so the header and account menu show the new name straight away.
+            await Session.RefreshAsync();
+            Toasts.Show(ToastSeverity.Success, "Display name updated.");
+        }
+        catch (HttpRequestException ex)
+        {
+            // Validation belongs beside the field; a toast would take it away from the input.
+            _displayNameError = ex.Message;
+        }
+        finally
+        {
+            _savingName = false;
+        }
+    }
+
+    private async Task OnAvatarChangedAsync()
+    {
+        try
+        {
+            _profile = await Client.GetAccountProfileAsync() ?? _profile;
+        }
+        catch (HttpRequestException)
+        {
+            // The avatar service already holds the authoritative new avatar; a failed profile
+            // re-read must not surface as an avatar error.
+        }
+    }
+
+    private static string FormatSignInSource(string source) => source switch
+    {
+        "Local" => "Local username and password",
+        "Entra" => "Microsoft Entra ID",
+        _ => source
+    };
+}

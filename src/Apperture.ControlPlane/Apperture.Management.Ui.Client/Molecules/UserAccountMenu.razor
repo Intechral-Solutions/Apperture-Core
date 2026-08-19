@@ -1,6 +1,8 @@
 @using System.Net.Http
 @using Apperture.Management.Client
+@using Apperture.Management.Ui.Client.Atoms
 @using Apperture.Management.Ui.Client.Services
+@using Apperture.Management.Ui.Shared
 @using Apperture.Management.Ui.Shared.Options
 @using Microsoft.Extensions.Options
 @inject SessionStateService Session
@@ -16,7 +18,7 @@
     }
     else if (Session.State == SessionLoadState.ForbiddenUnlinked)
     {
-        <a href="/account"
+        <a href="@AccountUiRoutes.Profile"
            class="rounded px-3 py-1.5 text-sm text-message-warning hover:bg-surface-muted"
            title="Contact an administrator to link your Entra account">
             Account not linked
@@ -29,9 +31,7 @@
                 aria-expanded="@_open"
                 aria-haspopup="true"
                 @onclick="Toggle">
-            <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-surface-muted font-medium text-heading">
-                @Initials(Session.User.DisplayName)
-            </span>
+            <AccountAvatar DisplayName="@Session.User.DisplayName" SizeClass="h-8 w-8" />
             <span class="min-w-0">
                 <span class="block truncate font-medium text-heading">@Session.User.DisplayName</span>
                 <span class="block truncate text-xs text-muted" title="@SecondaryIdentity(Session.User)">@SecondaryIdentity(Session.User)</span>
@@ -39,9 +39,19 @@
         </button>
         @if (_open)
         {
-            <div class="absolute end-0 z-50 mt-1 min-w-52 rounded border border-default bg-surface py-1 text-sm shadow-lg">
-                <a href="/account" class="block px-3 py-2 text-body hover:bg-surface-muted">Account</a>
-                <a href="/preferences" class="block px-3 py-2 text-body hover:bg-surface-muted">Preferences</a>
+            <div class="absolute end-0 z-50 mt-1 min-w-56 rounded border border-default bg-surface py-1 text-sm shadow-lg">
+                <div class="flex items-center gap-2 px-3 py-2">
+                    <AccountAvatar DisplayName="@Session.User.DisplayName" SizeClass="h-9 w-9" />
+                    <span class="min-w-0">
+                        <span class="block truncate font-medium text-heading">@Session.User.DisplayName</span>
+                        <span class="block truncate text-xs text-muted">@SecondaryIdentity(Session.User)</span>
+                    </span>
+                </div>
+                <hr class="my-1 border-default" />
+                <a href="@AccountUiRoutes.Profile" class="block px-3 py-2 text-body hover:bg-surface-muted">Profile</a>
+                <a href="@AccountUiRoutes.Notifications" class="block px-3 py-2 text-body hover:bg-surface-muted">Notification preferences</a>
+                <a href="@AccountUiRoutes.Preferences" class="block px-3 py-2 text-body hover:bg-surface-muted">Appearance &amp; regional</a>
+                <a href="@AccountUiRoutes.Security" class="block px-3 py-2 text-body hover:bg-surface-muted">Security</a>
                 <hr class="my-1 border-default" />
                 <button type="button" class="block w-full px-3 py-2 text-start text-body hover:bg-surface-muted" @onclick="SignOutLocalAsync">
                     Sign out
@@ -70,16 +80,6 @@
 
     private bool UseEntraSignOut =>
         ShellOpts.Value.UseEntraSignIn || (SignInOptions.Current?.EntraSignInEnabled ?? false);
-
-    private static string Initials(string name)
-    {
-        var parts = name.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        if (parts.Length == 0)
-            return "?";
-        if (parts.Length == 1)
-            return parts[0].Length >= 2 ? parts[0].Substring(0, 2).ToUpperInvariant() : parts[0].ToUpperInvariant();
-        return string.Concat(parts[0].AsSpan(0, 1), parts[^1].AsSpan(0, 1)).ToUpperInvariant();
-    }
 
     private void Toggle() => _open = !_open;
 

@@ -57,17 +57,29 @@ UIX-6  Interaction and progressive disclosure system
 **UIX arc note (2026-08):** the inspection panel, drawer, popover, and accordion remain deferred
 until the UIX-5 trigger criteria are met. **Supersession (2026-08-05):** UIX-6 and BDS-6 operator
 smoke are complete; Track 6 closed via JOB-1 — see [`../audits/job1-failed-work-resolution-bulk-retry.md`](../audits/job1-failed-work-resolution-bulk-retry.md).
-Next product handoff: **AUP-1** (Track 2 preferences) — SDK-7 delivered; not a new UIX epic by default.
+**Supersession (2026-08-18):** **AUP-1** delivered Track 2 — see [`../audits/aup1-account-profile-personal-preferences.md`](../audits/aup1-account-profile-personal-preferences.md).
+Next product handoff: **UIX-7 — Visual Language and Theme Overhaul**, with the account area as its
+flagship reference surface.
 
 ---
 
 ## Track 2 — User Profile & Preferences
 
-- Profile editing
-- Avatar / profile image
-- Display timezone preference UI (runtime TZ semantics already exist in SWM)
-- Notification preferences refinement
-- Account / user settings consolidation
+**Status: complete (2026-08-18) — [`AUP-1`](../audits/aup1-account-profile-personal-preferences.md).**
+
+| Item | Outcome |
+|---|---|
+| Profile editing | Display name is platform-owned and editable; identity-provider fields are read-only |
+| Avatar / profile image | Four curated inline-SVG illustrations plus securely normalized photo upload (SkiaSharp, EXIF stripped, square PNG at 64/128/256) |
+| Display timezone preference UI | Writes the existing `Users.DisplayTimeZoneId`; IANA-canonicalized searchable selector with browser detection. UTC remains execution truth |
+| Notification preferences refinement | Per-notification email toggle enforced by `SqlNotificationRecipientResolver`; the in-app channel is stated as required because it has no per-user switch |
+| Account / user settings consolidation | `/account/{profile,notifications,preferences,security}`, with `/account` and `/preferences` redirecting in |
+
+Added beyond the original list: appearance preference persisted per account with documented precedence
+(account → browser → platform default), and a 12/24-hour clock preference.
+
+Deferred: Entra profile photo synchronization (would require new delegated Graph scopes), digest,
+quiet hours, and non-email channels — none of which the delivery pipeline implements.
 
 ---
 
@@ -85,7 +97,8 @@ Next product handoff: **AUP-1** (Track 2 preferences) — SDK-7 delivered; not a
 **PFB-1 recommendation (historical):** prioritize Track 3 next (see baseline audit §12).  
 **Supersession (2026-08-05):** SDK-1 through SDK-6D are complete. Track 6 closed by JOB-1.  
 **Supersession (2026-08-06):** **SDK-7** shared-record identity + lookup delivered — [`sdk7-cross-integration-shared-record-identity-lookup.md`](../audits/sdk7-cross-integration-shared-record-identity-lookup.md). Platform `BusinessRecord` remains deferred.  
-**Next product epic:** **AUP-1 — Account, Profile, and Personal Preferences**.
+~~**Next product epic:** **AUP-1 — Account, Profile, and Personal Preferences**.~~ — **delivered 2026-08-18**, see [`aup1-account-profile-personal-preferences.md`](../audits/aup1-account-profile-personal-preferences.md).  
+**Next product epic:** **UIX-7 — Visual Language and Theme Overhaul**.
 
 ~~**Next epic:** **SDK-3A Operation Itemization Persistence & Writer**~~ — **superseded:** SDK-3A–3D, SDK-4A–4C, SDK-5*, SDK-6*, SDK-7 delivered; JOB-1 closed Track 6.
 

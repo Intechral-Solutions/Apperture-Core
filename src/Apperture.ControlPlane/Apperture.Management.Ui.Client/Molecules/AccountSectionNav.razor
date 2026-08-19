@@ -1,0 +1,57 @@
+@*
+    Tab-style navigation across the four account sections. Uses real links so the sections are
+    bookmarkable and keyboard/screen-reader navigation behaves like normal navigation.
+*@
+@implements IDisposable
+@using Apperture.Management.Ui.Shared
+@inject NavigationManager Nav
+
+<nav class="mt-4 border-b border-default" aria-label="Account sections">
+    <ul class="-mb-px flex flex-wrap gap-1">
+        @foreach (var section in AccountUiRoutes.Sections)
+        {
+            var isCurrent = IsCurrent(section);
+            <li>
+                <a href="@section.Href"
+                   aria-current="@(isCurrent ? "page" : null)"
+                   title="@section.Description"
+                   class="@LinkClass(isCurrent)">
+                    @section.Label
+                </a>
+            </li>
+        }
+    </ul>
+</nav>
+
+@code {
+    private string _path = "";
+
+    protected override void OnInitialized()
+    {
+        Nav.LocationChanged += OnLocationChanged;
+        _path = CurrentPath();
+    }
+
+    private void OnLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
+    {
+        var next = CurrentPath();
+        if (string.Equals(next, _path, StringComparison.OrdinalIgnoreCase))
+            return;
+
+        _path = next;
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    private string CurrentPath() => new Uri(Nav.Uri).AbsolutePath;
+
+    private bool IsCurrent(AccountSection section) =>
+        AccountUiRoutes.ResolveSection(_path) is { } current
+        && string.Equals(current.Href, section.Href, StringComparison.OrdinalIgnoreCase);
+
+    // Selection is carried by weight, colour, and an underline together, so it never depends on colour alone.
+    private static string LinkClass(bool isCurrent) => isCurrent
+        ? "inline-block border-b-2 border-heading px-3 py-2 text-sm font-semibold text-heading"
+        : "inline-block border-b-2 border-transparent px-3 py-2 text-sm text-muted hover:border-default hover:text-heading";
+
+    public void Dispose() => Nav.LocationChanged -= OnLocationChanged;
+}

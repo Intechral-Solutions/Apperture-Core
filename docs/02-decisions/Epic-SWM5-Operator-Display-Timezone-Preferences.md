@@ -35,10 +35,28 @@ flowchart LR
 
 ## Explicitly deferred — profile overhaul
 
-- Account / profile UI to set timezone
-- Authenticated write API for `DisplayTimeZoneId`
-- Capability flags for who may change the preference
-- Platform-level display fallback distinct from schedule default
+**Resolved by AUP-1 (2026-08-18)** — see [AUP-1 closure](../audits/aup1-account-profile-personal-preferences.md) §9.
+AUP-1 is the profile overhaul this epic deferred to, and it **reused `Users.DisplayTimeZoneId` rather
+than introducing a second timezone model**.
+
+| Deferred item | Outcome |
+|---|---|
+| Account / profile UI to set timezone | Delivered at `/account/preferences` via `TimeZoneSelector`: searchable, matches on identifier and description, treats underscores as spaces, and offers browser detection as a convenience |
+| Authenticated write API for `DisplayTimeZoneId` | `PUT /api/account/preferences`, self-scoped from the authentication cookie. Identifiers are validated against `TimeZoneInfo.FindSystemTimeZoneById`; unrecognized values are rejected with `problem+json`, never coerced |
+| Capability flags for who may change the preference | Not needed. This is self-service on the caller's own record, so `[Authorize]` plus resolver-derived scoping is sufficient; no new permission constant was added |
+| Platform-level display fallback distinct from schedule default | Still deferred. The fallback chain remains user preference → browser IANA → UTC, and `Scheduling.DefaultTimeZoneId` is still not overloaded for display |
+
+Two additions worth noting:
+
+- **Identifiers are canonicalized to IANA.** `OperatorTimeZoneCatalog` converts Windows zone names via
+  `TimeZoneInfo.TryConvertWindowsIdToIanaId`, because browsers report IANA and this platform's schedule
+  model already prefers it. Offering the Windows form would store a value that disagrees with browser
+  detection.
+- **A clock-format preference was added alongside it** (`System`/`Hour24`/`Hour12`), threaded through
+  `IOperatorDisplayTimeZone.ClockFormat` into `OperatorTimestampFormat`. The date portion stays ISO, and
+  the UTC detail line stays 24-hour because it is execution truth.
+
+UTC remains execution and storage truth; the preference affects display only.
 
 ## Out of scope
 

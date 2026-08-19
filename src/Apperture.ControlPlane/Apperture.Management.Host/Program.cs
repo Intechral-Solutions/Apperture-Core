@@ -25,6 +25,13 @@ var builder = WebApplication.CreateBuilder(args);
 builder.AddServiceDefaults();
 
 builder.Services.AddControllers();
+// Avatar upload is the only multipart endpoint. Cap the body well below the default 128 MB so an
+// oversized request is refused by the server before any of it reaches the image decoder.
+builder.Services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(options =>
+{
+    options.MultipartBodyLengthLimit = Apperture.Core.Application.Accounts.ProfileImageLimits.MaxUploadBytes + 8192;
+    options.ValueCountLimit = 32;
+});
 builder.Services.AddManagementHostExceptionHandling();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddHttpContextAccessor();
