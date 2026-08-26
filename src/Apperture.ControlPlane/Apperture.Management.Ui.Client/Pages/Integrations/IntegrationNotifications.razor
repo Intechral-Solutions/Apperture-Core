@@ -92,7 +92,7 @@
                     }
                     @if (_cutoverValidation.HasRecipientParityGap)
                     {
-                        <p class="mt-2 rounded border border-amber-500/40 bg-amber-500/10 p-2">
+                        <p class="mt-2 rounded border border-message-warning bg-message-warning p-2">
                             Recipient parity gap: @_cutoverValidation.RecipientsMissingInPlatform recipient(s) appear in Epic 69 but not in platform subscriptions.
                             Convert external operational-team emails to managed contacts before cutover.
                         </p>
@@ -166,7 +166,7 @@
                     </dl>
                     @if (SignOffIsStale)
                     {
-                        <p class="mt-2 text-xs text-amber-600">Current parity or configuration warnings differ from this sign-off — review again before cutover.</p>
+                        <p class="mt-2 text-xs text-warning">Current parity or configuration warnings differ from this sign-off — review again before cutover.</p>
                     }
                 }
                 else
@@ -180,7 +180,7 @@
                         <textarea class="mt-1 block w-full max-w-xl rounded border border-default px-2 py-1 text-xs" rows="2" @bind="_signOffNote" disabled="@_busy"></textarea>
                     </label>
                     <div class="mt-2 flex flex-wrap gap-2">
-                        <button type="button" class="rounded bg-green-600/20 px-3 py-1 text-xs disabled:opacity-50"
+                        <button type="button" class="rounded bg-success-light px-3 py-1 text-xs disabled:opacity-50"
                                 disabled="@(_busy || !CanSignOffReady)" @onclick="SignOffReadyAsync">
                             Sign off — ready for cutover
                         </button>
@@ -190,7 +190,7 @@
                         </button>
                         @if (_latestSignOff is not null && _latestSignOff.Status is not "revoked")
                         {
-                            <button type="button" class="rounded bg-amber-500/20 px-3 py-1 text-xs disabled:opacity-50"
+                            <button type="button" class="rounded bg-message-warning px-3 py-1 text-xs disabled:opacity-50"
                                     disabled="@_busy" @onclick="RevokeSignOffAsync">
                                 Revoke sign-off
                             </button>
@@ -219,7 +219,7 @@
                     @foreach (var item in CutoverChecklist)
                     {
                         <li class="flex gap-2">
-                            <span class="@(item.IsSatisfied ? "text-green-600" : "text-muted")">@(item.IsSatisfied ? "✓" : "○")</span>
+                            <span class="@(item.IsSatisfied ? "text-success" : "text-muted")">@(item.IsSatisfied ? "✓" : "○")</span>
                             <span>@item.Label@if (item.IsManual) { <span class="text-muted"> (confirm manually)</span> }</span>
                         </li>
                     }
@@ -261,7 +261,7 @@
                     <tbody>
                         @foreach (var d in _definitions)
                         {
-                            <tr class="border-t border-default @(IsPostCreateDefinition(d.Summary.Id) ? "bg-amber-500/10 ring-1 ring-inset ring-amber-500/30" : "")"
+                            <tr class="border-t border-default @(IsPostCreateDefinition(d.Summary.Id) ? "bg-message-warning ring-1 ring-inset ring-focus" : "")"
                                 id="@(IsPostCreateDefinition(d.Summary.Id) ? "created-definition-row" : null)">
                                 <td class="p-1 font-medium">@d.Summary.DisplayName</td>
                                 <td class="p-1 font-mono break-all">@d.Summary.Id</td>
@@ -601,9 +601,9 @@
 
     private string ReadinessBadgeClass => ReadinessState switch
     {
-        ExpectedRunMissingCutoverReadinessState.LooksAcceptableForCutover => "bg-green-500/10",
-        ExpectedRunMissingCutoverReadinessState.NotReadyForCutover => "bg-red-500/10",
-        ExpectedRunMissingCutoverReadinessState.NeedsReview => "bg-amber-500/10",
+        ExpectedRunMissingCutoverReadinessState.LooksAcceptableForCutover => "bg-success-light",
+        ExpectedRunMissingCutoverReadinessState.NotReadyForCutover => "bg-message-error",
+        ExpectedRunMissingCutoverReadinessState.NeedsReview => "bg-message-warning",
         _ => "bg-surface-muted",
     };
 

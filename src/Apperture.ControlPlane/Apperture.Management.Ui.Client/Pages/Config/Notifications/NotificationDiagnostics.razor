@@ -35,7 +35,7 @@
 
         @if (_canManage)
         {
-            <section class="mt-4 rounded border border-amber-500/40 bg-surface p-3 text-xs">
+            <section class="mt-4 rounded border border-message-warning bg-surface p-3 text-xs">
                 <h2 class="text-sm font-semibold text-heading mb-2">Pipeline verification (admin)</h2>
                 <p class="text-muted mb-3">
                     Diagnostics-only actions. SMTP test does not require a notification definition.
@@ -58,7 +58,7 @@
                         </button>
                         @if (_smtpTestResult is not null)
                         {
-                            <p class="mt-2 @( _smtpTestResult.Succeeded ? "text-green-700" : "text-red-700")">
+                            <p class="mt-2 @( _smtpTestResult.Succeeded ? "text-success" : "text-error")">
                                 @(_smtpTestResult.Succeeded ? "Sent." : $"Failed: {_smtpTestResult.FailureSummary}")
                             </p>
                         }
@@ -97,7 +97,7 @@
                         </div>
                         @if (!string.IsNullOrWhiteSpace(_pipelineTestResult.SuppressionReason))
                         {
-                            <p class="text-amber-700">Suppressed: @_pipelineTestResult.SuppressionReason</p>
+                            <p class="text-warning">Suppressed: @_pipelineTestResult.SuppressionReason</p>
                         }
                         <ul class="mt-1 space-y-1">
                             @foreach (var stage in _pipelineTestResult.Stages)
@@ -289,10 +289,10 @@
     private string AcceptanceBadgeClass =>
         ExpectedRunMissingCutoverReadiness.ResolveState(_parityEvaluated, _acceptance) switch
         {
-            ExpectedRunMissingCutoverReadinessState.LooksAcceptableForCutover => "bg-green-500/10",
-            ExpectedRunMissingCutoverReadinessState.NotReadyForCutover => "bg-red-500/10",
-            ExpectedRunMissingCutoverReadinessState.NeedsReview => "bg-amber-500/10",
-            _ => "bg-amber-500/10",
+            ExpectedRunMissingCutoverReadinessState.LooksAcceptableForCutover => "bg-success-light",
+            ExpectedRunMissingCutoverReadinessState.NotReadyForCutover => "bg-message-error",
+            ExpectedRunMissingCutoverReadinessState.NeedsReview => "bg-message-warning",
+            _ => "bg-message-warning",
         };
 
     protected override async Task OnInitializedAsync()

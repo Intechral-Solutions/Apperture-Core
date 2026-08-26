@@ -9,26 +9,32 @@
 @inject IManagementClient Client
 @inject IToastService Toasts
 
-<div class="p-4 md:p-6">
-    <PageHeader Title="Notifications"
+<div class="ui-settings-page">
+    <PageHeader Eyebrow="Account settings"
+                Title="Notifications"
                 Subtitle="Choose how the platform reaches you about work that needs attention." />
 
     <AccountSectionNav />
 
-    <div class="mt-6 max-w-3xl space-y-6">
-        <section class="rounded border border-default bg-surface p-4" aria-labelledby="channels-heading">
-            <h2 id="channels-heading" class="text-base font-semibold text-heading">Delivery channels</h2>
-            <p class="mt-1 text-sm text-muted">
-                <strong class="font-medium text-heading">In-app</strong> notifications appear in your
-                inbox and are always delivered for anything routed to you.
-                <strong class="font-medium text-heading">Email</strong> is yours to switch off per
-                notification. Administrators decide which notifications exist and who they are routed
-                to, so turning email off suppresses your email only.
-            </p>
-            <p class="mt-2 text-sm text-muted">
-                Read your notifications in the
-                <a class="underline hover:text-heading" href="@AccountUiRoutes.NotificationInbox">notification inbox</a>.
-            </p>
+    <div class="ui-settings-grid mt-6">
+        <div class="space-y-5">
+        <section class="ui-settings-card" aria-labelledby="channels-heading">
+            <div class="ui-settings-card__header">
+                <h2 id="channels-heading" class="ui-settings-card__title">Delivery channels</h2>
+                <p class="ui-settings-card__help">
+                    <strong class="font-medium text-heading">In-app</strong> notifications appear in your
+                    inbox and are always delivered for anything routed to you.
+                    <strong class="font-medium text-heading">Email</strong> is yours to switch off per
+                    notification. Administrators decide which notifications exist and who they are routed
+                    to, so turning email off suppresses your email only.
+                </p>
+            </div>
+            <div class="ui-settings-card__body pt-3">
+                <p class="text-sm text-muted">
+                    Read your notifications in the
+                    <a class="underline hover:text-heading" href="@AccountUiRoutes.NotificationInbox">notification inbox</a>.
+                </p>
+            </div>
         </section>
 
         @if (_loading)
@@ -46,9 +52,9 @@
         }
         else
         {
-            <section class="rounded border border-default bg-surface" aria-labelledby="preferences-heading">
-                <div class="border-b border-default p-4">
-                    <h2 id="preferences-heading" class="text-base font-semibold text-heading">Your notifications</h2>
+            <section class="ui-settings-card" aria-labelledby="preferences-heading">
+                <div class="ui-settings-card__header">
+                    <h2 id="preferences-heading" class="ui-settings-card__title">Your notifications</h2>
                 </div>
 
                 @*
@@ -103,15 +109,30 @@
                 </ul>
             </section>
 
-            <section class="rounded border border-default bg-surface p-4" aria-labelledby="future-heading">
-                <h2 id="future-heading" class="text-base font-semibold text-heading">Not available yet</h2>
-                <p class="mt-1 text-sm text-muted">
-                    Digest summaries, quiet hours, and delivery to channels other than email are not
-                    built yet, so there is nothing to configure for them here. Ask an administrator
-                    about routing to a team if you need cover outside your own inbox.
-                </p>
+            <section class="ui-settings-card" aria-labelledby="future-heading">
+                <div class="ui-settings-card__header">
+                    <h2 id="future-heading" class="ui-settings-card__title">Not available yet</h2>
+                    <p class="ui-settings-card__help">
+                        Digest summaries, quiet hours, and delivery to channels other than email are not
+                        built yet, so there is nothing to configure for them here. Ask an administrator
+                        about routing to a team if you need cover outside your own inbox.
+                    </p>
+                </div>
             </section>
         }
+        </div>
+
+        <aside class="space-y-5">
+            <div class="ui-settings-callout">
+                <div>
+                    <div class="ui-settings-callout__title">Personal only</div>
+                    <p class="ui-settings-callout__body">
+                        These preferences change how Apperture reaches you. Administrators still own which
+                        notifications exist and who they are routed to.
+                    </p>
+                </div>
+            </div>
+        </aside>
     </div>
 </div>
 

@@ -17,8 +17,9 @@
 @inject NavigationManager Nav
 @inject IToastService Toasts
 
-<div class="p-4 md:p-6">
-    <PageHeader Title="Security"
+<div class="ui-settings-page">
+    <PageHeader Eyebrow="Account settings"
+                Title="Security"
                 Subtitle="How you sign in, and where each control lives." />
 
     <AccountSectionNav />
@@ -33,121 +34,145 @@
     }
     else
     {
-        <div class="mt-6 max-w-2xl space-y-6">
-            <section class="rounded border border-default bg-surface p-4" aria-labelledby="signin-heading">
-                <h2 id="signin-heading" class="text-base font-semibold text-heading">Sign-in methods</h2>
-                <p class="mt-1 text-sm text-muted">
-                    Administrators add and remove sign-in methods for your account.
-                </p>
-
-                @if (_me.IdentityLinks.Count == 0)
-                {
-                    <p class="mt-3 text-sm text-muted">No linked identities recorded.</p>
-                }
-                else
-                {
-                    <ul class="mt-3 divide-y divide-default text-sm">
-                        @foreach (var link in _me.IdentityLinks)
-                        {
-                            <li class="py-2">
-                                <div class="flex flex-wrap items-baseline justify-between gap-2">
-                                    <span class="font-medium text-heading">@FormatSignInSource(link.Source)</span>
-                                    <span class="text-xs text-muted">@link.DisplayLabel</span>
-                                </div>
-                                @if (link.LastAuthenticatedAtUtc is not null)
-                                {
-                                    <p class="mt-1 text-xs text-muted">
-                                        Last used <TimestampDisplay Value="link.LastAuthenticatedAtUtc" CssClass="text-xs text-muted" />
-                                    </p>
-                                }
-                            </li>
-                        }
-                    </ul>
-                }
-            </section>
-
-            <section class="rounded border border-default bg-surface p-4" aria-labelledby="password-heading">
-                <h2 id="password-heading" class="text-base font-semibold text-heading">Password</h2>
-                <p class="mt-1 text-sm text-muted">
-                    Local credential: <span class="text-body">@FormatCredentialStatus(_me.LocalCredentialStatus)</span>
-                </p>
-
-                @if (_me.CanChangeLocalPassword)
-                {
-                    <form class="mt-4 space-y-3" @onsubmit="ChangePasswordAsync" @onsubmit:preventDefault="true">
-                        <div>
-                            <label class="block text-sm font-medium text-heading" for="current-password">Current password</label>
-                            <input id="current-password"
-                                   type="password"
-                                   autocomplete="current-password"
-                                   class="mt-1 w-full max-w-md rounded border border-default bg-surface px-3 py-2 text-sm"
-                                   aria-describedby="@(_passwordError is null ? null : "password-error")"
-                                   aria-invalid="@(_passwordError is not null ? "true" : null)"
-                                   @bind="_currentPassword" />
-                        </div>
-                        <div>
-                            <label class="block text-sm font-medium text-heading" for="new-password">New password</label>
-                            <input id="new-password"
-                                   type="password"
-                                   autocomplete="new-password"
-                                   class="mt-1 w-full max-w-md rounded border border-default bg-surface px-3 py-2 text-sm"
-                                   aria-describedby="@(_passwordError is null ? null : "password-error")"
-                                   aria-invalid="@(_passwordError is not null ? "true" : null)"
-                                   @bind="_newPassword" />
-                        </div>
-                        @if (_passwordError is not null)
-                        {
-                            <p id="password-error" class="text-sm text-message-error" role="alert">@_passwordError</p>
-                        }
-                        <button type="submit"
-                                class="rounded bg-surface-muted px-4 py-2 text-sm font-medium text-heading hover:bg-surface disabled:opacity-50"
-                                disabled="@_passwordBusy">
-                            @(_passwordBusy ? "Updating…" : "Change password")
-                        </button>
-                    </form>
-                }
-                else
-                {
-                    <div class="mt-3">
-                        <PageMessage Kind="PageMessageKind.Info"
-                                     Message="@PasswordChangeUnavailableMessage(_me.LocalCredentialStatus)" />
+        <div class="ui-settings-grid mt-6">
+            <div class="space-y-5">
+                <section class="ui-settings-card" aria-labelledby="signin-heading">
+                    <div class="ui-settings-card__header">
+                        <h2 id="signin-heading" class="ui-settings-card__title">Sign-in methods</h2>
+                        <p class="ui-settings-card__help">
+                            Administrators add and remove sign-in methods for your account.
+                        </p>
                     </div>
-                }
-            </section>
-
-            @if (HasEntraLink)
-            {
-                <section class="rounded border border-default bg-surface p-4" aria-labelledby="provider-heading">
-                    <h2 id="provider-heading" class="text-base font-semibold text-heading">Managed by Microsoft Entra ID</h2>
-                    <p class="mt-1 text-sm text-muted">
-                        Multi-factor authentication, passkeys, and password recovery for your
-                        organizational identity are managed by your organization's directory, not by
-                        Apperture. Change them through your organization's account portal.
-                    </p>
+                    <div class="ui-settings-card__body pt-3">
+                        @if (_me.IdentityLinks.Count == 0)
+                        {
+                            <p class="text-sm text-muted">No linked identities recorded.</p>
+                        }
+                        else
+                        {
+                            <ul class="divide-y divide-default text-sm">
+                                @foreach (var link in _me.IdentityLinks)
+                                {
+                                    <li class="py-2">
+                                        <div class="flex flex-wrap items-baseline justify-between gap-2">
+                                            <span class="font-medium text-heading">@FormatSignInSource(link.Source)</span>
+                                            <span class="text-xs text-muted">@link.DisplayLabel</span>
+                                        </div>
+                                        @if (link.LastAuthenticatedAtUtc is not null)
+                                        {
+                                            <p class="mt-1 text-xs text-muted">
+                                                Last used <TimestampDisplay Value="link.LastAuthenticatedAtUtc" CssClass="text-xs text-muted" />
+                                            </p>
+                                        }
+                                    </li>
+                                }
+                            </ul>
+                        }
+                    </div>
                 </section>
-            }
 
-            <section class="rounded border border-default bg-surface p-4" aria-labelledby="session-heading">
-                <h2 id="session-heading" class="text-base font-semibold text-heading">This session</h2>
-                <p class="mt-1 text-sm text-muted">
-                    Signing out clears your Apperture session in this browser.
-                </p>
-                <div class="mt-3 flex flex-wrap gap-2">
-                    <button type="button"
-                            class="rounded border border-default px-4 py-2 text-sm hover:bg-surface-muted"
-                            @onclick="SignOutLocalAsync">
-                        Sign out
-                    </button>
-                    @if (UseEntraSignOut)
-                    {
-                        <button type="button"
-                                class="rounded border border-default px-4 py-2 text-sm text-muted hover:bg-surface-muted"
-                                @onclick="SignOutHost">
-                            Sign out and end the directory session
-                        </button>
-                    }
+                <section class="ui-settings-card" aria-labelledby="password-heading">
+                    <div class="ui-settings-card__header">
+                        <h2 id="password-heading" class="ui-settings-card__title">Password</h2>
+                        <p class="ui-settings-card__help">
+                            Local credential: <span class="text-body">@FormatCredentialStatus(_me.LocalCredentialStatus)</span>
+                        </p>
+                    </div>
+                    <div class="ui-settings-card__body pt-3">
+                        @if (_me.CanChangeLocalPassword)
+                        {
+                            <form class="space-y-3" @onsubmit="ChangePasswordAsync" @onsubmit:preventDefault="true">
+                                <div>
+                                    <label class="block text-sm font-medium text-heading" for="current-password">Current password</label>
+                                    <input id="current-password"
+                                           type="password"
+                                           autocomplete="current-password"
+                                           class="ui-input mt-1 max-w-md"
+                                           aria-describedby="@(_passwordError is null ? null : "password-error")"
+                                           aria-invalid="@(_passwordError is not null ? "true" : null)"
+                                           @bind="_currentPassword" />
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-heading" for="new-password">New password</label>
+                                    <input id="new-password"
+                                           type="password"
+                                           autocomplete="new-password"
+                                           class="ui-input mt-1 max-w-md"
+                                           aria-describedby="@(_passwordError is null ? null : "password-error")"
+                                           aria-invalid="@(_passwordError is not null ? "true" : null)"
+                                           @bind="_newPassword" />
+                                </div>
+                                @if (_passwordError is not null)
+                                {
+                                    <p id="password-error" class="text-sm text-message-error" role="alert">@_passwordError</p>
+                                }
+                                <button type="submit"
+                                        class="btn btn-primary"
+                                        disabled="@_passwordBusy">
+                                    @(_passwordBusy ? "Updating…" : "Change password")
+                                </button>
+                            </form>
+                        }
+                        else
+                        {
+                            <PageMessage Kind="PageMessageKind.Info"
+                                         Message="@PasswordChangeUnavailableMessage(_me.LocalCredentialStatus)" />
+                        }
+                    </div>
+                </section>
+
+                @if (HasEntraLink)
+                {
+                    <section class="ui-settings-card" aria-labelledby="provider-heading">
+                        <div class="ui-settings-card__header">
+                            <h2 id="provider-heading" class="ui-settings-card__title">Managed by Microsoft Entra ID</h2>
+                            <p class="ui-settings-card__help">
+                                Multi-factor authentication, passkeys, and password recovery for your
+                                organizational identity are managed by your organization's directory, not by
+                                Apperture. Change them through your organization's account portal.
+                            </p>
+                        </div>
+                    </section>
+                }
+
+                <section class="ui-settings-card" aria-labelledby="session-heading">
+                    <div class="ui-settings-card__header">
+                        <h2 id="session-heading" class="ui-settings-card__title">This session</h2>
+                        <p class="ui-settings-card__help">
+                            Signing out clears your Apperture session in this browser.
+                        </p>
+                    </div>
+                    <div class="ui-settings-card__body pt-3">
+                        <div class="flex flex-wrap gap-2">
+                            <button type="button"
+                                    class="btn btn-secondary"
+                                    @onclick="SignOutLocalAsync">
+                                Sign out
+                            </button>
+                            @if (UseEntraSignOut)
+                            {
+                                <button type="button"
+                                        class="btn btn-secondary text-muted"
+                                        @onclick="SignOutHost">
+                                    Sign out and end the directory session
+                                </button>
+                            }
+                        </div>
+                    </div>
+                </section>
+            </div>
+
+            <aside class="space-y-5">
+                <div class="ui-settings-callout">
+                    <div>
+                        <div class="ui-settings-callout__title">Directory-managed controls</div>
+                        <p class="ui-settings-callout__body">
+                            MFA, passkeys, and recovery for organizational identities live in your
+                            directory — not in Apperture personal settings.
+                        </p>
+                    </div>
                 </div>
-            </section>
+            </aside>
         </div>
     }
 </div>

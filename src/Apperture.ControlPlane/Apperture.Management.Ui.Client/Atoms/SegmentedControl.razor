@@ -1,0 +1,72 @@
+@namespace Apperture.Management.Ui.Client
+@typeparam TValue
+@using System.Collections.Generic
+@using Microsoft.AspNetCore.Components.Web
+
+<div class="ui-segmented"
+     role="radiogroup"
+     @attributes="AdditionalAttributes">
+    @for (var i = 0; i < Items.Count; i++)
+    {
+        var index = i;
+        var item = Items[index];
+        var selected = EqualityComparer<TValue>.Default.Equals(item.Value, Value);
+        <button type="button"
+                id="@($"{IdPrefix}-{index}")"
+                class="ui-segmented__item"
+                role="radio"
+                data-state="@(selected ? "on" : "off")"
+                aria-checked="@selected"
+                tabindex="@(selected || (!HasSelection && index == 0) ? 0 : -1)"
+                disabled="@Disabled"
+                @onclick="() => SelectAsync(item.Value)"
+                @onkeydown="e => OnKeyDownAsync(e, index)">
+            @item.Label
+            @if (selected)
+            {
+                <span class="sr-only">Selected</span>
+            }
+        </button>
+    }
+</div>
+
+@code {
+    public sealed record Item(TValue Value, string Label);
+
+    [Parameter, EditorRequired] public IReadOnlyList<Item> Items { get; set; } = [];
+    [Parameter] public TValue? Value { get; set; }
+    [Parameter] public EventCallback<TValue> ValueChanged { get; set; }
+    [Parameter] public bool Disabled { get; set; }
+    [Parameter] public string IdPrefix { get; set; } = "segmented";
+    [Parameter(CaptureUnmatchedValues = true)] public Dictionary<string, object>? AdditionalAttributes { get; set; }
+
+    private bool HasSelection => Items.Any(i => EqualityComparer<TValue>.Default.Equals(i.Value, Value));
+
+    private async Task SelectAsync(TValue value)
+    {
+        if (Disabled)
+            return;
+        Value = value;
+        await ValueChanged.InvokeAsync(value);
+    }
+
+    private async Task OnKeyDownAsync(KeyboardEventArgs e, int index)
+    {
+        if (Disabled || Items.Count == 0)
+            return;
+
+        var next = e.Key switch
+        {
+            "ArrowRight" or "ArrowDown" => (index + 1) % Items.Count,
+            "ArrowLeft" or "ArrowUp" => (index - 1 + Items.Count) % Items.Count,
+            "Home" => 0,
+            "End" => Items.Count - 1,
+            _ => -1
+        };
+
+        if (next < 0)
+            return;
+
+        await SelectAsync(Items[next].Value);
+    }
+}

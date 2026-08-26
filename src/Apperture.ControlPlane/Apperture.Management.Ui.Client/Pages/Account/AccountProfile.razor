@@ -12,8 +12,9 @@
 @inject AccountAvatarService Avatars
 @inject IToastService Toasts
 
-<div class="p-4 md:p-6">
-    <PageHeader Title="Profile"
+<div class="ui-settings-page">
+    <PageHeader Eyebrow="Account settings"
+                Title="Profile"
                 Subtitle="Your name, photo, and the identity you sign in with." />
 
     <AccountSectionNav />
@@ -24,7 +25,7 @@
     }
     else if (Session.State == SessionLoadState.ForbiddenUnlinked)
     {
-        <div class="mt-6 max-w-2xl">
+        <div class="mt-6">
             <PageMessage Kind="PageMessageKind.Warning"
                          Title="Account not linked"
                          Message="You are signed in with an organizational identity that is not linked to a platform user. Contact an administrator to link your account before using management features." />
@@ -42,21 +43,24 @@
     }
     else
     {
-        <div class="mt-6 max-w-2xl space-y-6">
-            <section class="rounded border border-default bg-surface p-4" aria-labelledby="display-name-heading">
-                <h2 id="display-name-heading" class="text-base font-semibold text-heading">Display name</h2>
-                <p class="mt-1 text-sm text-muted">
-                    How your name appears throughout the platform. Apperture stores this name and does
-                    not overwrite it from your identity provider.
-                </p>
-
-                <form class="mt-4" @onsubmit="SaveDisplayNameAsync" @onsubmit:preventDefault="true">
+        <div class="ui-settings-grid mt-6">
+            <div class="space-y-5">
+            <section class="ui-settings-card" aria-labelledby="display-name-heading">
+                <div class="ui-settings-card__header">
+                    <h2 id="display-name-heading" class="ui-settings-card__title">Display name</h2>
+                    <p class="ui-settings-card__help">
+                        How your name appears throughout the platform. Apperture stores this name and does
+                        not overwrite it from your identity provider.
+                    </p>
+                </div>
+                <div class="ui-settings-card__body pt-4">
+                <form @onsubmit="SaveDisplayNameAsync" @onsubmit:preventDefault="true">
                     <label class="block text-sm font-medium text-heading" for="display-name">Display name</label>
                     <input id="display-name"
                            type="text"
                            maxlength="128"
                            autocomplete="name"
-                           class="mt-1 w-full max-w-md rounded border border-default bg-surface px-3 py-2 text-sm"
+                           class="ui-input mt-1 max-w-md"
                            aria-describedby="@(_displayNameError is null ? null : "display-name-error")"
                            aria-invalid="@(_displayNameError is not null ? "true" : null)"
                            value="@_displayNameDraft"
@@ -70,7 +74,7 @@
 
                     <div class="mt-3 flex items-center gap-3">
                         <button type="submit"
-                                class="rounded bg-surface-muted px-4 py-2 text-sm font-medium text-heading hover:bg-surface disabled:opacity-50"
+                                class="btn btn-primary"
                                 disabled="@(_savingName || !IsNameDirty)">
                             @(_savingName ? "Saving…" : "Save name")
                         </button>
@@ -84,39 +88,52 @@
                         }
                     </div>
                 </form>
+                </div>
             </section>
 
             <AvatarPicker DisplayName="@_profile.DisplayName" OnChanged="OnAvatarChangedAsync" />
+            </div>
 
-            <section class="rounded border border-default bg-surface p-4" aria-labelledby="identity-heading">
-                <h2 id="identity-heading" class="text-base font-semibold text-heading">Identity</h2>
-                <p class="mt-1 text-sm text-muted">
-                    These values come from the identity provider you sign in with, so they cannot be
-                    edited here.
-                </p>
-
-                <dl class="mt-4 grid gap-2 text-sm sm:grid-cols-[minmax(9rem,auto)_1fr]">
-                    <dt class="text-muted">Sign-in method</dt>
-                    <dd class="text-body">@FormatSignInSource(_profile.SignInSource)</dd>
+            <aside class="space-y-5">
+            <section class="ui-settings-card" aria-labelledby="identity-heading">
+                <div class="ui-settings-card__header">
+                    <h2 id="identity-heading" class="ui-settings-card__title">Identity</h2>
+                    <p class="ui-settings-card__help">
+                        These values come from the identity provider you sign in with, so they cannot be
+                        edited here.
+                    </p>
+                </div>
+                <div class="ui-settings-card__body pt-4">
+                <dl class="ui-settings-meta">
+                    <div class="ui-settings-meta__row">
+                        <dt class="ui-settings-meta__label">Sign-in method</dt>
+                        <dd class="ui-settings-meta__value">@FormatSignInSource(_profile.SignInSource)</dd>
+                    </div>
 
                     @if (!string.IsNullOrWhiteSpace(_profile.EmailAddress))
                     {
-                        <dt class="text-muted">Email</dt>
-                        <dd class="text-body">@_profile.EmailAddress</dd>
+                        <div class="ui-settings-meta__row">
+                            <dt class="ui-settings-meta__label">Email</dt>
+                            <dd class="ui-settings-meta__value">@_profile.EmailAddress</dd>
+                        </div>
                     }
 
                     @if (!string.IsNullOrWhiteSpace(_profile.UserPrincipal))
                     {
-                        <dt class="text-muted">Principal</dt>
-                        <dd class="text-body">@_profile.UserPrincipal</dd>
+                        <div class="ui-settings-meta__row">
+                            <dt class="ui-settings-meta__label">Principal</dt>
+                            <dd class="ui-settings-meta__value">@_profile.UserPrincipal</dd>
+                        </div>
                     }
 
-                    <dt class="text-muted">Display timezone</dt>
-                    <dd class="text-body">
-                        @OperatorTimeZoneCatalog.DescribeId(_profile.TimeZoneId)
-                        <a class="ml-2 text-sm text-muted underline hover:text-heading"
-                           href="@AccountUiRoutes.Preferences">Change</a>
-                    </dd>
+                    <div class="ui-settings-meta__row">
+                        <dt class="ui-settings-meta__label">Display timezone</dt>
+                        <dd class="ui-settings-meta__value">
+                            @OperatorTimeZoneCatalog.DescribeId(_profile.TimeZoneId)
+                            <a class="ml-2 text-sm text-muted underline hover:text-heading"
+                               href="@AccountUiRoutes.Preferences">Change</a>
+                        </dd>
+                    </div>
                 </dl>
 
                 <Disclosure Summary="Roles and linked sign-in methods" Dense="true" Class="mt-4">
@@ -170,7 +187,9 @@
                         <TechnicalDetail Label="@($"{link.Source} object id")" Value="@link.ExternalId" />
                     }
                 </TechnicalDetails>
+                </div>
             </section>
+            </aside>
         </div>
     }
 </div>

@@ -45,7 +45,7 @@
                 </dl>
                 @if (!_configDiagnostics.DeliveryEnabled)
                 {
-                    <p class="mt-2 rounded border border-amber-500/40 bg-amber-500/10 p-2">
+                    <p class="mt-2 rounded border border-message-warning bg-message-warning p-2">
                         Delivery is disabled — outbox rows may be created but mail is not sent. Review diagnostics and dev/staging logs before enabling delivery.
                     </p>
                 }
@@ -96,15 +96,15 @@
         }
         else if (_integrationDiag is not null)
         {
-            <section class="mt-4 rounded border border-red-500/30 bg-red-500/5 p-3">
+            <section class="mt-4 rounded border border-message-error bg-error-light p-3">
                 <div class="font-semibold text-heading text-sm mb-2">Failed deliveries</div>
                 @RenderOutboxTable(_integrationDiag.RecentFailedDeliveries)
             </section>
-            <section class="mt-4 rounded border border-amber-500/30 bg-amber-500/5 p-3">
+            <section class="mt-4 rounded border border-message-warning bg-warning-light p-3">
                 <div class="font-semibold text-heading text-sm mb-2">Pending / delivering</div>
                 @RenderOutboxTable(_integrationDiag.RecentOutboxRows.Where(r => r.Status is "pending" or "delivering").ToList())
             </section>
-            <section class="mt-4 rounded border border-green-500/30 bg-green-500/5 p-3">
+            <section class="mt-4 rounded border border-callout-info bg-success-light p-3">
                 <div class="font-semibold text-heading text-sm mb-2">Succeeded (recent window)</div>
                 @RenderOutboxTable(_integrationDiag.RecentOutboxRows.Where(r => r.Status is "succeeded" or "delivered").ToList())
             </section>

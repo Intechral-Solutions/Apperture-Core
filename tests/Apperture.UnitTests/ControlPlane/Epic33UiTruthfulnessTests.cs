@@ -110,9 +110,9 @@ public sealed class Epic33UiTruthfulnessTests
     [Fact]
     public void ControlCenter_StatusCssClass_HealthyGreen_DegradedAmber()
     {
-        Epic33UiDisplayHelpers.GetStatusCssClass("Healthy").Should().Be("text-green-600");
-        Epic33UiDisplayHelpers.GetStatusCssClass("Degraded").Should().Be("text-amber-600");
-        Epic33UiDisplayHelpers.GetStatusCssClass("Unhealthy").Should().Be("text-red-600");
+        Epic33UiDisplayHelpers.GetStatusCssClass("Healthy").Should().Be("text-success");
+        Epic33UiDisplayHelpers.GetStatusCssClass("Degraded").Should().Be("text-warning");
+        Epic33UiDisplayHelpers.GetStatusCssClass("Unhealthy").Should().Be("text-error");
     }
 
     // --- Audit cross-navigation links ---

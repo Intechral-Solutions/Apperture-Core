@@ -20,7 +20,7 @@
     </button>
     @if (IsOpen)
     {
-        <div class="absolute right-0 z-50 mt-1 min-w-52 rounded border border-default bg-surface py-1 text-sm shadow-lg"
+        <div class="ui-menu-panel"
              role="menu"
              aria-label="Theme options">
             @foreach (var p in _prefs)
@@ -29,23 +29,23 @@
                 <button type="button"
                         role="menuitemradio"
                         aria-checked="@active"
-                        class="flex w-full items-center gap-3 px-3 py-2 text-start hover:bg-surface-muted @(active ? "bg-surface-muted/80" : "")"
+                        data-state="@(active ? "on" : "off")"
+                        class="ui-menu-item"
                         @onclick="() => SelectAsync(p)">
-                    <ThemePreferenceIcon Preference="p" Class="h-5 w-5 shrink-0 text-body" />
-                    <span class="flex-1 @(active ? "font-medium text-heading" : "text-body")">@Label(p)</span>
-                    <span class="flex h-5 w-5 shrink-0 items-center justify-center" aria-hidden="true">
-                        @if (active)
-                        {
-                            <svg class="h-4 w-4 text-heading"
-                                 viewBox="0 0 20 20"
-                                 fill="currentColor"
-                                 aria-hidden="true">
-                                <path fill-rule="evenodd"
-                                      d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
-                                      clip-rule="evenodd" />
-                            </svg>
-                        }
-                    </span>
+                    <ThemePreferenceIcon Preference="p" Class="h-5 w-5 shrink-0" />
+                    <span class="flex-1">@Label(p)</span>
+                    @if (active)
+                    {
+                        <span class="sr-only">Selected</span>
+                        <svg class="h-4 w-4 shrink-0"
+                             viewBox="0 0 20 20"
+                             fill="currentColor"
+                             aria-hidden="true">
+                            <path fill-rule="evenodd"
+                                  d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
+                                  clip-rule="evenodd" />
+                        </svg>
+                    }
                 </button>
             }
         </div>

@@ -39,23 +39,23 @@
         </button>
         @if (IsOpen)
         {
-            <div class="absolute right-0 z-50 mt-1 min-w-56 rounded border border-default bg-surface py-1 text-sm shadow-lg">
+            <div class="ui-menu-panel min-w-56">
                 <div class="px-3 py-2">
                     <span class="block truncate font-medium text-heading">@Session.User.DisplayName</span>
                     <span class="block truncate text-xs text-muted" title="@SecondaryIdentity(Session.User)">@SecondaryIdentity(Session.User)</span>
                 </div>
                 <hr class="my-1 border-default" />
-                <a href="@AccountUiRoutes.Profile" class="block px-3 py-2 text-body hover:bg-surface-muted">Profile</a>
-                <a href="@AccountUiRoutes.Notifications" class="block px-3 py-2 text-body hover:bg-surface-muted">Notifications</a>
-                <a href="@AccountUiRoutes.Preferences" class="block px-3 py-2 text-body hover:bg-surface-muted">Appearance</a>
-                <a href="@AccountUiRoutes.Security" class="block px-3 py-2 text-body hover:bg-surface-muted">Security</a>
+                <a href="@AccountUiRoutes.Profile" class="ui-menu-item">Profile</a>
+                <a href="@AccountUiRoutes.Notifications" class="ui-menu-item">Notifications</a>
+                <a href="@AccountUiRoutes.Preferences" class="ui-menu-item">Appearance</a>
+                <a href="@AccountUiRoutes.Security" class="ui-menu-item">Security</a>
                 <hr class="my-1 border-default" />
-                <button type="button" class="block w-full px-3 py-2 text-start text-body hover:bg-surface-muted" @onclick="SignOutLocalAsync">
+                <button type="button" class="ui-menu-item" @onclick="SignOutLocalAsync">
                     Sign out
                 </button>
                 @if (UseEntraSignOut)
                 {
-                    <button type="button" class="block w-full px-3 py-2 text-start text-xs text-muted hover:bg-surface-muted" @onclick="SignOutHostAsync">
+                    <button type="button" class="ui-menu-item text-xs text-muted" @onclick="SignOutHostAsync">
                         Sign out (end IdP session)
                     </button>
                 }

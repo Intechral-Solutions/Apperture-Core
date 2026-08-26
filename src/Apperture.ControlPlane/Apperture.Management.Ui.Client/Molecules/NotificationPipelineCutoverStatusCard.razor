@@ -21,7 +21,7 @@
             </div>
             <div>
                 <dt class="text-muted">Critical preflight</dt>
-                <dd class="@(Status.CriticalPreflightPassed ? "text-green-700" : "text-amber-700")">
+                <dd class="@(Status.CriticalPreflightPassed ? "text-success" : "text-warning")">
                     @(Status.CriticalPreflightPassed ? "Passed" : "Review items below")
                 </dd>
             </div>
@@ -36,7 +36,7 @@
 
         @if (Status.ConfigurationWarnings.Count > 0)
         {
-            <ul class="mt-2 list-disc list-inside text-amber-700">
+            <ul class="mt-2 list-disc list-inside text-warning">
                 @foreach (var w in Status.ConfigurationWarnings)
                 {
                     <li>@w.Message</li>
@@ -71,5 +71,5 @@
     [Parameter] public NotificationPipelineCutoverStatusDto? Status { get; set; }
 
     private static string PreflightRowClass(NotificationPipelineCutoverPreflightCheckDto check) =>
-        check.Passed ? "bg-green-500/5" : "bg-amber-500/5";
+        check.Passed ? "bg-success-light" : "bg-warning-light";
 }

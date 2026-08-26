@@ -6,21 +6,18 @@
 @using Apperture.Management.Ui.Shared
 @inject NavigationManager Nav
 
-<nav class="mt-4 border-b border-default" aria-label="Account sections">
-    <ul class="-mb-px flex flex-wrap gap-1">
-        @foreach (var accountSection in AccountUiRoutes.Sections)
-        {
-            var isCurrent = IsCurrent(accountSection);
-            <li>
-                <a href="@accountSection.Href"
-                   aria-current="@(isCurrent ? "page" : null)"
-                   title="@accountSection.Description"
-                   class="@LinkClass(isCurrent)">
-                    @accountSection.Label
-                </a>
-            </li>
-        }
-    </ul>
+<nav class="ui-tabs" aria-label="Account sections">
+    @foreach (var accountSection in AccountUiRoutes.Sections)
+    {
+        var isCurrent = IsCurrent(accountSection);
+        <a href="@accountSection.Href"
+           aria-current="@(isCurrent ? "page" : null)"
+           title="@accountSection.Description"
+           data-state="@(isCurrent ? "active" : "inactive")"
+           class="ui-tabs__link">
+            @accountSection.Label
+        </a>
+    }
 </nav>
 
 @code {
@@ -47,11 +44,6 @@
     private bool IsCurrent(AccountSection section) =>
         AccountUiRoutes.ResolveSection(_path) is { } current
         && string.Equals(current.Href, section.Href, StringComparison.OrdinalIgnoreCase);
-
-    // Selection is carried by weight, colour, and an underline together, so it never depends on colour alone.
-    private static string LinkClass(bool isCurrent) => isCurrent
-        ? "inline-block border-b-2 border-heading px-3 py-2 text-sm font-semibold text-heading"
-        : "inline-block border-b-2 border-transparent px-3 py-2 text-sm text-muted hover:border-default hover:text-heading";
 
     public void Dispose() => Nav.LocationChanged -= OnLocationChanged;
 }

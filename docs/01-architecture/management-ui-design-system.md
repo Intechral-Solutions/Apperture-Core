@@ -29,7 +29,7 @@ Related shell documentation: [control-panel-ui.md](control-panel-ui.md).
 2. **Permission omission** — Hide sections or cards when forbidden; do not show locked placeholders on dashboard cards (Epic 45).
 3. **Composable, not generic** — Small Razor components with explicit parameters; no templating engine.
 4. **Incremental adoption** — New and touched pages use primitives; legacy markup remains valid until pilot epics.
-5. **Semantic tokens** — Visual roles use CSS variables in `wwwroot/css/app.css`; layout/status helpers in `management-ui-primitives.css`. Load both stylesheets after `app.css` in **Ui.Server** `_Layout.cshtml` (dev host) and WASM `wwwroot/index.html`.
+5. **Semantic tokens** — Visual roles use CSS variables in `wwwroot/css/app.css` (`:root` / `.dark`); layout/status helpers in `management-ui-primitives.css`. Dark theme is neutral cool black with a single cyan accent. Borders are white-alpha on dark. Load both stylesheets after `app.css` in **Ui.Server** `_Layout.cshtml` (dev host) and WASM `wwwroot/index.html`.
 
 ## Component categories
 
@@ -76,9 +76,7 @@ Personal account surfaces. Routes and section metadata live in `AccountUiRoutes`
 
 Conventions these establish, worth keeping when restyling:
 
-- **Selection state is carried by border, background, ring, and a text marker together** ("Selected",
-  "· Selected"). The redundancy is an accessibility requirement, not decoration — never let selection
-  depend on colour alone.
+- **Selection state is carried by border, background, accent fill/wash, and an assistive text marker.** Prefer `data-state="on"` with segment/theme-card styles plus an `sr-only` "Selected" label (or `aria-checked`/`aria-selected`). Theme swatch cards may also show a compact visible `Selected` badge that matches the design language. Do not use a `· Selected` prose suffix.
 - **An image is never the only label.** Every avatar option has visible text beside it.
 - **Avatar previews are decorative** (`alt=""`, `aria-hidden`) because the operator's name is always
   rendered next to them; alt text would be noise.
@@ -86,6 +84,11 @@ Conventions these establish, worth keeping when restyling:
   A disabled checkbox implies an editable preference that exists.
 - Validation stays inline and associated with its field (`aria-describedby`, `aria-invalid`,
   `role="alert"`); toasts are for successful saves.
+- **Shared choosers:** use `ThemeCardGroup` for appearance, `SegmentedControl` for small exclusive sets
+  (e.g. clock format), and `SearchableList` instead of native listbox/`<select size>`. These include
+  keyboard and ARIA behavior.
+- **No raw Tailwind palettes in `.razor`.** Prefer semantic utilities (`text-success`, `bg-message-warning`,
+  `text-heading`) and `ui-*` classes. `NoRawColorUtilitiesTests` enforces this.
 
 ### Interaction CSS utilities (Epic 93)
 

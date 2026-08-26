@@ -8,9 +8,9 @@
 @implements IDisposable
 
 <div id="nav-rail" class="fixed z-60 flex min-h-0 flex-row h-full print:hidden start-0 top-0 @(IsControlPanelOpen ? "" : "w-18")">
-    <div class="w-17 flex-none flex flex-col h-full relative border-r border-dashed border-default bg-surface text-body duration-300 z-40">
+    <div class="ui-nav-rail w-17 flex-none flex flex-col h-full relative border-r border-default text-body duration-300 z-40">
         <div role="button"
-             class="logo-link group mt-0.5 mb-8 block p-3 text-muted transition-all duration-200 cursor-pointer @(_isDashboardActive ? "opacity-100" : "opacity-70 hover:opacity-90")"
+             class="logo-link group mt-0.5 mb-8 block p-3 text-icon transition-colors duration-200 cursor-pointer hover:text-heading @(_isDashboardActive ? "text-heading" : "")"
              aria-label="Dashboard home"
              @onclick="HandleLogoClick"
              @onkeydown="HandleLogoKeyDown"
@@ -79,8 +79,8 @@
         string.Equals(ActiveDomain, SectionOwnerConstants.Config, StringComparison.OrdinalIgnoreCase);
 
     private string GetConfigIconStyle() =>
-        "block h-full w-full min-h-0 min-w-0 text-body transition-opacity duration-200 " +
-        (_isConfigActive ? "opacity-100" : "opacity-60 group-hover:opacity-90");
+        "ui-nav-rail__icon block h-full w-full min-h-0 min-w-0 transition-colors duration-200" +
+        (_isConfigActive ? " ui-nav-rail__icon--active" : "");
 
     protected override void OnInitialized()
     {

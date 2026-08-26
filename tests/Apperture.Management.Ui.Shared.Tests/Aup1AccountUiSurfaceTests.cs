@@ -308,20 +308,35 @@ public sealed class Aup1AccountUiSurfaceTests
     {
         var content = ReadRepoFile($"{ClientRoot}/Molecules/TimeZoneSelector.razor");
 
-        content.Should().Contain("<select");
+        content.Should().Contain("<SearchableList");
         content.Should().Contain("appertureShell.getTimeZone");
-        content.Should().Contain("Use this browser's timezone");
-        content.Should().Contain("aria-describedby=\"@HelpId\"");
+        content.Should().Contain("Use this browser");
+        content.Should().NotContain("<select");
     }
 
     [Fact]
     public void Appearance_and_clock_choices_are_real_radio_groups_with_text_labels()
     {
-        var content = ReadRepoFile($"{ClientRoot}/Pages/Account/AccountPreferences.razor");
+        var preferences = ReadRepoFile($"{ClientRoot}/Pages/Account/AccountPreferences.razor");
+        var themeCards = ReadRepoFile($"{ClientRoot}/Molecules/ThemeCardGroup.razor");
+        var segmented = ReadRepoFile($"{ClientRoot}/Atoms/SegmentedControl.razor");
 
-        content.Should().Contain("role=\"radiogroup\"");
-        content.Should().Contain("aria-label=\"Clock format\"");
-        content.Should().Contain("· Selected", "selection must not be conveyed by colour alone");
+        preferences.Should().Contain("<ThemeCardGroup");
+        preferences.Should().Contain("<SegmentedControl");
+        preferences.Should().Contain("aria-label=\"Clock format\"");
+        preferences.Should().Contain("ui-settings-grid");
+        preferences.Should().NotContain("· Selected");
+
+        themeCards.Should().Contain("role=\"radiogroup\"");
+        themeCards.Should().Contain("ui-theme-card__badge");
+        themeCards.Should().Contain("sr-only");
+        themeCards.Should().Contain("Selected");
+        themeCards.Should().NotContain("· Selected");
+
+        segmented.Should().Contain("role=\"radiogroup\"");
+        segmented.Should().Contain("sr-only");
+        segmented.Should().Contain("Selected");
+        segmented.Should().NotContain("· Selected");
     }
 
     // --- Identity ownership ---

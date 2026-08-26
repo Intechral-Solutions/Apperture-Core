@@ -69,7 +69,7 @@ public static class Epic33UiDisplayHelpers
     }
 
     public static string GetStatusCssClass(string status) =>
-        status == "Healthy" ? "text-green-600" : status == "Degraded" ? "text-amber-600" : "text-red-600";
+        status == "Healthy" ? "text-success" : status == "Degraded" ? "text-warning" : "text-error";
 
     // --- Audit cross-navigation (links from module/schedule/run context) ---
 

@@ -43,7 +43,7 @@
     {
         @if (!string.IsNullOrWhiteSpace(_highlightIncidentId))
         {
-            <div class="mt-4 rounded border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs">
+            <div class="mt-4 rounded border border-message-warning bg-message-warning px-3 py-2 text-xs">
                 Highlighting attention incident <span class="font-mono">@_highlightIncidentId</span> in history below.
                 <a class="ml-2 underline" href="@NotificationUiRoutes.IntegrationScheduleDiagnostics(IntegrationId)">Clear filter</a>
             </div>
@@ -220,7 +220,7 @@
                             <tbody>
                                 @foreach (var i in _diagnostics.RecentAttentionIncidents)
                                 {
-                                    <tr class="border-b border-default @(IsHighlightedIncident(i.Id) ? "bg-amber-500/10 ring-1 ring-inset ring-amber-500/30" : "")"
+                                    <tr class="border-b border-default @(IsHighlightedIncident(i.Id) ? "bg-message-warning ring-1 ring-inset ring-focus" : "")"
                                         id="@(IsHighlightedIncident(i.Id) ? $"incident-{i.Id}" : null)">
                                         <td class="px-3 py-2 font-mono text-xs">@i.StartedAtUtc.UtcDateTime.ToString("u")</td>
                                         <td class="px-3 py-2">@i.Status</td>

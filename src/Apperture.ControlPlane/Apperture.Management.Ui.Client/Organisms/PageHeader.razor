@@ -5,12 +5,12 @@
     <div class="ui-page-header__intro min-w-0">
         @if (!string.IsNullOrWhiteSpace(Eyebrow))
         {
-            <div class="ui-page-header__eyebrow text-xs text-muted">@Eyebrow</div>
+            <div class="ui-page-header__eyebrow">@Eyebrow</div>
         }
-        <h1 class="ui-page-header__title text-xl font-semibold text-heading">@Title</h1>
+            <h1 class="ui-page-header__title text-heading">@Title</h1>
         @if (!string.IsNullOrWhiteSpace(Subtitle))
         {
-            <div class="ui-page-header__subtitle mt-1 text-xs text-muted">@Subtitle</div>
+            <div class="ui-page-header__subtitle mt-1">@Subtitle</div>
         }
         @ChildContent
     </div>
