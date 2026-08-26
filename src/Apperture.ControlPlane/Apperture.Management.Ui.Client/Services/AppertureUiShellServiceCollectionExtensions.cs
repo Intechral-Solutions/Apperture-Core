@@ -17,6 +17,7 @@ public static class AppertureUiShellServiceCollectionExtensions
         services.AddScoped<ShellBootstrapState>();
         services.AddScoped<ShellHostNavigation>();
         services.AddScoped<ShellOrientationService>();
+        services.AddScoped<TopBarMenuCoordinator>();
         services.AddScoped<IOperatorDisplayTimeZone, OperatorDisplayTimeZoneService>();
         services.AddScoped<AccountAvatarService>();
         services.AddScoped<AppearancePreferenceCoordinator>();

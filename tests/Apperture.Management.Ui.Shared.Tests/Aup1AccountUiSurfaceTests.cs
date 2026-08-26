@@ -61,7 +61,7 @@ public sealed class Aup1AccountUiSurfaceTests
     }
 
     [Fact]
-    public void The_user_menu_links_to_every_account_section_and_shows_the_avatar()
+    public void The_user_menu_uses_an_avatar_trigger_and_text_identity_in_the_dropdown()
     {
         var content = ReadRepoFile($"{ClientRoot}/Molecules/UserAccountMenu.razor");
 
@@ -71,6 +71,21 @@ public sealed class Aup1AccountUiSurfaceTests
         content.Should().Contain("AccountUiRoutes.Security");
         content.Should().Contain("<AccountAvatar");
         content.Should().Contain("Sign out");
+        content.Should().Contain(">Notifications</a>");
+        content.Should().Contain(">Appearance</a>");
+        content.Should().NotContain("Notification preferences");
+        content.Should().NotContain("Appearance &amp; regional");
+
+        // The trigger is the only avatar; the open menu header is name and sign-in, not a second photo.
+        var triggerEnd = content.IndexOf("</button>", StringComparison.Ordinal);
+        var dropdownStart = content.IndexOf("@if (IsOpen)", StringComparison.Ordinal);
+        triggerEnd.Should().BeGreaterThan(0);
+        dropdownStart.Should().BeGreaterThan(triggerEnd);
+        content[..dropdownStart].Should().Contain("<AccountAvatar");
+        content[dropdownStart..].Should().NotContain("<AccountAvatar");
+        content[dropdownStart..].Should().Contain("Session.User.DisplayName");
+        content[dropdownStart..].Should().Contain("SecondaryIdentity(Session.User)");
+        content.Should().Contain("TopBarMenuCoordinator");
     }
 
     [Fact]
@@ -275,6 +290,17 @@ public sealed class Aup1AccountUiSurfaceTests
 
         content.Should().Contain("aria-current=");
         content.Should().Contain("aria-label=\"Account sections\"");
+    }
+
+    [Fact]
+    public void Section_navigation_does_not_use_the_reserved_razor_section_directive_as_a_loop_variable()
+    {
+        var content = ReadRepoFile($"{ClientRoot}/Molecules/AccountSectionNav.razor");
+
+        // `@section` is a Razor layout directive. Markup like href="@section.Href" fails the
+        // compiler with RZ9979 / RZ2005 / RZ1011. Bind a differently named loop variable instead.
+        content.Should().NotContain("@section.");
+        content.Should().NotContain("foreach (var section ");
     }
 
     [Fact]

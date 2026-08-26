@@ -5,13 +5,15 @@
 @using Apperture.Management.Ui.Shared
 @using Apperture.Management.Ui.Shared.Options
 @using Microsoft.Extensions.Options
+@implements IDisposable
 @inject SessionStateService Session
 @inject IManagementClient Client
 @inject ShellHostNavigation HostNav
 @inject IOptions<ShellUiOptions> ShellOpts
 @inject AuthSignInOptionsService SignInOptions
 @inject NavigationManager Nav
-<div class="relative" @onclick:stopPropagation="true">
+@inject TopBarMenuCoordinator Menus
+<div class="relative ml-3" @onclick:stopPropagation="true">
     @if (Session.State is SessionLoadState.Unknown or SessionLoadState.Loading)
     {
         <span class="text-xs text-muted">Signing in…</span>
@@ -27,30 +29,25 @@
     else if (Session.State == SessionLoadState.Authenticated && Session.User is not null)
     {
         <button type="button"
-                class="flex max-w-48 items-center gap-2 rounded px-2 py-1.5 text-start text-sm hover:bg-surface-muted"
-                aria-expanded="@_open"
+                class="flex items-center justify-center rounded p-1.5 hover:bg-surface-muted"
+                aria-expanded="@IsOpen"
                 aria-haspopup="true"
+                aria-label="@($"Account menu for {Session.User.DisplayName}")"
+                title="@Session.User.DisplayName"
                 @onclick="Toggle">
-            <AccountAvatar DisplayName="@Session.User.DisplayName" SizeClass="h-8 w-8" />
-            <span class="min-w-0">
-                <span class="block truncate font-medium text-heading">@Session.User.DisplayName</span>
-                <span class="block truncate text-xs text-muted" title="@SecondaryIdentity(Session.User)">@SecondaryIdentity(Session.User)</span>
-            </span>
+            <AccountAvatar DisplayName="@Session.User.DisplayName" SizeClass="ui-topbar-account-avatar" />
         </button>
-        @if (_open)
+        @if (IsOpen)
         {
-            <div class="absolute end-0 z-50 mt-1 min-w-56 rounded border border-default bg-surface py-1 text-sm shadow-lg">
-                <div class="flex items-center gap-2 px-3 py-2">
-                    <AccountAvatar DisplayName="@Session.User.DisplayName" SizeClass="h-9 w-9" />
-                    <span class="min-w-0">
-                        <span class="block truncate font-medium text-heading">@Session.User.DisplayName</span>
-                        <span class="block truncate text-xs text-muted">@SecondaryIdentity(Session.User)</span>
-                    </span>
+            <div class="absolute right-0 z-50 mt-1 min-w-56 rounded border border-default bg-surface py-1 text-sm shadow-lg">
+                <div class="px-3 py-2">
+                    <span class="block truncate font-medium text-heading">@Session.User.DisplayName</span>
+                    <span class="block truncate text-xs text-muted" title="@SecondaryIdentity(Session.User)">@SecondaryIdentity(Session.User)</span>
                 </div>
                 <hr class="my-1 border-default" />
                 <a href="@AccountUiRoutes.Profile" class="block px-3 py-2 text-body hover:bg-surface-muted">Profile</a>
-                <a href="@AccountUiRoutes.Notifications" class="block px-3 py-2 text-body hover:bg-surface-muted">Notification preferences</a>
-                <a href="@AccountUiRoutes.Preferences" class="block px-3 py-2 text-body hover:bg-surface-muted">Appearance &amp; regional</a>
+                <a href="@AccountUiRoutes.Notifications" class="block px-3 py-2 text-body hover:bg-surface-muted">Notifications</a>
+                <a href="@AccountUiRoutes.Preferences" class="block px-3 py-2 text-body hover:bg-surface-muted">Appearance</a>
                 <a href="@AccountUiRoutes.Security" class="block px-3 py-2 text-body hover:bg-surface-muted">Security</a>
                 <hr class="my-1 border-default" />
                 <button type="button" class="block w-full px-3 py-2 text-start text-body hover:bg-surface-muted" @onclick="SignOutLocalAsync">
@@ -76,12 +73,16 @@
 </div>
 
 @code {
-    private bool _open;
+    private bool IsOpen => Menus.IsOpen(TopBarMenuCoordinator.Ids.Account);
 
     private bool UseEntraSignOut =>
         ShellOpts.Value.UseEntraSignIn || (SignInOptions.Current?.EntraSignInEnabled ?? false);
 
-    private void Toggle() => _open = !_open;
+    protected override void OnInitialized() => Menus.Changed += OnMenusChanged;
+
+    private void OnMenusChanged() => _ = InvokeAsync(StateHasChanged);
+
+    private void Toggle() => Menus.Toggle(TopBarMenuCoordinator.Ids.Account);
 
     private Task GoSignInAsync()
     {
@@ -99,7 +100,7 @@
 
     private async Task SignOutLocalAsync()
     {
-        _open = false;
+        Menus.Close(TopBarMenuCoordinator.Ids.Account);
         try
         {
             await Client.LocalLogoutAsync();
@@ -116,7 +117,7 @@
 
     private void SignOutHostAsync()
     {
-        _open = false;
+        Menus.Close(TopBarMenuCoordinator.Ids.Account);
         var host = HostNav.GetManagementHostBase(Nav);
         var url = new Uri(host, "signout").ToString();
         Nav.NavigateTo(url, forceLoad: true);
@@ -140,4 +141,6 @@
             "Entra" => "Entra ID",
             _ => source
         };
+
+    public void Dispose() => Menus.Changed -= OnMenusChanged;
 }

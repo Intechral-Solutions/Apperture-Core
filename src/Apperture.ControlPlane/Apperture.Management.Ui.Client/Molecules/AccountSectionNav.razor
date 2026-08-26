@@ -8,15 +8,15 @@
 
 <nav class="mt-4 border-b border-default" aria-label="Account sections">
     <ul class="-mb-px flex flex-wrap gap-1">
-        @foreach (var section in AccountUiRoutes.Sections)
+        @foreach (var accountSection in AccountUiRoutes.Sections)
         {
-            var isCurrent = IsCurrent(section);
+            var isCurrent = IsCurrent(accountSection);
             <li>
-                <a href="@section.Href"
+                <a href="@accountSection.Href"
                    aria-current="@(isCurrent ? "page" : null)"
-                   title="@section.Description"
+                   title="@accountSection.Description"
                    class="@LinkClass(isCurrent)">
-                    @section.Label
+                    @accountSection.Label
                 </a>
             </li>
         }

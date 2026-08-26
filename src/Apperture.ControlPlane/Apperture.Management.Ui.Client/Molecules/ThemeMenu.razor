@@ -6,20 +6,21 @@
 @inject ThemeService ThemeService
 @inject SessionStateService Session
 @inject IManagementClient Client
+@inject TopBarMenuCoordinator Menus
 
 <div class="relative" @onclick:stopPropagation="true">
     <button type="button"
             class="flex items-center justify-center rounded p-2 text-body hover:bg-surface-muted"
-            aria-expanded="@_open"
+            aria-expanded="@IsOpen"
             aria-haspopup="true"
             aria-label="@($"Appearance: {Label(ThemeService.Current)}")"
             title="@Label(ThemeService.Current)"
             @onclick="Toggle">
-        <ThemePreferenceIcon Preference="ThemeService.Current" Class="h-5 w-5 shrink-0 text-heading" />
+        <ThemePreferenceIcon Preference="ThemeService.Current" Class="h-6 w-6 shrink-0 text-heading" />
     </button>
-    @if (_open)
+    @if (IsOpen)
     {
-        <div class="absolute end-0 z-50 mt-1 min-w-52 rounded border border-default bg-surface py-1 text-sm shadow-lg"
+        <div class="absolute right-0 z-50 mt-1 min-w-52 rounded border border-default bg-surface py-1 text-sm shadow-lg"
              role="menu"
              aria-label="Theme options">
             @foreach (var p in _prefs)
@@ -54,17 +55,23 @@
 @code {
     private static readonly ThemePreference[] _prefs = [ThemePreference.Light, ThemePreference.Dark, ThemePreference.System];
 
-    private bool _open;
+    private bool IsOpen => Menus.IsOpen(TopBarMenuCoordinator.Ids.Theme);
 
-    protected override void OnInitialized() => ThemeService.Changed += OnThemeChanged;
+    protected override void OnInitialized()
+    {
+        ThemeService.Changed += OnThemeChanged;
+        Menus.Changed += OnMenusChanged;
+    }
 
     private void OnThemeChanged() => _ = InvokeAsync(StateHasChanged);
 
-    private void Toggle() => _open = !_open;
+    private void OnMenusChanged() => _ = InvokeAsync(StateHasChanged);
+
+    private void Toggle() => Menus.Toggle(TopBarMenuCoordinator.Ids.Theme);
 
     private async Task SelectAsync(ThemePreference p)
     {
-        _open = false;
+        Menus.Close(TopBarMenuCoordinator.Ids.Theme);
 
         // Apply locally first so the theme switches immediately even if the account save is slow.
         await ThemeService.SetPreferenceAsync(p);
@@ -92,7 +99,11 @@
         }
     }
 
-    public void Dispose() => ThemeService.Changed -= OnThemeChanged;
+    public void Dispose()
+    {
+        ThemeService.Changed -= OnThemeChanged;
+        Menus.Changed -= OnMenusChanged;
+    }
 
     private static string Label(ThemePreference p) => p switch
     {

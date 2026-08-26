@@ -6,22 +6,25 @@
 @inject NavigationManager Nav
 @inject SessionStateService Session
 @inject DomainMenuService DomainMenuService
+@inject TopBarMenuCoordinator Menus
 @implements IDisposable
 
 <div class="relative" @onclick:stopPropagation="true">
     <button type="button"
             class="relative flex items-center justify-center rounded p-2 text-body hover:bg-surface-muted"
-            aria-expanded="@_open"
+            aria-expanded="@IsOpen"
             aria-haspopup="true"
             aria-label="Notifications"
             title="Notifications"
             @onclick="ToggleAsync">
-        <svg class="h-5 w-5 shrink-0 text-heading" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6 6 0 10-12 0v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
-        </svg>
-        <NotificationUnreadBadge Count="@_unreadCount" />
+        <span class="ui-notification-icon">
+            <svg class="h-6 w-6 shrink-0 text-heading" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6 6 0 10-12 0v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+            </svg>
+            <NotificationUnreadBadge Count="@_unreadCount" />
+        </span>
     </button>
-    @if (_open)
+    @if (IsOpen)
     {
         <div class="ui-personal-notification-menu__panel rounded border border-default bg-surface py-1 text-sm shadow-lg"
              role="menu"
@@ -70,16 +73,18 @@
 </div>
 
 @code {
-    private bool _open;
     private bool _loading;
     private bool _busy;
     private bool _countKickoffStarted;
     private int _unreadCount;
     private List<PersonalNotificationInboxItemDto> _items = [];
 
+    private bool IsOpen => Menus.IsOpen(TopBarMenuCoordinator.Ids.Notifications);
+
     protected override void OnInitialized()
     {
         Session.Changed += OnSessionChanged;
+        Menus.Changed += OnMenusChanged;
     }
 
     protected override void OnAfterRender(bool firstRender)
@@ -91,6 +96,8 @@
         _countKickoffStarted = true;
         _ = RefreshCountAndRenderAsync();
     }
+
+    private void OnMenusChanged() => _ = InvokeAsync(StateHasChanged);
 
     private async Task RefreshCountAndRenderAsync()
     {
@@ -115,12 +122,12 @@
 
     private async Task ToggleAsync()
     {
-        _open = !_open;
-        if (_open)
+        Menus.Toggle(TopBarMenuCoordinator.Ids.Notifications);
+        if (IsOpen)
             await LoadMenuAsync();
     }
 
-    private void Close() => _open = false;
+    private void Close() => Menus.Close(TopBarMenuCoordinator.Ids.Notifications);
 
     private async Task LoadMenuAsync()
     {
@@ -168,7 +175,7 @@
         try
         {
             await Client.MarkMyNotificationReadAsync(item.Id);
-            _open = false;
+            Menus.Close(TopBarMenuCoordinator.Ids.Notifications);
             await RefreshCountAsync();
             var target = PersonalNotificationUiRoutes.ResolveOpenTarget(item, item.CanOpenAdminInstanceDetail);
             Nav.NavigateTo(!string.IsNullOrWhiteSpace(target) ? target : PersonalNotificationUiRoutes.Inbox());
@@ -198,5 +205,9 @@
         }
     }
 
-    public void Dispose() => Session.Changed -= OnSessionChanged;
+    public void Dispose()
+    {
+        Session.Changed -= OnSessionChanged;
+        Menus.Changed -= OnMenusChanged;
+    }
 }

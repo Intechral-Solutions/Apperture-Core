@@ -7,9 +7,10 @@
 @inject DomainMenuService DomainMenuService
 @inject NavigationManager NavManager
 @inject SessionStateService SessionState
+@inject TopBarMenuCoordinator TopBarMenus
 @inject IJSRuntime Js
 
-<div id="main" class="flex h-screen bg-shell">
+<div id="main" class="flex h-screen bg-shell" @onclick="CloseTopBarMenus">
     <NavRail IsControlPanelOpen="@isControlPanelOpen"
              IsControlPanelLocked="@isControlPanelLocked"
              CurrentDomainName="@currentDomainName"
@@ -51,6 +52,8 @@
     private bool _menusKickoffStarted;
     private bool _bodyReady;
     private bool _disposed;
+
+    private void CloseTopBarMenus() => TopBarMenus.CloseAll();
 
     protected override void OnInitialized()
     {

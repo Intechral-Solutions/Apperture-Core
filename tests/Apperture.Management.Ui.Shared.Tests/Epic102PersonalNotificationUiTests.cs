@@ -67,6 +67,42 @@ public sealed class Epic102PersonalNotificationUiTests
             "Atoms",
             "NotificationUnreadBadge.razor");
         File.Exists(path).Should().BeTrue();
+        var content = File.ReadAllText(path);
+        content.Should().Contain("ui-notification-unread-badge");
+    }
+
+    [Fact]
+    public void Top_bar_utility_menus_share_an_exclusive_open_coordinator()
+    {
+        var root = FindRepoRoot();
+        var clientRoot = Path.Combine(root, "src", "Apperture.ControlPlane", "Apperture.Management.Ui.Client");
+
+        File.Exists(Path.Combine(clientRoot, "Services", "TopBarMenuCoordinator.cs")).Should().BeTrue();
+
+        var di = File.ReadAllText(Path.Combine(clientRoot, "Services", "AppertureUiShellServiceCollectionExtensions.cs"));
+        di.Should().Contain("AddScoped<TopBarMenuCoordinator>");
+
+        foreach (var relative in new[]
+                 {
+                     Path.Combine("Molecules", "ThemeMenu.razor"),
+                     Path.Combine("Organisms", "PersonalNotificationMenu.razor"),
+                     Path.Combine("Molecules", "UserAccountMenu.razor")
+                 })
+        {
+            var content = File.ReadAllText(Path.Combine(clientRoot, relative));
+            content.Should().Contain("TopBarMenuCoordinator", $"{relative} must coordinate exclusive open state");
+        }
+
+        var topBar = File.ReadAllText(Path.Combine(clientRoot, "Organisms", "TopBar.razor"));
+        topBar.Should().Contain("Menus.CloseAll()");
+
+        var layout = File.ReadAllText(Path.Combine(clientRoot, "Layout", "MainLayout.razor"));
+        layout.Should().Contain("@onclick=\"CloseTopBarMenus\"");
+        layout.Should().Contain("TopBarMenus.CloseAll()");
+
+        var css = File.ReadAllText(Path.Combine(clientRoot, "wwwroot", "css", "management-ui-primitives.css"));
+        css.Should().Contain(".ui-notification-unread-badge");
+        css.Should().Contain("bottom:");
     }
 
     [Fact]

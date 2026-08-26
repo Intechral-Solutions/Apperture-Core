@@ -854,6 +854,7 @@ a.ui-toolbar-btn--danger:hover {
 
 .ui-topbar__inner {
   box-sizing: border-box;
+  padding-inline-end: 1.5rem;
 }
 
 .ui-topbar__utilities {
@@ -868,6 +869,39 @@ a.ui-toolbar-btn--danger:hover {
   z-index: 1;
   width: 20rem;
   max-width: calc(100vw - 2rem);
+}
+
+/* Unread count sits on the bell's upper-right corner without covering the glyph. */
+.ui-notification-icon {
+  position: relative;
+  display: inline-flex;
+  flex-shrink: 0;
+}
+
+.ui-notification-unread-badge {
+  position: absolute;
+  right: -1.2rem;
+  top: -0.45rem;
+  z-index: 1;
+  display: flex;
+  min-width: 1.125rem;
+  height: 1.125rem;
+  align-items: center;
+  justify-content: center;
+  padding: 0 0.28rem;
+  border: 1.5px solid var(--color-surface);
+  border-radius: 9999px;
+  background-color: var(--color-error);
+  color: #fff;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  line-height: 1;
+  pointer-events: none;
+}
+
+.ui-topbar-account-avatar {
+  height: 2.25rem;
+  width: 2.25rem;
 }
 
 .ui-topbar__menu {
