@@ -163,7 +163,7 @@
                 <div class="text-sm font-semibold text-heading mb-2">Explicit subscriptions</div>
                 @if (_attentionRouting is not null && HasAttentionRoutingRecipients)
                 {
-                    <p class="mb-2 text-xs text-muted rounded border border-default bg-surface-muted/50 p-2">
+                    <p class="ui-detail-block text-xs">
                         Implicit attention-routing compatibility recipients may apply for this integration (Epic 69 parity). They are not platform subscriptions.
                     </p>
                 }
@@ -172,7 +172,7 @@
                     <div class="mb-3 flex flex-wrap items-end gap-2 text-xs border-b border-default pb-3" id="definition-subscriptions">
                         <label>
                             Kind
-                            <select class="mt-1 block rounded border border-default px-2 py-1" @bind="_addKind">
+                            <select class="ui-input" @bind="_addKind">
                                 <option value="principal">principal</option>
                                 <option value="operational_team">operational_team</option>
                                 <option value="managed_contact">managed_contact</option>
@@ -180,7 +180,7 @@
                         </label>
                         <label class="min-w-[10rem] flex-1">
                             Ref
-                            <select class="mt-1 block w-full rounded border border-default px-2 py-1 font-mono" @bind="_addRef">
+                            <select class="ui-input" @bind="_addRef">
                                 <option value="">— select —</option>
                                 @foreach (var opt in RecipientOptions)
                                 {
@@ -190,7 +190,7 @@
                         </label>
                         <label>
                             Delivery mode
-                            <select class="mt-1 block rounded border border-default px-2 py-1" @bind="_addDeliveryMode">
+                            <select class="ui-input" @bind="_addDeliveryMode">
                                 @foreach (var mode in NotificationDeliveryModeOptions.All)
                                 {
                                     <option value="@mode.Value">@mode.Label</option>
@@ -204,12 +204,12 @@
                                 Create contact if missing
                             </label>
                         }
-                        <button type="button" class="rounded bg-surface-muted px-3 py-2 disabled:opacity-50" disabled="@_busy" @onclick="AddSubscriptionAsync">Add</button>
+                        <button type="button" class="btn btn-secondary" disabled="@_busy" @onclick="AddSubscriptionAsync">Add</button>
                     </div>
                 }
                 @if (_subscriptions is { Count: 0 })
                 {
-                    <div class="rounded border border-default bg-surface-muted/50 p-2 text-xs">
+                    <div class="ui-detail-block text-xs">
                         <p class="font-medium text-heading">No explicit subscriptions yet</p>
                         <p class="mt-1 text-muted">@GetEmptySubscriptionsMessage()</p>
                     </div>
@@ -236,7 +236,7 @@
                                     <td class="p-1">
                                         @if (_canManage)
                                         {
-                                            <select class="rounded border border-default px-1 py-0.5" value="@s.DeliveryMode" disabled="@_busy" @onchange="e => PatchSubscriptionDeliveryModeAsync(s, e)">
+                                            <select class="ui-input ui-input--narrow" value="@s.DeliveryMode" disabled="@_busy" @onchange="e => PatchSubscriptionDeliveryModeAsync(s, e)">
                                                 @foreach (var mode in NotificationDeliveryModeOptions.All)
                                                 {
                                                     <option value="@mode.Value">@mode.Label</option>
@@ -276,7 +276,7 @@
                 <div class="text-sm font-semibold text-heading mb-2">Render preview</div>
                 <div class="flex items-center justify-between gap-2 mb-2">
                     <p class="text-xs text-muted">Uses a sample event payload and does not send delivery.</p>
-                    <button type="button" class="rounded bg-surface-muted px-3 py-1 text-xs disabled:opacity-50" disabled="@_busy" @onclick="RenderPreviewAsync">Preview</button>
+                    <button type="button" class="btn btn-secondary text-xs" disabled="@_busy" @onclick="RenderPreviewAsync">Preview</button>
                 </div>
                 @if (_preview is not null)
                 {
@@ -285,7 +285,7 @@
                         <div><span class="text-muted">Summary:</span> @_preview.Summary</div>
                         @if (!string.IsNullOrWhiteSpace(_preview.BodyText))
                         {
-                            <pre class="mt-1 bg-surface-muted p-2 rounded whitespace-pre-wrap">@_preview.BodyText</pre>
+                            <pre class="ui-code-block mt-1 whitespace-pre-wrap">@_preview.BodyText</pre>
                         }
                     </div>
                 }
@@ -300,9 +300,9 @@
                 <div class="flex flex-wrap items-end gap-2 text-xs">
                     <label>
                         Integration id
-                        <input class="mt-1 block rounded border border-default px-2 py-1 font-mono" @bind="_resolveIntegrationId" />
+                        <input class="ui-input font-mono" @bind="_resolveIntegrationId" />
                     </label>
-                    <button type="button" class="rounded bg-surface-muted px-3 py-2 disabled:opacity-50" disabled="@_busy" @onclick="ResolveRecipientsAsync">Preview</button>
+                    <button type="button" class="btn btn-secondary" disabled="@_busy" @onclick="ResolveRecipientsAsync">Preview</button>
                 </div>
                 @if (_recipientPreviewRefreshedAt is not null)
                 {
@@ -372,12 +372,12 @@
 
             <div class="mt-4">
                 <div class="font-semibold text-heading mb-2 text-sm">Rule JSON (read-only)</div>
-                <pre class="overflow-x-auto text-xs bg-surface-muted p-2 rounded">@_detail.RuleJson</pre>
+                <pre class="ui-code-block overflow-x-auto text-xs">@_detail.RuleJson</pre>
             </div>
 
             <div class="mt-4">
                 <div class="font-semibold text-heading mb-2 text-sm">Template JSON (read-only)</div>
-                <pre class="overflow-x-auto text-xs bg-surface-muted p-2 rounded">@_detail.TemplateJson</pre>
+                <pre class="ui-code-block overflow-x-auto text-xs">@_detail.TemplateJson</pre>
             </div>
         </ManagementAdvancedSection>
     }

@@ -9,10 +9,17 @@
 @inject IManagementClient Client
 @inject IOperatorCapabilitiesService Capabilities
 
-<div class="p-4">
-    <div class="text-xs text-muted mb-1">
-        <a class="underline" href="/config/notifications/instances">Instances</a> — @InstanceId
-    </div>
+<div class="p-4 ui-page-stack">
+    <PageHeader Eyebrow="Config — Notifications"
+                Title="@(_detail?.RenderedSubject ?? "Notification instance")"
+                Subtitle="@InstanceSubtitle">
+        <Toolbar>
+            <a href="/config/notifications/instances" class="ui-toolbar-btn text-sm">← Instances</a>
+        </Toolbar>
+        <ChildContent>
+            <div class="mt-1 font-mono text-xs text-muted break-all">@InstanceId</div>
+        </ChildContent>
+    </PageHeader>
 
     @if (!_capabilitiesLoaded)
     {
@@ -38,15 +45,12 @@
     }
     else
     {
-        <PageHeader Title="@_detail.RenderedSubject" Subtitle="@InstanceSubtitle" />
-
-        <div class="mt-4 space-y-4 text-sm">
-            <section class="rounded border border-default bg-surface p-3 text-xs">
-                <div class="font-semibold text-heading mb-2">Metadata</div>
-                <dl class="grid grid-cols-1 gap-1 md:grid-cols-2">
-                    <div><dt class="text-muted">Notification kind</dt><dd>@_detail.NotificationKind</dd></div>
-                    <div><dt class="text-muted">Status</dt><dd>@_detail.Status</dd></div>
-                    <div><dt class="text-muted">Suppression</dt><dd>
+        <div class="space-y-4 text-sm">
+            <ManagementSection Title="Metadata" Layer="@ManagementSection.UiLayer.Summary">
+                <MetadataGrid>
+                    <MetadataItem Label="Notification kind" Value="@_detail.NotificationKind" />
+                    <MetadataItem Label="Status" Value="@_detail.Status" />
+                    <MetadataItem Label="Suppression">
                         @if (string.IsNullOrWhiteSpace(_detail.SuppressionReason))
                         {
                             <span>—</span>
@@ -59,10 +63,12 @@
                                 <p class="mt-1 text-muted">@suppressionAction</p>
                             }
                         }
-                    </dd></div>
-                    <div><dt class="text-muted">Template hash</dt><dd class="font-mono break-all">@_detail.TemplateVersionHash</dd></div>
-                    <div><dt class="text-muted">Definition</dt><dd><a class="underline font-mono" href="@NotificationUiRoutes.DefinitionDetail(_detail.NotificationDefinitionId)">@_detail.NotificationDefinitionId</a></dd></div>
-                    <div><dt class="text-muted">Integration</dt><dd>
+                    </MetadataItem>
+                    <MetadataItem Label="Template hash" Monospace="true" Value="@_detail.TemplateVersionHash" />
+                    <MetadataItem Label="Definition">
+                        <a class="underline font-mono" href="@NotificationUiRoutes.DefinitionDetail(_detail.NotificationDefinitionId)">@_detail.NotificationDefinitionId</a>
+                    </MetadataItem>
+                    <MetadataItem Label="Integration">
                         @if (!string.IsNullOrWhiteSpace(_detail.IntegrationId))
                         {
                             <a class="underline font-mono" href="@NotificationUiRoutes.IntegrationNotifications(_detail.IntegrationId)">@_detail.IntegrationId</a>
@@ -71,8 +77,8 @@
                         {
                             <span>—</span>
                         }
-                    </dd></div>
-                    <div><dt class="text-muted">Incident</dt><dd>
+                    </MetadataItem>
+                    <MetadataItem Label="Incident">
                         @if (!string.IsNullOrWhiteSpace(_detail.AttentionIncidentId) && !string.IsNullOrWhiteSpace(_detail.IntegrationId))
                         {
                             <a class="underline font-mono" href="@NotificationUiRoutes.IntegrationScheduleDiagnostics(_detail.IntegrationId, _detail.AttentionIncidentId)">@_detail.AttentionIncidentId</a>
@@ -81,10 +87,10 @@
                         {
                             <span class="font-mono">@(_detail.AttentionIncidentId ?? "—")</span>
                         }
-                    </dd></div>
-                    <div><dt class="text-muted">Created</dt><dd>@_detail.CreatedAtUtc.UtcDateTime.ToString("u")</dd></div>
-                    <div><dt class="text-muted">Updated</dt><dd>@_detail.UpdatedAtUtc.UtcDateTime.ToString("u")</dd></div>
-                </dl>
+                    </MetadataItem>
+                    <MetadataItem Label="Created" Value="@_detail.CreatedAtUtc.UtcDateTime.ToString("u")" />
+                    <MetadataItem Label="Updated" Value="@_detail.UpdatedAtUtc.UtcDateTime.ToString("u")" />
+                </MetadataGrid>
                 @if (!string.IsNullOrWhiteSpace(_detail.IntegrationId))
                 {
                     <div class="mt-2 flex flex-wrap gap-3 text-xs">
@@ -92,71 +98,70 @@
                         <a class="underline" href="@NotificationUiRoutes.IntegrationScheduleDiagnostics(_detail.IntegrationId)">Schedule diagnostics</a>
                     </div>
                 }
-            </section>
+            </ManagementSection>
 
-            <section class="rounded border border-default bg-surface p-3">
-                <div class="font-semibold text-heading mb-2 text-sm">Rendered content</div>
-                <dl class="text-xs space-y-1">
+            <ManagementSection Title="Rendered content" Layer="@ManagementSection.UiLayer.Detail">
+                <dl class="space-y-1 text-xs">
                     <div><dt class="text-muted inline">Subject:</dt> <dd class="inline">@_detail.RenderedSubject</dd></div>
                     <div><dt class="text-muted inline">Summary:</dt> <dd class="inline">@_detail.RenderedSummary</dd></div>
                 </dl>
                 @if (!string.IsNullOrWhiteSpace(_detail.RenderedBodyText))
                 {
                     <Disclosure Summary="Body" InitiallyOpen="true" Dense="true" Class="mt-2">
-                        <pre class="bg-surface-muted p-2 rounded whitespace-pre-wrap">@_detail.RenderedBodyText</pre>
+                        <pre class="ui-code-block whitespace-pre-wrap">@_detail.RenderedBodyText</pre>
                     </Disclosure>
                 }
-            </section>
+            </ManagementSection>
 
-            <section class="rounded border border-default bg-surface p-3">
-                <div class="font-semibold text-heading mb-2 text-sm">Recipient snapshot</div>
+            <ManagementSection Title="Recipient snapshot" Layer="@ManagementSection.UiLayer.Detail">
                 <NotificationRecipientSnapshotDisplay RecipientSnapshotJson="@_detail.RecipientSnapshotJson"
                                                       DeliveredEmailCount="@(_outbox?.Count)" />
-            </section>
+            </ManagementSection>
 
-            <section class="rounded border border-default bg-surface p-3">
+            <ManagementSection Title="Render context" Layer="@ManagementSection.UiLayer.Detail">
                 <Disclosure Summary="Render context JSON" Dense="true">
-                    <pre class="bg-surface-muted p-2 rounded overflow-x-auto max-h-64">@_detail.RenderContextJson</pre>
+                    <pre class="ui-code-block overflow-x-auto max-h-64">@_detail.RenderContextJson</pre>
                 </Disclosure>
-            </section>
+            </ManagementSection>
 
-            <section class="rounded border border-default bg-surface p-3">
-                <div class="font-semibold text-heading mb-2 text-sm">Delivery outbox</div>
+            <ManagementSection Title="Delivery outbox" Layer="@ManagementSection.UiLayer.Detail">
                 @if (_outbox is { Count: 0 })
                 {
                     <p class="text-xs text-muted">No outbox rows.</p>
                 }
                 else if (_outbox is not null)
                 {
-                    <table class="min-w-full text-left text-xs">
-                        <thead class="text-muted">
-                            <tr>
-                                <th class="p-1">Recipient</th>
-                                <th class="p-1">Source</th>
-                                <th class="p-1">Status</th>
-                                <th class="p-1">Attempts</th>
-                                <th class="p-1">Last error</th>
-                                <th class="p-1">Guidance</th>
-                                <th class="p-1">Sent</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            @foreach (var o in _outbox)
-                            {
-                                <tr class="border-t border-default">
-                                    <td class="p-1">@(o.RecipientDisplayName ?? o.RecipientEmail)</td>
-                                    <td class="p-1">@NotificationRecipientSourceLabels.Label(o.RecipientSource)</td>
-                                    <td class="p-1">@o.Status</td>
-                                    <td class="p-1">@o.AttemptCount</td>
-                                    <td class="p-1 break-all">@(o.LastError ?? "—")</td>
-                                    <td class="p-1 text-muted">@(NotificationDeliveryErrorGuidance.Summarize(o.LastError, o.Status) ?? "—")</td>
-                                    <td class="p-1">@(o.SentAtUtc?.UtcDateTime.ToString("u") ?? "—")</td>
+                    <div class="ui-data-table">
+                        <table class="ui-data-table__table min-w-full text-left text-xs">
+                            <thead>
+                                <tr>
+                                    <th>Recipient</th>
+                                    <th>Source</th>
+                                    <th>Status</th>
+                                    <th>Attempts</th>
+                                    <th>Last error</th>
+                                    <th>Guidance</th>
+                                    <th>Sent</th>
                                 </tr>
-                            }
-                        </tbody>
-                    </table>
+                            </thead>
+                            <tbody>
+                                @foreach (var o in _outbox)
+                                {
+                                    <tr>
+                                        <td>@(o.RecipientDisplayName ?? o.RecipientEmail)</td>
+                                        <td>@NotificationRecipientSourceLabels.Label(o.RecipientSource)</td>
+                                        <td>@o.Status</td>
+                                        <td>@o.AttemptCount</td>
+                                        <td class="break-all">@(o.LastError ?? "—")</td>
+                                        <td class="text-muted">@(NotificationDeliveryErrorGuidance.Summarize(o.LastError, o.Status) ?? "—")</td>
+                                        <td>@(o.SentAtUtc?.UtcDateTime.ToString("u") ?? "—")</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
                 }
-            </section>
+            </ManagementSection>
         </div>
 
         @if (!string.IsNullOrEmpty(_error))

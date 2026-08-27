@@ -9,114 +9,121 @@
 @inject IOperatorCapabilitiesService Capabilities
 @inject IJSRuntime JS
 
-<div class="p-4">
-    <div class="text-xs text-muted mb-1">Config — Authentication — Entra directory</div>
-    <PageHeader Title="Entra directory users"
-                Subtitle="Browse users from Microsoft Graph. Import selected rows as managed contacts (no automatic login users)." />
+<div class="p-4 ui-page-stack">
+    <PageHeader Eyebrow="Config — Authentication — Entra directory"
+                Title="Entra directory users"
+                Subtitle="Browse users from Microsoft Graph. Import selected rows as managed contacts (no automatic login users).">
+        <Toolbar>
+            <a href="/config/auth/tenants" class="ui-toolbar-btn text-sm">← Entra tenant setup</a>
+            <a href="/config/contacts" class="ui-toolbar-btn text-sm">Managed contacts</a>
+            @if (_canImport)
+            {
+                <button type="button"
+                        class="ui-toolbar-btn text-sm"
+                        disabled="@(_busy || _selected.Count == 0)"
+                        @onclick="ImportSelectedAsync">
+                    Import selected
+                </button>
+            }
+            <button type="button"
+                    class="ui-toolbar-btn text-sm"
+                    disabled="@_busy"
+                    @onclick="SearchAsync">
+                Search
+            </button>
+        </Toolbar>
+    </PageHeader>
 
     @if (!_canView)
     {
-        <div class="mt-4">
-            <ForbiddenState Message="You do not have permission." />
-        </div>
+        <ForbiddenState Message="You do not have permission." />
     }
     else if (_loading)
     {
-        <div class="mt-4">
-            <LoadingState />
-        </div>
+        <LoadingState />
     }
     else if (_result is null)
     {
-        <div class="mt-4">
-            <ErrorState Message="@(_loadError ?? "Could not load directory users.")" />
-        </div>
+        <ErrorState Message="@(_loadError ?? "Could not load directory users.")" />
     }
     else
     {
-        <div class="mt-4 space-y-4 text-sm">
-            <PageMessage Kind="PageMessageKind.Info"
-                         Message="Import creates or updates managed contacts by Entra object id using server-side Graph refresh. To link an Entra sign-in to a platform user, copy an object id below and paste it on Config → Governance → Users → user detail → Add Entra link." />
+        <PageMessage Kind="PageMessageKind.Info"
+                     Message="Import creates or updates managed contacts by Entra object id using server-side Graph refresh. To link an Entra sign-in to a platform user, copy an object id below and paste it on Config → Governance → Users → user detail → Add Entra link." />
 
-            <p class="text-xs"><a class="underline" href="/config/auth/tenants">← Entra tenant setup</a> · <a class="underline" href="/config/contacts">Managed contacts</a></p>
+        <ManagementSection Title="Search" Layer="@ManagementSection.UiLayer.Summary">
+            <label class="flex min-w-[12rem] flex-1 flex-col gap-1 text-xs">
+                Search (display name, mail, UPN)
+                <input class="ui-input"
+                       @bind="_search"
+                       @bind:event="oninput" />
+            </label>
+        </ManagementSection>
 
-            <div class="flex flex-wrap items-end gap-2 max-w-2xl">
-                <label class="flex-1 min-w-[12rem] text-xs">
-                    Search (display name, mail, UPN)
-                    <input class="mt-1 w-full rounded border border-default px-2 py-1" @bind="_search" @bind:event="oninput" />
-                </label>
-                <button type="button" class="rounded bg-surface-muted px-3 py-2 text-xs font-medium disabled:opacity-50" disabled="@_busy" @onclick="SearchAsync">Search</button>
-                @if (_canImport)
-                {
-                    <button type="button" class="rounded bg-surface-muted px-3 py-2 text-xs font-medium disabled:opacity-50" disabled="@(_busy || _selected.Count == 0)" @onclick="ImportSelectedAsync">Import selected as managed contacts</button>
-                }
-            </div>
+        @if (!string.IsNullOrEmpty(_searchError))
+        {
+            <PageMessage Kind="PageMessageKind.Error" Message="@_searchError" />
+        }
 
-            @if (!string.IsNullOrEmpty(_searchError))
+        @if (!_result.Success)
+        {
+            <PageMessage Kind="PageMessageKind.Error" Message="@_result.Summary" />
+            @if (!string.IsNullOrEmpty(_result.TechnicalDetail))
             {
-                <PageMessage Kind="PageMessageKind.Error" Message="@_searchError" />
+                <pre class="ui-code-block text-xs whitespace-pre-wrap max-w-3xl overflow-x-auto">@_result.TechnicalDetail</pre>
             }
+        }
 
-            @if (!_result.Success)
-            {
-                <PageMessage Kind="PageMessageKind.Error" Message="@_result.Summary" />
-                @if (!string.IsNullOrEmpty(_result.TechnicalDetail))
-                {
-                    <pre class="text-xs text-muted whitespace-pre-wrap max-w-3xl overflow-x-auto">@_result.TechnicalDetail</pre>
-                }
-            }
+        @if (!string.IsNullOrEmpty(_importMessage))
+        {
+            <PageMessage Kind="PageMessageKind.Info" Message="@_importMessage" />
+        }
 
-            @if (!string.IsNullOrEmpty(_importMessage))
-            {
-                <PageMessage Kind="PageMessageKind.Info" Message="@_importMessage" />
-            }
+        @if (!string.IsNullOrEmpty(_copyMessage))
+        {
+            <PageMessage Kind="PageMessageKind.Info" Message="@_copyMessage" />
+        }
 
-            @if (!string.IsNullOrEmpty(_copyMessage))
-            {
-                <PageMessage Kind="PageMessageKind.Info" Message="@_copyMessage" />
-            }
-
-            <div class="overflow-x-auto rounded border border-default">
-                <table class="min-w-full text-left text-xs">
-                    <thead class="bg-surface-muted text-heading">
+        <div class="ui-data-table">
+            <table class="ui-data-table__table min-w-full text-left text-xs">
+                <thead>
+                    <tr>
+                        @if (_canImport)
+                        {
+                            <th class="w-10"></th>
+                        }
+                        <th>Display name</th>
+                        <th>UPN</th>
+                        <th>Mail</th>
+                        <th>Object id</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var u in _result.Items)
+                    {
                         <tr>
                             @if (_canImport)
                             {
-                                <th class="p-2 w-10"></th>
-                            }
-                            <th class="p-2">Display name</th>
-                            <th class="p-2">UPN</th>
-                            <th class="p-2">Mail</th>
-                            <th class="p-2">Object id</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @foreach (var u in _result.Items)
-                        {
-                            <tr class="border-t border-default">
-                                @if (_canImport)
-                                {
-                                    <td class="p-2">
-                                        <input type="checkbox" checked="@_selected.Contains(u.ObjectId)" @onclick="() => Toggle(u.ObjectId)" />
-                                    </td>
-                                }
-                                <td class="p-2 font-medium text-heading">@u.DisplayName</td>
-                                <td class="p-2 text-muted break-all">@(u.UserPrincipalName ?? "—")</td>
-                                <td class="p-2 text-muted break-all">@(u.Mail ?? "—")</td>
-                                <td class="p-2 font-mono text-muted break-all text-[11px]">
-                                    <span>@u.ObjectId</span>
-                                    <button type="button"
-                                            class="ms-2 rounded px-1.5 py-0.5 text-[10px] text-body hover:bg-surface-muted"
-                                            title="Copy object id"
-                                            @onclick="() => CopyOidAsync(u.ObjectId)">
-                                        Copy
-                                    </button>
+                                <td>
+                                    <input type="checkbox" checked="@_selected.Contains(u.ObjectId)" @onclick="() => Toggle(u.ObjectId)" />
                                 </td>
-                            </tr>
-                        }
-                    </tbody>
-                </table>
-            </div>
+                            }
+                            <td class="font-medium text-heading">@u.DisplayName</td>
+                            <td class="break-all text-muted">@(u.UserPrincipalName ?? "—")</td>
+                            <td class="break-all text-muted">@(u.Mail ?? "—")</td>
+                            <td class="font-mono break-all text-[11px] text-muted">
+                                <span>@u.ObjectId</span>
+                                <button type="button"
+                                        class="ui-toolbar-btn ms-2 px-1.5 py-0.5 text-[10px]"
+                                        title="Copy object id"
+                                        @onclick="() => CopyOidAsync(u.ObjectId)">
+                                    Copy
+                                </button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
         </div>
     }
 </div>

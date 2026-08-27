@@ -10,9 +10,9 @@
 @inject AuthSignInOptionsService SignInOptions
 @inject IToastService Toasts
 
-<div class="p-4">
-    <div class="text-xs text-muted mb-1">Config — Authentication</div>
-    <PageHeader Title="Entra tenant setup"
+<div class="p-4 ui-page-stack">
+    <PageHeader Eyebrow="Config — Authentication"
+                Title="Entra tenant setup"
                 Subtitle="Register authority and client id (secret stays in deployment). Validate OpenID metadata, then browse users and groups for directory discovery. Importing contacts is a later step. Restart the management host after changing the active registration so OIDC picks up authority and client id." />
 
     @if (!_canView)
@@ -35,7 +35,7 @@
     }
     else
     {
-        <div class="mt-6 space-y-6 text-sm">
+        <div class="space-y-4 text-sm">
             @if (_overview is not null)
             {
                 <PageMessage Kind="@(_overview.RuntimeMayRequireRestartToApplyChanges ? PageMessageKind.Warning : PageMessageKind.Info)"
@@ -47,9 +47,9 @@
                 · OID = last OpenID discovery validation. Dir = last Microsoft Graph browse. These do not create platform users.
             </p>
 
-            <div class="overflow-x-auto rounded border border-default">
-                <table class="min-w-full text-left text-xs">
-                    <thead class="bg-surface-muted text-heading">
+            <div class="ui-data-table">
+                <table class="ui-data-table__table min-w-full text-left text-xs">
+                    <thead>
                         <tr>
                             <th class="p-2">Name / authority</th>
                             <th class="p-2">Active</th>
@@ -62,7 +62,7 @@
                     <tbody>
                         @foreach (var r in _items)
                         {
-                            <tr class="border-t border-default">
+                            <tr>
                                 <td class="p-2">
                                     <div class="font-medium text-heading">@r.DisplayName</div>
                                     <div class="text-muted break-all">@r.Authority</div>
@@ -102,13 +102,13 @@
 
             @if (_editing is not null)
             {
-                <section class="max-w-xl rounded border border-default bg-surface p-4 space-y-3">
-                    <h2 class="font-medium text-heading">Edit registration</h2>
-                    <label class="block text-xs">Display name<input class="mt-1 w-full rounded border border-default px-2 py-1" @bind="_editingDisplay" /></label>
-                    <label class="block text-xs">Authority (https)<input class="mt-1 w-full rounded border border-default px-2 py-1" @bind="_editingAuthority" /></label>
-                    <label class="block text-xs">Client ID<input class="mt-1 w-full rounded border border-default px-2 py-1" @bind="_editingClientId" /></label>
-                    <label class="block text-xs">Azure tenant id (optional, for Graph and issuer checks)<input class="mt-1 w-full rounded border border-default px-2 py-1" @bind="_editingAzureTenantId" /></label>
-                    <label class="block text-xs">Callback path (optional)<input class="mt-1 w-full rounded border border-default px-2 py-1" @bind="_editingCallbackPath" /></label>
+                <ManagementSection Title="Edit registration" Layer="@ManagementSection.UiLayer.Detail">
+                    <div class="max-w-xl space-y-3">
+                    <label class="block text-xs">Display name<input class="ui-input mt-1" @bind="_editingDisplay" /></label>
+                    <label class="block text-xs">Authority (https)<input class="ui-input mt-1" @bind="_editingAuthority" /></label>
+                    <label class="block text-xs">Client ID<input class="ui-input mt-1" @bind="_editingClientId" /></label>
+                    <label class="block text-xs">Azure tenant id (optional, for Graph and issuer checks)<input class="ui-input mt-1" @bind="_editingAzureTenantId" /></label>
+                    <label class="block text-xs">Callback path (optional)<input class="ui-input mt-1" @bind="_editingCallbackPath" /></label>
                     <label class="flex items-center gap-2 text-xs">
                         <input type="checkbox" @bind="_editingEnabled" />
                         Enabled
@@ -117,21 +117,22 @@
                     {
                         <PageMessage Kind="PageMessageKind.Error" Message="@_formError" />
                     }
-                    <div class="space-x-2">
-                        <button type="button" class="rounded bg-surface-muted px-3 py-2 text-sm font-medium disabled:opacity-50" disabled="@_busy" @onclick="SaveEditAsync">Save</button>
-                        <button type="button" class="rounded px-3 py-2 text-sm text-muted" @onclick="CancelEdit">Cancel</button>
+                    <div class="flex gap-2">
+                        <button type="button" class="btn btn-primary" disabled="@_busy" @onclick="SaveEditAsync">Save</button>
+                        <button type="button" class="btn btn-secondary" @onclick="CancelEdit">Cancel</button>
                     </div>
-                </section>
+                    </div>
+                </ManagementSection>
             }
 
             @if (_canManage)
             {
-                <section class="max-w-xl rounded border border-default bg-surface p-4 space-y-3">
-                    <h2 class="font-medium text-heading">Add registration</h2>
-                    <label class="block text-xs">Display name<input class="mt-1 w-full rounded border border-default px-2 py-1" @bind="_newDisplay" /></label>
-                    <label class="block text-xs">Authority (https) <input class="mt-1 w-full rounded border border-default px-2 py-1" @bind="_newAuthority" /></label>
-                    <label class="block text-xs">Client ID <input class="mt-1 w-full rounded border border-default px-2 py-1" @bind="_newClientId" /></label>
-                    <label class="block text-xs">Azure tenant id (optional)<input class="mt-1 w-full rounded border border-default px-2 py-1" @bind="_newAzureTenantId" /></label>
+                <ManagementSection Title="Add registration" Layer="@ManagementSection.UiLayer.Detail">
+                    <div class="max-w-xl space-y-3">
+                    <label class="block text-xs">Display name<input class="ui-input mt-1" @bind="_newDisplay" /></label>
+                    <label class="block text-xs">Authority (https) <input class="ui-input mt-1" @bind="_newAuthority" /></label>
+                    <label class="block text-xs">Client ID <input class="ui-input mt-1" @bind="_newClientId" /></label>
+                    <label class="block text-xs">Azure tenant id (optional)<input class="ui-input mt-1" @bind="_newAzureTenantId" /></label>
                     <label class="flex items-center gap-2 text-xs">
                         <input type="checkbox" @bind="_newUsesDeploymentSecret" disabled="true" />
                         Use deployment client secret (required in v1)
@@ -140,8 +141,9 @@
                     {
                         <PageMessage Kind="PageMessageKind.Error" Message="@_formError" />
                     }
-                    <button type="button" class="rounded bg-surface-muted px-3 py-2 text-sm font-medium disabled:opacity-50" disabled="@_busy" @onclick="CreateAsync">Create</button>
-                </section>
+                    <button type="button" class="btn btn-primary" disabled="@_busy" @onclick="CreateAsync">Create</button>
+                    </div>
+                </ManagementSection>
             }
         </div>
     }

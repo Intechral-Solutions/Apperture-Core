@@ -10,7 +10,7 @@
 @inject NavigationManager Nav
 @inject ShellOrientationService ShellOrientation
 
-<div class="p-4">
+<div class="p-4 ui-page-stack">
     <PageHeader @key="@IntegrationId"
                 Eyebrow="Integrations"
                 Title="@EntityShellTitles.Detail(_integrationName, "Integration")"
@@ -19,11 +19,11 @@
             <div class="mt-1 font-mono text-xs text-muted break-all">@IntegrationId</div>
         </ChildContent>
         <Toolbar>
-            <a href="@IntegrationUiRoutes.Detail(IntegrationId)" class="rounded bg-surface-muted px-3 py-2 text-sm">Integration detail</a>
-            <a href="@IntegrationUiRoutes.Settings(IntegrationId)" class="rounded bg-surface-muted px-3 py-2 text-sm">Settings</a>
-            <a href="@IntegrationUiRoutes.ScheduleDiagnostics(IntegrationId)" class="rounded bg-surface-muted px-3 py-2 text-sm">Schedule diagnostics</a>
-            <a href="@ConfigDiagnosticsHref" class="rounded bg-surface-muted px-3 py-2 text-sm">Full diagnostics</a>
-            <button type="button" class="rounded bg-surface-muted px-3 py-2 text-sm disabled:opacity-50" disabled="@_busy" @onclick="LoadAsync">Refresh</button>
+            <a href="@IntegrationUiRoutes.Detail(IntegrationId)" class="ui-toolbar-btn text-sm">Integration detail</a>
+            <a href="@IntegrationUiRoutes.Settings(IntegrationId)" class="ui-toolbar-btn text-sm">Settings</a>
+            <a href="@IntegrationUiRoutes.ScheduleDiagnostics(IntegrationId)" class="ui-toolbar-btn text-sm">Schedule diagnostics</a>
+            <a href="@ConfigDiagnosticsHref" class="ui-toolbar-btn text-sm">Full diagnostics</a>
+            <button type="button" class="ui-toolbar-btn text-sm disabled:opacity-50" disabled="@_busy" @onclick="LoadAsync">Refresh</button>
         </Toolbar>
     </PageHeader>
 
@@ -53,7 +53,7 @@
                                                 OnPreviewRecipients="PreviewPostCreateRecipientsAsync"
                                                 OnDismiss="DismissPostCreatePromptAsync" />
 
-        <section class="mt-4 rounded border border-default bg-surface p-3" id="cutover-readiness">
+        <section class="ui-detail-block mt-4" id="cutover-readiness">
             <div class="flex flex-wrap items-start justify-between gap-2">
                 <h2 class="text-sm font-semibold text-heading">Expected-run-missing cutover readiness</h2>
                 <div class="flex flex-wrap gap-2 text-xs">
@@ -74,7 +74,7 @@
 
             @if (_cutoverValidation is not null)
             {
-                <div class="mt-3 rounded border border-default bg-surface-muted/50 p-2 text-xs">
+                <div class="ui-detail-block text-xs">
                     <div class="font-semibold text-heading">Staging cutover validation</div>
                     <p class="mt-1 text-muted">Read-only — flags are not changed by this summary.</p>
                     <ul class="mt-2 space-y-1">
@@ -177,14 +177,14 @@
                 {
                     <label class="mt-2 block text-xs">
                         Operator note (optional)
-                        <textarea class="mt-1 block w-full max-w-xl rounded border border-default px-2 py-1 text-xs" rows="2" @bind="_signOffNote" disabled="@_busy"></textarea>
+                        <textarea class="ui-input" rows="2" @bind="_signOffNote" disabled="@_busy"></textarea>
                     </label>
                     <div class="mt-2 flex flex-wrap gap-2">
                         <button type="button" class="rounded bg-success-light px-3 py-1 text-xs disabled:opacity-50"
                                 disabled="@(_busy || !CanSignOffReady)" @onclick="SignOffReadyAsync">
                             Sign off — ready for cutover
                         </button>
-                        <button type="button" class="rounded bg-surface-muted px-3 py-1 text-xs disabled:opacity-50"
+                        <button type="button" class="ui-toolbar-btn text-xs disabled:opacity-50"
                                 disabled="@_busy" @onclick="SignOffNotReadyAsync">
                             Record not ready
                         </button>
@@ -200,7 +200,7 @@
             </div>
 
             <div class="mt-3 flex flex-wrap gap-2 text-xs">
-                <button type="button" class="rounded bg-surface-muted px-3 py-1 disabled:opacity-50" disabled="@_busy" @onclick="LoadCutoverReadinessAsync">Refresh readiness</button>
+                <button type="button" class="ui-toolbar-btn text-xs disabled:opacity-50" disabled="@_busy" @onclick="LoadCutoverReadinessAsync">Refresh readiness</button>
                 @if (_parityDetail is not null)
                 {
                     <details>
@@ -227,12 +227,12 @@
             </div>
         </section>
 
-        <section class="mt-4 rounded border border-default bg-surface p-3">
+        <section class="ui-detail-block mt-4">
             <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
                 <h2 class="text-sm font-semibold text-heading">Notification definitions</h2>
                 @if (_canManageSubscriptions)
                 {
-                    <a class="rounded bg-surface-muted px-3 py-1 text-xs hover:bg-surface"
+                    <a class="ui-toolbar-btn text-xs hover:bg-surface"
                        href="@($"/integrations/{Uri.EscapeDataString(IntegrationId)}/notifications/definitions/new")">
                         Create definition
                     </a>
@@ -294,7 +294,7 @@
             }
         </section>
 
-        <section class="mt-4 rounded border border-default bg-surface p-3">
+        <section class="ui-detail-block mt-4">
             <h2 class="text-sm font-semibold text-heading mb-2">Implicit recipients (attention routing compatibility)</h2>
             <p class="text-xs text-muted mb-2">Epic 69 attention routing — not platform notification subscriptions. Shown for parity only.</p>
             @if (_attentionRouting is null)
@@ -318,14 +318,14 @@
             }
         </section>
 
-        <section class="mt-4 rounded border border-default bg-surface p-3" id="explicit-subscriptions">
+        <section class="ui-detail-block mt-4" id="explicit-subscriptions">
             <h2 class="text-sm font-semibold text-heading mb-2">Explicit subscriptions</h2>
             @if (_canManageSubscriptions)
             {
                 <div class="mb-3 flex flex-wrap items-end gap-2 text-xs border-b border-default pb-3">
                     <label>
                         Definition
-                        <select class="mt-1 block rounded border border-default px-2 py-1 font-mono" @bind="_addDefinitionId">
+                        <select class="ui-input font-mono" @bind="_addDefinitionId">
                             @foreach (var d in _definitions)
                             {
                                 <option value="@d.Summary.Id">@d.Summary.DisplayName</option>
@@ -334,7 +334,7 @@
                     </label>
                     <label>
                         Kind
-                        <select class="mt-1 block rounded border border-default px-2 py-1" @bind="_addKind">
+                        <select class="ui-input" @bind="_addKind">
                             <option value="principal">principal</option>
                             <option value="operational_team">operational_team</option>
                             <option value="managed_contact">managed_contact</option>
@@ -342,7 +342,7 @@
                     </label>
                     <label class="min-w-[10rem] flex-1">
                         Ref
-                        <select class="mt-1 block w-full rounded border border-default px-2 py-1 font-mono" @bind="_addRef">
+                        <select class="ui-input font-mono" @bind="_addRef">
                             <option value="">— select —</option>
                             @foreach (var opt in RecipientOptions)
                             {
@@ -352,7 +352,7 @@
                     </label>
                     <label>
                         Delivery mode
-                        <select class="mt-1 block rounded border border-default px-2 py-1" @bind="_addDeliveryMode">
+                        <select class="ui-input" @bind="_addDeliveryMode">
                             @foreach (var mode in NotificationDeliveryModeOptions.All)
                             {
                                 <option value="@mode.Value">@mode.Label</option>
@@ -366,12 +366,12 @@
                             Create contact if missing
                         </label>
                     }
-                    <button type="button" class="rounded bg-surface-muted px-3 py-2 disabled:opacity-50" disabled="@_busy" @onclick="AddSubscriptionAsync">Add</button>
+                    <button type="button" class="btn btn-secondary" disabled="@_busy" @onclick="AddSubscriptionAsync">Add</button>
                 </div>
             }
             @if (!string.IsNullOrWhiteSpace(_addDefinitionId) && !HasExplicitSubscriptions(_addDefinitionId))
             {
-                <div class="mb-3 rounded border border-default bg-surface-muted/50 p-2 text-xs">
+                <div class="ui-detail-block text-xs">
                     <p class="font-medium text-heading">No explicit subscriptions yet</p>
                     <p class="mt-1 text-muted">@GetEmptySubscriptionsMessage(_addDefinitionId)</p>
                 </div>
@@ -405,7 +405,7 @@
                                 <td class="p-1">
                                     @if (_canManageSubscriptions)
                                     {
-                                        <select class="rounded border border-default px-1 py-0.5" value="@s.DeliveryMode" disabled="@_busy" @onchange="e => PatchSubscriptionDeliveryModeAsync(s, e)">
+                                        <select class="ui-input ui-input--narrow" value="@s.DeliveryMode" disabled="@_busy" @onchange="e => PatchSubscriptionDeliveryModeAsync(s, e)">
                                             @foreach (var mode in NotificationDeliveryModeOptions.All)
                                             {
                                                 <option value="@mode.Value">@mode.Label</option>
@@ -445,14 +445,14 @@
                 <div class="flex flex-wrap items-end gap-2 text-xs">
                     <label>
                         Definition
-                        <select class="mt-1 block rounded border border-default px-2 py-1 font-mono" @bind="_previewDefinitionId">
+                        <select class="ui-input font-mono" @bind="_previewDefinitionId">
                             @foreach (var d in _definitions)
                             {
                                 <option value="@d.Summary.Id">@d.Summary.DisplayName</option>
                             }
                         </select>
                     </label>
-                    <button type="button" class="rounded bg-surface-muted px-3 py-2 disabled:opacity-50" disabled="@_busy" @onclick="ResolveRecipientsAsync">Preview</button>
+                    <button type="button" class="btn btn-secondary" disabled="@_busy" @onclick="ResolveRecipientsAsync">Preview</button>
                 </div>
                 @if (_recipientPreviewRefreshedAt is not null)
                 {
@@ -462,7 +462,7 @@
             </div>
         </section>
 
-        <section class="mt-4 rounded border border-default bg-surface p-3">
+        <section class="ui-detail-block mt-4">
             <h2 class="text-sm font-semibold text-heading mb-2">Recent platform instances</h2>
             @if (_instances.Count == 0)
             {
@@ -500,7 +500,7 @@
             }
         </section>
 
-        <section class="mt-4 rounded border border-default bg-surface p-3">
+        <section class="ui-detail-block mt-4">
             <h2 class="text-sm font-semibold text-heading mb-2">Recent delivery outbox</h2>
             @if (_outboxRows.Count == 0)
             {

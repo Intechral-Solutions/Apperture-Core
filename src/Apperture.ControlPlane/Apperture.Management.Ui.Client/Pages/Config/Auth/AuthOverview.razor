@@ -6,32 +6,26 @@
 @inject IManagementClient Client
 @inject IOperatorCapabilitiesService Capabilities
 
-<div class="p-4">
-    <div class="text-xs text-muted mb-1">Config — Authentication</div>
-    <PageHeader Title="Overview"
+<div class="p-4 ui-page-stack">
+    <PageHeader Eyebrow="Config — Authentication"
+                Title="Overview"
                 Subtitle="What operators see at sign-in, how that relates to deployment and policy, and recovery paths." />
 
     @if (!_canView)
     {
-        <div class="mt-4">
-            <ForbiddenState Message="You do not have permission to view authentication configuration." />
-        </div>
+        <ForbiddenState Message="You do not have permission to view authentication configuration." />
     }
     else if (_loading)
     {
-        <div class="mt-4">
-            <LoadingState />
-        </div>
+        <LoadingState />
     }
     else if (_overview is null)
     {
-        <div class="mt-4">
-            <ErrorState Message="Could not load authentication overview." />
-        </div>
+        <ErrorState Message="Could not load authentication overview." />
     }
     else
     {
-        <div class="mt-6 max-w-3xl space-y-6 text-sm text-body">
+        <div class="max-w-3xl space-y-4 text-sm text-body">
             @if (_overview.Warnings.Count > 0)
             {
                 foreach (var w in _overview.Warnings)
@@ -40,22 +34,20 @@
                 }
             }
 
-            <section class="rounded border border-default bg-surface p-4">
-                <h2 class="font-medium text-heading">What users see</h2>
-                <p class="mt-2 text-xs">@_overview.EffectiveExperienceDescription</p>
+            <ManagementSection Title="What users see" Layer="@ManagementSection.UiLayer.Summary">
+                <p class="text-xs">@_overview.EffectiveExperienceDescription</p>
                 <ul class="mt-3 list-inside list-disc space-y-1 text-xs text-muted">
                     <li>Local on primary login: @(_overview.LocalShownOnPrimaryLogin ? "yes" : "no")</li>
-                    <li>Local only as fallback at <code class="rounded bg-surface-muted px-1">/login/local</code>: @(_overview.LocalFallbackOnly ? "yes" : "no")</li>
+                    <li>Local only as fallback at <code class="ui-inline-code">/login/local</code>: @(_overview.LocalFallbackOnly ? "yes" : "no")</li>
                     <li>Entra sign-in (effective): @(_overview.EntraSignInEnabled ? "available" : "not available")</li>
                 </ul>
-            </section>
+            </ManagementSection>
 
             @if (_overview.AuthProviderAvailability is not null)
             {
                 var ap = _overview.AuthProviderAvailability;
-                <section class="rounded border border-default bg-surface p-4">
-                    <h2 class="font-medium text-heading">Provider readiness</h2>
-                    <ul class="mt-2 list-inside list-disc space-y-1 text-xs">
+                <ManagementSection Title="Provider readiness" Layer="@ManagementSection.UiLayer.Summary">
+                    <ul class="list-inside list-disc space-y-1 text-xs">
                         <li>Entra sign-in ready (effective): @(ap.EntraSignInReady ? "yes" : "no")</li>
                         <li>Local sign-in available: @(ap.LocalSignInAvailable ? "yes" : "no")</li>
                         <li>Active registration OID validation status: @(ap.ActiveEntraOpenIdConfigurationStatus ?? "—")</li>
@@ -65,21 +57,19 @@
                     {
                         <PageMessage Kind="PageMessageKind.Warning" Message="@ap.AdminDiagnosis" />
                     }
-                </section>
+                </ManagementSection>
             }
 
-            <section class="rounded border border-default bg-surface p-4">
-                <h2 class="font-medium text-heading">Entra administration</h2>
-                <p class="mt-2 text-xs text-muted">
+            <ManagementSection Title="Entra administration" Layer="@ManagementSection.UiLayer.Summary">
+                <p class="text-xs text-muted">
                     Configure tenants, validate OpenID metadata, browse directory objects, and import users into
                     <a class="underline" href="/config/contacts">managed contacts</a>:
                     <a class="underline" href="/config/auth/tenants">Entra tenant setup</a>
                 </p>
-            </section>
+            </ManagementSection>
 
-            <section class="rounded border border-default bg-surface p-4">
-                <h2 class="font-medium text-heading">Capabilities vs policy</h2>
-                <ul class="mt-2 list-inside list-disc space-y-1 text-xs">
+            <ManagementSection Title="Capabilities vs policy" Layer="@ManagementSection.UiLayer.Summary">
+                <ul class="list-inside list-disc space-y-1 text-xs">
                     <li>Local auth (deployment): @(_overview.LocalAuthEnabled ? "enabled" : "disabled")</li>
                     <li>Entra enabled in deployment configuration: @(_overview.EntraEnabledInDeploymentConfiguration ? "yes" : "no")</li>
                     <li>Entra configuration valid: @(_overview.EntraConfigurationValid ? "yes" : "no")</li>
@@ -103,12 +93,11 @@
                     <li>Prefer Entra in chooser: @_overview.PreferEntraInChooser</li>
                     <li>Auto-redirect to Entra: @_overview.AutoRedirectToEntra</li>
                 </ul>
-            </section>
+            </ManagementSection>
 
-            <section class="rounded border border-default bg-surface p-4">
-                <h2 class="font-medium text-heading">Recovery</h2>
-                <p class="mt-2 text-xs text-muted">Local backup sign-in: <a class="underline" href="/login/local">/login/local</a></p>
-            </section>
+            <ManagementSection Title="Recovery" Layer="@ManagementSection.UiLayer.Summary">
+                <p class="text-xs text-muted">Local backup sign-in: <a class="underline" href="/login/local">/login/local</a></p>
+            </ManagementSection>
         </div>
     }
 </div>

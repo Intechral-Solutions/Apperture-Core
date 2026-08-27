@@ -8,9 +8,9 @@
 @inject IManagementClient Client
 @inject IOperatorCapabilitiesService Capabilities
 
-<div class="p-4">
-    <div class="text-xs text-muted mb-1">Config — Notifications — Delivery</div>
-    <PageHeader Title="Delivery health"
+<div class="p-4 ui-page-stack">
+    <PageHeader Eyebrow="Config — Notifications"
+                Title="Delivery health"
                 Subtitle="Read-only operational view. Does not send mail or change delivery flags." />
 
     @if (!_capabilitiesLoaded)
@@ -19,24 +19,19 @@
     }
     else if (!_canView)
     {
-        <div class="mt-4">
-            <ForbiddenState Message="You do not have permission to view notification delivery health." />
-        </div>
+        <ForbiddenState Message="You do not have permission to view notification delivery health." />
     }
     else
     {
         @if (_cutoverStatus is not null)
         {
-            <div class="mt-4">
-                <NotificationPipelineCutoverStatusCard Status="_cutoverStatus" />
-            </div>
+            <NotificationPipelineCutoverStatusCard Status="_cutoverStatus" />
         }
 
         @if (_configDiagnostics is not null)
         {
-            <section class="mt-4 rounded border border-default bg-surface p-3 text-xs">
-                <div class="font-semibold text-heading mb-2">Platform pipeline configuration</div>
-                <dl class="grid grid-cols-2 md:grid-cols-5 gap-2">
+            <ManagementSection Title="Platform pipeline configuration" Layer="@ManagementSection.UiLayer.Summary">
+                <dl class="grid grid-cols-2 gap-2 text-xs md:grid-cols-5">
                     <div><dt class="text-muted">Platform events</dt><dd>@FlagLabel(_configDiagnostics.PlatformEventsEnabled)</dd></div>
                     <div><dt class="text-muted">Evaluation</dt><dd>@FlagLabel(_configDiagnostics.EvaluationEnabled)</dd></div>
                     <div><dt class="text-muted">Instances</dt><dd>@FlagLabel(_configDiagnostics.InstancesEnabled)</dd></div>
@@ -45,69 +40,65 @@
                 </dl>
                 @if (!_configDiagnostics.DeliveryEnabled)
                 {
-                    <p class="mt-2 rounded border border-message-warning bg-message-warning p-2">
-                        Delivery is disabled — outbox rows may be created but mail is not sent. Review diagnostics and dev/staging logs before enabling delivery.
-                    </p>
+                    <PageMessage Kind="PageMessageKind.Warning"
+                                 Message="Delivery is disabled — outbox rows may be created but mail is not sent. Review diagnostics and dev/staging logs before enabling delivery." />
                 }
                 else if (_configDiagnostics.Warnings.Count > 0)
                 {
-                    <ul class="mt-2 list-disc list-inside text-muted">
+                    <ul class="mt-2 list-inside list-disc text-muted">
                         @foreach (var w in _configDiagnostics.Warnings)
                         {
                             <li>@w.Message</li>
                         }
                     </ul>
                 }
-                <p class="mt-2 text-muted">
+                <p class="mt-2 text-xs text-muted">
                     <a class="underline" href="@NotificationUiRoutes.DeliveryDiagnostics()">Full notification diagnostics</a>
                 </p>
-            </section>
+            </ManagementSection>
         }
 
         @if (_globalHealth is not null)
         {
-            <div class="mt-4 grid grid-cols-2 gap-2 md:grid-cols-4 text-xs">
-                <div class="rounded border border-default p-2"><div class="text-muted">Failed deliveries</div><div class="text-lg font-semibold">@_globalHealth.RecentFailedDeliveryCount</div></div>
-                <div class="rounded border border-default p-2"><div class="text-muted">Suppressed instances</div><div class="text-lg font-semibold">@_globalHealth.RecentSuppressedInstanceCount</div></div>
-                <div class="rounded border border-default p-2"><div class="text-muted">Pending / delivering</div><div class="text-lg font-semibold">@_globalHealth.RecentPendingOrDeliveringOutboxCount</div></div>
-                <div class="rounded border border-default p-2"><div class="text-muted">Generated</div><div class="text-lg font-semibold">@_globalHealth.GeneratedAtUtc.UtcDateTime.ToString("u")</div></div>
+            <div class="grid grid-cols-2 gap-2 text-xs md:grid-cols-4">
+                <div class="ui-detail-block"><div class="text-muted">Failed deliveries</div><div class="text-lg font-semibold">@_globalHealth.RecentFailedDeliveryCount</div></div>
+                <div class="ui-detail-block"><div class="text-muted">Suppressed instances</div><div class="text-lg font-semibold">@_globalHealth.RecentSuppressedInstanceCount</div></div>
+                <div class="ui-detail-block"><div class="text-muted">Pending / delivering</div><div class="text-lg font-semibold">@_globalHealth.RecentPendingOrDeliveringOutboxCount</div></div>
+                <div class="ui-detail-block"><div class="text-muted">Generated</div><div class="text-lg font-semibold">@_globalHealth.GeneratedAtUtc.UtcDateTime.ToString("u")</div></div>
             </div>
         }
 
-        <div class="mt-4 flex flex-wrap items-end gap-2 text-xs">
-            <label>
-                Integration
-                <select class="mt-1 block min-w-[14rem] rounded border border-default px-2 py-1" @bind="_selectedIntegrationId">
-                    <option value="">— select —</option>
-                    @foreach (var i in _integrations)
-                    {
-                        <option value="@i.Id">@i.DisplayName</option>
-                    }
-                </select>
-            </label>
-            <button type="button" class="rounded bg-surface-muted px-3 py-2 disabled:opacity-50" disabled="@_busy" @onclick="LoadIntegrationAsync">Load</button>
-        </div>
+        <ManagementSection Title="Integration scope" Layer="@ManagementSection.UiLayer.Summary">
+            <div class="flex flex-wrap items-end gap-2 text-xs">
+                <label class="flex flex-col gap-1">
+                    Integration
+                    <select class="ui-input min-w-[14rem]" @bind="_selectedIntegrationId">
+                        <option value="">— select —</option>
+                        @foreach (var i in _integrations)
+                        {
+                            <option value="@i.Id">@i.DisplayName</option>
+                        }
+                    </select>
+                </label>
+                <button type="button" class="btn btn-secondary" disabled="@_busy" @onclick="LoadIntegrationAsync">Load</button>
+            </div>
+        </ManagementSection>
 
         @if (!string.IsNullOrEmpty(_error))
         {
-            <div class="mt-4">
-                <ErrorState Message="@_error" />
-            </div>
+            <ErrorState Message="@_error" />
         }
         else if (_integrationDiag is not null)
         {
-            <section class="mt-4 rounded border border-message-error bg-error-light p-3">
-                <div class="font-semibold text-heading text-sm mb-2">Failed deliveries</div>
+            <ManagementSection Title="Failed deliveries" Layer="@ManagementSection.UiLayer.Detail">
                 @RenderOutboxTable(_integrationDiag.RecentFailedDeliveries)
-            </section>
-            <section class="mt-4 rounded border border-message-warning bg-warning-light p-3">
-                <div class="font-semibold text-heading text-sm mb-2">Pending / delivering</div>
+            </ManagementSection>
+            <ManagementSection Title="Pending / delivering" Layer="@ManagementSection.UiLayer.Detail">
                 @RenderOutboxTable(_integrationDiag.RecentOutboxRows.Where(r => r.Status is "pending" or "delivering").ToList())
-            </section>
-            <section class="mt-4 rounded border border-callout-info bg-success-light p-3">
-                <div class="font-semibold text-heading text-sm mb-2">Succeeded (recent window)</div>
+            </ManagementSection>
+            <ManagementSection Title="Succeeded (recent window)" Layer="@ManagementSection.UiLayer.Detail">
                 @RenderOutboxTable(_integrationDiag.RecentOutboxRows.Where(r => r.Status is "succeeded" or "delivered").ToList())
-            </section>
+            </ManagementSection>
         }
     }
 </div>
@@ -184,51 +175,46 @@
             builder.CloseElement();
             return;
         }
-        builder.OpenElement(0, "table");
-        builder.AddAttribute(1, "class", "min-w-full text-left text-xs");
-        builder.OpenElement(2, "thead");
-        builder.OpenElement(3, "tr");
+        builder.OpenElement(0, "div");
+        builder.AddAttribute(1, "class", "ui-data-table");
+        builder.OpenElement(2, "table");
+        builder.AddAttribute(3, "class", "ui-data-table__table min-w-full text-left text-xs");
+        builder.OpenElement(4, "thead");
+        builder.OpenElement(5, "tr");
         foreach (var h in new[] { "Recipient", "Kind", "Status", "Attempts", "Error", "Guidance", "Instance" })
         {
-            builder.OpenElement(4, "th");
-            builder.AddAttribute(5, "class", "p-1");
-            builder.AddContent(6, h);
+            builder.OpenElement(6, "th");
+            builder.AddContent(7, h);
             builder.CloseElement();
         }
         builder.CloseElement();
         builder.CloseElement();
-        builder.OpenElement(7, "tbody");
-        var seq = 8;
+        builder.OpenElement(8, "tbody");
+        var seq = 9;
         foreach (var r in rows)
         {
             builder.OpenElement(seq++, "tr");
-            builder.AddAttribute(seq++, "class", "border-t border-default");
             builder.OpenElement(seq++, "td");
-            builder.AddAttribute(seq++, "class", "p-1");
             builder.AddContent(seq++, r.RecipientEmail);
             builder.CloseElement();
             builder.OpenElement(seq++, "td");
-            builder.AddAttribute(seq++, "class", "p-1");
             builder.AddContent(seq++, r.NotificationKind);
             builder.CloseElement();
             builder.OpenElement(seq++, "td");
-            builder.AddAttribute(seq++, "class", "p-1");
             builder.AddContent(seq++, r.Status);
             builder.CloseElement();
             builder.OpenElement(seq++, "td");
-            builder.AddAttribute(seq++, "class", "p-1");
             builder.AddContent(seq++, r.AttemptCount);
             builder.CloseElement();
             builder.OpenElement(seq++, "td");
-            builder.AddAttribute(seq++, "class", "p-1 break-all");
+            builder.AddAttribute(seq++, "class", "break-all");
             builder.AddContent(seq++, r.LastError ?? "—");
             builder.CloseElement();
             builder.OpenElement(seq++, "td");
-            builder.AddAttribute(seq++, "class", "p-1 text-muted");
+            builder.AddAttribute(seq++, "class", "text-muted");
             builder.AddContent(seq++, NotificationDeliveryErrorGuidance.Summarize(r.LastError, r.Status) ?? "—");
             builder.CloseElement();
             builder.OpenElement(seq++, "td");
-            builder.AddAttribute(seq++, "class", "p-1");
             builder.OpenElement(seq++, "a");
             builder.AddAttribute(seq++, "class", "underline");
             builder.AddAttribute(seq++, "href", NotificationUiRoutes.InstanceDetail(r.NotificationInstanceId));
@@ -239,6 +225,6 @@
         }
         builder.CloseElement();
         builder.CloseElement();
+        builder.CloseElement();
     };
 }
-

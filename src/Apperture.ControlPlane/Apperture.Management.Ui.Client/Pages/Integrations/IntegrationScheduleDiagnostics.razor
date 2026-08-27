@@ -8,7 +8,7 @@
 @inject NavigationManager Nav
 @inject ShellOrientationService ShellOrientation
 
-<div class="p-4">
+<div class="p-4 ui-page-stack">
     <PageHeader @key="@IntegrationId"
                 Eyebrow="Integrations"
                 Title="@EntityShellTitles.Detail(_integrationDisplayName, "Integration")"
@@ -17,11 +17,11 @@
             <div class="mt-1 font-mono text-xs text-muted break-all">@IntegrationId</div>
         </ChildContent>
         <Toolbar>
-            <a href="@IntegrationUiRoutes.Detail(IntegrationId)" class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface">Integration detail</a>
-            <a href="@IntegrationUiRoutes.Settings(IntegrationId)" class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface">Settings</a>
-            <a href="/integrations" class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface">Back to fleet</a>
+            <a href="@IntegrationUiRoutes.Detail(IntegrationId)" class="ui-toolbar-btn text-sm">Integration detail</a>
+            <a href="@IntegrationUiRoutes.Settings(IntegrationId)" class="ui-toolbar-btn text-sm">Settings</a>
+            <a href="/integrations" class="ui-toolbar-btn text-sm">Back to fleet</a>
             <button type="button"
-                    class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface disabled:opacity-50"
+                    class="ui-toolbar-btn text-sm disabled:opacity-50"
                     disabled="@_loading"
                     @onclick="LoadAsync">
                 Refresh
@@ -49,7 +49,7 @@
             </div>
         }
         <div class="mt-4 space-y-4">
-            <div class="rounded border border-default bg-surface p-3">
+            <div class="ui-detail-block">
                 <div class="text-sm font-semibold text-heading mb-2">Current status</div>
 
                 <div class="grid grid-cols-1 gap-2 md:grid-cols-2">
@@ -87,7 +87,7 @@
                 }
             </div>
 
-            <div class="rounded border border-default bg-surface p-3">
+            <div class="ui-detail-block">
                 <div class="text-sm font-semibold text-heading mb-2">Core evidence</div>
 
                 <div class="grid grid-cols-1 gap-2 md:grid-cols-2">
@@ -152,11 +152,11 @@
                 </div>
             </div>
 
-            <div class="rounded border border-default bg-surface p-3">
+            <div class="ui-detail-block">
                 <div class="text-sm font-semibold text-heading mb-2">Recent expected fires</div>
                 @if (_diagnostics.RecentExpectedFires is { Count: > 0 })
                 {
-                    <div class="overflow-x-auto rounded border border-default">
+                    <div class="ui-data-table overflow-x-auto">
                         <table class="min-w-full text-left text-sm text-body">
                             <thead class="border-b border-default text-xs text-muted">
                                 <tr>
@@ -201,11 +201,11 @@
                 }
             </div>
 
-            <div class="rounded border border-default bg-surface p-3">
+            <div class="ui-detail-block">
                 <div class="text-sm font-semibold text-heading mb-2">Expected-run-missing incident history</div>
                 @if (_diagnostics.RecentAttentionIncidents is { Count: > 0 })
                 {
-                    <div class="overflow-x-auto rounded border border-default">
+                    <div class="ui-data-table overflow-x-auto">
                         <table class="min-w-full text-left text-sm text-body">
                             <thead class="border-b border-default text-xs text-muted">
                                 <tr>
@@ -257,7 +257,7 @@
                                             @if (string.Equals(i.Status, "Active", StringComparison.OrdinalIgnoreCase))
                                             {
                                                 <button type="button"
-                                                        class="rounded bg-surface-muted px-2 py-1 text-xs text-body hover:bg-surface disabled:opacity-50"
+                                                        class="ui-toolbar-btn text-xs disabled:opacity-50"
                                                         disabled="@_ackBusy"
                                                         @onclick="async () => await AcknowledgeIncidentAsync(i.Id)">
                                                     Acknowledge
@@ -276,7 +276,7 @@
                 }
             </div>
 
-            <div class="rounded border border-default bg-surface p-3">
+            <div class="ui-detail-block">
                 <div class="text-sm font-semibold text-heading mb-2">Attention routing (expected_run_missing)</div>
                 @if (_diagnostics.AttentionRouting is { } rt)
                 {
@@ -318,7 +318,7 @@
                             <div class="text-xs font-semibold text-heading">Integration override (operational teams)</div>
                             <div class="text-xs text-muted">Leave as “Instance default” to clear the override for that role.</div>
                             <label class="block text-xs text-muted">Primary group</label>
-                            <select class="w-full rounded border border-default bg-surface px-2 py-1 text-sm" @bind="_routingPrimaryGroupId">
+                            <select class="ui-input w-full text-sm" @bind="_routingPrimaryGroupId">
                                 <option value="">Instance default</option>
                                 @foreach (var g in _contactGroups.Where(x => x.IsEnabled))
                                 {
@@ -326,7 +326,7 @@
                                 }
                             </select>
                             <label class="block text-xs text-muted">Escalation group</label>
-                            <select class="w-full rounded border border-default bg-surface px-2 py-1 text-sm" @bind="_routingEscalationGroupId">
+                            <select class="ui-input w-full text-sm" @bind="_routingEscalationGroupId">
                                 <option value="">Instance default</option>
                                 @foreach (var g in _contactGroups.Where(x => x.IsEnabled))
                                 {
@@ -334,7 +334,7 @@
                                 }
                             </select>
                             <div class="flex flex-wrap gap-2 items-center">
-                                <button type="button" class="rounded bg-surface-muted px-3 py-1 text-sm disabled:opacity-50" disabled="@_routingSaveBusy" @onclick="SaveRoutingAsync">Save integration override</button>
+                                <button type="button" class="btn btn-secondary text-sm" disabled="@_routingSaveBusy" @onclick="SaveRoutingAsync">Save integration override</button>
                                 @if (!string.IsNullOrEmpty(_routingSaveError))
                                 {
                                     <span class="text-xs text-muted">@_routingSaveError</span>
@@ -345,11 +345,11 @@
                 }
             </div>
 
-            <div class="rounded border border-default bg-surface p-3">
+            <div class="ui-detail-block">
                 <div class="text-sm font-semibold text-heading mb-2">Notification evidence (Epic 69 legacy ledger)</div>
                 @if (_diagnostics.RecentAttentionIncidentNotifications is { Count: > 0 })
                 {
-                    <div class="overflow-x-auto rounded border border-default">
+                    <div class="ui-data-table overflow-x-auto">
                         <table class="min-w-full text-left text-sm text-body">
                             <thead class="border-b border-default text-xs text-muted">
                                 <tr>
@@ -402,14 +402,14 @@
                 }
             </div>
 
-            <div class="rounded border border-default bg-surface p-3">
+            <div class="ui-detail-block">
                 <p class="text-xs text-muted">
                     <a class="underline font-medium" href="@NotificationUiRoutes.IntegrationCutoverReadiness(IntegrationId)">View platform notification cutover readiness</a>
                     — Epic 77 parity and instance flag guidance (read-only).
                 </p>
             </div>
 
-            <div class="rounded border border-default bg-surface p-3">
+            <div class="ui-detail-block">
                 <div class="text-sm font-semibold text-heading mb-2">Navigation</div>
                 <div class="flex flex-wrap gap-2">
                     @if (!string.IsNullOrWhiteSpace(_diagnostics.ReferenceScheduleId))

@@ -107,7 +107,9 @@ Legend: **R** reference · **P** pilot · **L** legacy · **C** candidate
 | `/runs`, `/runs/{id}` | List + execution detail | **P** | none | `ui-data-table`, `ui-detail-block`, `ui-code-block` |
 | `/control/center`, `/control/blocked-work`, `/control/audit` | Operational console | **P** | none | `ui-detail-block`, `ui-input`, `btn` |
 | `/schedules`, `/schedules/{id}`, `/schedules/new` | List + detail + create | **P** | none | Create form migrated; list already on `ui-data-table` |
-| `/config/**` | Hub + hybrid lists | **P** | none | Governance, notifications hub, attention teams migrated |
+| `/config/auth/**` | Auth overview + Entra + sign-in | **P** | none | `ManagementSection`, `ui-data-table`, `ui-input`, `btn` |
+| `/config/contacts/**` | Managed contacts | **P** | none | List/detail on primitives; `MetadataGrid` on editor |
+| `/config/governance` | Governance hub | **P** | none | `ManagementSummaryCard` grid |
 | `/attention/**` | Operational teams | **P** | none | Groups list/detail + routing defaults on primitives |
 | `/modules`, `/modules/{id}` | Module list + detail | **P** | none | List on `ui-data-table`; detail already on primitives |
 | `/connections/**` | Connections + connectors | **P** | none | `ui-data-table`, `ui-input`, `btn`, `ManagementSection` |
@@ -138,5 +140,6 @@ Legend: **R** reference · **P** pilot · **L** legacy · **C** candidate
 5. ~~Runs, Schedules, Control~~ (done)
 6. ~~Config notifications + governance + contacts~~ (done)
 7. ~~Modules, connections, runtimes, demo~~ (done)
+8. ~~Auth, contacts hub, notification detail/diagnostics, integration sub-pages~~ (done)
 
 Update this table as batches complete.

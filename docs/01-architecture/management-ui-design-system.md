@@ -543,6 +543,7 @@ Tracked in [pattern-catalog.md](../../.planning/management-ui/pattern-catalog.md
 | Runs, Schedules, Control | Runs list/detail, schedule create/detail, control center, audit, blocked work | Done |
 | Config + governance + attention | Users/roles/catalog, user/role detail, notification hub/lists, operational teams | Done |
 | Modules, connections, runtimes, demo | Module list, connections CRUD, connector catalog, shutdown requests, demo customers | Done |
+| Auth, contacts, notification detail, integration sub-pages | Auth/Entra/sign-in, managed contacts, definition/instance/delivery/diagnostics, integration notifications/settings/schedule diagnostics | Done |
 
 Update this table when batches complete.
 
