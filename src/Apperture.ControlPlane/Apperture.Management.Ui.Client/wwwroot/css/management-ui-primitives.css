@@ -170,23 +170,27 @@ button.ui-summary-card {
 }
 
 .ui-status-pill--success {
-  background: color-mix(in oklch, var(--color-success) 18%, transparent);
-  color: var(--color-success-dark);
+  background: var(--color-tint-sage);
+  color: var(--color-tint-sage-text);
+  border: 1px solid var(--color-tint-sage-line);
 }
 
 .ui-status-pill--warning {
-  background: color-mix(in oklch, var(--color-warning) 20%, transparent);
-  color: var(--color-warning-dark);
+  background: var(--color-tint-sand);
+  color: var(--color-tint-sand-text);
+  border: 1px solid var(--color-tint-sand-line);
 }
 
 .ui-status-pill--error {
-  background: color-mix(in oklch, var(--color-error) 18%, transparent);
+  background: var(--color-error-light);
   color: var(--color-error-dark);
+  border: 1px solid color-mix(in srgb, var(--color-error) 35%, var(--color-border));
 }
 
 .ui-status-pill--pending {
-  background: color-mix(in oklch, var(--color-info) 16%, transparent);
-  color: var(--color-info-dark);
+  background: var(--color-tint-teal);
+  color: var(--color-tint-teal-text);
+  border: 1px solid var(--color-tint-teal-line);
 }
 
 .ui-status-pill--neutral {
@@ -206,18 +210,21 @@ button.ui-summary-card {
 }
 
 .ui-attention-pill--critical {
-  background: color-mix(in oklch, var(--color-error) 18%, transparent);
+  background: var(--color-error-light);
   color: var(--color-error-dark);
+  border: 1px solid color-mix(in srgb, var(--color-error) 35%, var(--color-border));
 }
 
 .ui-attention-pill--warning {
-  background: color-mix(in oklch, var(--color-warning) 20%, transparent);
-  color: var(--color-warning-dark);
+  background: var(--color-tint-sand);
+  color: var(--color-tint-sand-text);
+  border: 1px solid var(--color-tint-sand-line);
 }
 
 .ui-attention-pill--info {
-  background: color-mix(in oklch, var(--color-primary) 14%, transparent);
-  color: var(--color-primary-dark);
+  background: var(--color-tint-teal);
+  color: var(--color-tint-teal-text);
+  border: 1px solid var(--color-tint-teal-line);
 }
 
 .ui-attention-pill--neutral {
@@ -603,6 +610,39 @@ details.text-muted[open] > summary {
   gap: 0.5rem;
 }
 
+.ui-toast {
+  display: flex;
+  gap: 0.5rem;
+  border-radius: var(--r-md);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-elevated);
+  box-shadow: var(--shadow-card);
+  padding: 0.625rem 0.75rem;
+  font-size: 13.5px;
+  color: var(--color-text-body);
+  pointer-events: auto;
+}
+
+.ui-toast__title {
+  font-weight: 600;
+  color: var(--color-text-heading);
+}
+
+.ui-toast__dismiss {
+  flex-shrink: 0;
+  border: 0;
+  background: transparent;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  padding: 0;
+  line-height: 1;
+  font-size: 1.125rem;
+}
+
+.ui-toast__dismiss:hover {
+  color: var(--color-text-heading);
+}
+
 /* Modal owns scroll; body is outside the Blazor render root. */
 body.apperture-modal-open {
   overflow: hidden;
@@ -901,6 +941,21 @@ a.ui-toolbar-btn--danger:hover {
   z-index: 1;
   width: 20rem;
   max-width: calc(100vw - 2rem);
+  padding: 0;
+}
+
+.ui-personal-notification-menu__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  border-bottom: 1px solid var(--color-border-subtle);
+  padding: 0.5rem 0.75rem;
+}
+
+.ui-personal-notification-menu__footer {
+  border-top: 1px solid var(--color-border-subtle);
+  padding: 0.25rem;
 }
 
 /* Unread count sits on the bell's upper-right corner without covering the glyph. */
@@ -1066,6 +1121,23 @@ a.ui-toolbar-btn--danger:hover {
   line-height: 1.55;
   padding: 0 0.875rem;
   transition: border-color 120ms ease, box-shadow 120ms ease, background-color 120ms ease;
+}
+
+select.ui-input {
+  appearance: none;
+  padding-right: 2rem;
+  background-image: linear-gradient(45deg, transparent 50%, var(--color-text-subtle) 50%),
+    linear-gradient(135deg, var(--color-text-subtle) 50%, transparent 50%);
+  background-position: calc(100% - 1rem) calc(50% - 0.15rem), calc(100% - 0.7rem) calc(50% - 0.15rem);
+  background-size: 0.35rem 0.35rem, 0.35rem 0.35rem;
+  background-repeat: no-repeat;
+}
+
+textarea.ui-input {
+  min-height: 5rem;
+  height: auto;
+  padding-block: 0.625rem;
+  resize: vertical;
 }
 
 .ui-input::placeholder {
@@ -1696,12 +1768,7 @@ a.ui-toolbar-btn--danger:hover {
 }
 
 .ui-hamburger-line {
-  background-color: var(--color-chrome-line);
-}
-
-html.dark .ui-hamburger-line {
-  /* Neutral body-muted gray — readable on the dark top bar without going accent. */
-  background-color: var(--color-text-muted);
+  background-color: var(--color-hamburger-line);
 }
 
 /* Config gear: larger than domain icons; fill most of the rail tile. */

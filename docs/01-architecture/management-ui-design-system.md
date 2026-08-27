@@ -29,7 +29,7 @@ Related shell documentation: [control-panel-ui.md](control-panel-ui.md).
 2. **Permission omission** — Hide sections or cards when forbidden; do not show locked placeholders on dashboard cards (Epic 45).
 3. **Composable, not generic** — Small Razor components with explicit parameters; no templating engine.
 4. **Incremental adoption** — New and touched pages use primitives; legacy markup remains valid until pilot epics.
-5. **Semantic tokens** — Visual roles use CSS variables in `wwwroot/css/app.css` (`:root` / `.dark`); layout/status helpers in `management-ui-primitives.css`. Dark theme is neutral cool black with a single cyan accent. Borders are white-alpha on dark. Load both stylesheets after `app.css` in **Ui.Server** `_Layout.cshtml` (dev host) and WASM `wwwroot/index.html`.
+5. **Semantic tokens** — Visual roles use CSS variables in `wwwroot/css/app.css` (`:root` for light greige, `.dark` on `html` for cool black). Both themes are siblings: the same markup and `ui-*` classes; only token values change. Load `management-ui-primitives.css` after `app.css` in **Ui.Server** `_Layout.cshtml` (dev host) and WASM `wwwroot/index.html`.
 
 ## Component categories
 
@@ -121,10 +121,10 @@ Defined in `management-ui-primitives.css`:
 
 | Semantic | Typical use | Visual role |
 |----------|-------------|-------------|
-| Success | Healthy, completed | Green mix |
-| Warning | Degraded, advisory | Amber mix |
-| Error / Blocking | Failed, blocked | Red mix |
-| Pending | In progress, queued | Info mix |
+| Success | Healthy, completed | Sage tint fill + line + text |
+| Warning | Degraded, advisory | Sand tint fill + line + text |
+| Error / Blocking | Failed, blocked | Error-light fill + error-dark text |
+| Pending | In progress, queued | Teal tint fill + line + text |
 | Neutral | Disabled, idle | Muted surface |
 | Unknown | Missing data | Muted dashed |
 | Forbidden | Not available to role | Muted + dashed border |

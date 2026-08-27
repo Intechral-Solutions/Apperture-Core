@@ -26,10 +26,10 @@
     </button>
     @if (IsOpen)
     {
-        <div class="ui-personal-notification-menu__panel rounded border border-default bg-surface py-1 text-sm shadow-lg"
+        <div class="ui-menu-panel ui-personal-notification-menu__panel"
              role="menu"
              aria-label="Notifications">
-            <div class="flex items-center justify-between gap-2 border-b border-default px-3 py-2">
+            <div class="ui-personal-notification-menu__header">
                 <span class="font-semibold text-heading">Notifications</span>
                 @if (_unreadCount > 0)
                 {
@@ -51,19 +51,18 @@
                     <PersonalNotificationMenuItem Item="item" OnClick="() => OpenItemAsync(item)" />
                 }
             }
-            <hr class="my-1 border-default" />
-            <div class="flex flex-col gap-0.5 px-1 pb-1">
+            <div class="ui-personal-notification-menu__footer">
                 @if (_unreadCount > 0)
                 {
                     <button type="button"
-                            class="w-full rounded px-2 py-1.5 text-start text-xs text-body hover:bg-surface-muted disabled:opacity-50"
+                            class="ui-menu-item"
                             disabled="@_busy"
                             @onclick="MarkAllReadAsync">
                         Mark all as read
                     </button>
                 }
                 <a href="@PersonalNotificationUiRoutes.Inbox()"
-                   class="block rounded px-2 py-1.5 text-xs text-body hover:bg-surface-muted"
+                   class="ui-menu-item"
                    @onclick="Close">
                     View all notifications
                 </a>

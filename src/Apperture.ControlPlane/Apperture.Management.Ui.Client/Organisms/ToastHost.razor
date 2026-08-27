@@ -27,16 +27,16 @@
     private ToastItem[] _snapshot = Array.Empty<ToastItem>();
 
     private RenderFragment RenderToast(ToastItem t) =>
-        @<div class="@ToastClass(t.Severity) pointer-events-auto flex gap-2 rounded border border-default bg-surface px-3 py-2 text-sm text-body shadow-lg">
+        @<div class="@ToastClass(t.Severity) ui-toast">
             <div class="min-w-0 flex-1">
                 @if (!string.IsNullOrEmpty(t.Title))
                 {
-                    <div class="font-semibold text-heading">@t.Title</div>
+                    <div class="ui-toast__title">@t.Title</div>
                 }
-                <div class="text-body">@t.Message</div>
+                <div>@t.Message</div>
             </div>
             <button type="button"
-                    class="shrink-0 text-muted hover:text-heading"
+                    class="ui-toast__dismiss"
                     aria-label="Dismiss"
                     @onclick="() => Toasts.Dismiss(t.Id)">
                 ×

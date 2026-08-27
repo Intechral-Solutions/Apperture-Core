@@ -9,19 +9,26 @@
 <div class="space-y-4">
     <EditForm Model="_model" OnValidSubmit="SubmitAsync">
         <div>
-            <label class="text-xs text-muted">Username</label>
-            <InputText @bind-Value="_model.Username" class="mt-1 w-full rounded border border-default bg-surface px-2 py-2 text-sm" autocomplete="username" />
+            <label class="text-xs text-muted" for="local-login-username">Username</label>
+            <InputText id="local-login-username"
+                       @bind-Value="_model.Username"
+                       class="ui-input mt-1"
+                       autocomplete="username" />
         </div>
         <div>
-            <label class="text-xs text-muted">Password</label>
-            <InputText type="password" @bind-Value="_model.Password" class="mt-1 w-full rounded border border-default bg-surface px-2 py-2 text-sm" autocomplete="current-password" />
+            <label class="text-xs text-muted" for="local-login-password">Password</label>
+            <InputText id="local-login-password"
+                       type="password"
+                       @bind-Value="_model.Password"
+                       class="ui-input mt-1"
+                       autocomplete="current-password" />
         </div>
         <div class="mt-6 space-y-3">
             @if (!string.IsNullOrEmpty(_error))
             {
                 <PageMessage Kind="PageMessageKind.Error" Message="@_error" />
             }
-            <button type="submit" class="w-full rounded bg-surface-muted px-3 py-2 text-sm font-medium text-heading hover:bg-surface disabled:opacity-50" disabled="@_busy">
+            <button type="submit" class="btn btn-primary w-full" disabled="@_busy">
                 @(_busy ? "Signing in…" : "Sign in")
             </button>
         </div>

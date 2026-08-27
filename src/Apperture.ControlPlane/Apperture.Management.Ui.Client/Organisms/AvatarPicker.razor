@@ -13,103 +13,106 @@
 @inject AccountAvatarService Avatars
 @inject IToastService Toasts
 
-<section class="rounded border border-default bg-surface p-4" aria-labelledby="avatar-heading">
-    <h2 id="avatar-heading" class="text-base font-semibold text-heading">Profile photo</h2>
-    <p class="mt-1 text-sm text-muted">
-        Your photo appears in the header and on your account page. It is visible to signed-in users of
-        this instance only.
-    </p>
-
-    <div class="mt-4 flex flex-wrap items-center gap-4">
-        <AccountAvatar DisplayName="@DisplayName" SizeClass="h-20 w-20" />
-        <div class="text-sm">
-            <p class="font-medium text-heading">@CurrentSelectionLabel</p>
-            @if (IsCustom)
-            {
-                <button type="button"
-                        class="mt-1 text-sm text-muted underline hover:text-heading disabled:opacity-50"
-                        disabled="@_busy"
-                        @onclick="() => _confirmRemoveOpen = true">
-                    Remove photo
-                </button>
-            }
-        </div>
-    </div>
-
-    <fieldset class="mt-6">
-        <legend class="text-sm font-medium text-heading">Choose an illustration</legend>
-        <p class="mt-1 text-sm text-muted">
-            A small set of neutral illustrations. Your choice is presentation only — it tells the
-            platform nothing about you.
+<section class="ui-settings-card" aria-labelledby="avatar-heading">
+    <div class="ui-settings-card__header">
+        <h2 id="avatar-heading" class="ui-settings-card__title">Profile photo</h2>
+        <p class="ui-settings-card__help">
+            Your photo appears in the header and on your account page. It is visible to signed-in users of
+            this instance only.
         </p>
-
-        @if (_options.Count == 0)
-        {
-            <p class="mt-3 text-sm text-muted">Illustration choices are unavailable right now.</p>
-        }
-        else
-        {
-            <div class="mt-3 flex flex-wrap gap-3" role="radiogroup" aria-labelledby="avatar-heading">
-                @foreach (var option in _options)
+    </div>
+    <div class="ui-settings-card__body pt-4">
+        <div class="flex flex-wrap items-center gap-4">
+            <AccountAvatar DisplayName="@DisplayName" SizeClass="h-20 w-20" />
+            <div class="text-sm">
+                <p class="font-medium text-heading">@CurrentSelectionLabel</p>
+                @if (IsCustom)
                 {
-                    var selected = IsSelectedOption(option.Id);
-                    var inputId = $"avatar-option-{option.Id}";
-                    <div>
-                        <input type="radio"
-                               class="peer sr-only"
-                               name="avatar-option"
-                               id="@inputId"
-                               value="@option.Id"
-                               checked="@selected"
-                               disabled="@_busy"
-                               @onchange="() => SelectOptionAsync(option.Id)" />
-                        <label for="@inputId"
-                               class="@OptionLabelClass(selected)">
-                            <BuiltInAvatarGlyph OptionId="@option.Id" CssClass="h-12 w-12 rounded-full" />
-                            <span class="text-xs font-medium">@option.DisplayName</span>
-                            @if (selected)
-                            {
-                                <span class="text-[11px] text-muted">Selected</span>
-                            }
-                            else if (option.IsDefault)
-                            {
-                                <span class="text-[11px] text-muted">Default</span>
-                            }
-                        </label>
-                    </div>
+                    <button type="button"
+                            class="mt-1 text-sm text-muted underline hover:text-heading disabled:opacity-50"
+                            disabled="@_busy"
+                            @onclick="() => _confirmRemoveOpen = true">
+                        Remove photo
+                    </button>
                 }
             </div>
-        }
-    </fieldset>
+        </div>
 
-    <div class="mt-6 border-t border-default pt-4">
-        <label class="text-sm font-medium text-heading" for="avatar-upload">Upload a photo</label>
-        <p id="avatar-upload-help" class="mt-1 text-sm text-muted">
-            JPEG, PNG, or WebP, up to @MaxUploadMegabytes MB. The image is cropped to a square, resized,
-            and stripped of camera metadata before it is stored. The file you choose is not kept.
-        </p>
-        <InputFile id="avatar-upload"
-                   class="mt-2 block w-full max-w-md text-sm"
-                   accept="@AcceptAttribute"
-                   aria-describedby="avatar-upload-help"
-                   disabled="@_busy"
-                   OnChange="UploadAsync" />
+        <fieldset class="mt-6">
+            <legend class="text-sm font-medium text-heading">Choose an illustration</legend>
+            <p class="mt-1 text-sm text-muted">
+                A small set of neutral illustrations. Your choice is presentation only — it tells the
+                platform nothing about you.
+            </p>
 
-        @if (_uploadError is not null)
-        {
-            <p id="avatar-upload-error" class="mt-2 text-sm text-message-error" role="alert">@_uploadError</p>
-        }
-        @if (_busy)
-        {
-            <p class="mt-2 text-sm text-muted" role="status">Processing image…</p>
-        }
+            @if (_options.Count == 0)
+            {
+                <p class="mt-3 text-sm text-muted">Illustration choices are unavailable right now.</p>
+            }
+            else
+            {
+                <div class="mt-3 flex flex-wrap gap-3" role="radiogroup" aria-labelledby="avatar-heading">
+                    @foreach (var option in _options)
+                    {
+                        var selected = IsSelectedOption(option.Id);
+                        var inputId = $"avatar-option-{option.Id}";
+                        <div>
+                            <input type="radio"
+                                   class="peer sr-only"
+                                   name="avatar-option"
+                                   id="@inputId"
+                                   value="@option.Id"
+                                   checked="@selected"
+                                   disabled="@_busy"
+                                   @onchange="() => SelectOptionAsync(option.Id)" />
+                            <label for="@inputId"
+                                   class="@OptionLabelClass(selected)">
+                                <BuiltInAvatarGlyph OptionId="@option.Id" CssClass="h-12 w-12 rounded-full" />
+                                <span class="text-xs font-medium">@option.DisplayName</span>
+                                @if (selected)
+                                {
+                                    <span class="text-[11px] text-muted">Selected</span>
+                                }
+                                else if (option.IsDefault)
+                                {
+                                    <span class="text-[11px] text-muted">Default</span>
+                                }
+                            </label>
+                        </div>
+                    }
+                </div>
+            }
+        </fieldset>
+
+        <div class="mt-6 border-t border-default pt-4">
+            <label class="text-sm font-medium text-heading" for="avatar-upload">Upload a photo</label>
+            <p id="avatar-upload-help" class="mt-1 text-sm text-muted">
+                JPEG, PNG, or WebP, up to @MaxUploadMegabytes MB. The image is cropped to a square, resized,
+                and stripped of camera metadata before it is stored. The file you choose is not kept.
+            </p>
+            <InputFile id="avatar-upload"
+                       class="mt-2 block w-full max-w-md text-sm text-body"
+                       accept="@AcceptAttribute"
+                       aria-describedby="avatar-upload-help"
+                       disabled="@_busy"
+                       OnChange="UploadAsync" />
+
+            @if (_uploadError is not null)
+            {
+                <p id="avatar-upload-error" class="mt-2 text-sm text-message-error" role="alert">@_uploadError</p>
+            }
+            @if (_busy)
+            {
+                <p class="mt-2 text-sm text-muted" role="status">Processing image…</p>
+            }
+        </div>
+
+        <TechnicalDetails Summary="Technical details" Dense="true" Class="mt-4">
+            <TechnicalDetail Label="Avatar source" Value="@(Avatars.Avatar?.Kind ?? "unknown")" />
+            <TechnicalDetail Label="Avatar version" Value="@(Avatars.Avatar?.Version ?? "—")" />
+            <TechnicalDetail Label="Stored sizes" Value="@StoredSizesLabel" />
+        </TechnicalDetails>
     </div>
-
-    <TechnicalDetails Summary="Technical details" Dense="true" Class="mt-4">
-        <TechnicalDetail Label="Avatar source" Value="@(Avatars.Avatar?.Kind ?? "unknown")" />
-        <TechnicalDetail Label="Avatar version" Value="@(Avatars.Avatar?.Version ?? "—")" />
-        <TechnicalDetail Label="Stored sizes" Value="@StoredSizesLabel" />
-    </TechnicalDetails>
 </section>
 
 <ConfirmActionDialog IsOpen="_confirmRemoveOpen"
@@ -175,10 +178,10 @@
     // Selection is shown with a ring, a border, a background change, and the word "Selected", so it
     // does not depend on colour perception alone.
     private static string OptionLabelClass(bool selected) =>
-        "flex w-24 cursor-pointer flex-col items-center gap-1 rounded border p-2 text-center peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 "
+        "flex w-24 cursor-pointer flex-col items-center gap-1 rounded-lg border p-2 text-center peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 "
         + (selected
-            ? "border-heading bg-surface-muted ring-2 ring-heading text-heading"
-            : "border-default text-muted hover:bg-surface-muted hover:text-heading");
+            ? "border-accent bg-accent-wash text-heading"
+            : "border-default text-muted hover:bg-hover-overlay hover:text-heading");
 
     private async Task SelectOptionAsync(string optionId)
     {

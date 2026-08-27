@@ -2210,6 +2210,7 @@
     --color-input-bg: var(--color-surface-elevated);
     --color-text-heading: #1e2229;
     --color-text-body: #414753;
+    --color-text: var(--color-text-body);
     --color-text-muted: #6c7380;
     --color-text-subtle: #7e8692;
     --color-icon: #7e8692;
@@ -2226,6 +2227,8 @@
     --color-error: #c24a46;
     --color-error-light: color-mix(in srgb, var(--color-error) 12%, var(--color-surface));
     --color-error-dark: color-mix(in srgb, var(--color-error) 72%, black);
+    --color-destructive: var(--color-error);
+    --color-destructive-fg: #ffffff;
     --color-tint-teal: #e4eff1;
     --color-tint-teal-line: rgb(14 124 139 / 0.2);
     --color-tint-teal-text: #0a5561;
@@ -2243,6 +2246,7 @@
     --color-glow-focus: var(--color-accent-ring);
     --color-topbar-bg: rgb(251 250 247 / 0.86);
     --color-rail-bg: #eae7e1;
+    --color-hamburger-line: var(--color-text-muted);
     --color-hover-overlay: rgb(30 34 41 / 0.05);
     --color-scroll-thumb: rgb(30 34 41 / 0.2);
     --color-selected-fg: var(--color-accent-text);
@@ -2338,6 +2342,7 @@
     --color-input-bg: var(--color-bg);
     --color-text-heading: #f2f5f8;
     --color-text-body: #c6cfda;
+    --color-text: var(--color-text-body);
     --color-text-muted: #9aa3b0;
     --color-text-subtle: #7a8494;
     --color-icon: #5aa8b6;
@@ -2354,6 +2359,8 @@
     --color-error: #e8595e;
     --color-error-light: color-mix(in oklch, var(--color-error) 14%, var(--color-surface));
     --color-error-dark: color-mix(in oklch, var(--color-error) 70%, white);
+    --color-destructive: var(--color-error);
+    --color-destructive-fg: #ffffff;
     --color-tint-teal: color-mix(in srgb, var(--color-accent) 14%, var(--color-surface));
     --color-tint-teal-line: var(--color-accent-line);
     --color-tint-teal-text: var(--color-accent-text);
@@ -2371,6 +2378,7 @@
     --color-glow-focus: var(--color-accent-ring);
     --color-topbar-bg: rgba(10, 12, 15, 0.86);
     --color-rail-bg: #08090c;
+    --color-hamburger-line: var(--color-text-muted);
     --color-hover-overlay: rgb(255 255 255 / 0.04);
     --color-scroll-thumb: rgb(255 255 255 / 0.14);
     --color-selected-fg: var(--color-accent-text);
