@@ -165,7 +165,7 @@
             <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
                 <div>
                     <label class="block text-xs text-muted">Execution kind</label>
-                    <select class="mt-1 w-full rounded border border-default bg-surface px-2 py-2 text-sm"
+                    <select class="ui-input mt-1 w-full text-sm"
                             disabled="@_loading"
                             @bind="_executionKindFilter"
                             @bind:after="LoadAsync">
@@ -178,7 +178,7 @@
 
             @if (HasUrlFilters)
             {
-                <div class="mt-3 rounded border border-default bg-surface-muted px-3 py-2 text-sm text-body space-y-1">
+                <div class="ui-detail-block mt-3 text-sm text-body space-y-1">
                     @if (!string.IsNullOrWhiteSpace(QueryCorrelationKey))
                     {
                         <div>

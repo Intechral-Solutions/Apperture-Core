@@ -46,7 +46,7 @@ Legend: **R** reference · **P** pilot · **L** legacy · **C** candidate
 | `primitive.section.panel` | Generic bordered panel | `.ui-section-panel` | P | reuse | Login card, config sections |
 | `primitive.inbox.list` | Notification inbox | `.ui-inbox-list`, `.ui-inbox-toolbar` | R | none | `/me/notifications` |
 | `primitive.table.data` | Operational table | `.ui-data-table` | P | reuse | Runs, schedules, control lists |
-| `primitive.disclosure.advanced` | Forensic collapse | `.ui-advanced-section` | P | none | Stays `--color-bg-sunken` (recessed) |
+| `primitive.disclosure.advanced` | Forensic collapse | `.ui-advanced-section` | P | none | `--color-disclosure-bg` (cool recess, not warm greige) |
 | `primitive.disclosure.details` | Inline disclosure | `.ui-disclosure`, `Disclosure.razor` | P | tokenize | Profile roles block |
 
 **Tech debt (primitives):** duplicate CSS blocks ~L22–876 vs ~L1021+ in `management-ui-primitives.css` — do not merge until pattern set stabilizes.
@@ -60,7 +60,7 @@ Legend: **R** reference · **P** pilot · **L** legacy · **C** candidate
 | `component.page-header` | Page title block | `PageHeader.razor` | P | reuse | All modernized pages |
 | `component.management-section` | Detail panel | `ManagementSection.razor` | P | reuse | |
 | `component.summary-card` | Hub tile | `ManagementSummaryCard.razor` | P | reuse | Dashboard, config hub |
-| `component.metadata-grid` | Label/value facts | `MetadataGrid.razor` | P | reuse | Run/schedule detail |
+| `component.metadata-grid` | Label/value facts | `MetadataGrid.razor` | P | reuse | Label strip uses `--color-metadata-label-bg` |
 | `component.action-feedback` | Cooperative result | `ActionFeedback.razor` | P | reuse | Run/schedule detail |
 | `component.theme-card-group` | Appearance radios | `ThemeCardGroup.razor` | R | reuse | |
 | `component.segmented-control` | Segmented radios | `SegmentedControl.razor` | R | reuse | |
@@ -104,8 +104,9 @@ Legend: **R** reference · **P** pilot · **L** legacy · **C** candidate
 | `/login`, `/login/local` | Auth shell | **R** | none | `ui-section-panel`, `EntraSignInButton` → `btn btn-secondary` |
 | `/integrations`, `/integrations/{id}` | List filters + entity hub | **P** | none | `ui-data-table`, `ui-input` filters, `btn` on detail |
 | `/execute` | Procedure form + sections | **P** | none | `ui-input`, `btn btn-primary` launch |
-| `/runs`, `/runs/{id}` | List + execution detail | P | reuse | Polish only |
-| `/control/center`, `/control/blocked-work` | Operational console | P | reuse | |
+| `/runs`, `/runs/{id}` | List + execution detail | **P** | none | `ui-data-table`, `ui-detail-block`, `ui-code-block` |
+| `/control/center`, `/control/blocked-work`, `/control/audit` | Operational console | **P** | none | `ui-detail-block`, `ui-input`, `btn` |
+| `/schedules`, `/schedules/{id}`, `/schedules/new` | List + detail + create | **P** | none | Create form migrated; list already on `ui-data-table` |
 | `/config/**` | Hub + hybrid lists | P/L | reuse | Governance lists legacy |
 | `/attention/**` | Legacy lists | L | restructure | |
 | Redirects/stubs | — | — | skip | AccountRedirect, OperationStart, etc. |
@@ -130,7 +131,7 @@ Legend: **R** reference · **P** pilot · **L** legacy · **C** candidate
 2. ~~Shared forms: ProcedureParameterForm, NotificationDefinitionAuthoringForm, ConnectorConnectionFieldInputs, PlatformSettingsEditor~~ (done)
 3. ~~Account Security + Notifications + Login polish~~ (done)
 4. ~~Integrations list/detail + Execute~~ (done)
-5. Runs, Schedules, Control
+5. ~~Runs, Schedules, Control~~ (done)
 6. Config notifications + governance + contacts
 7. Modules, connections, runtimes, demo
 

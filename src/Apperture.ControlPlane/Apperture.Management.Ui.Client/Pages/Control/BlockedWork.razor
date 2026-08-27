@@ -14,7 +14,7 @@
             <div class="text-xs text-muted">Blocked deferred work with remediation eligibility. Workflow items may be retried; operation items are inspection-only.</div>
         </div>
         <div class="ui-action-row">
-            <select class="rounded border border-default bg-surface px-2 py-1 text-sm"
+            <select class="ui-input text-sm"
                     disabled="@_loading"
                     @bind="_windowHours"
                     @bind:after="RefreshAsync">
@@ -124,7 +124,7 @@
                                     case Epic33UiDisplayHelpers.BlockedWorkActionKind.Retry:
                                         @if (_capabilities?.CanManageRecovery == true)
                                         {
-                                            <button class="rounded bg-surface-muted px-2 py-1 text-xs hover:bg-surface"
+                                            <button class="btn btn-secondary text-xs"
                                                     disabled="@_loading"
                                                     @onclick="() => RetryAsync(item.RunId)">
                                                 Retry

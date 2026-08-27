@@ -12,14 +12,14 @@
         <ChildContent>
             @if (!string.IsNullOrWhiteSpace(QueryRunId))
             {
-                <div class="mt-2 rounded border border-default bg-surface px-2 py-1 text-xs text-body">
+                <div class="ui-detail-block mt-2 text-xs text-body">
                     <span class="text-muted">Run filter:</span>
                     <a class="ml-1 font-mono underline" href="@($"/runs/{QueryRunId.Trim()}")">Open run @QueryRunId.Trim()</a>
                 </div>
             }
         </ChildContent>
         <Toolbar>
-            <button class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface"
+            <button class="ui-toolbar-btn"
                     disabled="@_loading"
                     @onclick="LoadAsync">
                 Refresh
@@ -30,7 +30,7 @@
     <div class="mt-4 flex flex-wrap gap-3">
         <div>
             <label class="text-xs text-muted">Time range</label>
-            <select class="ml-1 rounded border border-default bg-surface px-2 py-1 text-sm"
+            <select class="ui-input text-sm ml-1"
                     @bind="_timeRange"
                     @bind:after="LoadAsync">
                 <option value="24">Last 24 hours</option>
@@ -39,7 +39,7 @@
         </div>
         <div>
             <label class="text-xs text-muted">Category</label>
-            <select class="ml-1 rounded border border-default bg-surface px-2 py-1 text-sm"
+            <select class="ui-input text-sm ml-1"
                     @bind="_actionPrefix"
                     @bind:after="LoadAsync">
                 <option value="">All</option>
@@ -53,7 +53,7 @@
         </div>
         <div>
             <label class="text-xs text-muted">Outcome</label>
-            <select class="ml-1 rounded border border-default bg-surface px-2 py-1 text-sm"
+            <select class="ui-input text-sm ml-1"
                     @bind="_outcomeFilter"
                     @bind:after="LoadAsync">
                 <option value="">All</option>
@@ -70,7 +70,7 @@
         </div>
         <div>
             <label class="text-xs text-muted">Actor</label>
-            <input type="text" class="ml-1 rounded border border-default bg-surface px-2 py-1 text-sm font-mono"
+            <input type="text" class="ui-input text-sm font-mono ml-1"
                    placeholder="e.g. system:scheduler"
                    @bind="_actorFilter"
                    @bind:event="oninput"
@@ -106,9 +106,9 @@
         }
         else
         {
-            <div class="mt-4 overflow-x-auto rounded border border-default bg-surface">
-                <table class="min-w-full text-left text-sm text-body">
-                    <thead class="border-b border-default text-xs text-muted">
+            <div class="ui-data-table mt-4">
+                <table class="ui-data-table__table min-w-full text-left text-body">
+                    <thead>
                         <tr>
                             <th class="px-2 py-2">When</th>
                             <th class="px-2 py-2">Category</th>
@@ -121,7 +121,7 @@
                     <tbody>
                         @foreach (var e in _page.Items)
                         {
-                            <tr class="border-b border-default hover:bg-surface-muted">
+                            <tr>
                                 <td class="px-2 py-2">
                                     <div class="font-mono text-xs">@FmtWhen(e.Timestamp)</div>
                                 </td>
@@ -154,9 +154,9 @@
                             </tr>
                             @if (_expandedId == e.Id)
                             {
-                                <tr class="border-b border-default bg-surface-muted">
+                                <tr>
                                     <td colspan="6" class="px-2 py-2">
-                                        <div class="space-y-2 text-xs">
+                                        <div class="ui-detail-block space-y-2 text-xs">
                                             @if (!string.IsNullOrWhiteSpace(e.Details))
                                             {
                                                 <div>
@@ -188,7 +188,7 @@
             @if (!string.IsNullOrEmpty(_page.NextContinuationToken))
             {
                 <div class="mt-3">
-                    <button class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface"
+                    <button class="ui-toolbar-btn"
                             disabled="@_loading"
                             @onclick="LoadMoreAsync">
                         Load more

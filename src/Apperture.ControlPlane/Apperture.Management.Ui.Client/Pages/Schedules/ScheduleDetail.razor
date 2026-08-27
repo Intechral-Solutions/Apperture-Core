@@ -139,7 +139,7 @@
             }
             @if (!string.IsNullOrWhiteSpace(blockedSummary))
             {
-                <div class="mt-2 rounded border border-default bg-surface-muted p-3 text-sm text-body">
+                <div class="ui-detail-block mt-2 text-sm text-body">
                     <div class="font-semibold">Last blocked dispatch</div>
                     <div class="mt-1 text-xs text-muted">@blockedSummary</div>
                     @if (!string.IsNullOrWhiteSpace(_detail.IntegrationId))
@@ -177,7 +177,7 @@
             }
             @if (whyNotFiring.Count > 0)
             {
-                <div class="mt-3 rounded border border-default bg-surface-muted p-3 text-sm text-body">
+                <div class="ui-detail-block mt-3 text-sm text-body">
                     <div class="font-semibold">Why this schedule may not be firing</div>
                     <ul class="mt-2 list-disc pl-5 text-xs text-muted">
                         @foreach (var hint in whyNotFiring)
@@ -241,7 +241,7 @@
                 <div class="grid grid-cols-1 gap-2 md:grid-cols-2">
                     <div>
                         <label class="block text-xs text-muted">Name</label>
-                        <input class="mt-1 w-full rounded border border-default bg-surface px-2 py-2 text-sm"
+                        <input class="ui-input mt-1 w-full text-sm"
                                @bind="_editName" />
                     </div>
                     <div>
@@ -261,12 +261,12 @@
                     </div>
                     <div>
                         <label class="block text-xs text-muted">Recurrence</label>
-                        <input class="mt-1 w-full rounded border border-default bg-surface px-2 py-2 text-sm font-mono"
+                        <input class="ui-input mt-1 w-full text-sm font-mono"
                                @bind="_editRecurrence" />
                     </div>
                     <div>
                         <label class="block text-xs text-muted">Time zone</label>
-                        <input class="mt-1 w-full rounded border border-default bg-surface px-2 py-2 text-sm"
+                        <input class="ui-input mt-1 w-full text-sm"
                                @bind="_editTimeZone" />
                         <div class="mt-1 text-xs text-muted">Cron is interpreted in this zone (IANA, e.g. America/Los_Angeles). Fire times are stored as UTC.</div>
                     </div>
@@ -338,7 +338,7 @@
                     @if (_detail.IsClaimStale == true)
                     {
                         <div class="mt-2">
-                            <span class="rounded bg-warning-light px-2 py-0.5 text-xs font-medium text-warning">Stale</span>
+                            <span class="ui-status-pill ui-status-pill--warning text-xs">Stale</span>
                             <span class="ml-2 text-xs text-muted">Past claim lease; another host may take over.</span>
                         </div>
                     }

@@ -204,7 +204,7 @@ button.ui-summary-card {
 }
 
 .ui-status-pill--forbidden {
-  background: color-mix(in oklch, var(--color-text-muted) 12%, var(--color-surface-muted));
+  background: color-mix(in srgb, var(--color-text-muted) 12%, var(--color-surface-muted));
   color: var(--color-text-subtle);
   border: 1px dashed var(--color-border);
 }
@@ -237,8 +237,8 @@ button.ui-summary-card {
 .ui-advanced-section {
   margin-top: 0.25rem;
   border-radius: var(--r-md);
-  border: 1px dashed var(--color-border);
-  background-color: var(--color-bg-sunken);
+  border: 1px dashed var(--color-disclosure-border);
+  background-color: var(--color-disclosure-bg);
   box-shadow: none;
 }
 
@@ -300,8 +300,8 @@ button.ui-summary-card {
   --dialog-margin: 1rem;
   --dialog-scrim-color: color-mix(in oklch, var(--color-text-heading) 45%, transparent);
 
-  --disclosure-border: var(--color-border);
-  --disclosure-bg: var(--color-bg-sunken);
+  --disclosure-border: var(--color-disclosure-border);
+  --disclosure-bg: var(--color-disclosure-bg);
   --disclosure-summary: var(--color-text-body);
   --disclosure-summary-open: var(--color-text-heading);
   --disclosure-marker: var(--color-icon);
@@ -418,13 +418,11 @@ button.ui-summary-card {
 
 /* Native <details>/<summary> accordions used outside the Disclosure molecule.
    Browsers sometimes paint summary like a visited link (brown/maroon) — force theme colors. */
-details > summary {
-  color: var(--color-text-body);
-}
-
+details > summary,
 details > summary:visited,
+details > summary:hover,
 details > summary:active {
-  color: inherit;
+  color: var(--color-text-body);
 }
 
 details > summary.text-muted,
@@ -577,8 +575,8 @@ details.text-muted[open] > summary {
 }
 
 .ui-dialog__confirm--caution {
-  border-color: color-mix(in oklch, var(--color-warning) 55%, var(--color-border) 45%);
-  background-color: color-mix(in oklch, var(--color-warning) 18%, var(--color-surface-muted));
+  border-color: color-mix(in srgb, var(--color-warning) 55%, var(--color-border) 45%);
+  background-color: color-mix(in srgb, var(--color-warning) 18%, var(--color-surface));
   color: var(--color-warning-dark);
 }
 
@@ -832,13 +830,16 @@ a.ui-toolbar-btn--danger:hover {
 }
 
 .ui-metadata-item {
-  padding: 0.5rem 0.625rem;
+  overflow: hidden;
   border-radius: 0.375rem;
-  background-color: color-mix(in oklch, var(--color-surface-muted) 80%, var(--color-surface) 20%);
-  border: 1px solid color-mix(in oklch, var(--color-border) 55%, transparent);
+  background-color: var(--color-metadata-bg);
+  border: 1px solid color-mix(in srgb, var(--color-border) 55%, transparent);
 }
 
 .ui-metadata-item__label {
+  padding: 0.375rem 0.625rem;
+  background-color: var(--color-metadata-label-bg);
+  border-bottom: 1px solid var(--color-border-subtle);
   font-size: 0.6875rem;
   line-height: 1rem;
   font-weight: 600;
@@ -848,7 +849,7 @@ a.ui-toolbar-btn--danger:hover {
 }
 
 .ui-metadata-item__value {
-  margin-top: 0.25rem;
+  padding: 0.5rem 0.625rem;
   font-size: 0.875rem;
   line-height: 1.4;
   color: var(--color-text-body);
@@ -876,7 +877,7 @@ a.ui-toolbar-btn--danger:hover {
 }
 
 .ui-data-table thead {
-  background-color: color-mix(in oklch, var(--color-surface-muted) 92%, var(--color-surface) 8%);
+  background-color: var(--color-table-header-bg);
 }
 
 .ui-data-table thead th {
@@ -900,7 +901,7 @@ a.ui-toolbar-btn--danger:hover {
 }
 
 .ui-data-table tbody tr:hover {
-  background-color: color-mix(in oklch, var(--color-surface-muted) 65%, var(--color-surface) 35%);
+  background-color: var(--color-row-hover-bg);
 }
 
 /* --- Feedback & state panels --- */
@@ -991,7 +992,7 @@ a.ui-toolbar-btn--danger:hover {
 }
 
 .ui-inbox-list__item[data-state="unread"] {
-  background-color: color-mix(in oklch, var(--color-surface-muted) 30%, var(--color-surface) 70%);
+  background-color: var(--color-row-hover-bg);
 }
 
 .ui-inbox-list__open {
@@ -1038,6 +1039,29 @@ a.ui-toolbar-btn--danger:hover {
 .ui-inbox-list__action:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.ui-inline-code {
+  border-radius: 0.25rem;
+  background-color: var(--color-surface-muted);
+  padding: 0.125rem 0.375rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.85em;
+}
+
+.ui-code-block {
+  margin-top: 0.25rem;
+  max-height: 16rem;
+  overflow: auto;
+  border-radius: 0.5rem;
+  border: 1px solid var(--color-card-border);
+  background-color: var(--color-surface-muted);
+  padding: 0.5rem;
+  font-size: 0.75rem;
+  line-height: 1.45;
+  color: var(--color-text-body);
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 /* Unread count sits on the bell's upper-right corner without covering the glyph. */
@@ -1315,7 +1339,7 @@ textarea.ui-input {
   text-align: start;
   border: 1px solid var(--color-border);
   border-radius: var(--r-lg);
-  background: var(--color-bg-sunken);
+  background: var(--color-disclosure-bg);
   padding: 0.875rem;
   cursor: pointer;
   color: var(--color-text-body);

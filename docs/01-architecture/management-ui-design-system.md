@@ -153,6 +153,8 @@ Defined in `management-ui-primitives.css`:
 | `ui-page-header__toolbar` | Applied by `PageHeader` toolbar slot — flex wrap, gap |
 | `ui-toolbar-btn` | Page/section toolbar links and buttons (neutral) |
 | `ui-inbox-list` | Personal notification inbox rows; pair with `SegmentedControl` filter toolbar |
+| `ui-inline-code` | Inline monospace snippets in help text |
+| `ui-code-block` | Scrollable preformatted JSON / payload display |
 | `ui-toolbar-btn--danger` | Destructive toolbar actions (e.g. Integration Delete) — **after** positive/neutral actions |
 | `ui-action-row` | Horizontal drill-ins, filters + refresh, link groups |
 | `ui-section-actions` | Section-local button row (edit save/cancel, lifecycle actions) |
@@ -514,7 +516,7 @@ The pilot stack is now ready for these follow-on epics, but none are implemented
 
 | Family | Variables | Role |
 |--------|-----------|------|
-| Surfaces | `--color-bg`, `--color-bg-sunken`, `--color-surface`, `--color-surface-elevated`, `--color-surface-muted`, `--color-surface-header` | Canvas, cards, recess, headers |
+| Surfaces | `--color-bg`, `--color-bg-sunken`, `--color-surface`, `--color-surface-elevated`, `--color-surface-muted`, `--color-surface-header`, `--color-disclosure-bg`, `--color-disclosure-border`, `--color-table-header-bg`, `--color-row-hover-bg`, `--color-metadata-bg`, `--color-metadata-label-bg` | Canvas, cards, recess, headers, tables, metadata pills |
 | Input | `--color-input-bg` | Form fields and nested panels (theme inversion) |
 | Text | `--color-text-heading` … `--color-text-subtle`, `--color-text` | Body copy hierarchy |
 | Accent | `--color-accent`, `--color-accent-wash`, `--color-accent-line`, `--color-accent-ring` | Brand actions and selection |
@@ -538,7 +540,7 @@ Tracked in [pattern-catalog.md](../../.planning/management-ui/pattern-catalog.md
 | Shared form molecules | `ProcedureParameterForm`, `NotificationDefinitionAuthoringForm`, `ConnectorConnectionFieldInputs`, `PlatformSettingsEditor` / `PlatformSettingRow` | Done |
 | Account Security + Notifications + Login polish | Account security/notifications, personal inbox, auth sign-in | Done |
 | Integrations + Execute | Integrations list/detail, create wizard, execute launch | Done |
-| Runs, Schedules, Control | Operational lists and detail | Queued |
+| Runs, Schedules, Control | Runs list/detail, schedule create/detail, control center, audit, blocked work | Done |
 
 Update this table when batches complete.
 

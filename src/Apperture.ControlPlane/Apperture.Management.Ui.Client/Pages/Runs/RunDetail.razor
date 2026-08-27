@@ -198,7 +198,7 @@
                 <div class="grid grid-cols-1 gap-2 md:grid-cols-2">
                     @foreach (var action in _actions.OrderBy(x => x.ActionKind, StringComparer.Ordinal))
                     {
-                        <div class="rounded border border-default bg-surface-muted px-2 py-2">
+                        <div class="ui-detail-block">
                             <div class="text-xs font-mono text-body">@action.ActionKind</div>
                             <div class="text-xs text-muted">@action.AvailabilityState</div>
                             @if (!string.IsNullOrWhiteSpace(action.ReasonCode))
@@ -220,7 +220,7 @@
             </div>
             @if (_blockedWork is not null)
             {
-                <div class="mt-2 rounded border border-default bg-surface-muted p-2">
+                <div class="ui-detail-block mt-2">
                     <div class="text-xs font-semibold">Blocked work context</div>
                     <div class="text-xs text-muted">@_blockedWork.BlockedReason</div>
                     @if (_blockedWork.RetryEligibleNow && string.Equals(_blockedWork.DefinitionKind, "workflow", StringComparison.OrdinalIgnoreCase))
@@ -300,7 +300,7 @@
                 </div>
             </div>
 
-            <div class="mt-4 rounded border border-default bg-surface-muted/30 p-3">
+            <div class="ui-detail-block mt-4">
                 <div class="text-sm font-semibold text-heading">Start request</div>
                 <div class="text-xs text-muted">Persisted start metadata for this execution run.</div>
                 <div class="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2">
@@ -346,7 +346,7 @@
                         <div class="mt-1 text-xs text-muted">
                             Full payload persisted on the start request after validation (ADR-0031). Intended for non-secret operational inputs; secret-bearing .NET types are rejected at launch. Plain strings are not redacted—do not put secrets here. May include PII or business data; a future sensitive-field model could change visibility.
                         </div>
-                        <pre class="mt-1 max-h-64 overflow-auto rounded border border-default bg-surface-muted p-2 text-xs text-body"><code>@_detail.StartParametersJson</code></pre>
+                        <pre class="ui-code-block"><code>@_detail.StartParametersJson</code></pre>
                     </div>
                 }
             </div>
@@ -392,7 +392,7 @@
                 </div>
                 @if (_detail.Error is not null)
                 {
-                    <div class="mt-2 rounded border border-default bg-surface-muted px-2 py-2">
+                    <div class="ui-detail-block mt-2">
                         <div class="text-xs text-muted">Failure</div>
                         <div class="text-sm text-body">@_detail.Error.Category: @_detail.Error.Message</div>
                         @if (!string.IsNullOrWhiteSpace(_detail.Error.DetailsJson))
@@ -425,7 +425,7 @@
                         {
                             <div class="text-xs text-muted">Output was truncated at persistence.</div>
                         }
-                        <pre class="mt-1 max-h-64 overflow-auto rounded border border-default bg-surface-muted p-2 text-xs text-body"><code>@_detail.Result?.PayloadJson</code></pre>
+                        <pre class="ui-code-block"><code>@_detail.Result?.PayloadJson</code></pre>
                     </div>
                 }
                 else if (IsSummaryOnlyOutput)

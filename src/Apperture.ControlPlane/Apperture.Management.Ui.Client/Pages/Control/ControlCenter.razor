@@ -88,7 +88,7 @@
                 <div class="space-y-2">
                     @foreach (var it in _dto.AttentionItems)
                     {
-                        <div class="rounded border border-default bg-surface-muted p-3">
+                        <div class="ui-detail-block">
                             <div class="flex items-start justify-between gap-3">
                                 <div class="min-w-0">
                                     <div class="text-sm font-semibold">@OperatorAttentionUiHelpers.FormatAttentionSummaryForDisplay(it.Summary)</div>
@@ -123,7 +123,7 @@
                 <div class="space-y-2">
                     @foreach (var a in ProblematicActivities.Take(5))
                     {
-                        <div class="rounded border border-default bg-surface-muted p-3 flex items-start justify-between gap-3">
+                        <div class="ui-detail-block flex items-start justify-between gap-3">
                             <div class="min-w-0">
                                 <div class="text-sm font-semibold">@a.OutcomeSummary</div>
                                 <div class="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted">
@@ -320,9 +320,9 @@
                     <div class="mt-2 space-y-2 text-sm text-body">
                         <div>Observable here: host id, plane, heartbeat last seen, observed worker count, scheduler Healthy/Warning/Unknown, scheduler ops (run-cycle / recover-stale).</div>
                         <div>Not owned by Management: WorkerHost process start, stop, restart, scale, or fleet orchestration.</div>
-                        <div>Aspire/dev: <code class="rounded bg-surface-muted px-1">dotnet run --project src/Apperture.AppHost</code> or Aspire dashboard — restart the <code class="rounded bg-surface-muted px-1">worker</code> resource.</div>
-                        <div>Scripted local: <code class="rounded bg-surface-muted px-1">./scripts/Manage.ps1 -Area dev -Command start</code> (do not mix with Aspire).</div>
-                        <div>Epic72B <code class="rounded bg-surface-muted px-1">runtime-worker/start</code> is quarantined (410) — do not use it.</div>
+                        <div>Aspire/dev: <code class="ui-inline-code">dotnet run --project src/Apperture.AppHost</code> or Aspire dashboard — restart the <code class="ui-inline-code">worker</code> resource.</div>
+                        <div>Scripted local: <code class="ui-inline-code">./scripts/Manage.ps1 -Area dev -Command start</code> (do not mix with Aspire).</div>
+                        <div>Epic72B <code class="ui-inline-code">runtime-worker/start</code> is quarantined (410) — do not use it.</div>
                     </div>
                 </details>
                 <details class="mt-3 text-xs text-muted">
@@ -350,7 +350,7 @@
                         <div class="mt-2 space-y-3 text-sm text-body">
                             <PageMessage Kind="PageMessageKind.Info"
                                          Message="These actions do not restart WorkerHost, do not change schedule definitions, and do not write the background scheduler heartbeat. Duplicate fire prevention still applies." />
-                            <div class="rounded border border-default bg-surface-muted p-3">
+                            <div class="ui-detail-block">
                                 <div class="font-semibold">Run one scheduler cycle</div>
                                 <div class="mt-1 text-xs text-muted">
                                     Evaluates due schedules once for the expected plane. Does not restart WorkerHost. Does not write the scheduler heartbeat.
@@ -362,7 +362,7 @@
                                     Run one scheduler cycle
                                 </button>
                             </div>
-                            <div class="rounded border border-default bg-surface-muted p-3">
+                            <div class="ui-detail-block">
                                 <div class="font-semibold">Recover stale schedule runs</div>
                                 <div class="mt-1 text-xs text-muted">
                                     Recovers only stale InProgress claims (ClaimLeaseMinutes). Does not dispatch newly due work. Does not restart WorkerHost.
@@ -376,7 +376,7 @@
                             </div>
                             @if (_schedulerOpResult is not null)
                             {
-                                <div class="rounded border border-default p-3 font-mono text-xs">
+                                <div class="ui-detail-block font-mono text-xs">
                                     <div>Action: @_schedulerOpResult.Action · Plane: @_schedulerOpResult.RuntimePlaneId · Host: @(_schedulerOpResult.HostId ?? "—")</div>
                                     <div>WritesHeartbeat: @_schedulerOpResult.WritesHeartbeat</div>
                                     <div>Assignments/Due/Stale/Candidates: @_schedulerOpResult.AssignmentCount / @_schedulerOpResult.DueCount / @_schedulerOpResult.StaleCount / @_schedulerOpResult.CandidateCount</div>
@@ -494,7 +494,7 @@
                     <div class="space-y-3">
                         @foreach (var t in _dto.Targets)
                         {
-                            <div class="rounded border border-default bg-surface-muted p-3">
+                            <div class="ui-detail-block">
                                 <div class="flex items-start justify-between gap-2">
                                     <div class="min-w-0">
                                         <div class="text-sm font-semibold">@t.DisplayName</div>

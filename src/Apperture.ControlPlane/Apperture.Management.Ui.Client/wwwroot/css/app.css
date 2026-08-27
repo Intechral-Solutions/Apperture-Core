@@ -2184,7 +2184,7 @@
     --inset-hi: inset 0 1px 0 rgba(0, 0, 0, 0.04);
     --shadow-card: 0 1px 2px rgb(30 34 41 / 0.05), 0 8px 20px -14px rgb(30 34 41 / 0.18);
     /* Canvas + surfaces — warm greige light (default) */
-    --color-bg-sunken: #e8e5df;
+    --color-bg-sunken: #e4e8eb;
     --color-bg: #f1efea;
     --color-fg: #414753;
     --color-accent: #0e7c8b;
@@ -2205,7 +2205,7 @@
     --color-surface: #fbfaf7;
     --color-surface-elevated: #ffffff;
     --color-surface-muted: #f3f1ec;
-    --color-surface-header: #f5f3ef;
+    --color-surface-header: color-mix(in srgb, var(--color-tint-teal) 38%, var(--color-surface) 62%);
     --color-surface-raised-hover: #ebe8e2;
     --color-input-bg: var(--color-surface-elevated);
     --color-text-heading: #1e2229;
@@ -2312,6 +2312,14 @@
     --color-message-error-border: var(--color-error);
     --color-message-error-title: var(--color-error);
     --color-message-error-text: var(--color-text-body);
+    /* Progressive disclosure — recessed from cards, cool tint (not warm greige) */
+    --color-disclosure-bg: color-mix(in oklch, var(--color-tint-teal) 26%, var(--color-surface) 74%);
+    --color-disclosure-border: color-mix(in oklch, var(--color-border) 72%, var(--color-tint-teal-line) 28%);
+    /* Structural recesses — cool tint, not warm greige */
+    --color-table-header-bg: color-mix(in srgb, var(--color-tint-teal) 42%, var(--color-surface) 58%);
+    --color-row-hover-bg: color-mix(in srgb, var(--color-accent-wash) 80%, var(--color-surface) 20%);
+    --color-metadata-bg: var(--color-surface);
+    --color-metadata-label-bg: color-mix(in srgb, var(--color-tint-teal) 48%, var(--color-surface) 52%);
   }
   .dark {
     color-scheme: dark;
@@ -2332,12 +2340,12 @@
     --color-secondary: var(--color-accent);
     --color-secondary-light: var(--color-accent-wash);
     --color-secondary-dark: var(--color-accent-hover);
-    --color-accent-warm: color-mix(in oklch, #f4ee7a 64%, #ffffff);
-    --color-accent-earth: color-mix(in oklch, #c8b28b 72%, #b9c6d6);
+    --color-accent-warm: color-mix(in srgb, var(--color-warning) 18%, var(--color-surface-elevated) 82%);
+    --color-accent-earth: color-mix(in srgb, var(--color-tint-sage) 65%, var(--color-surface-elevated) 35%);
     --color-surface: #0f1217;
     --color-surface-elevated: #161a21;
-    --color-surface-muted: #161a21;
-    --color-surface-header: var(--color-surface-muted);
+    --color-surface-muted: #121820;
+    --color-surface-header: color-mix(in srgb, var(--color-accent) 10%, var(--color-surface-elevated) 90%);
     --color-surface-raised-hover: #1d222a;
     --color-input-bg: var(--color-bg);
     --color-text-heading: #f2f5f8;
@@ -2445,6 +2453,12 @@
     --color-message-error-border: color-mix(in oklch, var(--color-error) 48%, var(--color-border));
     --color-message-error-title: var(--color-error-dark);
     --color-message-error-text: var(--color-text-body);
+    --color-disclosure-bg: color-mix(in oklch, var(--color-accent-wash) 48%, var(--color-surface) 52%);
+    --color-disclosure-border: var(--color-border-subtle);
+    --color-table-header-bg: color-mix(in srgb, var(--color-accent) 12%, var(--color-surface-elevated) 88%);
+    --color-row-hover-bg: color-mix(in srgb, var(--color-accent-wash) 90%, var(--color-surface) 10%);
+    --color-metadata-bg: var(--color-surface-elevated);
+    --color-metadata-label-bg: color-mix(in srgb, var(--color-accent) 13%, var(--color-surface-elevated) 87%);
   }
   html {
     font-family: var(--font-sans);
@@ -2491,6 +2505,12 @@
   }
   .bg-surface-muted {
     background-color: var(--color-surface-muted);
+  }
+  .bg-table-header {
+    background-color: var(--color-table-header-bg);
+  }
+  .bg-row-hover {
+    background-color: var(--color-row-hover-bg);
   }
   .bg-surface-raised-hover {
     background-color: var(--color-surface-raised-hover);
@@ -2580,6 +2600,13 @@
     &:hover {
       @media (hover: hover) {
         background-color: var(--color-surface-muted);
+      }
+    }
+  }
+  .hover\:bg-row-hover {
+    &:hover {
+      @media (hover: hover) {
+        background-color: var(--color-row-hover-bg);
       }
     }
   }
