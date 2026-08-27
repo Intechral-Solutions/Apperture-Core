@@ -8,9 +8,10 @@
 @inject IOperatorCapabilitiesService Capabilities
 @inject NavigationManager Nav
 
-<div class="p-4">
-    <div class="text-xs text-muted mb-1">Config — Notifications — Instances</div>
-    <PageHeader Title="Notification instances" Subtitle="Rendered platform notification instances (read-only)." />
+<div class="p-4 ui-page-stack">
+    <PageHeader Eyebrow="Config — Notifications"
+                Title="Notification instances"
+                Subtitle="Rendered platform notification instances (read-only)." />
 
     @if (!_capabilitiesLoaded)
     {
@@ -24,20 +25,20 @@
     }
     else
     {
-        <div class="mt-4 flex flex-wrap items-end gap-2 text-xs">
-            <label>
-                Integration id
-                <input class="mt-1 block rounded border border-default px-2 py-1 font-mono" @bind="_integrationId" />
+        <div class="ui-detail-block flex flex-wrap items-end gap-3 text-sm">
+            <label class="flex flex-col gap-1">
+                <span class="text-xs text-muted">Integration id</span>
+                <input class="ui-input ui-input--narrow font-mono" @bind="_integrationId" />
             </label>
-            <label>
-                Definition id
-                <input class="mt-1 block rounded border border-default px-2 py-1 font-mono" @bind="_definitionId" />
+            <label class="flex flex-col gap-1">
+                <span class="text-xs text-muted">Definition id</span>
+                <input class="ui-input ui-input--narrow font-mono" @bind="_definitionId" />
             </label>
-            <label>
-                Incident id
-                <input class="mt-1 block rounded border border-default px-2 py-1 font-mono" @bind="_incidentId" />
+            <label class="flex flex-col gap-1">
+                <span class="text-xs text-muted">Incident id</span>
+                <input class="ui-input ui-input--narrow font-mono" @bind="_incidentId" />
             </label>
-            <button type="button" class="rounded bg-surface-muted px-3 py-2 disabled:opacity-50" disabled="@_busy" @onclick="LoadAsync">Apply</button>
+            <button type="button" class="btn btn-secondary" disabled="@_busy" @onclick="LoadAsync">Apply</button>
         </div>
 
         @if (!string.IsNullOrEmpty(_error))
@@ -56,29 +57,29 @@
         }
         else if (_items is not null)
         {
-            <div class="mt-4 overflow-x-auto rounded border border-default">
-                <table class="min-w-full text-left text-xs">
-                    <thead class="bg-surface-muted text-heading">
+            <div class="ui-data-table">
+                <table class="ui-data-table__table min-w-full text-left text-body">
+                    <thead>
                         <tr>
-                            <th class="p-2">Status</th>
-                            <th class="p-2">Kind</th>
-                            <th class="p-2">Definition</th>
-                            <th class="p-2">Integration</th>
-                            <th class="p-2">Incident</th>
-                            <th class="p-2">Created</th>
-                            <th class="p-2"></th>
+                            <th>Status</th>
+                            <th>Kind</th>
+                            <th>Definition</th>
+                            <th>Integration</th>
+                            <th>Incident</th>
+                            <th>Created</th>
+                            <th></th>
                         </tr>
                     </thead>
                     <tbody>
                         @foreach (var i in _items)
                         {
-                            <tr class="border-t border-default">
-                                <td class="p-2">@i.Status</td>
-                                <td class="p-2">@i.NotificationKind</td>
-                                <td class="p-2 font-mono break-all">
+                            <tr>
+                                <td>@i.Status</td>
+                                <td>@i.NotificationKind</td>
+                                <td class="font-mono text-xs break-all">
                                     <a class="underline" href="@NotificationUiRoutes.DefinitionDetail(i.NotificationDefinitionId)">@i.NotificationDefinitionId</a>
                                 </td>
-                                <td class="p-2 font-mono break-all">
+                                <td class="font-mono text-xs break-all">
                                     @if (!string.IsNullOrWhiteSpace(i.IntegrationId))
                                     {
                                         <a class="underline" href="@NotificationUiRoutes.IntegrationNotifications(i.IntegrationId)">@i.IntegrationId</a>
@@ -88,7 +89,7 @@
                                         <span>—</span>
                                     }
                                 </td>
-                                <td class="p-2 font-mono break-all">
+                                <td class="font-mono text-xs break-all">
                                     @if (!string.IsNullOrWhiteSpace(i.AttentionIncidentId) && !string.IsNullOrWhiteSpace(i.IntegrationId))
                                     {
                                         <a class="underline" href="@NotificationUiRoutes.IntegrationScheduleDiagnostics(i.IntegrationId, i.AttentionIncidentId)">@i.AttentionIncidentId</a>
@@ -98,8 +99,8 @@
                                         @(i.AttentionIncidentId ?? "—")
                                     }
                                 </td>
-                                <td class="p-2">@i.CreatedAtUtc.UtcDateTime.ToString("u")</td>
-                                <td class="p-2"><a class="underline" href="@NotificationUiRoutes.InstanceDetail(i.Id)">View</a></td>
+                                <td class="text-xs">@i.CreatedAtUtc.UtcDateTime.ToString("u")</td>
+                                <td><a class="underline" href="@NotificationUiRoutes.InstanceDetail(i.Id)">View</a></td>
                             </tr>
                         }
                     </tbody>

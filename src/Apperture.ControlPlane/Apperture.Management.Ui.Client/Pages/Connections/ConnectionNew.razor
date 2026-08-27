@@ -1,6 +1,7 @@
 @page "/connections/new"
 @using Apperture.Management.Client
 @using Apperture.Management.Ui.Client.Services
+@using Apperture.Management.Ui.Client.Molecules
 @using Apperture.Management.Ui.Client.Organisms
 @using Apperture.Management.Ui.Shared
 @inject IManagementClient Client
@@ -9,10 +10,10 @@
 @inject IToastService Toasts
 @using Microsoft.AspNetCore.Components.Web
 
-<div class="p-4">
+<div class="p-4 ui-page-stack">
     <PageHeader Title="Add connection" Subtitle="Create a new connection">
         <Toolbar>
-            <a href="/connections" class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface">Back to list</a>
+            <a href="/connections" class="ui-toolbar-btn">Back to list</a>
         </Toolbar>
     </PageHeader>
 
@@ -30,10 +31,11 @@
     }
     else
     {
-        <div class="mt-4 rounded border border-default bg-surface p-4 space-y-4 text-sm text-body">
+        <ManagementSection Title="Connection details" Layer="ManagementSection.UiLayer.Detail">
+            <div class="space-y-4 text-sm text-body">
             <div>
                 <label class="block text-xs text-muted">Connector definition</label>
-                <select class="mt-1 w-full rounded border border-default bg-surface px-2 py-2 text-sm"
+                <select class="ui-input mt-1"
                         @bind="_connectorDefinitionId"
                         @bind:after="OnConnectorDefinitionChangedAsync">
                     <option value="">Select…</option>
@@ -45,7 +47,7 @@
             </div>
             <div>
                 <label class="block text-xs text-muted">Connection name</label>
-                <input class="mt-1 w-full rounded border border-default bg-surface px-2 py-2 text-sm"
+                <input class="ui-input mt-1"
                        @bind="_connectionName"
                        placeholder="e.g. Campus Nexus Production" />
             </div>
@@ -64,9 +66,10 @@
                               ErrorText="Create failed"
                               IsInactive="@(!CanCreate)"
                               OnClick="HandleCreateClick" />
-                <a href="/connections" class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface">Cancel</a>
+                <a href="/connections" class="btn btn-secondary">Cancel</a>
             </div>
-        </div>
+            </div>
+        </ManagementSection>
     }
 </div>
 

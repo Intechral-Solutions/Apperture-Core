@@ -2,6 +2,7 @@
 @layout ConfigLayout
 @using System.Net
 @using Apperture.Management.Client
+@using Apperture.Management.Ui.Client.Molecules
 @using Apperture.Management.Ui.Client.Organisms
 @using Apperture.Management.Ui.Client.Services
 @using Apperture.Management.Ui.Shared
@@ -22,9 +23,10 @@
             <div class="mt-1 font-mono text-xs text-muted break-all">@UserId</div>
         </ChildContent>
         <Toolbar>
-            <a href="/config/governance/users" class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface">Back to users</a>
-            <a href="@("/config/governance/users/" + Uri.EscapeDataString(UserId) + "/role-derived-access")" class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface">View role-derived access</a>
-            <button class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface"
+            <a href="/config/governance/users" class="ui-toolbar-btn">Back to users</a>
+            <a href="@("/config/governance/users/" + Uri.EscapeDataString(UserId) + "/role-derived-access")" class="ui-toolbar-btn">View role-derived access</a>
+            <button type="button"
+                    class="ui-toolbar-btn"
                     disabled="@_loading"
                     @onclick="LoadAsync">
                 Refresh
@@ -32,7 +34,7 @@
         </Toolbar>
     </PageHeader>
 
-    <div class="mt-2 rounded border border-callout-info bg-callout-info px-3 py-2 text-xs text-body">
+    <div class="ui-settings-callout">
         This page shows linked sign-in methods and role assignments. Administrators with <strong>user.manage</strong> can add an Entra identity link (object id) to an existing platform user.
     </div>
 
@@ -74,22 +76,14 @@
         else
         {
         <div class="mt-4 grid gap-4">
-            <div class="rounded border border-default bg-surface p-3">
-                <div class="text-sm font-semibold text-heading">User</div>
-                <div class="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2">
-                    <div>
-                        <div class="text-xs text-muted">User ID</div>
-                        <div class="text-sm font-mono">@_user.UserId</div>
-                    </div>
-                    <div>
-                        <div class="text-xs text-muted">Display name</div>
-                        <div class="text-sm text-body">@_user.DisplayName</div>
-                    </div>
-                </div>
-            </div>
+            <ManagementSection Title="User" Layer="ManagementSection.UiLayer.Summary">
+                <MetadataGrid>
+                    <MetadataItem Label="User ID" Monospace="true" Value="@_user.UserId" />
+                    <MetadataItem Label="Display name" Value="@_user.DisplayName" />
+                </MetadataGrid>
+            </ManagementSection>
 
-            <div class="rounded border border-default bg-surface p-3">
-                <div class="text-sm font-semibold text-heading">Linked sign-in methods</div>
+            <ManagementSection Title="Linked sign-in methods" Layer="ManagementSection.UiLayer.Detail">
                 @if (_user.IdentityLinks.Count == 0)
                 {
                     <div class="mt-2 text-xs text-muted">No linked identities.</div>
@@ -121,14 +115,15 @@
                             </div>
                         }
                         <div class="mt-2 flex flex-wrap items-end gap-2">
-                            <label class="min-w-[16rem] flex-1 text-xs">
+                            <label class="min-w-[16rem] flex-1 text-xs text-muted">
                                 Entra object id
-                                <input class="mt-1 w-full rounded border border-default bg-surface px-3 py-2 font-mono text-xs"
+                                <input class="ui-input mt-1 font-mono text-xs"
                                        @bind="_entraOidToLink"
                                        disabled="@_mutating"
                                        placeholder="00000000-0000-0000-0000-000000000000" />
                             </label>
-                            <button class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface disabled:opacity-50"
+                            <button type="button"
+                                    class="btn btn-secondary"
                                     disabled="@(_mutating || string.IsNullOrWhiteSpace(_entraOidToLink))"
                                     @onclick="AddEntraLinkAsync">
                                 Add Entra link
@@ -136,10 +131,9 @@
                         </div>
                     </div>
                 }
-            </div>
+            </ManagementSection>
 
-            <div class="rounded border border-default bg-surface p-3">
-                <div class="text-sm font-semibold text-heading">Assigned roles</div>
+            <ManagementSection Title="Assigned roles" Layer="ManagementSection.UiLayer.Detail">
                 @if (_user.RoleIds.Count == 0)
                 {
                     <div class="mt-2 text-xs text-muted">User has no assigned roles. Use the control below to assign one.</div>
@@ -150,7 +144,7 @@
                         @foreach (var roleId in _user.RoleIds)
                         {
                             var roleInfo = _rolesById.GetValueOrDefault(roleId);
-                            <div class="flex items-center justify-between gap-2 rounded border border-default bg-surface-muted/50 px-3 py-2">
+                            <div class="ui-detail-block flex items-center justify-between gap-2">
                                 <div>
                                     <a href="@("/config/governance/roles/" + Uri.EscapeDataString(roleId))" class="font-mono text-sm underline hover:no-underline">@roleId</a>
                                     @if (roleInfo is not null)
@@ -171,12 +165,11 @@
                         }
                     </div>
                 }
-            </div>
+            </ManagementSection>
 
             @if (_capabilities?.CanAssignRoles == true)
             {
-                <div class="rounded border border-default bg-surface p-3">
-                    <div class="text-sm font-semibold text-heading">Assign role</div>
+                <ManagementSection Title="Assign role" Layer="ManagementSection.UiLayer.Detail">
                     @if (_assignableRoles.Count == 0)
                     {
                         <div class="mt-2 text-xs text-muted">No additional roles available to assign.</div>
@@ -184,7 +177,7 @@
                     else
                     {
                         <div class="mt-2 flex flex-wrap items-center gap-2">
-                            <select class="rounded border border-default bg-surface px-3 py-2 text-sm"
+                            <select class="ui-input max-w-md"
                                     @bind="_selectedRoleToAssign"
                                     disabled="@_mutating">
                                 <option value="">— Select role —</option>
@@ -193,14 +186,15 @@
                                     <option value="@r.Id">@r.Name (@r.Id)</option>
                                 }
                             </select>
-                            <button class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface"
+                            <button type="button"
+                                    class="btn btn-primary"
                                     disabled="@(_mutating || string.IsNullOrEmpty(_selectedRoleToAssign))"
                                     @onclick="AssignRoleAsync">
                                 Assign
                             </button>
                         </div>
                     }
-                </div>
+                </ManagementSection>
             }
         </div>
         }

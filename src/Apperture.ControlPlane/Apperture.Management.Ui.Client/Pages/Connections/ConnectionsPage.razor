@@ -6,14 +6,14 @@
 @inject IOperatorCapabilitiesService Capabilities
 @inject NavigationManager Nav
 
-<div class="p-4">
+<div class="p-4 ui-page-stack">
     <PageHeader Title="Connections" Subtitle="Manage connection instances and browse connector definitions (connection shape only — not executable client operations).">
         <Toolbar>
             @if (_capabilities?.CanViewConnections == true && _capabilities?.CanCreateConnections == true)
             {
-                <a href="/connections/new" class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface">Add connection</a>
+                <a href="/connections/new" class="btn btn-primary">Add connection</a>
                 <button type="button"
-                        class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface disabled:opacity-50"
+                        class="ui-toolbar-btn"
                         disabled="@_loading"
                         @onclick="LoadAsync">
                     Refresh
@@ -70,28 +70,28 @@
             }
             else
             {
-                <div class="mt-4 overflow-x-auto rounded border border-default bg-surface">
-                    <table class="min-w-full text-left text-sm text-body">
-                        <thead class="border-b border-default text-xs text-muted">
+                <div class="ui-data-table">
+                    <table class="ui-data-table__table min-w-full text-left text-body">
+                        <thead>
                             <tr>
-                                <th class="px-3 py-2">Name</th>
-                                <th class="px-3 py-2">Connector</th>
-                                <th class="px-3 py-2">State</th>
-                                <th class="px-3 py-2">Scope</th>
-                                <th class="px-3 py-2">Used In</th>
-                                <th class="px-3 py-2"></th>
+                                <th>Name</th>
+                                <th>Connector</th>
+                                <th>State</th>
+                                <th>Scope</th>
+                                <th>Used in</th>
+                                <th></th>
                             </tr>
                         </thead>
                         <tbody>
                             @foreach (var c in _connections)
                             {
-                                <tr class="border-b border-default hover:bg-surface-muted cursor-pointer"
+                                <tr class="cursor-pointer"
                                     @onclick="@(() => Nav.NavigateTo("/connections/" + Uri.EscapeDataString(c.Id)))">
-                                    <td class="px-3 py-2 font-medium">@c.Name</td>
-                                    <td class="px-3 py-2 font-mono text-xs">@c.ConnectorDefinitionId</td>
-                                    <td class="px-3 py-2">@c.State</td>
-                                    <td class="px-3 py-2 text-muted">@(c.ScopeKey ?? "—")</td>
-                                    <td class="px-3 py-2">
+                                    <td class="font-medium">@c.Name</td>
+                                    <td class="font-mono text-xs">@c.ConnectorDefinitionId</td>
+                                    <td>@c.State</td>
+                                    <td class="text-muted">@(c.ScopeKey ?? "—")</td>
+                                    <td>
                                         @if (c.UsedIn is { Count: > 0 })
                                         {
                                             <div class="flex flex-wrap gap-x-2 gap-y-1">
@@ -110,7 +110,7 @@
                                             <span class="text-muted">—</span>
                                         }
                                     </td>
-                                    <td class="px-3 py-2">
+                                    <td>
                                         <a href="@("/connections/" + Uri.EscapeDataString(c.Id))" class="underline text-sm" @onclick:stopPropagation>Open</a>
                                     </td>
                                 </tr>

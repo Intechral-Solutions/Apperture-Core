@@ -107,8 +107,12 @@ Legend: **R** reference · **P** pilot · **L** legacy · **C** candidate
 | `/runs`, `/runs/{id}` | List + execution detail | **P** | none | `ui-data-table`, `ui-detail-block`, `ui-code-block` |
 | `/control/center`, `/control/blocked-work`, `/control/audit` | Operational console | **P** | none | `ui-detail-block`, `ui-input`, `btn` |
 | `/schedules`, `/schedules/{id}`, `/schedules/new` | List + detail + create | **P** | none | Create form migrated; list already on `ui-data-table` |
-| `/config/**` | Hub + hybrid lists | P/L | reuse | Governance lists legacy |
-| `/attention/**` | Legacy lists | L | restructure | |
+| `/config/**` | Hub + hybrid lists | **P** | none | Governance, notifications hub, attention teams migrated |
+| `/attention/**` | Operational teams | **P** | none | Groups list/detail + routing defaults on primitives |
+| `/modules`, `/modules/{id}` | Module list + detail | **P** | none | List on `ui-data-table`; detail already on primitives |
+| `/connections/**` | Connections + connectors | **P** | none | `ui-data-table`, `ui-input`, `btn`, `ManagementSection` |
+| `/runtimes/**` | Shutdown requests | **P** | none | `PageHeader` + `ui-data-table` |
+| `/demo/**` | Demo customer explorer | **P** | none | Filters/table on primitives; activity cards on `ui-detail-block` |
 | Redirects/stubs | — | — | skip | AccountRedirect, OperationStart, etc. |
 
 ---
@@ -132,7 +136,7 @@ Legend: **R** reference · **P** pilot · **L** legacy · **C** candidate
 3. ~~Account Security + Notifications + Login polish~~ (done)
 4. ~~Integrations list/detail + Execute~~ (done)
 5. ~~Runs, Schedules, Control~~ (done)
-6. Config notifications + governance + contacts
-7. Modules, connections, runtimes, demo
+6. ~~Config notifications + governance + contacts~~ (done)
+7. ~~Modules, connections, runtimes, demo~~ (done)
 
 Update this table as batches complete.

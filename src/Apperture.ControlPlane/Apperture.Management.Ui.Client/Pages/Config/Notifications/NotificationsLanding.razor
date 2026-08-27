@@ -5,9 +5,9 @@
 @using Apperture.Management.Ui.Client.Services
 @inject IOperatorCapabilitiesService Capabilities
 
-<div class="p-4">
-    <div class="text-xs text-muted mb-1">Config — Notifications</div>
-    <PageHeader Title="Notifications"
+<div class="p-4 ui-page-stack">
+    <PageHeader Eyebrow="Config"
+                Title="Notifications"
                 Subtitle="Platform notification definitions, delivery instances, and cutover diagnostics. No live send from the UI in this phase." />
 
     @if (!_capabilitiesLoaded)
@@ -16,32 +16,26 @@
     }
     else if (!_canView)
     {
-        <div class="mt-4">
-            <ForbiddenState Message="You do not have permission to view notification definitions." />
-        </div>
+        <ForbiddenState Message="You do not have permission to view notification definitions." />
     }
     else
     {
-        <div class="mt-6 grid grid-cols-1 gap-3 md:grid-cols-2">
-            <a href="/config/notifications/definitions" class="rounded border border-default bg-surface p-4 hover:bg-surface-muted block">
-                <div class="font-semibold text-heading">Definitions</div>
-                <div class="mt-1 text-sm text-muted">Browse definitions, subscriptions, and render preview.</div>
-            </a>
-            <a href="/config/notifications/instances" class="rounded border border-default bg-surface p-4 hover:bg-surface-muted block">
-                <div class="font-semibold text-heading">Instances</div>
-                <div class="mt-1 text-sm text-muted">Rendered instances and suppression reasons.</div>
-            </a>
-            <a href="/config/notifications/delivery" class="rounded border border-default bg-surface p-4 hover:bg-surface-muted block">
-                <div class="font-semibold text-heading">Delivery</div>
-                <div class="mt-1 text-sm text-muted">Outbox health and failed or pending deliveries by integration.</div>
-            </a>
-            <a href="/config/notifications/diagnostics" class="rounded border border-default bg-surface p-4 hover:bg-surface-muted block">
-                <div class="font-semibold text-heading">Diagnostics</div>
-                <div class="mt-1 text-sm text-muted">Parity acceptance for expected-run-missing cutover (read-only; does not change flags or send mail).</div>
-            </a>
+        <div class="ui-summary-card-grid">
+            <ManagementSummaryCard Title="Definitions"
+                                   Description="Browse definitions, subscriptions, and render preview."
+                                   Href="/config/notifications/definitions" />
+            <ManagementSummaryCard Title="Instances"
+                                   Description="Rendered instances and suppression reasons."
+                                   Href="/config/notifications/instances" />
+            <ManagementSummaryCard Title="Delivery"
+                                   Description="Outbox health and failed or pending deliveries by integration."
+                                   Href="/config/notifications/delivery" />
+            <ManagementSummaryCard Title="Diagnostics"
+                                   Description="Parity acceptance for expected-run-missing cutover (read-only; does not change flags or send mail)."
+                                   Href="/config/notifications/diagnostics" />
         </div>
         <p class="mt-6 text-xs text-muted">
-            See the Epic 77 cutover runbook in <code>docs/03-operations/epic77-expected-run-missing-notification-cutover-runbook.md</code> before enabling <code>UsePlatformPipeline</code>.
+            See the Epic 77 cutover runbook in <code class="ui-inline-code">docs/03-operations/epic77-expected-run-missing-notification-cutover-runbook.md</code> before enabling <code class="ui-inline-code">UsePlatformPipeline</code>.
         </p>
     }
 </div>

@@ -44,7 +44,7 @@
             <div class="flex flex-wrap items-end gap-3 text-sm">
                 <label class="flex min-w-[12rem] flex-1 flex-col gap-1">
                     Search
-                    <input class="rounded border border-default bg-surface px-2 py-1.5"
+                    <input class="ui-input"
                            placeholder="Name, key, or email"
                            @bind="_query"
                            @bind:event="oninput"
@@ -52,7 +52,7 @@
                 </label>
                 <label class="flex flex-col gap-1">
                     Source
-                    <select class="rounded border border-default bg-surface px-2 py-1.5" @bind="_sourceKind">
+                    <select class="ui-input ui-input--narrow" @bind="_sourceKind">
                         @foreach (var opt in DemoCustomerUiHelpers.SourceKindOptions)
                         {
                             <option value="@opt.Value">@opt.Label</option>
@@ -107,30 +107,30 @@
                     }
                 </div>
 
-                <div class="overflow-x-auto rounded border border-default">
-                    <table class="min-w-full text-left text-sm">
-                        <thead class="bg-surface-muted text-xs uppercase tracking-wide text-muted">
+                <div class="ui-data-table">
+                    <table class="ui-data-table__table min-w-full text-left text-body">
+                        <thead>
                             <tr>
-                                <th class="p-2 font-medium">Customer</th>
-                                <th class="p-2 font-medium">Business key</th>
-                                <th class="p-2 font-medium">Email</th>
-                                <th class="p-2 font-medium">Status</th>
-                                <th class="p-2 font-medium">Sources</th>
-                                <th class="p-2 font-medium">Conflicts</th>
-                                <th class="p-2 font-medium">Last observed</th>
-                                <th class="p-2 font-medium"></th>
+                                <th>Customer</th>
+                                <th>Business key</th>
+                                <th>Email</th>
+                                <th>Status</th>
+                                <th>Sources</th>
+                                <th>Conflicts</th>
+                                <th>Last observed</th>
+                                <th></th>
                             </tr>
                         </thead>
                         <tbody>
                             @foreach (var row in _items)
                             {
-                                <tr class="border-t border-default align-top">
-                                    <td class="p-2 font-medium text-heading">@DemoCustomerUiHelpers.CustomerDisplayName(row)</td>
-                                    <td class="p-2 font-mono text-xs text-body">@row.BusinessKey</td>
-                                    <td class="p-2 break-all text-body">@(row.PrimaryEmail ?? "—")</td>
-                                    <td class="p-2 text-body">@(row.PrimaryStatus ?? "—")</td>
-                                    <td class="p-2 text-body">@DemoCustomerUiHelpers.FormatSourceCount(row.SourceCount)</td>
-                                    <td class="p-2">
+                                <tr class="align-top">
+                                    <td class="font-medium text-heading">@DemoCustomerUiHelpers.CustomerDisplayName(row)</td>
+                                    <td class="font-mono text-xs text-body">@row.BusinessKey</td>
+                                    <td class="break-all text-body">@(row.PrimaryEmail ?? "—")</td>
+                                    <td class="text-body">@(row.PrimaryStatus ?? "—")</td>
+                                    <td class="text-body">@DemoCustomerUiHelpers.FormatSourceCount(row.SourceCount)</td>
+                                    <td>
                                         <StatusPill Label="@(row.HasConflict ? "Conflict" : "OK")"
                                                     Semantic="@DemoCustomerUiHelpers.ConflictSemantic(row.HasConflict)" />
                                         @if (row.HasConflict && !string.IsNullOrWhiteSpace(row.PrimaryConflictSummary))
@@ -138,10 +138,10 @@
                                             <div class="mt-1 text-xs text-muted">@row.PrimaryConflictSummary</div>
                                         }
                                     </td>
-                                    <td class="p-2 text-body">
+                                    <td class="text-body">
                                         <TimestampDisplay Value="@row.LastObservedAtUtc" ShowUtcDetail="true" />
                                     </td>
-                                    <td class="p-2">
+                                    <td>
                                         <a class="text-link text-sm"
                                            href="@DemoCustomerUiRoutes.Detail(row.BusinessKey)">
                                             Open

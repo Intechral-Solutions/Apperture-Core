@@ -541,6 +541,8 @@ Tracked in [pattern-catalog.md](../../.planning/management-ui/pattern-catalog.md
 | Account Security + Notifications + Login polish | Account security/notifications, personal inbox, auth sign-in | Done |
 | Integrations + Execute | Integrations list/detail, create wizard, execute launch | Done |
 | Runs, Schedules, Control | Runs list/detail, schedule create/detail, control center, audit, blocked work | Done |
+| Config + governance + attention | Users/roles/catalog, user/role detail, notification hub/lists, operational teams | Done |
+| Modules, connections, runtimes, demo | Module list, connections CRUD, connector catalog, shutdown requests, demo customers | Done |
 
 Update this table when batches complete.
 

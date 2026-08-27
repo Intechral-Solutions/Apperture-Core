@@ -1,28 +1,22 @@
 @page "/demo/nested-nav"
 @page "/demo/nested-nav/{*Slugs}"
+@using Apperture.Management.Ui.Client.Molecules
+@using Apperture.Management.Ui.Client.Organisms
 
 <PageTitle>Nested nav demo</PageTitle>
 
-<div class="p-4 max-w-2xl">
-    <h1 class="text-xl font-semibold text-heading">Nested navigation demo</h1>
-    <p class="mt-2 text-sm text-muted">
-        One page for every depth. Use Tools in the control panel to open the tree; each level links here with a longer path.
-    </p>
+<div class="p-4 ui-page-stack max-w-2xl">
+    <PageHeader Title="Nested navigation demo"
+                Eyebrow="Developer"
+                Subtitle="One page for every depth. Use Tools in the control panel to open the tree; each level links here with a longer path." />
 
-    <dl class="mt-6 space-y-3 text-sm">
-        <div>
-            <dt class="font-medium text-heading">Depth</dt>
-            <dd class="text-body">@_depth</dd>
-        </div>
-        <div>
-            <dt class="font-medium text-heading">Segments</dt>
-            <dd class="text-body">@(_segments.Length == 0 ? "(none — root)" : string.Join(" → ", _segments))</dd>
-        </div>
-        <div>
-            <dt class="font-medium text-heading">Slugs parameter</dt>
-            <dd class="break-all font-mono text-xs text-body">@(string.IsNullOrEmpty(Slugs) ? "(empty)" : Slugs)</dd>
-        </div>
-    </dl>
+    <ManagementSection Title="Route state" Layer="ManagementSection.UiLayer.Detail">
+        <MetadataGrid>
+            <MetadataItem Label="Depth" Value="@_depth.ToString()" />
+            <MetadataItem Label="Segments" Value="@(_segments.Length == 0 ? "(none — root)" : string.Join(" → ", _segments))" />
+            <MetadataItem Label="Slugs parameter" Monospace="true" Value="@(string.IsNullOrEmpty(Slugs) ? "(empty)" : Slugs)" />
+        </MetadataGrid>
+    </ManagementSection>
 </div>
 
 @code {

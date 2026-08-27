@@ -2,6 +2,7 @@
 @layout ConfigLayout
 @using System.Net
 @using Apperture.Management.Client
+@using Apperture.Management.Ui.Client.Molecules
 @using Apperture.Management.Ui.Client.Organisms
 @using Apperture.Management.Ui.Client.Services
 @using Apperture.Management.Ui.Shared
@@ -18,9 +19,10 @@
             <div class="mt-1 font-mono text-xs text-muted break-all">@UserId — merged permissions from assigned roles only</div>
         </ChildContent>
         <Toolbar>
-            <a href="@("/config/governance/users/" + Uri.EscapeDataString(UserId))" class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface">Manage role assignments</a>
-            <a href="/config/governance/users" class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface">Back to users</a>
-            <button class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface"
+            <a href="@("/config/governance/users/" + Uri.EscapeDataString(UserId))" class="ui-toolbar-btn">Manage role assignments</a>
+            <a href="/config/governance/users" class="ui-toolbar-btn">Back to users</a>
+            <button type="button"
+                    class="ui-toolbar-btn"
                     disabled="@_loading"
                     @onclick="LoadAsync">
                 Refresh
@@ -28,7 +30,7 @@
         </Toolbar>
     </PageHeader>
 
-    <div class="mt-2 rounded border border-callout-info bg-callout-info px-3 py-2 text-xs text-body">
+    <div class="ui-settings-callout">
         This page shows <strong>merged permissions from assigned roles only</strong>. It is not a complete effective-access model: direct user grants, scope containment, and service principals are excluded.
     </div>
 
@@ -55,51 +57,43 @@
     else
     {
         <div class="mt-4 grid gap-4">
-            <div class="rounded border border-default bg-surface p-3">
-                <div class="text-sm font-semibold text-heading">User & roles</div>
-                <div class="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2">
-                    <div>
-                        <div class="text-xs text-muted">User ID</div>
-                        <div class="text-sm font-mono">@_access.UserId</div>
-                    </div>
-                    <div>
-                        <div class="text-xs text-muted">Roles</div>
-                        <div class="text-sm">@(string.Join(", ", _access.RoleIds) != "" ? string.Join(", ", _access.RoleIds) : "(none)")</div>
-                    </div>
-                </div>
-            </div>
+            <ManagementSection Title="User and roles" Layer="ManagementSection.UiLayer.Summary">
+                <MetadataGrid>
+                    <MetadataItem Label="User ID" Monospace="true" Value="@_access.UserId" />
+                    <MetadataItem Label="Roles" Value="@(string.Join(", ", _access.RoleIds) != "" ? string.Join(", ", _access.RoleIds) : "(none)")" />
+                </MetadataGrid>
+            </ManagementSection>
 
-            <div class="rounded border border-default bg-surface p-3">
-                <div class="text-sm font-semibold text-heading">Merged permissions</div>
+            <ManagementSection Title="Merged permissions" Layer="ManagementSection.UiLayer.Detail">
                 @if (_access.Permissions.Count == 0)
                 {
-                    <div class="mt-2 text-xs text-muted">No permissions (user has no roles or roles have no permissions).</div>
+                    <div class="text-xs text-muted">No permissions (user has no roles or roles have no permissions).</div>
                 }
                 else
                 {
-                    <div class="mt-2 overflow-x-auto">
-                        <table class="min-w-full text-left text-sm text-body">
-                            <thead class="border-b border-default text-xs text-muted">
+                    <div class="ui-data-table">
+                        <table class="ui-data-table__table min-w-full text-left text-body">
+                            <thead>
                                 <tr>
-                                    <th class="px-2 py-2">Action</th>
-                                    <th class="px-2 py-2">Resource Type</th>
-                                    <th class="px-2 py-2">Scope Key</th>
+                                    <th>Action</th>
+                                    <th>Resource type</th>
+                                    <th>Scope key</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 @foreach (var p in _access.Permissions)
                                 {
-                                    <tr class="border-b border-default hover:bg-surface-muted">
-                                        <td class="px-2 py-2 font-mono text-xs">@p.Action</td>
-                                        <td class="px-2 py-2 font-mono text-xs">@(p.ResourceType ?? "-")</td>
-                                        <td class="px-2 py-2 font-mono text-xs">@(p.ScopeKey ?? "-")</td>
+                                    <tr>
+                                        <td class="font-mono text-xs">@p.Action</td>
+                                        <td class="font-mono text-xs">@(p.ResourceType ?? "-")</td>
+                                        <td class="font-mono text-xs">@(p.ScopeKey ?? "-")</td>
                                     </tr>
                                 }
                             </tbody>
                         </table>
                     </div>
                 }
-            </div>
+            </ManagementSection>
         </div>
     }
 </div>

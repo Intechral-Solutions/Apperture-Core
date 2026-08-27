@@ -16,7 +16,7 @@
             </p>
         </div>
         <button type="button"
-                class="shrink-0 rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface disabled:opacity-50"
+                class="ui-toolbar-btn shrink-0"
                 disabled="@_loading"
                 @onclick="LoadAsync">
             Refresh
@@ -45,26 +45,26 @@
     }
     else
     {
-        <div class="overflow-x-auto rounded border border-default bg-surface">
-            <table class="min-w-full text-left text-sm text-body">
-                <thead class="border-b border-default text-xs text-muted">
+        <div class="ui-data-table">
+            <table class="ui-data-table__table min-w-full text-left text-body">
+                <thead>
                     <tr>
-                        <th class="px-3 py-2">Name</th>
-                        <th class="px-3 py-2">Id</th>
-                        <th class="px-3 py-2">Source</th>
-                        <th class="px-3 py-2">Fields</th>
-                        <th class="px-3 py-2">Capabilities</th>
+                        <th>Name</th>
+                        <th>Id</th>
+                        <th>Source</th>
+                        <th>Fields</th>
+                        <th>Capabilities</th>
                     </tr>
                 </thead>
                 <tbody>
                     @foreach (var d in _definitions)
                     {
-                        <tr class="border-b border-default hover:bg-surface-muted align-top">
-                            <td class="px-3 py-2 font-medium">@d.Name</td>
-                            <td class="px-3 py-2 font-mono text-xs">@d.Id</td>
-                            <td class="px-3 py-2">@(d.ModuleId ?? "Platform")</td>
-                            <td class="px-3 py-2 text-xs">@d.Fields.Count</td>
-                            <td class="px-3 py-2 text-xs text-muted">@d.Capabilities</td>
+                        <tr class="align-top">
+                            <td class="font-medium">@d.Name</td>
+                            <td class="font-mono text-xs">@d.Id</td>
+                            <td>@(d.ModuleId ?? "Platform")</td>
+                            <td class="text-xs">@d.Fields.Count</td>
+                            <td class="text-xs text-muted">@d.Capabilities</td>
                         </tr>
                     }
                 </tbody>

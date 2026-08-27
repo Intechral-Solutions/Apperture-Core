@@ -18,7 +18,7 @@
             <div class="mt-1 font-mono text-xs text-muted break-all">@Id</div>
         </ChildContent>
         <Toolbar>
-            <a href="/attention/operational-teams" class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface">All teams</a>
+            <a href="/attention/operational-teams" class="ui-toolbar-btn">All teams</a>
         </Toolbar>
     </PageHeader>
 
@@ -34,25 +34,25 @@
     {
         @if (_capabilities?.CanManageSchedules == true)
         {
-            <div class="mt-4 space-y-2 rounded border border-default bg-surface p-3">
-                <div class="text-xs font-semibold text-heading">Team</div>
+            <div class="mt-4 space-y-4">
+            <ManagementSection Title="Team" Layer="ManagementSection.UiLayer.Detail">
                 <label class="block text-xs text-muted">Name</label>
-                <input class="w-full max-w-md rounded border border-default bg-surface px-2 py-1 text-sm" @bind="_editName" />
-                <label class="block text-xs text-muted">Description</label>
-                <input class="w-full max-w-xl rounded border border-default bg-surface px-2 py-1 text-sm" @bind="_editDescription" />
-                <label class="flex items-center gap-2 text-sm">
+                <input class="ui-input mt-1 max-w-md" @bind="_editName" />
+                <label class="mt-3 block text-xs text-muted">Description</label>
+                <input class="ui-input mt-1 max-w-xl" @bind="_editDescription" />
+                <label class="mt-3 flex items-center gap-2 text-sm">
                     <input type="checkbox" @bind="_editEnabled" />
                     Enabled
                 </label>
-                <button type="button" class="rounded bg-surface-muted px-3 py-1 text-sm disabled:opacity-50" disabled="@_savingMeta" @onclick="SaveMetaAsync">Save team</button>
-            </div>
+                <button type="button" class="btn btn-primary mt-3" disabled="@_savingMeta" @onclick="SaveMetaAsync">Save team</button>
+            </ManagementSection>
 
-            <div class="mt-6 space-y-2 rounded border border-default bg-surface p-3">
-                <div class="text-xs font-semibold text-heading">Members (one row per line)</div>
-                <textarea class="w-full min-h-[160px] rounded border border-default bg-surface px-2 py-1 text-sm font-mono" @bind="_membersRaw"></textarea>
-                <div class="text-xs text-muted">Accepted formats: <span class="font-mono">user_123</span> (principal), <span class="font-mono">mcontact_…</span> (managed contact id), email for external, or <span class="font-mono">managed,mcontact_…[,Display]</span>, <span class="font-mono">principal,…</span>, <span class="font-mono">external,…</span>.</div>
+            <ManagementSection Title="Members (one row per line)" Layer="ManagementSection.UiLayer.Detail">
+                <textarea class="ui-input mt-1 min-h-[160px] font-mono" @bind="_membersRaw"></textarea>
+                <div class="mt-2 text-xs text-muted">Accepted formats: <span class="font-mono">user_123</span> (principal), <span class="font-mono">mcontact_…</span> (managed contact id), email for external, or <span class="font-mono">managed,mcontact_…[,Display]</span>, <span class="font-mono">principal,…</span>, <span class="font-mono">external,…</span>.</div>
                 <div class="text-xs text-muted">Manage users at <a class="underline" href="/config/governance/users">/config/governance/users</a>.</div>
-                <button type="button" class="rounded bg-surface-muted px-3 py-1 text-sm disabled:opacity-50" disabled="@_savingMembers" @onclick="SaveMembersAsync">Replace members</button>
+                <button type="button" class="btn btn-primary mt-3" disabled="@_savingMembers" @onclick="SaveMembersAsync">Replace members</button>
+            </ManagementSection>
             </div>
         }
         else
@@ -65,39 +65,38 @@
             }
         }
 
-        <div class="mt-6">
-            <div class="text-xs font-semibold text-heading mb-2">Members</div>
+        <ManagementSection Title="Members" Layer="ManagementSection.UiLayer.Detail">
             @if (_detail.Members.Count == 0)
             {
                 <div class="text-sm text-muted">No members.</div>
             }
             else
             {
-                <div class="overflow-x-auto rounded border border-default bg-surface">
-                    <table class="min-w-full text-left text-sm text-body">
-                        <thead class="border-b border-default text-xs text-muted">
+                <div class="ui-data-table">
+                    <table class="ui-data-table__table min-w-full text-left text-body">
+                        <thead>
                             <tr>
-                                <th class="px-3 py-2">Kind</th>
-                                <th class="px-3 py-2">Value</th>
-                                <th class="px-3 py-2">Display</th>
-                                <th class="px-3 py-2">Enabled</th>
+                                <th>Kind</th>
+                                <th>Value</th>
+                                <th>Display</th>
+                                <th>Enabled</th>
                             </tr>
                         </thead>
                         <tbody>
                             @foreach (var m in _detail.Members)
                             {
-                                <tr class="border-b border-default">
-                                    <td class="px-3 py-2 text-xs">@m.MemberKind</td>
-                                    <td class="px-3 py-2 font-mono text-xs">@MemberValue(m)</td>
-                                    <td class="px-3 py-2">@(m.DisplayName ?? "—")</td>
-                                    <td class="px-3 py-2">@(m.IsEnabled ? "Yes" : "No")</td>
+                                <tr>
+                                    <td class="text-xs">@m.MemberKind</td>
+                                    <td class="font-mono text-xs">@MemberValue(m)</td>
+                                    <td>@(m.DisplayName ?? "—")</td>
+                                    <td>@(m.IsEnabled ? "Yes" : "No")</td>
                                 </tr>
                             }
                         </tbody>
                     </table>
                 </div>
             }
-        </div>
+        </ManagementSection>
     }
 </div>
 
