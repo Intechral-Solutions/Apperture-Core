@@ -47,7 +47,7 @@
                 @if (isSecret)
                 {
                     <input type="password"
-                           class="rounded border border-default px-2 py-1 text-sm min-w-48"
+                           class="ui-input ui-input--inline"
                            value="@EditValue"
                            disabled="@IsSaving"
                            autocomplete="new-password"
@@ -70,7 +70,7 @@
                     {
                         var optionValues = EditorOptions.Select(o => o.Value).ToHashSet(StringComparer.Ordinal);
                         var includeUnavailableValue = !string.IsNullOrWhiteSpace(EditValue) && !optionValues.Contains(EditValue);
-                        <select class="rounded border border-default px-2 py-1 text-sm min-w-48 font-mono"
+                        <select class="ui-input ui-input--inline font-mono"
                                 value="@EditValue"
                                 disabled="@IsSaving"
                                 @onchange="OnTextInput">
@@ -104,7 +104,7 @@
                          || string.Equals(Row.ValueType, "Integer", StringComparison.OrdinalIgnoreCase))
                 {
                     <input type="number"
-                           class="rounded border border-default px-2 py-1 text-sm w-28"
+                           class="ui-input ui-input--narrow"
                            value="@EditValue"
                            min="@Row.MinInteger"
                            disabled="@IsSaving"
@@ -112,7 +112,7 @@
                 }
                 else
                 {
-                    <input class="rounded border border-default px-2 py-1 text-sm min-w-48 font-mono"
+                    <input class="ui-input ui-input--inline font-mono"
                            value="@EditValue"
                            disabled="@IsSaving"
                            placeholder="@GetTextInputPlaceholder()"
@@ -127,7 +127,7 @@
             </div>
             <div class="flex shrink-0 items-center gap-1">
                 <button type="button"
-                        class="rounded bg-surface-muted px-2 py-1 text-xs font-medium text-heading disabled:opacity-50"
+                        class="btn btn-secondary text-xs"
                         disabled="@(!CanSave || IsSaving)"
                         title="@SaveTitle"
                         @onclick="OnSave">
@@ -136,7 +136,7 @@
                 @if (isSecret)
                 {
                     <button type="button"
-                            class="rounded bg-surface-muted px-2 py-1 text-xs disabled:opacity-50"
+                            class="btn btn-secondary text-xs"
                             disabled="@(!CanClearSecret || IsSaving)"
                             title="@PlatformSettingUiHelpers.GetSecretClearTitle(CanClearSecret)"
                             @onclick="OnClear">
@@ -144,7 +144,7 @@
                     </button>
                 }
                 <button type="button"
-                        class="rounded bg-surface-muted px-2 py-1 text-xs disabled:opacity-50"
+                        class="btn btn-secondary text-xs"
                         disabled="@(!CanReset || IsSaving)"
                         title="@ResetTitle"
                         @onclick="OnReset">

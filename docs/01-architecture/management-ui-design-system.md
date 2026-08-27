@@ -11,6 +11,43 @@ Related shell documentation: [control-panel-ui.md](control-panel-ui.md).
 - Document **page-state** conventions (loading, empty, error, forbidden) on top of existing `PageMessage`.
 - Preserve **backend truth**, permission omission, and drill-in query contracts from prior epics.
 
+## Living document and working catalog
+
+This file is the **canonical** design system guide for the Management UI. During the site-wide theme and layout overhaul, a working inventory lives in **[`.planning/management-ui/`](../../.planning/management-ui/README.md)**:
+
+| Planning artifact | Role |
+|-------------------|------|
+| [pattern-catalog.md](../../.planning/management-ui/pattern-catalog.md) | Instances, maturity, and promotion actions |
+| [catalog-schema.md](../../.planning/management-ui/catalog-schema.md) | Field definitions and 3+ route rule |
+| [disclosure-audit.md](../../.planning/management-ui/disclosure-audit.md) | Progressive-disclosure candidates |
+
+**Workflow:** catalog while touching pages → promote stable patterns into this document → face-lift instances. Do not maintain two normative spec documents.
+
+## System layers
+
+Implementers work top-down; tokens are the floor.
+
+| Layer | Where | Examples |
+|-------|--------|----------|
+| **Tokens** | `app.css` (`:root`, `.dark`) | `--color-surface`, `--color-input-bg`, tint families, segmented active |
+| **Primitives** | `management-ui-primitives.css` | `.ui-input`, `.ui-settings-card`, `.ui-status-pill--*` |
+| **Components** | `Atoms/`, `Molecules/`, `Organisms/` | `PageHeader`, `SegmentedControl`, `ThemeCardGroup` |
+| **Patterns** | Composed markup + primitives | Settings shell, hub summary grid, cooperative toolbar |
+| **Page recipes** | Full routes | Account settings, entity hub, list+detail, dense authoring |
+
+New work should **reuse** an existing layer before adding below it. Promote to the next layer only when the same composition appears on **three or more routes** (see catalog schema).
+
+## Pattern maturity
+
+| Maturity | Meaning | Implementer action |
+|----------|---------|-------------------|
+| **Reference** | Signed off for theme overhaul | Copy implementation |
+| **Pilot** | Epic 79–97 structure | Harmonize tokens/primitives when touched |
+| **Legacy** | Pre-pilot ad-hoc markup | Migrate when batch schedules the route |
+| **Candidate** | Proposed abstraction | Document in catalog; do not spread until promoted |
+
+**Current references:** `/account/preferences` (Appearance & regional), `/account/profile`, auth shell (`/login`), chrome primitives (toast, menus). See catalog for full matrix.
+
 ## Relationship to Epic 78
 
 | Epic 78 deliverable | Epic 79 implementation |
@@ -30,6 +67,23 @@ Related shell documentation: [control-panel-ui.md](control-panel-ui.md).
 3. **Composable, not generic** — Small Razor components with explicit parameters; no templating engine.
 4. **Incremental adoption** — New and touched pages use primitives; legacy markup remains valid until pilot epics.
 5. **Semantic tokens** — Visual roles use CSS variables in `wwwroot/css/app.css` (`:root` for light greige, `.dark` on `html` for cool black). Both themes are siblings: the same markup and `ui-*` classes; only token values change. Load `management-ui-primitives.css` after `app.css` in **Ui.Server** `_Layout.cshtml` (dev host) and WASM `wwwroot/index.html`.
+6. **No theme branching in markup** — Never add a `light` class, `dark:` utilities, or C# theme switches. `ThemeService` toggles `html.dark` only.
+7. **Catalog-driven evolution** — Record new or divergent UX in `.planning/management-ui/pattern-catalog.md`; fold stable rules back into this document.
+
+## Theme (light and dark siblings)
+
+| Concern | Light (`:root`) | Dark (`html.dark`) |
+|---------|-----------------|---------------------|
+| Page floor | `--color-bg` (warm greige) | `--color-bg` (cool black) |
+| Cards | `--color-surface` | `--color-surface` |
+| Inputs, menus, toasts | `--color-input-bg` → elevated white | `--color-input-bg` → page sunken |
+| Segmented active chip | Raised white + accent inset | Accent wash + inset hairline |
+| Status / callout fills | Tint families (sage, sand, teal) | Tint mixes from accent/status |
+| Borders | Ink alpha `rgb(30 34 41 / …)` | White alpha on dark surfaces |
+
+Pure `#FFFFFF` in light is reserved for **elevated** surfaces (inputs, nested list panels, menus, active segmented chip)—not page or card backgrounds.
+
+Pre-boot: inline script in `index.html` / `_Layout.cshtml` reads `localStorage` and toggles `dark` before paint. `ThemeService` re-applies on OS `prefers-color-scheme` when preference is `System`.
 
 ## Component categories
 
@@ -103,6 +157,58 @@ Defined in `management-ui-primitives.css`:
 | `ui-section-actions` | Section-local button row (edit save/cancel, lifecycle actions) |
 | `ui-metadata-grid` / `ui-metadata-grid--3` | Responsive metadata layout (used by `MetadataGrid`) |
 
+### Settings and chooser primitives (theme overhaul)
+
+Account surfaces established the reference patterns below. Use on personal settings and anywhere a similar **exclusive choice** or **searchable list** is needed.
+
+| Primitive / component | CSS / component | Use when |
+|---------------------|-----------------|----------|
+| Settings page shell | `ui-settings-page`, `ui-settings-grid` | Multi-section personal or admin settings with optional aside |
+| Settings card | `ui-settings-card`, `__header`, `__body`, `__footer` | Bordered section with title, help, actions |
+| Saved / dirty chip | `ui-settings-status` + `data-state` | Toolbar or footer sync state (sage saved, sand dirty) |
+| Info callout | `ui-settings-callout` | Non-blocking context (teal tint) |
+| Text field | `ui-input` or `TextInput` | Single-line text; also `select.ui-input`, `textarea.ui-input`; `ui-input--inline` / `ui-input--narrow` for compact rows |
+| Primary / secondary | `btn btn-primary`, `btn btn-secondary` | Form submit, Reset, empty-state CTAs |
+| Theme cards | `ThemeCardGroup` + `ui-theme-card` | Few visual options with preview swatch |
+| Segmented control | `SegmentedControl` + `ui-segmented` | 2–5 exclusive options (clock format, etc.) |
+| Searchable list | `SearchableList` + `ui-searchable-list` | Timezone-scale lists; prefer over `<select size>` |
+| Section nav tabs | `AccountSectionNav` | Real links + `aria-current`; only tab pattern in shell today |
+
+### Chrome primitives (theme overhaul)
+
+| Surface | Classes / components | Notes |
+|---------|---------------------|-------|
+| Toast | `ui-toast`, `toast-strip-*` | Elevated panel; assertive vs polite regions in `ToastHost` |
+| Menus | `ui-menu-panel`, `ui-menu-item` | Theme, account, notification footers |
+| Notification panel | `ui-menu-panel` + `ui-personal-notification-menu__*` | Anchored to bell |
+| Auth layout | `AuthLayout` (`bg-default`) + `ui-section-panel` on login card | Greige floor, white panel |
+| Rail / topbar | `ui-nav-rail`, `ui-topbar`, `--color-rail-bg`, `--color-topbar-bg` | Badge cutout uses topbar bg |
+
+## Progressive disclosure
+
+Hide **secondary, forensic, or rare** information—not primary actions or permission-gated work.
+
+| Level | Mechanism | Examples |
+|-------|-----------|----------|
+| **Always visible** | Page header, summary band, blocking status | Integration readiness blockers, run actionability |
+| **Section** | `ManagementSection`, settings cards | Editable config, subscription lists |
+| **Advanced** | `ManagementAdvancedSection`, `TechnicalDetails`, `Disclosure` | Raw ids, payloads, roles/links on profile |
+| **Drill-in route** | Separate page | Schedule diagnostics, notification diagnostics |
+
+Audit candidates: [disclosure-audit.md](../../.planning/management-ui/disclosure-audit.md). Prefer restructuring overloaded pages into sections before adding collapses everywhere.
+
+## Anti-patterns
+
+| Do not | Use instead |
+|--------|-------------|
+| `bg-body`, `text-surface` ad-hoc buttons | `btn btn-primary`, `ui-toolbar-btn` |
+| `border-default bg-surface` on inputs | `ui-input`, `TextInput` |
+| Raw Tailwind palettes, `dark:`, hex in Razor | Semantic tokens; `NoRawColorUtilitiesTests` |
+| `rgba(255,255,255,…)` in component CSS | Theme tokens in `:root` / `.dark` only |
+| `· Selected` prose suffix | `data-state="on"`, visible badge, `sr-only` |
+| Disabled checkbox for non-existent preference | Prose explaining unavailable capability |
+| Toast for field validation errors | Inline `aria-describedby` + `role="alert"` |
+
 ## Layout primitives and Epic 78 layers
 
 | Epic 78 layer | Components / patterns |
@@ -156,9 +262,10 @@ Use **`PageMessage`** directly or the wrappers:
 ## Form and control conventions (high level)
 
 - Prefer **metadata-driven** inputs (`ProcedureParameterForm`) for execution starts; no new schema framework in Epic 79.
-- Primary actions: `ActionButton` or `btn btn-primary` / `btn-secondary` utilities from `app.css`.
-- Destructive: `ActionButtonVariant.Danger` or `btn-danger` / `bg-destructive` toolbar buttons.
-- Section labels: `text-xs text-muted` for field labels; `text-heading` for section titles inside `ManagementSection`.
+- **Text inputs:** `ui-input` or `TextInput`; **select/textarea:** add class `ui-input` to native elements.
+- Primary actions: `btn btn-primary` / `btn-secondary` or `ActionButton` for single-shot cooperative feedback.
+- Destructive: `ActionButtonVariant.Danger`, `btn-danger`, or `ui-toolbar-btn--danger` (toolbar, last position).
+- Section labels: `text-xs text-muted` for field labels; `ui-settings-card__title` or `text-heading` for section titles.
 - See **Action surface and feedback** (Epic 87) below for placement and result messaging rules.
 
 ## Action surface and feedback (Epic 87)
@@ -284,7 +391,7 @@ See [Epic 97](../02-decisions/Epic97-Management-UI-Visual-Density-and-Polish-Pas
 
 ### When not to abstract (Epic 93)
 
-- Integration Detail **Activate** primary CTA (`bg-body`) — intentional emphasis; not normalized to `ui-toolbar-btn`.
+- ~~Integration Detail **Activate** primary CTA (`bg-body`)~~ — **migrate** to `btn btn-primary` during overhaul; do not add `bg-body` utilities.
 - Wizard step buttons, inline table actions, `ActionButton` connection test.
 - Toast-only Integration Detail mutations.
 - Full metadata abstraction on Run Detail investigation sections (many conditional fields).
@@ -399,10 +506,40 @@ The pilot stack is now ready for these follow-on epics, but none are implemented
 
 | File | Contents |
 |------|----------|
-| `wwwroot/css/app.css` | Tailwind v4 build + semantic theme tokens (`--color-surface`, `--color-success`, message callouts, buttons) |
-| `wwwroot/css/management-ui-primitives.css` | Epic 79 panel/card/pill/link/stack classes referencing theme variables |
+| `wwwroot/css/app.css` | Tailwind v4 build + semantic theme tokens in `:root` and `.dark` |
+| `wwwroot/css/management-ui-primitives.css` | `ui-*` primitives referencing theme variables |
 
-Do not add one-off hex colors in Razor; extend semantic tokens in `app.css` when a new **role** is needed.
+### Token families (extend here, not in Razor)
+
+| Family | Variables | Role |
+|--------|-----------|------|
+| Surfaces | `--color-bg`, `--color-bg-sunken`, `--color-surface`, `--color-surface-elevated`, `--color-surface-muted`, `--color-surface-header` | Canvas, cards, recess, headers |
+| Input | `--color-input-bg` | Form fields and nested panels (theme inversion) |
+| Text | `--color-text-heading` … `--color-text-subtle`, `--color-text` | Body copy hierarchy |
+| Accent | `--color-accent`, `--color-accent-wash`, `--color-accent-line`, `--color-accent-ring` | Brand actions and selection |
+| Borders | `--color-border-subtle`, `--color-border`, `--color-border-strong` | Ink-alpha light / white-alpha dark |
+| Tints | `--color-tint-teal|sand|sage` + `-line` + `-text` | Callouts, status chips, dirty/saved |
+| Segmented | `--color-segmented-track`, `--color-segmented-active-*`, `--shadow-segmented-active` | Exclusive option chips |
+| Chrome | `--color-rail-bg`, `--color-topbar-bg`, `--color-hamburger-line`, `--color-hover-overlay` | Shell |
+| Destructive | `--color-destructive`, `--color-destructive-fg` | Danger toolbar and buttons |
+| Buttons | `--color-btn-primary-*`, `--color-btn-secondary-*`, `--color-btn-primary-disabled-*` | `.btn-*` utilities |
+
+Do not add one-off hex colors in Razor; extend semantic tokens in `app.css` when a new **role** is needed in both themes.
+
+## Theme overhaul status
+
+Tracked in [pattern-catalog.md](../../.planning/management-ui/pattern-catalog.md). Summary:
+
+| Phase | Scope | Status |
+|-------|--------|--------|
+| Light/dark sibling tokens | `app.css`, primitives tokenization | Done |
+| Chrome + Profile + Dashboard | Toast, menus, auth, profile, dashboard empty CTAs | Done |
+| Shared form molecules | `ProcedureParameterForm`, `NotificationDefinitionAuthoringForm`, `ConnectorConnectionFieldInputs`, `PlatformSettingsEditor` / `PlatformSettingRow` | Done |
+| Account Security + Notifications + Login polish | Remaining account pages | Queued |
+| Integrations + Execute | Highest legacy debt | Queued |
+| Config + governance | Hybrid lists | Queued |
+
+Update this table when batches complete.
 
 ## Future extension seams
 

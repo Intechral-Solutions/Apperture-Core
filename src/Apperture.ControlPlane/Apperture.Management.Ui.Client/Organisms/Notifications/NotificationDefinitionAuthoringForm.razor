@@ -3,18 +3,18 @@
 @inject IManagementClient Client
 
 <div class="space-y-4">
-    <section class="rounded border border-default bg-surface p-3 text-sm">
+    <section class="ui-section-panel p-3 text-sm">
         <div class="font-semibold text-heading mb-2">Definition metadata</div>
         <p class="text-xs text-muted mb-3">User-created definitions are integration-scoped. Global user definitions are not supported.</p>
         <div class="grid gap-3 md:grid-cols-2">
             <label class="block text-xs">
                 <span class="text-muted">Display name (required)</span>
-                <input class="mt-1 w-full rounded border border-default bg-surface px-2 py-2 text-sm"
+                <input class="ui-input mt-1"
                        @bind="_model.DisplayName" disabled="@(!CanSave)" />
             </label>
             <label class="block text-xs">
                 <span class="text-muted">Integration (required)</span>
-                <select class="mt-1 w-full rounded border border-default bg-surface px-2 py-2 text-sm font-mono"
+                <select class="ui-input mt-1 font-mono"
                         value="@_model.IntegrationId"
                         @onchange="OnIntegrationChanged"
                         disabled="@(!CanSave || LockIntegration)">
@@ -27,14 +27,14 @@
             </label>
             <label class="block text-xs md:col-span-2">
                 <span class="text-muted">Description</span>
-                <textarea class="mt-1 w-full rounded border border-default bg-surface px-2 py-2 text-sm"
+                <textarea class="ui-input mt-1"
                           rows="2"
                           @bind="_model.Description"
                           disabled="@(!CanSave)"></textarea>
             </label>
             <label class="block text-xs">
                 <span class="text-muted">Default severity</span>
-                <select class="mt-1 w-full rounded border border-default bg-surface px-2 py-2 text-sm"
+                <select class="ui-input mt-1"
                         @bind="_model.DefaultSeverity"
                         disabled="@(!CanSave || _model.SelectedCatalogEntry is null)">
                     <option value="">—</option>
@@ -54,12 +54,12 @@
         </div>
     </section>
 
-    <section class="rounded border border-default bg-surface p-3 text-sm">
+    <section class="ui-section-panel p-3 text-sm">
         <div class="font-semibold text-heading mb-2">Event type</div>
         <p class="text-xs text-muted mb-2">Platform event source only (log/telemetry rules are not supported in this editor).</p>
         <label class="block text-xs mb-2">
             <span class="text-muted">Search</span>
-            <input class="mt-1 w-full rounded border border-default bg-surface px-2 py-2 text-sm"
+            <input class="ui-input mt-1"
                    placeholder="Filter by type, name, or source…"
                    @bind="_catalogFilter"
                    @bind:event="oninput"
@@ -75,9 +75,9 @@
         }
         else
         {
-            <div class="max-h-48 overflow-y-auto rounded border border-default">
-                <table class="min-w-full text-left text-xs">
-                    <thead class="bg-surface-muted text-muted sticky top-0">
+            <div class="ui-data-table max-h-48 overflow-y-auto">
+                <table class="ui-data-table__table min-w-full text-left text-xs">
+                    <thead class="sticky top-0">
                         <tr>
                             <th class="p-2">Event</th>
                             <th class="p-2">Source</th>
@@ -87,7 +87,7 @@
                         @foreach (var entry in FilteredCatalog)
                         {
                             var selected = string.Equals(_model.SelectedEventType, entry.Type, StringComparison.Ordinal);
-                            <tr class="border-t border-default cursor-pointer @(selected ? "bg-surface-muted" : "")"
+                            <tr class="cursor-pointer @(selected ? "bg-accent-wash" : "")"
                                 @onclick="() => SelectEventTypeAsync(entry)">
                                 <td class="p-2">
                                     <div class="font-medium text-heading">@entry.DisplayName</div>
@@ -119,7 +119,7 @@
                         @foreach (var variable in _model.SelectedCatalogEntry.TemplateVariables.Take(24))
                         {
                             <button type="button"
-                                    class="rounded bg-surface-muted px-2 py-0.5 font-mono hover:bg-surface"
+                                    class="btn btn-secondary text-xs font-mono py-0.5"
                                     title="Insert into last focused template field"
                                     disabled="@(!CanSave)"
                                     @onclick="() => InsertVariable(variable)">
@@ -132,7 +132,7 @@
         }
     </section>
 
-    <section class="rounded border border-default bg-surface p-3 text-sm">
+    <section class="ui-section-panel p-3 text-sm">
         <div class="font-semibold text-heading mb-2">Rule (v1)</div>
         <label class="flex items-center gap-2 text-xs mb-2">
             <input type="checkbox" @bind="_model.UseAdvancedRuleJson" disabled="@(!CanSave)" />
@@ -140,7 +140,7 @@
         </label>
         @if (_model.UseAdvancedRuleJson)
         {
-            <textarea class="w-full rounded border border-default bg-surface px-2 py-2 font-mono text-xs"
+            <textarea class="ui-input font-mono text-xs"
                       rows="10"
                       @bind="_model.AdvancedRuleJson"
                       disabled="@(!CanSave)"></textarea>
@@ -151,7 +151,7 @@
             <div class="grid gap-3 md:grid-cols-2">
                 <label class="text-xs">
                     <span class="text-muted">Severity filter operator</span>
-                    <select class="mt-1 block w-full rounded border border-default px-2 py-1"
+                    <select class="ui-input mt-1"
                             @bind="_model.IndexSeverityOperator"
                             disabled="@(!CanSave)">
                         <option value="">None</option>
@@ -161,14 +161,14 @@
                 </label>
                 <label class="text-xs">
                     <span class="text-muted">Severity value</span>
-                    <input class="mt-1 block w-full rounded border border-default px-2 py-1"
+                    <input class="ui-input mt-1"
                            @bind="_model.IndexSeverityValue"
                            placeholder="warning or warning,error"
                            disabled="@(!CanSave)" />
                 </label>
                 <label class="text-xs md:col-span-2">
                     <span class="text-muted">Module id (equals)</span>
-                    <input class="mt-1 block w-full rounded border border-default px-2 py-1 font-mono"
+                    <input class="ui-input mt-1 font-mono"
                            @bind="_model.IndexModuleId"
                            disabled="@(!CanSave)" />
                 </label>
@@ -180,14 +180,14 @@
                     <div class="flex flex-wrap gap-2 mb-2 items-end">
                         <label class="text-xs flex-1 min-w-[8rem]">
                             Field
-                            <input class="mt-1 block w-full rounded border border-default px-2 py-1 font-mono"
+                            <input class="ui-input mt-1 font-mono"
                                    @bind="row.DataField"
                                    placeholder="evaluationStatus"
                                    disabled="@(!CanSave)" />
                         </label>
                         <label class="text-xs">
                             Operator
-                            <select class="mt-1 block rounded border border-default px-2 py-1"
+                            <select class="ui-input ui-input--inline mt-1"
                                     @bind="row.Operator"
                                     disabled="@(!CanSave)">
                                 <option value="equals">equals</option>
@@ -199,25 +199,25 @@
                         </label>
                         <label class="text-xs flex-1 min-w-[8rem]">
                             Value
-                            <input class="mt-1 block w-full rounded border border-default px-2 py-1"
+                            <input class="ui-input mt-1"
                                    @bind="row.Value"
                                    disabled="@(!CanSave)" />
                         </label>
                         <button type="button"
-                                class="rounded bg-surface-muted px-2 py-1 text-xs"
+                                class="btn btn-secondary text-xs"
                                 disabled="@(!CanSave)"
                                 @onclick="() => RemovePropertyFilter(row)">Remove</button>
                     </div>
                 }
                 <button type="button"
-                        class="rounded bg-surface-muted px-3 py-1 text-xs"
+                        class="btn btn-secondary text-xs"
                         disabled="@(!CanSave)"
                         @onclick="AddPropertyFilter">Add filter</button>
             </div>
         }
     </section>
 
-    <section class="rounded border border-default bg-surface p-3 text-sm">
+    <section class="ui-section-panel p-3 text-sm">
         <div class="font-semibold text-heading mb-2">Template (v1)</div>
         <label class="flex items-center gap-2 text-xs mb-2">
             <input type="checkbox" @bind="_model.UseAdvancedTemplateJson" disabled="@(!CanSave)" />
@@ -225,7 +225,7 @@
         </label>
         @if (_model.UseAdvancedTemplateJson)
         {
-            <textarea class="w-full rounded border border-default bg-surface px-2 py-2 font-mono text-xs"
+            <textarea class="ui-input font-mono text-xs"
                       rows="10"
                       @bind="_model.AdvancedTemplateJson"
                       disabled="@(!CanSave)"></textarea>
@@ -235,21 +235,21 @@
             <div class="grid gap-3">
                 <label class="text-xs">
                     <span class="text-muted">Subject (required)</span>
-                    <input class="mt-1 block w-full rounded border border-default px-2 py-2"
+                    <input class="ui-input mt-1"
                            @bind="_model.Subject"
                            @onfocus="() => _focusedTemplateField = TemplateField.Subject"
                            disabled="@(!CanSave)" />
                 </label>
                 <label class="text-xs">
                     <span class="text-muted">Summary (required)</span>
-                    <input class="mt-1 block w-full rounded border border-default px-2 py-2"
+                    <input class="ui-input mt-1"
                            @bind="_model.Summary"
                            @onfocus="() => _focusedTemplateField = TemplateField.Summary"
                            disabled="@(!CanSave)" />
                 </label>
                 <label class="text-xs">
                     <span class="text-muted">Body text (required)</span>
-                    <textarea class="mt-1 block w-full rounded border border-default px-2 py-2"
+                    <textarea class="ui-input mt-1"
                               rows="4"
                               @bind="_model.BodyText"
                               @onfocus="() => _focusedTemplateField = TemplateField.BodyText"
@@ -257,13 +257,13 @@
                 </label>
                 <label class="text-xs">
                     <span class="text-muted">Action text</span>
-                    <input class="mt-1 block w-full rounded border border-default px-2 py-2"
+                    <input class="ui-input mt-1"
                            @bind="_model.ActionText"
                            disabled="@(!CanSave)" />
                 </label>
                 <label class="text-xs">
                     <span class="text-muted">Action URL</span>
-                    <input class="mt-1 block w-full rounded border border-default px-2 py-2 font-mono"
+                    <input class="ui-input mt-1 font-mono"
                            @bind="_model.ActionUrl"
                            placeholder="/path or {{instance.baseUrl}}/…"
                            disabled="@(!CanSave)" />
@@ -274,21 +274,21 @@
                 @foreach (var row in _model.ContentFields)
                 {
                     <div class="flex flex-wrap gap-2 mb-2">
-                        <input class="flex-1 rounded border border-default px-2 py-1 text-xs" placeholder="Label" @bind="row.Label" disabled="@(!CanSave)" />
-                        <input class="flex-[2] rounded border border-default px-2 py-1 text-xs font-mono" placeholder="Value" @bind="row.Value" disabled="@(!CanSave)" />
-                        <button type="button" class="rounded bg-surface-muted px-2 py-1 text-xs" disabled="@(!CanSave)" @onclick="() => RemoveContentField(row)">Remove</button>
+                        <input class="ui-input flex-1 text-xs" placeholder="Label" @bind="row.Label" disabled="@(!CanSave)" />
+                        <input class="ui-input flex-[2] text-xs font-mono" placeholder="Value" @bind="row.Value" disabled="@(!CanSave)" />
+                        <button type="button" class="btn btn-secondary text-xs" disabled="@(!CanSave)" @onclick="() => RemoveContentField(row)">Remove</button>
                     </div>
                 }
-                <button type="button" class="rounded bg-surface-muted px-3 py-1 text-xs" disabled="@(!CanSave)" @onclick="AddContentField">Add content field</button>
+                <button type="button" class="btn btn-secondary text-xs" disabled="@(!CanSave)" @onclick="AddContentField">Add content field</button>
             </div>
         }
     </section>
 
-    <section class="rounded border border-default bg-surface p-3 text-sm">
+    <section class="ui-section-panel p-3 text-sm">
         <div class="flex flex-wrap items-center gap-2 mb-2">
             <div class="font-semibold text-heading">Validation and preview</div>
-            <button type="button" class="rounded bg-surface-muted px-3 py-1 text-xs disabled:opacity-50" disabled="@(_busy || !CanSave)" @onclick="ValidateAsync">Validate</button>
-            <button type="button" class="rounded bg-surface-muted px-3 py-1 text-xs disabled:opacity-50" disabled="@(_busy || !CanSave)" @onclick="PreviewAsync">Preview</button>
+            <button type="button" class="btn btn-secondary text-xs" disabled="@(_busy || !CanSave)" @onclick="ValidateAsync">Validate</button>
+            <button type="button" class="btn btn-secondary text-xs" disabled="@(_busy || !CanSave)" @onclick="PreviewAsync">Preview</button>
         </div>
         @if (_validation is not null)
         {
@@ -330,12 +330,12 @@
 
     <div class="flex flex-wrap gap-2">
         <button type="button"
-                class="rounded bg-surface-muted px-4 py-2 text-sm disabled:opacity-50"
+                class="btn btn-primary"
                 disabled="@(_busy || !CanSave || !CanSubmit)"
                 @onclick="SaveAsync">
             @(Mode == NotificationDefinitionAuthoringMode.Create ? "Create definition" : "Save changes")
         </button>
-        <a href="@ReturnUrl" class="rounded border border-default px-4 py-2 text-sm">Cancel</a>
+        <a href="@ReturnUrl" class="btn btn-secondary">Cancel</a>
     </div>
 </div>
 

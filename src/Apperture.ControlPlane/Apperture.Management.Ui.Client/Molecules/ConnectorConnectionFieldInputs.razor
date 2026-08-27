@@ -17,7 +17,7 @@
                 }
             </label>
             <input type="@(field.IsSecret ? "password" : "text")"
-                   class="mt-1 w-full rounded border border-default bg-surface px-2 py-1 text-sm"
+                   class="ui-input mt-1"
                    value="@GetValue(field)"
                    @oninput="e => OnFieldChanged(field, e.Value?.ToString())"
                    placeholder="@field.Key" />

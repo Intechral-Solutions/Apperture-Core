@@ -14,7 +14,7 @@
                 }
                 @if (f.AllowedValues is { Count: > 0 })
                 {
-                    <select class="mt-1 w-full rounded border border-default bg-surface px-2 py-2 text-sm"
+                    <select class="ui-input mt-1"
                             value="@GetStringValue(f.Key)"
                             @onchange="e => SetValue(f.Key, string.IsNullOrEmpty(e.Value?.ToString()) ? null : e.Value?.ToString())">
                         <option value="">@(f.Required ? "(select)" : "(optional)")</option>
@@ -26,20 +26,20 @@
                 }
                 else if (string.Equals(f.Type, "bool", StringComparison.OrdinalIgnoreCase))
                 {
-                    <input type="checkbox" class="mt-1 h-4 w-4 rounded border border-default"
+                    <input type="checkbox" class="mt-1 h-4 w-4 rounded border border-strong"
                            checked="@GetBool(f.Key)"
                            @onchange="e => OnBoolChanged(f.Key, e)" />
                 }
                 else if (string.Equals(f.Type, "int", StringComparison.OrdinalIgnoreCase) || string.Equals(f.Type, "decimal", StringComparison.OrdinalIgnoreCase))
                 {
                     <input type="number" step="@(string.Equals(f.Type, "int", StringComparison.OrdinalIgnoreCase) ? "1" : "any")"
-                           class="mt-1 w-full rounded border border-default bg-surface px-2 py-2 text-sm font-mono"
+                           class="ui-input ui-input--inline mt-1 font-mono"
                            value="@GetNumericString(f)"
                            @onchange="e => OnNumericChange(f, e.Value?.ToString())" />
                 }
                 else
                 {
-                    <input type="text" class="mt-1 w-full rounded border border-default bg-surface px-2 py-2 text-sm font-mono"
+                    <input type="text" class="ui-input mt-1 font-mono"
                            value="@GetStringValue(f.Key)"
                            @oninput="e => SetValue(f.Key, e.Value?.ToString())" />
                 }
