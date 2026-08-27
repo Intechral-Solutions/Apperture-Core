@@ -65,7 +65,7 @@
             {
                 var expanded = string.Equals(_expandedGroupId, group.OperationGroupId, StringComparison.Ordinal);
                 var groupAnchor = string.Equals(_highlightedGroupId, group.OperationGroupId, StringComparison.Ordinal);
-                <div class="@(groupAnchor ? "ui-operation-group-anchor " : "")rounded border border-default bg-surface p-3"
+                <div class="@(groupAnchor ? "ui-operation-group-anchor " : "")ui-detail-block"
                      data-testid="operation-group"
                      data-operation-group-id="@group.OperationGroupId"
                      id="@($"operation-group-{Uri.EscapeDataString(group.OperationGroupId)}")">
@@ -144,7 +144,7 @@
 
                             @if (_selectedItemIds.Count > 0)
                             {
-                                <div class="mb-2 flex flex-wrap items-center gap-2 rounded border border-default bg-surface-muted p-2"
+                                <div class="ui-detail-block mb-2 flex flex-wrap items-center gap-2"
                                      data-testid="bulk-action-bar">
                                     <span class="text-xs font-semibold text-heading">
                                         @OperationItemizationUiHelpers.FormatSelectionCount(_selectedItemIds.Count)
@@ -284,7 +284,7 @@
                                                         @if (OperationItemizationUiHelpers.IsAcknowledgedFailure(item))
                                                         {
                                                             <div class="mt-1" data-testid="operation-item-acknowledged-badge">
-                                                                <span class="rounded border border-default bg-surface-muted px-1.5 py-0.5 text-xs font-medium">
+                                                                <span class="ui-status-pill ui-status-pill--neutral">
                                                                     @OperationItemizationUiHelpers.AcknowledgedBadgeLabel
                                                                     @if (item.ActiveAcknowledgement is not null)
                                                                     {
@@ -350,11 +350,11 @@
                                                             }
                                                             else
                                                             {
-                                                                <div class="space-y-2 rounded border border-default bg-surface-muted p-2" data-testid="operation-item-retry-form">
+                                                                <div class="ui-detail-block space-y-2" data-testid="operation-item-retry-form">
                                                                     <div class="text-xs text-muted">@OperationItemizationUiHelpers.RetryCreatesChildRunHint</div>
                                                                     <label class="block text-xs text-heading">
                                                                         Reason (optional)
-                                                                        <input class="mt-1 w-full rounded border border-default bg-surface px-2 py-1 text-xs"
+                                                                        <input class="ui-input mt-1 text-xs"
                                                                                maxlength="@OperationItemizationUiHelpers.RetryReasonMaxLength"
                                                                                disabled="@inFlight"
                                                                                @bind="_retryReason"
@@ -464,7 +464,7 @@
                                                                         {
                                                                             @foreach (var attempt in attempts.OrderByDescending(a => a.AttemptIndex))
                                                                             {
-                                                                                <div class="rounded border border-default bg-surface p-2 text-xs"
+                                                                                <div class="ui-detail-block text-xs"
                                                                                      data-testid="retry-attempt"
                                                                                      data-attempt-status="@attempt.Status">
                                                                                     <div class="flex flex-wrap items-center gap-2">
@@ -599,7 +599,7 @@
         <div class="mt-2 space-y-2">
             <label class="block text-xs text-heading">
                 Disposition
-                <select class="mt-1 block w-full rounded border border-default bg-surface px-2 py-1 text-xs"
+                <select class="ui-input mt-1 text-xs"
                         data-testid="bulk-acknowledge-disposition"
                         @bind="_bulkAckDisposition">
                     <option value="">— select —</option>
@@ -611,7 +611,7 @@
             </label>
             <label class="block text-xs text-heading">
                 Reason (optional)
-                <textarea class="mt-1 block w-full rounded border border-default bg-surface px-2 py-1 text-xs"
+                <textarea class="ui-input mt-1 text-xs"
                           rows="2"
                           maxlength="@OperationItemizationUiHelpers.RetryReasonMaxLength"
                           data-testid="bulk-acknowledge-reason"

@@ -112,7 +112,7 @@
                         @foreach (var r in DisplayRuns)
                         {
                             var scheduleId = RunScheduleOperatorUiHelpers.TryGetScheduleIdFromCorrelation(r.CorrelationKey);
-                            <tr class="border-b border-default hover:bg-surface-muted cursor-pointer"
+                            <tr class="border-b border-default hover:bg-row-hover cursor-pointer"
                                 @onclick="() => Open(r.RunId)">
                                 <td class="px-3 py-2">
                                     <StatusPill Label="@r.Status"

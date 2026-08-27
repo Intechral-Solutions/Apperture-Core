@@ -113,7 +113,7 @@
                             var primaryReason = RunScheduleOperatorUiHelpers.FormatPrimaryStatusReason(s.StatusReasons);
                             var integrationRunnable = GetIntegrationRunnable(s.IntegrationId);
                             var executionPill = IntegrationConfigurationOperatorUiHelpers.BuildScheduleExecutionPill(s.Enabled, integrationRunnable, s.IntegrationId);
-                            <tr class="border-b border-default hover:bg-surface-muted cursor-pointer"
+                            <tr class="border-b border-default hover:bg-row-hover cursor-pointer"
                                 @onclick="@(() => Nav.NavigateTo("/schedules/" + Uri.EscapeDataString(s.Id)))">
                                 <td class="px-3 py-2">
                                     <div class="text-sm font-medium text-body">@s.Name</div>

@@ -8,19 +8,19 @@
         <div class="mt-3 flex flex-wrap gap-2 text-xs">
             @if (CanManageSubscriptions)
             {
-                <button type="button" class="rounded bg-surface-muted px-3 py-2 hover:bg-surface disabled:opacity-50"
+                <button type="button" class="ui-toolbar-btn text-xs"
                         disabled="@Disabled" @onclick="OnAddSubscription">
                     Add subscription
                 </button>
             }
-            <button type="button" class="rounded bg-surface-muted px-3 py-2 hover:bg-surface disabled:opacity-50"
+            <button type="button" class="ui-toolbar-btn text-xs"
                     disabled="@Disabled" @onclick="OnPreviewRecipients">
                 Preview recipients
             </button>
-            <a class="rounded bg-surface-muted px-3 py-2 hover:bg-surface" href="@ViewDefinitionHref">View definition</a>
+            <a class="ui-toolbar-btn text-xs" href="@ViewDefinitionHref">View definition</a>
             @if (!string.IsNullOrWhiteSpace(IntegrationNotificationsHref))
             {
-                <a class="rounded bg-surface-muted px-3 py-2 hover:bg-surface" href="@IntegrationNotificationsHref">
+                <a class="ui-toolbar-btn text-xs" href="@IntegrationNotificationsHref">
                     Open integration notifications
                 </a>
             }

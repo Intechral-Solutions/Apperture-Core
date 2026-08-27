@@ -544,8 +544,10 @@ Tracked in [pattern-catalog.md](../../.planning/management-ui/pattern-catalog.md
 | Config + governance + attention | Users/roles/catalog, user/role detail, notification hub/lists, operational teams | Done |
 | Modules, connections, runtimes, demo | Module list, connections CRUD, connector catalog, shutdown requests, demo customers | Done |
 | Auth, contacts, notification detail, integration sub-pages | Auth/Entra/sign-in, managed contacts, definition/instance/delivery/diagnostics, integration notifications/settings/schedule diagnostics | Done |
+| Final sweep (shared components) | `IntegrationConfigurationOverview`, `RunOperationItemizationPanel`, `WizardFlowPanel`, `NotificationPipelineCutoverStatusCard`, post-create prompt, row hover tokens | Done |
 
-Update this table when batches complete.
+All operator-facing routes and shared components are on design-system primitives. When adding pages, reuse the
+primitives above; add a new semantic token only when a role is missing in **both** themes.
 
 ## Future extension seams
 

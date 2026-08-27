@@ -115,7 +115,8 @@ Legend: **R** reference · **P** pilot · **L** legacy · **C** candidate
 | `/connections/**` | Connections + connectors | **P** | none | `ui-data-table`, `ui-input`, `btn`, `ManagementSection` |
 | `/runtimes/**` | Shutdown requests | **P** | none | `PageHeader` + `ui-data-table` |
 | `/demo/**` | Demo customer explorer | **P** | none | Filters/table on primitives; activity cards on `ui-detail-block` |
-| Redirects/stubs | — | — | skip | AccountRedirect, OperationStart, etc. |
+| Legacy stubs | Route moved notice | **P** | none | `OperationStart`, `WorkflowStart` on `ManagementSection` + `btn` |
+| Redirects | — | — | skip | AccountRedirect and similar pass-throughs |
 
 ---
 
@@ -128,6 +129,13 @@ Legend: **R** reference · **P** pilot · **L** legacy · **C** candidate
 | `anti.raw-palette` | `bg-slate-*`, `dark:`, hex in Razor | Semantic tokens; `NoRawColorUtilitiesTests` |
 | `anti.white-alpha-light` | `rgba(255,255,255,...)` outside `.dark` tokens | Theme tokens only |
 | `anti.prose-selected` | `· Selected` suffix | `data-state="on"` + `sr-only` / badge |
+| `anti.adhoc-panel` | `rounded border border-default bg-surface p-3` panels | `ManagementSection` or `ui-detail-block` |
+| `anti.adhoc-toolbar-btn` | `rounded bg-surface-muted px-3 py-2 hover:bg-surface` | `ui-toolbar-btn` |
+| `anti.adhoc-code` | `bg-surface-muted p-2 rounded` on `pre`/`code` | `ui-code-block` / `ui-inline-code` |
+| `anti.adhoc-row-hover` | `hover:bg-surface-muted` on table rows | `hover:bg-row-hover` (cool in dark theme) |
+
+**Still acceptable:** token-backed tint rows (`bg-success-light`, `bg-message-warning`), chrome hover overlays
+(`hover:bg-surface-muted` on nav/menu items), and table cell padding utilities.
 
 ---
 
@@ -141,5 +149,8 @@ Legend: **R** reference · **P** pilot · **L** legacy · **C** candidate
 6. ~~Config notifications + governance + contacts~~ (done)
 7. ~~Modules, connections, runtimes, demo~~ (done)
 8. ~~Auth, contacts hub, notification detail/diagnostics, integration sub-pages~~ (done)
+9. ~~Final sweep: shared organisms/molecules (`IntegrationConfigurationOverview`, `RunOperationItemizationPanel`,
+   `WizardFlowPanel`, `NotificationPipelineCutoverStatusCard`, post-create prompt) + row hover tokens~~ (done)
 
-Update this table as batches complete.
+Theme overhaul complete. Keep this catalog current when adding pages: reuse primitives, and add a new
+semantic **token** only when a role is genuinely missing in both themes.
