@@ -537,8 +537,8 @@ Tracked in [pattern-catalog.md](../../.planning/management-ui/pattern-catalog.md
 | Chrome + Profile + Dashboard | Toast, menus, auth, profile, dashboard empty CTAs | Done |
 | Shared form molecules | `ProcedureParameterForm`, `NotificationDefinitionAuthoringForm`, `ConnectorConnectionFieldInputs`, `PlatformSettingsEditor` / `PlatformSettingRow` | Done |
 | Account Security + Notifications + Login polish | Account security/notifications, personal inbox, auth sign-in | Done |
-| Integrations + Execute | Highest legacy debt | Queued |
-| Config + governance | Hybrid lists | Queued |
+| Integrations + Execute | Integrations list/detail, create wizard, execute launch | Done |
+| Runs, Schedules, Control | Operational lists and detail | Queued |
 
 Update this table when batches complete.
 

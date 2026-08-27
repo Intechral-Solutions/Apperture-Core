@@ -57,8 +57,8 @@
                            Help="Choose integration, launch type, and executable. Readiness and blocked reasons are evaluated before launch.">
             <div class="grid gap-4 md:grid-cols-2">
                 <div>
-                    <label class="text-xs text-muted">Integration</label>
-                    <select class="mt-1 w-full rounded border border-default bg-surface px-2 py-2 text-sm"
+                    <label class="block text-sm font-medium text-heading">Integration</label>
+                    <select class="ui-input mt-1 w-full text-sm"
                             value="@(_selectedIntegrationId ?? "")"
                             @onchange="OnIntegrationChanged">
                         <option value="">Select integration…</option>
@@ -75,8 +75,8 @@
                     }
                 </div>
                 <div>
-                    <label class="text-xs text-muted">Launch type</label>
-                    <select class="mt-1 w-full rounded border border-default bg-surface px-2 py-2 text-sm"
+                    <label class="block text-sm font-medium text-heading">Launch type</label>
+                    <select class="ui-input mt-1 w-full text-sm"
                             disabled="@string.IsNullOrWhiteSpace(_selectedIntegrationId)"
                             value="@_selectedKind"
                             @onchange="OnKindChanged">
@@ -86,8 +86,8 @@
                     </select>
                 </div>
                 <div class="md:col-span-2">
-                    <label class="text-xs text-muted">@TargetExecutableLabel</label>
-                    <select class="mt-1 w-full rounded border border-default bg-surface px-2 py-2 text-sm"
+                    <label class="block text-sm font-medium text-heading">@TargetExecutableLabel</label>
+                    <select class="ui-input mt-1 w-full text-sm"
                             disabled="@(!_targetIds.Any())"
                             value="@(_selectedTargetId ?? "")"
                             @onchange="OnTargetChanged">
@@ -124,7 +124,7 @@
 
             @if (_descriptor is not null)
             {
-                <div class="mt-4 rounded border border-default bg-surface-muted/40 p-3">
+                <div class="mt-4 ui-detail-block">
                     <div class="text-sm font-semibold text-heading">@_descriptor.DisplayName</div>
                     @if (!string.IsNullOrWhiteSpace(_descriptorDescription))
                     {
@@ -169,14 +169,14 @@
                     @foreach (var field in fields)
                     {
                         <div class="mt-3">
-                            <label class="text-xs text-muted">@field.Label@(field.Required ? " *" : "")</label>
+                            <label class="block text-sm font-medium text-heading">@field.Label@(field.Required ? " *" : "")</label>
                             @if (!string.IsNullOrWhiteSpace(field.HelpText))
                             {
                                 <div class="text-xs text-muted mb-1">@field.HelpText</div>
                             }
                             @if (field.AllowedValues is { Count: > 0 } options)
                             {
-                                <select class="mt-1 w-full rounded border border-default bg-surface px-2 py-2 text-sm"
+                                <select class="ui-input mt-1 w-full text-sm"
                                         value="@GetStringValue(field.Key)"
                                         @onchange="e => SetStringValue(field.Key, e.Value?.ToString())">
                                     <option value="">@(field.Required ? "(select)" : "(optional)")</option>
@@ -188,7 +188,7 @@
                             }
                             else
                             {
-                                <input class="mt-1 w-full rounded border border-default bg-surface px-2 py-2 text-sm"
+                                <input class="ui-input mt-1 w-full text-sm"
                                        value="@GetStringValue(field.Key, field.DefaultValue)"
                                        @onchange="e => SetStringValue(field.Key, e.Value?.ToString())" />
                             }
@@ -198,8 +198,8 @@
                 else
                 {
                     <div class="mt-3">
-                        <label class="text-xs text-muted">Parameters (JSON object)</label>
-                        <textarea class="mt-1 w-full rounded border border-default bg-surface px-2 py-2 text-sm font-mono"
+                        <label class="block text-sm font-medium text-heading">Parameters (JSON object)</label>
+                        <textarea class="ui-input mt-1 w-full text-sm font-mono"
                                   rows="8"
                                   @bind="_jsonParameters"></textarea>
                     </div>
@@ -209,7 +209,7 @@
                     var disabledReason = LaunchDisabledReason;
                 }
                 <button type="button"
-                        class="mt-4 ui-toolbar-btn"
+                        class="mt-4 btn btn-primary"
                         disabled="@(!CanLaunch)"
                         title="@disabledReason"
                         @onclick="LaunchAsync">
@@ -226,12 +226,12 @@
                                        InitiallyOpen="false">
                 <div class="grid gap-3 md:grid-cols-2">
                     <div>
-                        <label class="text-xs text-muted">Idempotency key (optional)</label>
-                        <input class="mt-1 w-full rounded border border-default bg-surface px-2 py-2 text-sm font-mono" @bind="_idempotencyKey" />
+                        <label class="block text-sm font-medium text-heading">Idempotency key (optional)</label>
+                        <input class="ui-input mt-1 w-full text-sm font-mono" @bind="_idempotencyKey" />
                     </div>
                     <div>
-                        <label class="text-xs text-muted">Correlation ID (optional)</label>
-                        <input class="mt-1 w-full rounded border border-default bg-surface px-2 py-2 text-sm font-mono" @bind="_correlationId" />
+                        <label class="block text-sm font-medium text-heading">Correlation ID (optional)</label>
+                        <input class="ui-input mt-1 w-full text-sm font-mono" @bind="_correlationId" />
                     </div>
                 </div>
                 <details class="mt-3">

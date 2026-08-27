@@ -83,8 +83,8 @@ Legend: **R** reference · **P** pilot · **L** legacy · **C** candidate
 | `pattern.auth.shell` | Sign-in layout | `AuthLayout` + `ui-section-panel` | R | reuse | `/login`, `/login/local` |
 | `pattern.chrome.shell` | App chrome | `MainLayout`, `TopBar`, `NavRail`, menus | P | reuse | ToastHost, notification panel updated |
 | `pattern.hub.summary-grid` | Quick links | `ui-summary-card-grid` | P | reuse | Dashboard, config landing |
-| `pattern.list.filters` | Filter toolbar + table | ad-hoc on IntegrationsList | L | new-component | 8+ raw `<select>`; candidate `FilterBar` molecule |
-| `pattern.entity.hub` | Integration-style hub | `IntegrationDetail.razor` | P | restructure | 17 legacy bordered pockets; inline schedule form |
+| `pattern.list.filters` | Filter toolbar + table | `IntegrationsList` filter panel | **P** | none | `ui-input` selects in `ui-detail-block` |
+| `pattern.entity.hub` | Integration-style hub | `IntegrationDetail.razor` | **P** | none | Inline forms use `ui-section-panel`, `btn`, `ui-input` |
 | `pattern.list.detail` | Schedules, runs | `SchedulesList` + `ScheduleDetail` | P | reuse | ScheduleCreate still legacy inputs |
 | `pattern.authoring.dense` | Notification definition | `NotificationDefinitionAuthoringForm` | L | restructure | |
 | `pattern.empty.forbidden` | Page states | `LoadingState`, `EmptyState`, `ForbiddenState`, `ErrorState` | P | reuse | Dashboard empty uses `btn-secondary` |
@@ -102,8 +102,8 @@ Legend: **R** reference · **P** pilot · **L** legacy · **C** candidate
 | `/me/notifications` | Personal inbox | **R** | none | `ui-inbox-list`, `SegmentedControl`, `btn` |
 | `/dashboard` | Hub + summary cards | P | none | Pills via Phase A |
 | `/login`, `/login/local` | Auth shell | **R** | none | `ui-section-panel`, `EntraSignInButton` → `btn btn-secondary` |
-| `/integrations`, `/integrations/{id}` | List filters + entity hub | L/P | restructure | Highest risk |
-| `/execute` | Procedure form + sections | L | restructure | |
+| `/integrations`, `/integrations/{id}` | List filters + entity hub | **P** | none | `ui-data-table`, `ui-input` filters, `btn` on detail |
+| `/execute` | Procedure form + sections | **P** | none | `ui-input`, `btn btn-primary` launch |
 | `/runs`, `/runs/{id}` | List + execution detail | P | reuse | Polish only |
 | `/control/center`, `/control/blocked-work` | Operational console | P | reuse | |
 | `/config/**` | Hub + hybrid lists | P/L | reuse | Governance lists legacy |
@@ -129,7 +129,7 @@ Legend: **R** reference · **P** pilot · **L** legacy · **C** candidate
 1. ~~Phase A CSS + chrome + Profile + Dashboard~~ (done)
 2. ~~Shared forms: ProcedureParameterForm, NotificationDefinitionAuthoringForm, ConnectorConnectionFieldInputs, PlatformSettingsEditor~~ (done)
 3. ~~Account Security + Notifications + Login polish~~ (done)
-4. Integrations list/detail + Execute
+4. ~~Integrations list/detail + Execute~~ (done)
 5. Runs, Schedules, Control
 6. Config notifications + governance + contacts
 7. Modules, connections, runtimes, demo

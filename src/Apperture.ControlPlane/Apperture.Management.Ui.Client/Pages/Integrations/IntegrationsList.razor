@@ -13,10 +13,10 @@
         <Toolbar>
             @if (_capabilities?.CanManageIntegrations == true)
             {
-                <a href="/integrations/new" class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface">Create Integration</a>
+                <a href="/integrations/new" class="ui-toolbar-btn">Create Integration</a>
             }
             <button type="button"
-                    class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface disabled:opacity-50"
+                    class="ui-toolbar-btn"
                     disabled="@_loading"
                     @onclick="LoadAsync">
                 Refresh
@@ -96,10 +96,10 @@
         <ManagementAdvancedSection Title="Fleet filters"
                                    Subtitle="Narrow the list by state, readiness, verification, and operational signals."
                                    InitiallyOpen="false">
-        <div class="flex flex-wrap items-end gap-3 rounded border border-default bg-surface-muted/40 p-3 text-sm">
+        <div class="flex flex-wrap items-end gap-3 ui-detail-block text-sm">
             <label class="flex flex-col gap-1">
                 <span class="text-xs text-muted">State</span>
-                <select class="rounded border border-default bg-surface px-2 py-1.5 text-body" @bind="_filterState" @bind:after="LoadAsync">
+                <select class="ui-input text-sm" @bind="_filterState" @bind:after="LoadAsync">
                     <option value="">All</option>
                     <option value="Active">Active</option>
                     <option value="Inactive">Inactive</option>
@@ -108,7 +108,7 @@
             </label>
             <label class="flex flex-col gap-1">
                 <span class="text-xs text-muted">Runnable</span>
-                <select class="rounded border border-default bg-surface px-2 py-1.5 text-body" @bind="_filterRunnable" @bind:after="LoadAsync">
+                <select class="ui-input text-sm" @bind="_filterRunnable" @bind:after="LoadAsync">
                     <option value="">All</option>
                     <option value="true">Yes</option>
                     <option value="false">No</option>
@@ -116,7 +116,7 @@
             </label>
             <label class="flex flex-col gap-1">
                 <span class="text-xs text-muted">Blocking issues</span>
-                <select class="rounded border border-default bg-surface px-2 py-1.5 text-body" @bind="_filterHasBlocking" @bind:after="LoadAsync">
+                <select class="ui-input text-sm" @bind="_filterHasBlocking" @bind:after="LoadAsync">
                     <option value="">All</option>
                     <option value="true">Has blocking</option>
                     <option value="false">None</option>
@@ -124,7 +124,7 @@
             </label>
             <label class="flex flex-col gap-1">
                 <span class="text-xs text-muted">Advisory issues</span>
-                <select class="rounded border border-default bg-surface px-2 py-1.5 text-body" @bind="_filterHasAdvisory" @bind:after="LoadAsync">
+                <select class="ui-input text-sm" @bind="_filterHasAdvisory" @bind:after="LoadAsync">
                     <option value="">All</option>
                     <option value="true">Has advisory</option>
                     <option value="false">None</option>
@@ -132,14 +132,14 @@
             </label>
             <label class="flex flex-col gap-1">
                 <span class="text-xs text-muted">Verification</span>
-                <select class="rounded border border-default bg-surface px-2 py-1.5 text-body" @bind="_filterVerificationConcern" @bind:after="LoadAsync">
+                <select class="ui-input text-sm" @bind="_filterVerificationConcern" @bind:after="LoadAsync">
                     <option value="">All</option>
                     <option value="true">Any concern</option>
                 </select>
             </label>
             <label class="flex flex-col gap-1">
                 <span class="text-xs text-muted">Run failures (window)</span>
-                <select class="rounded border border-default bg-surface px-2 py-1.5 text-body" @bind="_filterHasOperationalFailure" @bind:after="LoadAsync">
+                <select class="ui-input text-sm" @bind="_filterHasOperationalFailure" @bind:after="LoadAsync">
                     <option value="">All</option>
                     <option value="true">Has recent failures</option>
                     <option value="false">No recent failures</option>
@@ -147,7 +147,7 @@
             </label>
             <label class="flex flex-col gap-1">
                 <span class="text-xs text-muted">Unexpected silence</span>
-                <select class="rounded border border-default bg-surface px-2 py-1.5 text-body" @bind="_filterHasUnexpectedSilence" @bind:after="LoadAsync">
+                <select class="ui-input text-sm" @bind="_filterHasUnexpectedSilence" @bind:after="LoadAsync">
                     <option value="">All</option>
                     <option value="true">Expected run missing</option>
                     <option value="false">Not silent</option>
@@ -155,7 +155,7 @@
             </label>
             <label class="flex flex-col gap-1">
                 <span class="text-xs text-muted">Sort</span>
-                <select class="rounded border border-default bg-surface px-2 py-1.5 text-body" @bind="_sort" @bind:after="LoadAsync">
+                <select class="ui-input text-sm" @bind="_sort" @bind:after="LoadAsync">
                     <option value="">Name (A–Z)</option>
                     <option value="-updatedAt">Updated (newest)</option>
                     <option value="updatedAt">Updated (oldest)</option>
@@ -168,9 +168,9 @@
         </div>
         </ManagementAdvancedSection>
 
-        <div class="mt-4 overflow-x-auto rounded border border-default bg-surface">
-            <table class="min-w-full text-left text-sm text-body">
-                <thead class="border-b border-default text-xs text-muted">
+        <div class="ui-data-table mt-4">
+            <table class="ui-data-table__table min-w-full text-left text-body">
+                <thead>
                     <tr>
                         <th class="px-3 py-2">Integration</th>
                         <th class="px-3 py-2">Health</th>
@@ -183,7 +183,7 @@
                 <tbody>
                     @foreach (var row in DisplayFleet)
                     {
-                        <tr class="border-b border-default hover:bg-surface-muted cursor-pointer"
+                        <tr class="cursor-pointer"
                             @onclick="@(() => Nav.NavigateTo("/integrations/" + Uri.EscapeDataString(row.Id)))">
                             <td class="px-3 py-2">
                                 <div class="font-medium">@row.DisplayName</div>
@@ -303,7 +303,7 @@
                                     @if (string.Equals(row.OperationalState, "Active", StringComparison.OrdinalIgnoreCase))
                                     {
                                         <button type="button"
-                                                class="rounded bg-surface-muted px-2 py-1 text-xs text-body hover:bg-surface disabled:opacity-50"
+                                                class="btn btn-secondary text-xs"
                                                 disabled="@_loading"
                                                 @onclick="@(() => DeactivateRowAsync(row.Id))">
                                             Deactivate
@@ -312,7 +312,7 @@
                                     else
                                     {
                                         <button type="button"
-                                                class="rounded bg-body px-2 py-1 text-xs text-surface hover:bg-body/90 disabled:opacity-50"
+                                                class="btn btn-primary text-xs"
                                                 disabled="@_loading"
                                                 @onclick="@(() => ActivateRowAsync(row.Id))">
                                             Activate
