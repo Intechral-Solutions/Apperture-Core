@@ -44,7 +44,7 @@ Criteria:
 | `ControlCenter.razor` | Multiple summary + activity sections | Already layered; tune advanced evidence only |
 | `RunDetail.razor` | Investigation sections | Keep actionability first; payload panels already advanced |
 | `PlatformSettings.razor` | Long category lists | Category tabs exist; row help → disclosure per row (candidate) |
-| `PersonalNotifications.razor` | Custom tabs | Align with `AccountSectionNav` pattern or document as inbox-specific |
+| `PersonalNotifications.razor` | Custom tabs | Align with `AccountSectionNav` pattern or document as inbox-specific | **Done** — inbox uses `SegmentedControl` + `ui-inbox-list` (filter tabs, not account nav) |
 | `ConnectionsPage.razor` | Two tabs | OK as drill-in; connector vs instance separation is IA |
 
 ---

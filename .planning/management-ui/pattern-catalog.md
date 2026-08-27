@@ -44,6 +44,7 @@ Legend: **R** reference · **P** pilot · **L** legacy · **C** candidate
 | `primitive.toast` | Toast surface | `.ui-toast` | R | reuse | `ToastHost` |
 | `primitive.menu.panel` | Dropdown panel | `.ui-menu-panel`, `.ui-menu-item` | R | reuse | Theme, account, notification menus |
 | `primitive.section.panel` | Generic bordered panel | `.ui-section-panel` | P | reuse | Login card, config sections |
+| `primitive.inbox.list` | Notification inbox | `.ui-inbox-list`, `.ui-inbox-toolbar` | R | none | `/me/notifications` |
 | `primitive.table.data` | Operational table | `.ui-data-table` | P | reuse | Runs, schedules, control lists |
 | `primitive.disclosure.advanced` | Forensic collapse | `.ui-advanced-section` | P | none | Stays `--color-bg-sunken` (recessed) |
 | `primitive.disclosure.details` | Inline disclosure | `.ui-disclosure`, `Disclosure.razor` | P | tokenize | Profile roles block |
@@ -97,9 +98,10 @@ Legend: **R** reference · **P** pilot · **L** legacy · **C** candidate
 |--------------|--------|------|--------|-------|
 | `/account/preferences` | Settings shell + choosers | **R** | none | Theme overhaul reference |
 | `/account/profile` | Settings shell + identity | **R** | none | AvatarPicker harmonized |
-| `/account/security`, `/account/notifications` | Settings shell | P | reuse | Visual pass pending |
+| `/account/security`, `/account/notifications` | Settings shell | **R** | none | Security + notification prefs aligned with account reference |
+| `/me/notifications` | Personal inbox | **R** | none | `ui-inbox-list`, `SegmentedControl`, `btn` |
 | `/dashboard` | Hub + summary cards | P | none | Pills via Phase A |
-| `/login`, `/login/local` | Auth shell | R | none | |
+| `/login`, `/login/local` | Auth shell | **R** | none | `ui-section-panel`, `EntraSignInButton` → `btn btn-secondary` |
 | `/integrations`, `/integrations/{id}` | List filters + entity hub | L/P | restructure | Highest risk |
 | `/execute` | Procedure form + sections | L | restructure | |
 | `/runs`, `/runs/{id}` | List + execution detail | P | reuse | Polish only |
@@ -126,7 +128,7 @@ Legend: **R** reference · **P** pilot · **L** legacy · **C** candidate
 
 1. ~~Phase A CSS + chrome + Profile + Dashboard~~ (done)
 2. ~~Shared forms: ProcedureParameterForm, NotificationDefinitionAuthoringForm, ConnectorConnectionFieldInputs, PlatformSettingsEditor~~ (done)
-3. Account Security + Notifications + Login polish
+3. ~~Account Security + Notifications + Login polish~~ (done)
 4. Integrations list/detail + Execute
 5. Runs, Schedules, Control
 6. Config notifications + governance + contacts

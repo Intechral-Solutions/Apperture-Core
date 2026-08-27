@@ -958,6 +958,88 @@ a.ui-toolbar-btn--danger:hover {
   padding: 0.25rem;
 }
 
+/* Personal notification inbox (full page) */
+.ui-inbox-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.ui-inbox-list {
+  margin-top: 1rem;
+  overflow: hidden;
+  border-radius: 0.5rem;
+  border: 1px solid var(--color-card-border);
+  background-color: var(--color-surface);
+  background-image: var(--color-card-sheen);
+  box-shadow: var(--shadow-shell);
+}
+
+.ui-inbox-list__item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--color-border-subtle);
+}
+
+.ui-inbox-list__item:last-child {
+  border-bottom: none;
+}
+
+.ui-inbox-list__item[data-state="unread"] {
+  background-color: color-mix(in oklch, var(--color-surface-muted) 30%, var(--color-surface) 70%);
+}
+
+.ui-inbox-list__open {
+  min-width: 0;
+  flex: 1 1 auto;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.ui-inbox-list__open:hover {
+  color: var(--color-text-heading);
+}
+
+.ui-inbox-list__open:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
+  border-radius: var(--r-sm);
+}
+
+.ui-inbox-list__actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 0.5rem;
+}
+
+.ui-inbox-list__action {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  font-size: 0.75rem;
+  line-height: 1.25rem;
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+
+.ui-inbox-list__action:hover:not(:disabled) {
+  color: var(--color-text-heading);
+}
+
+.ui-inbox-list__action:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 /* Unread count sits on the bell's upper-right corner without covering the glyph. */
 .ui-notification-icon {
   position: relative;

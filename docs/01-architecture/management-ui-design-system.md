@@ -152,6 +152,7 @@ Defined in `management-ui-primitives.css`:
 |-------|-----|
 | `ui-page-header__toolbar` | Applied by `PageHeader` toolbar slot — flex wrap, gap |
 | `ui-toolbar-btn` | Page/section toolbar links and buttons (neutral) |
+| `ui-inbox-list` | Personal notification inbox rows; pair with `SegmentedControl` filter toolbar |
 | `ui-toolbar-btn--danger` | Destructive toolbar actions (e.g. Integration Delete) — **after** positive/neutral actions |
 | `ui-action-row` | Horizontal drill-ins, filters + refresh, link groups |
 | `ui-section-actions` | Section-local button row (edit save/cancel, lifecycle actions) |
@@ -535,7 +536,7 @@ Tracked in [pattern-catalog.md](../../.planning/management-ui/pattern-catalog.md
 | Light/dark sibling tokens | `app.css`, primitives tokenization | Done |
 | Chrome + Profile + Dashboard | Toast, menus, auth, profile, dashboard empty CTAs | Done |
 | Shared form molecules | `ProcedureParameterForm`, `NotificationDefinitionAuthoringForm`, `ConnectorConnectionFieldInputs`, `PlatformSettingsEditor` / `PlatformSettingRow` | Done |
-| Account Security + Notifications + Login polish | Remaining account pages | Queued |
+| Account Security + Notifications + Login polish | Account security/notifications, personal inbox, auth sign-in | Done |
 | Integrations + Execute | Highest legacy debt | Queued |
 | Config + governance | Hybrid lists | Queued |
 
