@@ -72,16 +72,7 @@ public sealed class SqlUserRepository : IUserRepository
         _db.Users.Add(userEntity);
 
         foreach (var link in user.IdentityLinks)
-        {
-            _db.IdentityLinks.Add(new IdentityLinkEntity
-            {
-                Id = Guid.NewGuid().ToString("N")[..24],
-                UserId = user.Id.Value,
-                Source = (int)link.Source,
-                ExternalId = link.ExternalId,
-                LastAuthenticatedAt = link.LastAuthenticatedAt
-            });
-        }
+            _db.IdentityLinks.Add(ToEntity(user.Id, link));
 
         foreach (var roleId in user.AssignedRoleIds)
         {
@@ -197,9 +188,72 @@ public sealed class SqlUserRepository : IUserRepository
             UserId = userId.Value,
             Source = (int)source,
             ExternalId = externalId,
-            LastAuthenticatedAt = null
+            LastAuthenticatedAt = null,
+            LinkedAt = DateTimeOffset.UtcNow
         });
         await _db.SaveChangesAsync(cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public async ValueTask AddIdentityLinkAsync(UserId userId, IdentityLink link, CancellationToken cancellationToken = default)
+    {
+        var exists = await _db.IdentityLinks.AnyAsync(
+            l => l.Source == (int)link.Source && l.ExternalId == link.ExternalId, cancellationToken);
+        if (exists)
+            throw new InvalidOperationException("An identity link with this source and external id already exists.");
+
+        var userExists = await _db.Users.AnyAsync(u => u.Id == userId.Value, cancellationToken);
+        if (!userExists)
+            throw new InvalidOperationException($"User {userId.Value} not found.");
+
+        _db.IdentityLinks.Add(ToEntity(userId, link));
+        await _db.SaveChangesAsync(cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public async ValueTask<IdentityLinkOwner?> FindIdentityLinkAsync(
+        IdentitySource source,
+        string externalId,
+        CancellationToken cancellationToken = default)
+    {
+        var link = await _db.IdentityLinks.AsNoTracking()
+            .FirstOrDefaultAsync(l => l.Source == (int)source && l.ExternalId == externalId, cancellationToken);
+        return link is null ? null : new IdentityLinkOwner(new UserId(link.UserId), ToDomain(link));
+    }
+
+    /// <inheritdoc />
+    public async ValueTask CompleteEntraLinkProofAsync(
+        string externalId,
+        DateTimeOffset provenAt,
+        string? tenantIdWhenMissing,
+        string? registrationIdWhenMissing,
+        string? providerSubject,
+        CancellationToken cancellationToken = default)
+    {
+        var link = await _db.IdentityLinks
+            .FirstOrDefaultAsync(l => l.Source == (int)IdentitySource.Entra && l.ExternalId == externalId, cancellationToken);
+        if (link is null)
+            return;
+
+        link.LastAuthenticatedAt = provenAt;
+        if (string.IsNullOrEmpty(link.TenantId) && !string.IsNullOrEmpty(tenantIdWhenMissing))
+            link.TenantId = tenantIdWhenMissing;
+        if (string.IsNullOrEmpty(link.RegistrationId) && !string.IsNullOrEmpty(registrationIdWhenMissing))
+            link.RegistrationId = registrationIdWhenMissing;
+        if (!string.IsNullOrEmpty(providerSubject))
+            link.ProviderSubject = providerSubject;
+
+        try
+        {
+            await _db.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException ex)
+        {
+            _logger.LogDebug(
+                ex,
+                "Ignored optimistic concurrency while completing Entra link proof for {ExternalId}.",
+                externalId);
+        }
     }
 
     /// <inheritdoc />
@@ -218,14 +272,37 @@ public sealed class SqlUserRepository : IUserRepository
         await _db.SaveChangesAsync(cancellationToken);
     }
 
+    private static IdentityLinkEntity ToEntity(UserId userId, IdentityLink link) => new()
+    {
+        Id = Guid.NewGuid().ToString("N")[..24],
+        UserId = userId.Value,
+        Source = (int)link.Source,
+        ExternalId = link.ExternalId,
+        LastAuthenticatedAt = link.LastAuthenticatedAt,
+        TenantId = link.TenantId,
+        RegistrationId = link.RegistrationId,
+        LinkedAt = link.LinkedAt ?? DateTimeOffset.UtcNow,
+        ProviderSubject = link.ProviderSubject,
+        DisplayNameSnapshot = link.DisplayNameSnapshot,
+        UserPrincipalNameSnapshot = link.UserPrincipalNameSnapshot,
+        MailSnapshot = link.MailSnapshot
+    };
+
+    private static IdentityLink ToDomain(IdentityLinkEntity l) => new(
+        (IdentitySource)l.Source,
+        l.ExternalId,
+        l.LastAuthenticatedAt,
+        l.TenantId,
+        l.RegistrationId,
+        l.LinkedAt,
+        l.ProviderSubject,
+        l.DisplayNameSnapshot,
+        l.UserPrincipalNameSnapshot,
+        l.MailSnapshot);
+
     private static User ToDomain(UserEntity userEntity, List<IdentityLinkEntity> links, List<string> roleIds)
     {
-        var identityLinks = links
-            .Select(l => new IdentityLink(
-                (IdentitySource)l.Source,
-                l.ExternalId,
-                l.LastAuthenticatedAt))
-            .ToList();
+        var identityLinks = links.Select(ToDomain).ToList();
         var assignedRoleIds = roleIds.Select(r => new RoleId(r)).ToList();
 
         return new User(

@@ -34,6 +34,7 @@ public static class AuthenticationServiceCollectionExtensions
                 options.LogoutPath = "/signout";
                 options.ExpireTimeSpan = TimeSpan.FromHours(12);
                 options.SlidingExpiration = true;
+                ManagementCookieAuthentication.Configure(options);
             })
             .AddOpenIdConnect(OpenIdConnectScheme, options =>
             {

@@ -166,6 +166,51 @@ public sealed class ManagementHostEntraLinkingHttpTests
         body!.Roles.Should().Contain(roleId);
     }
 
+    [Fact]
+    public async Task Admin_association_is_pending_until_the_operator_signs_in()
+    {
+        AssertSqlAvailable();
+        var admin = await EnsureAdminClientAsync();
+        var entraOid = Guid.NewGuid().ToString();
+        var targetUserId = await CreateLocalUserAsync(admin, $"pending-{Guid.NewGuid():N}"[..16]);
+
+        var added = await admin.PostAsJsonAsync(
+            $"/api/users/{targetUserId}/identity-links",
+            new AddIdentityLinkRequest("Entra", entraOid));
+        added.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        await using var scope = _fixture.Factory!.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppertureDbContext>();
+        var link = await db.IdentityLinks.SingleAsync(l => l.ExternalId == entraOid).ConfigureAwait(false);
+        link.LastAuthenticatedAt.Should().BeNull();
+        link.LinkedAt.Should().NotBe(default);
+    }
+
+    [Fact]
+    public async Task First_entra_sign_in_proves_a_pending_link_without_disabling_local_login()
+    {
+        AssertSqlAvailable();
+        var admin = await EnsureAdminClientAsync();
+        var entraOid = Guid.NewGuid().ToString();
+        var username = $"proof-{Guid.NewGuid():N}"[..16];
+        var targetUserId = await CreateLocalUserAsync(admin, username);
+        _ = await admin.PostAsJsonAsync(
+            $"/api/users/{targetUserId}/identity-links",
+            new AddIdentityLinkRequest("Entra", entraOid));
+
+        var entraClient = CreateTestClient(entraOid, "Entra");
+        var me = await entraClient.GetAsync("/api/auth/me");
+        me.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        await using var scope = _fixture.Factory!.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppertureDbContext>();
+        var link = await db.IdentityLinks.SingleAsync(l => l.ExternalId == entraOid).ConfigureAwait(false);
+        link.LastAuthenticatedAt.Should().NotBeNull();
+
+        var credential = await db.LocalCredentials.SingleAsync(c => c.UserId == targetUserId).ConfigureAwait(false);
+        credential.IsDisabled.Should().BeFalse();
+    }
+
     private sealed record RoleListItem(string Id, string Name, string? Description, bool IsSystemRole);
 
     private async Task<HttpClient> EnsureAdminClientAsync()

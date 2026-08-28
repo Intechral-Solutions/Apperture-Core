@@ -15,10 +15,6 @@ using Sample.ApiPolling;
 using Sample.ApiPolling.Persistence;
 using Unisa.CampusNexus.PaymentPlans;
 using Apperture.RuntimePlane.DTFx;
-using Microsoft.AspNetCore.Authentication;
-using Microsoft.AspNetCore.Authentication.Cookies;
-using Microsoft.AspNetCore.Authentication.OpenIdConnect;
-using Microsoft.Extensions.Options;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -90,18 +86,7 @@ app.UseCors("UiDev");
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
-
-// Entra: redirect to IdP. Local-only: return 401 (client uses POST /api/auth/local/login).
-app.MapGet("/signin", async (HttpContext ctx, IOptions<EntraAuthOptions> entra) =>
-{
-    if (EntraRuntimeState.IsUsable(entra.Value))
-        await ctx.ChallengeAsync(OpenIdConnectDefaults.AuthenticationScheme);
-    else
-        ctx.Response.StatusCode = StatusCodes.Status401Unauthorized;
-});
-
-app.MapGet("/signout", (HttpContext ctx) => ctx.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme));
-
+app.MapManagementAuthEndpoints();
 app.MapDefaultEndpoints();
 
 app.Run();

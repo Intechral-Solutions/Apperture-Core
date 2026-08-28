@@ -19,7 +19,18 @@ Implemented (stabilization epic S2D).
 4. Optional convenience: **Config → Authentication → Entra directory** → **Copy** object id, then paste on the user detail page.
 5. API: existing `POST /api/users/{id}/identity-links` with `{ "identitySource": "Entra", "externalId": "<oid>" }`.
 
-No user-initiated self-linking and no JIT provisioning in v1.
+No JIT provisioning in v1.
+
+## Superseded by IAM-1 (self-service linking)
+
+Self-service linking is no longer deferred. IAM-1 keeps everything above and adds:
+
+- A Microsoft identity is keyed by **`oid` + `tid`** only. The token `tid` must equal the active Entra registration's tenant; email, UPN, `preferred_username`, `amr`, `acr` and `auth_time` are never used for identity or authorization, and `sub` is kept only as diagnostic provenance.
+- **`GET /signin/link`** on Management.Host starts a linking challenge from an already authenticated local session, carrying the initiating platform user id in `AuthenticationProperties`. **Connect Microsoft account** on `/account/security` drives it.
+- An admin association created from the directory picker or a pasted object id stays **pending** (`LastAuthenticatedAt` null) until the operator's first successful Entra sign-in proves it.
+- Each platform user may hold **at most one** Entra link, and an Entra link only counts as an alternate sign-in path once it is proven and Entra is configured, so a pending link can never strand the last Platform Administrator.
+- Linking **never** disables local login. Automatic local-credential disablement remains deferred until recovery paths exist.
+- An Entra sign-in for an unknown object id now **fails the OIDC sign-in** and returns the operator to `/login?error=account_not_linked` instead of issuing a durable unlinked session. The `403` + `auth.unlinked_principal` behavior below remains as defense in depth.
 
 ## API error codes
 
@@ -45,8 +56,8 @@ Caller without `user.manage` → **403**.
 
 ## Deferred
 
-- User-initiated Entra self-linking (OIDC verification in browser)
 - Automatic broad JIT provisioning
+- Automatic local-login disablement after linking (needs recovery paths first)
 - Avatar / profile photo sync
 - Notification subscription ownership UI
 

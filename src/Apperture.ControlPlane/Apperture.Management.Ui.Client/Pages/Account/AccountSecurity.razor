@@ -44,6 +44,12 @@
                         </p>
                     </div>
                     <div class="ui-settings-card__body pt-3">
+                        @if (_linkMessage is not null)
+                        {
+                            <div class="mb-3">
+                                <PageMessage Kind="@_linkMessageKind" Message="@_linkMessage" />
+                            </div>
+                        }
                         @if (_me.IdentityLinks.Count == 0)
                         {
                             <p class="text-sm text-muted">No linked identities recorded.</p>
@@ -64,9 +70,30 @@
                                                 Last used <TimestampDisplay Value="link.LastAuthenticatedAtUtc" CssClass="text-xs text-muted" />
                                             </p>
                                         }
+                                        else if (IsEntra(link.Source))
+                                        {
+                                            <p class="mt-1 text-xs text-muted">
+                                                Waiting for your first sign-in with this Microsoft account.
+                                            </p>
+                                        }
                                     </li>
                                 }
                             </ul>
+                        }
+
+                        @if (EntraAvailable && !HasEntraLink)
+                        {
+                            <div class="mt-4 border-t border-default pt-3">
+                                <p class="text-sm text-muted">
+                                    Connect your Microsoft work account so you can sign in with it. Your existing
+                                    username and password keep working.
+                                </p>
+                                <button type="button"
+                                        class="btn btn-secondary mt-2"
+                                        @onclick="ConnectMicrosoftAccount">
+                                    Connect Microsoft account
+                                </button>
+                            </div>
                         }
                     </div>
                 </section>
@@ -184,16 +211,63 @@
     private string? _passwordError;
     private bool _passwordBusy;
 
-    private bool HasEntraLink =>
-        _me?.IdentityLinks.Any(l => string.Equals(l.Source, "Entra", StringComparison.OrdinalIgnoreCase)) ?? false;
+    private string? _linkMessage;
+    private PageMessageKind _linkMessageKind = PageMessageKind.Info;
 
-    private bool UseEntraSignOut =>
+    private static bool IsEntra(string source) => string.Equals(source, "Entra", StringComparison.OrdinalIgnoreCase);
+
+    private bool HasEntraLink => _me?.IdentityLinks.Any(l => IsEntra(l.Source)) ?? false;
+
+    private bool EntraAvailable =>
         ShellOpts.Value.UseEntraSignIn || (SignInOptions.Current?.EntraSignInEnabled ?? false);
+
+    private bool UseEntraSignOut => EntraAvailable;
 
     protected override void OnInitialized()
     {
         Session.Changed += OnSessionChanged;
         _me = Session.User;
+        ReadLinkOutcomeFromQuery();
+    }
+
+    /// <summary>
+    /// The host redirects back here after a linking round trip. A failure means no Microsoft identity was
+    /// bound and the existing local session was kept, so the message is informational rather than fatal.
+    /// </summary>
+    private void ReadLinkOutcomeFromQuery()
+    {
+        var query = new Uri(Nav.Uri).Query;
+        if (string.IsNullOrEmpty(query))
+            return;
+
+        var parameters = System.Web.HttpUtility.ParseQueryString(query);
+        if (parameters["linked"] == "1")
+        {
+            _linkMessageKind = PageMessageKind.Info;
+            _linkMessage = "Your Microsoft account is connected. You can now sign in with it.";
+            return;
+        }
+
+        var error = parameters["error"];
+        if (string.IsNullOrEmpty(error))
+            return;
+
+        _linkMessageKind = PageMessageKind.Error;
+        _linkMessage = error switch
+        {
+            "collision" => "That Microsoft account is already connected to a different Apperture user. Nothing was changed.",
+            "already_linked" => "This account already has a Microsoft account connected. Ask an administrator to remove it first.",
+            "tenant_mismatch" => "That Microsoft account belongs to a different directory than the one this instance trusts.",
+            "not_configured" => "Microsoft sign-in is not configured for this instance.",
+            "invalid_identity" => "Microsoft did not return the directory identifiers Apperture requires.",
+            _ => "Connecting your Microsoft account did not complete. You are still signed in with your existing method."
+        };
+    }
+
+    private void ConnectMicrosoftAccount()
+    {
+        var host = HostNav.GetManagementHostBase(Nav);
+        Nav.NavigateTo(new Uri(host, "signin/link").ToString(), forceLoad: true);
     }
 
     public void Dispose() => Session.Changed -= OnSessionChanged;

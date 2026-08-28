@@ -95,7 +95,7 @@
                         {
                             <li class="flex flex-wrap items-baseline justify-between gap-2 py-2">
                                 <span class="font-mono text-xs text-body break-all">@FormatLinkLabel(link)</span>
-                                <span class="text-xs text-muted">@link.Source</span>
+                                <span class="text-xs text-muted">@link.Source · @FormatLinkState(link)</span>
                             </li>
                         }
                     </ul>
@@ -104,9 +104,64 @@
                 @if (_capabilities?.CanManageUsers == true)
                 {
                     <div class="mt-4 border-t border-default pt-3">
-                        <div class="text-xs font-medium text-heading">Add Entra link</div>
+                        <div class="text-xs font-medium text-heading">Link a Microsoft account</div>
                         <p class="mt-1 text-xs text-muted">
-                            Paste the Entra object id (oid) from directory browse or your IdP. This does not verify the OIDC session; it only links the oid to this platform user.
+                            Search your directory and select the person. The association stays pending until they
+                            sign in with that Microsoft account for the first time; local sign-in is left as it is.
+                        </p>
+                        @if (_directoryTenantId is null)
+                        {
+                            <p class="mt-2 text-xs text-muted">
+                                Directory search is unavailable because no Microsoft Entra registration is active. Paste an object id below instead.
+                            </p>
+                        }
+                        else
+                        {
+                            <div class="mt-2 flex flex-wrap items-end gap-2">
+                                <label class="min-w-[16rem] flex-1 text-xs text-muted">
+                                    Search directory
+                                    <input class="ui-input mt-1 text-xs"
+                                           @bind="_directorySearch"
+                                           @bind:event="oninput"
+                                           disabled="@(_mutating || _directoryBusy)"
+                                           placeholder="Name or user principal name" />
+                                </label>
+                                <button type="button"
+                                        class="btn btn-secondary"
+                                        disabled="@(_mutating || _directoryBusy)"
+                                        @onclick="SearchDirectoryAsync">
+                                    @(_directoryBusy ? "Searching…" : "Search")
+                                </button>
+                            </div>
+                            @if (_directoryMessage is not null)
+                            {
+                                <p class="mt-2 text-xs text-muted">@_directoryMessage</p>
+                            }
+                            @if (_directoryResults.Count > 0)
+                            {
+                                <ul class="mt-2 divide-y divide-default text-sm">
+                                    @foreach (var candidate in _directoryResults)
+                                    {
+                                        <li class="flex flex-wrap items-center justify-between gap-2 py-2">
+                                            <span>
+                                                <span class="text-body">@candidate.DisplayName</span>
+                                                <span class="ml-2 text-xs text-muted">@(candidate.UserPrincipalName ?? candidate.Mail)</span>
+                                            </span>
+                                            <button type="button"
+                                                    class="btn btn-secondary"
+                                                    disabled="@_mutating"
+                                                    @onclick="() => LinkDirectoryUserAsync(candidate.ObjectId)">
+                                                Link
+                                            </button>
+                                        </li>
+                                    }
+                                </ul>
+                            }
+                        }
+
+                        <div class="mt-3 text-xs font-medium text-heading">Or paste an object id</div>
+                        <p class="mt-1 text-xs text-muted">
+                            Use the Entra object id (oid) as a GUID. Email addresses and user principal names are not identities.
                         </p>
                         @if (!string.IsNullOrEmpty(_identityLinkError))
                         {
@@ -126,7 +181,7 @@
                                     class="btn btn-secondary"
                                     disabled="@(_mutating || string.IsNullOrWhiteSpace(_entraOidToLink))"
                                     @onclick="AddEntraLinkAsync">
-                                Add Entra link
+                                Link object id
                             </button>
                         </div>
                     </div>
@@ -215,6 +270,11 @@
     private string? _error;
     private string? _identityLinkError;
     private string _entraOidToLink = "";
+    private string _directorySearch = "";
+    private string? _directoryTenantId;
+    private string? _directoryMessage;
+    private bool _directoryBusy;
+    private IReadOnlyList<EntraDirectoryUserItemDto> _directoryResults = Array.Empty<EntraDirectoryUserItemDto>();
     private OperatorCapabilitiesDto? _capabilities;
     private bool _capabilitiesLoaded;
     private string? _dataLoadKey;
@@ -254,6 +314,8 @@
                 _error = "User not found.";
                 return;
             }
+            if (_capabilities?.CanManageUsers == true)
+                await LoadDirectoryTenantAsync();
             _allRoles = await Client.GetRolesAsync();
             _rolesById = _allRoles.ToDictionary(r => r.Id, StringComparer.OrdinalIgnoreCase);
             var assignedSet = _user.RoleIds.ToHashSet(StringComparer.OrdinalIgnoreCase);
@@ -335,6 +397,63 @@
         }
     }
 
+    /// <summary>
+    /// Directory browse is scoped to the active registration, which is also the only directory whose
+    /// object ids the platform will accept.
+    /// </summary>
+    private async Task LoadDirectoryTenantAsync()
+    {
+        try
+        {
+            var tenants = await Client.GetEntraTenantsAsync();
+            _directoryTenantId = tenants.FirstOrDefault(t => t.IsActive && t.Enabled)?.Id;
+        }
+        catch (Exception)
+        {
+            _directoryTenantId = null;
+        }
+    }
+
+    private async Task SearchDirectoryAsync()
+    {
+        if (_directoryTenantId is null)
+            return;
+
+        _directoryBusy = true;
+        _directoryMessage = null;
+        try
+        {
+            var result = await Client.GetEntraDirectoryUsersAsync(_directoryTenantId, _directorySearch, top: 25);
+            if (result is null)
+            {
+                _directoryResults = Array.Empty<EntraDirectoryUserItemDto>();
+                _directoryMessage = "Not authorized to browse the directory.";
+                return;
+            }
+
+            _directoryResults = result.Items;
+            _directoryMessage = result.Success
+                ? (result.Items.Count == 0 ? "No matching directory users." : null)
+                : result.Summary;
+        }
+        catch (Exception ex)
+        {
+            _directoryResults = Array.Empty<EntraDirectoryUserItemDto>();
+            _directoryMessage = ex.Message;
+        }
+        finally
+        {
+            _directoryBusy = false;
+        }
+    }
+
+    private async Task LinkDirectoryUserAsync(string objectId)
+    {
+        _entraOidToLink = objectId;
+        await AddEntraLinkAsync();
+        _directoryResults = Array.Empty<EntraDirectoryUserItemDto>();
+    }
+
     private async Task AddEntraLinkAsync()
     {
         if (_user is null || string.IsNullOrWhiteSpace(_entraOidToLink))
@@ -347,7 +466,10 @@
             await Client.AddIdentityLinkAsync(
                 UserId,
                 new AddIdentityLinkRequest("Entra", _entraOidToLink.Trim()));
-            Toasts.Show(ToastSeverity.Success, "Entra identity linked.", "Governance");
+            Toasts.Show(
+                ToastSeverity.Success,
+                "Microsoft account associated. It becomes active after their first successful sign-in.",
+                "Governance");
             _entraOidToLink = "";
             await LoadAsync();
         }
@@ -368,6 +490,10 @@
             _mutating = false;
         }
     }
+
+    /// <summary>A link is only a usable sign-in path once an authentication has proven it.</summary>
+    private static string FormatLinkState(IdentityLinkDto link) =>
+        link.LastAuthenticatedAt is null ? "pending first sign-in" : "active";
 
     private static string FormatLinkLabel(IdentityLinkDto link)
     {

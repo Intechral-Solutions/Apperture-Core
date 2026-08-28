@@ -47,18 +47,147 @@ public sealed class UserManagementServiceIdentityLinkTests
         ex.Which.Code.Should().Be(IdentityLinkErrorCodes.ExternalIdInUse);
     }
 
-    private static UserManagementService NewService(InMemoryUserRepository repo) =>
+    [Fact]
+    public async Task AddIdentityLinkAsync_rejects_a_second_entra_identity_on_the_same_user()
+    {
+        var userId = new UserId("usr-two-entra");
+        var user = new User(
+            userId,
+            "Operator",
+            [new IdentityLink(IdentitySource.Entra, FirstOid, DateTimeOffset.UtcNow)],
+            [],
+            false);
+        var repo = new InMemoryUserRepository(user);
+        var service = NewService(repo, new StubEntraAssociation());
+
+        Func<Task> act = async () =>
+            await service.AddIdentityLinkAsync(userId, IdentitySource.Entra, SecondOid, CancellationToken.None);
+
+        var ex = await act.Should().ThrowAsync<IdentityLinkException>();
+        ex.Which.Code.Should().Be(IdentityLinkErrorCodes.EntraLinkAlreadyPresent);
+        repo.IdentityLinkAddCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task AddIdentityLinkAsync_for_entra_persists_a_pending_link_with_tenant_metadata()
+    {
+        var userId = new UserId("usr-pending");
+        var repo = new InMemoryUserRepository(
+            new User(userId, "Operator", [new IdentityLink(IdentitySource.Local, "operator", null)], [], false));
+        var service = NewService(repo, new StubEntraAssociation());
+
+        await service.AddIdentityLinkAsync(userId, IdentitySource.Entra, FirstOid, CancellationToken.None);
+
+        var added = repo.AddedLinks.Should().ContainSingle().Subject;
+        added.LastAuthenticatedAt.Should().BeNull();
+        added.TenantId.Should().Be(TenantId);
+    }
+
+    [Fact]
+    public async Task RemoveIdentityLinkAsync_will_not_leave_the_last_admin_with_only_a_pending_entra_link()
+    {
+        var userId = new UserId("usr-last-admin");
+        var repo = new InMemoryUserRepository(new User(
+            userId,
+            "Only admin",
+            [
+                new IdentityLink(IdentitySource.Local, "operator", DateTimeOffset.UtcNow),
+                new IdentityLink(IdentitySource.Entra, FirstOid, LastAuthenticatedAt: null, TenantId: TenantId)
+            ],
+            [new RoleId(BootstrapConstants.PlatformAdminRoleId)],
+            false));
+        var service = NewService(repo, new StubEntraAssociation(), soleAdmin: true);
+
+        Func<Task> act = async () =>
+            await service.RemoveIdentityLinkAsync(userId, IdentitySource.Local, "operator", CancellationToken.None);
+
+        var ex = await act.Should().ThrowAsync<IdentityLinkException>();
+        ex.Which.Code.Should().Be(IdentityLinkErrorCodes.LastViableSignInMethod);
+    }
+
+    [Fact]
+    public async Task RemoveIdentityLinkAsync_allows_removal_when_the_entra_link_is_proven_and_usable()
+    {
+        var userId = new UserId("usr-last-admin-proven");
+        var repo = new InMemoryUserRepository(new User(
+            userId,
+            "Only admin",
+            [
+                new IdentityLink(IdentitySource.Local, "operator", DateTimeOffset.UtcNow),
+                new IdentityLink(IdentitySource.Entra, FirstOid, DateTimeOffset.UtcNow, TenantId)
+            ],
+            [new RoleId(BootstrapConstants.PlatformAdminRoleId)],
+            false));
+        var service = NewService(repo, new StubEntraAssociation(), soleAdmin: true);
+
+        Func<Task> act = async () =>
+            await service.RemoveIdentityLinkAsync(userId, IdentitySource.Local, "operator", CancellationToken.None);
+
+        await act.Should().NotThrowAsync();
+    }
+
+    private const string FirstOid = "33333333-3333-3333-3333-333333333333";
+    private const string SecondOid = "44444444-4444-4444-4444-444444444444";
+    private const string TenantId = "11111111-1111-1111-1111-111111111111";
+
+    private static UserManagementService NewService(
+        InMemoryUserRepository repo,
+        IEntraIdentityAssociationService? entraAssociation = null,
+        bool soleAdmin = false) =>
         new(
             new StubPrincipalContext(),
             new StubPrincipalToUserResolver(),
             new AllowUserManageAuth(),
             repo,
-            new StubRoleRepository(),
+            new StubRoleRepository(soleAdmin ? 1 : 0),
             new InMemoryResourceDescriptorRegistry(),
             new StubLocalCredentialRepository(),
             new StubPasswordHasher(),
             new StubAuditService(),
-            Options.Create(new LocalAuthOptions()));
+            Options.Create(new LocalAuthOptions()),
+            entraAssociation,
+            entraAssociation is null ? null : new UsableEntraOptionsMonitor());
+
+    /// <summary>Stands in for the real association service: pending link with active-registration tenant.</summary>
+    private sealed class StubEntraAssociation : IEntraIdentityAssociationService
+    {
+        public ValueTask<EntraAssociationOutcome> CompleteSignInAsync(EntraIdentityAssertion assertion, CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(EntraAssociationOutcome.Failure(EntraLinkFailureCodes.AccountNotLinked));
+
+        public ValueTask<EntraAssociationOutcome> CompleteLinkAsync(UserId initiatingUserId, EntraIdentityAssertion assertion, CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(EntraAssociationOutcome.Success(initiatingUserId));
+
+        public ValueTask<IdentityLink> BuildPendingAdminLinkAsync(string objectId, CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(new IdentityLink(
+                IdentitySource.Entra,
+                objectId.Trim().ToLowerInvariant(),
+                LastAuthenticatedAt: null,
+                TenantId: TenantId,
+                RegistrationId: "reg-1",
+                LinkedAt: DateTimeOffset.UtcNow));
+    }
+
+    private sealed class UsableEntraOptionsMonitor : IOptionsMonitor<EntraAuthOptions>
+    {
+        public EntraAuthOptions CurrentValue { get; } = new()
+        {
+            Enabled = true,
+            Authority = "https://login.microsoftonline.com/" + TenantId,
+            ClientId = "client-1",
+            ClientSecret = "secret"
+        };
+
+        public EntraAuthOptions Get(string? name) => CurrentValue;
+
+        public IDisposable OnChange(Action<EntraAuthOptions, string?> listener) => new NoopDisposable();
+
+        private sealed class NoopDisposable : IDisposable
+        {
+            public void Dispose()
+            {
+            }
+        }
+    }
 
     private sealed class InMemoryUserRepository : IUserRepository
     {
@@ -68,6 +197,8 @@ public sealed class UserManagementServiceIdentityLinkTests
             _users = users.ToDictionary(u => u.Id);
 
         public int IdentityLinkAddCount { get; private set; }
+
+        public List<IdentityLink> AddedLinks { get; } = [];
 
         public ValueTask<int> GetUserCountAsync(CancellationToken cancellationToken = default) =>
             ValueTask.FromResult(_users.Count);
@@ -100,12 +231,16 @@ public sealed class UserManagementServiceIdentityLinkTests
         public ValueTask UpdateLastAuthenticatedAtAsync(IdentitySource source, string externalId, DateTimeOffset at, CancellationToken cancellationToken = default) =>
             ValueTask.CompletedTask;
 
-        public ValueTask AddIdentityLinkAsync(UserId userId, IdentitySource source, string externalId, CancellationToken cancellationToken = default)
+        public ValueTask AddIdentityLinkAsync(UserId userId, IdentitySource source, string externalId, CancellationToken cancellationToken = default) =>
+            AddIdentityLinkAsync(userId, new IdentityLink(source, externalId, null), cancellationToken);
+
+        public ValueTask AddIdentityLinkAsync(UserId userId, IdentityLink link, CancellationToken cancellationToken = default)
         {
             IdentityLinkAddCount++;
+            AddedLinks.Add(link);
             var user = _users[userId];
             var links = user.IdentityLinks.ToList();
-            links.Add(new IdentityLink(source, externalId, null));
+            links.Add(link);
             _users[userId] = user with { IdentityLinks = links };
             return ValueTask.CompletedTask;
         }
@@ -134,6 +269,11 @@ public sealed class UserManagementServiceIdentityLinkTests
 
     private sealed class StubRoleRepository : IRoleRepository
     {
+        private readonly int _platformAdminAssignmentCount;
+
+        public StubRoleRepository(int platformAdminAssignmentCount = 0) =>
+            _platformAdminAssignmentCount = platformAdminAssignmentCount;
+
         public ValueTask<IReadOnlyList<Role>> GetAllAsync(CancellationToken cancellationToken = default) =>
             ValueTask.FromResult<IReadOnlyList<Role>>([]);
 
@@ -144,7 +284,7 @@ public sealed class UserManagementServiceIdentityLinkTests
             ValueTask.FromResult<IReadOnlyList<Role>>([]);
 
         public ValueTask<int> CountUserAssignmentsAsync(RoleId roleId, CancellationToken cancellationToken = default) =>
-            ValueTask.FromResult(0);
+            ValueTask.FromResult(_platformAdminAssignmentCount);
 
         public ValueTask AssignToUserAsync(UserId userId, RoleId roleId, CancellationToken cancellationToken = default) =>
             ValueTask.CompletedTask;

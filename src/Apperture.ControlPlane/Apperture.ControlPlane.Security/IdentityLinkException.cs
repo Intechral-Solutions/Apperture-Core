@@ -21,4 +21,6 @@ public static class IdentityLinkErrorCodes
     public const string InvalidEntraExternalId = "identity_link.invalid_entra_external_id";
     public const string UserNotFound = "identity_link.user_not_found";
     public const string ExternalIdInUse = "identity_link.external_id_in_use";
+    public const string EntraLinkAlreadyPresent = "identity_link.entra_link_already_present";
+    public const string LastViableSignInMethod = "identity_link.last_viable_sign_in_method";
 }

@@ -25,6 +25,8 @@ public sealed class UserManagementService : IUserManagementService
     private readonly ILocalPasswordHasher _passwordHasher;
     private readonly IAuditService _audit;
     private readonly LocalAuthOptions _localOptions;
+    private readonly IEntraIdentityAssociationService? _entraAssociation;
+    private readonly IOptionsMonitor<EntraAuthOptions>? _entraOptions;
 
     public UserManagementService(
         IPrincipalContext principalContext,
@@ -36,8 +38,12 @@ public sealed class UserManagementService : IUserManagementService
         ILocalCredentialRepository localCredentialRepository,
         ILocalPasswordHasher passwordHasher,
         IAuditService audit,
-        IOptions<LocalAuthOptions> localOptions)
+        IOptions<LocalAuthOptions> localOptions,
+        IEntraIdentityAssociationService? entraAssociation = null,
+        IOptionsMonitor<EntraAuthOptions>? entraOptions = null)
     {
+        _entraAssociation = entraAssociation;
+        _entraOptions = entraOptions;
         _principalContext = principalContext;
         _principalToUserResolver = principalToUserResolver;
         _auth = auth;
@@ -183,6 +189,28 @@ public sealed class UserManagementService : IUserManagementService
                 "An identity link with this source and external id is already attached to another user.");
         }
 
+        if (source == IdentitySource.Entra && _entraAssociation is not null)
+        {
+            if (user.IdentityLinks.Any(l => l.Source == IdentitySource.Entra))
+            {
+                throw new IdentityLinkException(
+                    IdentityLinkErrorCodes.EntraLinkAlreadyPresent,
+                    "This user already has a Microsoft identity linked. Remove the existing link first.");
+            }
+
+            // Pending on purpose: an administrator association is proven only by a successful sign-in,
+            // and it never disables local sign-in.
+            var pendingLink = await _entraAssociation.BuildPendingAdminLinkAsync(linkExternalId, cancellationToken);
+            await _userRepository.AddIdentityLinkAsync(userId, pendingLink, cancellationToken);
+            await AppendAuditAsync(
+                EntraLinkAuditActionNames.Pending,
+                actorId,
+                userId.Value,
+                $"userId={userId.Value} oid={pendingLink.ExternalId} tenantId={pendingLink.TenantId ?? "unknown"}",
+                cancellationToken);
+            return;
+        }
+
         await _userRepository.AddIdentityLinkAsync(userId, source, linkExternalId, cancellationToken);
         await AppendAuditAsync("identity_link.added", actorId, userId.Value, $"userId={userId.Value} source={source} externalId={linkExternalId}", cancellationToken);
     }
@@ -195,6 +223,22 @@ public sealed class UserManagementService : IUserManagementService
         var linkExternalId = source == IdentitySource.Local
             ? LocalAuthHelpers.NormalizeUsername(externalId)
             : externalId.Trim();
+
+        var user = await _userRepository.GetByIdAsync(userId, cancellationToken);
+        if (user is not null && source == IdentitySource.Local)
+        {
+            var platformAdminRoleId = new RoleId(BootstrapConstants.PlatformAdminRoleId);
+            var adminCount = await _roleRepository.CountUserAssignmentsAsync(platformAdminRoleId, cancellationToken);
+            var userHasPlatformAdmin = user.AssignedRoleIds.Any(r => r.Value == BootstrapConstants.PlatformAdminRoleId);
+            var removedLink = user.IdentityLinks.FirstOrDefault(l => l.Source == source && l.ExternalId == linkExternalId);
+            if (adminCount == 1 && userHasPlatformAdmin && removedLink is not null && !HasViableAlternateSignIn(user, removedLink))
+            {
+                await AppendAuditAsync("auth_admin.blocked.last_admin_link_removed", actorId, userId.Value, $"userId={userId.Value} source={source}", cancellationToken);
+                throw new IdentityLinkException(
+                    IdentityLinkErrorCodes.LastViableSignInMethod,
+                    "Cannot remove the last sign-in method for the last platform administrator. A pending Microsoft identity is not a sign-in path until it has been used successfully.");
+            }
+        }
 
         await _userRepository.RemoveIdentityLinkAsync(userId, source, linkExternalId, cancellationToken);
         await AppendAuditAsync("identity_link.removed", actorId, userId.Value, $"userId={userId.Value} source={source} externalId={linkExternalId}", cancellationToken);
@@ -281,8 +325,7 @@ public sealed class UserManagementService : IUserManagementService
             var platformAdminRoleId = new RoleId(BootstrapConstants.PlatformAdminRoleId);
             var adminCount = await _roleRepository.CountUserAssignmentsAsync(platformAdminRoleId, cancellationToken);
             var userHasPlatformAdmin = user.AssignedRoleIds.Any(r => r.Value == BootstrapConstants.PlatformAdminRoleId);
-            var onlyLocalLink = user.IdentityLinks.Count == 1 && user.IdentityLinks[0].Source == IdentitySource.Local;
-            if (adminCount == 1 && userHasPlatformAdmin && onlyLocalLink)
+            if (adminCount == 1 && userHasPlatformAdmin && !HasViableAlternateSignIn(user, excludedLink: null))
             {
                 await AppendAuditAsync("auth_admin.blocked.last_admin_credential_disabled", actorId, userId.Value, $"userId={userId.Value}", cancellationToken);
                 throw new InvalidOperationException("Cannot disable the only local credential for the last platform administrator who has no other sign-in path.");
@@ -361,6 +404,21 @@ public sealed class UserManagementService : IUserManagementService
         if (!allowed)
             throw new UnauthorizedAccessException("Not authorized to assign permissions.");
         return new ActorId(actor.Id.Value);
+    }
+
+    /// <summary>
+    /// An Entra link is a real alternative only when it has been proven by a successful authentication
+    /// (<c>LastAuthenticatedAt != null</c>) and Entra is currently usable. A pending administrator
+    /// association is not a sign-in path and must not satisfy the last-administrator guard.
+    /// </summary>
+    private bool HasViableAlternateSignIn(User user, IdentityLink? excludedLink)
+    {
+        var entraUsable = EntraConfigurationState.IsUsable(_entraOptions?.CurrentValue);
+        return user.IdentityLinks.Any(l =>
+            l.Source == IdentitySource.Entra
+            && l.IsProven
+            && entraUsable
+            && (excludedLink is null || !ReferenceEquals(l, excludedLink)));
     }
 
     private static void ValidateEntraExternalId(IdentitySource source, string externalId)

@@ -52,4 +52,42 @@ public interface IUserRepository
     /// Removes an identity link from a user. Throws if this is the user's last link.
     /// </summary>
     ValueTask RemoveIdentityLinkAsync(UserId userId, IdentitySource source, string externalId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Finds the owner and full record of a single identity link, or null when no link exists.
+    /// </summary>
+    async ValueTask<IdentityLinkOwner?> FindIdentityLinkAsync(
+        IdentitySource source,
+        string externalId,
+        CancellationToken cancellationToken = default)
+    {
+        var user = await GetByIdentityLinkAsync(source, externalId, cancellationToken);
+        var link = user?.IdentityLinks.FirstOrDefault(l => l.Source == source && l.ExternalId == externalId);
+        return user is null || link is null ? null : new IdentityLinkOwner(user.Id, link);
+    }
+
+    /// <summary>
+    /// Adds an identity link including its provider metadata (tenant, provenance, snapshots).
+    /// Throws if (Source, ExternalId) already exists for any user.
+    /// </summary>
+    ValueTask AddIdentityLinkAsync(UserId userId, IdentityLink link, CancellationToken cancellationToken = default) =>
+        AddIdentityLinkAsync(userId, link.Source, link.ExternalId, cancellationToken);
+
+    /// <summary>
+    /// Marks an Entra link proven and completes metadata a legacy row may be missing. Tenant id is only
+    /// written when the stored value is null, so an existing tenant binding is never silently changed.
+    /// </summary>
+    ValueTask CompleteEntraLinkProofAsync(
+        string externalId,
+        DateTimeOffset provenAt,
+        string? tenantIdWhenMissing,
+        string? registrationIdWhenMissing,
+        string? providerSubject,
+        CancellationToken cancellationToken = default) =>
+        UpdateLastAuthenticatedAtAsync(IdentitySource.Entra, externalId, provenAt, cancellationToken);
 }
+
+/// <summary>
+/// An identity link together with the platform user that owns it.
+/// </summary>
+public sealed record IdentityLinkOwner(UserId UserId, IdentityLink Link);

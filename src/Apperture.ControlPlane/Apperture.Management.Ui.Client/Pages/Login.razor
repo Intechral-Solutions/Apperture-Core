@@ -13,7 +13,11 @@
     <PageHeader Title="Sign in"
                 Subtitle="Sign in to the Apperture management console." />
 
-    @if (_oidcError)
+    @if (_accountNotLinkedError)
+    {
+        <PageMessage Kind="PageMessageKind.Error" Message="That Microsoft account is not connected to an Apperture user. Ask an administrator to link it, or sign in with your Apperture username and password." />
+    }
+    else if (_oidcError)
     {
         <PageMessage Kind="PageMessageKind.Error" Message="Microsoft sign-in did not complete. You can try again or use local sign-in if it is available." />
     }
@@ -81,6 +85,7 @@
     private string? _rawReturnQuery;
     private bool _autoRedirected;
     private bool _oidcError;
+    private bool _accountNotLinkedError;
 
     protected override async Task OnInitializedAsync()
     {
@@ -94,8 +99,17 @@
             var i = part.IndexOf('=');
             if (i <= 0)
                 continue;
-            if (part[..i].Equals("error", StringComparison.OrdinalIgnoreCase) &&
-                Uri.UnescapeDataString(part[(i + 1)..]).Equals("oidc", StringComparison.OrdinalIgnoreCase))
+            if (!part[..i].Equals("error", StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            var error = Uri.UnescapeDataString(part[(i + 1)..]);
+            if (error.Equals("account_not_linked", StringComparison.OrdinalIgnoreCase))
+            {
+                _accountNotLinkedError = true;
+                break;
+            }
+
+            if (error.Equals("oidc", StringComparison.OrdinalIgnoreCase))
             {
                 _oidcError = true;
                 break;
@@ -124,7 +138,10 @@
     private Task GoEntraAsync()
     {
         var host = HostNav.GetManagementHostBase(Nav);
-        Nav.NavigateTo(new Uri(host, "signin").ToString(), forceLoad: true);
+        var relative = string.IsNullOrEmpty(_returnPath)
+            ? "signin"
+            : "signin?returnUrl=" + Uri.EscapeDataString(_returnPath);
+        Nav.NavigateTo(new Uri(host, relative).ToString(), forceLoad: true);
         return Task.CompletedTask;
     }
 }

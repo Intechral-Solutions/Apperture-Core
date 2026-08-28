@@ -66,6 +66,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<EntraClientSecretMaterialProvisioner>();
         services.AddScoped<IAuthenticationAdminOverviewService, AuthenticationAdminOverviewService>();
         services.AddScoped<IUserRepository, SqlUserRepository>();
+        services.AddScoped<IEntraIdentityAssociationService, EntraIdentityAssociationService>();
         services.AddScoped<IUserPreferencesRepository, SqlUserPreferencesRepository>();
         services.AddScoped<IUserProfileImageStore, SqlUserProfileImageStore>();
         services.AddSingleton<IProfileImageNormalizer, SkiaProfileImageNormalizer>();

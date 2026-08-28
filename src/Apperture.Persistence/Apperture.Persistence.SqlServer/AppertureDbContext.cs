@@ -640,6 +640,12 @@ public class AppertureDbContext : DbContext
             e.Property(x => x.Id).HasMaxLength(64);
             e.Property(x => x.UserId).HasMaxLength(64);
             e.Property(x => x.ExternalId).HasMaxLength(256);
+            e.Property(x => x.TenantId).HasMaxLength(64);
+            e.Property(x => x.RegistrationId).HasMaxLength(64);
+            e.Property(x => x.ProviderSubject).HasMaxLength(256);
+            e.Property(x => x.DisplayNameSnapshot).HasMaxLength(256);
+            e.Property(x => x.UserPrincipalNameSnapshot).HasMaxLength(512);
+            e.Property(x => x.MailSnapshot).HasMaxLength(512);
             e.Property<byte[]>("RowVersion").IsRowVersion();
             e.HasIndex(x => new { x.Source, x.ExternalId }).IsUnique();
             e.HasOne<UserEntity>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Restrict);
