@@ -92,6 +92,12 @@ page-header toolbars (Tailwind z-30 is not in app.css)"* — a raw `z-index: 60`
 work around this. Restoring or explicitly documenting the pipeline is a prerequisite for the cleanup
 work, not an optional extra.
 
+> **RESOLVED — see [§15 CSS pipeline closure](#15-css-pipeline-closure-resolves-21).** The reproducibility
+> defect described above has been fixed: the authored layer now lives in `styles/theme.css`, and
+> `wwwroot/css/app.css` is regenerated from committed source by a pinned Tailwind 4.1.8 standalone CLI.
+> The dead-CSS finding in §9(4) was cleared as a side effect of the first regeneration — 279 unused
+> selectors dropped out because nothing references them.
+
 ### 2.2 Token hierarchy
 
 Three tiers, consumed top-down:
@@ -689,10 +695,8 @@ Small, bounded, and worth doing before the next epic starts. Ordered by value.
    edits.
 2. **Broaden the reduced-motion block** (§7.2(3)) to cover the nav-rail and control-panel transforms and
    the remaining transitions — currently 2 of 14+. A few lines in one existing `@media` block.
-3. **Resolve the `app.css` pipeline question** (§2.1) — either restore a Tailwind config and input CSS so
-   the file can be regenerated, or record an ADR stating that it is now a hand-maintained stylesheet and
-   the Tailwind provenance is historical. Everything in §9(4), (19), (20) is blocked behind this choice,
-   so decide it before attempting any dead-CSS removal. **Do not hand-strip the generated layers first.**
+3. ~~**Resolve the `app.css` pipeline question** (§2.1)~~ — **Done.** The pipeline was restored rather than
+   declared hand-maintained; see [§15](#15-css-pipeline-closure-resolves-21). §9(4) dead CSS is cleared.
 4. **Operator smoke, one session** — both themes × four viewport tiers on ~6 representative routes
    (Dashboard, Integration Detail, Run Detail + Affected records, Control Center, Account Preferences,
    Notification Diagnostics): keyboard traversal and focus-ring visibility, one destructive
@@ -763,6 +767,165 @@ settings without a breaking change. If it cannot, the epic starts with a contrac
 
 ---
 
+## 15. CSS pipeline closure (resolves §2.1)
+
+**Status:** Implemented · bounded maintenance, not an epic · closes §13 action 3 and §9(4).
+
+### 15.1 Former reproducibility defect
+
+`wwwroot/css/app.css` was simultaneously the generated Tailwind 4.1.8 artifact *and* the only copy of the
+hand-authored token layer. `dotnet build`, publish, Aspire, and CI only ever **copied** it, and the
+`build-ui` / `watch-ui` commands called an inert npm-oriented scaffold that printed
+*"UI asset pipeline not configured yet"* and returned success. Deleting the file from a clean checkout
+would have produced a green build and an unstyled UI, with no command able to recreate it.
+
+### 15.2 Final source/output architecture
+
+| File | Ownership |
+|---|---|
+| `Apperture.Management.Ui.Client/styles/app.css` | **Source** — Tailwind entry, explicit `@source` scan rules |
+| `Apperture.Management.Ui.Client/styles/theme.css` | **Source** — authored `:root` / `.dark` tokens, base rules, semantic utilities, `.btn*`, `.focus-ring`, nav rail |
+| `wwwroot/css/management-ui-primitives.css` | **Source** — authored `ui-*` primitives, unchanged and still loaded second |
+| `wwwroot/css/app.css` | **Generated output**, committed |
+
+The 775 authored lines (old `app.css` 2169–2943) moved verbatim into `theme.css`; no visual values were
+changed. Automatic source detection is disabled (`@import "tailwindcss" source(none)`) so the scanned set
+is explicit: client `**/*.razor` and `**/*.cs`, plus `Apperture.Management.Ui.Shared/**/*.cs` for
+`Epic33UiDisplayHelpers.GetStatusCssClass`. Browser load order is unchanged.
+
+### 15.3 Pinned Tailwind version and tooling
+
+Official **Tailwind CSS standalone CLI 4.1.8** — the exact version in the pre-existing banner, so
+regeneration was a like-for-like recompile. No Node, npm, `package.json`, Vite, or PostCSS.
+
+The binary is downloaded on first use to `scripts/.runtime/tailwind/4.1.8/` (already gitignored, not
+vendored) over HTTPS from the GitHub release, and verified against a SHA256 pinned in
+`scripts/lib/Apperture.UiAssets.ps1` (values taken from the release's `sha256sums.txt`). A mismatch
+deletes the download and throws. Hashes are pinned for Windows x64, Linux x64/arm64, and macOS
+x64/arm64, so Linux CI needs no script change.
+
+### 15.4 `build-ui`
+
+One-shot compile of `styles/app.css` → `wwwroot/css/app.css`. Throws (non-zero exit) on unsupported
+platform, download failure, checksum mismatch, missing source, or Tailwind error — it never falls back to
+the stale committed stylesheet. Exposed unchanged via `Manage.ps1 -Area dev -Command build-ui` and the
+deployment area.
+
+### 15.5 `watch-ui`
+
+Same pinned CLI with `--watch`, in the foreground so Ctrl+C stops it cleanly. Rebuilds on `.razor`, `.cs`,
+and source-CSS changes, including newly used utility classes. It starts nothing else: Aspire, the
+Management API, SQL, and the worker are untouched. **AppHost was not changed** — the watcher is optional
+and normally runs in a second terminal.
+
+### 15.6 Generated-file policy
+
+`wwwroot/css/app.css` stays committed and now carries a `/*! … GENERATED FILE … */` marker naming the
+sources and the rebuild command. Ordinary Tailwind comments are stripped by Lightning CSS, so the marker
+is a bang comment and survives every rebuild including watch mode. Never edit it by hand; add tokens to
+`styles/theme.css` and run `build-ui`.
+
+### 15.7 CI policy
+
+Unchanged this pass: CI remains `dotnet restore` / `build` / `test` and copies the committed output, so no
+CI job downloads Tailwind. **Tradeoff:** a developer who changes a source stylesheet or adds a utility
+class must run `build-ui` and commit the result, and nothing currently fails if they forget. The
+deterministic staleness check for later adoption is documented in `scripts/README.md`:
+`build-ui` then `git diff --exit-code -- "*wwwroot/css/app.css"`.
+
+### 15.8 First-regeneration findings
+
+Generated to a temporary file and compared before overwriting.
+
+| Check | Result |
+|---|---|
+| Banner | `tailwindcss v4.1.8`, unchanged |
+| Size | 88,514 → 62,709 bytes (−29%) |
+| Light tokens | 141 → **141**, none missing |
+| Dark tokens | 135 → **135**, none missing |
+| Light-only | Exactly the 6 theme-independent tokens (3 fonts, 3 radii) |
+| Dark-only | **0** — sibling model intact |
+| Authored rules | `.btn*`, `.focus-ring`, `.nav-rail-btn*`, toast strips, `.bg-surface` sheen all present |
+| Selectors removed | 279 |
+| Selectors added | 88 |
+| Determinism | Two runs byte-identical (`sha256 fe32f592…`) |
+
+The **88 added** utilities are classes already used in markup that the stale artifact never contained —
+the committed file had drifted behind the Razor it was supposed to style. The **279 removed** are the
+dead palette quantified in §9(4): every one was checked against all `.razor`, `.cs`, `.cshtml`, `.js`, and
+`management-ui-primitives.css`; 9 matched only as loose substrings and all 9 failed whole-token
+verification (for example `container` appears solely in a JS comment). None was preserved.
+
+### 15.9 Dynamic-class and safelist decisions
+
+**No safelist was required.** Tailwind cannot see class strings assembled at runtime, so the composed
+sites were verified explicitly against the new output: `ActionButton.BuildClass` (21 classes, including
+every `btn-*` variant and state), `AccountAvatar` sizing, `PageMessage`, `Epic33UiDisplayHelpers`
+status text classes, semantic aliases, toast strips, and nav rail — **0 missing**. This holds because each
+site interpolates whole literal class names that appear in scanned source, and
+`NoRawColorUtilitiesTests` already bans fragment interpolation (`$"bg-{…}"`). The one non-obvious case,
+Shared-assembly literals, is covered by an explicit `@source` rather than a safelist. `ui-*` classes are
+correctly absent — they belong to `management-ui-primitives.css`.
+
+### 15.10 Tests
+
+New `Uix7CssPipelineTests` (12 facts) guards: sources exist; the entry imports Tailwind and the theme and
+scans the Shared assembly; the output carries the pinned version and the generated marker; tokens and the
+authored `.btn`/`.focus-ring`/`.nav-rail-btn` rules are declared in source; no token exists only in
+generated output; 141/135 counts hold; dark adds no tokens and light-only is exactly fonts plus radii;
+primitives are neither imported nor scanned; and the script contains no npm scaffold while retaining a
+pinned version and `Get-FileHash` verification.
+
+Results: Management UI Shared **686 passed**, Unit **1,581 passed**, Arch **38 passed**, all zero failures;
+`NoRawColorUtilitiesTests` and `Epic97UiVisualPolishTests` green; `Apperture.Management.Ui.Client` builds
+with no new warnings; `build-ui` byte-reproducible across runs.
+
+The §13 action 8 file-lock issue reproduced (`MSB3027` from a running dev stack) and is unrelated to this
+change; Unit and Arch tests pass once the dev environment is stopped.
+
+### 15.11 Runtime smoke
+
+Verified against a running Aspire stack on `:9001` with `watch-ui` in a second terminal:
+
+- The running UI served the regenerated stylesheet **byte-identical to disk without a rebuild or
+  restart**, confirming static web assets resolve to the source path.
+- A temporary `--color-accent: #ff00ff` edit in `styles/theme.css` was recompiled and served in under
+  500 ms.
+- A temporary `rotate-45` added to `Login.razor` — a utility absent from the previous output — was
+  emitted by the watcher, confirming markup scanning works incrementally.
+- Both temporary edits were reverted and `app.css` returned to the committed bytes
+  (`sha256 fe32f592…`); `git diff` shows no stray visual change.
+- The watcher performed 7 incremental rebuilds and started/stopped nothing else — Aspire, the API, SQL,
+  and the worker were untouched throughout.
+- All of `/`, `/dashboard`, `/runs`, `/account/preferences`, `/login` returned 200, and the host document
+  still loads `css/app.css` before `management-ui-primitives.css`.
+
+A Development-only cache header was added in `Management.Ui.Server/Program.cs`: `/css/*` now returns
+`no-store, max-age=0` in Development, because the watcher rewrites `app.css` in place under an
+unversioned URL and a normal refresh would otherwise serve the cached copy. Measured before the change
+the response carried **no** `Cache-Control` header; after the change it carries `no-store, max-age=0`.
+Production caching is unchanged.
+
+**Verification limits.** No browser automation was available, so the smoke test was performed over HTTP
+against the dev server plus file-level comparison. Route responses confirm the host document and
+stylesheet delivery, but because the Management UI is a Blazor WebAssembly SPA these do **not** confirm
+client-side rendering. Light/dark appearance, dialog behaviour, and browser-console cleanliness were
+**not** visually confirmed; the token-level guarantees rest on the 141/135 parity checks, the unchanged
+authored values, and `Uix7CssPipelineTests`. A visual pass in a browser is still worth doing.
+
+One operational note: `watch-ui` passes `--watch=always` because the plain `--watch` form exits as soon
+as stdin closes, which happens under non-interactive shells. In an interactive terminal Ctrl+C stops the
+watcher normally; killing the wrapper process without a console signal can orphan the Tailwind child.
+
+### 15.12 Remaining future option
+
+**Razor/C# Hot Reload is still not wired and remains deliberately out of scope.** `.razor` edits need a
+rebuild and a resource restart. The optional future step is `dotnet watch --project src/Apperture.AppHost`
+for per-resource .NET hot reload; it is independent of this work and should not be conflated with the CSS
+loop. Aspire's `defaultWatchEnabled` is the wrong tool — it restarts the whole topology.
+
+---
+
 ## Appendix — evidence index
 
 | Claim | Where verified |
@@ -770,7 +933,12 @@ settings without a breaking change. If it cannot, the epic starts with a contrac
 | 9 commits, 105 files, +4405/−2337 | `git diff --shortstat 3680730 0a14b1e` |
 | CSS churn: primitives +1014/−252, app.css +612 | `git diff --stat … -- "*wwwroot/css/*"` |
 | 141 light / 135 dark authored tokens; 6 light-only (fonts + radii), 0 dark-only | Scripted diff of `app.css` light block (2175–2323) vs `.dark` block (2324–2462); see §3.1 caveats on slice boundaries |
-| No Tailwind build pipeline exists | Recursive search for `tailwind.config.*`, `package.json`, `postcss.config.*`, and any input CSS across the repo (excluding `bin`/`obj`/`node_modules`) → **zero results**; only 5 `.css` files exist, 3 of them in `poc/` |
+| No Tailwind build pipeline exists (at audit time) | Recursive search for `tailwind.config.*`, `package.json`, `postcss.config.*`, and any input CSS across the repo (excluding `bin`/`obj`/`node_modules`) → **zero results**; only 5 `.css` files exist, 3 of them in `poc/`. **Superseded by §15** — a pinned standalone-CLI pipeline now exists |
+| Pinned CLI hashes are official | `sha256sums.txt` asset on the `v4.1.8` GitHub release; Windows x64 = `c9117f6f…` |
+| Regenerated output is deterministic | `build-ui` run twice → identical `sha256 fe32f592…`; 62,709 bytes |
+| 279 removed selectors are genuinely dead | Each checked against all client/shared/server `.razor`, `.cs`, `.cshtml`, `.js` and `management-ui-primitives.css`; 9 loose substring matches, 0 whole-token matches |
+| No safelist needed | Composed class sites (`ActionButton`, `AccountAvatar`, `PageMessage`, `Epic33UiDisplayHelpers`, toasts, nav rail) checked against new output → 0 missing |
+| Source files are not deployed | `dotnet msbuild -getItem:None` / `-getItem:Content` → `styles/*.css` are `None` items, absent from `Content` and static web assets |
 | 8 tables unstyled, 3 wrapped, 35 compliant | Enumerated every `<table class=…>` in client `.razor` (46 total), then inspected each non-compliant call site's 4 preceding lines for a `ui-data-table` wrapper |
 | `.ui-data-table` styling is wrapper-based | `management-ui-primitives.css:867–905` — `thead`, `thead th`, `tbody td`, `tbody tr:hover` are all descendant selectors; `.ui-data-table__table` sets only `font-size` |
 | 5 orphaned tokens | Per-token `var(--name)` search across both stylesheets and all client `.razor` → 0 each; control token `--color-table-header-bg` → 2, confirming the method |

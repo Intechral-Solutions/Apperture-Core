@@ -1,0 +1,27 @@
+/*
+ * Tailwind entry point for the Management UI.
+ *
+ * Build:  .\scripts\Manage.ps1 -Area dev -Command build-ui
+ * Watch:  .\scripts\Manage.ps1 -Area dev -Command watch-ui
+ *
+ * Output is wwwroot/css/app.css (generated - do not edit by hand).
+ * Semantic light/dark tokens live in theme.css; ui-* primitives stay in
+ * wwwroot/css/management-ui-primitives.css and are loaded separately.
+ */
+
+/*! Apperture Management UI - GENERATED FILE. Do not edit wwwroot/css/app.css by hand.
+    Source: src/Apperture.ControlPlane/Apperture.Management.Ui.Client/styles/{app,theme}.css
+    Rebuild: .\scripts\Manage.ps1 -Area dev -Command build-ui */
+
+/* Automatic source detection is disabled so the scanned set is explicit and
+   reproducible across machines and CI. */
+@import "tailwindcss" source(none);
+@import "./theme.css";
+
+/* Markup and C# helpers that compose utility class literals. */
+@source "../**/*.razor";
+@source "../**/*.cs";
+
+/* Shared assembly maps status values to utility literals
+   (Epic33UiDisplayHelpers.GetStatusCssClass -> text-success/warning/error). */
+@source "../../Apperture.Management.Ui.Shared/**/*.cs";

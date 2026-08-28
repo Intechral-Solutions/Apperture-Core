@@ -67,4 +67,4 @@ Page archetypes, summary/detail/advanced layering, drill-in rules, and pilot rec
 
 **Top-bar breadcrumbs (Epic 101 / UIX-2):** Route-aware parent context in the shell top bar — [Epic 101](../02-decisions/Epic101-Top-Bar-Breadcrumbs-and-Parent-Context-Links.md); renderer stabilization — [UIX-2](../audits/uix2-breadcrumb-shell-stabilization.md).
 
-**Stylesheets:** The dev host shell (`Apperture.Management.Ui.Server/Pages/_Layout.cshtml`) must load `css/management-ui-primitives.css` after `css/app.css` (same as WASM `index.html`). See Epic 97 toolbar corrective ADR.
+**Stylesheets:** The dev host shell (`Apperture.Management.Ui.Server/Pages/_Layout.cshtml`) must load `css/management-ui-primitives.css` after `css/app.css` (same as WASM `index.html`). See Epic 97 toolbar corrective ADR. `css/app.css` is generated from `Apperture.Management.Ui.Client/styles/` by `build-ui` — edit the sources, not the output.

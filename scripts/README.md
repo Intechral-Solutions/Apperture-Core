@@ -45,7 +45,8 @@ Saved defaults (`Area`, `Mode`, `Target`, `Service`, `Configuration`) persist in
 | `restart-service` | Restart `api`, `ui`, `worker`, `db`, or `all` (native only for per-service). |
 | `status` | Ports, PIDs, runtime mode, SQL container, worker state. |
 | `restore`, `build`, `clean`, `rebuild` | Solution-wide .NET commands. |
-| `build-ui`, `watch-ui` | UI asset scaffold (npm pipeline TODO). |
+| `build-ui` | Compile Management UI CSS once (Tailwind standalone CLI). |
+| `watch-ui` | Same compile in watch mode; optional, run in a second terminal. |
 
 Examples:
 
@@ -57,11 +58,55 @@ Examples:
 .\scripts\Manage.ps1 -Area dev -Command rebuild
 ```
 
+## Management UI CSS
+
+`wwwroot/css/app.css` is **generated**. Never edit it by hand — the next `build-ui` overwrites it.
+
+| File | Role |
+|------|------|
+| `Apperture.Management.Ui.Client/styles/app.css` | Tailwind entry point and source-scan rules |
+| `Apperture.Management.Ui.Client/styles/theme.css` | Authored semantic light/dark tokens, `.btn*`, `.focus-ring`, nav rail |
+| `Apperture.Management.Ui.Client/wwwroot/css/management-ui-primitives.css` | Authored `ui-*` primitives (not compiled by Tailwind) |
+| `Apperture.Management.Ui.Client/wwwroot/css/app.css` | **Generated output** (committed) |
+
+```powershell
+.\scripts\Manage.ps1 -Area dev -Command build-ui     # one-shot compile
+.\scripts\Manage.ps1 -Area dev -Command watch-ui     # optional watcher
+```
+
+The pinned **Tailwind 4.1.8** standalone CLI is downloaded on first use to
+`scripts/.runtime/tailwind/<version>/` (gitignored) and verified against a SHA256 pinned in
+[`lib/Apperture.UiAssets.ps1`](lib/Apperture.UiAssets.ps1). There is no Node, npm, or `package.json`.
+
+Typical inner loop — Aspire in one terminal, the watcher in another:
+
+```powershell
+.\scripts\Manage.ps1 -Area dev -Command start -Mode aspire
+```
+
+```powershell
+.\scripts\Manage.ps1 -Area dev -Command watch-ui
+```
+
+Edit a `.razor` utility class or `styles/theme.css`, Tailwind rewrites `app.css`, then refresh the
+browser. `watch-ui` only rebuilds CSS — it never starts, stops, or restarts Aspire, the API, SQL, or the
+worker. Stop it with Ctrl+C.
+
+Because the generated file is committed, `dotnet build`, `publish`, and CI keep working without
+downloading Tailwind; the tradeoff is that you must run `build-ui` and commit the result whenever you
+change a source stylesheet or add a utility class. CI can adopt a staleness check later:
+
+```powershell
+.\scripts\Manage.ps1 -Area dev -Command build-ui
+git diff --exit-code -- "*wwwroot/css/app.css"
+```
+
 ### Deployment (`-Area deployment`, scaffolded)
 
 | Command | Description |
 |---------|-------------|
-| `status`, `restore`, `build`, `publish`, `deploy`, `build-ui` | Placeholder workflows for future packaging/deploy targets. |
+| `build-ui` | Same one-shot Management UI CSS compile as the dev command. |
+| `status`, `restore`, `build`, `publish`, `deploy` | Placeholder workflows for future packaging/deploy targets. |
 
 ```powershell
 .\scripts\Manage.ps1 -Area deployment -Command status

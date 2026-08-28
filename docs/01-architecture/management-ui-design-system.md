@@ -66,7 +66,7 @@ New work should **reuse** an existing layer before adding below it. Promote to t
 2. **Permission omission** — Hide sections or cards when forbidden; do not show locked placeholders on dashboard cards (Epic 45).
 3. **Composable, not generic** — Small Razor components with explicit parameters; no templating engine.
 4. **Incremental adoption** — New and touched pages use primitives; legacy markup remains valid until pilot epics.
-5. **Semantic tokens** — Visual roles use CSS variables in `wwwroot/css/app.css` (`:root` for light greige, `.dark` on `html` for cool black). Both themes are siblings: the same markup and `ui-*` classes; only token values change. Load `management-ui-primitives.css` after `app.css` in **Ui.Server** `_Layout.cshtml` (dev host) and WASM `wwwroot/index.html`.
+5. **Semantic tokens** — Visual roles use CSS variables authored in `styles/theme.css` and compiled into `wwwroot/css/app.css` (`:root` for light greige, `.dark` on `html` for cool black). Both themes are siblings: the same markup and `ui-*` classes; only token values change. Load `management-ui-primitives.css` after `app.css` in **Ui.Server** `_Layout.cshtml` (dev host) and WASM `wwwroot/index.html`.
 6. **No theme branching in markup** — Never add a `light` class, `dark:` utilities, or C# theme switches. `ThemeService` toggles `html.dark` only.
 7. **Catalog-driven evolution** — Record new or divergent UX in `.planning/management-ui/pattern-catalog.md`; fold stable rules back into this document.
 
@@ -509,8 +509,15 @@ The pilot stack is now ready for these follow-on epics, but none are implemented
 
 | File | Contents |
 |------|----------|
-| `wwwroot/css/app.css` | Tailwind v4 build + semantic theme tokens in `:root` and `.dark` |
-| `wwwroot/css/management-ui-primitives.css` | `ui-*` primitives referencing theme variables |
+| `styles/app.css` | **Source.** Tailwind v4 entry point and explicit `@source` scan rules |
+| `styles/theme.css` | **Source.** Semantic `:root` / `.dark` tokens, `.btn*`, `.focus-ring`, nav rail |
+| `wwwroot/css/app.css` | **Generated** by the pinned Tailwind 4.1.8 CLI — do not edit |
+| `wwwroot/css/management-ui-primitives.css` | Authored `ui-*` primitives referencing theme variables |
+
+Regenerate with `.\scripts\Manage.ps1 -Area dev -Command build-ui` (or `watch-ui` while developing).
+The generated file stays committed so `dotnet build`, publish, and CI never need Tailwind. See
+[scripts/README.md](../../scripts/README.md) for the workflow and
+[UIX-7 §2.1](../audits/uix7-visual-language-theme-overhaul.md) for the closure record.
 
 ### Token families (extend here, not in Razor)
 
@@ -527,7 +534,7 @@ The pilot stack is now ready for these follow-on epics, but none are implemented
 | Destructive | `--color-destructive`, `--color-destructive-fg` | Danger toolbar and buttons |
 | Buttons | `--color-btn-primary-*`, `--color-btn-secondary-*`, `--color-btn-primary-disabled-*` | `.btn-*` utilities |
 
-Do not add one-off hex colors in Razor; extend semantic tokens in `app.css` when a new **role** is needed in both themes.
+Do not add one-off hex colors in Razor; extend semantic tokens in `styles/theme.css` when a new **role** is needed in both themes, then run `build-ui`. Editing the generated `wwwroot/css/app.css` is lost on the next build.
 
 ## Theme overhaul status
 

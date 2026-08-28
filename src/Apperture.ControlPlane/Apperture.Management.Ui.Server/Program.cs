@@ -109,6 +109,7 @@ else
         await next();
     });
 }
+var isDevelopment = app.Environment.IsDevelopment();
 app.UseBlazorFrameworkFiles();
 app.UseStaticFiles(new StaticFileOptions
 {
@@ -118,6 +119,12 @@ app.UseStaticFiles(new StaticFileOptions
         // Hashes can change across rebuilds, and a cached boot manifest can request
         // a now-missing hashed asset => 404 => runtime fails to start.
         if (ctx.Context.Request.Path.StartsWithSegments("/_framework", StringComparison.OrdinalIgnoreCase))
+            ctx.Context.Response.Headers["Cache-Control"] = "no-store, max-age=0";
+
+        // Development only: the Tailwind watcher (watch-ui) rewrites css/app.css in
+        // place, and stylesheet URLs are unversioned, so a cached copy would survive
+        // a normal refresh. Production caching is unchanged.
+        if (isDevelopment && ctx.Context.Request.Path.StartsWithSegments("/css", StringComparison.OrdinalIgnoreCase))
             ctx.Context.Response.Headers["Cache-Control"] = "no-store, max-age=0";
     }
 });
