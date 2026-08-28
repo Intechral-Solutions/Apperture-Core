@@ -147,6 +147,11 @@ public sealed class OperatorCapabilitiesQueryService : IOperatorCapabilitiesQuer
                 ActionConstants.UserManage,
                 ResourceTypeConstants.User,
                 cancellationToken).ConfigureAwait(false);
+            var canManageCredentials = await EvaluateAsync(
+                actor,
+                ActionConstants.CredentialManage,
+                ResourceTypeConstants.User,
+                cancellationToken).ConfigureAwait(false);
 
             return new OperatorCapabilitiesDto(
                 canManageSchedules,
@@ -175,7 +180,8 @@ public sealed class OperatorCapabilitiesQueryService : IOperatorCapabilitiesQuer
                 canUpdateIntegrations,
                 canViewPlatformSettings,
                 canManagePlatformSettings,
-                canManageUsers);
+                canManageUsers,
+                canManageCredentials);
         }
         catch (OperationCanceledException ex)
         {

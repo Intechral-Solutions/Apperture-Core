@@ -24,6 +24,13 @@ public sealed class EntraAuthOptionsValidator : IValidateOptions<EntraAuthOption
         if (string.IsNullOrWhiteSpace(options.ClientSecret))
             return ValidateOptionsResult.Fail("Entra:ClientSecret is required when Entra auth is enabled (confidential client).");
 
+        if (!string.IsNullOrWhiteSpace(options.AuthenticationContextId)
+            && EntraAuthenticationContextId.TryNormalize(options.AuthenticationContextId) is null)
+        {
+            return ValidateOptionsResult.Fail(
+                "Entra:AuthenticationContextId must be a Microsoft authentication-context identifier (c1–c25) when set.");
+        }
+
         return ValidateOptionsResult.Success;
     }
 }

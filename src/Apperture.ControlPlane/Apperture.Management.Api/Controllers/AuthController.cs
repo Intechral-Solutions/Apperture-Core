@@ -42,6 +42,8 @@ public sealed class AuthController : ControllerBase
     private readonly BreakGlassAuthOptions _breakGlassOptions;
     private readonly EntraAuthOptions _entraOptions;
     private readonly IInstanceAuthUiPolicyRepository _authUiPolicyRepository;
+    private readonly IEntraPrimaryAuthenticationPolicy? _entraPrimaryPolicy;
+    private readonly IAuthenticationAssuranceEvaluator? _assuranceEvaluator;
 
     public AuthController(
         IUserRepository userRepository,
@@ -55,7 +57,9 @@ public sealed class AuthController : ControllerBase
         IOptions<LocalAuthOptions> localOptions,
         IOptions<BreakGlassAuthOptions> breakGlassOptions,
         IOptions<EntraAuthOptions> entraOptions,
-        IInstanceAuthUiPolicyRepository authUiPolicyRepository)
+        IInstanceAuthUiPolicyRepository authUiPolicyRepository,
+        IEntraPrimaryAuthenticationPolicy? entraPrimaryPolicy = null,
+        IAuthenticationAssuranceEvaluator? assuranceEvaluator = null)
     {
         _userRepository = userRepository;
         _localCredentialRepository = localCredentialRepository;
@@ -69,6 +73,8 @@ public sealed class AuthController : ControllerBase
         _breakGlassOptions = breakGlassOptions.Value;
         _entraOptions = entraOptions.Value;
         _authUiPolicyRepository = authUiPolicyRepository;
+        _entraPrimaryPolicy = entraPrimaryPolicy;
+        _assuranceEvaluator = assuranceEvaluator;
     }
 
     /// <summary>Merged anonymous-safe sign-in capabilities and chooser policy for the management UI.</summary>
@@ -133,6 +139,12 @@ public sealed class AuthController : ControllerBase
         // format on first paint instead of after a second request.
         var preferences = await _userPreferences.GetAsync(uid, cancellationToken);
         var deferred = AccountMeSnapshotBuilder.BuildDeferredFeatures();
+        var presentation = _entraPrimaryPolicy is null
+            ? null
+            : await _entraPrimaryPolicy.DescribeAsync(user, credential, cancellationToken);
+        var assurance = _assuranceEvaluator?.Evaluate(User) ?? AuthenticationAssurance.None;
+        var strongConfigured = EntraConfigurationState.IsUsable(_entraOptions)
+            && EntraAuthenticationContextId.TryNormalize(_entraOptions.AuthenticationContextId) is not null;
         return Ok(new MeResponse(
             user.Id.Value,
             user.DisplayName,
@@ -151,11 +163,13 @@ public sealed class AuthController : ControllerBase
                     deferred.NotificationSubscriptionsDeferred,
                     deferred.Message),
             user.DisplayTimeZoneId,
-            // Carried on the session response so the shell can paint the avatar on first render
-            // without a second round trip.
             AccountAvatarDtoMapper.ToDto(user.EffectiveAvatar),
             preferences?.TimeFormat.ToString(),
-            preferences?.Appearance.ToString()));
+            preferences?.Appearance.ToString(),
+            presentation?.EntraAssociationStatus,
+            presentation?.LocalSignInPolicy,
+            assurance.RequirementSatisfied && assurance.IsRecent,
+            strongConfigured));
     }
 
     /// <summary>
@@ -503,7 +517,11 @@ public sealed record MeResponse(
     /// <summary>Stored clock preference (<c>System</c>, <c>Hour12</c>, <c>Hour24</c>).</summary>
     string? TimeFormat = null,
     /// <summary>Stored appearance preference (<c>System</c>, <c>Light</c>, <c>Dark</c>); null when unset.</summary>
-    string? Appearance = null);
+    string? Appearance = null,
+    string? EntraAssociationStatus = null,
+    string? LocalSignInPolicy = null,
+    bool HasRecentStrongAuthentication = false,
+    bool StrongAuthenticationConfigured = false);
 
 public sealed record AccountIdentityLinkDto(
     string Source,

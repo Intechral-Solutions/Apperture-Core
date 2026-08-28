@@ -18,12 +18,18 @@ public sealed class UsersController : ControllerBase
     private readonly IUserManagementService _userManagement;
     private readonly ILocalCredentialRepository _localCredentialRepository;
     private readonly IRoleProvider _roleProvider;
+    private readonly IEntraPrimaryAuthenticationPolicy? _entraPrimaryPolicy;
 
-    public UsersController(IUserManagementService userManagement, ILocalCredentialRepository localCredentialRepository, IRoleProvider roleProvider)
+    public UsersController(
+        IUserManagementService userManagement,
+        ILocalCredentialRepository localCredentialRepository,
+        IRoleProvider roleProvider,
+        IEntraPrimaryAuthenticationPolicy? entraPrimaryPolicy = null)
     {
         _userManagement = userManagement;
         _localCredentialRepository = localCredentialRepository;
         _roleProvider = roleProvider;
+        _entraPrimaryPolicy = entraPrimaryPolicy;
     }
 
     /// <summary>
@@ -67,13 +73,18 @@ public sealed class UsersController : ControllerBase
                 return NotFound();
             bool? hasLocalCredential = null;
             bool? isCredentialDisabled = null;
+            LocalCredentialData? cred = null;
             if (user.IdentityLinks.Any(l => l.Source == IdentitySource.Local))
             {
-                var cred = await _localCredentialRepository.GetByUserIdAsync(user.Id, cancellationToken);
+                cred = await _localCredentialRepository.GetByUserIdAsync(user.Id, cancellationToken);
                 hasLocalCredential = cred is not null;
                 isCredentialDisabled = cred?.IsDisabled;
             }
-            return Ok(ToDetailDto(user, hasLocalCredential, isCredentialDisabled));
+
+            var presentation = _entraPrimaryPolicy is null
+                ? null
+                : await _entraPrimaryPolicy.DescribeAsync(user, cred, cancellationToken);
+            return Ok(ToDetailDto(user, hasLocalCredential, isCredentialDisabled, presentation));
         }
         catch (UnauthorizedAccessException)
         {
@@ -346,6 +357,7 @@ public sealed class UsersController : ControllerBase
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
     public async Task<IActionResult> SetLocalCredentialDisabled(
         string id,
         [FromBody] SetLocalCredentialDisabledRequest request,
@@ -359,6 +371,13 @@ public sealed class UsersController : ControllerBase
         catch (UnauthorizedAccessException)
         {
             return Forbid();
+        }
+        catch (StrongAuthenticationException ex)
+        {
+            var status = ex.Code == StrongAuthenticationErrorCodes.NotConfigured
+                ? StatusCodes.Status409Conflict
+                : StatusCodes.Status403Forbidden;
+            return StatusCode(status, new IdentityLinkErrorResponse(ex.Message, ex.Code));
         }
         catch (InvalidOperationException ex)
         {
@@ -380,7 +399,11 @@ public sealed class UsersController : ControllerBase
             user.AssignedRoleIds.Select(r => r.Value).ToArray());
     }
 
-    private static UserDetailDto ToDetailDto(User user, bool? hasLocalCredential, bool? isCredentialDisabled)
+    private static UserDetailDto ToDetailDto(
+        User user,
+        bool? hasLocalCredential,
+        bool? isCredentialDisabled,
+        LocalAuthenticationPresentation? presentation = null)
     {
         return new UserDetailDto(
             user.Id.Value,
@@ -388,7 +411,10 @@ public sealed class UsersController : ControllerBase
             user.IdentityLinks.Select(l => new IdentityLinkDto(l.Source.ToString(), l.ExternalId, l.LastAuthenticatedAt)).ToList(),
             user.AssignedRoleIds.Select(r => r.Value).ToList(),
             hasLocalCredential,
-            isCredentialDisabled);
+            isCredentialDisabled,
+            presentation?.EntraAssociationStatus,
+            presentation?.LocalSignInPolicy,
+            presentation?.RecoverySafeguardActive ?? false);
     }
 }
 
@@ -407,7 +433,10 @@ public sealed record UserDetailDto(
     IReadOnlyList<IdentityLinkDto> IdentityLinks,
     IReadOnlyList<string> RoleIds,
     bool? HasLocalCredential,
-    bool? IsCredentialDisabled);
+    bool? IsCredentialDisabled,
+    string? EntraAssociationStatus = null,
+    string? LocalSignInPolicy = null,
+    bool LocalRecoverySafeguard = false);
 
 public sealed record IdentityLinkDto(string Source, string ExternalId, DateTimeOffset? LastAuthenticatedAt);
 

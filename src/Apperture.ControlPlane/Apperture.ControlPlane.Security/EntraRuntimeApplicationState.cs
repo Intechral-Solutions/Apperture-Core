@@ -25,6 +25,11 @@ public static class EntraRuntimeApplicationState
             return true;
         if (string.IsNullOrWhiteSpace(effective.ClientSecret))
             return true;
+        if (!string.Equals(
+                (active.AuthenticationContextId ?? "").Trim(),
+                (effective.AuthenticationContextId ?? "").Trim(),
+                StringComparison.OrdinalIgnoreCase))
+            return true;
         return false;
     }
 

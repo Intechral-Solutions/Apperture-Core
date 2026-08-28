@@ -5,7 +5,8 @@ namespace Apperture.Management.Host;
 
 /// <summary>
 /// Cookie is the application session scheme. Interactive Microsoft navigation is started only by
-/// explicit <c>/signin</c> and <c>/signin/link</c> challenges, not by API authorization failures.
+/// explicit <c>/signin</c>, <c>/signin/link</c>, and <c>/signin/step-up</c> challenges, not by
+/// API authorization failures.
 /// </summary>
 internal sealed class EntraAuthenticationOptionsConfigurer : IConfigureOptions<AuthenticationOptions>
 {

@@ -1,12 +1,15 @@
 using System.Security.Claims;
+using System.Text.Json;
 using Apperture.ControlPlane.Security;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Audit;
 using Apperture.Core.Domain.Identity;
 using Apperture.Shared.Kernel;
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 
@@ -60,19 +63,27 @@ internal sealed class EntraOpenIdConnectOptionsConfigurer : IConfigureNamedOptio
             options.Scope.Add("profile");
         }
 
-        // Identity is oid + tid only. sub is kept for diagnostics; email, UPN, amr, acr and auth_time
-        // are deliberately not mapped, so they cannot leak into identity or authorization decisions.
         // Identity is oid + tid only. Keeping the token's own claim names (instead of the legacy SOAP URI
         // translation) means oid, tid and sub arrive verbatim from the id_token and identity never depends
-        // on a mapped alias. The userinfo endpoint is not called, so no claim actions are needed; email,
-        // UPN, preferred_username, amr, acr and auth_time are never read for identity or authorization.
+        // on a mapped alias. The userinfo endpoint is not called. Email, UPN, preferred_username, amr, acr
+        // and auth_time are never read for identity. Step-up reads acrs only to verify the requested
+        // authentication context; that is not an identity key and is not treated as a specific MFA method.
         options.MapInboundClaims = false;
 
         options.Events = new OpenIdConnectEvents
         {
+            OnRedirectToIdentityProvider = OnRedirectToIdentityProvider,
             OnTokenValidated = OnTokenValidatedAsync,
             OnRemoteFailure = ctx =>
             {
+                if (EntraStepUpFlowConstants.IsStepUpPurpose(ctx.Properties))
+                {
+                    var returnPath = EntraStepUpFlowConstants.GetReturnPath(ctx.Properties);
+                    ctx.Response.Redirect(ManagementUiRedirects.Build(_configuration, returnPath, "error", "oidc"));
+                    ctx.HandleResponse();
+                    return Task.CompletedTask;
+                }
+
                 var env = ctx.HttpContext.RequestServices.GetService<IHostEnvironment>();
                 if (env?.IsDevelopment() == true)
                 {
@@ -90,9 +101,36 @@ internal sealed class EntraOpenIdConnectOptionsConfigurer : IConfigureNamedOptio
         };
     }
 
+    private Task OnRedirectToIdentityProvider(RedirectContext ctx)
+    {
+        if (!EntraStepUpFlowConstants.IsStepUpPurpose(ctx.Properties))
+            return Task.CompletedTask;
+
+        var requested = EntraAuthenticationContextId.TryNormalize(
+            EntraStepUpFlowConstants.GetRequestedContextId(ctx.Properties)
+            ?? _entra.CurrentValue.AuthenticationContextId);
+        if (requested is null)
+            return Task.CompletedTask;
+
+        var claims = JsonSerializer.Serialize(new
+        {
+            id_token = new
+            {
+                acrs = new
+                {
+                    essential = true,
+                    values = new[] { requested }
+                }
+            }
+        });
+        ctx.ProtocolMessage.SetParameter("claims", claims);
+        ctx.ProtocolMessage.Prompt = "login";
+        return Task.CompletedTask;
+    }
+
     /// <summary>
     /// Association runs before the handler finalizes sign-in. A rejected identity therefore never receives
-    /// an application cookie, and a failed self-link leaves the operator's local session untouched.
+    /// an application cookie, and a failed self-link or step-up leaves the operator's existing session untouched.
     /// </summary>
     private async Task OnTokenValidatedAsync(TokenValidatedContext ctx)
     {
@@ -100,20 +138,26 @@ internal sealed class EntraOpenIdConnectOptionsConfigurer : IConfigureNamedOptio
         identity?.AddClaim(new Claim(ClaimsPrincipalToActorMapper.IdentitySourceClaimType, "Entra"));
 
         var isLinking = EntraLinkFlowConstants.IsLinkPurpose(ctx.Properties);
-        var association = ctx.HttpContext.RequestServices.GetService<IEntraIdentityAssociationService>();
+        var isStepUp = EntraStepUpFlowConstants.IsStepUpPurpose(ctx.Properties);
         var objectId = EntraTokenClaims.TryGetObjectId(ctx.Principal);
         var tenantId = EntraTokenClaims.TryGetTenantId(ctx.Principal);
 
-        if (association is null)
+        if (objectId is null || tenantId is null)
         {
-            // Nothing can be verified without the association service; refuse rather than issue a cookie.
-            FailWithRedirect(ctx, isLinking, EntraLinkFailureCodes.NotConfigured);
+            FailWithRedirect(ctx, isLinking, isStepUp, EntraLinkFailureCodes.InvalidIdentity);
             return;
         }
 
-        if (objectId is null || tenantId is null)
+        if (isStepUp)
         {
-            FailWithRedirect(ctx, isLinking, EntraLinkFailureCodes.InvalidIdentity);
+            await CompleteStepUpAsync(ctx, objectId, tenantId);
+            return;
+        }
+
+        var association = ctx.HttpContext.RequestServices.GetService<IEntraIdentityAssociationService>();
+        if (association is null)
+        {
+            FailWithRedirect(ctx, isLinking, isStepUp: false, EntraLinkFailureCodes.NotConfigured);
             return;
         }
 
@@ -128,7 +172,7 @@ internal sealed class EntraOpenIdConnectOptionsConfigurer : IConfigureNamedOptio
             var initiatingUserId = EntraLinkFlowConstants.GetInitiatingUserId(ctx.Properties);
             if (string.IsNullOrEmpty(initiatingUserId))
             {
-                FailWithRedirect(ctx, isLinking: true, EntraLinkFailureCodes.UserNotFound);
+                FailWithRedirect(ctx, isLinking: true, isStepUp: false, EntraLinkFailureCodes.UserNotFound);
                 return;
             }
 
@@ -144,7 +188,7 @@ internal sealed class EntraOpenIdConnectOptionsConfigurer : IConfigureNamedOptio
 
         if (!outcome.Succeeded)
         {
-            FailWithRedirect(ctx, isLinking, outcome.FailureCode ?? EntraLinkFailureCodes.AccountNotLinked);
+            FailWithRedirect(ctx, isLinking, isStepUp: false, outcome.FailureCode ?? EntraLinkFailureCodes.AccountNotLinked);
             return;
         }
 
@@ -165,11 +209,78 @@ internal sealed class EntraOpenIdConnectOptionsConfigurer : IConfigureNamedOptio
         }
     }
 
-    private void FailWithRedirect(TokenValidatedContext ctx, bool isLinking, string failureCode)
+    private async Task CompleteStepUpAsync(TokenValidatedContext ctx, string objectId, string tenantId)
     {
-        var target = isLinking
-            ? ManagementUiRedirects.Build(_configuration, EntraLinkFlowConstants.AccountSecurityPath, "error", failureCode)
-            : ManagementUiRedirects.Build(_configuration, EntraLinkFlowConstants.LoginPath, "error", failureCode);
+        var stepUp = ctx.HttpContext.RequestServices.GetService<IEntraStepUpService>();
+        var initiatingUserId = EntraLinkFlowConstants.GetInitiatingUserId(ctx.Properties);
+        var requested = EntraAuthenticationContextId.TryNormalize(
+            EntraStepUpFlowConstants.GetRequestedContextId(ctx.Properties)
+            ?? _entra.CurrentValue.AuthenticationContextId);
+
+        if (stepUp is null || string.IsNullOrEmpty(initiatingUserId) || requested is null)
+        {
+            FailWithRedirect(ctx, isLinking: false, isStepUp: true, EntraStepUpFailureCodes.NotConfigured);
+            return;
+        }
+
+        var env = ctx.HttpContext.RequestServices.GetService<IHostEnvironment>();
+        var developmentSimulated = env?.IsDevelopment() == true && _entra.CurrentValue.DevelopmentSimulateAuthenticationContext;
+        var returned = EntraAuthenticationContextEvidence.ReadReturnedContexts(ctx.Principal);
+        var assertion = new EntraIdentityAssertion(objectId, tenantId, EntraTokenClaims.TryGetSubject(ctx.Principal));
+        var outcome = await stepUp.CompleteAsync(
+            new UserId(initiatingUserId),
+            assertion,
+            requested,
+            returned,
+            developmentSimulated,
+            ctx.HttpContext.RequestAborted);
+
+        if (!outcome.Succeeded)
+        {
+            FailWithRedirect(ctx, isLinking: false, isStepUp: true, outcome.FailureCode ?? EntraStepUpFailureCodes.AuthenticationContextNotSatisfied);
+            return;
+        }
+
+        var existing = await ctx.HttpContext.AuthenticateAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+        if (existing.Succeeded != true || existing.Principal?.Identity is not ClaimsIdentity cookieIdentity)
+        {
+            FailWithRedirect(ctx, isLinking: false, isStepUp: true, EntraStepUpFailureCodes.UserNotFound);
+            return;
+        }
+
+        var merged = (ClaimsIdentity)cookieIdentity.Clone();
+        AuthenticationAssuranceClaims.Replace(
+            merged,
+            AuthenticationAssuranceClaims.EntraAuthenticationContextMechanism,
+            DateTimeOffset.UtcNow,
+            requested,
+            developmentSimulated);
+        await ctx.HttpContext.SignInAsync(
+            CookieAuthenticationDefaults.AuthenticationScheme,
+            new ClaimsPrincipal(merged),
+            existing.Properties);
+
+        var returnPath = EntraStepUpFlowConstants.GetReturnPath(ctx.Properties);
+        ctx.Response.Redirect(ManagementUiRedirects.Build(_configuration, returnPath, "steppedUp", "1"));
+        ctx.HandleResponse();
+    }
+
+    private void FailWithRedirect(TokenValidatedContext ctx, bool isLinking, bool isStepUp, string failureCode)
+    {
+        string target;
+        if (isStepUp)
+        {
+            var returnPath = EntraStepUpFlowConstants.GetReturnPath(ctx.Properties);
+            target = ManagementUiRedirects.Build(_configuration, returnPath, "error", failureCode);
+        }
+        else if (isLinking)
+        {
+            target = ManagementUiRedirects.Build(_configuration, EntraLinkFlowConstants.AccountSecurityPath, "error", failureCode);
+        }
+        else
+        {
+            target = ManagementUiRedirects.Build(_configuration, EntraLinkFlowConstants.LoginPath, "error", failureCode);
+        }
 
         ctx.Fail($"entra_association_rejected:{failureCode}");
         ctx.Response.Redirect(target);

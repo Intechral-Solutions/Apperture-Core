@@ -71,6 +71,7 @@ public interface IUserManagementService
 
     /// <summary>
     /// Enables or disables the local credential for a user. User must have a Local identity link. Requires credential.manage.
+    /// Re-enabling (disabled = false) also requires recent strong authentication.
     /// </summary>
     ValueTask SetLocalCredentialDisabledAsync(UserId userId, bool disabled, CancellationToken cancellationToken = default);
 }

@@ -38,6 +38,7 @@ public sealed class EntraSignInChallengeTests
     [InlineData("http://localhost:9001/users")]
     [InlineData("/signin")]
     [InlineData("/signin/link")]
+    [InlineData("/signin/step-up")]
     [InlineData("/signin-oidc")]
     [InlineData("/signout")]
     [InlineData("/signin?returnUrl=/dashboard")]

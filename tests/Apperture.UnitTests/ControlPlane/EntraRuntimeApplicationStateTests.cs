@@ -51,4 +51,28 @@ public sealed class EntraRuntimeApplicationStateTests
         EntraRuntimeApplicationState.MayRequireRestartToApplyChanges(active, new EntraAuthOptions { Enabled = false })
             .Should().BeTrue();
     }
+
+    [Fact]
+    public void MayRequireRestart_WhenAuthenticationContextIdDiffers_IsTrue()
+    {
+        var active = new EntraInstanceRegistration
+        {
+            Enabled = true,
+            Authority = "https://login.microsoftonline.com/tenant",
+            ClientId = "client-id",
+            CallbackPath = "/signin-oidc",
+            AuthenticationContextId = "c1"
+        };
+        var effective = new EntraAuthOptions
+        {
+            Enabled = true,
+            Authority = "https://login.microsoftonline.com/tenant",
+            ClientId = "client-id",
+            CallbackPath = "/signin-oidc",
+            ClientSecret = "set",
+            AuthenticationContextId = null
+        };
+
+        EntraRuntimeApplicationState.MayRequireRestartToApplyChanges(active, effective).Should().BeTrue();
+    }
 }

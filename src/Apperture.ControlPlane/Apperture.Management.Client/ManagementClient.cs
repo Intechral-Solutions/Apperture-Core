@@ -1374,6 +1374,29 @@ public sealed class ManagementClient : IManagementClient
         throw new HttpRequestException(message, null, response.StatusCode);
     }
 
+    public async Task SetLocalCredentialDisabledAsync(string userId, bool isDisabled, CancellationToken cancellationToken = default)
+    {
+        var response = await _http.PatchAsJsonAsync(
+            $"users/{Uri.EscapeDataString(userId)}/local-credential",
+            new { isDisabled },
+            cancellationToken).ConfigureAwait(false);
+        if (response.IsSuccessStatusCode)
+            return;
+
+        IdentityLinkErrorResponse? error = null;
+        try
+        {
+            error = await response.Content.ReadFromJsonAsync<IdentityLinkErrorResponse>(cancellationToken).ConfigureAwait(false);
+        }
+        catch (JsonException)
+        {
+            /* fall through */
+        }
+
+        var message = error?.Message ?? "Could not update local sign-in.";
+        throw new HttpRequestException(message, null, response.StatusCode);
+    }
+
     private static async Task<string?> TryGetMessageFromResponseAsync(HttpResponseMessage response, CancellationToken cancellationToken)
     {
         try

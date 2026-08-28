@@ -372,6 +372,26 @@ public sealed class Aup1AccountUiSurfaceTests
     }
 
     [Fact]
+    public void The_security_page_does_not_let_ordinary_users_reenable_local_sign_in()
+    {
+        var security = ReadRepoFile($"{ClientRoot}/Pages/Account/AccountSecurity.razor");
+        security.Should().Contain("Primary sign-in method");
+        security.Should().Contain("The password itself has not been deleted");
+        security.Should().NotContain("Enable local sign-in");
+        security.Should().NotContain("Enable local login");
+    }
+
+    [Fact]
+    public void User_detail_gates_enable_local_sign_in_on_credential_manage()
+    {
+        var detail = ReadRepoFile($"{ClientRoot}/Pages/Config/Governance/UserDetail.razor");
+        detail.Should().Contain("CanManageCredentials");
+        detail.Should().Contain("Enable local sign-in");
+        detail.Should().Contain("signin/step-up");
+        detail.Should().Contain("Strong authentication is not configured");
+    }
+
+    [Fact]
     public void Technical_identifiers_are_kept_in_progressive_disclosure_rather_than_as_primary_content()
     {
         var profile = ReadRepoFile($"{ClientRoot}/Pages/Account/AccountProfile.razor");

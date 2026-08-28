@@ -62,7 +62,9 @@ public interface IUserRepository
         CancellationToken cancellationToken = default)
     {
         var user = await GetByIdentityLinkAsync(source, externalId, cancellationToken);
-        var link = user?.IdentityLinks.FirstOrDefault(l => l.Source == source && l.ExternalId == externalId);
+        var link = user?.IdentityLinks.FirstOrDefault(l =>
+            l.Source == source
+            && string.Equals(l.ExternalId, externalId, StringComparison.OrdinalIgnoreCase));
         return user is null || link is null ? null : new IdentityLinkOwner(user.Id, link);
     }
 

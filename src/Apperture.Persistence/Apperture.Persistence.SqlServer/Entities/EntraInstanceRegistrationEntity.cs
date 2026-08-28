@@ -28,6 +28,8 @@ public sealed class EntraInstanceRegistrationEntity
 
     public string? AzureTenantId { get; set; }
 
+    public string? AuthenticationContextId { get; set; }
+
     public int OpenIdConfigurationStatus { get; set; }
 
     public DateTimeOffset? LastOpenIdValidationUtc { get; set; }

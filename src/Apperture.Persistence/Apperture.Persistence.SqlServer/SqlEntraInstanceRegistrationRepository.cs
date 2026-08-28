@@ -56,6 +56,7 @@ public sealed class SqlEntraInstanceRegistrationRepository : IEntraInstanceRegis
             CreatedUtc = now,
             UpdatedUtc = now,
             AzureTenantId = registration.AzureTenantId,
+            AuthenticationContextId = registration.AuthenticationContextId,
             OpenIdConfigurationStatus = (int)openIdStatus,
             LastOpenIdValidationUtc = registration.LastOpenIdValidationUtc,
             LastOpenIdValidationSummary = registration.LastOpenIdValidationSummary,
@@ -88,6 +89,9 @@ public sealed class SqlEntraInstanceRegistrationRepository : IEntraInstanceRegis
         e.AzureTenantId = string.IsNullOrWhiteSpace(registration.AzureTenantId)
             ? null
             : registration.AzureTenantId.Trim();
+        e.AuthenticationContextId = string.IsNullOrWhiteSpace(registration.AuthenticationContextId)
+            ? null
+            : registration.AuthenticationContextId.Trim();
         e.Enabled = registration.Enabled;
         if (!registration.Enabled && e.IsActive)
             e.IsActive = false;
@@ -187,6 +191,7 @@ public sealed class SqlEntraInstanceRegistrationRepository : IEntraInstanceRegis
             CreatedUtc = e.CreatedUtc,
             UpdatedUtc = e.UpdatedUtc,
             AzureTenantId = e.AzureTenantId,
+            AuthenticationContextId = e.AuthenticationContextId,
             OpenIdConfigurationStatus = (OpenIdConfigurationStatus)e.OpenIdConfigurationStatus,
             LastOpenIdValidationUtc = e.LastOpenIdValidationUtc,
             LastOpenIdValidationSummary = e.LastOpenIdValidationSummary,

@@ -39,6 +39,9 @@ public sealed class EntraAuthOptionsDatabasePostConfigure : IPostConfigureOption
             options.ClientId = active.ClientId;
             if (!string.IsNullOrWhiteSpace(active.AzureTenantId))
                 options.AzureTenantId = active.AzureTenantId;
+            options.AuthenticationContextId = string.IsNullOrWhiteSpace(active.AuthenticationContextId)
+                ? null
+                : active.AuthenticationContextId.Trim();
             if (!string.IsNullOrWhiteSpace(active.CallbackPath))
                 options.CallbackPath = active.CallbackPath!;
 

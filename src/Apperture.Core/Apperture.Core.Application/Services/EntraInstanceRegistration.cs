@@ -37,6 +37,12 @@ public sealed class EntraInstanceRegistration
     /// <summary>Optional Azure AD tenant id (directory id) for Graph and issuer checks.</summary>
     public string? AzureTenantId { get; init; }
 
+    /// <summary>
+    /// Optional Microsoft Entra Conditional Access authentication-context identifier (<c>c1</c>–<c>c25</c>)
+    /// used for Apperture strong-authentication step-up.
+    /// </summary>
+    public string? AuthenticationContextId { get; init; }
+
     public OpenIdConfigurationStatus OpenIdConfigurationStatus { get; init; }
 
     public DateTimeOffset? LastOpenIdValidationUtc { get; init; }

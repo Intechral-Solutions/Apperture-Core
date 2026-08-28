@@ -64,16 +64,23 @@
                                             <span class="font-medium text-heading">@FormatSignInSource(link.Source)</span>
                                             <span class="text-xs text-muted">@link.DisplayLabel</span>
                                         </div>
-                                        @if (link.LastAuthenticatedAtUtc is not null)
+                                        @if (IsEntra(link.Source))
+                                        {
+                                            <p class="mt-1 text-xs text-muted">
+                                                @if (link.LastAuthenticatedAtUtc is not null)
+                                                {
+                                                    <span>Connected · Primary sign-in method. Last used <TimestampDisplay Value="link.LastAuthenticatedAtUtc" CssClass="text-xs text-muted" /></span>
+                                                }
+                                                else
+                                                {
+                                                    <span>Waiting for your first sign-in with this Microsoft account.</span>
+                                                }
+                                            </p>
+                                        }
+                                        else if (link.LastAuthenticatedAtUtc is not null)
                                         {
                                             <p class="mt-1 text-xs text-muted">
                                                 Last used <TimestampDisplay Value="link.LastAuthenticatedAtUtc" CssClass="text-xs text-muted" />
-                                            </p>
-                                        }
-                                        else if (IsEntra(link.Source))
-                                        {
-                                            <p class="mt-1 text-xs text-muted">
-                                                Waiting for your first sign-in with this Microsoft account.
                                             </p>
                                         }
                                     </li>
@@ -85,8 +92,9 @@
                         {
                             <div class="mt-4 border-t border-default pt-3">
                                 <p class="text-sm text-muted">
-                                    Connect your Microsoft work account so you can sign in with it. Your existing
-                                    username and password keep working.
+                                    Connect your Microsoft work account so you can sign in with it. After it is
+                                    connected, Microsoft Entra becomes your primary sign-in method and local
+                                    password sign-in is disabled. Your password is kept for administrator recovery.
                                 </p>
                                 <button type="button"
                                         class="btn btn-secondary mt-2"
@@ -100,9 +108,9 @@
 
                 <section class="ui-settings-card" aria-labelledby="password-heading">
                     <div class="ui-settings-card__header">
-                        <h2 id="password-heading" class="ui-settings-card__title">Password</h2>
+                        <h2 id="password-heading" class="ui-settings-card__title">Local password</h2>
                         <p class="ui-settings-card__help">
-                            Local credential: <span class="text-body">@FormatCredentialStatus(_me.LocalCredentialStatus)</span>
+                            @FormatLocalPasswordHelp(_me)
                         </p>
                     </div>
                     <div class="ui-settings-card__body pt-3">
@@ -244,7 +252,14 @@
         if (parameters["linked"] == "1")
         {
             _linkMessageKind = PageMessageKind.Info;
-            _linkMessage = "Your Microsoft account is connected. You can now sign in with it.";
+            _linkMessage = "Your Microsoft account is connected. It is now your primary sign-in method.";
+            return;
+        }
+
+        if (parameters["steppedUp"] == "1")
+        {
+            _linkMessageKind = PageMessageKind.Info;
+            _linkMessage = "Strong authentication completed. You can continue with the administrator action.";
             return;
         }
 
@@ -258,6 +273,8 @@
             "collision" => "That Microsoft account is already connected to a different Apperture user. Nothing was changed.",
             "already_linked" => "This account already has a Microsoft account connected. Ask an administrator to remove it first.",
             "tenant_mismatch" => "That Microsoft account belongs to a different directory than the one this instance trusts.",
+            "identity_mismatch" => "The Microsoft account that completed step-up is not the signed-in user.",
+            "authentication_context_not_satisfied" => "Microsoft did not report the configured authentication context.",
             "not_configured" => "Microsoft sign-in is not configured for this instance.",
             "invalid_identity" => "Microsoft did not return the directory identifiers Apperture requires.",
             _ => "Connecting your Microsoft account did not complete. You are still signed in with your existing method."
@@ -332,15 +349,26 @@
 
     private static string FormatCredentialStatus(string status) => status switch
     {
-        "active" => "Active",
+        "active" => "Enabled",
         "disabled" => "Disabled",
         "none" => "Not configured",
         _ => status
     };
 
+    private static string FormatLocalPasswordHelp(MeResponse me)
+    {
+        if (me.LocalSignInPolicy == "recovery_safeguard")
+            return "Enabled for emergency platform recovery. This local credential is temporarily retained because no independent emergency administrator has been configured yet.";
+        if (me.LocalSignInPolicy == "disabled" || me.LocalCredentialStatus == "disabled")
+            return "Disabled. Your local password sign-in is disabled because your Microsoft account is connected. A Platform Administrator can restore local authentication for account recovery. The password itself has not been deleted.";
+        if (me.LocalCredentialStatus == "active")
+            return "Enabled. You can sign in with your local username and password.";
+        return "Not configured.";
+    }
+
     private static string PasswordChangeUnavailableMessage(string status) => status switch
     {
-        "disabled" => "Local sign-in is disabled for your account. Contact an administrator to re-enable it or reset your password.",
+        "disabled" => "Local password sign-in is disabled because your Microsoft account is connected. The password has not been deleted. A Platform Administrator can restore local authentication for account recovery.",
         "none" => "This account does not have a local password. Sign in with your organizational identity, or ask an administrator to set a local password.",
         _ => "Password change is not available for your account."
     };

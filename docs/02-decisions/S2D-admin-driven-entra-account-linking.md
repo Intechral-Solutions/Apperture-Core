@@ -29,7 +29,7 @@ Self-service linking is no longer deferred. IAM-1 keeps everything above and add
 - **`GET /signin/link`** on Management.Host starts a linking challenge from an already authenticated local session, carrying the initiating platform user id in `AuthenticationProperties`. **Connect Microsoft account** on `/account/security` drives it.
 - An admin association created from the directory picker or a pasted object id stays **pending** (`LastAuthenticatedAt` null) until the operator's first successful Entra sign-in proves it.
 - Each platform user may hold **at most one** Entra link, and an Entra link only counts as an alternate sign-in path once it is proven and Entra is configured, so a pending link can never strand the last Platform Administrator.
-- Linking **never** disables local login. Automatic local-credential disablement remains deferred until recovery paths exist.
+- Linking **never** disables local login at association time. IAM-2 disables local password sign-in after the Entra identity is **proven**, with a temporary Platform Administrator recovery safeguard until IAM-3.
 - An Entra sign-in for an unknown object id now **fails the OIDC sign-in** and returns the operator to `/login?error=account_not_linked` instead of issuing a durable unlinked session. The `403` + `auth.unlinked_principal` behavior below remains as defense in depth.
 
 ## API error codes
@@ -57,7 +57,8 @@ Caller without `user.manage` → **403**.
 ## Deferred
 
 - Automatic broad JIT provisioning
-- Automatic local-login disablement after linking (needs recovery paths first)
+- Native Apperture MFA and the dedicated emergency Platform Administrator (IAM-3)
+- Contact email, verification, and password setup/reset modernization (IAM-4)
 - Avatar / profile photo sync
 - Notification subscription ownership UI
 

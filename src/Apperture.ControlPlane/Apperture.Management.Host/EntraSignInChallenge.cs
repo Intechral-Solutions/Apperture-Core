@@ -68,6 +68,7 @@ internal static class EntraSignInChallenge
 
         return trimmed.Equals("/signin", StringComparison.OrdinalIgnoreCase)
             || trimmed.Equals("/signin/link", StringComparison.OrdinalIgnoreCase)
+            || trimmed.Equals("/signin/step-up", StringComparison.OrdinalIgnoreCase)
             || trimmed.Equals("/signin-oidc", StringComparison.OrdinalIgnoreCase)
             || trimmed.Equals("/signout", StringComparison.OrdinalIgnoreCase);
     }

@@ -37,6 +37,9 @@ public sealed class EntraTenantListItemResponse
     [JsonPropertyName("azureTenantId")]
     public string? AzureTenantId { get; init; }
 
+    [JsonPropertyName("authenticationContextId")]
+    public string? AuthenticationContextId { get; init; }
+
     [JsonPropertyName("openIdConfigurationStatus")]
     public string OpenIdConfigurationStatus { get; init; } =
         nameof(Apperture.Core.Application.Services.OpenIdConfigurationStatus.NotValidated);
@@ -90,6 +93,9 @@ public sealed class CreateEntraTenantRequestBody
     [JsonPropertyName("azureTenantId")]
     public string? AzureTenantId { get; set; }
 
+    [JsonPropertyName("authenticationContextId")]
+    public string? AuthenticationContextId { get; set; }
+
     /// <summary>Write-only. Plaintext is stored in ISecretStore; never returned.</summary>
     [JsonPropertyName("clientSecret")]
     public string? ClientSecret { get; set; }
@@ -120,6 +126,9 @@ public sealed class UpdateEntraTenantRequestBody
 
     [JsonPropertyName("azureTenantId")]
     public string? AzureTenantId { get; set; }
+
+    [JsonPropertyName("authenticationContextId")]
+    public string? AuthenticationContextId { get; set; }
 
     /// <summary>Write-only. When set, replaces the stored secret. Omit or leave blank to keep the existing secret.</summary>
     [JsonPropertyName("clientSecret")]

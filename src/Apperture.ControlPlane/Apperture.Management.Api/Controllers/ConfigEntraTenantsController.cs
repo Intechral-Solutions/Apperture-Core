@@ -97,6 +97,9 @@ public sealed class ConfigEntraTenantsController : ControllerBase
         if (err is not null)
             return BadRequest(new { message = err });
 
+        if (!TryParseAuthenticationContextId(body.AuthenticationContextId, out var authenticationContextId, out var contextError))
+            return BadRequest(new { message = contextError });
+
         var draft = new EntraInstanceRegistration
         {
             DisplayName = body.DisplayName.Trim(),
@@ -106,7 +109,8 @@ public sealed class ConfigEntraTenantsController : ControllerBase
             CallbackPath = string.IsNullOrWhiteSpace(body.CallbackPath) ? null : body.CallbackPath.Trim(),
             Enabled = body.Enabled,
             IsActive = false,
-            AzureTenantId = string.IsNullOrWhiteSpace(body.AzureTenantId) ? null : body.AzureTenantId.Trim()
+            AzureTenantId = string.IsNullOrWhiteSpace(body.AzureTenantId) ? null : body.AzureTenantId.Trim(),
+            AuthenticationContextId = authenticationContextId
         };
 
         var created = await _repository.AddAsync(draft, cancellationToken);
@@ -141,6 +145,9 @@ public sealed class ConfigEntraTenantsController : ControllerBase
         if (err is not null)
             return BadRequest(new { message = err });
 
+        if (!TryParseAuthenticationContextId(body.AuthenticationContextId, out var authenticationContextId, out var contextError))
+            return BadRequest(new { message = contextError });
+
         if (string.IsNullOrWhiteSpace(body.RowVersionBase64))
             return BadRequest(new { message = "rowVersionBase64 is required." });
 
@@ -166,6 +173,7 @@ public sealed class ConfigEntraTenantsController : ControllerBase
             UsesDeploymentSecret = body.UsesDeploymentSecret,
             CallbackPath = string.IsNullOrWhiteSpace(body.CallbackPath) ? null : body.CallbackPath.Trim(),
             AzureTenantId = string.IsNullOrWhiteSpace(body.AzureTenantId) ? null : body.AzureTenantId.Trim(),
+            AuthenticationContextId = authenticationContextId,
             Enabled = body.Enabled,
             IsActive = existing.IsActive,
             RowVersion = existing.RowVersion,
@@ -479,6 +487,7 @@ public sealed class ConfigEntraTenantsController : ControllerBase
         o.Authority = active.Authority;
         o.ClientId = active.ClientId;
         o.Enabled = true;
+        o.AuthenticationContextId = active.AuthenticationContextId;
         if (!string.IsNullOrWhiteSpace(active.CallbackPath))
             o.CallbackPath = active.CallbackPath!;
         return o;
@@ -492,6 +501,7 @@ public sealed class ConfigEntraTenantsController : ControllerBase
             ClientId = source.ClientId,
             ClientSecret = source.ClientSecret,
             AzureTenantId = source.AzureTenantId,
+            AuthenticationContextId = source.AuthenticationContextId,
             CallbackPath = source.CallbackPath,
             Scopes = source.Scopes?.ToArray() ?? ["openid", "profile"]
         };
@@ -515,6 +525,7 @@ public sealed class ConfigEntraTenantsController : ControllerBase
             DeploymentSecretConfigured = e.UsesDeploymentSecret && deploymentSecretConfigured,
             ClientSecretConfigured = clientSecretConfigured,
             AzureTenantId = e.AzureTenantId,
+            AuthenticationContextId = e.AuthenticationContextId,
             OpenIdConfigurationStatus = e.OpenIdConfigurationStatus.ToString(),
             LastOpenIdValidationUtc = e.LastOpenIdValidationUtc,
             LastOpenIdValidationSummary = e.LastOpenIdValidationSummary,
@@ -525,6 +536,21 @@ public sealed class ConfigEntraTenantsController : ControllerBase
             LastDirectoryDiscoveryDetail = e.LastDirectoryDiscoveryDetail,
             RowVersionBase64 = e.RowVersion is { Length: > 0 } ? Convert.ToBase64String(e.RowVersion) : null
         };
+    }
+
+    private static bool TryParseAuthenticationContextId(string? raw, out string? normalized, out string? error)
+    {
+        normalized = null;
+        error = null;
+        if (string.IsNullOrWhiteSpace(raw))
+            return true;
+
+        normalized = EntraAuthenticationContextId.TryNormalize(raw);
+        if (normalized is not null)
+            return true;
+
+        error = "Authentication context identifier must be a Microsoft identifier of the form c1–c25.";
+        return false;
     }
 
     private bool DeploymentSecretPresent() =>

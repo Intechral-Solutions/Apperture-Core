@@ -43,4 +43,18 @@ public sealed class EntraAuthOptions
     /// Scopes to request (e.g. openid, profile).
     /// </summary>
     public string[] Scopes { get; set; } = ["openid", "profile"];
+
+    /// <summary>
+    /// Optional Microsoft Entra Conditional Access authentication-context identifier (<c>c1</c>–<c>c25</c>)
+    /// requested during strong-authentication step-up. Empty means step-up is not configured.
+    /// Satisfying this identifier is what Apperture trusts; it is not interpreted as a specific MFA method.
+    /// </summary>
+    public string? AuthenticationContextId { get; set; }
+
+    /// <summary>
+    /// Development-only: treat a completed Entra step-up as satisfying the configured authentication
+    /// context even when the id_token does not contain <c>acrs</c>. Ignored unless the host environment
+    /// is Development. Never enable this in production.
+    /// </summary>
+    public bool DevelopmentSimulateAuthenticationContext { get; set; }
 }

@@ -27,6 +27,7 @@ public sealed class UserManagementService : IUserManagementService
     private readonly LocalAuthOptions _localOptions;
     private readonly IEntraIdentityAssociationService? _entraAssociation;
     private readonly IOptionsMonitor<EntraAuthOptions>? _entraOptions;
+    private readonly IStrongAuthenticationGate? _strongAuthentication;
 
     public UserManagementService(
         IPrincipalContext principalContext,
@@ -40,10 +41,12 @@ public sealed class UserManagementService : IUserManagementService
         IAuditService audit,
         IOptions<LocalAuthOptions> localOptions,
         IEntraIdentityAssociationService? entraAssociation = null,
-        IOptionsMonitor<EntraAuthOptions>? entraOptions = null)
+        IOptionsMonitor<EntraAuthOptions>? entraOptions = null,
+        IStrongAuthenticationGate? strongAuthentication = null)
     {
         _entraAssociation = entraAssociation;
         _entraOptions = entraOptions;
+        _strongAuthentication = strongAuthentication;
         _principalContext = principalContext;
         _principalToUserResolver = principalToUserResolver;
         _auth = auth;
@@ -320,6 +323,31 @@ public sealed class UserManagementService : IUserManagementService
         if (cred is null)
             throw new InvalidOperationException("User has no local credential row; set a password first.");
 
+        if (!disabled)
+        {
+            if (_strongAuthentication is null)
+            {
+                throw new StrongAuthenticationException(
+                    StrongAuthenticationErrorCodes.NotConfigured,
+                    "Strong authentication is not available. Local sign-in cannot be re-enabled.");
+            }
+
+            try
+            {
+                await _strongAuthentication.RequireRecentStrongAuthenticationAsync(cancellationToken);
+            }
+            catch (StrongAuthenticationException ex)
+            {
+                await AppendAuditAsync(
+                    StrongAuthenticationAuditActionNames.AssuranceInsufficient,
+                    actorId,
+                    userId.Value,
+                    $"userId={userId.Value} code={ex.Code}",
+                    cancellationToken);
+                throw;
+            }
+        }
+
         if (disabled)
         {
             var platformAdminRoleId = new RoleId(BootstrapConstants.PlatformAdminRoleId);
@@ -333,7 +361,9 @@ public sealed class UserManagementService : IUserManagementService
         }
 
         await _localCredentialRepository.SetDisabledAsync(userId, disabled, cancellationToken);
-        var action = disabled ? "credential.disabled" : "credential.enabled";
+        var action = disabled
+            ? "credential.disabled"
+            : StrongAuthenticationAuditActionNames.LocalReenabledStrongAdmin;
         await AppendAuditAsync(action, actorId, userId.Value, $"userId={userId.Value} disabled={disabled}", cancellationToken);
     }
 

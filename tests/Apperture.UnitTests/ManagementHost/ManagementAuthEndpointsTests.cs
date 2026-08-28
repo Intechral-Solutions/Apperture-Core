@@ -114,6 +114,52 @@ public sealed class ManagementAuthEndpointsTests
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
         response.Headers.Location.Should().BeNull();
         capture.RedirectUri.Should().BeNull();
+        capture.IsStepUpPurpose.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Step_up_without_authentication_context_returns_409_without_oidc()
+    {
+        var capture = new RedirectCapture();
+        await using var host = await StartAsync(capture, entraEnabled: true, authenticationContextId: null);
+        using var client = Client(host);
+        client.DefaultRequestHeaders.Add("X-Test-Auth", "1");
+
+        var response = await client.GetAsync("/signin/step-up?returnUrl=%2Fconfig%2Fgovernance%2Fusers%2Fusr-1");
+
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        capture.RedirectUri.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Step_up_challenges_oidc_with_a_safe_return_url()
+    {
+        var capture = new RedirectCapture();
+        await using var host = await StartAsync(capture, entraEnabled: true, authenticationContextId: "c1");
+        using var client = Client(host);
+        client.DefaultRequestHeaders.Add("X-Test-Auth", "1");
+
+        var response = await client.GetAsync("/signin/step-up?returnUrl=%2Fconfig%2Fgovernance%2Fusers%2Fusr-1");
+
+        response.StatusCode.Should().Be(HttpStatusCode.Redirect);
+        response.Headers.Location!.ToString().Should().StartWith(IdpAuthorize);
+        capture.IsStepUpPurpose.Should().BeTrue();
+        capture.InitiatingUserId.Should().Be(LinkedUserId);
+        capture.RedirectUri.Should().Be("http://localhost:9001/config/governance/users/usr-1?steppedUp=1");
+        capture.ClaimsParameter.Should().Contain("c1");
+    }
+
+    [Fact]
+    public async Task Anonymous_step_up_returns_401_without_oidc()
+    {
+        var capture = new RedirectCapture();
+        await using var host = await StartAsync(capture, entraEnabled: true, authenticationContextId: "c1");
+        using var client = Client(host);
+
+        var response = await client.GetAsync("/signin/step-up");
+
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        capture.RedirectUri.Should().BeNull();
     }
 
     [Fact]
@@ -151,7 +197,10 @@ public sealed class ManagementAuthEndpointsTests
         };
     }
 
-    private static async Task<WebApplication> StartAsync(RedirectCapture capture, bool entraEnabled)
+    private static async Task<WebApplication> StartAsync(
+        RedirectCapture capture,
+        bool entraEnabled,
+        string? authenticationContextId = null)
     {
         var builder = WebApplication.CreateBuilder(new WebApplicationOptions
         {
@@ -164,6 +213,7 @@ public sealed class ManagementAuthEndpointsTests
             [$"{EntraAuthOptions.SectionName}:Authority"] = "https://login.microsoftonline.com/common",
             [$"{EntraAuthOptions.SectionName}:ClientId"] = "test-client-id",
             [$"{EntraAuthOptions.SectionName}:ClientSecret"] = "test-client-secret",
+            [$"{EntraAuthOptions.SectionName}:AuthenticationContextId"] = authenticationContextId,
             [$"{LocalAuthOptions.SectionName}:Enabled"] = "true",
             [$"{LocalAuthOptions.SectionName}:MinPasswordLength"] = "8"
         });
@@ -189,9 +239,11 @@ public sealed class ManagementAuthEndpointsTests
             {
                 capture.RedirectUri = context.Properties.RedirectUri;
                 capture.IsLinkPurpose = EntraLinkFlowConstants.IsLinkPurpose(context.Properties);
+                capture.IsStepUpPurpose = EntraStepUpFlowConstants.IsStepUpPurpose(context.Properties);
                 capture.InitiatingUserId = EntraLinkFlowConstants.GetInitiatingUserId(context.Properties);
                 if (inner is not null)
                     await inner(context);
+                capture.ClaimsParameter = context.ProtocolMessage.GetParameter("claims");
             };
         });
 
@@ -220,7 +272,9 @@ public sealed class ManagementAuthEndpointsTests
     {
         public string? RedirectUri { get; set; }
         public bool IsLinkPurpose { get; set; }
+        public bool IsStepUpPurpose { get; set; }
         public string? InitiatingUserId { get; set; }
+        public string? ClaimsParameter { get; set; }
     }
 
     private sealed class TestPrincipalContext : IPrincipalContext

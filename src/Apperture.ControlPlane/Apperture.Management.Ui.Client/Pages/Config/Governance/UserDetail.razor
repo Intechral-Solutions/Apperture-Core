@@ -6,8 +6,10 @@
 @using Apperture.Management.Ui.Client.Organisms
 @using Apperture.Management.Ui.Client.Services
 @using Apperture.Management.Ui.Shared
+@inject SessionStateService Session
 @inject IManagementClient Client
 @inject IOperatorCapabilitiesService Capabilities
+@inject ShellHostNavigation HostNav
 @inject IToastService Toasts
 @inject NavigationManager Nav
 @inject ShellOrientationService ShellOrientation
@@ -101,13 +103,57 @@
                     </ul>
                 }
 
+                <div class="mt-3 text-xs text-muted space-y-1">
+                    <div>Microsoft Entra: <span class="text-body">@FormatEntraAssociation(_user.EntraAssociationStatus)</span></div>
+                    <div>Local sign-in: <span class="text-body">@FormatLocalSignInPolicy(_user.LocalSignInPolicy, _user.IsCredentialDisabled, _user.LocalRecoverySafeguard)</span></div>
+                    @if (_user.LocalRecoverySafeguard)
+                    {
+                        <p>This local credential is temporarily retained because no independent emergency administrator has been configured yet.</p>
+                    }
+                </div>
+
+                @if (_capabilities?.CanManageCredentials == true && _user.IsCredentialDisabled == true)
+                {
+                    <div class="mt-4 border-t border-default pt-3">
+                        <div class="text-xs font-medium text-heading">Enable local sign-in</div>
+                        @if (Session.User?.StrongAuthenticationConfigured == false)
+                        {
+                            <p class="mt-1 text-xs text-muted">
+                                Strong authentication is not configured. Set a Microsoft Entra Conditional Access
+                                authentication-context identifier on the active Entra registration before local
+                                sign-in can be restored.
+                            </p>
+                        }
+                        else
+                        {
+                            <p class="mt-1 text-xs text-muted">
+                                Restores the existing local password. This does not change the password. Recent
+                                strong authentication is required.
+                            </p>
+                            @if (!string.IsNullOrEmpty(_credentialError))
+                            {
+                                <div class="mt-2">
+                                    <PageMessage Kind="PageMessageKind.Error" Message="@_credentialError" />
+                                </div>
+                            }
+                            <button type="button"
+                                    class="btn btn-secondary mt-2"
+                                    disabled="@_mutating"
+                                    @onclick="EnableLocalSignInAsync">
+                                Enable local sign-in
+                            </button>
+                        }
+                    </div>
+                }
+
                 @if (_capabilities?.CanManageUsers == true)
                 {
                     <div class="mt-4 border-t border-default pt-3">
                         <div class="text-xs font-medium text-heading">Link a Microsoft account</div>
                         <p class="mt-1 text-xs text-muted">
                             Search your directory and select the person. The association stays pending until they
-                            sign in with that Microsoft account for the first time; local sign-in is left as it is.
+                            sign in with that Microsoft account for the first time; local sign-in is left as it is
+                            until that first proof.
                         </p>
                         @if (_directoryTenantId is null)
                         {
@@ -269,6 +315,7 @@
     private bool _mutating;
     private string? _error;
     private string? _identityLinkError;
+    private string? _credentialError;
     private string _entraOidToLink = "";
     private string _directorySearch = "";
     private string? _directoryTenantId;
@@ -295,6 +342,7 @@
             return;
         _dataLoadKey = key;
         _user = null;
+        ReadStepUpOutcomeFromQuery();
         await LoadAsync();
     }
 
@@ -505,5 +553,75 @@
         }
 
         return link.ExternalId;
+    }
+
+    private void ReadStepUpOutcomeFromQuery()
+    {
+        var query = new Uri(Nav.Uri).Query;
+        if (string.IsNullOrEmpty(query))
+            return;
+        var parameters = System.Web.HttpUtility.ParseQueryString(query);
+        if (parameters["steppedUp"] == "1")
+        {
+            _credentialError = null;
+            return;
+        }
+
+        var error = parameters["error"];
+        if (string.IsNullOrEmpty(error))
+            return;
+        _credentialError = error switch
+        {
+            "identity_mismatch" => "The Microsoft account that completed step-up is not the signed-in administrator.",
+            "tenant_mismatch" => "The Microsoft directory that completed step-up is not the directory this instance trusts.",
+            "authentication_context_not_satisfied" => "Microsoft did not report the configured authentication context. Strong authentication was not recorded.",
+            "not_configured" => "Strong authentication is not configured on this instance.",
+            _ => "Strong authentication did not complete. Your existing session was kept."
+        };
+    }
+
+    private async Task EnableLocalSignInAsync()
+    {
+        _credentialError = null;
+        _mutating = true;
+        try
+        {
+            await Client.SetLocalCredentialDisabledAsync(UserId, isDisabled: false);
+            Toasts.Show(ToastSeverity.Success, "Local sign-in enabled.");
+            await LoadAsync();
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.Forbidden)
+        {
+            var returnPath = "/config/governance/users/" + Uri.EscapeDataString(UserId);
+            var host = HostNav.GetManagementHostBase(Nav);
+            Nav.NavigateTo(new Uri(host, "signin/step-up?returnUrl=" + Uri.EscapeDataString(returnPath)).ToString(), forceLoad: true);
+        }
+        catch (HttpRequestException ex)
+        {
+            _credentialError = ex.Message;
+        }
+        finally
+        {
+            _mutating = false;
+        }
+    }
+
+    private static string FormatEntraAssociation(string? status) => status switch
+    {
+        "pending" => "Pending first sign-in",
+        "proven" => "Proven / primary",
+        "none" => "Not associated",
+        _ => "Not associated"
+    };
+
+    private static string FormatLocalSignInPolicy(string? policy, bool? disabled, bool safeguard)
+    {
+        if (safeguard || policy == "recovery_safeguard")
+            return "Enabled for emergency platform recovery";
+        if (policy == "disabled" || disabled == true)
+            return "Disabled";
+        if (policy == "enabled" || disabled == false)
+            return "Enabled";
+        return "Not configured";
     }
 }

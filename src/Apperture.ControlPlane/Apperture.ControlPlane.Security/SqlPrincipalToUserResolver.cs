@@ -1,6 +1,8 @@
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Identity;
 using Apperture.Shared.Kernel;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Apperture.ControlPlane.Security;
 
@@ -11,10 +13,17 @@ namespace Apperture.ControlPlane.Security;
 public sealed class SqlPrincipalToUserResolver : IPrincipalToUserResolver
 {
     private readonly IUserRepository _userRepository;
+    private readonly IEntraPrimaryAuthenticationPolicy? _entraPrimaryPolicy;
+    private readonly ILogger<SqlPrincipalToUserResolver> _logger;
 
-    public SqlPrincipalToUserResolver(IUserRepository userRepository)
+    public SqlPrincipalToUserResolver(
+        IUserRepository userRepository,
+        IEntraPrimaryAuthenticationPolicy? entraPrimaryPolicy = null,
+        ILogger<SqlPrincipalToUserResolver>? logger = null)
     {
         _userRepository = userRepository;
+        _entraPrimaryPolicy = entraPrimaryPolicy;
+        _logger = logger ?? NullLogger<SqlPrincipalToUserResolver>.Instance;
     }
 
     /// <inheritdoc />
@@ -32,14 +41,22 @@ public sealed class SqlPrincipalToUserResolver : IPrincipalToUserResolver
         {
             user = await _userRepository.GetByIdentityLinkAsync(source, externalId, cancellationToken);
             if (user is not null)
+            {
+                var wasPendingEntra = source == IdentitySource.Entra && WasPendingEntra(user, externalId);
                 await _userRepository.UpdateLastAuthenticatedAtAsync(source, externalId, DateTimeOffset.UtcNow, cancellationToken);
+                if (wasPendingEntra)
+                    await ApplyEntraPrimaryPolicyAsync(user.Id, cancellationToken);
+            }
             return user?.Id;
         }
 
         user = await _userRepository.GetByIdentityLinkAsync(IdentitySource.Entra, externalId, cancellationToken);
         if (user is not null)
         {
+            var wasPendingEntra = WasPendingEntra(user, externalId);
             await _userRepository.UpdateLastAuthenticatedAtAsync(IdentitySource.Entra, externalId, DateTimeOffset.UtcNow, cancellationToken);
+            if (wasPendingEntra)
+                await ApplyEntraPrimaryPolicyAsync(user.Id, cancellationToken);
             return user.Id;
         }
 
@@ -48,5 +65,25 @@ public sealed class SqlPrincipalToUserResolver : IPrincipalToUserResolver
             await _userRepository.UpdateLastAuthenticatedAtAsync(IdentitySource.Local, externalId, DateTimeOffset.UtcNow, cancellationToken);
 
         return user?.Id;
+    }
+
+    private static bool WasPendingEntra(User user, string externalId) =>
+        user.IdentityLinks.Any(l =>
+            l.Source == IdentitySource.Entra
+            && string.Equals(l.ExternalId, externalId, StringComparison.OrdinalIgnoreCase)
+            && !l.IsProven);
+
+    private async ValueTask ApplyEntraPrimaryPolicyAsync(UserId userId, CancellationToken cancellationToken)
+    {
+        if (_entraPrimaryPolicy is null)
+            return;
+        try
+        {
+            await _entraPrimaryPolicy.ApplyAfterEntraProvenAsync(userId, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Entra-primary local-authentication policy could not be applied for {UserId}.", userId.Value);
+        }
     }
 }

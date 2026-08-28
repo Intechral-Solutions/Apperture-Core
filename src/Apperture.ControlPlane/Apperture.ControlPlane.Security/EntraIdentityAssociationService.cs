@@ -64,6 +64,7 @@ public sealed class EntraIdentityAssociationService : IEntraIdentityAssociationS
     private readonly IAuditService _audit;
     private readonly TimeProvider _timeProvider;
     private readonly ILogger<EntraIdentityAssociationService> _logger;
+    private readonly IEntraPrimaryAuthenticationPolicy? _entraPrimaryPolicy;
 
     public EntraIdentityAssociationService(
         IUserRepository userRepository,
@@ -73,7 +74,8 @@ public sealed class EntraIdentityAssociationService : IEntraIdentityAssociationS
         IAuditService audit,
         TimeProvider timeProvider,
         ILogger<EntraIdentityAssociationService> logger,
-        ISecretResolver? secretResolver = null)
+        ISecretResolver? secretResolver = null,
+        IEntraPrimaryAuthenticationPolicy? entraPrimaryPolicy = null)
     {
         _userRepository = userRepository;
         _registrations = registrations;
@@ -83,6 +85,7 @@ public sealed class EntraIdentityAssociationService : IEntraIdentityAssociationS
         _timeProvider = timeProvider;
         _logger = logger;
         _secretResolver = secretResolver;
+        _entraPrimaryPolicy = entraPrimaryPolicy;
     }
 
     /// <inheritdoc />
@@ -132,6 +135,9 @@ public sealed class EntraIdentityAssociationService : IEntraIdentityAssociationS
             await AuditAsync(EntraLinkAuditActionNames.Proven, objectId!, owner.UserId.Value, null, cancellationToken);
         if (legacyTenantCompleted)
             await AuditAsync(EntraLinkAuditActionNames.LegacyTenantCompleted, objectId!, owner.UserId.Value, $"tenantId={tokenTenantId}", cancellationToken);
+
+        if (wasPending)
+            await ApplyEntraPrimaryPolicyAsync(owner.UserId, cancellationToken);
 
         return EntraAssociationOutcome.Success(owner.UserId);
     }
@@ -201,6 +207,7 @@ public sealed class EntraIdentityAssociationService : IEntraIdentityAssociationS
             }
 
             await AuditAsync(EntraLinkAuditActionNames.Linked, objectId!, initiatingUserId.Value, null, cancellationToken);
+            await ApplyEntraPrimaryPolicyAsync(initiatingUserId, cancellationToken);
             return EntraAssociationOutcome.Success(initiatingUserId);
         }
 
@@ -220,6 +227,10 @@ public sealed class EntraIdentityAssociationService : IEntraIdentityAssociationS
             initiatingUserId.Value,
             wasPending ? "reason=self_link_proved_pending" : "reason=already_linked_idempotent",
             cancellationToken);
+
+        if (wasPending)
+            await ApplyEntraPrimaryPolicyAsync(initiatingUserId, cancellationToken);
+
         return EntraAssociationOutcome.Success(initiatingUserId);
     }
 
@@ -307,6 +318,20 @@ public sealed class EntraIdentityAssociationService : IEntraIdentityAssociationS
         {
             _logger.LogInformation(ex, "Directory snapshot unavailable for Entra association; continuing with object id only.");
             return null;
+        }
+    }
+
+    private async ValueTask ApplyEntraPrimaryPolicyAsync(UserId userId, CancellationToken cancellationToken)
+    {
+        if (_entraPrimaryPolicy is null)
+            return;
+        try
+        {
+            await _entraPrimaryPolicy.ApplyAfterEntraProvenAsync(userId, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Entra-primary local-authentication policy could not be applied for {UserId}.", userId.Value);
         }
     }
 

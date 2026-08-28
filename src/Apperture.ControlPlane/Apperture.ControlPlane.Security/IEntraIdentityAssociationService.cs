@@ -36,8 +36,9 @@ public sealed record EntraAssociationOutcome(bool Succeeded, UserId? UserId, str
 }
 
 /// <summary>
-/// Binds Microsoft Entra identities to existing platform users and proves them. Never creates a user and
-/// never disables local login.
+/// Binds Microsoft Entra identities to existing platform users and proves them. Never creates a user.
+/// After a link becomes proven, <see cref="IEntraPrimaryAuthenticationPolicy"/> disables local password
+/// sign-in for ordinary users (hash retained). Pending administrator associations do not disable local login.
 /// </summary>
 public interface IEntraIdentityAssociationService
 {

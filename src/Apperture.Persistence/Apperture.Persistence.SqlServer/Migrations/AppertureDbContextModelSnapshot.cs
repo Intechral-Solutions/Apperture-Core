@@ -402,6 +402,10 @@ namespace Apperture.Persistence.SqlServer.Migrations
                         .HasMaxLength(64)
                         .HasColumnType("nvarchar(64)");
 
+                    b.Property<string>("AuthenticationContextId")
+                        .HasMaxLength(8)
+                        .HasColumnType("nvarchar(8)");
+
                     b.Property<string>("CallbackPath")
                         .HasMaxLength(256)
                         .HasColumnType("nvarchar(256)");

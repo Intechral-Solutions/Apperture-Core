@@ -187,7 +187,7 @@ public sealed class ManagementHostEntraLinkingHttpTests
     }
 
     [Fact]
-    public async Task First_entra_sign_in_proves_a_pending_link_without_disabling_local_login()
+    public async Task First_entra_sign_in_proves_a_pending_link_and_disables_local_login()
     {
         AssertSqlAvailable();
         var admin = await EnsureAdminClientAsync();
@@ -208,7 +208,7 @@ public sealed class ManagementHostEntraLinkingHttpTests
         link.LastAuthenticatedAt.Should().NotBeNull();
 
         var credential = await db.LocalCredentials.SingleAsync(c => c.UserId == targetUserId).ConfigureAwait(false);
-        credential.IsDisabled.Should().BeFalse();
+        credential.IsDisabled.Should().BeTrue();
     }
 
     private sealed record RoleListItem(string Id, string Name, string? Description, bool IsSystemRole);

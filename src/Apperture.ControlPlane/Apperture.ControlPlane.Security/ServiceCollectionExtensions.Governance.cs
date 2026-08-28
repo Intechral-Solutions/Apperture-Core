@@ -67,6 +67,10 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IAuthenticationAdminOverviewService, AuthenticationAdminOverviewService>();
         services.AddScoped<IUserRepository, SqlUserRepository>();
         services.AddScoped<IEntraIdentityAssociationService, EntraIdentityAssociationService>();
+        services.AddScoped<IEntraStepUpService, EntraStepUpService>();
+        services.AddScoped<IEntraPrimaryAuthenticationPolicy, EntraPrimaryAuthenticationPolicy>();
+        services.AddScoped<IAuthenticationAssuranceEvaluator, AuthenticationAssuranceEvaluator>();
+        services.AddScoped<IStrongAuthenticationGate, StrongAuthenticationGate>();
         services.AddScoped<IUserPreferencesRepository, SqlUserPreferencesRepository>();
         services.AddScoped<IUserProfileImageStore, SqlUserProfileImageStore>();
         services.AddSingleton<IProfileImageNormalizer, SkiaProfileImageNormalizer>();

@@ -1,4 +1,5 @@
 using Apperture.ControlPlane.Security;
+using Apperture.Core.Application.Services;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
@@ -21,6 +22,7 @@ public static class AuthenticationServiceCollectionExtensions
         services.Configure<EntraAuthOptions>(configuration.GetSection(EntraAuthOptions.SectionName));
         services.Configure<LocalAuthOptions>(configuration.GetSection(LocalAuthOptions.SectionName));
         services.Configure<BreakGlassAuthOptions>(configuration.GetSection(BreakGlassAuthOptions.SectionName));
+        services.Configure<AuthenticationAssuranceOptions>(configuration.GetSection(AuthenticationAssuranceOptions.SectionName));
         services.AddSingleton<IValidateOptions<EntraAuthOptions>, EntraAuthOptionsValidator>();
         services.AddSingleton<IValidateOptions<LocalAuthOptions>, LocalAuthOptionsValidator>();
 

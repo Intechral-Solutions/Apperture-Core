@@ -72,14 +72,35 @@ public sealed class EntraIdentityAssociationServiceTests
     }
 
     [Fact]
-    public async Task Sign_in_does_not_disable_local_credentials()
+    public async Task First_sign_in_of_a_pending_association_applies_entra_primary_policy()
     {
         var harness = new Harness();
         harness.Repository.Seed(NewUser("usr-1", EntraLink(Oid, provenAt: null, tenantId: null)));
 
         await harness.Service.CompleteSignInAsync(Assertion());
 
-        harness.Repository.LocalCredentialDisableRequested.Should().BeFalse();
+        harness.Policy.AppliedUserIds.Should().ContainSingle().Which.Should().Be("usr-1");
+    }
+
+    [Fact]
+    public async Task Repeated_proven_sign_in_does_not_reapply_entra_primary_policy()
+    {
+        var harness = new Harness();
+        harness.Repository.Seed(NewUser("usr-1", EntraLink(Oid, provenAt: Now.AddDays(-1), tenantId: ActiveTenantId)));
+
+        await harness.Service.CompleteSignInAsync(Assertion());
+
+        harness.Policy.AppliedUserIds.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Pending_admin_link_construction_does_not_apply_entra_primary_policy()
+    {
+        var harness = new Harness();
+
+        await harness.Service.BuildPendingAdminLinkAsync(Oid);
+
+        harness.Policy.AppliedUserIds.Should().BeEmpty();
     }
 
     [Fact]
@@ -124,6 +145,7 @@ public sealed class EntraIdentityAssociationServiceTests
         added.Link.LastAuthenticatedAt.Should().Be(Now);
         added.Link.LinkedAt.Should().Be(Now);
         harness.Audit.Actions.Should().Contain(EntraLinkAuditActionNames.Linked);
+        harness.Policy.AppliedUserIds.Should().ContainSingle().Which.Should().Be("usr-1");
     }
 
     [Fact]
@@ -165,6 +187,7 @@ public sealed class EntraIdentityAssociationServiceTests
 
         outcome.Succeeded.Should().BeTrue();
         harness.Repository.AddedLinks.Should().BeEmpty();
+        harness.Policy.AppliedUserIds.Should().BeEmpty();
     }
 
     [Fact]
@@ -288,7 +311,8 @@ public sealed class EntraIdentityAssociationServiceTests
                     .Build(),
                 Audit,
                 new FixedTimeProvider(Now),
-                NullLogger<EntraIdentityAssociationService>.Instance);
+                NullLogger<EntraIdentityAssociationService>.Instance,
+                entraPrimaryPolicy: Policy);
         }
 
         public RecordingUserRepository Repository { get; }
@@ -296,6 +320,8 @@ public sealed class EntraIdentityAssociationServiceTests
         public RecordingAuditService Audit { get; }
 
         public StubDirectoryDiscovery Directory { get; }
+
+        public RecordingEntraPrimaryPolicy Policy { get; } = new();
 
         public EntraIdentityAssociationService Service { get; }
     }
@@ -370,6 +396,28 @@ public sealed class EntraIdentityAssociationServiceTests
     }
 
     internal sealed record ProofCall(string ExternalId, DateTimeOffset ProvenAt, string? TenantIdWhenMissing);
+
+    internal sealed class RecordingEntraPrimaryPolicy : IEntraPrimaryAuthenticationPolicy
+    {
+        public List<string> AppliedUserIds { get; } = [];
+
+        public ValueTask<EntraPrimaryLocalDisableOutcome> ApplyAfterEntraProvenAsync(
+            UserId userId,
+            CancellationToken cancellationToken = default)
+        {
+            AppliedUserIds.Add(userId.Value);
+            return ValueTask.FromResult(EntraPrimaryLocalDisableOutcome.Disabled);
+        }
+
+        public ValueTask<LocalAuthenticationPresentation> DescribeAsync(
+            User user,
+            LocalCredentialData? credential,
+            CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(new LocalAuthenticationPresentation(
+                AuthenticationMethodStatuses.EntraNone,
+                AuthenticationMethodStatuses.LocalEnabled,
+                false));
+    }
 
     internal sealed class RecordingUserRepository : IUserRepository
     {

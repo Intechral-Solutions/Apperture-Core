@@ -13,7 +13,7 @@
 <div class="p-4 ui-page-stack">
     <PageHeader Eyebrow="Config — Authentication"
                 Title="Entra tenant setup"
-                Subtitle="Register authority, client id, and the confidential client secret. The secret is stored in the platform secret store (never shown again). Validate OpenID metadata, then browse users and groups. Restart the management host after changing the active registration so OIDC picks up authority, client id, and secret." />
+                Subtitle="Register authority, client id, the confidential client secret, and an optional Conditional Access authentication-context identifier for strong-authentication step-up. Restart the management host after changing the active registration so OIDC picks up authority, client id, secret, and authentication context." />
 
     @if (!_canView)
     {
@@ -108,6 +108,15 @@
                     <label class="block text-xs">Authority (https)<input class="ui-input mt-1" @bind="_editingAuthority" /></label>
                     <label class="block text-xs">Client ID<input class="ui-input mt-1" @bind="_editingClientId" /></label>
                     <label class="block text-xs">Azure tenant id (optional, for Graph and issuer checks)<input class="ui-input mt-1" @bind="_editingAzureTenantId" /></label>
+                    <label class="block text-xs">Authentication context id (optional, c1–c25)
+                        <input class="ui-input mt-1 font-mono" @bind="_editingAuthenticationContextId" placeholder="c1" />
+                    </label>
+                    <p class="text-xs text-muted">
+                        Optional until strong administrative recovery is configured. Microsoft Entra Conditional
+                        Access must be configured in the directory. Apperture trusts that the configured context
+                        was satisfied; it does not claim a particular MFA method occurred. Restart the host after
+                        changing the active registration.
+                    </p>
                     <label class="block text-xs">Callback path (optional)<input class="ui-input mt-1" @bind="_editingCallbackPath" /></label>
                     <label class="block text-xs">Client secret
                         <input class="ui-input mt-1"
@@ -141,6 +150,13 @@
                     <label class="block text-xs">Authority (https) <input class="ui-input mt-1" @bind="_newAuthority" /></label>
                     <label class="block text-xs">Client ID <input class="ui-input mt-1" @bind="_newClientId" /></label>
                     <label class="block text-xs">Azure tenant id (optional)<input class="ui-input mt-1" @bind="_newAzureTenantId" /></label>
+                    <label class="block text-xs">Authentication context id (optional, c1–c25)
+                        <input class="ui-input mt-1 font-mono" @bind="_newAuthenticationContextId" placeholder="c1" />
+                    </label>
+                    <p class="text-xs text-muted">
+                        Optional until strong administrative recovery is configured. Your tenant administrator
+                        must attach a Conditional Access policy to this authentication context in Microsoft Entra.
+                    </p>
                     <label class="block text-xs">Client secret
                         <input class="ui-input mt-1"
                                type="password"
@@ -172,6 +188,7 @@
     private string _newAuthority = "";
     private string _newClientId = "";
     private string? _newAzureTenantId;
+    private string? _newAuthenticationContextId;
     private string _newClientSecret = "";
     private string? _formError;
 
@@ -180,6 +197,7 @@
     private string _editingAuthority = "";
     private string _editingClientId = "";
     private string? _editingAzureTenantId;
+    private string? _editingAuthenticationContextId;
     private string? _editingCallbackPath;
     private string _editingClientSecret = "";
     private bool _editingSecretConfigured;
@@ -218,6 +236,7 @@
         _editingAuthority = r.Authority;
         _editingClientId = r.ClientId;
         _editingAzureTenantId = r.AzureTenantId;
+        _editingAuthenticationContextId = r.AuthenticationContextId;
         _editingCallbackPath = r.CallbackPath;
         _editingClientSecret = "";
         _editingSecretConfigured = r.ClientSecretConfigured || r.DeploymentSecretConfigured;
@@ -251,7 +270,8 @@
                     _editingEnabled,
                     _editingRowVersion,
                     string.IsNullOrWhiteSpace(_editingAzureTenantId) ? null : _editingAzureTenantId.Trim(),
-                    ClientSecret: string.IsNullOrWhiteSpace(_editingClientSecret) ? null : _editingClientSecret));
+                    ClientSecret: string.IsNullOrWhiteSpace(_editingClientSecret) ? null : _editingClientSecret,
+                    AuthenticationContextId: string.IsNullOrWhiteSpace(_editingAuthenticationContextId) ? null : _editingAuthenticationContextId.Trim()));
             _editing = null;
             _editingClientSecret = "";
             await ReloadAsync();
@@ -282,11 +302,13 @@
                 CallbackPath: null,
                 Enabled: true,
                 AzureTenantId: string.IsNullOrWhiteSpace(_newAzureTenantId) ? null : _newAzureTenantId.Trim(),
-                ClientSecret: string.IsNullOrWhiteSpace(_newClientSecret) ? null : _newClientSecret));
+                ClientSecret: string.IsNullOrWhiteSpace(_newClientSecret) ? null : _newClientSecret,
+                AuthenticationContextId: string.IsNullOrWhiteSpace(_newAuthenticationContextId) ? null : _newAuthenticationContextId.Trim()));
             _newDisplay = "";
             _newAuthority = "";
             _newClientId = "";
             _newAzureTenantId = null;
+            _newAuthenticationContextId = null;
             _newClientSecret = "";
             await ReloadAsync();
             await SignInOptions.RefreshAsync();

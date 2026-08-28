@@ -129,18 +129,58 @@ public sealed class UsersControllerIdentityLinkTests
         body.Code.Should().Be(IdentityLinkErrorCodes.MissingExternalId);
     }
 
+    [Fact]
+    public async Task SetLocalCredentialDisabled_without_recent_strong_authentication_returns_forbidden_with_code()
+    {
+        var service = new StubUserManagement(throwOnDisable: new StrongAuthenticationException(
+            StrongAuthenticationErrorCodes.Required,
+            "step-up required"));
+        var controller = NewController(service);
+
+        var result = await controller.SetLocalCredentialDisabled(
+            TargetUserId,
+            new SetLocalCredentialDisabledRequest(false),
+            CancellationToken.None);
+
+        var objectResult = result.Should().BeOfType<ObjectResult>().Subject;
+        objectResult.StatusCode.Should().Be(403);
+        var body = objectResult.Value.Should().BeOfType<IdentityLinkErrorResponse>().Subject;
+        body.Code.Should().Be(StrongAuthenticationErrorCodes.Required);
+    }
+
+    [Fact]
+    public async Task SetLocalCredentialDisabled_when_strong_authentication_is_not_configured_returns_conflict()
+    {
+        var service = new StubUserManagement(throwOnDisable: new StrongAuthenticationException(
+            StrongAuthenticationErrorCodes.NotConfigured,
+            "not configured"));
+        var controller = NewController(service);
+
+        var result = await controller.SetLocalCredentialDisabled(
+            TargetUserId,
+            new SetLocalCredentialDisabledRequest(false),
+            CancellationToken.None);
+
+        var objectResult = result.Should().BeOfType<ObjectResult>().Subject;
+        objectResult.StatusCode.Should().Be(409);
+        var body = objectResult.Value.Should().BeOfType<IdentityLinkErrorResponse>().Subject;
+        body.Code.Should().Be(StrongAuthenticationErrorCodes.NotConfigured);
+    }
+
     private static UsersController NewController(StubUserManagement service) =>
         new(service, new StubLocalCredentialRepository(), new StubRoleProvider([]));
 
     private sealed class StubUserManagement : IUserManagementService
     {
         private readonly Exception? _throwOnAdd;
+        private readonly Exception? _throwOnDisable;
         private readonly bool _duplicateSameUser;
 
-        public StubUserManagement(Exception? throwOnAdd = null, bool duplicateSameUser = false)
+        public StubUserManagement(Exception? throwOnAdd = null, bool duplicateSameUser = false, Exception? throwOnDisable = null)
         {
             _throwOnAdd = throwOnAdd;
             _duplicateSameUser = duplicateSameUser;
+            _throwOnDisable = throwOnDisable;
         }
 
         public List<(UserId UserId, IdentitySource Source, string ExternalId)> AddCalls { get; } = [];
@@ -188,8 +228,12 @@ public sealed class UsersControllerIdentityLinkTests
         public ValueTask SetLocalPasswordAsync(UserId userId, string newPassword, CancellationToken cancellationToken = default) =>
             throw new NotImplementedException();
 
-        public ValueTask SetLocalCredentialDisabledAsync(UserId userId, bool disabled, CancellationToken cancellationToken = default) =>
-            throw new NotImplementedException();
+        public ValueTask SetLocalCredentialDisabledAsync(UserId userId, bool disabled, CancellationToken cancellationToken = default)
+        {
+            if (_throwOnDisable is not null)
+                throw _throwOnDisable;
+            return ValueTask.CompletedTask;
+        }
     }
 
     private sealed class StubLocalCredentialRepository : ILocalCredentialRepository

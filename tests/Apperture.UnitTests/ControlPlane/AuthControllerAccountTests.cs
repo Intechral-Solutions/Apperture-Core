@@ -264,6 +264,22 @@ public sealed class AuthControllerAccountTests
     }
 
     [Fact]
+    public async Task LocalLogin_disabled_credential_returns_unauthorized()
+    {
+        var controller = NewController(
+            actor: null,
+            user: SampleUser(),
+            credential: new LocalCredentialData(TestUserId, "hash", "salt", "stub", IsDisabled: true),
+            httpContext: new DefaultHttpContext());
+
+        var result = await controller.LocalLogin(
+            new LocalLoginRequest(LocalUsername, "Password1!"),
+            CancellationToken.None);
+
+        result.Result.Should().BeOfType<UnauthorizedResult>();
+    }
+
+    [Fact]
     public async Task ChangeLocalPassword_unlinked_principal_returns_forbidden()
     {
         var audit = new CapturingAuditService();
@@ -340,7 +356,11 @@ public sealed class AuthControllerAccountTests
         public ValueTask<int> GetUserCountAsync(CancellationToken cancellationToken = default) => ValueTask.FromResult(_user is null ? 0 : 1);
         public ValueTask<User?> GetByIdAsync(UserId userId, CancellationToken cancellationToken = default) => ValueTask.FromResult(_user);
         public ValueTask<(IReadOnlyList<User> Page, int TotalCount)> GetPageAsync(int skip, int take, CancellationToken cancellationToken = default) => ValueTask.FromResult<(IReadOnlyList<User>, int)>(([], 0));
-        public ValueTask<User?> GetByIdentityLinkAsync(IdentitySource source, string externalId, CancellationToken cancellationToken = default) => ValueTask.FromResult<User?>(null);
+        public ValueTask<User?> GetByIdentityLinkAsync(IdentitySource source, string externalId, CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(
+                _user?.IdentityLinks.Any(l => l.Source == source && string.Equals(l.ExternalId, externalId, StringComparison.OrdinalIgnoreCase)) == true
+                    ? _user
+                    : null);
         public ValueTask AddAsync(User user, CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
         public ValueTask UpdateAsync(User user, CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
         public ValueTask UpdateLastAuthenticatedAtAsync(IdentitySource source, string externalId, DateTimeOffset at, CancellationToken cancellationToken = default) => ValueTask.CompletedTask;

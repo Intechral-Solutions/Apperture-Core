@@ -844,6 +844,9 @@ public interface IManagementClient
 
     /// <summary>Adds an identity link to a user. Requires user.manage. Returns on 204; throws on 400/403/404/409.</summary>
     Task AddIdentityLinkAsync(string userId, AddIdentityLinkRequest request, CancellationToken cancellationToken = default);
+
+    /// <summary>Enables or disables local password sign-in. Re-enable requires credential.manage and recent strong authentication.</summary>
+    Task SetLocalCredentialDisabledAsync(string userId, bool isDisabled, CancellationToken cancellationToken = default);
 }
 
 public sealed record GovernanceDescriptorResponse(
@@ -892,7 +895,10 @@ public sealed record UserDetailDto(
     [property: JsonPropertyName("identityLinks")] IReadOnlyList<IdentityLinkDto> IdentityLinks,
     [property: JsonPropertyName("roleIds")] IReadOnlyList<string> RoleIds,
     [property: JsonPropertyName("hasLocalCredential")] bool? HasLocalCredential,
-    [property: JsonPropertyName("isCredentialDisabled")] bool? IsCredentialDisabled);
+    [property: JsonPropertyName("isCredentialDisabled")] bool? IsCredentialDisabled,
+    [property: JsonPropertyName("entraAssociationStatus")] string? EntraAssociationStatus = null,
+    [property: JsonPropertyName("localSignInPolicy")] string? LocalSignInPolicy = null,
+    [property: JsonPropertyName("localRecoverySafeguard")] bool LocalRecoverySafeguard = false);
 
 public sealed record IdentityLinkDto(
     [property: JsonPropertyName("source")] string Source,
@@ -939,7 +945,8 @@ public sealed record OperatorCapabilitiesDto(
     [property: JsonPropertyName("canUpdateIntegrations")] bool CanUpdateIntegrations = false,
     [property: JsonPropertyName("canViewPlatformSettings")] bool CanViewPlatformSettings = false,
     [property: JsonPropertyName("canManagePlatformSettings")] bool CanManagePlatformSettings = false,
-    [property: JsonPropertyName("canManageUsers")] bool CanManageUsers = false);
+    [property: JsonPropertyName("canManageUsers")] bool CanManageUsers = false,
+    [property: JsonPropertyName("canManageCredentials")] bool CanManageCredentials = false);
 
 public sealed record PlatformSettingAllowedValueDto(
     string Value,
@@ -1583,7 +1590,11 @@ public sealed record MeResponse(
     /// <summary>Stored clock preference (<c>System</c>, <c>Hour12</c>, <c>Hour24</c>).</summary>
     [property: JsonPropertyName("timeFormat")] string? TimeFormat = null,
     /// <summary>Stored appearance preference (<c>System</c>, <c>Light</c>, <c>Dark</c>); null when unset.</summary>
-    [property: JsonPropertyName("appearance")] string? Appearance = null);
+    [property: JsonPropertyName("appearance")] string? Appearance = null,
+    [property: JsonPropertyName("entraAssociationStatus")] string? EntraAssociationStatus = null,
+    [property: JsonPropertyName("localSignInPolicy")] string? LocalSignInPolicy = null,
+    [property: JsonPropertyName("hasRecentStrongAuthentication")] bool HasRecentStrongAuthentication = false,
+    [property: JsonPropertyName("strongAuthenticationConfigured")] bool StrongAuthenticationConfigured = false);
 
 public sealed record AccountIdentityLinkDto(
     [property: JsonPropertyName("source")] string Source,
@@ -1662,6 +1673,7 @@ public sealed record EntraTenantListItemDto(
     [property: JsonPropertyName("deploymentSecretConfigured")] bool DeploymentSecretConfigured,
     [property: JsonPropertyName("clientSecretConfigured")] bool ClientSecretConfigured = false,
     [property: JsonPropertyName("azureTenantId")] string? AzureTenantId = null,
+    [property: JsonPropertyName("authenticationContextId")] string? AuthenticationContextId = null,
     [property: JsonPropertyName("openIdConfigurationStatus")] string? OpenIdConfigurationStatus = null,
     [property: JsonPropertyName("lastOpenIdValidationUtc")] DateTimeOffset? LastOpenIdValidationUtc = null,
     [property: JsonPropertyName("lastOpenIdValidationSummary")] string? LastOpenIdValidationSummary = null,
@@ -1680,7 +1692,8 @@ public sealed record CreateEntraTenantRequest(
     [property: JsonPropertyName("callbackPath")] string? CallbackPath = null,
     [property: JsonPropertyName("enabled")] bool Enabled = true,
     [property: JsonPropertyName("azureTenantId")] string? AzureTenantId = null,
-    [property: JsonPropertyName("clientSecret")] string? ClientSecret = null);
+    [property: JsonPropertyName("clientSecret")] string? ClientSecret = null,
+    [property: JsonPropertyName("authenticationContextId")] string? AuthenticationContextId = null);
 
 public sealed record UpdateEntraTenantRequest(
     [property: JsonPropertyName("displayName")] string DisplayName,
@@ -1691,7 +1704,8 @@ public sealed record UpdateEntraTenantRequest(
     [property: JsonPropertyName("enabled")] bool Enabled,
     [property: JsonPropertyName("rowVersionBase64")] string? RowVersionBase64,
     [property: JsonPropertyName("azureTenantId")] string? AzureTenantId = null,
-    [property: JsonPropertyName("clientSecret")] string? ClientSecret = null);
+    [property: JsonPropertyName("clientSecret")] string? ClientSecret = null,
+    [property: JsonPropertyName("authenticationContextId")] string? AuthenticationContextId = null);
 
 public sealed record ValidationResultDto(
     [property: JsonPropertyName("success")] bool Success,
