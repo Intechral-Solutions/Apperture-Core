@@ -31,6 +31,9 @@ public sealed class EntraTenantListItemResponse
     [JsonPropertyName("deploymentSecretConfigured")]
     public bool DeploymentSecretConfigured { get; init; }
 
+    [JsonPropertyName("clientSecretConfigured")]
+    public bool ClientSecretConfigured { get; init; }
+
     [JsonPropertyName("azureTenantId")]
     public string? AzureTenantId { get; init; }
 
@@ -86,6 +89,10 @@ public sealed class CreateEntraTenantRequestBody
 
     [JsonPropertyName("azureTenantId")]
     public string? AzureTenantId { get; set; }
+
+    /// <summary>Write-only. Plaintext is stored in ISecretStore; never returned.</summary>
+    [JsonPropertyName("clientSecret")]
+    public string? ClientSecret { get; set; }
 }
 
 public sealed class UpdateEntraTenantRequestBody
@@ -113,6 +120,10 @@ public sealed class UpdateEntraTenantRequestBody
 
     [JsonPropertyName("azureTenantId")]
     public string? AzureTenantId { get; set; }
+
+    /// <summary>Write-only. When set, replaces the stored secret. Omit or leave blank to keep the existing secret.</summary>
+    [JsonPropertyName("clientSecret")]
+    public string? ClientSecret { get; set; }
 }
 
 /// <summary>OpenID Connect validation outcome returned to admins (API shape named per Epic 75).</summary>

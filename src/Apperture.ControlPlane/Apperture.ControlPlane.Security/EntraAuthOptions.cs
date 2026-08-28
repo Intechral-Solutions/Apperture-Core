@@ -29,6 +29,12 @@ public sealed class EntraAuthOptions
     public string ClientSecret { get; set; } = "";
 
     /// <summary>
+    /// Optional Azure AD directory id. Used to build a tenant-specific OIDC authority when
+    /// <see cref="Authority"/> is <c>common</c>/<c>organizations</c> or omits a tenant segment.
+    /// </summary>
+    public string? AzureTenantId { get; set; }
+
+    /// <summary>
     /// Callback path after Entra redirect (e.g. /signin-oidc).
     /// </summary>
     public string CallbackPath { get; set; } = "/signin-oidc";

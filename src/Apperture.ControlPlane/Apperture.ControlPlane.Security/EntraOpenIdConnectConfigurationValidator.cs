@@ -25,10 +25,11 @@ public sealed class EntraOpenIdConnectConfigurationValidator : IEntraOpenIdConne
         string authority,
         string clientId,
         bool usesDeploymentSecret,
-        bool deploymentSecretConfigured,
+        bool clientSecretConfigured,
         string? azureTenantId,
         CancellationToken cancellationToken = default)
     {
+        _ = usesDeploymentSecret;
         if (string.IsNullOrWhiteSpace(authority))
             return Fail(OpenIdConfigurationStatus.InvalidConfiguration, "missing_authority", "Authority is required.", null);
 
@@ -38,12 +39,32 @@ public sealed class EntraOpenIdConnectConfigurationValidator : IEntraOpenIdConne
         if (string.IsNullOrWhiteSpace(clientId))
             return Fail(OpenIdConfigurationStatus.InvalidConfiguration, "missing_client_id", "Client ID is required.", null);
 
-        if (usesDeploymentSecret && !deploymentSecretConfigured)
+        if (!clientSecretConfigured)
             return Fail(
                 OpenIdConfigurationStatus.InvalidConfiguration,
                 "missing_client_secret",
-                "Deployment client secret is not configured. Set Entra:ClientSecret (or KeyVault) before Entra sign-in can work.",
+                "A client secret is not configured. Record one on this Entra registration or set Entra:ClientSecret before sign-in can work.",
                 null);
+
+        if (EntraAuthorityHelper.TenantSegmentLooksLikeMalformedGuid(authority))
+        {
+            var segment = EntraAuthorityHelper.TryGetTenantSegmentFromAuthority(authority);
+            return Fail(
+                OpenIdConfigurationStatus.InvalidConfiguration,
+                "malformed_tenant_in_authority",
+                "The tenant id in the authority URL is not a valid GUID. Compare it to Azure tenant id and check for an extra or missing character.",
+                segment is null ? null : $"authorityTenantSegment={segment}");
+        }
+
+        if (!EntraAuthorityHelper.AuthorityTenantMatchesAzureTenantId(authority, azureTenantId))
+        {
+            var segment = EntraAuthorityHelper.TryGetTenantSegmentFromAuthority(authority);
+            return Fail(
+                OpenIdConfigurationStatus.InvalidConfiguration,
+                "authority_tenant_mismatch",
+                "The authority URL tenant segment does not match the Azure tenant id. They must refer to the same directory.",
+                $"authorityTenantSegment={segment}; azureTenantId={azureTenantId}");
+        }
 
         var discoveryUri = BuildDiscoveryDocumentUri(authorityUri);
         using var client = _httpClientFactory.CreateClient(HttpClientName);

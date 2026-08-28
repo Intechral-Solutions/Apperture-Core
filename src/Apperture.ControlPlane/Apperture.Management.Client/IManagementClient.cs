@@ -1660,6 +1660,7 @@ public sealed record EntraTenantListItemDto(
     [property: JsonPropertyName("enabled")] bool Enabled,
     [property: JsonPropertyName("isActive")] bool IsActive,
     [property: JsonPropertyName("deploymentSecretConfigured")] bool DeploymentSecretConfigured,
+    [property: JsonPropertyName("clientSecretConfigured")] bool ClientSecretConfigured = false,
     [property: JsonPropertyName("azureTenantId")] string? AzureTenantId = null,
     [property: JsonPropertyName("openIdConfigurationStatus")] string? OpenIdConfigurationStatus = null,
     [property: JsonPropertyName("lastOpenIdValidationUtc")] DateTimeOffset? LastOpenIdValidationUtc = null,
@@ -1678,7 +1679,8 @@ public sealed record CreateEntraTenantRequest(
     [property: JsonPropertyName("usesDeploymentSecret")] bool UsesDeploymentSecret = true,
     [property: JsonPropertyName("callbackPath")] string? CallbackPath = null,
     [property: JsonPropertyName("enabled")] bool Enabled = true,
-    [property: JsonPropertyName("azureTenantId")] string? AzureTenantId = null);
+    [property: JsonPropertyName("azureTenantId")] string? AzureTenantId = null,
+    [property: JsonPropertyName("clientSecret")] string? ClientSecret = null);
 
 public sealed record UpdateEntraTenantRequest(
     [property: JsonPropertyName("displayName")] string DisplayName,
@@ -1688,7 +1690,8 @@ public sealed record UpdateEntraTenantRequest(
     [property: JsonPropertyName("callbackPath")] string? CallbackPath,
     [property: JsonPropertyName("enabled")] bool Enabled,
     [property: JsonPropertyName("rowVersionBase64")] string? RowVersionBase64,
-    [property: JsonPropertyName("azureTenantId")] string? AzureTenantId = null);
+    [property: JsonPropertyName("azureTenantId")] string? AzureTenantId = null,
+    [property: JsonPropertyName("clientSecret")] string? ClientSecret = null);
 
 public sealed record ValidationResultDto(
     [property: JsonPropertyName("success")] bool Success,

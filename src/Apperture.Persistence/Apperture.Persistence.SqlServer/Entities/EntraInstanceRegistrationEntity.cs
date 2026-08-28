@@ -12,6 +12,8 @@ public sealed class EntraInstanceRegistrationEntity
 
     public bool UsesDeploymentSecret { get; set; } = true;
 
+    public string? ClientSecretRef { get; set; }
+
     public string? CallbackPath { get; set; }
 
     public bool Enabled { get; set; } = true;

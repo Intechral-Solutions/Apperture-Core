@@ -260,7 +260,7 @@ public sealed class EntraDirectoryDiscoveryService : IEntraDirectoryDiscoverySer
             return "Client ID is missing.";
 
         if (string.IsNullOrWhiteSpace(context.ClientSecret))
-            return "Client secret is not available. Configure Entra:ClientSecret (or KeyVault) for directory discovery.";
+            return "Client secret is not available. Record one on the Entra registration or set Entra:ClientSecret for directory discovery.";
 
         return null;
     }

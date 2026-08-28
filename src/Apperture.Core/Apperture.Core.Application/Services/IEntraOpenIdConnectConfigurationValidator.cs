@@ -9,7 +9,7 @@ public interface IEntraOpenIdConnectConfigurationValidator
         string authority,
         string clientId,
         bool usesDeploymentSecret,
-        bool deploymentSecretConfigured,
+        bool clientSecretConfigured,
         string? azureTenantId,
         CancellationToken cancellationToken = default);
 }

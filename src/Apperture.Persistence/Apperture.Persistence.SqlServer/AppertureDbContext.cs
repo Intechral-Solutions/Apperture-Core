@@ -765,6 +765,7 @@ public class AppertureDbContext : DbContext
             e.Property(x => x.DisplayName).HasMaxLength(256);
             e.Property(x => x.Authority).HasMaxLength(512);
             e.Property(x => x.ClientId).HasMaxLength(128);
+            e.Property(x => x.ClientSecretRef).HasMaxLength(64);
             e.Property(x => x.CallbackPath).HasMaxLength(256);
             e.Property(x => x.AzureTenantId).HasMaxLength(64);
             e.Property(x => x.LastOpenIdValidationSummary).HasMaxLength(512);

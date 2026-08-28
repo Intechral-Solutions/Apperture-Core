@@ -24,7 +24,7 @@ public static class AuthenticationServiceCollectionExtensions
         services.AddSingleton<IValidateOptions<EntraAuthOptions>, EntraAuthOptionsValidator>();
         services.AddSingleton<IValidateOptions<LocalAuthOptions>, LocalAuthOptionsValidator>();
 
-        services.AddSingleton<IConfigureNamedOptions<OpenIdConnectOptions>, EntraOpenIdConnectOptionsConfigurer>();
+        services.AddSingleton<IConfigureOptions<OpenIdConnectOptions>, EntraOpenIdConnectOptionsConfigurer>();
         services.AddSingleton<IConfigureOptions<AuthenticationOptions>, EntraAuthenticationOptionsConfigurer>();
 
         services.AddAuthentication()

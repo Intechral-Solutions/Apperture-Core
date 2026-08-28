@@ -13,7 +13,7 @@
 <div class="p-4 ui-page-stack">
     <PageHeader Eyebrow="Config — Authentication"
                 Title="Entra tenant setup"
-                Subtitle="Register authority and client id (secret stays in deployment). Validate OpenID metadata, then browse users and groups for directory discovery. Importing contacts is a later step. Restart the management host after changing the active registration so OIDC picks up authority and client id." />
+                Subtitle="Register authority, client id, and the confidential client secret. The secret is stored in the platform secret store (never shown again). Validate OpenID metadata, then browse users and groups. Restart the management host after changing the active registration so OIDC picks up authority, client id, and secret." />
 
     @if (!_canView)
     {
@@ -75,7 +75,7 @@
                                 <td class="p-2">@(r.IsActive ? "Yes" : "—")</td>
                                 <td class="p-2" title="@r.LastOpenIdValidationSummary">@ShortStatus(r.OpenIdConfigurationStatus ?? "")</td>
                                 <td class="p-2" title="@r.LastDirectoryDiscoverySummary">@ShortStatus(r.DirectoryDiscoveryStatus ?? "")</td>
-                                <td class="p-2">@(r.DeploymentSecretConfigured ? "ok" : "missing")</td>
+                                <td class="p-2">@(r.ClientSecretConfigured || r.DeploymentSecretConfigured ? "ok" : "missing")</td>
                                 <td class="p-2 space-y-1 whitespace-nowrap text-right">
                                     <div class="space-x-2">
                                         <a class="underline" href="/config/auth/entra/@r.Id/users">Users</a>
@@ -109,6 +109,14 @@
                     <label class="block text-xs">Client ID<input class="ui-input mt-1" @bind="_editingClientId" /></label>
                     <label class="block text-xs">Azure tenant id (optional, for Graph and issuer checks)<input class="ui-input mt-1" @bind="_editingAzureTenantId" /></label>
                     <label class="block text-xs">Callback path (optional)<input class="ui-input mt-1" @bind="_editingCallbackPath" /></label>
+                    <label class="block text-xs">Client secret
+                        <input class="ui-input mt-1"
+                               type="password"
+                               autocomplete="new-password"
+                               placeholder="@(_editingSecretConfigured ? "Enter new value to replace" : "Enter secret value")"
+                               @bind="_editingClientSecret" />
+                    </label>
+                    <p class="text-xs text-muted">The current secret is never shown. Leave blank to keep the stored secret.</p>
                     <label class="flex items-center gap-2 text-xs">
                         <input type="checkbox" @bind="_editingEnabled" />
                         Enabled
@@ -133,10 +141,14 @@
                     <label class="block text-xs">Authority (https) <input class="ui-input mt-1" @bind="_newAuthority" /></label>
                     <label class="block text-xs">Client ID <input class="ui-input mt-1" @bind="_newClientId" /></label>
                     <label class="block text-xs">Azure tenant id (optional)<input class="ui-input mt-1" @bind="_newAzureTenantId" /></label>
-                    <label class="flex items-center gap-2 text-xs">
-                        <input type="checkbox" @bind="_newUsesDeploymentSecret" disabled="true" />
-                        Use deployment client secret (required in v1)
+                    <label class="block text-xs">Client secret
+                        <input class="ui-input mt-1"
+                               type="password"
+                               autocomplete="new-password"
+                               placeholder="Enter secret value"
+                               @bind="_newClientSecret" />
                     </label>
+                    <p class="text-xs text-muted">Stored in the platform secret store. Deployment <span class="font-mono">Entra:ClientSecret</span> is used only when no stored secret exists.</p>
                     @if (!string.IsNullOrEmpty(_formError))
                     {
                         <PageMessage Kind="PageMessageKind.Error" Message="@_formError" />
@@ -160,7 +172,7 @@
     private string _newAuthority = "";
     private string _newClientId = "";
     private string? _newAzureTenantId;
-    private bool _newUsesDeploymentSecret = true;
+    private string _newClientSecret = "";
     private string? _formError;
 
     private string? _editing;
@@ -169,6 +181,8 @@
     private string _editingClientId = "";
     private string? _editingAzureTenantId;
     private string? _editingCallbackPath;
+    private string _editingClientSecret = "";
+    private bool _editingSecretConfigured;
     private bool _editingEnabled;
     private string? _editingRowVersion;
 
@@ -205,6 +219,8 @@
         _editingClientId = r.ClientId;
         _editingAzureTenantId = r.AzureTenantId;
         _editingCallbackPath = r.CallbackPath;
+        _editingClientSecret = "";
+        _editingSecretConfigured = r.ClientSecretConfigured || r.DeploymentSecretConfigured;
         _editingEnabled = r.Enabled;
         _editingRowVersion = r.RowVersionBase64;
     }
@@ -212,6 +228,7 @@
     private void CancelEdit()
     {
         _editing = null;
+        _editingClientSecret = "";
         _formError = null;
     }
 
@@ -233,8 +250,10 @@
                     string.IsNullOrWhiteSpace(_editingCallbackPath) ? null : _editingCallbackPath.Trim(),
                     _editingEnabled,
                     _editingRowVersion,
-                    string.IsNullOrWhiteSpace(_editingAzureTenantId) ? null : _editingAzureTenantId.Trim()));
+                    string.IsNullOrWhiteSpace(_editingAzureTenantId) ? null : _editingAzureTenantId.Trim(),
+                    ClientSecret: string.IsNullOrWhiteSpace(_editingClientSecret) ? null : _editingClientSecret));
             _editing = null;
+            _editingClientSecret = "";
             await ReloadAsync();
             await SignInOptions.RefreshAsync();
             Toasts.Show(ToastSeverity.Success, "Registration updated.");
@@ -262,11 +281,13 @@
                 UsesDeploymentSecret: true,
                 CallbackPath: null,
                 Enabled: true,
-                AzureTenantId: string.IsNullOrWhiteSpace(_newAzureTenantId) ? null : _newAzureTenantId.Trim()));
+                AzureTenantId: string.IsNullOrWhiteSpace(_newAzureTenantId) ? null : _newAzureTenantId.Trim(),
+                ClientSecret: string.IsNullOrWhiteSpace(_newClientSecret) ? null : _newClientSecret));
             _newDisplay = "";
             _newAuthority = "";
             _newClientId = "";
             _newAzureTenantId = null;
+            _newClientSecret = "";
             await ReloadAsync();
             await SignInOptions.RefreshAsync();
             Toasts.Show(ToastSeverity.Success, $"Created registration {created.DisplayName}.");

@@ -75,7 +75,7 @@ public sealed class AuthenticationAdminOverviewService : IAuthenticationAdminOve
         var effectiveValidation = legacyValidator.Validate(null, effectiveEntra);
         var entraConfigurationValid = !effectiveEntra.Enabled || !effectiveValidation.Failed;
         var entraMisconfiguredReason = effectiveEntra.Enabled && effectiveValidation.Failed
-            ? "Entra is enabled but authority, client ID, or deployment client secret is missing or invalid."
+            ? "Entra is enabled but authority, client ID, or client secret is missing or invalid."
             : null;
 
         var built = AuthSignInSnapshotBuilder.Build(local, effectiveEntra, policy);
@@ -97,10 +97,8 @@ public sealed class AuthenticationAdminOverviewService : IAuthenticationAdminOve
         if (!snap.LocalSignInEnabled && !snap.EntraSignInEnabled)
             warnings.Add("No viable sign-in method: enable local auth in deployment or fix Entra.");
 
-        var runtimeMayRequireRestart = active is { Enabled: true };
-        var runtimeApplicationStatus = runtimeMayRequireRestart
-            ? "Pending restart/reload confirmation: the active registration is persisted and used by API-derived state, but OpenID Connect handler behavior may lag until host restart."
-            : "No active Entra registration override is currently pending application.";
+        var runtimeMayRequireRestart = EntraRuntimeApplicationState.MayRequireRestartToApplyChanges(active, effectiveEntra);
+        var runtimeApplicationStatus = EntraRuntimeApplicationState.Describe(runtimeMayRequireRestart, active is { Enabled: true });
 
         var availability = BuildAuthProviderAvailability(active, snap);
 
@@ -132,7 +130,7 @@ public sealed class AuthenticationAdminOverviewService : IAuthenticationAdminOve
     {
         string? diagnosis = null;
         if (active is not null && snap.EntraSignInEnabled && active.OpenIdConfigurationStatus != OpenIdConfigurationStatus.Valid)
-            diagnosis = "The active Entra registration’s last OpenID validation is not “Valid”. Run “Validate OpenID” from Entra setup or fix authority, client id, and deployment secret.";
+            diagnosis = "The active Entra registration’s last OpenID validation is not “Valid”. Run “Validate OpenID” from Entra setup or fix authority, client id, and client secret.";
 
         if (active is not null &&
             active.DirectoryDiscoveryStatus is not DirectoryDiscoveryStatus.NotAttempted

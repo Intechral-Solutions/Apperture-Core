@@ -1,6 +1,7 @@
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Governance;
 using Apperture.Core.Domain.Identity;
+using Apperture.Core.Security.Secrets.Abstractions;
 using Apperture.Shared.Kernel;
 using Microsoft.Extensions.Configuration;
 
@@ -17,6 +18,7 @@ public sealed class ManagedContactManagementService : IManagedContactManagementS
     private readonly IUserRepository _users;
     private readonly IConfiguration _configuration;
     private readonly TimeProvider _time;
+    private readonly ISecretResolver? _secretResolver;
 
     public ManagedContactManagementService(
         IPrincipalContext principalContext,
@@ -27,7 +29,8 @@ public sealed class ManagedContactManagementService : IManagedContactManagementS
         IEntraDirectoryDiscoveryService directory,
         IUserRepository users,
         IConfiguration configuration,
-        TimeProvider time)
+        TimeProvider time,
+        ISecretResolver? secretResolver = null)
     {
         _principalContext = principalContext;
         _auth = auth;
@@ -38,6 +41,7 @@ public sealed class ManagedContactManagementService : IManagedContactManagementS
         _users = users;
         _configuration = configuration;
         _time = time;
+        _secretResolver = secretResolver;
     }
 
     /// <inheritdoc />
@@ -311,7 +315,13 @@ public sealed class ManagedContactManagementService : IManagedContactManagementS
         var reg = await _entraRegistrations.GetByIdAsync(registrationId.Trim(), cancellationToken).ConfigureAwait(false);
         if (reg is null)
             return null;
-        var secret = _configuration[EntraAuthOptions.SectionName + ":" + nameof(EntraAuthOptions.ClientSecret)] ?? "";
+        var secret = await EntraClientSecretAccess
+            .TryResolveAsync(
+                reg,
+                _secretResolver,
+                _configuration[EntraAuthOptions.SectionName + ":" + nameof(EntraAuthOptions.ClientSecret)],
+                cancellationToken)
+            .ConfigureAwait(false) ?? "";
         var tenantId = EntraDirectoryTenantResolver.TryResolveGraphTenantId(reg) ?? "";
         return new EntraDirectoryDiscoveryContext(tenantId, reg.ClientId, secret, reg.Id);
     }

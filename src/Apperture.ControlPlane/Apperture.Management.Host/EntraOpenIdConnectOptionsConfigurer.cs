@@ -33,7 +33,7 @@ internal sealed class EntraOpenIdConnectOptionsConfigurer : IConfigureNamedOptio
             return;
         }
 
-        options.Authority = e.Authority;
+        options.Authority = EntraAuthorityHelper.ToMicrosoftIdentityPlatformAuthority(e.Authority, e.AzureTenantId);
         options.ClientId = e.ClientId;
         options.ClientSecret = e.ClientSecret;
         options.CallbackPath = e.CallbackPath;

@@ -63,6 +63,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IEntraOpenIdConnectConfigurationValidator, EntraOpenIdConnectConfigurationValidator>();
         services.AddSingleton<IEntraDirectoryDiscoveryService, EntraDirectoryDiscoveryService>();
         services.AddSingleton<IPostConfigureOptions<EntraAuthOptions>, EntraAuthOptionsDatabasePostConfigure>();
+        services.AddScoped<EntraClientSecretMaterialProvisioner>();
         services.AddScoped<IAuthenticationAdminOverviewService, AuthenticationAdminOverviewService>();
         services.AddScoped<IUserRepository, SqlUserRepository>();
         services.AddScoped<IUserPreferencesRepository, SqlUserPreferencesRepository>();

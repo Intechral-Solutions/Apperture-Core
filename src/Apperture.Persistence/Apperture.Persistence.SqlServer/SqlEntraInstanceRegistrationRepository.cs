@@ -49,6 +49,7 @@ public sealed class SqlEntraInstanceRegistrationRepository : IEntraInstanceRegis
             Authority = registration.Authority,
             ClientId = registration.ClientId,
             UsesDeploymentSecret = registration.UsesDeploymentSecret,
+            ClientSecretRef = registration.ClientSecretRef,
             CallbackPath = registration.CallbackPath,
             Enabled = registration.Enabled,
             IsActive = registration.IsActive,
@@ -82,6 +83,7 @@ public sealed class SqlEntraInstanceRegistrationRepository : IEntraInstanceRegis
         e.Authority = registration.Authority;
         e.ClientId = registration.ClientId;
         e.UsesDeploymentSecret = registration.UsesDeploymentSecret;
+        e.ClientSecretRef = registration.ClientSecretRef;
         e.CallbackPath = registration.CallbackPath;
         e.AzureTenantId = string.IsNullOrWhiteSpace(registration.AzureTenantId)
             ? null
@@ -177,6 +179,7 @@ public sealed class SqlEntraInstanceRegistrationRepository : IEntraInstanceRegis
             Authority = e.Authority,
             ClientId = e.ClientId,
             UsesDeploymentSecret = e.UsesDeploymentSecret,
+            ClientSecretRef = e.ClientSecretRef,
             CallbackPath = e.CallbackPath,
             Enabled = e.Enabled,
             IsActive = e.IsActive,

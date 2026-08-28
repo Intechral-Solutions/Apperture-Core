@@ -54,7 +54,7 @@ public sealed class EntraOpenIdConnectConfigurationValidatorTests
             "https://login.microsoftonline.com/11111111-1111-1111-1111-111111111111",
             "client-id",
             usesDeploymentSecret: true,
-            deploymentSecretConfigured: true,
+            clientSecretConfigured: true,
             azureTenantId: "11111111-1111-1111-1111-111111111111");
 
         result.Success.Should().BeTrue();
@@ -73,12 +73,32 @@ public sealed class EntraOpenIdConnectConfigurationValidatorTests
             "https://login.microsoftonline.com/tenant",
             "client",
             usesDeploymentSecret: true,
-            deploymentSecretConfigured: false,
+            clientSecretConfigured: false,
             azureTenantId: null);
 
         result.Success.Should().BeFalse();
         result.Status.Should().Be(OpenIdConfigurationStatus.InvalidConfiguration);
         result.Code.Should().Be("missing_client_secret");
+    }
+
+    [Fact]
+    public async Task ValidateAsync_WhenAuthorityTenantHasTypo_ReturnsInvalidConfigurationWithoutHttp()
+    {
+        var handler = new RecordingHandler(_ => throw new InvalidOperationException("HTTP should not run"));
+        var validator = new EntraOpenIdConnectConfigurationValidator(
+            new TestHttpClientFactory(handler),
+            NullLogger<EntraOpenIdConnectConfigurationValidator>.Instance);
+
+        var result = await validator.ValidateAsync(
+            "https://login.microsoftonline.com/f47559c4-15e1-4df2-8bf2-a31cd60330c6a",
+            "client",
+            usesDeploymentSecret: true,
+            clientSecretConfigured: true,
+            azureTenantId: "f47559c4-15e1-4df2-8bf2-a31cd60330c6");
+
+        result.Success.Should().BeFalse();
+        result.Status.Should().Be(OpenIdConfigurationStatus.InvalidConfiguration);
+        result.Code.Should().Be("malformed_tenant_in_authority");
     }
 
     [Fact]
@@ -93,7 +113,7 @@ public sealed class EntraOpenIdConnectConfigurationValidatorTests
             "https://login.microsoftonline.com/tenant",
             "client",
             usesDeploymentSecret: true,
-            deploymentSecretConfigured: true,
+            clientSecretConfigured: true,
             azureTenantId: null);
 
         result.Success.Should().BeFalse();

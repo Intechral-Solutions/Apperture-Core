@@ -1,6 +1,7 @@
 using Apperture.ControlPlane.Security;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Governance;
+using Apperture.Core.Security.Secrets.Abstractions;
 using Apperture.Management.Api.Models;
 using Apperture.Shared.Kernel;
 using Microsoft.AspNetCore.Authorization;
@@ -24,6 +25,8 @@ public sealed class ConfigEntraTenantsController : ControllerBase
     private readonly IInstanceAuthUiPolicyRepository _policyRepository;
     private readonly IEntraOpenIdConnectConfigurationValidator _openIdValidator;
     private readonly IEntraDirectoryDiscoveryService _directoryDiscovery;
+    private readonly EntraClientSecretMaterialProvisioner _clientSecretProvisioner;
+    private readonly ISecretResolver _secretResolver;
 
     public ConfigEntraTenantsController(
         IEntraInstanceRegistrationRepository repository,
@@ -33,7 +36,9 @@ public sealed class ConfigEntraTenantsController : ControllerBase
         IOptions<LocalAuthOptions> localOptions,
         IInstanceAuthUiPolicyRepository policyRepository,
         IEntraOpenIdConnectConfigurationValidator openIdValidator,
-        IEntraDirectoryDiscoveryService directoryDiscovery)
+        IEntraDirectoryDiscoveryService directoryDiscovery,
+        EntraClientSecretMaterialProvisioner clientSecretProvisioner,
+        ISecretResolver secretResolver)
     {
         _repository = repository;
         _principalContext = principalContext;
@@ -43,6 +48,8 @@ public sealed class ConfigEntraTenantsController : ControllerBase
         _policyRepository = policyRepository;
         _openIdValidator = openIdValidator;
         _directoryDiscovery = directoryDiscovery;
+        _clientSecretProvisioner = clientSecretProvisioner;
+        _secretResolver = secretResolver;
     }
 
     [HttpGet]
@@ -52,11 +59,9 @@ public sealed class ConfigEntraTenantsController : ControllerBase
         if (!await AuthorizeReadAsync(cancellationToken))
             return Forbid();
 
-        var secretConfigured = !string.IsNullOrWhiteSpace(
-            _configuration[EntraAuthOptions.SectionName + ":" + nameof(EntraAuthOptions.ClientSecret)]);
-
         var list = await _repository.ListAsync(cancellationToken);
-        return Ok(list.Select(e => ToListItem(e, secretConfigured)).ToList());
+        var deploymentSecretConfigured = DeploymentSecretPresent();
+        return Ok(list.Select(e => ToListItem(e, deploymentSecretConfigured)).ToList());
     }
 
     [HttpGet("{id}")]
@@ -71,10 +76,7 @@ public sealed class ConfigEntraTenantsController : ControllerBase
         if (e is null)
             return NotFound();
 
-        var secretConfigured = !string.IsNullOrWhiteSpace(
-            _configuration[EntraAuthOptions.SectionName + ":" + nameof(EntraAuthOptions.ClientSecret)]);
-
-        return Ok(ToListItem(e, secretConfigured));
+        return Ok(ToListItem(e, DeploymentSecretPresent()));
     }
 
     [HttpPost]
@@ -108,10 +110,9 @@ public sealed class ConfigEntraTenantsController : ControllerBase
         };
 
         var created = await _repository.AddAsync(draft, cancellationToken);
-        var secretConfigured = !string.IsNullOrWhiteSpace(
-            _configuration[EntraAuthOptions.SectionName + ":" + nameof(EntraAuthOptions.ClientSecret)]);
+        created = await PersistClientSecretIfProvidedAsync(created, body.ClientSecret, cancellationToken);
 
-        var dto = ToListItem(created, secretConfigured);
+        var dto = ToListItem(created, DeploymentSecretPresent());
         return CreatedAtAction(nameof(GetById), new { id = created.Id }, dto);
     }
 
@@ -177,8 +178,17 @@ public sealed class ConfigEntraTenantsController : ControllerBase
             DirectoryDiscoveryStatus = existing.DirectoryDiscoveryStatus,
             LastDirectoryDiscoveryUtc = existing.LastDirectoryDiscoveryUtc,
             LastDirectoryDiscoverySummary = existing.LastDirectoryDiscoverySummary,
-            LastDirectoryDiscoveryDetail = existing.LastDirectoryDiscoveryDetail
+            LastDirectoryDiscoveryDetail = existing.LastDirectoryDiscoveryDetail,
+            ClientSecretRef = existing.ClientSecretRef
         };
+
+        if (!string.IsNullOrWhiteSpace(body.ClientSecret))
+        {
+            var (secretRef, _) = await _clientSecretProvisioner
+                .ReplaceAsync(existing.Id, body.ClientSecret, existing.ClientSecretRef, cancellationToken)
+                .ConfigureAwait(false);
+            updatedModel = WithClientSecretRef(updatedModel, secretRef);
+        }
 
         // If disabling or breaking the active registration, ensure we do not lock the instance out.
         var simulatedEffective = SimulateEffectiveEntraAfterUpdate(legacy, await _repository.ListAsync(cancellationToken), updatedModel);
@@ -196,10 +206,7 @@ public sealed class ConfigEntraTenantsController : ControllerBase
         }
 
         var refreshed = await _repository.GetByIdAsync(id, cancellationToken);
-        var secretConfigured = !string.IsNullOrWhiteSpace(
-            _configuration[EntraAuthOptions.SectionName + ":" + nameof(EntraAuthOptions.ClientSecret)]);
-
-        return Ok(ToListItem(refreshed!, secretConfigured));
+        return Ok(ToListItem(refreshed!, DeploymentSecretPresent()));
     }
 
     [HttpDelete("{id}")]
@@ -223,6 +230,10 @@ public sealed class ConfigEntraTenantsController : ControllerBase
             existing.IsActive);
         if (err is not null)
             return BadRequest(new { message = err });
+
+        await _clientSecretProvisioner
+            .TryDisableOwnedSecretAsync(existing.Id, existing.ClientSecretRef, cancellationToken)
+            .ConfigureAwait(false);
 
         await _repository.DeleteAsync(id, cancellationToken);
         return NoContent();
@@ -283,8 +294,10 @@ public sealed class ConfigEntraTenantsController : ControllerBase
         if (reg is null)
             return NotFound();
 
-        var secretConfigured = !string.IsNullOrWhiteSpace(
-            _configuration[EntraAuthOptions.SectionName + ":" + nameof(EntraAuthOptions.ClientSecret)]);
+        var secretConfigured = EntraClientSecretAccess.IsConfigured(
+            reg.ClientSecretRef,
+            reg.UsesDeploymentSecret,
+            DeploymentSecretPresent());
 
         var outcome = await _openIdValidator.ValidateAsync(
             reg.Authority,
@@ -318,7 +331,7 @@ public sealed class ConfigEntraTenantsController : ControllerBase
                 Summary = outcome.Summary,
                 TechnicalDetail = outcome.TechnicalDetail
             },
-            Tenant = ToListItem(refreshed, secretConfigured)
+            Tenant = ToListItem(refreshed, DeploymentSecretPresent())
         });
     }
 
@@ -360,8 +373,7 @@ public sealed class ConfigEntraTenantsController : ControllerBase
         if (reg is null)
             return NotFound();
 
-        var secret = _configuration[EntraAuthOptions.SectionName + ":" + nameof(EntraAuthOptions.ClientSecret)]
-            ?? "";
+        var secret = await ResolveClientSecretAsync(reg, cancellationToken);
         var tenantId = EntraDirectoryTenantResolver.TryResolveGraphTenantId(reg) ?? "";
         var ctx = new EntraDirectoryDiscoveryContext(tenantId, reg.ClientId, secret, reg.Id);
 
@@ -405,8 +417,7 @@ public sealed class ConfigEntraTenantsController : ControllerBase
         if (reg is null)
             return NotFound();
 
-        var secret = _configuration[EntraAuthOptions.SectionName + ":" + nameof(EntraAuthOptions.ClientSecret)]
-            ?? "";
+        var secret = await ResolveClientSecretAsync(reg, cancellationToken);
         var tenantId = EntraDirectoryTenantResolver.TryResolveGraphTenantId(reg) ?? "";
         var ctx = new EntraDirectoryDiscoveryContext(tenantId, reg.ClientId, secret, reg.Id);
 
@@ -480,12 +491,18 @@ public sealed class ConfigEntraTenantsController : ControllerBase
             Authority = source.Authority,
             ClientId = source.ClientId,
             ClientSecret = source.ClientSecret,
+            AzureTenantId = source.AzureTenantId,
             CallbackPath = source.CallbackPath,
             Scopes = source.Scopes?.ToArray() ?? ["openid", "profile"]
         };
 
-    private static EntraTenantListItemResponse ToListItem(EntraInstanceRegistration e, bool deploymentSecretConfigured) =>
-        new()
+    private static EntraTenantListItemResponse ToListItem(EntraInstanceRegistration e, bool deploymentSecretConfigured)
+    {
+        var clientSecretConfigured = EntraClientSecretAccess.IsConfigured(
+            e.ClientSecretRef,
+            e.UsesDeploymentSecret,
+            deploymentSecretConfigured);
+        return new()
         {
             Id = e.Id,
             DisplayName = e.DisplayName,
@@ -496,6 +513,7 @@ public sealed class ConfigEntraTenantsController : ControllerBase
             Enabled = e.Enabled,
             IsActive = e.IsActive,
             DeploymentSecretConfigured = e.UsesDeploymentSecret && deploymentSecretConfigured,
+            ClientSecretConfigured = clientSecretConfigured,
             AzureTenantId = e.AzureTenantId,
             OpenIdConfigurationStatus = e.OpenIdConfigurationStatus.ToString(),
             LastOpenIdValidationUtc = e.LastOpenIdValidationUtc,
@@ -506,6 +524,67 @@ public sealed class ConfigEntraTenantsController : ControllerBase
             LastDirectoryDiscoverySummary = e.LastDirectoryDiscoverySummary,
             LastDirectoryDiscoveryDetail = e.LastDirectoryDiscoveryDetail,
             RowVersionBase64 = e.RowVersion is { Length: > 0 } ? Convert.ToBase64String(e.RowVersion) : null
+        };
+    }
+
+    private bool DeploymentSecretPresent() =>
+        !string.IsNullOrWhiteSpace(
+            _configuration[EntraAuthOptions.SectionName + ":" + nameof(EntraAuthOptions.ClientSecret)]);
+
+    private async Task<string> ResolveClientSecretAsync(
+        EntraInstanceRegistration registration,
+        CancellationToken cancellationToken)
+    {
+        var resolved = await EntraClientSecretAccess
+            .TryResolveAsync(
+                registration,
+                _secretResolver,
+                _configuration[EntraAuthOptions.SectionName + ":" + nameof(EntraAuthOptions.ClientSecret)],
+                cancellationToken)
+            .ConfigureAwait(false);
+        return resolved ?? "";
+    }
+
+    private async Task<EntraInstanceRegistration> PersistClientSecretIfProvidedAsync(
+        EntraInstanceRegistration created,
+        string? clientSecret,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(clientSecret))
+            return created;
+
+        var (secretRef, _) = await _clientSecretProvisioner
+            .ReplaceAsync(created.Id, clientSecret, created.ClientSecretRef, cancellationToken)
+            .ConfigureAwait(false);
+        await _repository.UpdateAsync(WithClientSecretRef(created, secretRef), created.RowVersion, cancellationToken)
+            .ConfigureAwait(false);
+        return await _repository.GetByIdAsync(created.Id, cancellationToken).ConfigureAwait(false) ?? created;
+    }
+
+    private static EntraInstanceRegistration WithClientSecretRef(EntraInstanceRegistration source, string? clientSecretRef) =>
+        new()
+        {
+            Id = source.Id,
+            DisplayName = source.DisplayName,
+            Authority = source.Authority,
+            ClientId = source.ClientId,
+            UsesDeploymentSecret = source.UsesDeploymentSecret,
+            ClientSecretRef = clientSecretRef,
+            CallbackPath = source.CallbackPath,
+            Enabled = source.Enabled,
+            IsActive = source.IsActive,
+            RowVersion = source.RowVersion,
+            CreatedUtc = source.CreatedUtc,
+            UpdatedUtc = source.UpdatedUtc,
+            AzureTenantId = source.AzureTenantId,
+            OpenIdConfigurationStatus = source.OpenIdConfigurationStatus,
+            LastOpenIdValidationUtc = source.LastOpenIdValidationUtc,
+            LastOpenIdValidationSummary = source.LastOpenIdValidationSummary,
+            LastOpenIdValidationDetail = source.LastOpenIdValidationDetail,
+            DirectoryDiscoveryStatus = source.DirectoryDiscoveryStatus,
+            LastDirectoryDiscoveryUtc = source.LastDirectoryDiscoveryUtc,
+            LastDirectoryDiscoverySummary = source.LastDirectoryDiscoverySummary,
+            LastDirectoryDiscoveryDetail = source.LastDirectoryDiscoveryDetail
         };
 
     private async Task<bool> AuthorizeReadAsync(CancellationToken cancellationToken)

@@ -2,7 +2,9 @@ namespace Apperture.Core.Application.Services;
 
 /// <summary>
 /// Persisted Entra (Azure AD) OIDC registration for the instance. At most one row is active at a time.
-/// Client secret is not stored; v1 uses deployment configuration when <see cref="UsesDeploymentSecret"/> is true.
+/// The confidential client secret is stored in <c>ISecretStore</c> and referenced by
+/// <see cref="ClientSecretRef"/>; deployment <c>Entra:ClientSecret</c> remains a fallback when
+/// <see cref="UsesDeploymentSecret"/> is true.
 /// </summary>
 public sealed class EntraInstanceRegistration
 {
@@ -14,8 +16,11 @@ public sealed class EntraInstanceRegistration
 
     public string ClientId { get; init; } = "";
 
-    /// <summary>When true, <c>Entra:ClientSecret</c> (or KeyVault) supplies the confidential client secret.</summary>
+    /// <summary>When true, <c>Entra:ClientSecret</c> (or KeyVault) is used if <see cref="ClientSecretRef"/> is empty.</summary>
     public bool UsesDeploymentSecret { get; init; } = true;
+
+    /// <summary>Opaque <c>ISecretStore</c> id for the client secret. Never the secret value.</summary>
+    public string? ClientSecretRef { get; init; }
 
     public string? CallbackPath { get; init; }
 
