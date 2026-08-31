@@ -40,7 +40,8 @@ public interface IUserManagementService
     ValueTask SetRolePermissionsAsync(RoleId roleId, IReadOnlyList<PermissionDescriptor> permissions, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Creates a new user with one initial identity link. Optional password when source is Local. Requires user.manage.
+    /// Creates a new user with one initial identity link. Local source requires a password hashed through
+    /// the platform hasher (not a hash supplied by the caller). Requires user.manage.
     /// </summary>
     ValueTask<UserId> CreateUserAsync(string displayName, IdentitySource source, string externalId, string? password = null, CancellationToken cancellationToken = default);
 

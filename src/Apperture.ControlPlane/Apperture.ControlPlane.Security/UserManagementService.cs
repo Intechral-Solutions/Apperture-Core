@@ -138,10 +138,22 @@ public sealed class UserManagementService : IUserManagementService
     {
         var actorId = await RequireUserManageAsync(cancellationToken);
         await AppendBreakGlassUseAuditIfNeededAsync("user.create", actorId, cancellationToken);
+        if (string.IsNullOrWhiteSpace(displayName))
+            throw new InvalidOperationException("Display name is required.");
         ValidateEntraExternalId(source, externalId);
         var linkExternalId = source == IdentitySource.Local
             ? LocalAuthHelpers.NormalizeUsername(externalId)
             : externalId.Trim();
+        if (string.IsNullOrWhiteSpace(linkExternalId))
+            throw new InvalidOperationException("A username is required.");
+
+        if (source == IdentitySource.Local)
+        {
+            if (string.IsNullOrEmpty(password))
+                throw new InvalidOperationException("A password is required when creating a local user.");
+            if (_localOptions.MinPasswordLength > 0 && password.Length < _localOptions.MinPasswordLength)
+                throw new InvalidOperationException($"Password must be at least {_localOptions.MinPasswordLength} characters.");
+        }
 
         var existing = await _userRepository.GetByIdentityLinkAsync(source, linkExternalId, cancellationToken);
         if (existing is not null)

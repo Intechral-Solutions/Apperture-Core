@@ -46,6 +46,10 @@ public static class AuthenticationServiceCollectionExtensions
                 options.ClientSecret ??= "Apperture-Entra-Disabled-Placeholder";
                 if (!options.CallbackPath.HasValue)
                     options.CallbackPath = "/signin-oidc";
+                if (!options.SignedOutCallbackPath.HasValue)
+                    options.SignedOutCallbackPath = EntraSignOut.SignedOutCallbackPath;
+                if (!options.RemoteSignOutPath.HasValue)
+                    options.RemoteSignOutPath = EntraSignOut.RemoteSignOutPath;
                 options.ResponseType ??= "code";
                 if (options.Scope.Count == 0)
                 {

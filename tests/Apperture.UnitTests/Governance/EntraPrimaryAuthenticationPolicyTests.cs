@@ -91,6 +91,48 @@ public sealed class EntraPrimaryAuthenticationPolicyTests
         presentation.EntraAssociationStatus.Should().Be(AuthenticationMethodStatuses.EntraProven);
     }
 
+    [Fact]
+    public async Task Previously_deferred_last_admin_is_disabled_after_another_independent_admin_exists()
+    {
+        var harness = Harness.SolePlatformAdministrator();
+
+        var deferred = await harness.Policy.ApplyAfterEntraProvenAsync(new UserId("admin-1"));
+        deferred.Should().Be(EntraPrimaryLocalDisableOutcome.DeferredLastEntraIndependentPlatformAdministrator);
+        harness.Credentials.Disabled["admin-1"].Should().BeFalse();
+
+        harness.Users.Seed(new User(
+            new UserId("admin-2"),
+            "Second Administrator",
+            [new IdentityLink(IdentitySource.Local, "admin2", Now)],
+            [AdminRole],
+            false));
+        harness.Credentials.Seed("admin-2", "hash-other", disabled: false);
+        harness.Roles.UserIds.Add(new UserId("admin-2"));
+        harness.Audit.Actions.Clear();
+
+        var reevaluated = await harness.Policy.ApplyAfterEntraProvenAsync(new UserId("admin-1"));
+
+        reevaluated.Should().Be(EntraPrimaryLocalDisableOutcome.Disabled);
+        harness.Credentials.Disabled["admin-1"].Should().BeTrue();
+        harness.Credentials.Disabled["admin-2"].Should().BeFalse();
+        harness.Credentials.Hashes["admin-1"].Should().Be("hash-original");
+        harness.Audit.Actions.Should().Contain(StrongAuthenticationAuditActionNames.LocalDisabledEntraPrimary);
+        harness.Audit.Actions.Should().NotContain(StrongAuthenticationAuditActionNames.LocalDisableDeferredLastAdmin);
+    }
+
+    [Fact]
+    public async Task Subsequent_apply_while_still_the_last_independent_admin_remains_deferred()
+    {
+        var harness = Harness.SolePlatformAdministrator();
+
+        var first = await harness.Policy.ApplyAfterEntraProvenAsync(new UserId("admin-1"));
+        var second = await harness.Policy.ApplyAfterEntraProvenAsync(new UserId("admin-1"));
+
+        first.Should().Be(EntraPrimaryLocalDisableOutcome.DeferredLastEntraIndependentPlatformAdministrator);
+        second.Should().Be(EntraPrimaryLocalDisableOutcome.DeferredLastEntraIndependentPlatformAdministrator);
+        harness.Credentials.Disabled["admin-1"].Should().BeFalse();
+    }
+
     private sealed class Harness
     {
         public RecordingUsers Users { get; } = new();

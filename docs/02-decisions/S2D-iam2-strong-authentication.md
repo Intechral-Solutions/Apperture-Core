@@ -16,6 +16,10 @@ Re-enabling another user's local credential requires `credential.manage` **and**
 
 Until IAM-3 provides an Entra-independent emergency Platform Administrator, IAM-2 will not auto-disable the last Platform Administrator local credential that can still sign in without Entra.
 
+Successful Entra authentication re-applies that policy. A previously deferred last-administrator disable is not sticky: once another Entra-independent Platform Administrator with an enabled local credential exists, the next successful Entra sign-in of the first administrator disables that local credential. Already-disabled credentials are not mutated or re-audited.
+
+Platform administrators with `user.manage` can create a local platform user (User, Local identity link, hashed local credential) from Governance → Users. Optional role assignment uses the existing `role.assign` operation. Initial passwords reuse the existing hasher; dedicated password-setup and reset remains IAM-4.
+
 ## Persistence choice
 
 Assurance timestamps live in the signed authentication cookie, not in saved access tokens and not in a parallel session store. The UI cannot set these claims.

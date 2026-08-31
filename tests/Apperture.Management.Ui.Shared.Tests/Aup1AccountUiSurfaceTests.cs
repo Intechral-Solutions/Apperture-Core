@@ -71,6 +71,9 @@ public sealed class Aup1AccountUiSurfaceTests
         content.Should().Contain("AccountUiRoutes.Security");
         content.Should().Contain("<AccountAvatar");
         content.Should().Contain("Sign out");
+        content.Should().Contain("GetSignOutUrl");
+        content.Should().NotContain("end IdP session");
+        content.Should().NotContain("SignOutLocalAsync");
         content.Should().Contain(">Notifications</a>");
         content.Should().Contain(">Appearance</a>");
         content.Should().NotContain("Notification preferences");
@@ -377,6 +380,9 @@ public sealed class Aup1AccountUiSurfaceTests
         var security = ReadRepoFile($"{ClientRoot}/Pages/Account/AccountSecurity.razor");
         security.Should().Contain("Primary sign-in method");
         security.Should().Contain("The password itself has not been deleted");
+        security.Should().Contain("GetSignOutUrl");
+        security.Should().Contain("returns you to the sign-in page");
+        security.Should().NotContain("Sign out and end the directory session");
         security.Should().NotContain("Enable local sign-in");
         security.Should().NotContain("Enable local login");
     }

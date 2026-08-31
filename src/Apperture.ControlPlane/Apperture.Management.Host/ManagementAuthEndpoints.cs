@@ -28,9 +28,15 @@ internal static class ManagementAuthEndpoints
         // if linking fails.
         app.MapGet("/signin/link", SignInLinkAsync);
         app.MapGet("/signin/step-up", SignInStepUpAsync);
-        app.MapGet("/signout", (HttpContext ctx) => ctx.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme));
+        app.MapGet("/signout", SignOutAsync);
         return app;
     }
+
+    private static Task SignOutAsync(
+        HttpContext ctx,
+        IOptions<EntraAuthOptions> entra,
+        IConfiguration configuration) =>
+        EntraSignOut.ExecuteAsync(ctx, entra, configuration);
 
     private static async Task SignInAsync(
         HttpContext ctx,

@@ -27,6 +27,7 @@ public static class ManagementBreadcrumbResolver
         MatchConfigNotificationDefinitionsList,
         MatchConfigNotificationsLanding,
         MatchConfigGovernanceUserRoleDerivedAccess,
+        MatchConfigGovernanceUserNew,
         MatchConfigGovernanceUserDetail,
         MatchConfigGovernanceUsersList,
         MatchConfigGovernanceRoleDetail,
@@ -508,6 +509,18 @@ public static class ManagementBreadcrumbResolver
             ("Users", "/config/governance/users"),
             ("User", $"/config/governance/users/{s[3]}"),
             ("Role-derived access", null));
+        return true;
+    }
+
+    private static bool MatchConfigGovernanceUserNew(string[] s, out IReadOnlyList<BreadcrumbItem>? c)
+    {
+        c = null;
+        if (!Matches(s, "config", "governance", "users", "new"))
+            return false;
+        c = Config(
+            ("Governance", "/config/governance"),
+            ("Users", "/config/governance/users"),
+            ("New", null));
         return true;
     }
 

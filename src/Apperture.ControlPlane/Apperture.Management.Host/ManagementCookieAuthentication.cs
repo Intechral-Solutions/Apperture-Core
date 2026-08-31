@@ -15,6 +15,13 @@ internal static class ManagementCookieAuthentication
     {
         options.Events.OnRedirectToLogin = context => WriteApiStatusOrRedirect(context, StatusCodes.Status401Unauthorized);
         options.Events.OnRedirectToAccessDenied = context => WriteApiStatusOrRedirect(context, StatusCodes.Status403Forbidden);
+        options.Events.OnRedirectToLogout = context =>
+        {
+            if (string.IsNullOrEmpty(context.RedirectUri))
+                return Task.CompletedTask;
+            context.Response.Redirect(context.RedirectUri);
+            return Task.CompletedTask;
+        };
     }
 
     public static bool IsApiRequest(HttpRequest request) =>

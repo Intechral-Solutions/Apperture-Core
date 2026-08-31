@@ -13,6 +13,10 @@
                 Title="Users"
                 Subtitle="Users for role-derived access inspection. Use the effective-access link to see merged permissions from assigned roles.">
         <Toolbar>
+            @if (_capabilities?.CanManageUsers == true)
+            {
+                <a href="/config/governance/users/new" class="ui-toolbar-btn">New user</a>
+            }
             <button type="button"
                     class="ui-toolbar-btn"
                     disabled="@_loading"

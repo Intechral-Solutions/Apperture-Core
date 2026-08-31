@@ -830,6 +830,9 @@ public interface IManagementClient
     /// <summary>Gets a paginated page of users. Requires user.read.</summary>
     Task<UserListResponse> GetUserPageAsync(int skip, int take, CancellationToken cancellationToken = default);
 
+    /// <summary>Creates a local or Entra-linked platform user. Requires user.manage. Throws on 400/403/409.</summary>
+    Task<CreateUserResponse> CreateUserAsync(CreateUserRequest request, CancellationToken cancellationToken = default);
+
     /// <summary>Gets a user by id. Requires user.read.</summary>
     Task<UserDetailDto?> GetUserAsync(string userId, CancellationToken cancellationToken = default);
 
@@ -888,6 +891,15 @@ public sealed record UserListDto(
     [property: JsonPropertyName("hasLocalLink")] bool HasLocalLink,
     [property: JsonPropertyName("hasEntraLink")] bool HasEntraLink,
     [property: JsonPropertyName("roleIds")] IReadOnlyList<string> RoleIds);
+
+public sealed record CreateUserRequest(
+    [property: JsonPropertyName("displayName")] string DisplayName,
+    [property: JsonPropertyName("identitySource")] string IdentitySource,
+    [property: JsonPropertyName("externalId")] string ExternalId,
+    [property: JsonPropertyName("password")] string? Password = null);
+
+public sealed record CreateUserResponse(
+    [property: JsonPropertyName("userId")] string UserId);
 
 public sealed record UserDetailDto(
     [property: JsonPropertyName("userId")] string UserId,

@@ -136,8 +136,9 @@ public sealed class EntraIdentityAssociationService : IEntraIdentityAssociationS
         if (legacyTenantCompleted)
             await AuditAsync(EntraLinkAuditActionNames.LegacyTenantCompleted, objectId!, owner.UserId.Value, $"tenantId={tokenTenantId}", cancellationToken);
 
-        if (wasPending)
-            await ApplyEntraPrimaryPolicyAsync(owner.UserId, cancellationToken);
+        // Re-evaluate on every successful Entra authentication. A previously deferred last-admin
+        // disable must not stick once another Entra-independent Platform Administrator exists.
+        await ApplyEntraPrimaryPolicyAsync(owner.UserId, cancellationToken);
 
         return EntraAssociationOutcome.Success(owner.UserId);
     }

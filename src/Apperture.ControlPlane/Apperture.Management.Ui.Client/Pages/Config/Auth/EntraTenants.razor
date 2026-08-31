@@ -118,6 +118,12 @@
                         changing the active registration.
                     </p>
                     <label class="block text-xs">Callback path (optional)<input class="ui-input mt-1" @bind="_editingCallbackPath" /></label>
+                    <p class="text-xs text-muted">
+                        Register these URLs on the Entra app, on the management host (not the UI origin):
+                        the sign-in callback (default <code class="ui-inline-code">/signin-oidc</code>),
+                        the sign-out callback <code class="ui-inline-code">/signout-callback-oidc</code> as a Redirect URI,
+                        and <code class="ui-inline-code">/signout-oidc</code> as Front-channel logout URL.
+                    </p>
                     <label class="block text-xs">Client secret
                         <input class="ui-input mt-1"
                                type="password"

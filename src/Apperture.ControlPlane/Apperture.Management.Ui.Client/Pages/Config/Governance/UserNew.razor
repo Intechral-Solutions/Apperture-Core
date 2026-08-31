@@ -1,0 +1,194 @@
+@page "/config/governance/users/new"
+@layout ConfigLayout
+@using System.Net
+@inject IManagementClient Client
+@inject IOperatorCapabilitiesService Capabilities
+@inject IToastService Toasts
+@inject NavigationManager Nav
+
+<div class="p-4 ui-page-stack">
+    <PageHeader Title="New user" Subtitle="Create a local platform user">
+        <Toolbar>
+            <a href="/config/governance/users" class="ui-toolbar-btn">Back to users</a>
+        </Toolbar>
+    </PageHeader>
+
+    @if (!_capabilitiesLoaded)
+    {
+        <LoadingState Message="Loading…" />
+    }
+    else if (_capabilities?.CanManageUsers != true)
+    {
+        <ForbiddenState Message="You do not have permission to create users." />
+    }
+    else
+    {
+        <div class="ui-settings-callout">
+            Creates a platform user with a local username and an initial password. Dedicated password-setup and reset is not available yet; use a password the operator can change later.
+        </div>
+
+        @if (!string.IsNullOrEmpty(_error))
+        {
+            <ErrorState Message="@_error" />
+        }
+
+        <ManagementSection Title="User details" Layer="ManagementSection.UiLayer.Detail">
+            <div class="space-y-4 text-sm text-body">
+                <div>
+                    <label class="block text-xs text-muted" for="new-user-display-name">Display name</label>
+                    <input id="new-user-display-name"
+                           class="ui-input mt-1"
+                           @bind="_displayName"
+                           disabled="@_saving"
+                           autocomplete="name"
+                           placeholder="e.g. Operator" />
+                </div>
+                <div>
+                    <label class="block text-xs text-muted" for="new-user-username">Username</label>
+                    <input id="new-user-username"
+                           class="ui-input mt-1"
+                           @bind="_username"
+                           disabled="@_saving"
+                           autocomplete="username"
+                           placeholder="local sign-in username" />
+                </div>
+                <div>
+                    <label class="block text-xs text-muted" for="new-user-password">Initial password</label>
+                    <input id="new-user-password"
+                           class="ui-input mt-1"
+                           type="password"
+                           @bind="_password"
+                           disabled="@_saving"
+                           autocomplete="new-password" />
+                    <p class="mt-1 text-xs text-muted">Must meet the instance password-length requirement. The password is hashed; it is never stored or edited as a hash.</p>
+                </div>
+                @if (_capabilities?.CanAssignRoles == true)
+                {
+                    <div>
+                        <label class="block text-xs text-muted" for="new-user-role">Role (optional)</label>
+                        <select id="new-user-role"
+                                class="ui-input mt-1"
+                                @bind="_selectedRoleId"
+                                disabled="@_saving">
+                            <option value="">None — assign later</option>
+                            @foreach (var role in _roles)
+                            {
+                                <option value="@role.Id">@role.Name (@role.Id)</option>
+                            }
+                        </select>
+                    </div>
+                }
+                <div class="flex gap-2 pt-2">
+                    <ActionButton @ref="_createButton"
+                                  Variant="ActionButtonVariant.Primary"
+                                  DefaultText="Create user"
+                                  ActiveText="Creating…"
+                                  SuccessText="Created"
+                                  ErrorText="Create failed"
+                                  IsInactive="@(!CanCreate)"
+                                  OnClick="HandleCreateClick" />
+                    <a href="/config/governance/users" class="btn btn-secondary">Cancel</a>
+                </div>
+            </div>
+        </ManagementSection>
+    }
+</div>
+
+@code {
+    private OperatorCapabilitiesDto? _capabilities;
+    private bool _capabilitiesLoaded;
+    private string? _error;
+    private bool _saving;
+    private ActionButton? _createButton;
+    private IReadOnlyList<RoleDto> _roles = Array.Empty<RoleDto>();
+    private string _displayName = "";
+    private string _username = "";
+    private string _password = "";
+    private string _selectedRoleId = "";
+
+    private bool CanCreate =>
+        !_saving
+        && !string.IsNullOrWhiteSpace(_displayName)
+        && !string.IsNullOrWhiteSpace(_username)
+        && !string.IsNullOrEmpty(_password);
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _capabilities = await Capabilities.GetCapabilitiesAsync();
+            if (_capabilities?.CanAssignRoles == true)
+                _roles = await Client.GetRolesAsync();
+        }
+        catch (HttpRequestException ex)
+        {
+            _error = ex.Message;
+        }
+        catch
+        {
+            _capabilities = new OperatorCapabilitiesDto(false, false, false, false, false, false, false, false);
+        }
+        _capabilitiesLoaded = true;
+    }
+
+    private async Task CreateAsync()
+    {
+        if (!CanCreate)
+            return;
+
+        _saving = true;
+        if (_createButton is not null)
+            await _createButton.SetStateAsync(ActionButtonState.Active);
+        _error = null;
+        try
+        {
+            var created = await Client.CreateUserAsync(
+                new CreateUserRequest(
+                    _displayName.Trim(),
+                    "Local",
+                    _username.Trim(),
+                    _password));
+
+            if (!string.IsNullOrEmpty(_selectedRoleId))
+            {
+                try
+                {
+                    await Client.AssignRoleAsync(created.UserId, _selectedRoleId);
+                }
+                catch (Exception ex)
+                {
+                    Toasts.Show(ToastSeverity.Warning, "User created, but the role could not be assigned: " + ex.Message);
+                    if (_createButton is not null)
+                        await _createButton.SetStateAsync(ActionButtonState.Success);
+                    Nav.NavigateTo("/config/governance/users/" + Uri.EscapeDataString(created.UserId));
+                    return;
+                }
+            }
+
+            Toasts.Show(ToastSeverity.Success, "User created.");
+            if (_createButton is not null)
+                await _createButton.SetStateAsync(ActionButtonState.Success);
+            Nav.NavigateTo("/config/governance/users/" + Uri.EscapeDataString(created.UserId));
+        }
+        catch (InvalidOperationException ex)
+        {
+            _error = ex.Message;
+            Toasts.Show(ToastSeverity.Error, ex.Message);
+            if (_createButton is not null)
+                await _createButton.SetStateAsync(ActionButtonState.Error);
+        }
+        catch (HttpRequestException ex)
+        {
+            _error = ex.Message;
+            Toasts.Show(ToastSeverity.Error, ex.Message);
+            if (_createButton is not null)
+                await _createButton.SetStateAsync(ActionButtonState.Error);
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private Task HandleCreateClick(MouseEventArgs _) => CreateAsync();
+}

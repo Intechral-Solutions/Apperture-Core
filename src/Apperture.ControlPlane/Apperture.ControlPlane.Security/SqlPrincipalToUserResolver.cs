@@ -42,6 +42,8 @@ public sealed class SqlPrincipalToUserResolver : IPrincipalToUserResolver
             user = await _userRepository.GetByIdentityLinkAsync(source, externalId, cancellationToken);
             if (user is not null)
             {
+                // First Entra proof on this request path (test-auth). Subsequent API requests must not
+                // re-apply policy; live OIDC re-evaluates from CompleteSignInAsync instead.
                 var wasPendingEntra = source == IdentitySource.Entra && WasPendingEntra(user, externalId);
                 await _userRepository.UpdateLastAuthenticatedAtAsync(source, externalId, DateTimeOffset.UtcNow, cancellationToken);
                 if (wasPendingEntra)
@@ -50,10 +52,12 @@ public sealed class SqlPrincipalToUserResolver : IPrincipalToUserResolver
             return user?.Id;
         }
 
-        user = await _userRepository.GetByIdentityLinkAsync(IdentitySource.Entra, externalId, cancellationToken);
-        if (user is not null)
-        {
-            var wasPendingEntra = WasPendingEntra(user, externalId);
+            user = await _userRepository.GetByIdentityLinkAsync(IdentitySource.Entra, externalId, cancellationToken);
+            if (user is not null)
+            {
+                // First Entra proof on this request path (test-auth). Subsequent API requests must not
+                // re-apply policy; live OIDC re-evaluates from CompleteSignInAsync instead.
+                var wasPendingEntra = WasPendingEntra(user, externalId);
             await _userRepository.UpdateLastAuthenticatedAtAsync(IdentitySource.Entra, externalId, DateTimeOffset.UtcNow, cancellationToken);
             if (wasPendingEntra)
                 await ApplyEntraPrimaryPolicyAsync(user.Id, cancellationToken);

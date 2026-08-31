@@ -1310,6 +1310,21 @@ public sealed class ManagementClient : IManagementClient
         return dto ?? new UserListResponse([], 0);
     }
 
+    public async Task<CreateUserResponse> CreateUserAsync(CreateUserRequest request, CancellationToken cancellationToken = default)
+    {
+        var response = await _http.PostAsJsonAsync("users", request, cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode == HttpStatusCode.BadRequest || response.StatusCode == HttpStatusCode.Conflict)
+        {
+            var msg = await TryGetMessageFromResponseAsync(response, cancellationToken).ConfigureAwait(false);
+            throw new InvalidOperationException(msg ?? "Could not create user.");
+        }
+        if (response.StatusCode == HttpStatusCode.Forbidden)
+            throw new HttpRequestException("Not authorized to create users.", null, HttpStatusCode.Forbidden);
+        response.EnsureSuccessStatusCode();
+        var body = await response.Content.ReadFromJsonAsync<CreateUserResponse>(cancellationToken).ConfigureAwait(false);
+        return body ?? throw new InvalidOperationException("Create user succeeded without a user id.");
+    }
+
     public async Task<UserDetailDto?> GetUserAsync(string userId, CancellationToken cancellationToken = default)
     {
         return await _http.GetFromJsonAsync<UserDetailDto>($"users/{Uri.EscapeDataString(userId)}", cancellationToken).ConfigureAwait(false);

@@ -130,7 +130,7 @@ public sealed class UsersController : ControllerBase
     }
 
     /// <summary>
-    /// Creates a new user with one initial identity link. Optional password when identitySource is Local. Requires user.manage.
+    /// Creates a new user with one initial identity link. Local identity requires a password. Requires user.manage.
     /// </summary>
     [HttpPost]
     [ProducesResponseType(StatusCodes.Status201Created)]
@@ -162,9 +162,17 @@ public sealed class UsersController : ControllerBase
         {
             return Forbid();
         }
+        catch (IdentityLinkException ex)
+        {
+            return BadRequest(new { message = ex.Message, code = ex.Code });
+        }
         catch (InvalidOperationException ex) when (ex.Message.Contains("already exists"))
         {
             return Conflict(new { message = ex.Message });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { message = ex.Message });
         }
     }
 

@@ -174,24 +174,17 @@
                     <div class="ui-settings-card__header">
                         <h2 id="session-heading" class="ui-settings-card__title">This session</h2>
                         <p class="ui-settings-card__help">
-                            Signing out clears your Apperture session in this browser.
+                            Signing out clears your Apperture session and returns you to the sign-in page.
+                            When Microsoft sign-in is enabled, it also ends the directory session.
                         </p>
                     </div>
                     <div class="ui-settings-card__body pt-3">
                         <div class="flex flex-wrap gap-2">
                             <button type="button"
                                     class="btn btn-secondary"
-                                    @onclick="SignOutLocalAsync">
+                                    @onclick="SignOut">
                                 Sign out
                             </button>
-                            @if (UseEntraSignOut)
-                            {
-                                <button type="button"
-                                        class="btn btn-secondary text-muted"
-                                        @onclick="SignOutHost">
-                                    Sign out and end the directory session
-                                </button>
-                            }
                         </div>
                     </div>
                 </section>
@@ -228,8 +221,6 @@
 
     private bool EntraAvailable =>
         ShellOpts.Value.UseEntraSignIn || (SignInOptions.Current?.EntraSignInEnabled ?? false);
-
-    private bool UseEntraSignOut => EntraAvailable;
 
     protected override void OnInitialized()
     {
@@ -318,26 +309,9 @@
         }
     }
 
-    private async Task SignOutLocalAsync()
+    private void SignOut()
     {
-        try
-        {
-            await Client.LocalLogoutAsync();
-        }
-        catch (HttpRequestException)
-        {
-            // The cookie may already be gone; treat sign-out as successful either way.
-        }
-
-        await Session.RefreshAsync();
-        await SignInOptions.RefreshAsync();
-        Nav.NavigateTo("/login");
-    }
-
-    private void SignOutHost()
-    {
-        var host = HostNav.GetManagementHostBase(Nav);
-        Nav.NavigateTo(new Uri(host, "signout").ToString(), forceLoad: true);
+        Nav.NavigateTo(HostNav.GetSignOutUrl(Nav), forceLoad: true);
     }
 
     private static string FormatSignInSource(string source) => source switch

@@ -10,8 +10,10 @@ namespace Apperture.Core.Application.Services;
 public interface IEntraPrimaryAuthenticationPolicy
 {
     /// <summary>
-    /// Applies the policy after an Entra identity becomes proven. Idempotent: already-disabled
-    /// credentials are left unchanged and are not re-audited.
+    /// Applies the policy after successful Entra authentication of a proven identity. Call this on
+    /// every successful Entra sign-in, not only the first proof: a previously deferred last-admin
+    /// disable is re-evaluated when another Entra-independent Platform Administrator exists.
+    /// Idempotent for already-disabled credentials: they are left unchanged and are not re-audited.
     /// </summary>
     ValueTask<EntraPrimaryLocalDisableOutcome> ApplyAfterEntraProvenAsync(
         UserId userId,

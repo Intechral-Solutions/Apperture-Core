@@ -1,4 +1,3 @@
-@using System.Net.Http
 @using Apperture.Management.Client
 @using Apperture.Management.Ui.Client.Atoms
 @using Apperture.Management.Ui.Client.Services
@@ -7,7 +6,6 @@
 @using Microsoft.Extensions.Options
 @implements IDisposable
 @inject SessionStateService Session
-@inject IManagementClient Client
 @inject ShellHostNavigation HostNav
 @inject IOptions<ShellUiOptions> ShellOpts
 @inject AuthSignInOptionsService SignInOptions
@@ -50,15 +48,9 @@
                 <a href="@AccountUiRoutes.Preferences" class="ui-menu-item">Appearance</a>
                 <a href="@AccountUiRoutes.Security" class="ui-menu-item">Security</a>
                 <hr class="my-1 border-default" />
-                <button type="button" class="ui-menu-item" @onclick="SignOutLocalAsync">
+                <button type="button" class="ui-menu-item" @onclick="SignOutAsync">
                     Sign out
                 </button>
-                @if (UseEntraSignOut)
-                {
-                    <button type="button" class="ui-menu-item text-xs text-muted" @onclick="SignOutHostAsync">
-                        Sign out (end IdP session)
-                    </button>
-                }
             </div>
         }
     }
@@ -74,9 +66,6 @@
 
 @code {
     private bool IsOpen => Menus.IsOpen(TopBarMenuCoordinator.Ids.Account);
-
-    private bool UseEntraSignOut =>
-        ShellOpts.Value.UseEntraSignIn || (SignInOptions.Current?.EntraSignInEnabled ?? false);
 
     protected override void OnInitialized() => Menus.Changed += OnMenusChanged;
 
@@ -98,29 +87,10 @@
         return Task.CompletedTask;
     }
 
-    private async Task SignOutLocalAsync()
+    private void SignOutAsync()
     {
         Menus.Close(TopBarMenuCoordinator.Ids.Account);
-        try
-        {
-            await Client.LocalLogoutAsync();
-        }
-        catch (HttpRequestException)
-        {
-            /* cookie may already be cleared */
-        }
-
-        await Session.RefreshAsync();
-        await SignInOptions.RefreshAsync();
-        Nav.NavigateTo("/login");
-    }
-
-    private void SignOutHostAsync()
-    {
-        Menus.Close(TopBarMenuCoordinator.Ids.Account);
-        var host = HostNav.GetManagementHostBase(Nav);
-        var url = new Uri(host, "signout").ToString();
-        Nav.NavigateTo(url, forceLoad: true);
+        Nav.NavigateTo(HostNav.GetSignOutUrl(Nav), forceLoad: true);
     }
 
     private static string SecondaryIdentity(MeResponse user)

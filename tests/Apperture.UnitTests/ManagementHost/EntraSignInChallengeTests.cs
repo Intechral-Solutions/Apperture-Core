@@ -41,6 +41,8 @@ public sealed class EntraSignInChallengeTests
     [InlineData("/signin/step-up")]
     [InlineData("/signin-oidc")]
     [InlineData("/signout")]
+    [InlineData("/signout-callback-oidc")]
+    [InlineData("/signout-oidc")]
     [InlineData("/signin?returnUrl=/dashboard")]
     [InlineData("users")]
     public void Unsafe_or_reserved_return_urls_are_replaced_with_the_dashboard(string? returnUrl)
@@ -105,6 +107,14 @@ public sealed class EntraSignInChallengeTests
         var properties = EntraLinkFlowConstants.CreateChallengeProperties(Config(), "usr-1", "https://evil.example");
 
         properties.RedirectUri.Should().Be("http://localhost:9001/account/security?linked=1");
+    }
+
+    [Fact]
+    public void Sign_out_properties_return_to_the_ui_login_page()
+    {
+        var properties = EntraSignOut.CreateProperties(Config());
+
+        properties.RedirectUri.Should().Be("http://localhost:9001/login");
     }
 
     [Fact]

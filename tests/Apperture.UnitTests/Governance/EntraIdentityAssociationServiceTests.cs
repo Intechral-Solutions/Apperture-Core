@@ -83,14 +83,15 @@ public sealed class EntraIdentityAssociationServiceTests
     }
 
     [Fact]
-    public async Task Repeated_proven_sign_in_does_not_reapply_entra_primary_policy()
+    public async Task Repeated_proven_sign_in_reapplies_entra_primary_policy()
     {
         var harness = new Harness();
         harness.Repository.Seed(NewUser("usr-1", EntraLink(Oid, provenAt: Now.AddDays(-1), tenantId: ActiveTenantId)));
 
         await harness.Service.CompleteSignInAsync(Assertion());
 
-        harness.Policy.AppliedUserIds.Should().BeEmpty();
+        harness.Policy.AppliedUserIds.Should().ContainSingle().Which.Should().Be("usr-1");
+        harness.Audit.Actions.Should().NotContain(EntraLinkAuditActionNames.Proven);
     }
 
     [Fact]

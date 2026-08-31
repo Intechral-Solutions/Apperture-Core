@@ -188,6 +188,37 @@ public sealed class ManagementAuthEndpointsTests
         capture.RedirectUri.Should().BeNull();
     }
 
+    [Fact]
+    public async Task Signout_without_entra_redirects_to_the_ui_login_page()
+    {
+        var capture = new RedirectCapture();
+        await using var host = await StartAsync(capture, entraEnabled: false);
+        using var client = Client(host);
+
+        var response = await client.GetAsync("/signout");
+
+        response.StatusCode.Should().Be(HttpStatusCode.Redirect);
+        response.Headers.Location!.ToString().Should().Be("http://localhost:9001/login");
+        capture.SignOutRedirectUri.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Signout_with_entra_sends_the_browser_to_the_directory_then_back_to_ui_login()
+    {
+        var capture = new RedirectCapture();
+        await using var host = await StartAsync(capture, entraEnabled: true);
+        using var client = Client(host);
+
+        var response = await client.GetAsync("/signout");
+
+        response.StatusCode.Should().Be(HttpStatusCode.Redirect);
+        response.Headers.Location!.ToString().Should().StartWith("https://idp.test/logout");
+        capture.SignOutRedirectUri.Should().Be("http://localhost:9001/login");
+        capture.PostLogoutRedirectUri.Should().NotBeNull();
+        capture.PostLogoutRedirectUri.Should().Contain(EntraSignOut.SignedOutCallbackPath);
+        capture.PostLogoutRedirectUri.Should().NotContain(":9001");
+    }
+
     private static HttpClient Client(WebApplication app)
     {
         var server = app.GetTestServer();
@@ -230,6 +261,7 @@ public sealed class ManagementAuthEndpointsTests
             {
                 AuthorizationEndpoint = IdpAuthorize,
                 TokenEndpoint = "https://idp.test/token",
+                EndSessionEndpoint = "https://idp.test/logout",
                 Issuer = "https://idp.test"
             };
             options.Configuration = configuration;
@@ -244,6 +276,12 @@ public sealed class ManagementAuthEndpointsTests
                 if (inner is not null)
                     await inner(context);
                 capture.ClaimsParameter = context.ProtocolMessage.GetParameter("claims");
+            };
+            options.Events.OnRedirectToIdentityProviderForSignOut = context =>
+            {
+                capture.SignOutRedirectUri = context.Properties.RedirectUri;
+                capture.PostLogoutRedirectUri = context.ProtocolMessage.PostLogoutRedirectUri;
+                return Task.CompletedTask;
             };
         });
 
@@ -275,6 +313,8 @@ public sealed class ManagementAuthEndpointsTests
         public bool IsStepUpPurpose { get; set; }
         public string? InitiatingUserId { get; set; }
         public string? ClaimsParameter { get; set; }
+        public string? SignOutRedirectUri { get; set; }
+        public string? PostLogoutRedirectUri { get; set; }
     }
 
     private sealed class TestPrincipalContext : IPrincipalContext
