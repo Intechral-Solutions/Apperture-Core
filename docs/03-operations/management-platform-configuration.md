@@ -202,6 +202,7 @@ To verify the catalog at runtime (after Management.Host is up), call `GET /api/c
 - **Baseline:** committed `Management.Host/appsettings.json` (safe production defaults).
 - **Overrides:** environment variables, mounted files, or platform-specific settings (Azure App Service, Windows service install directory). Document instance-specific values outside git.
 - **Topology templates:** [deploy/config/examples/](../../deploy/config/examples/) for docker-dev, Windows, and Azure starting points.
+- **Public hostnames / Entra redirects:** not wired yet. Launch notes: [deferred-public-origin-auth-redirects.md](deferred-public-origin-auth-redirects.md).
 
 ## UI configuration rules
 

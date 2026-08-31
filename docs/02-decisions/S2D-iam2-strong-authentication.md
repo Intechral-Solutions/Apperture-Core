@@ -27,3 +27,7 @@ Assurance timestamps live in the signed authentication cookie, not in saved acce
 ## Development simulation
 
 `Entra:DevelopmentSimulateAuthenticationContext` is honored only when the host environment is Development. Production ignores a simulated cookie claim.
+
+## Deferred — public origin and federated logout
+
+Sign-in/sign-out paths work in local split-host development. Public hostnames (Azure custom domains, Windows service + Kestrel, forwarded headers, production `ShellUi:ManagementUiUrl`) are **not** implemented yet. Notes for launch: [deferred-public-origin-auth-redirects.md](../03-operations/deferred-public-origin-auth-redirects.md).
