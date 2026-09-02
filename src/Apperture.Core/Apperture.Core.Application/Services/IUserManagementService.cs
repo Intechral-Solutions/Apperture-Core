@@ -75,4 +75,9 @@ public interface IUserManagementService
     /// Re-enabling (disabled = false) also requires recent strong authentication.
     /// </summary>
     ValueTask SetLocalCredentialDisabledAsync(UserId userId, bool disabled, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Instance emergency-access posture. Requires user.read. Does not include secrets.
+    /// </summary>
+    ValueTask<EmergencyAccessPosture> GetEmergencyAccessPostureAsync(CancellationToken cancellationToken = default);
 }

@@ -31,14 +31,17 @@ public sealed class StrongAuthenticationGate : IStrongAuthenticationGate
     /// <inheritdoc />
     public ValueTask RequireRecentStrongAuthenticationAsync(CancellationToken cancellationToken = default)
     {
+        var assurance = _evaluator.Evaluate(_httpContextAccessor.HttpContext?.User);
+        if (IsNativeStrongMechanism(assurance.Mechanism) && assurance.RequirementSatisfied && assurance.IsRecent)
+            return ValueTask.CompletedTask;
+
         if (!IsStrongAuthenticationConfigured())
         {
             throw new StrongAuthenticationException(
                 StrongAuthenticationErrorCodes.NotConfigured,
-                "Strong authentication is not configured. A Platform Administrator must set a Microsoft Entra Conditional Access authentication-context identifier on the active Entra registration before local sign-in can be re-enabled.");
+                "Strong authentication is not configured. Sign in with native MFA on an emergency administrator, or set a Microsoft Entra Conditional Access authentication-context identifier on the active Entra registration.");
         }
 
-        var assurance = _evaluator.Evaluate(_httpContextAccessor.HttpContext?.User);
         if (assurance.RequirementSatisfied && assurance.IsRecent)
             return ValueTask.CompletedTask;
 
@@ -46,13 +49,17 @@ public sealed class StrongAuthenticationGate : IStrongAuthenticationGate
         {
             throw new StrongAuthenticationException(
                 StrongAuthenticationErrorCodes.Expired,
-                "Recent strong authentication has expired. Complete Microsoft Entra step-up and try again.");
+                "Recent strong authentication has expired. Complete native MFA or Microsoft Entra step-up and try again.");
         }
 
         throw new StrongAuthenticationException(
             StrongAuthenticationErrorCodes.Required,
-            "This action requires recent strong authentication. Complete Microsoft Entra step-up and try again.");
+            "This action requires recent strong authentication. Complete native MFA or Microsoft Entra step-up and try again.");
     }
+
+    private static bool IsNativeStrongMechanism(string? mechanism) =>
+        string.Equals(mechanism, AuthenticationAssuranceClaims.NativeTotpMechanism, StringComparison.Ordinal)
+        || string.Equals(mechanism, AuthenticationAssuranceClaims.NativeRecoveryCodeMechanism, StringComparison.Ordinal);
 
     private bool IsStrongAuthenticationConfigured()
     {

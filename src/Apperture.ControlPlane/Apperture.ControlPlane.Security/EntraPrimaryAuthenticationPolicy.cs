@@ -19,6 +19,7 @@ public sealed class EntraPrimaryAuthenticationPolicy : IEntraPrimaryAuthenticati
     private readonly IAuditService _audit;
     private readonly TimeProvider _time;
     private readonly ILogger<EntraPrimaryAuthenticationPolicy> _logger;
+    private readonly IEmergencyAccessService? _emergencyAccess;
 
     public EntraPrimaryAuthenticationPolicy(
         IUserRepository users,
@@ -26,7 +27,8 @@ public sealed class EntraPrimaryAuthenticationPolicy : IEntraPrimaryAuthenticati
         IRoleRepository roles,
         IAuditService audit,
         TimeProvider time,
-        ILogger<EntraPrimaryAuthenticationPolicy> logger)
+        ILogger<EntraPrimaryAuthenticationPolicy> logger,
+        IEmergencyAccessService? emergencyAccess = null)
     {
         _users = users;
         _credentials = credentials;
@@ -34,6 +36,7 @@ public sealed class EntraPrimaryAuthenticationPolicy : IEntraPrimaryAuthenticati
         _audit = audit;
         _time = time;
         _logger = logger;
+        _emergencyAccess = emergencyAccess;
     }
 
     /// <inheritdoc />
@@ -51,8 +54,22 @@ public sealed class EntraPrimaryAuthenticationPolicy : IEntraPrimaryAuthenticati
         if (credential.IsDisabled)
             return EntraPrimaryLocalDisableOutcome.AlreadyDisabled;
 
-        if (IsPlatformAdministrator(user) &&
-            await CountOtherEntraIndependentPlatformAdministratorsAsync(userId, cancellationToken) == 0)
+        if (user.IsBreakGlassEligible)
+        {
+            await AuditAsync(
+                EmergencyAccessAuditActionNames.LocalProtected,
+                userId.Value,
+                $"userId={userId.Value} reason=designated_emergency_account",
+                cancellationToken);
+            return EntraPrimaryLocalDisableOutcome.ProtectedEmergencyAccount;
+        }
+
+        var emergencyHealthy = _emergencyAccess is not null
+            && (await _emergencyAccess.GetPostureAsync(cancellationToken)).IsHealthy;
+
+        if (!emergencyHealthy
+            && IsPlatformAdministrator(user)
+            && await CountOtherEntraIndependentPlatformAdministratorsAsync(userId, cancellationToken) == 0)
         {
             await AuditAsync(
                 StrongAuthenticationAuditActionNames.LocalDisableDeferredLastAdmin,
@@ -76,7 +93,9 @@ public sealed class EntraPrimaryAuthenticationPolicy : IEntraPrimaryAuthenticati
         await AuditAsync(
             StrongAuthenticationAuditActionNames.LocalDisabledEntraPrimary,
             userId.Value,
-            $"userId={userId.Value} reason=entra_proven",
+            emergencyHealthy
+                ? $"userId={userId.Value} reason=entra_proven emergency_access=healthy"
+                : $"userId={userId.Value} reason=entra_proven",
             cancellationToken);
         return EntraPrimaryLocalDisableOutcome.Disabled;
     }
@@ -93,24 +112,39 @@ public sealed class EntraPrimaryAuthenticationPolicy : IEntraPrimaryAuthenticati
             return new LocalAuthenticationPresentation(
                 entra,
                 AuthenticationMethodStatuses.LocalNone,
-                RecoverySafeguardActive: false);
+                RecoverySafeguardActive: false,
+                EmergencyAccessAccount: user.IsBreakGlassEligible);
         }
 
         if (!credential.IsDisabled)
         {
-            var safeguard = IsPlatformAdministrator(user)
+            if (user.IsBreakGlassEligible)
+            {
+                return new LocalAuthenticationPresentation(
+                    entra,
+                    AuthenticationMethodStatuses.LocalEmergencyAccess,
+                    RecoverySafeguardActive: false,
+                    EmergencyAccessAccount: true);
+            }
+
+            var emergencyHealthy = _emergencyAccess is not null
+                && (await _emergencyAccess.GetPostureAsync(cancellationToken)).IsHealthy;
+            var safeguard = !emergencyHealthy
+                && IsPlatformAdministrator(user)
                 && entra == AuthenticationMethodStatuses.EntraProven
                 && await CountOtherEntraIndependentPlatformAdministratorsAsync(user.Id, cancellationToken) == 0;
             return new LocalAuthenticationPresentation(
                 entra,
                 safeguard ? AuthenticationMethodStatuses.LocalRecoverySafeguard : AuthenticationMethodStatuses.LocalEnabled,
-                safeguard);
+                safeguard,
+                EmergencyAccessAccount: false);
         }
 
         return new LocalAuthenticationPresentation(
             entra,
             AuthenticationMethodStatuses.LocalDisabled,
-            RecoverySafeguardActive: false);
+            RecoverySafeguardActive: false,
+            EmergencyAccessAccount: user.IsBreakGlassEligible);
     }
 
     private static string DescribeEntra(User user)
@@ -126,8 +160,8 @@ public sealed class EntraPrimaryAuthenticationPolicy : IEntraPrimaryAuthenticati
             string.Equals(r.Value, BootstrapConstants.PlatformAdminRoleId, StringComparison.OrdinalIgnoreCase));
 
     /// <summary>
-    /// Other Platform Administrators who can sign in with an enabled local credential — independently of Entra.
-    /// A pending Entra link, a proven Entra link, or a disabled local credential does not count.
+    /// Other Platform Administrators who can sign in with an enabled local credential independently of Entra.
+    /// The designated emergency account is excluded: it is not a complete recovery path until MFA is enrolled.
     /// </summary>
     private async ValueTask<int> CountOtherEntraIndependentPlatformAdministratorsAsync(
         UserId exceptUserId,
@@ -143,7 +177,7 @@ public sealed class EntraPrimaryAuthenticationPolicy : IEntraPrimaryAuthenticati
                 continue;
 
             var admin = await _users.GetByIdAsync(adminId, cancellationToken);
-            if (admin is null || !admin.IdentityLinks.Any(l => l.Source == IdentitySource.Local))
+            if (admin is null || admin.IsBreakGlassEligible || !admin.IdentityLinks.Any(l => l.Source == IdentitySource.Local))
                 continue;
 
             var cred = await _credentials.GetByUserIdAsync(adminId, cancellationToken);

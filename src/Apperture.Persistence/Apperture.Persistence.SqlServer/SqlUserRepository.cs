@@ -48,6 +48,16 @@ public sealed class SqlUserRepository : IUserRepository
     }
 
     /// <inheritdoc />
+    public async ValueTask<User?> FindDesignatedEmergencyUserAsync(CancellationToken cancellationToken = default)
+    {
+        var entity = await _db.Users.AsNoTracking()
+            .FirstOrDefaultAsync(e => e.IsBreakGlassEligible, cancellationToken);
+        if (entity is null)
+            return null;
+        return await GetByIdAsync(new UserId(entity.Id), cancellationToken);
+    }
+
+    /// <inheritdoc />
     public async ValueTask<User?> GetByIdentityLinkAsync(IdentitySource source, string externalId, CancellationToken cancellationToken = default)
     {
         var link = await _db.IdentityLinks.AsNoTracking()

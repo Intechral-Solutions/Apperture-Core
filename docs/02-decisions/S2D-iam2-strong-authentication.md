@@ -14,7 +14,7 @@ Apperture requests a Microsoft Entra Conditional Access **authentication-context
 
 Re-enabling another user's local credential requires `credential.manage` **and** recent strong authentication. Ordinary users cannot re-enable themselves.
 
-Until IAM-3 provides an Entra-independent emergency Platform Administrator, IAM-2 will not auto-disable the last Platform Administrator local credential that can still sign in without Entra.
+Until a healthy IAM-3 emergency Platform Administrator exists, IAM-2 will not auto-disable the last Platform Administrator local credential that can still sign in without Entra. After healthy emergency access is configured, ordinary administrators follow Entra-primary policy; the designated emergency local credential is protected explicitly. See [IAM-3](S2D-iam3-emergency-access-native-mfa.md).
 
 Successful Entra authentication re-applies that policy. A previously deferred last-administrator disable is not sticky: once another Entra-independent Platform Administrator with an enabled local credential exists, the next successful Entra sign-in of the first administrator disables that local credential. Already-disabled credentials are not mutated or re-audited.
 

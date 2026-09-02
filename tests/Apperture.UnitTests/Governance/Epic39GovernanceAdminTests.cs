@@ -149,6 +149,9 @@ public sealed class Epic39GovernanceAdminTests
 
         public ValueTask SetLocalCredentialDisabledAsync(UserId userId, bool disabled, CancellationToken cancellationToken = default) =>
             throw new NotImplementedException();
+
+        public ValueTask<EmergencyAccessPosture> GetEmergencyAccessPostureAsync(CancellationToken cancellationToken = default) =>
+            throw new NotImplementedException();
     }
 
     private sealed class StubRoleProvider : IRoleProvider

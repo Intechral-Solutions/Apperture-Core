@@ -43,6 +43,12 @@ public interface IUserRepository
     ValueTask<(IReadOnlyList<User> Page, int TotalCount)> GetPageAsync(int skip, int take, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// The designated emergency-access user, if any. v1 allows at most one.
+    /// </summary>
+    ValueTask<User?> FindDesignatedEmergencyUserAsync(CancellationToken cancellationToken = default) =>
+        ValueTask.FromResult<User?>(null);
+
+    /// <summary>
     /// Adds an identity link to an existing user. ExternalId for Local must be normalized (trim, lowercase) by the caller.
     /// Throws if (Source, ExternalId) already exists for any user.
     /// </summary>

@@ -34,6 +34,7 @@
     <ProjectReference Include="..\..\Apperture.Bootstrap\Apperture.Bootstrap\Apperture.Bootstrap.csproj" />
     <ProjectReference Include="..\..\Apperture.Core\Apperture.Core.Domain\Apperture.Core.Domain.csproj" />
     <ProjectReference Include="..\..\Apperture.Core\Apperture.Core.Application\Apperture.Core.Application.csproj" />
+    <ProjectReference Include="..\..\Apperture.Core\Apperture.Core.Security.Secrets\Apperture.Core.Security.Secrets.csproj" />
     <ProjectReference Include="..\..\Apperture.Core\Apperture.Core.Security.Trust\Apperture.Core.Security.Trust.csproj" />
     <ProjectReference Include="..\..\Apperture.ModuleSdk\Apperture.ModuleSdk.Abstractions\Apperture.ModuleSdk.Abstractions.csproj" />
     <ProjectReference Include="..\..\Apperture.ModuleSdk\Apperture.ModuleSdk.Integration\Apperture.ModuleSdk.Integration.csproj" />

@@ -48,6 +48,8 @@ public class AppertureDbContext : DbContext
     public DbSet<RoleEntity> Roles => Set<RoleEntity>();
     public DbSet<UserRoleEntity> UserRoles => Set<UserRoleEntity>();
     public DbSet<LocalCredentialEntity> LocalCredentials => Set<LocalCredentialEntity>();
+    public DbSet<UserTotpCredentialEntity> UserTotpCredentials => Set<UserTotpCredentialEntity>();
+    public DbSet<UserMfaRecoveryCodeEntity> UserMfaRecoveryCodes => Set<UserMfaRecoveryCodeEntity>();
     public DbSet<UserPreferenceEntity> UserPreferences => Set<UserPreferenceEntity>();
     public DbSet<UserProfileImageEntity> UserProfileImages => Set<UserProfileImageEntity>();
     public DbSet<ModuleInstallationStateEntity> ModuleInstallationStates => Set<ModuleInstallationStateEntity>();
@@ -607,6 +609,10 @@ public class AppertureDbContext : DbContext
             e.Property(x => x.AvatarOptionId).HasMaxLength(64);
             e.Property(x => x.AvatarImageKey).HasMaxLength(64);
             e.Property<byte[]>("RowVersion").IsRowVersion();
+            e.HasIndex(x => x.IsBreakGlassEligible)
+                .HasDatabaseName("UX_Users_EmergencyAccess")
+                .IsUnique()
+                .HasFilter("[IsBreakGlassEligible] = 1");
         });
 
         modelBuilder.Entity<UserPreferenceEntity>(e =>
@@ -683,6 +689,30 @@ public class AppertureDbContext : DbContext
             e.Property(x => x.Algorithm).IsRequired().HasMaxLength(64);
             e.Property(x => x.RowVersion).IsRowVersion();
             e.HasOne<UserEntity>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<UserTotpCredentialEntity>(e =>
+        {
+            e.ToTable("UserTotpCredentials");
+            e.HasKey(x => x.UserId);
+            e.Property(x => x.UserId).HasMaxLength(64);
+            e.Property(x => x.ProtectedSecret).IsRequired();
+            e.Property(x => x.ProtectorKeyId).IsRequired().HasMaxLength(128);
+            e.Property(x => x.RowVersion).IsRowVersion();
+            e.HasOne<UserEntity>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<UserMfaRecoveryCodeEntity>(e =>
+        {
+            e.ToTable("UserMfaRecoveryCodes");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasMaxLength(64);
+            e.Property(x => x.UserId).HasMaxLength(64);
+            e.Property(x => x.CodeHash).IsRequired().HasMaxLength(512);
+            e.Property(x => x.Salt).IsRequired().HasMaxLength(256);
+            e.Property(x => x.Algorithm).IsRequired().HasMaxLength(64);
+            e.HasIndex(x => x.UserId);
+            e.HasOne<UserEntity>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<ModuleInstallationStateEntity>(e =>

@@ -14,5 +14,8 @@
   <ItemGroup>
     <ProjectReference Include="..\Apperture.Cli.Bootstrap\Apperture.Cli.Bootstrap.csproj" />
     <ProjectReference Include="..\Apperture.Cli.Core\Apperture.Cli.Core.csproj" />
+    <ProjectReference Include="..\..\Apperture.ControlPlane\Apperture.ControlPlane.Security\Apperture.ControlPlane.Security.csproj" />
+    <ProjectReference Include="..\..\Apperture.Persistence\Apperture.Persistence.SqlServer\Apperture.Persistence.SqlServer.csproj" />
+    <ProjectReference Include="..\..\Apperture.Core\Apperture.Core.Security.Secrets\Apperture.Core.Security.Secrets.csproj" />
   </ItemGroup>
 </Project>

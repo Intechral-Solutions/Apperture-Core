@@ -284,5 +284,8 @@ public sealed class RolesControllerTests
 
         public ValueTask SetLocalCredentialDisabledAsync(Apperture.Core.Domain.Identity.UserId userId, bool disabled, CancellationToken cancellationToken = default) =>
             throw new NotImplementedException();
+
+        public ValueTask<EmergencyAccessPosture> GetEmergencyAccessPostureAsync(CancellationToken cancellationToken = default) =>
+            throw new NotImplementedException();
     }
 }

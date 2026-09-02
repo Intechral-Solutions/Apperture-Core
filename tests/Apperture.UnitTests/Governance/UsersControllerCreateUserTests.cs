@@ -135,6 +135,9 @@ public sealed class UsersControllerCreateUserTests
 
         public ValueTask SetLocalCredentialDisabledAsync(UserId userId, bool disabled, CancellationToken cancellationToken = default) =>
             ValueTask.CompletedTask;
+
+        public ValueTask<EmergencyAccessPosture> GetEmergencyAccessPostureAsync(CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(new EmergencyAccessPosture(false, true, null, null, false, false, false, 0));
     }
 
     private sealed class StubLocalCredentialRepository : ILocalCredentialRepository

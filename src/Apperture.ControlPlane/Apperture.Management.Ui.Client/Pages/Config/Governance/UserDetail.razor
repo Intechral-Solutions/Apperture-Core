@@ -106,6 +106,10 @@
                 <div class="mt-3 text-xs text-muted space-y-1">
                     <div>Microsoft Entra: <span class="text-body">@FormatEntraAssociation(_user.EntraAssociationStatus)</span></div>
                     <div>Local sign-in: <span class="text-body">@FormatLocalSignInPolicy(_user.LocalSignInPolicy, _user.IsCredentialDisabled, _user.LocalRecoverySafeguard)</span></div>
+                    @if (_user.EmergencyAccessAccount)
+                    {
+                        <p>This is the designated emergency administrator. Native authenticator: @(_user.NativeMfaEnrolled ? "enrolled" : "not enrolled"). Recovery codes: @(_user.EmergencyRecoveryCodesPresent ? "on file" : "none").</p>
+                    }
                     @if (_user.LocalRecoverySafeguard)
                     {
                         <p>This local credential is temporarily retained because no independent emergency administrator has been configured yet.</p>
@@ -616,6 +620,8 @@
 
     private static string FormatLocalSignInPolicy(string? policy, bool? disabled, bool safeguard)
     {
+        if (policy == "emergency_access")
+            return "Enabled for designated emergency access";
         if (safeguard || policy == "recovery_safeguard")
             return "Enabled for emergency platform recovery";
         if (policy == "disabled" || disabled == true)

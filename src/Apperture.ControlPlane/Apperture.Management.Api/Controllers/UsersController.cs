@@ -19,17 +19,20 @@ public sealed class UsersController : ControllerBase
     private readonly ILocalCredentialRepository _localCredentialRepository;
     private readonly IRoleProvider _roleProvider;
     private readonly IEntraPrimaryAuthenticationPolicy? _entraPrimaryPolicy;
+    private readonly INativeMfaService? _nativeMfa;
 
     public UsersController(
         IUserManagementService userManagement,
         ILocalCredentialRepository localCredentialRepository,
         IRoleProvider roleProvider,
-        IEntraPrimaryAuthenticationPolicy? entraPrimaryPolicy = null)
+        IEntraPrimaryAuthenticationPolicy? entraPrimaryPolicy = null,
+        INativeMfaService? nativeMfa = null)
     {
         _userManagement = userManagement;
         _localCredentialRepository = localCredentialRepository;
         _roleProvider = roleProvider;
         _entraPrimaryPolicy = entraPrimaryPolicy;
+        _nativeMfa = nativeMfa;
     }
 
     /// <summary>
@@ -84,7 +87,11 @@ public sealed class UsersController : ControllerBase
             var presentation = _entraPrimaryPolicy is null
                 ? null
                 : await _entraPrimaryPolicy.DescribeAsync(user, cred, cancellationToken);
-            return Ok(ToDetailDto(user, hasLocalCredential, isCredentialDisabled, presentation));
+            var nativeMfaEnrolled = _nativeMfa is not null && await _nativeMfa.IsEnrolledAsync(user.Id, cancellationToken);
+            var unusedCodes = nativeMfaEnrolled && _nativeMfa is not null
+                ? await _nativeMfa.CountUnusedRecoveryCodesAsync(user.Id, cancellationToken)
+                : 0;
+            return Ok(ToDetailDto(user, hasLocalCredential, isCredentialDisabled, presentation, nativeMfaEnrolled, unusedCodes > 0));
         }
         catch (UnauthorizedAccessException)
         {
@@ -260,6 +267,10 @@ public sealed class UsersController : ControllerBase
         {
             return Forbid();
         }
+        catch (EmergencyAccessException ex)
+        {
+            return Conflict(new { message = ex.Message, code = ex.Code });
+        }
         catch (InvalidOperationException ex) when (ex.Message.Contains("last identity link"))
         {
             return BadRequest(new { message = ex.Message });
@@ -315,6 +326,10 @@ public sealed class UsersController : ControllerBase
         catch (UnauthorizedAccessException)
         {
             return Forbid();
+        }
+        catch (EmergencyAccessException ex)
+        {
+            return Conflict(new { message = ex.Message, code = ex.Code });
         }
         catch (InvalidOperationException ex)
         {
@@ -387,6 +402,10 @@ public sealed class UsersController : ControllerBase
                 : StatusCodes.Status403Forbidden;
             return StatusCode(status, new IdentityLinkErrorResponse(ex.Message, ex.Code));
         }
+        catch (EmergencyAccessException ex)
+        {
+            return Conflict(new { message = ex.Message, code = ex.Code });
+        }
         catch (InvalidOperationException ex)
         {
             if (ex.Message.Contains("not found") || ex.Message.Contains("no Local") || ex.Message.Contains("no local credential"))
@@ -404,14 +423,17 @@ public sealed class UsersController : ControllerBase
             user.DisplayName,
             hasLocal,
             hasEntra,
-            user.AssignedRoleIds.Select(r => r.Value).ToArray());
+            user.AssignedRoleIds.Select(r => r.Value).ToArray(),
+            user.IsBreakGlassEligible);
     }
 
     private static UserDetailDto ToDetailDto(
         User user,
         bool? hasLocalCredential,
         bool? isCredentialDisabled,
-        LocalAuthenticationPresentation? presentation = null)
+        LocalAuthenticationPresentation? presentation = null,
+        bool nativeMfaEnrolled = false,
+        bool emergencyRecoveryCodesPresent = false)
     {
         return new UserDetailDto(
             user.Id.Value,
@@ -422,7 +444,10 @@ public sealed class UsersController : ControllerBase
             isCredentialDisabled,
             presentation?.EntraAssociationStatus,
             presentation?.LocalSignInPolicy,
-            presentation?.RecoverySafeguardActive ?? false);
+            presentation?.RecoverySafeguardActive ?? false,
+            presentation?.EmergencyAccessAccount ?? user.IsBreakGlassEligible,
+            nativeMfaEnrolled,
+            emergencyRecoveryCodesPresent);
     }
 }
 
@@ -433,7 +458,8 @@ public sealed record UserListDto(
     string DisplayName,
     bool HasLocalLink,
     bool HasEntraLink,
-    string[] RoleIds);
+    string[] RoleIds,
+    bool EmergencyAccessAccount = false);
 
 public sealed record UserDetailDto(
     string UserId,
@@ -444,7 +470,10 @@ public sealed record UserDetailDto(
     bool? IsCredentialDisabled,
     string? EntraAssociationStatus = null,
     string? LocalSignInPolicy = null,
-    bool LocalRecoverySafeguard = false);
+    bool LocalRecoverySafeguard = false,
+    bool EmergencyAccessAccount = false,
+    bool NativeMfaEnrolled = false,
+    bool EmergencyRecoveryCodesPresent = false);
 
 public sealed record IdentityLinkDto(string Source, string ExternalId, DateTimeOffset? LastAuthenticatedAt);
 

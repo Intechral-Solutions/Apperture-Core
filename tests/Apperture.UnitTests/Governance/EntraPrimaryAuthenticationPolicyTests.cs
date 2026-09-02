@@ -56,6 +56,91 @@ public sealed class EntraPrimaryAuthenticationPolicyTests
     }
 
     [Fact]
+    public async Task Designated_emergency_account_is_never_auto_disabled()
+    {
+        var harness = Harness.SolePlatformAdministrator();
+        harness.Users.Seed(new User(
+            new UserId("admin-1"),
+            "Emergency Administrator",
+            [
+                new IdentityLink(IdentitySource.Local, "admin", Now),
+                new IdentityLink(IdentitySource.Entra, "33333333-3333-3333-3333-333333333333", Now)
+            ],
+            [AdminRole],
+            IsBreakGlassEligible: true));
+
+        var outcome = await harness.Policy.ApplyAfterEntraProvenAsync(new UserId("admin-1"));
+
+        outcome.Should().Be(EntraPrimaryLocalDisableOutcome.ProtectedEmergencyAccount);
+        harness.Credentials.Disabled["admin-1"].Should().BeFalse();
+        harness.Audit.Actions.Should().Contain(EmergencyAccessAuditActionNames.LocalProtected);
+    }
+
+    [Fact]
+    public async Task Healthy_emergency_access_allows_ordinary_last_admin_local_disable()
+    {
+        var harness = Harness.SolePlatformAdministrator();
+        harness.Emergency.Healthy = true;
+        harness.Users.Seed(new User(
+            new UserId("emerg-1"),
+            "Emergency Administrator",
+            [new IdentityLink(IdentitySource.Local, "breakglass", Now)],
+            [AdminRole],
+            IsBreakGlassEligible: true));
+        harness.Credentials.Seed("emerg-1", "hash-e", disabled: false);
+        harness.Roles.UserIds.Add(new UserId("emerg-1"));
+
+        var outcome = await harness.Policy.ApplyAfterEntraProvenAsync(new UserId("admin-1"));
+
+        outcome.Should().Be(EntraPrimaryLocalDisableOutcome.Disabled);
+        harness.Credentials.Disabled["admin-1"].Should().BeTrue();
+        harness.Credentials.Disabled["emerg-1"].Should().BeFalse();
+        harness.Audit.Actions.Should().Contain(StrongAuthenticationAuditActionNames.LocalDisabledEntraPrimary);
+        harness.Audit.Actions.Should().NotContain(StrongAuthenticationAuditActionNames.LocalDisableDeferredLastAdmin);
+    }
+
+    [Fact]
+    public async Task Incomplete_emergency_account_does_not_lift_last_admin_safeguard()
+    {
+        var harness = Harness.SolePlatformAdministrator();
+        harness.Emergency.Healthy = false;
+        harness.Users.Seed(new User(
+            new UserId("emerg-1"),
+            "Emergency Administrator",
+            [new IdentityLink(IdentitySource.Local, "breakglass", Now)],
+            [AdminRole],
+            IsBreakGlassEligible: true));
+        harness.Credentials.Seed("emerg-1", "hash-e", disabled: false);
+        harness.Roles.UserIds.Add(new UserId("emerg-1"));
+
+        var outcome = await harness.Policy.ApplyAfterEntraProvenAsync(new UserId("admin-1"));
+
+        outcome.Should().Be(EntraPrimaryLocalDisableOutcome.DeferredLastEntraIndependentPlatformAdministrator);
+        harness.Credentials.Disabled["admin-1"].Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Describe_marks_designated_emergency_local_policy()
+    {
+        var harness = Harness.SolePlatformAdministrator();
+        var user = new User(
+            new UserId("emerg-1"),
+            "Emergency Administrator",
+            [new IdentityLink(IdentitySource.Local, "breakglass", Now)],
+            [AdminRole],
+            IsBreakGlassEligible: true);
+        harness.Users.Seed(user);
+        harness.Credentials.Seed("emerg-1", "hash-e", disabled: false);
+        var cred = await harness.Credentials.GetByUserIdAsync(new UserId("emerg-1"));
+
+        var presentation = await harness.Policy.DescribeAsync(user, cred);
+
+        presentation.LocalSignInPolicy.Should().Be(AuthenticationMethodStatuses.LocalEmergencyAccess);
+        presentation.EmergencyAccessAccount.Should().BeTrue();
+        presentation.RecoverySafeguardActive.Should().BeFalse();
+    }
+
+    [Fact]
     public async Task Second_local_platform_administrator_allows_policy_to_proceed()
     {
         var harness = Harness.TwoLocalPlatformAdministrators();
@@ -139,6 +224,7 @@ public sealed class EntraPrimaryAuthenticationPolicyTests
         public RecordingCredentials Credentials { get; } = new();
         public RecordingRoles Roles { get; } = new();
         public RecordingAudit Audit { get; } = new();
+        public FakeEmergency Emergency { get; } = new();
         public EntraPrimaryAuthenticationPolicy Policy { get; }
 
         private Harness()
@@ -149,7 +235,8 @@ public sealed class EntraPrimaryAuthenticationPolicyTests
                 Roles,
                 Audit,
                 TimeProvider.System,
-                NullLogger<EntraPrimaryAuthenticationPolicy>.Instance);
+                NullLogger<EntraPrimaryAuthenticationPolicy>.Instance,
+                Emergency);
         }
 
         public static Harness OrdinaryUser(bool alreadyDisabled = false)
@@ -215,6 +302,8 @@ public sealed class EntraPrimaryAuthenticationPolicyTests
         public ValueTask AddIdentityLinkAsync(UserId userId, IdentitySource source, string externalId, CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
         public ValueTask RemoveIdentityLinkAsync(UserId userId, IdentitySource source, string externalId, CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
         public ValueTask CompleteEntraLinkProofAsync(string externalId, DateTimeOffset provenAt, string? tenantIdWhenMissing, string? registrationIdWhenMissing, string? providerSubject, CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
+        public ValueTask<User?> FindDesignatedEmergencyUserAsync(CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(_users.Values.FirstOrDefault(u => u.IsBreakGlassEligible));
     }
 
     private sealed class RecordingCredentials : ILocalCredentialRepository
@@ -271,5 +360,30 @@ public sealed class EntraPrimaryAuthenticationPolicyTests
         public ValueTask<AuditPage> QueryAsync(AuditQuery query, CancellationToken cancellationToken = default) => ValueTask.FromResult(new AuditPage([], null));
         public ValueTask<int> CountAsync(AuditQuery query, CancellationToken cancellationToken = default) => ValueTask.FromResult(0);
         public ValueTask<AuditRecord?> GetByIdAsync(string id, CancellationToken cancellationToken = default) => ValueTask.FromResult<AuditRecord?>(null);
+    }
+
+    private sealed class FakeEmergency : IEmergencyAccessService
+    {
+        public bool Healthy { get; set; }
+
+        public ValueTask<EmergencyAccessPosture> GetPostureAsync(CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(new EmergencyAccessPosture(
+                Healthy,
+                FallbackSafeguardRequired: !Healthy,
+                Healthy ? "emerg-1" : null,
+                Healthy ? "Emergency Administrator" : null,
+                Healthy,
+                Healthy,
+                Healthy,
+                Healthy ? 10 : 0));
+
+        public ValueTask DesignateAsync(UserId userId, ActorId? actorId, CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
+        public ValueTask<UserId> ProvisionAsync(string displayName, string username, string password, ActorId? actorId, CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(new UserId("emerg-1"));
+        public ValueTask RevokeAsync(bool confirmFallback, ActorId? actorId, CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
+        public ValueTask SetLocalPasswordAsync(UserId userId, string password, ActorId? actorId, CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
+        public ValueTask<bool> IsDesignatedEmergencyUserAsync(UserId userId, CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(string.Equals(userId.Value, "emerg-1", StringComparison.Ordinal));
+        public ValueTask EnsureDestructiveChangeAllowedAsync(UserId userId, string operation, CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
     }
 }

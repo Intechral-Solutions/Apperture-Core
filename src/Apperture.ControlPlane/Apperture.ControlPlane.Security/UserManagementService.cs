@@ -28,6 +28,7 @@ public sealed class UserManagementService : IUserManagementService
     private readonly IEntraIdentityAssociationService? _entraAssociation;
     private readonly IOptionsMonitor<EntraAuthOptions>? _entraOptions;
     private readonly IStrongAuthenticationGate? _strongAuthentication;
+    private readonly IEmergencyAccessService? _emergencyAccess;
 
     public UserManagementService(
         IPrincipalContext principalContext,
@@ -42,11 +43,13 @@ public sealed class UserManagementService : IUserManagementService
         IOptions<LocalAuthOptions> localOptions,
         IEntraIdentityAssociationService? entraAssociation = null,
         IOptionsMonitor<EntraAuthOptions>? entraOptions = null,
-        IStrongAuthenticationGate? strongAuthentication = null)
+        IStrongAuthenticationGate? strongAuthentication = null,
+        IEmergencyAccessService? emergencyAccess = null)
     {
         _entraAssociation = entraAssociation;
         _entraOptions = entraOptions;
         _strongAuthentication = strongAuthentication;
+        _emergencyAccess = emergencyAccess;
         _principalContext = principalContext;
         _principalToUserResolver = principalToUserResolver;
         _auth = auth;
@@ -71,6 +74,26 @@ public sealed class UserManagementService : IUserManagementService
     {
         await RequireUserReadAsync(cancellationToken);
         return await _userRepository.GetByIdAsync(userId, cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public async ValueTask<EmergencyAccessPosture> GetEmergencyAccessPostureAsync(CancellationToken cancellationToken = default)
+    {
+        await RequireUserReadAsync(cancellationToken);
+        if (_emergencyAccess is null)
+        {
+            return new EmergencyAccessPosture(
+                IsHealthy: false,
+                FallbackSafeguardRequired: true,
+                DesignatedUserId: null,
+                DesignatedDisplayName: null,
+                DesignatedIsPlatformAdministrator: false,
+                LocalCredentialEnabled: false,
+                NativeMfaEnrolled: false,
+                UnusedRecoveryCodeCount: 0);
+        }
+
+        return await _emergencyAccess.GetPostureAsync(cancellationToken);
     }
 
     /// <inheritdoc />
@@ -242,6 +265,8 @@ public sealed class UserManagementService : IUserManagementService
         var user = await _userRepository.GetByIdAsync(userId, cancellationToken);
         if (user is not null && source == IdentitySource.Local)
         {
+            if (_emergencyAccess is not null)
+                await _emergencyAccess.EnsureDestructiveChangeAllowedAsync(userId, "identity_link.remove_local", cancellationToken);
             var platformAdminRoleId = new RoleId(BootstrapConstants.PlatformAdminRoleId);
             var adminCount = await _roleRepository.CountUserAssignmentsAsync(platformAdminRoleId, cancellationToken);
             var userHasPlatformAdmin = user.AssignedRoleIds.Any(r => r.Value == BootstrapConstants.PlatformAdminRoleId);
@@ -289,6 +314,8 @@ public sealed class UserManagementService : IUserManagementService
 
         if (roleId.Value == BootstrapConstants.PlatformAdminRoleId)
         {
+            if (_emergencyAccess is not null)
+                await _emergencyAccess.EnsureDestructiveChangeAllowedAsync(userId, "role.remove_platform_administrator", cancellationToken);
             var count = await _roleRepository.CountUserAssignmentsAsync(roleId, cancellationToken);
             if (count <= 1)
             {
@@ -362,6 +389,8 @@ public sealed class UserManagementService : IUserManagementService
 
         if (disabled)
         {
+            if (_emergencyAccess is not null)
+                await _emergencyAccess.EnsureDestructiveChangeAllowedAsync(userId, "credential.disable", cancellationToken);
             var platformAdminRoleId = new RoleId(BootstrapConstants.PlatformAdminRoleId);
             var adminCount = await _roleRepository.CountUserAssignmentsAsync(platformAdminRoleId, cancellationToken);
             var userHasPlatformAdmin = user.AssignedRoleIds.Any(r => r.Value == BootstrapConstants.PlatformAdminRoleId);

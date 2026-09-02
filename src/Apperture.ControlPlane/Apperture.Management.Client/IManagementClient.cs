@@ -474,6 +474,10 @@ public interface IManagementClient
     /// <summary>Local username/password login. Throws <see cref="HttpRequestException"/> on failure (e.g. 401).</summary>
     Task<LocalLoginResponse> LocalLoginAsync(LocalLoginRequest request, CancellationToken cancellationToken = default);
 
+    Task<LocalLoginResponse> CompleteLocalMfaAsync(LocalMfaChallengeRequest request, CancellationToken cancellationToken = default);
+
+    Task<EmergencyAccessPostureDto> GetEmergencyAccessAsync(CancellationToken cancellationToken = default);
+
     /// <summary>Clears auth cookie (204).</summary>
     Task LocalLogoutAsync(CancellationToken cancellationToken = default);
 
@@ -890,7 +894,8 @@ public sealed record UserListDto(
     [property: JsonPropertyName("displayName")] string DisplayName,
     [property: JsonPropertyName("hasLocalLink")] bool HasLocalLink,
     [property: JsonPropertyName("hasEntraLink")] bool HasEntraLink,
-    [property: JsonPropertyName("roleIds")] IReadOnlyList<string> RoleIds);
+    [property: JsonPropertyName("roleIds")] IReadOnlyList<string> RoleIds,
+    [property: JsonPropertyName("emergencyAccessAccount")] bool EmergencyAccessAccount = false);
 
 public sealed record CreateUserRequest(
     [property: JsonPropertyName("displayName")] string DisplayName,
@@ -910,7 +915,10 @@ public sealed record UserDetailDto(
     [property: JsonPropertyName("isCredentialDisabled")] bool? IsCredentialDisabled,
     [property: JsonPropertyName("entraAssociationStatus")] string? EntraAssociationStatus = null,
     [property: JsonPropertyName("localSignInPolicy")] string? LocalSignInPolicy = null,
-    [property: JsonPropertyName("localRecoverySafeguard")] bool LocalRecoverySafeguard = false);
+    [property: JsonPropertyName("localRecoverySafeguard")] bool LocalRecoverySafeguard = false,
+    [property: JsonPropertyName("emergencyAccessAccount")] bool EmergencyAccessAccount = false,
+    [property: JsonPropertyName("nativeMfaEnrolled")] bool NativeMfaEnrolled = false,
+    [property: JsonPropertyName("emergencyRecoveryCodesPresent")] bool EmergencyRecoveryCodesPresent = false);
 
 public sealed record IdentityLinkDto(
     [property: JsonPropertyName("source")] string Source,
@@ -1606,7 +1614,9 @@ public sealed record MeResponse(
     [property: JsonPropertyName("entraAssociationStatus")] string? EntraAssociationStatus = null,
     [property: JsonPropertyName("localSignInPolicy")] string? LocalSignInPolicy = null,
     [property: JsonPropertyName("hasRecentStrongAuthentication")] bool HasRecentStrongAuthentication = false,
-    [property: JsonPropertyName("strongAuthenticationConfigured")] bool StrongAuthenticationConfigured = false);
+    [property: JsonPropertyName("strongAuthenticationConfigured")] bool StrongAuthenticationConfigured = false,
+    [property: JsonPropertyName("emergencyAccessAccount")] bool EmergencyAccessAccount = false,
+    [property: JsonPropertyName("nativeMfaEnrolled")] bool NativeMfaEnrolled = false);
 
 public sealed record AccountIdentityLinkDto(
     [property: JsonPropertyName("source")] string Source,
@@ -1633,7 +1643,22 @@ public sealed record LocalLoginRequest(
 
 public sealed record LocalLoginResponse(
     [property: JsonPropertyName("userId")] string UserId,
-    [property: JsonPropertyName("displayName")] string DisplayName);
+    [property: JsonPropertyName("displayName")] string DisplayName,
+    [property: JsonPropertyName("requiresMfa")] bool RequiresMfa = false);
+
+public sealed record LocalMfaChallengeRequest(
+    [property: JsonPropertyName("totpCode")] string? TotpCode,
+    [property: JsonPropertyName("recoveryCode")] string? RecoveryCode);
+
+public sealed record EmergencyAccessPostureDto(
+    [property: JsonPropertyName("isHealthy")] bool IsHealthy,
+    [property: JsonPropertyName("fallbackSafeguardRequired")] bool FallbackSafeguardRequired,
+    [property: JsonPropertyName("designatedUserId")] string? DesignatedUserId,
+    [property: JsonPropertyName("designatedDisplayName")] string? DesignatedDisplayName,
+    [property: JsonPropertyName("designatedIsPlatformAdministrator")] bool DesignatedIsPlatformAdministrator,
+    [property: JsonPropertyName("localCredentialEnabled")] bool LocalCredentialEnabled,
+    [property: JsonPropertyName("nativeMfaEnrolled")] bool NativeMfaEnrolled,
+    [property: JsonPropertyName("recoveryCodesPresent")] bool RecoveryCodesPresent);
 
 public sealed record AuthSignInOptionsDto(
     [property: JsonPropertyName("localSignInEnabled")] bool LocalSignInEnabled,

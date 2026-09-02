@@ -56,6 +56,34 @@ public sealed class StrongAuthenticationGateTests
     }
 
     [Fact]
+    public async Task Fresh_native_totp_is_accepted_without_entra_context()
+    {
+        var identity = CookiePrincipal().Identity as ClaimsIdentity;
+        AuthenticationAssuranceClaims.Replace(
+            identity!,
+            AuthenticationAssuranceClaims.NativeTotpMechanism,
+            Now.AddMinutes(-5),
+            providerContext: null);
+        var gate = Create(new ClaimsPrincipal(identity!), authenticationContextId: null);
+
+        await gate.RequireRecentStrongAuthenticationAsync();
+    }
+
+    [Fact]
+    public async Task Fresh_recovery_code_assurance_is_accepted_without_entra_context()
+    {
+        var identity = CookiePrincipal().Identity as ClaimsIdentity;
+        AuthenticationAssuranceClaims.Replace(
+            identity!,
+            AuthenticationAssuranceClaims.NativeRecoveryCodeMechanism,
+            Now.AddMinutes(-1),
+            providerContext: null);
+        var gate = Create(new ClaimsPrincipal(identity!), authenticationContextId: null);
+
+        await gate.RequireRecentStrongAuthenticationAsync();
+    }
+
+    [Fact]
     public async Task Missing_authentication_context_configuration_fails_closed()
     {
         var gate = Create(CookiePrincipal(), authenticationContextId: null);

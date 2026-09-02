@@ -20,13 +20,13 @@ Well-known recovery actions (see `BootstrapRecoveryAction`):
 
 ## Break-glass operator login (v1 status — Epic S2B)
 
-**Not available in v1.** `POST /api/auth/break-glass` is disabled by default via `BreakGlassAuth:Enabled` (`false`). Disabled requests return **404 Not Found** with code `auth.break_glass.disabled` and audit `auth.break_glass.rejected_disabled`.
+**Not available.** `POST /api/auth/break-glass` is disabled by default via `BreakGlassAuth:Enabled` (`false`). Disabled requests return **404 Not Found** with code `auth.break_glass.disabled` and audit `auth.break_glass.rejected_disabled`.
 
-- No users are created with `IsBreakGlassEligible = true` on default bootstrap paths.
-- RBAC grant-all for `IsBreakGlassSession` remains in code for a future recovery epic but is **not reachable** through the default disabled endpoint.
-- **SQL/bootstrap recovery** (`IBootstrapRecoveryService`, CLI recovery-unlock) is separate from break-glass operator login.
+IAM-3 emergency access does **not** enable that endpoint. The supported Entra-independent recovery path is a designated Platform Administrator (`Users.IsBreakGlassEligible`) who signs in with a local password plus native authenticator MFA (or a one-time recovery code). See [IAM-3 emergency access](../02-decisions/S2D-iam3-emergency-access-native-mfa.md) and the [live smoke procedure](../03-operations/iam3-emergency-access-smoke-test.md).
 
-Future break-glass support requires a dedicated epic: eligibility management, audit/runbook, rate limits, and explicit enablement of `BreakGlassAuth:Enabled`.
+- Default bootstrap paths do not designate an emergency user.
+- RBAC grant-all for `IsBreakGlassSession` remains in code for a possible future recovery epic but is **not reachable** through the default disabled endpoint.
+- **SQL/bootstrap recovery** (`IBootstrapRecoveryService`, CLI recovery-unlock) is separate from emergency operator login.
 
 ## Flow
 

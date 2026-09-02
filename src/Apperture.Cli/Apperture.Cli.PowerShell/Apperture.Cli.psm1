@@ -222,3 +222,117 @@ function Unlock-AppertureBootstrapRecovery {
 }
 
 #endregion Bootstrap Functions
+
+#region Emergency Access Functions
+
+function Invoke-AppertureEmergencyHelper {
+    [CmdletBinding()]
+    param([string[]]$Args)
+    $apperture = Get-Command apperture -ErrorAction SilentlyContinue
+    if ($apperture) {
+        & apperture emergency @Args
+    } else {
+        Write-Warning "Apperture CLI not found. Run 'dotnet run --project src/Apperture.Cli/Apperture.Cli.Host -- emergency <subcommand>' from the repo root, or install the apperture CLI."
+        Write-Output "Not implemented (apperture not in PATH)."
+    }
+}
+
+function Get-AppertureEmergencyAccess {
+    <#
+    .SYNOPSIS
+        Shows whether a valid emergency administrator is configured.
+    #>
+    [CmdletBinding()]
+    param()
+    Invoke-AppertureEmergencyHelper -Args @('status')
+}
+
+function New-AppertureEmergencyAdministrator {
+    <#
+    .SYNOPSIS
+        Creates a Platform Administrator and designates it as emergency access.
+    .DESCRIPTION
+        The password is prompted by the CLI (stdin). Do not pass the password as an argument.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$DisplayName,
+        [Parameter(Mandatory = $true)]
+        [string]$Username
+    )
+    Invoke-AppertureEmergencyHelper -Args @('provision', '--display-name', $DisplayName, '--username', $Username)
+}
+
+function Set-AppertureEmergencyAdministrator {
+    <#
+    .SYNOPSIS
+        Designates an existing local Platform Administrator as emergency access.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Username
+    )
+    Invoke-AppertureEmergencyHelper -Args @('designate', '--username', $Username)
+}
+
+function Set-AppertureEmergencyPassword {
+    <#
+    .SYNOPSIS
+        Sets the emergency administrator local password. The CLI prompts on stdin.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Username
+    )
+    Invoke-AppertureEmergencyHelper -Args @('set-password', '--username', $Username)
+}
+
+function Register-AppertureEmergencyAuthenticator {
+    <#
+    .SYNOPSIS
+        Enrolls native authenticator MFA for the emergency administrator.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Username,
+        [switch]$Reset
+    )
+    if ($Reset) {
+        Invoke-AppertureEmergencyHelper -Args @('reset-mfa', '--username', $Username)
+    } else {
+        Invoke-AppertureEmergencyHelper -Args @('enroll-mfa', '--username', $Username)
+    }
+}
+
+function New-AppertureEmergencyRecoveryCodes {
+    <#
+    .SYNOPSIS
+        Regenerates one-time recovery codes. Previous unused codes are invalidated.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Username
+    )
+    Invoke-AppertureEmergencyHelper -Args @('regenerate-codes', '--username', $Username)
+}
+
+function Remove-AppertureEmergencyAdministrator {
+    <#
+    .SYNOPSIS
+        Clears emergency designation and returns to last-administrator fallback protection.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [switch]$ConfirmFallback
+    )
+    Invoke-AppertureEmergencyHelper -Args @('revoke', '--confirm-fallback')
+}
+
+#endregion Emergency Access Functions
+

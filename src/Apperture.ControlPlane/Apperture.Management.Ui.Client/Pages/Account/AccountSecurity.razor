@@ -156,6 +156,25 @@
                     </div>
                 </section>
 
+                @if (_me.EmergencyAccessAccount || _me.NativeMfaEnrolled)
+                {
+                    <section class="ui-settings-card" aria-labelledby="authenticator-heading">
+                        <div class="ui-settings-card__header">
+                            <h2 id="authenticator-heading" class="ui-settings-card__title">Authenticator app</h2>
+                            <p class="ui-settings-card__help">
+                                @if (_me.NativeMfaEnrolled)
+                                {
+                                    <text>An authenticator app is enrolled for this account. Recovery codes were shown only when they were generated. A Platform Administrator can reset enrollment from the supported operator CLI if the device is lost.</text>
+                                }
+                                else
+                                {
+                                    <text>This emergency administrator still needs authenticator enrollment. Use the supported operator CLI; enrollment is not performed from this page.</text>
+                                }
+                            </p>
+                        </div>
+                    </section>
+                }
+
                 @if (HasEntraLink)
                 {
                     <section class="ui-settings-card" aria-labelledby="provider-heading">
@@ -331,6 +350,8 @@
 
     private static string FormatLocalPasswordHelp(MeResponse me)
     {
+        if (me.LocalSignInPolicy == "emergency_access" || me.EmergencyAccessAccount)
+            return "Enabled as the designated emergency administrator. Sign-in uses your local password and native authenticator (or a recovery code). This account remains usable if Microsoft Entra is unavailable.";
         if (me.LocalSignInPolicy == "recovery_safeguard")
             return "Enabled for emergency platform recovery. This local credential is temporarily retained because no independent emergency administrator has been configured yet.";
         if (me.LocalSignInPolicy == "disabled" || me.LocalCredentialStatus == "disabled")

@@ -4,8 +4,9 @@ namespace Apperture.Core.Application.Services;
 
 /// <summary>
 /// Entra-primary authentication policy: after an Entra identity is proven, local password
-/// sign-in is disabled unless doing so would remove the last Entra-independent Platform
-/// Administrator recovery path (temporary until IAM-3).
+/// sign-in is disabled. A designated emergency Platform Administrator is never auto-disabled.
+/// Until healthy emergency access exists, the last Entra-independent Platform Administrator
+/// local credential is preserved (IAM-2 fallback).
 /// </summary>
 public interface IEntraPrimaryAuthenticationPolicy
 {
@@ -34,7 +35,8 @@ public enum EntraPrimaryLocalDisableOutcome
     NoLocalCredential,
     AlreadyDisabled,
     Disabled,
-    DeferredLastEntraIndependentPlatformAdministrator
+    DeferredLastEntraIndependentPlatformAdministrator,
+    ProtectedEmergencyAccount
 }
 
 /// <summary>
@@ -43,7 +45,8 @@ public enum EntraPrimaryLocalDisableOutcome
 public sealed record LocalAuthenticationPresentation(
     string EntraAssociationStatus,
     string LocalSignInPolicy,
-    bool RecoverySafeguardActive);
+    bool RecoverySafeguardActive,
+    bool EmergencyAccessAccount = false);
 
 /// <summary>Stable status strings for Entra association and local sign-in policy.</summary>
 public static class AuthenticationMethodStatuses
@@ -56,4 +59,5 @@ public static class AuthenticationMethodStatuses
     public const string LocalEnabled = "enabled";
     public const string LocalDisabled = "disabled";
     public const string LocalRecoverySafeguard = "recovery_safeguard";
+    public const string LocalEmergencyAccess = "emergency_access";
 }

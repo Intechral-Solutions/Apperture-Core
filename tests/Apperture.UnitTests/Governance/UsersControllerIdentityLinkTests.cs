@@ -234,6 +234,9 @@ public sealed class UsersControllerIdentityLinkTests
                 throw _throwOnDisable;
             return ValueTask.CompletedTask;
         }
+
+        public ValueTask<EmergencyAccessPosture> GetEmergencyAccessPostureAsync(CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(new EmergencyAccessPosture(false, true, null, null, false, false, false, 0));
     }
 
     private sealed class StubLocalCredentialRepository : ILocalCredentialRepository

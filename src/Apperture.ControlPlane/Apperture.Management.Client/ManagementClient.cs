@@ -1528,6 +1528,26 @@ public sealed class ManagementClient : IManagementClient
         return dto ?? throw new InvalidOperationException("Login response was empty.");
     }
 
+    public async Task<LocalLoginResponse> CompleteLocalMfaAsync(LocalMfaChallengeRequest request, CancellationToken cancellationToken = default)
+    {
+        var response = await _http.PostAsJsonAsync("auth/local/mfa", request, cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode == HttpStatusCode.Unauthorized)
+            throw new HttpRequestException("Login failed.", null, HttpStatusCode.Unauthorized);
+        response.EnsureSuccessStatusCode();
+        var dto = await response.Content.ReadFromJsonAsync<LocalLoginResponse>(cancellationToken).ConfigureAwait(false);
+        return dto ?? throw new InvalidOperationException("Login response was empty.");
+    }
+
+    public async Task<EmergencyAccessPostureDto> GetEmergencyAccessAsync(CancellationToken cancellationToken = default)
+    {
+        var response = await _http.GetAsync("emergency-access", cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode == HttpStatusCode.Forbidden)
+            throw new HttpRequestException("Not authorized to view emergency access.", null, HttpStatusCode.Forbidden);
+        response.EnsureSuccessStatusCode();
+        var dto = await response.Content.ReadFromJsonAsync<EmergencyAccessPostureDto>(cancellationToken).ConfigureAwait(false);
+        return dto ?? throw new InvalidOperationException("Emergency access response was empty.");
+    }
+
     public async Task LocalLogoutAsync(CancellationToken cancellationToken = default)
     {
         var response = await _http.PostAsync("auth/local/logout", content: null, cancellationToken).ConfigureAwait(false);

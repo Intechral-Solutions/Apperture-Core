@@ -68,6 +68,11 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IUserRepository, SqlUserRepository>();
         services.AddScoped<IEntraIdentityAssociationService, EntraIdentityAssociationService>();
         services.AddScoped<IEntraStepUpService, EntraStepUpService>();
+        services.AddScoped<INativeTotpCredentialRepository, SqlNativeTotpCredentialRepository>();
+        services.AddScoped<INativeMfaRecoveryCodeRepository, SqlNativeMfaRecoveryCodeRepository>();
+        services.AddScoped<INativeMfaService, NativeMfaService>();
+        services.AddScoped<IPendingMfaLoginTicketService, PendingMfaLoginTicketService>();
+        services.AddScoped<IEmergencyAccessService, EmergencyAccessService>();
         services.AddScoped<IEntraPrimaryAuthenticationPolicy, EntraPrimaryAuthenticationPolicy>();
         services.AddScoped<IAuthenticationAssuranceEvaluator, AuthenticationAssuranceEvaluator>();
         services.AddScoped<IStrongAuthenticationGate, StrongAuthenticationGate>();
@@ -167,6 +172,25 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IRecoveryQueryService, RecoveryQueryService>();
         services.AddScoped<IAuditTimelineQueryService, AuditTimelineQueryService>();
         services.AddHostedService<ModuleCompositionBootstrapHostedService>();
+        return services;
+    }
+
+    /// <summary>
+    /// Identity, credential, audit, native MFA, and emergency-access services without hosted workers.
+    /// For operator CLI. Requires AddApperturePersistence and an <see cref="ISecretProtector"/>.
+    /// </summary>
+    public static IServiceCollection AddAppertureEmergencyOperatorServices(this IServiceCollection services)
+    {
+        services.TryAddSingleton(TimeProvider.System);
+        services.AddScoped<IUserRepository, SqlUserRepository>();
+        services.AddScoped<IRoleRepository, SqlRoleRepository>();
+        services.AddScoped<ILocalCredentialRepository, SqlLocalCredentialRepository>();
+        services.AddScoped<IAuditService, SqlAuditService>();
+        services.AddSingleton<ILocalPasswordHasher, LocalPasswordHasher>();
+        services.AddScoped<INativeTotpCredentialRepository, SqlNativeTotpCredentialRepository>();
+        services.AddScoped<INativeMfaRecoveryCodeRepository, SqlNativeMfaRecoveryCodeRepository>();
+        services.AddScoped<INativeMfaService, NativeMfaService>();
+        services.AddScoped<IEmergencyAccessService, EmergencyAccessService>();
         return services;
     }
 

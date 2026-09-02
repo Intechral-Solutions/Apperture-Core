@@ -26,6 +26,8 @@ try
         case "bootstrap":
             await RunBootstrapAsync(bootstrapCli, subArgs);
             break;
+        case "emergency":
+            return await EmergencyCli.RunAsync(subArgs, config, environmentName);
         case "--help":
         case "-h":
         case "help":
@@ -150,6 +152,7 @@ static void PrintHelp()
     Console.WriteLine("  bootstrap bind-keyvault-secret <uri> | bind-managed-identity | bind-integrated-security");
     Console.WriteLine("  bootstrap set-password   - deferred (Epic 108b); use bind-* commands");
     Console.WriteLine("  bootstrap repair | recovery-unlock | rotate-sql-credential - deferred");
+    Console.WriteLine("  emergency status | provision | designate | set-password | enroll-mfa | reset-mfa | regenerate-codes | revoke");
 }
 
 static void PrintBootstrapHelp()

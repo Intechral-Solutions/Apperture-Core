@@ -17,6 +17,8 @@ public static class AuthenticationAssuranceClaims
     public const string SimulatedClaimType = "apperture.auth.assurance.simulated";
 
     public const string EntraAuthenticationContextMechanism = "entra-authentication-context";
+    public const string NativeTotpMechanism = "native-totp";
+    public const string NativeRecoveryCodeMechanism = "native-recovery-code";
 
     /// <summary>Round-trip format that is independent of the server locale.</summary>
     public const string TimestampFormat = "o";
