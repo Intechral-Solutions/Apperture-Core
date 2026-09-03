@@ -123,6 +123,9 @@
                         the sign-in callback (default <code class="ui-inline-code">/signin-oidc</code>),
                         the sign-out callback <code class="ui-inline-code">/signout-callback-oidc</code> as a Redirect URI,
                         and <code class="ui-inline-code">/signout-oidc</code> as Front-channel logout URL.
+                        To skip the Microsoft account picker on sign-out, add the <code class="ui-inline-code">login_hint</code>
+                        optional claim to the ID token (Token configuration → optional claims). Sign-out still
+                        returns to Apperture without that claim.
                     </p>
                     <label class="block text-xs">Client secret
                         <input class="ui-input mt-1"
@@ -162,6 +165,11 @@
                     <p class="text-xs text-muted">
                         Optional until strong administrative recovery is configured. Your tenant administrator
                         must attach a Conditional Access policy to this authentication context in Microsoft Entra.
+                    </p>
+                    <p class="text-xs text-muted">
+                        On the Entra app, register the host sign-in and sign-out callback paths. To skip the
+                        Microsoft account picker on sign-out, add the <code class="ui-inline-code">login_hint</code>
+                        optional claim to the ID token.
                     </p>
                     <label class="block text-xs">Client secret
                         <input class="ui-input mt-1"

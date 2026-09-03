@@ -1,9 +1,11 @@
 using System.Security.Claims;
+using System.Text;
 using Apperture.ControlPlane.Security;
 using Apperture.Management.Host;
 using FluentAssertions;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.Configuration;
+using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 using Xunit;
 
 namespace Apperture.UnitTests.ManagementHost;
@@ -129,13 +131,68 @@ public sealed class EntraSignInChallengeTests
         EntraSignOut.ShouldEndEntraSession(Principal("Entra"), entraUsable: true).Should().BeTrue();
     }
 
-    private static ClaimsPrincipal Principal(string? identitySource)
+    [Fact]
+    public void Logout_hint_uses_the_login_hint_claim_not_upn_or_email()
+    {
+        var withHint = Principal("Entra", new Claim(EntraSignOut.LoginHintClaimType, "  opaque-session-hint  "));
+        EntraSignOut.TryGetLogoutHint(withHint).Should().Be("opaque-session-hint");
+
+        var upnOnly = Principal("Entra", new Claim("preferred_username", "tenny@contoso.com"));
+        EntraSignOut.TryGetLogoutHint(upnOnly).Should().BeNull();
+
+        var fromToken = EntraSignOut.TryGetLogoutHint(Principal("Entra"), UnsignedJwt(("login_hint", "from-token")));
+        fromToken.Should().Be("from-token");
+    }
+
+    [Fact]
+    public void Directory_logout_sends_login_hint_and_strips_the_id_token()
+    {
+        var properties = new AuthenticationProperties();
+        properties.StoreTokens(
+        [
+            new AuthenticationToken { Name = OpenIdConnectParameterNames.IdToken, Value = "saved.id.token" }
+        ]);
+        properties.Items[EntraSignOut.LogoutHintPropertyKey] = "opaque-session-hint";
+        var message = new OpenIdConnectMessage { IdTokenHint = "saved.id.token" };
+
+        EntraSignOut.ApplyDirectoryLogoutHints(message, properties);
+
+        message.IdTokenHint.Should().BeNull();
+        message.GetParameter("logout_hint").Should().Be("opaque-session-hint");
+    }
+
+    [Fact]
+    public void Directory_logout_hints_are_omitted_when_the_optional_claim_is_missing()
+    {
+        var message = new OpenIdConnectMessage { IdTokenHint = "saved.id.token" };
+
+        EntraSignOut.ApplyDirectoryLogoutHints(message, new AuthenticationProperties());
+
+        message.IdTokenHint.Should().BeNull();
+        message.GetParameter("logout_hint").Should().BeNull();
+    }
+
+    private static ClaimsPrincipal Principal(string? identitySource, params Claim[] extra)
     {
         var identity = new ClaimsIdentity("test", ClaimTypes.Name, ClaimTypes.Role);
         identity.AddClaim(new Claim(ClaimTypes.NameIdentifier, "usr-1"));
         if (identitySource is not null)
             identity.AddClaim(new Claim(ClaimsPrincipalToActorMapper.IdentitySourceClaimType, identitySource));
+        foreach (var claim in extra)
+            identity.AddClaim(claim);
         return new ClaimsPrincipal(identity);
+    }
+
+    private static string UnsignedJwt(params (string Name, string Value)[] claims)
+    {
+        static string Encode(string json)
+        {
+            var bytes = Encoding.UTF8.GetBytes(json);
+            return Convert.ToBase64String(bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_');
+        }
+
+        var payload = "{" + string.Join(',', claims.Select(c => $"\"{c.Name}\":\"{c.Value}\"")) + "}";
+        return $"{Encode("{\"alg\":\"none\"}")}.{Encode(payload)}.sig";
     }
 
     [Fact]

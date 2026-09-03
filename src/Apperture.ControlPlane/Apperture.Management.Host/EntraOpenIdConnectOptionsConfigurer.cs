@@ -76,6 +76,7 @@ internal sealed class EntraOpenIdConnectOptionsConfigurer : IConfigureNamedOptio
         options.Events = new OpenIdConnectEvents
         {
             OnRedirectToIdentityProvider = OnRedirectToIdentityProvider,
+            OnRedirectToIdentityProviderForSignOut = OnRedirectToIdentityProviderForSignOut,
             OnTokenValidated = OnTokenValidatedAsync,
             OnRemoteFailure = ctx =>
             {
@@ -102,6 +103,12 @@ internal sealed class EntraOpenIdConnectOptionsConfigurer : IConfigureNamedOptio
                 return Task.CompletedTask;
             }
         };
+    }
+
+    private static Task OnRedirectToIdentityProviderForSignOut(RedirectContext ctx)
+    {
+        EntraSignOut.ApplyDirectoryLogoutHints(ctx.ProtocolMessage, ctx.Properties);
+        return Task.CompletedTask;
     }
 
     private Task OnRedirectToIdentityProvider(RedirectContext ctx)

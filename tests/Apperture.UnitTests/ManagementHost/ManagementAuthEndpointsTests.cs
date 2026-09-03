@@ -210,6 +210,7 @@ public sealed class ManagementAuthEndpointsTests
         using var client = Client(host);
         client.DefaultRequestHeaders.Add("X-Test-Auth", "1");
         client.DefaultRequestHeaders.Add("X-Test-Identity-Source", "Entra");
+        client.DefaultRequestHeaders.Add("X-Test-Login-Hint", "opaque-session-hint");
 
         var response = await client.GetAsync("/signout");
 
@@ -219,6 +220,9 @@ public sealed class ManagementAuthEndpointsTests
         capture.PostLogoutRedirectUri.Should().NotBeNull();
         capture.PostLogoutRedirectUri.Should().Contain(EntraSignOut.SignedOutCallbackPath);
         capture.PostLogoutRedirectUri.Should().NotContain(":9001");
+        capture.LogoutHint.Should().Be("opaque-session-hint");
+        capture.IdTokenHint.Should().BeNull();
+        response.Headers.Location!.ToString().Should().NotContain("id_token_hint");
     }
 
     [Fact]
@@ -309,11 +313,15 @@ public sealed class ManagementAuthEndpointsTests
                     await inner(context);
                 capture.ClaimsParameter = context.ProtocolMessage.GetParameter("claims");
             };
-            options.Events.OnRedirectToIdentityProviderForSignOut = context =>
+            var innerSignOut = options.Events.OnRedirectToIdentityProviderForSignOut;
+            options.Events.OnRedirectToIdentityProviderForSignOut = async context =>
             {
+                if (innerSignOut is not null)
+                    await innerSignOut(context);
                 capture.SignOutRedirectUri = context.Properties.RedirectUri;
                 capture.PostLogoutRedirectUri = context.ProtocolMessage.PostLogoutRedirectUri;
-                return Task.CompletedTask;
+                capture.LogoutHint = context.ProtocolMessage.GetParameter("logout_hint");
+                capture.IdTokenHint = context.ProtocolMessage.IdTokenHint;
             };
         });
 
@@ -329,6 +337,9 @@ public sealed class ManagementAuthEndpointsTests
                 var source = ctx.Request.Headers["X-Test-Identity-Source"].ToString();
                 if (!string.IsNullOrWhiteSpace(source))
                     identity.AddClaim(new Claim(ClaimsPrincipalToActorMapper.IdentitySourceClaimType, source));
+                var loginHint = ctx.Request.Headers["X-Test-Login-Hint"].ToString();
+                if (!string.IsNullOrWhiteSpace(loginHint))
+                    identity.AddClaim(new Claim(EntraSignOut.LoginHintClaimType, loginHint));
                 ctx.User = new ClaimsPrincipal(identity);
             }
 
@@ -350,6 +361,8 @@ public sealed class ManagementAuthEndpointsTests
         public string? ClaimsParameter { get; set; }
         public string? SignOutRedirectUri { get; set; }
         public string? PostLogoutRedirectUri { get; set; }
+        public string? LogoutHint { get; set; }
+        public string? IdTokenHint { get; set; }
     }
 
     private sealed class TestPrincipalContext : IPrincipalContext
