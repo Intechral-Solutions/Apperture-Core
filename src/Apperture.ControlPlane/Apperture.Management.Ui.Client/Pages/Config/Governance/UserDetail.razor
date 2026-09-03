@@ -108,11 +108,11 @@
                     <div>Local sign-in: <span class="text-body">@FormatLocalSignInPolicy(_user.LocalSignInPolicy, _user.IsCredentialDisabled, _user.LocalRecoverySafeguard)</span></div>
                     @if (_user.EmergencyAccessAccount)
                     {
-                        <p>This is the designated emergency administrator. Native authenticator: @(_user.NativeMfaEnrolled ? "enrolled" : "not enrolled"). Recovery codes: @(_user.EmergencyRecoveryCodesPresent ? "on file" : "none").</p>
+                        <p>This is the system-managed Recovery Access account. Native authenticator: @(_user.NativeMfaEnrolled ? "enrolled" : "not enrolled"). Recovery codes: @(_user.EmergencyRecoveryCodesPresent ? "on file" : "none"). Manage it through Emergency Access operator tooling, not ordinary user administration.</p>
                     }
                     @if (_user.LocalRecoverySafeguard)
                     {
-                        <p>This local credential is temporarily retained because no independent emergency administrator has been configured yet.</p>
+                        <p>This local credential is temporarily retained because Emergency Access is not healthy yet.</p>
                     }
                 </div>
 
@@ -150,7 +150,7 @@
                     </div>
                 }
 
-                @if (_capabilities?.CanManageUsers == true)
+                @if (_capabilities?.CanManageUsers == true && !_user.EmergencyAccessAccount)
                 {
                     <div class="mt-4 border-t border-default pt-3">
                         <div class="text-xs font-medium text-heading">Link a Microsoft account</div>
@@ -621,7 +621,7 @@
     private static string FormatLocalSignInPolicy(string? policy, bool? disabled, bool safeguard)
     {
         if (policy == "emergency_access")
-            return "Enabled for designated emergency access";
+            return "Enabled for Recovery Access";
         if (safeguard || policy == "recovery_safeguard")
             return "Enabled for emergency platform recovery";
         if (policy == "disabled" || disabled == true)

@@ -74,6 +74,7 @@ public sealed class EmergencyAccessService : IEmergencyAccessService
             ? await _mfa.CountUnusedRecoveryCodesAsync(designated.Id, cancellationToken)
             : 0;
         var healthy = isAdmin && localEnabled && mfaEnrolled && unusedCodes > 0;
+        var localUsername = EmergencyAccessIdentity.LocalUsernameOf(designated);
         return new EmergencyAccessPosture(
             healthy,
             FallbackSafeguardRequired: !healthy,
@@ -82,7 +83,11 @@ public sealed class EmergencyAccessService : IEmergencyAccessService
             isAdmin,
             localEnabled,
             mfaEnrolled,
-            unusedCodes);
+            unusedCodes,
+            localUsername,
+            CanonicalIdentityApplied: EmergencyAccessIdentity.HasCanonicalIdentity(designated),
+            CanonicalUsernameConflict: await HasCanonicalUsernameConflictAsync(designated, cancellationToken),
+            HasEntraIdentityLink: EmergencyAccessIdentity.HasEntraIdentityLink(designated));
     }
 
     /// <inheritdoc />
@@ -92,6 +97,7 @@ public sealed class EmergencyAccessService : IEmergencyAccessService
             ?? throw new EmergencyAccessException(EmergencyAccessErrorCodes.UserNotFound, "User not found.");
 
         EnsureEligibleForDesignation(user, await _credentials.GetByUserIdAsync(userId, cancellationToken));
+        await EnsureCanTakeCanonicalUsernameAsync(user, cancellationToken);
 
         var previous = await _users.FindDesignatedEmergencyUserAsync(cancellationToken);
         if (previous is not null && !string.Equals(previous.Id.Value, user.Id.Value, StringComparison.Ordinal))
@@ -99,6 +105,8 @@ public sealed class EmergencyAccessService : IEmergencyAccessService
 
         if (!user.IsBreakGlassEligible)
             await SetDesignationAsync(user, designated: true, cancellationToken);
+
+        await EnsureCanonicalIdentityAsync(cancellationToken);
 
         await AuditAsync(
             EmergencyAccessAuditActionNames.Designated,
@@ -109,16 +117,17 @@ public sealed class EmergencyAccessService : IEmergencyAccessService
 
     /// <inheritdoc />
     public async ValueTask<UserId> ProvisionAsync(
-        string displayName,
-        string username,
         string password,
         ActorId? actorId,
         CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(displayName))
-            throw new InvalidOperationException("Display name is required.");
-        if (string.IsNullOrWhiteSpace(username))
-            throw new InvalidOperationException("Username is required.");
+        var existingDesignated = await _users.FindDesignatedEmergencyUserAsync(cancellationToken);
+        if (existingDesignated is not null)
+        {
+            await EnsureCanonicalIdentityAsync(cancellationToken);
+            return existingDesignated.Id;
+        }
+
         ValidatePassword(password);
 
         var role = await _roles.GetAsync(new RoleId(BootstrapConstants.PlatformAdminRoleId), cancellationToken)
@@ -126,23 +135,19 @@ public sealed class EmergencyAccessService : IEmergencyAccessService
                 EmergencyAccessErrorCodes.RoleNotFound,
                 "The Platform Administrator role is not available.");
 
-        var normalizedUsername = LocalAuthHelpers.NormalizeUsername(username);
+        var normalizedUsername = EmergencyAccessIdentity.NormalizedLocalUsername;
         var existing = await _users.GetByIdentityLinkAsync(IdentitySource.Local, normalizedUsername, cancellationToken);
         if (existing is not null)
         {
             throw new EmergencyAccessException(
-                EmergencyAccessErrorCodes.DuplicateUsername,
-                "A user with this local username already exists.");
+                EmergencyAccessErrorCodes.UsernameConflict,
+                "The reserved username is already assigned to a user that is not the emergency account. Resolve the conflict before provisioning Recovery Access.");
         }
-
-        var previous = await _users.FindDesignatedEmergencyUserAsync(cancellationToken);
-        if (previous is not null)
-            await SetDesignationAsync(previous, designated: false, cancellationToken);
 
         var userId = new UserId(Guid.NewGuid().ToString("N")[..24]);
         var user = new User(
             userId,
-            displayName.Trim(),
+            EmergencyAccessIdentity.DisplayName,
             [new IdentityLink(IdentitySource.Local, normalizedUsername, LastAuthenticatedAt: null)],
             [role.Id],
             IsBreakGlassEligible: true);
@@ -157,6 +162,36 @@ public sealed class EmergencyAccessService : IEmergencyAccessService
             $"userId={userId.Value}",
             cancellationToken);
         return userId;
+    }
+
+    /// <inheritdoc />
+    public async ValueTask EnsureCanonicalIdentityAsync(CancellationToken cancellationToken = default)
+    {
+        var designated = await _users.FindDesignatedEmergencyUserAsync(cancellationToken);
+        if (designated is null)
+            return;
+        if (EmergencyAccessIdentity.HasCanonicalIdentity(designated))
+            return;
+
+        await EnsureCanTakeCanonicalUsernameAsync(designated, cancellationToken);
+
+        var currentLocal = EmergencyAccessIdentity.LocalUsernameOf(designated)
+            ?? throw new EmergencyAccessException(
+                EmergencyAccessErrorCodes.LocalCredentialRequired,
+                "The emergency account must have an enabled local username and password.");
+
+        await _users.ApplyCanonicalLocalIdentityAsync(
+            designated.Id,
+            EmergencyAccessIdentity.DisplayName,
+            currentLocal,
+            EmergencyAccessIdentity.NormalizedLocalUsername,
+            cancellationToken);
+
+        await AuditAsync(
+            EmergencyAccessAuditActionNames.Canonicalized,
+            CliActorId,
+            $"userId={designated.Id.Value} previousUsername={currentLocal}",
+            cancellationToken);
     }
 
     /// <inheritdoc />
@@ -255,6 +290,25 @@ public sealed class EmergencyAccessService : IEmergencyAccessService
     {
         var updated = user with { IsBreakGlassEligible = designated };
         await _users.UpdateAsync(updated, cancellationToken);
+    }
+
+    private async ValueTask EnsureCanTakeCanonicalUsernameAsync(User user, CancellationToken cancellationToken)
+    {
+        if (await HasCanonicalUsernameConflictAsync(user, cancellationToken))
+        {
+            throw new EmergencyAccessException(
+                EmergencyAccessErrorCodes.UsernameConflict,
+                "The reserved username is already assigned to another user. The emergency account was not changed. Resolve the conflict before applying the canonical Recovery Access identity.");
+        }
+    }
+
+    private async ValueTask<bool> HasCanonicalUsernameConflictAsync(User user, CancellationToken cancellationToken)
+    {
+        var owner = await _users.GetByIdentityLinkAsync(
+            IdentitySource.Local,
+            EmergencyAccessIdentity.NormalizedLocalUsername,
+            cancellationToken);
+        return owner is not null && !string.Equals(owner.Id.Value, user.Id.Value, StringComparison.Ordinal);
     }
 
     private static bool IsPlatformAdministrator(User user) =>

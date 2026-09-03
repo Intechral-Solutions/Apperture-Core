@@ -1,3 +1,5 @@
+using System.Security.Claims;
+using Apperture.ControlPlane.Security;
 using Apperture.Management.Host;
 using FluentAssertions;
 using Microsoft.AspNetCore.Authentication;
@@ -115,6 +117,25 @@ public sealed class EntraSignInChallengeTests
         var properties = EntraSignOut.CreateProperties(Config());
 
         properties.RedirectUri.Should().Be("http://localhost:9001/login");
+    }
+
+    [Fact]
+    public void Federated_sign_out_is_only_for_an_entra_session()
+    {
+        EntraSignOut.ShouldEndEntraSession(null, entraUsable: true).Should().BeFalse();
+        EntraSignOut.ShouldEndEntraSession(Principal("Local"), entraUsable: true).Should().BeFalse();
+        EntraSignOut.ShouldEndEntraSession(Principal(null), entraUsable: true).Should().BeFalse();
+        EntraSignOut.ShouldEndEntraSession(Principal("Entra"), entraUsable: false).Should().BeFalse();
+        EntraSignOut.ShouldEndEntraSession(Principal("Entra"), entraUsable: true).Should().BeTrue();
+    }
+
+    private static ClaimsPrincipal Principal(string? identitySource)
+    {
+        var identity = new ClaimsIdentity("test", ClaimTypes.Name, ClaimTypes.Role);
+        identity.AddClaim(new Claim(ClaimTypes.NameIdentifier, "usr-1"));
+        if (identitySource is not null)
+            identity.AddClaim(new Claim(ClaimsPrincipalToActorMapper.IdentitySourceClaimType, identitySource));
+        return new ClaimsPrincipal(identity);
     }
 
     [Fact]

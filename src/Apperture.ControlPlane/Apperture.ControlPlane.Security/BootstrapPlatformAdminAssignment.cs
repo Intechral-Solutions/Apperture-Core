@@ -54,6 +54,12 @@ public static class BootstrapPlatformAdminAssignment
                 ? LocalAuthHelpers.NormalizeUsername(p.ExternalId)
                 : p.ExternalId.Trim();
 
+            if (source == IdentitySource.Local && EmergencyAccessIdentity.IsReservedLocalUsername(externalId))
+            {
+                logger?.LogWarning("Bootstrap principal skipped: username is reserved for Emergency Access.");
+                continue;
+            }
+
             if (source == IdentitySource.Entra && externalId.Contains('@', StringComparison.Ordinal))
             {
                 logger?.LogWarning(

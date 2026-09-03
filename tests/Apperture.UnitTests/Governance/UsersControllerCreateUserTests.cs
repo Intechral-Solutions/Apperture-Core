@@ -55,6 +55,21 @@ public sealed class UsersControllerCreateUserTests
     }
 
     [Fact]
+    public async Task Create_reserved_username_returns_conflict()
+    {
+        var service = new StubUserManagement(throwOnCreate: new EmergencyAccessException(
+            EmergencyAccessErrorCodes.ReservedUsername,
+            "That username is reserved for Emergency Access."));
+        var controller = NewController(service);
+
+        var result = await controller.Create(
+            new CreateUserRequest("Operator", "Local", "breakglass", "Password1!"),
+            CancellationToken.None);
+
+        result.Result.Should().BeOfType<ConflictObjectResult>();
+    }
+
+    [Fact]
     public async Task Create_short_password_returns_bad_request()
     {
         var service = new StubUserManagement(throwOnCreate: new InvalidOperationException("Password must be at least 8 characters."));

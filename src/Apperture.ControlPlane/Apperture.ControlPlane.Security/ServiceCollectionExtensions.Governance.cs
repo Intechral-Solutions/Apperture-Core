@@ -73,6 +73,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<INativeMfaService, NativeMfaService>();
         services.AddScoped<IPendingMfaLoginTicketService, PendingMfaLoginTicketService>();
         services.AddScoped<IEmergencyAccessService, EmergencyAccessService>();
+        services.AddHostedService<EmergencyAccessCanonicalizationHostedService>();
         services.AddScoped<IEntraPrimaryAuthenticationPolicy, EntraPrimaryAuthenticationPolicy>();
         services.AddScoped<IAuthenticationAssuranceEvaluator, AuthenticationAssuranceEvaluator>();
         services.AddScoped<IStrongAuthenticationGate, StrongAuthenticationGate>();

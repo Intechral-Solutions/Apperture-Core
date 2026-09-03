@@ -88,7 +88,7 @@
                             </ul>
                         }
 
-                        @if (EntraAvailable && !HasEntraLink)
+                        @if (EntraAvailable && !HasEntraLink && !_me.EmergencyAccessAccount)
                         {
                             <div class="mt-4 border-t border-default pt-3">
                                 <p class="text-sm text-muted">
@@ -151,7 +151,7 @@
                         else
                         {
                             <PageMessage Kind="PageMessageKind.Info"
-                                         Message="@PasswordChangeUnavailableMessage(_me.LocalCredentialStatus)" />
+                                         Message="@PasswordChangeUnavailableMessage(_me)" />
                         }
                     </div>
                 </section>
@@ -168,7 +168,7 @@
                                 }
                                 else
                                 {
-                                    <text>This emergency administrator still needs authenticator enrollment. Use the supported operator CLI; enrollment is not performed from this page.</text>
+                                    <text>This Recovery Access account still needs authenticator enrollment. Use the supported operator CLI; enrollment is not performed from this page.</text>
                                 }
                             </p>
                         </div>
@@ -351,7 +351,7 @@
     private static string FormatLocalPasswordHelp(MeResponse me)
     {
         if (me.LocalSignInPolicy == "emergency_access" || me.EmergencyAccessAccount)
-            return "Enabled as the designated emergency administrator. Sign-in uses your local password and native authenticator (or a recovery code). This account remains usable if Microsoft Entra is unavailable.";
+            return "Enabled for Emergency Access. Sign-in uses the Recovery Access local password and native authenticator (or a recovery code). This account remains usable if Microsoft Entra is unavailable. Password and authenticator changes use operator tooling, not this page.";
         if (me.LocalSignInPolicy == "recovery_safeguard")
             return "Enabled for emergency platform recovery. This local credential is temporarily retained because no independent emergency administrator has been configured yet.";
         if (me.LocalSignInPolicy == "disabled" || me.LocalCredentialStatus == "disabled")
@@ -361,10 +361,15 @@
         return "Not configured.";
     }
 
-    private static string PasswordChangeUnavailableMessage(string status) => status switch
+    private static string PasswordChangeUnavailableMessage(MeResponse me)
     {
-        "disabled" => "Local password sign-in is disabled because your Microsoft account is connected. The password has not been deleted. A Platform Administrator can restore local authentication for account recovery.",
-        "none" => "This account does not have a local password. Sign in with your organizational identity, or ask an administrator to set a local password.",
-        _ => "Password change is not available for your account."
-    };
+        if (me.EmergencyAccessAccount)
+            return "Password changes for Recovery Access use Emergency Access operator tooling, not this page.";
+        return me.LocalCredentialStatus switch
+        {
+            "disabled" => "Local password sign-in is disabled because your Microsoft account is connected. The password has not been deleted. A Platform Administrator can restore local authentication for account recovery.",
+            "none" => "This account does not have a local password. Sign in with your organizational identity, or ask an administrator to set a local password.",
+            _ => "Password change is not available for your account."
+        };
+    }
 }

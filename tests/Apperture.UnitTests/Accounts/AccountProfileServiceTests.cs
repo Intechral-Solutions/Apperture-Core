@@ -1,5 +1,6 @@
 using Apperture.ControlPlane.Security;
 using Apperture.Core.Application.Accounts;
+using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Identity;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -40,6 +41,42 @@ public sealed class AccountProfileServiceTests
         var profile = await fixture.Service.GetProfileAsync(new UserId("usr_missing"));
 
         profile.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Recovery_access_display_name_is_not_editable_and_cannot_be_changed()
+    {
+        var fixture = new Fixture();
+        await fixture.Users.UpdateAsync(new User(
+            Owner,
+            EmergencyAccessIdentity.DisplayName,
+            [new IdentityLink(IdentitySource.Local, EmergencyAccessIdentity.LocalUsername, null)],
+            [],
+            true));
+
+        var profile = await fixture.Service.GetProfileAsync(Owner);
+
+        profile!.DisplayNameEditable.Should().BeFalse();
+        var act = () => fixture.Service.UpdateDisplayNameAsync(Owner, "Hacked").AsTask();
+        var ex = await act.Should().ThrowAsync<EmergencyAccessException>();
+        ex.Which.Code.Should().Be(EmergencyAccessErrorCodes.UnsafeOperation);
+        fixture.Users.Get(Owner.Value).DisplayName.Should().Be(EmergencyAccessIdentity.DisplayName);
+    }
+
+    [Fact]
+    public async Task Recovery_access_avatar_cannot_be_changed()
+    {
+        var fixture = new Fixture();
+        await fixture.Users.UpdateAsync(new User(
+            Owner,
+            EmergencyAccessIdentity.DisplayName,
+            [new IdentityLink(IdentitySource.Local, EmergencyAccessIdentity.LocalUsername, null)],
+            [],
+            true));
+
+        var act = () => fixture.Service.SelectBuiltInAvatarAsync(Owner, "long-hair").AsTask();
+        var ex = await act.Should().ThrowAsync<EmergencyAccessException>();
+        ex.Which.Code.Should().Be(EmergencyAccessErrorCodes.UnsafeOperation);
     }
 
     [Fact]

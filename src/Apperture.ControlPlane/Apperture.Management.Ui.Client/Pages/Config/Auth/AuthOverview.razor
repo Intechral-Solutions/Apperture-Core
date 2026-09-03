@@ -95,8 +95,39 @@
                 </ul>
             </ManagementSection>
 
-            <ManagementSection Title="Recovery" Layer="@ManagementSection.UiLayer.Summary">
-                <p class="text-xs text-muted">Local backup sign-in: <a class="underline" href="/login/local">/login/local</a></p>
+            <ManagementSection Title="Emergency Access" Layer="@ManagementSection.UiLayer.Summary">
+                @if (_emergency is null)
+                {
+                    <p class="text-xs text-muted">Emergency Access status is available to operators who can read users.</p>
+                }
+                else
+                {
+                    <ul class="list-inside list-disc space-y-1 text-xs">
+                        <li>Status: @(_emergency.IsHealthy ? "Healthy" : "Not healthy")</li>
+                        <li>Account: @(_emergency.DesignatedDisplayName ?? "(none)")</li>
+                        <li>Username: @(_emergency.DesignatedUsername ?? "(none)")</li>
+                        <li>Local credential: @(_emergency.LocalCredentialEnabled ? "Enabled" : "Disabled")</li>
+                        <li>Authenticator: @(_emergency.NativeMfaEnrolled ? "Enrolled" : "Not enrolled")</li>
+                        <li>Recovery codes: @_emergency.UnusedRecoveryCodeCount available</li>
+                    </ul>
+                    @if (_emergency.FallbackSafeguardRequired)
+                    {
+                        <p class="mt-2 text-xs text-muted">Last-administrator local fallback is still required until Emergency Access is healthy.</p>
+                    }
+                    @if (_emergency.CanonicalUsernameConflict)
+                    {
+                        <PageMessage Kind="PageMessageKind.Warning" Message="Another user already owns the reserved Recovery Access username. The existing emergency account was not renamed." />
+                    }
+                    @if (_emergency.HasEntraIdentityLink)
+                    {
+                        <PageMessage Kind="PageMessageKind.Warning" Message="Recovery Access has a Microsoft identity linked. Recovery still depends only on the local password and native authenticator." />
+                    }
+                    <TechnicalDetails>
+                        <TechnicalDetail Label="User id" Value="@(_emergency.DesignatedUserId ?? "—")" />
+                    </TechnicalDetails>
+                }
+                <p class="mt-2 text-xs text-muted">Recovery Access is omitted from ordinary Governance user administration. That is an operational boundary, not a secrecy guarantee — assume the username is guessable.</p>
+                <p class="mt-1 text-xs text-muted">Local backup sign-in: <a class="underline" href="/login/local">/login/local</a></p>
             </ManagementSection>
         </div>
     }
@@ -106,6 +137,7 @@
     private bool _canView;
     private bool _loading = true;
     private ConfigAuthOverviewDto? _overview;
+    private EmergencyAccessPostureDto? _emergency;
 
     protected override async Task OnInitializedAsync()
     {
@@ -118,6 +150,14 @@
         }
 
         _overview = await Client.GetConfigAuthOverviewAsync();
+        try
+        {
+            _emergency = await Client.GetEmergencyAccessAsync();
+        }
+        catch (HttpRequestException)
+        {
+            _emergency = null;
+        }
         _loading = false;
     }
 }

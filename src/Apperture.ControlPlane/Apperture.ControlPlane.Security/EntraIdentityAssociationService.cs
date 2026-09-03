@@ -20,6 +20,9 @@ public static class EntraLinkFailureCodes
     /// <summary>The Microsoft identity is already linked to a different platform user.</summary>
     public const string Collision = "collision";
 
+    /// <summary>Emergency Access cannot be associated with Entra.</summary>
+    public const string EmergencyAccount = "emergency_account";
+
     /// <summary>The user already has a different Microsoft identity linked.</summary>
     public const string AlreadyLinked = "already_linked";
 
@@ -157,6 +160,12 @@ public sealed class EntraIdentityAssociationService : IEntraIdentityAssociationS
         var user = await _userRepository.GetByIdAsync(initiatingUserId, cancellationToken);
         if (user is null)
             return EntraAssociationOutcome.Failure(EntraLinkFailureCodes.UserNotFound);
+
+        if (EmergencyAccessIdentity.IsSystemManaged(user))
+        {
+            await AuditAsync(EntraLinkAuditActionNames.LinkFailed, objectId!, initiatingUserId.Value, "reason=emergency_account", cancellationToken);
+            return EntraAssociationOutcome.Failure(EntraLinkFailureCodes.EmergencyAccount);
+        }
 
         var registration = await GetActiveRegistrationAsync(cancellationToken);
         var activeTenantId = ResolveActiveTenantId(registration);

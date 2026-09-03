@@ -378,8 +378,9 @@ public sealed class EntraPrimaryAuthenticationPolicyTests
                 Healthy ? 10 : 0));
 
         public ValueTask DesignateAsync(UserId userId, ActorId? actorId, CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
-        public ValueTask<UserId> ProvisionAsync(string displayName, string username, string password, ActorId? actorId, CancellationToken cancellationToken = default) =>
+        public ValueTask<UserId> ProvisionAsync(string password, ActorId? actorId, CancellationToken cancellationToken = default) =>
             ValueTask.FromResult(new UserId("emerg-1"));
+        public ValueTask EnsureCanonicalIdentityAsync(CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
         public ValueTask RevokeAsync(bool confirmFallback, ActorId? actorId, CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
         public ValueTask SetLocalPasswordAsync(UserId userId, string password, ActorId? actorId, CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
         public ValueTask<bool> IsDesignatedEmergencyUserAsync(UserId userId, CancellationToken cancellationToken = default) =>

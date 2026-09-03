@@ -164,7 +164,8 @@ public sealed class AuthController : ControllerBase
             identityLinks,
             localStatus,
             roles.Select(r => r.Name).ToArray(),
-            AccountMeSnapshotBuilder.CanChangeLocalPassword(_localOptions.Enabled, localStatus),
+            AccountMeSnapshotBuilder.CanChangeLocalPassword(_localOptions.Enabled, localStatus)
+                && !user.IsBreakGlassEligible,
             deferred is null
                 ? null
                 : new AccountDeferredFeaturesDto(
@@ -258,6 +259,18 @@ public sealed class AuthController : ControllerBase
                 "Platform user not found",
                 cancellationToken);
             return Forbid();
+        }
+
+        if (EmergencyAccessIdentity.IsSystemManaged(user))
+        {
+            await AppendAuthAuditAsync(
+                AuthActionLocalPasswordChangeFailed,
+                new ActorId(userId.Value),
+                "System-managed recovery account",
+                cancellationToken);
+            return Conflict(new LocalPasswordChangeErrorResponse(
+                "This account is system-managed. Use Emergency Access operator tooling to change the password.",
+                LocalPasswordChangeErrorCodes.NoCredential));
         }
 
         if (!user.IdentityLinks.Any(l => l.Source == IdentitySource.Local))

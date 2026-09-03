@@ -109,6 +109,42 @@ public sealed class SqlUserRepository : IUserRepository
         await _db.SaveChangesAsync(cancellationToken);
     }
 
+    /// <inheritdoc />
+    public async ValueTask ApplyCanonicalLocalIdentityAsync(
+        UserId userId,
+        string displayName,
+        string currentLocalUsername,
+        string newLocalUsername,
+        CancellationToken cancellationToken = default)
+    {
+        var entity = await _db.Users.FirstOrDefaultAsync(e => e.Id == userId.Value, cancellationToken)
+            ?? throw new InvalidOperationException($"User {userId.Value} not found.");
+
+        var localLink = await _db.IdentityLinks.FirstOrDefaultAsync(
+            l => l.UserId == userId.Value
+                && l.Source == (int)IdentitySource.Local
+                && l.ExternalId == currentLocalUsername,
+            cancellationToken)
+            ?? throw new InvalidOperationException($"User {userId.Value} has no matching local identity.");
+
+        if (!string.Equals(localLink.ExternalId, newLocalUsername, StringComparison.Ordinal))
+        {
+            var taken = await _db.IdentityLinks.AnyAsync(
+                l => l.Source == (int)IdentitySource.Local && l.ExternalId == newLocalUsername,
+                cancellationToken);
+            if (taken)
+            {
+                throw new InvalidOperationException(
+                    "An identity link with this source and external id already exists.");
+            }
+
+            localLink.ExternalId = newLocalUsername;
+        }
+
+        entity.DisplayName = displayName;
+        await _db.SaveChangesAsync(cancellationToken);
+    }
+
     /// <summary>
     /// A null avatar means "caller did not express an avatar intent" (for example an admin updating
     /// roles), so the persisted selection is left untouched rather than silently reset.
@@ -151,8 +187,9 @@ public sealed class SqlUserRepository : IUserRepository
     /// <inheritdoc />
     public async ValueTask<(IReadOnlyList<User> Page, int TotalCount)> GetPageAsync(int skip, int take, CancellationToken cancellationToken = default)
     {
-        var totalCount = await _db.Users.CountAsync(cancellationToken);
-        var userEntities = await _db.Users.AsNoTracking()
+        var query = _db.Users.AsNoTracking().Where(u => !u.IsBreakGlassEligible);
+        var totalCount = await query.CountAsync(cancellationToken);
+        var userEntities = await query
             .OrderBy(u => u.Id)
             .Skip(skip)
             .Take(take)

@@ -1658,7 +1658,12 @@ public sealed record EmergencyAccessPostureDto(
     [property: JsonPropertyName("designatedIsPlatformAdministrator")] bool DesignatedIsPlatformAdministrator,
     [property: JsonPropertyName("localCredentialEnabled")] bool LocalCredentialEnabled,
     [property: JsonPropertyName("nativeMfaEnrolled")] bool NativeMfaEnrolled,
-    [property: JsonPropertyName("recoveryCodesPresent")] bool RecoveryCodesPresent);
+    [property: JsonPropertyName("recoveryCodesPresent")] bool RecoveryCodesPresent,
+    [property: JsonPropertyName("unusedRecoveryCodeCount")] int UnusedRecoveryCodeCount = 0,
+    [property: JsonPropertyName("designatedUsername")] string? DesignatedUsername = null,
+    [property: JsonPropertyName("canonicalIdentityApplied")] bool CanonicalIdentityApplied = false,
+    [property: JsonPropertyName("canonicalUsernameConflict")] bool CanonicalUsernameConflict = false,
+    [property: JsonPropertyName("hasEntraIdentityLink")] bool HasEntraIdentityLink = false);
 
 public sealed record AuthSignInOptionsDto(
     [property: JsonPropertyName("localSignInEnabled")] bool LocalSignInEnabled,

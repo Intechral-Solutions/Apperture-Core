@@ -81,6 +81,10 @@ public sealed class AccountController : ControllerBase
         {
             return ValidationProblem(nameof(request.DisplayName), ex.Message);
         }
+        catch (EmergencyAccessException ex)
+        {
+            return Conflict(new { message = ex.Message, code = ex.Code });
+        }
 
         return Ok(await ComposeProfileAsync(userId, snapshot, cancellationToken));
     }
@@ -159,6 +163,10 @@ public sealed class AccountController : ControllerBase
         {
             return ValidationProblem(nameof(request.OptionId), ex.Message);
         }
+        catch (EmergencyAccessException ex)
+        {
+            return Conflict(new { message = ex.Message, code = ex.Code });
+        }
     }
 
     /// <summary>
@@ -190,10 +198,18 @@ public sealed class AccountController : ControllerBase
         using var buffer = new MemoryStream();
         await file.CopyToAsync(buffer, cancellationToken);
 
-        var result = await _account.UploadAvatarAsync(
-            userId,
-            new AccountAvatarUpload(file.FileName, file.ContentType, buffer.ToArray()),
-            cancellationToken);
+        AccountAvatarUploadResult result;
+        try
+        {
+            result = await _account.UploadAvatarAsync(
+                userId,
+                new AccountAvatarUpload(file.FileName, file.ContentType, buffer.ToArray()),
+                cancellationToken);
+        }
+        catch (EmergencyAccessException ex)
+        {
+            return Conflict(new { message = ex.Message, code = ex.Code });
+        }
 
         if (!result.Succeeded)
             return ValidationProblem("file", result.Message ?? "That image could not be used.");
@@ -210,8 +226,15 @@ public sealed class AccountController : ControllerBase
         if (userId is null)
             return Forbid();
 
-        var avatar = await _account.ResetAvatarAsync(userId, cancellationToken);
-        return Ok(ToDto(avatar));
+        try
+        {
+            var avatar = await _account.ResetAvatarAsync(userId, cancellationToken);
+            return Ok(ToDto(avatar));
+        }
+        catch (EmergencyAccessException ex)
+        {
+            return Conflict(new { message = ex.Message, code = ex.Code });
+        }
     }
 
     /// <summary>

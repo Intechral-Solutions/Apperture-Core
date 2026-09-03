@@ -17,14 +17,22 @@ public interface IEmergencyAccessService
     ValueTask DesignateAsync(UserId userId, ActorId? actorId, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Creates a new local Platform Administrator and designates it as the emergency account.
+    /// Creates the canonical Recovery Access account (<c>breakglass</c>) and designates it.
+    /// When a designated emergency user already exists, returns that user id without creating another
+    /// and without changing credentials. Username and display name are not caller-configurable.
     /// </summary>
     ValueTask<UserId> ProvisionAsync(
-        string displayName,
-        string username,
         string password,
         ActorId? actorId,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Normalizes the designated emergency user in place to the canonical username and display name.
+    /// Preserves UserId, credentials, TOTP, recovery codes, and designation. Throws
+    /// <see cref="EmergencyAccessErrorCodes.UsernameConflict"/> without mutating when another user
+    /// already owns the reserved username.
+    /// </summary>
+    ValueTask EnsureCanonicalIdentityAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Clears emergency designation. IAM-2 last-admin fallback becomes required again until a

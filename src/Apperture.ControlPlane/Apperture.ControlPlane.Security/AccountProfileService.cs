@@ -71,6 +71,7 @@ public sealed class AccountProfileService : IAccountProfileService
             throw new ArgumentException(error, nameof(displayName));
 
         var user = await RequireUserAsync(userId, cancellationToken).ConfigureAwait(false);
+        EnsureMutable(user);
         if (string.Equals(user.DisplayName, normalized, StringComparison.Ordinal))
             return BuildSnapshot(user);
 
@@ -142,6 +143,7 @@ public sealed class AccountProfileService : IAccountProfileService
             throw new ArgumentException($"'{optionId}' is not a built-in avatar option.", nameof(optionId));
 
         var user = await RequireUserAsync(userId, cancellationToken).ConfigureAwait(false);
+        EnsureMutable(user);
         var avatar = UserAvatar.ForBuiltIn(optionId!);
         await _users.UpdateAsync(user with { Avatar = avatar }, cancellationToken).ConfigureAwait(false);
 
@@ -167,6 +169,7 @@ public sealed class AccountProfileService : IAccountProfileService
         CancellationToken cancellationToken = default)
     {
         var user = await RequireUserAsync(userId, cancellationToken).ConfigureAwait(false);
+        EnsureMutable(user);
         var current = user.EffectiveAvatar;
 
         // Cheap pre-filter on what the client claims. The decoder below is what actually decides.
@@ -233,6 +236,7 @@ public sealed class AccountProfileService : IAccountProfileService
     public async ValueTask<UserAvatar> ResetAvatarAsync(UserId userId, CancellationToken cancellationToken = default)
     {
         var user = await RequireUserAsync(userId, cancellationToken).ConfigureAwait(false);
+        EnsureMutable(user);
         await _users.UpdateAsync(user with { Avatar = UserAvatar.Default }, cancellationToken).ConfigureAwait(false);
         var retired = await _images
             .DeleteForUserAsync(userId.Value, keepImageKey: null, cancellationToken)
@@ -324,9 +328,7 @@ public sealed class AccountProfileService : IAccountProfileService
         new(
             user.Id.Value,
             user.DisplayName,
-            // Display name is stored by Apperture and never re-synchronized from the identity
-            // provider after account creation, so an operator edit is safe and authoritative.
-            DisplayNameEditable: true,
+            DisplayNameEditable: !EmergencyAccessIdentity.IsSystemManaged(user),
             user.EffectiveAvatar,
             user.DisplayTimeZoneId,
             user.IdentityLinks
@@ -372,6 +374,15 @@ public sealed class AccountProfileService : IAccountProfileService
     private async ValueTask<User> RequireUserAsync(UserId userId, CancellationToken cancellationToken) =>
         await _users.GetByIdAsync(userId, cancellationToken).ConfigureAwait(false)
         ?? throw new KeyNotFoundException($"User '{userId.Value}' was not found.");
+
+    private static void EnsureMutable(User user)
+    {
+        if (!EmergencyAccessIdentity.IsSystemManaged(user))
+            return;
+        throw new EmergencyAccessException(
+            EmergencyAccessErrorCodes.UnsafeOperation,
+            "Recovery Access is system-managed. Display name and avatar cannot be changed here.");
+    }
 
     private async ValueTask AppendAuditAsync(
         UserId userId,

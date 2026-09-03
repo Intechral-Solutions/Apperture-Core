@@ -11,5 +11,6 @@
 | **Step** | A unit of execution within a workflow. The runtime invokes steps in order. |
 | **OperationRun** | Top-level record for a workflow execution, surfaced in the UI and audit. |
 | **Control plane** | Management API, UI, module registry, execution requests, schedules, audit, telemetry queries. |
-| **Emergency administrator** | The single designated Platform Administrator (`Users.IsBreakGlassEligible`) that provides Entra-independent recovery. Signs in with local password plus native MFA or a recovery code. Not a Super Admin role. |
+| **Emergency Access** | The Entra-independent recovery capability (CLI, API, posture, audit). Not a Super Admin role and not `POST /api/auth/break-glass`. |
+| **Recovery Access** | The system-managed principal for Emergency Access. Canonical username `breakglass`, display name Recovery Access, role Platform Administrator. Designated via `Users.IsBreakGlassEligible`. Omitted from ordinary Governance Users administration (operational boundary, not secrecy). Signs in with local password plus native MFA or a recovery code. Must not be linked to Entra or used as a daily administrator account. |
 | **Instance plane** | Worker, DTFx/Durable Functions execution, step execution. The "data plane" for workflow runs. (When referring to deployment boundary, prefer "Environment".) |

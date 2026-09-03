@@ -39,8 +39,23 @@ public interface IUserRepository
 
     /// <summary>
     /// Gets a page of users with their identity links and role ids. For auth-admin listing.
+    /// Excludes the designated emergency account so ordinary Governance Users administration does
+    /// not treat Recovery Access as a manageable user. TotalCount matches the filtered set.
     /// </summary>
     ValueTask<(IReadOnlyList<User> Page, int TotalCount)> GetPageAsync(int skip, int take, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Updates display name and the Local identity ExternalId in one SaveChanges. Does not recreate
+    /// the user, local credential, TOTP, or recovery-code rows. Throws when another user already
+    /// owns <paramref name="newLocalUsername"/>.
+    /// </summary>
+    ValueTask ApplyCanonicalLocalIdentityAsync(
+        UserId userId,
+        string displayName,
+        string currentLocalUsername,
+        string newLocalUsername,
+        CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException();
 
     /// <summary>
     /// The designated emergency-access user, if any. v1 allows at most one.

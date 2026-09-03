@@ -250,18 +250,14 @@ function Get-AppertureEmergencyAccess {
 function New-AppertureEmergencyAdministrator {
     <#
     .SYNOPSIS
-        Creates a Platform Administrator and designates it as emergency access.
+        Creates the system-managed Recovery Access account (username breakglass) if it does not exist.
     .DESCRIPTION
         The password is prompted by the CLI (stdin). Do not pass the password as an argument.
+        Username and display name are not configurable.
     #>
     [CmdletBinding()]
-    param(
-        [Parameter(Mandatory = $true)]
-        [string]$DisplayName,
-        [Parameter(Mandatory = $true)]
-        [string]$Username
-    )
-    Invoke-AppertureEmergencyHelper -Args @('provision', '--display-name', $DisplayName, '--username', $Username)
+    param()
+    Invoke-AppertureEmergencyHelper -Args @('provision')
 }
 
 function Set-AppertureEmergencyAdministrator {
@@ -280,31 +276,40 @@ function Set-AppertureEmergencyAdministrator {
 function Set-AppertureEmergencyPassword {
     <#
     .SYNOPSIS
-        Sets the emergency administrator local password. The CLI prompts on stdin.
+        Sets the Recovery Access local password. The CLI prompts on stdin.
     #>
     [CmdletBinding()]
     param(
-        [Parameter(Mandatory = $true)]
+        [Parameter()]
         [string]$Username
     )
-    Invoke-AppertureEmergencyHelper -Args @('set-password', '--username', $Username)
+    if ($Username) {
+        Invoke-AppertureEmergencyHelper -Args @('set-password', '--username', $Username)
+    } else {
+        Invoke-AppertureEmergencyHelper -Args @('set-password')
+    }
 }
 
 function Register-AppertureEmergencyAuthenticator {
     <#
     .SYNOPSIS
-        Enrolls native authenticator MFA for the emergency administrator.
+        Enrolls native authenticator MFA for Recovery Access.
     #>
     [CmdletBinding()]
     param(
-        [Parameter(Mandatory = $true)]
+        [Parameter()]
         [string]$Username,
         [switch]$Reset
     )
     if ($Reset) {
-        Invoke-AppertureEmergencyHelper -Args @('reset-mfa', '--username', $Username)
+        $cmd = 'reset-mfa'
     } else {
-        Invoke-AppertureEmergencyHelper -Args @('enroll-mfa', '--username', $Username)
+        $cmd = 'enroll-mfa'
+    }
+    if ($Username) {
+        Invoke-AppertureEmergencyHelper -Args @($cmd, '--username', $Username)
+    } else {
+        Invoke-AppertureEmergencyHelper -Args @($cmd)
     }
 }
 
@@ -315,10 +320,14 @@ function New-AppertureEmergencyRecoveryCodes {
     #>
     [CmdletBinding()]
     param(
-        [Parameter(Mandatory = $true)]
+        [Parameter()]
         [string]$Username
     )
-    Invoke-AppertureEmergencyHelper -Args @('regenerate-codes', '--username', $Username)
+    if ($Username) {
+        Invoke-AppertureEmergencyHelper -Args @('regenerate-codes', '--username', $Username)
+    } else {
+        Invoke-AppertureEmergencyHelper -Args @('regenerate-codes')
+    }
 }
 
 function Remove-AppertureEmergencyAdministrator {

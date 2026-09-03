@@ -1,4 +1,5 @@
 using Apperture.ControlPlane.Security;
+using Apperture.Core.Application;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Audit;
 using Apperture.Core.Domain.Identity;
@@ -147,6 +148,25 @@ public sealed class EntraIdentityAssociationServiceTests
         added.Link.LinkedAt.Should().Be(Now);
         harness.Audit.Actions.Should().Contain(EntraLinkAuditActionNames.Linked);
         harness.Policy.AppliedUserIds.Should().ContainSingle().Which.Should().Be("usr-1");
+    }
+
+    [Fact]
+    public async Task Self_link_is_rejected_for_the_designated_recovery_account()
+    {
+        var harness = new Harness();
+        harness.Repository.Seed(new User(
+            new UserId("emerg-1"),
+            EmergencyAccessIdentity.DisplayName,
+            [LocalLink(EmergencyAccessIdentity.LocalUsername)],
+            [new RoleId(BootstrapConstants.PlatformAdminRoleId)],
+            IsBreakGlassEligible: true));
+
+        var outcome = await harness.Service.CompleteLinkAsync(new UserId("emerg-1"), Assertion());
+
+        outcome.Succeeded.Should().BeFalse();
+        outcome.FailureCode.Should().Be(EntraLinkFailureCodes.EmergencyAccount);
+        harness.Repository.AddedLinks.Should().BeEmpty();
+        harness.Policy.AppliedUserIds.Should().BeEmpty();
     }
 
     [Fact]

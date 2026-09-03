@@ -65,6 +65,24 @@ public sealed class UsersControllerIdentityLinkTests
     }
 
     [Fact]
+    public async Task AddIdentityLink_recovery_access_returns_conflict()
+    {
+        var service = new StubUserManagement(throwOnAdd: new EmergencyAccessException(
+            EmergencyAccessErrorCodes.UnsafeOperation,
+            "Recovery Access is system-managed."));
+        var controller = NewController(service);
+
+        var result = await controller.AddIdentityLink(
+            TargetUserId,
+            new AddIdentityLinkRequest("Entra", EntraOid),
+            CancellationToken.None);
+
+        var conflict = result.Should().BeOfType<ConflictObjectResult>().Subject;
+        var body = conflict.Value.Should().BeOfType<IdentityLinkErrorResponse>().Subject;
+        body.Code.Should().Be(EmergencyAccessErrorCodes.UnsafeOperation);
+    }
+
+    [Fact]
     public async Task AddIdentityLink_user_not_found_returns_not_found_with_code()
     {
         var service = new StubUserManagement(throwOnAdd: new IdentityLinkException(

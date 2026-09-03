@@ -41,6 +41,11 @@ public sealed class DevTestUserBootstrapHostedService : IHostedService
             return;
 
         var username = LocalAuthHelpers.NormalizeUsername(opts.Username);
+        if (EmergencyAccessIdentity.IsReservedLocalUsername(username))
+        {
+            _logger?.LogWarning("Dev test user username is reserved for Emergency Access; skipped.");
+            return;
+        }
         var displayName = string.IsNullOrWhiteSpace(opts.DisplayName) ? opts.Username : opts.DisplayName.Trim();
 
         using var scope = _scopeFactory.CreateScope();

@@ -75,16 +75,17 @@ internal static class EmergencyCli
 
     public static void PrintHelp()
     {
-        Console.WriteLine("Apperture emergency access (Entra-independent Platform Administrator)");
+        Console.WriteLine("Apperture Emergency Access (system-managed Recovery Access account)");
         Console.WriteLine("  emergency status");
-        Console.WriteLine("  emergency provision --display-name <name> --username <username>");
+        Console.WriteLine("  emergency provision");
         Console.WriteLine("  emergency designate --username <username>");
-        Console.WriteLine("  emergency set-password --username <username>");
-        Console.WriteLine("  emergency enroll-mfa --username <username>");
-        Console.WriteLine("  emergency reset-mfa --username <username>");
-        Console.WriteLine("  emergency regenerate-codes --username <username>");
+        Console.WriteLine("  emergency set-password");
+        Console.WriteLine("  emergency enroll-mfa");
+        Console.WriteLine("  emergency reset-mfa");
+        Console.WriteLine("  emergency regenerate-codes");
         Console.WriteLine("  emergency revoke --confirm-fallback");
         Console.WriteLine();
+        Console.WriteLine("Recovery Access uses username 'breakglass'. Username and display name are not configurable.");
         Console.WriteLine("Passwords and authenticator codes are read from stdin (prompted when interactive).");
         Console.WriteLine("Do not pass secrets on the command line.");
     }
@@ -108,26 +109,52 @@ internal static class EmergencyCli
 
     private static async Task<int> StatusAsync(IEmergencyAccessService emergency)
     {
+        try
+        {
+            await emergency.EnsureCanonicalIdentityAsync();
+        }
+        catch (EmergencyAccessException ex) when (ex.Code == EmergencyAccessErrorCodes.UsernameConflict)
+        {
+            Console.Error.WriteLine(ex.Message);
+        }
+
         var posture = await emergency.GetPostureAsync();
         Console.WriteLine($"Healthy: {posture.IsHealthy}");
         Console.WriteLine($"Fallback safeguard required: {posture.FallbackSafeguardRequired}");
+        Console.WriteLine($"Account: {posture.DesignatedDisplayName ?? "(none)"}");
+        Console.WriteLine($"Username: {posture.DesignatedUsername ?? "(none)"}");
+        Console.WriteLine($"Canonical identity: {posture.CanonicalIdentityApplied}");
+        if (posture.CanonicalUsernameConflict)
+            Console.WriteLine("Username conflict: another user already owns the reserved username. Recovery Access was not renamed.");
+        if (posture.HasEntraIdentityLink)
+            Console.WriteLine("Warning: Recovery Access has a Microsoft identity linked. Recovery still depends only on local password + native MFA.");
         Console.WriteLine($"Designated user id: {posture.DesignatedUserId ?? "(none)"}");
-        Console.WriteLine($"Display name: {posture.DesignatedDisplayName ?? "(none)"}");
         Console.WriteLine($"Platform Administrator: {posture.DesignatedIsPlatformAdministrator}");
         Console.WriteLine($"Local credential enabled: {posture.LocalCredentialEnabled}");
-        Console.WriteLine($"Native MFA enrolled: {posture.NativeMfaEnrolled}");
-        Console.WriteLine($"Unused recovery codes: {posture.UnusedRecoveryCodeCount}");
+        Console.WriteLine($"Authenticator: {(posture.NativeMfaEnrolled ? "Enrolled" : "Not enrolled")}");
+        Console.WriteLine($"Recovery codes: {posture.UnusedRecoveryCodeCount} available");
         return 0;
     }
 
     private static async Task<int> ProvisionAsync(IEmergencyAccessService emergency, string[] args)
     {
-        var displayName = GetOption(args, "--display-name");
-        var username = GetOption(args, "--username");
-        if (string.IsNullOrWhiteSpace(displayName) || string.IsNullOrWhiteSpace(username))
+        _ = args;
+        var posture = await emergency.GetPostureAsync();
+        if (!string.IsNullOrEmpty(posture.DesignatedUserId))
         {
-            Console.Error.WriteLine("provision requires --display-name and --username.");
-            return 1;
+            try
+            {
+                await emergency.EnsureCanonicalIdentityAsync();
+            }
+            catch (EmergencyAccessException ex) when (ex.Code == EmergencyAccessErrorCodes.UsernameConflict)
+            {
+                Console.Error.WriteLine(ex.Message);
+                return 1;
+            }
+
+            Console.WriteLine($"Emergency Access already provisioned userId={posture.DesignatedUserId}");
+            Console.WriteLine($"Account: {EmergencyAccessIdentity.DisplayName}  Username: {EmergencyAccessIdentity.LocalUsername}");
+            return 0;
         }
 
         var password = await ReadSecretAsync("Enter emergency local password:");
@@ -140,9 +167,10 @@ internal static class EmergencyCli
             return 1;
         }
 
-        var userId = await emergency.ProvisionAsync(displayName, username, password, CliActor);
-        Console.WriteLine($"Provisioned emergency administrator userId={userId.Value}");
-        Console.WriteLine("Next: run 'emergency enroll-mfa --username <username>' and store the recovery codes.");
+        var userId = await emergency.ProvisionAsync(password, CliActor);
+        Console.WriteLine($"Provisioned Recovery Access userId={userId.Value}");
+        Console.WriteLine($"Username: {EmergencyAccessIdentity.LocalUsername}");
+        Console.WriteLine("Next: run 'emergency enroll-mfa' and store the recovery codes.");
         return 0;
     }
 
@@ -234,8 +262,10 @@ internal static class EmergencyCli
 
         if (string.IsNullOrWhiteSpace(username))
         {
-            Console.Error.WriteLine("Specify --username or --user-id.");
-            return null;
+            var designated = await users.FindDesignatedEmergencyUserAsync();
+            if (designated is not null)
+                return designated;
+            username = EmergencyAccessIdentity.LocalUsername;
         }
 
         var byName = await users.GetByIdentityLinkAsync(IdentitySource.Local, LocalAuthHelpers.NormalizeUsername(username));

@@ -84,6 +84,46 @@ public sealed class UserManagementServiceIdentityLinkTests
     }
 
     [Fact]
+    public async Task AddIdentityLinkAsync_rejects_entra_on_recovery_access()
+    {
+        var userId = new UserId("emerg-1");
+        var repo = new InMemoryUserRepository(new User(
+            userId,
+            EmergencyAccessIdentity.DisplayName,
+            [new IdentityLink(IdentitySource.Local, EmergencyAccessIdentity.LocalUsername, null)],
+            [new RoleId(BootstrapConstants.PlatformAdminRoleId)],
+            true));
+        var service = NewService(repo, new StubEntraAssociation());
+
+        Func<Task> act = async () =>
+            await service.AddIdentityLinkAsync(userId, IdentitySource.Entra, FirstOid, CancellationToken.None);
+
+        var ex = await act.Should().ThrowAsync<EmergencyAccessException>();
+        ex.Which.Code.Should().Be(EmergencyAccessErrorCodes.UnsafeOperation);
+        repo.IdentityLinkAddCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task AddIdentityLinkAsync_rejects_reserved_local_username()
+    {
+        var userId = new UserId("usr-ordinary");
+        var repo = new InMemoryUserRepository(new User(
+            userId,
+            "Operator",
+            [new IdentityLink(IdentitySource.Entra, FirstOid, DateTimeOffset.UtcNow)],
+            [],
+            false));
+        var service = NewService(repo);
+
+        Func<Task> act = async () =>
+            await service.AddIdentityLinkAsync(userId, IdentitySource.Local, "  BreakGlass  ", CancellationToken.None);
+
+        var ex = await act.Should().ThrowAsync<EmergencyAccessException>();
+        ex.Which.Code.Should().Be(EmergencyAccessErrorCodes.ReservedUsername);
+        repo.IdentityLinkAddCount.Should().Be(0);
+    }
+
+    [Fact]
     public async Task RemoveIdentityLinkAsync_will_not_leave_the_last_admin_with_only_a_pending_entra_link()
     {
         var userId = new UserId("usr-last-admin");

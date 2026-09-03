@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
@@ -38,8 +39,12 @@ internal static class EntraSignOut
         IConfiguration configuration)
     {
         var properties = CreateProperties(configuration);
+        var login = properties.RedirectUri!;
 
-        if (EntraRuntimeState.IsUsable(entra.Value))
+        // Federated directory logout only for an Entra session. A local session (including Recovery
+        // Access) has no id_token; sending it to Microsoft end-session looks like a Microsoft login
+        // page and never returns to Apperture.
+        if (ShouldEndEntraSession(ctx.User, EntraRuntimeState.IsUsable(entra.Value)))
         {
             // Do not pass RedirectUri to cookie sign-out: that would bounce to the UI before Entra end-session.
             await ctx.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
@@ -48,6 +53,15 @@ internal static class EntraSignOut
         }
 
         await ctx.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
-        ctx.Response.Redirect(properties.RedirectUri!);
+        ctx.Response.Redirect(login);
+    }
+
+    internal static bool ShouldEndEntraSession(ClaimsPrincipal? user, bool entraUsable)
+    {
+        if (!entraUsable || user?.Identity?.IsAuthenticated != true)
+            return false;
+
+        var source = user.FindFirst(ClaimsPrincipalToActorMapper.IdentitySourceClaimType)?.Value;
+        return string.Equals(source, "Entra", StringComparison.OrdinalIgnoreCase);
     }
 }

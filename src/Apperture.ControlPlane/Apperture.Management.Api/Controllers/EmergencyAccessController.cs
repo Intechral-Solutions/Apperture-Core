@@ -37,7 +37,12 @@ public sealed class EmergencyAccessController : ControllerBase
                 posture.DesignatedIsPlatformAdministrator,
                 posture.LocalCredentialEnabled,
                 posture.NativeMfaEnrolled,
-                posture.UnusedRecoveryCodeCount > 0));
+                posture.UnusedRecoveryCodeCount > 0,
+                posture.UnusedRecoveryCodeCount,
+                posture.DesignatedUsername,
+                posture.CanonicalIdentityApplied,
+                posture.CanonicalUsernameConflict,
+                posture.HasEntraIdentityLink));
         }
         catch (UnauthorizedAccessException)
         {
@@ -54,4 +59,9 @@ public sealed record EmergencyAccessPostureDto(
     bool DesignatedIsPlatformAdministrator,
     bool LocalCredentialEnabled,
     bool NativeMfaEnrolled,
-    bool RecoveryCodesPresent);
+    bool RecoveryCodesPresent,
+    int UnusedRecoveryCodeCount = 0,
+    string? DesignatedUsername = null,
+    bool CanonicalIdentityApplied = false,
+    bool CanonicalUsernameConflict = false,
+    bool HasEntraIdentityLink = false);

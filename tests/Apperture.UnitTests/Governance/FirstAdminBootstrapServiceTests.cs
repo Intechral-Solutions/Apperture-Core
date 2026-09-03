@@ -25,6 +25,52 @@ public sealed class FirstAdminBootstrapServiceTests
         status.AllowsFirstAdmin.Should().Be(allowsFirstAdmin);
     }
 
+    [Theory]
+    [InlineData("breakglass")]
+    [InlineData("BreakGlass")]
+    [InlineData("  BREAKGLASS  ")]
+    public async Task TryCreateFirstAdminAsync_rejects_the_reserved_recovery_username(string username)
+    {
+        var users = new CapturingUserRepository();
+        var service = new FirstAdminBootstrapService(users, new PresentRoleRepository());
+
+        var result = await service.TryCreateFirstAdminAsync("First admin", IdentitySource.Local, username, "Password1!");
+
+        result.Kind.Should().Be(FirstAdminBootstrapResultKind.DuplicateIdentityLink);
+        users.Added.Should().BeEmpty();
+    }
+
+    private sealed class CapturingUserRepository : IUserRepository
+    {
+        public List<User> Added { get; } = [];
+
+        public ValueTask<int> GetUserCountAsync(CancellationToken cancellationToken = default) => ValueTask.FromResult(0);
+        public ValueTask<User?> GetByIdAsync(UserId userId, CancellationToken cancellationToken = default) => ValueTask.FromResult<User?>(null);
+        public ValueTask<(IReadOnlyList<User> Page, int TotalCount)> GetPageAsync(int skip, int take, CancellationToken cancellationToken = default) => ValueTask.FromResult<(IReadOnlyList<User>, int)>(([], 0));
+        public ValueTask<User?> GetByIdentityLinkAsync(IdentitySource source, string externalId, CancellationToken cancellationToken = default) => ValueTask.FromResult<User?>(null);
+        public ValueTask AddAsync(User user, CancellationToken cancellationToken = default)
+        {
+            Added.Add(user);
+            return ValueTask.CompletedTask;
+        }
+        public ValueTask UpdateAsync(User user, CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
+        public ValueTask UpdateLastAuthenticatedAtAsync(IdentitySource source, string externalId, DateTimeOffset at, CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
+        public ValueTask AddIdentityLinkAsync(UserId userId, IdentitySource source, string externalId, CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
+        public ValueTask RemoveIdentityLinkAsync(UserId userId, IdentitySource source, string externalId, CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
+    }
+
+    private sealed class PresentRoleRepository : IRoleRepository
+    {
+        public ValueTask<Role?> GetAsync(RoleId roleId, CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult<Role?>(new Role(roleId, "Platform Administrator", null, [], true));
+        public ValueTask<IReadOnlyList<Role>> GetAllAsync(CancellationToken cancellationToken = default) => ValueTask.FromResult<IReadOnlyList<Role>>([]);
+        public ValueTask<IReadOnlyList<Role>> GetForUserAsync(UserId userId, CancellationToken cancellationToken = default) => ValueTask.FromResult<IReadOnlyList<Role>>([]);
+        public ValueTask<int> CountUserAssignmentsAsync(RoleId roleId, CancellationToken cancellationToken = default) => ValueTask.FromResult(0);
+        public ValueTask AssignToUserAsync(UserId userId, RoleId roleId, CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
+        public ValueTask RemoveFromUserAsync(UserId userId, RoleId roleId, CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
+        public ValueTask UpdatePermissionsAsync(RoleId roleId, IReadOnlyList<PermissionDescriptor> permissions, CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
+    }
+
     private sealed class CountingUserRepository : IUserRepository
     {
         private readonly int _count;

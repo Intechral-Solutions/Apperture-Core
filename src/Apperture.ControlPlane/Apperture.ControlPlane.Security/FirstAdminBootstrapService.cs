@@ -48,6 +48,9 @@ public sealed class FirstAdminBootstrapService : IFirstAdminBootstrapService
             ? LocalAuthHelpers.NormalizeUsername(externalId)
             : externalId.Trim();
 
+        if (source == IdentitySource.Local && EmergencyAccessIdentity.IsReservedLocalUsername(linkExternalId))
+            return FirstAdminBootstrapResult.DuplicateIdentityLink;
+
         var existing = await _userRepository.GetByIdentityLinkAsync(source, linkExternalId, cancellationToken);
         if (existing is not null)
             return FirstAdminBootstrapResult.DuplicateIdentityLink;

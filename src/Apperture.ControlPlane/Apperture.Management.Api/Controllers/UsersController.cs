@@ -169,6 +169,10 @@ public sealed class UsersController : ControllerBase
         {
             return Forbid();
         }
+        catch (EmergencyAccessException ex)
+        {
+            return Conflict(new { message = ex.Message, code = ex.Code });
+        }
         catch (IdentityLinkException ex)
         {
             return BadRequest(new { message = ex.Message, code = ex.Code });
@@ -216,6 +220,10 @@ public sealed class UsersController : ControllerBase
         catch (UnauthorizedAccessException)
         {
             return Forbid();
+        }
+        catch (EmergencyAccessException ex)
+        {
+            return Conflict(new IdentityLinkErrorResponse(ex.Message, ex.Code));
         }
         catch (IdentityLinkException ex) when (ex.Code == IdentityLinkErrorCodes.UserNotFound)
         {
@@ -302,6 +310,10 @@ public sealed class UsersController : ControllerBase
         {
             return Forbid();
         }
+        catch (EmergencyAccessException ex)
+        {
+            return Conflict(new { message = ex.Message, code = ex.Code });
+        }
         catch (InvalidOperationException ex)
         {
             return NotFound(new { message = ex.Message });
@@ -362,6 +374,10 @@ public sealed class UsersController : ControllerBase
         catch (UnauthorizedAccessException)
         {
             return Forbid();
+        }
+        catch (EmergencyAccessException ex)
+        {
+            return Conflict(new { message = ex.Message, code = ex.Code });
         }
         catch (InvalidOperationException ex)
         {

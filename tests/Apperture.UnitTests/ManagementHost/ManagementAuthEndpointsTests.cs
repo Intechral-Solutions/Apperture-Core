@@ -203,11 +203,13 @@ public sealed class ManagementAuthEndpointsTests
     }
 
     [Fact]
-    public async Task Signout_with_entra_sends_the_browser_to_the_directory_then_back_to_ui_login()
+    public async Task Signout_of_an_entra_session_sends_the_browser_to_the_directory_then_back_to_ui_login()
     {
         var capture = new RedirectCapture();
         await using var host = await StartAsync(capture, entraEnabled: true);
         using var client = Client(host);
+        client.DefaultRequestHeaders.Add("X-Test-Auth", "1");
+        client.DefaultRequestHeaders.Add("X-Test-Identity-Source", "Entra");
 
         var response = await client.GetAsync("/signout");
 
@@ -217,6 +219,36 @@ public sealed class ManagementAuthEndpointsTests
         capture.PostLogoutRedirectUri.Should().NotBeNull();
         capture.PostLogoutRedirectUri.Should().Contain(EntraSignOut.SignedOutCallbackPath);
         capture.PostLogoutRedirectUri.Should().NotContain(":9001");
+    }
+
+    [Fact]
+    public async Task Signout_of_a_local_session_returns_to_the_ui_login_even_when_entra_is_enabled()
+    {
+        var capture = new RedirectCapture();
+        await using var host = await StartAsync(capture, entraEnabled: true);
+        using var client = Client(host);
+        client.DefaultRequestHeaders.Add("X-Test-Auth", "1");
+        client.DefaultRequestHeaders.Add("X-Test-Identity-Source", "Local");
+
+        var response = await client.GetAsync("/signout");
+
+        response.StatusCode.Should().Be(HttpStatusCode.Redirect);
+        response.Headers.Location!.ToString().Should().Be("http://localhost:9001/login");
+        capture.SignOutRedirectUri.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Signout_when_anonymous_returns_to_the_ui_login_even_when_entra_is_enabled()
+    {
+        var capture = new RedirectCapture();
+        await using var host = await StartAsync(capture, entraEnabled: true);
+        using var client = Client(host);
+
+        var response = await client.GetAsync("/signout");
+
+        response.StatusCode.Should().Be(HttpStatusCode.Redirect);
+        response.Headers.Location!.ToString().Should().Be("http://localhost:9001/login");
+        capture.SignOutRedirectUri.Should().BeNull();
     }
 
     private static HttpClient Client(WebApplication app)
@@ -294,6 +326,9 @@ public sealed class ManagementAuthEndpointsTests
                 var identity = new ClaimsIdentity(CookieAuthenticationDefaults.AuthenticationScheme, ClaimTypes.Name, ClaimTypes.Role);
                 identity.AddClaim(new Claim(ClaimTypes.NameIdentifier, LinkedUserId));
                 identity.AddClaim(new Claim(ClaimTypes.Name, "Linked operator"));
+                var source = ctx.Request.Headers["X-Test-Identity-Source"].ToString();
+                if (!string.IsNullOrWhiteSpace(source))
+                    identity.AddClaim(new Claim(ClaimsPrincipalToActorMapper.IdentitySourceClaimType, source));
                 ctx.User = new ClaimsPrincipal(identity);
             }
 

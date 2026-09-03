@@ -107,6 +107,114 @@ public sealed class UserManagementServiceCreateUserTests
         harness.Audit.Actions.Should().Contain(GovernanceAuditActionNames.RoleAssigned);
     }
 
+    [Theory]
+    [InlineData("breakglass")]
+    [InlineData("BreakGlass")]
+    [InlineData("  BREAKGLASS  ")]
+    public async Task CreateUser_rejects_reserved_emergency_username(string username)
+    {
+        var harness = Harness.Create();
+
+        var act = () => harness.Service.CreateUserAsync("Operator", IdentitySource.Local, username, "Password1!").AsTask();
+
+        var ex = await act.Should().ThrowAsync<EmergencyAccessException>();
+        ex.Which.Code.Should().Be(EmergencyAccessErrorCodes.ReservedUsername);
+        harness.Users.Added.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task GetUserPage_excludes_the_designated_emergency_account()
+    {
+        var harness = Harness.Create();
+        await harness.Service.CreateUserAsync("Operator", IdentitySource.Local, "operator", "Password1!");
+        harness.Users.Seed(new User(
+            new UserId("emerg-1"),
+            EmergencyAccessIdentity.DisplayName,
+            [new IdentityLink(IdentitySource.Local, EmergencyAccessIdentity.LocalUsername, DateTimeOffset.UtcNow)],
+            [new RoleId(BootstrapConstants.PlatformAdminRoleId)],
+            IsBreakGlassEligible: true));
+
+        var (page, total) = await harness.Service.GetUserPageAsync(0, 20);
+
+        total.Should().Be(1);
+        page.Should().ContainSingle(u => u.DisplayName == "Operator");
+        page.Should().NotContain(u => u.IsBreakGlassEligible);
+    }
+
+    [Fact]
+    public async Task GetUserById_hides_the_designated_emergency_account()
+    {
+        var harness = Harness.Create();
+        harness.Users.Seed(new User(
+            new UserId("emerg-1"),
+            EmergencyAccessIdentity.DisplayName,
+            [new IdentityLink(IdentitySource.Local, EmergencyAccessIdentity.LocalUsername, DateTimeOffset.UtcNow)],
+            [new RoleId(BootstrapConstants.PlatformAdminRoleId)],
+            IsBreakGlassEligible: true));
+
+        var user = await harness.Service.GetUserByIdAsync(new UserId("emerg-1"));
+
+        user.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task GetUserPage_paging_counts_only_ordinary_users()
+    {
+        var harness = Harness.Create();
+        await harness.Service.CreateUserAsync("Alpha", IdentitySource.Local, "alpha", "Password1!");
+        await harness.Service.CreateUserAsync("Beta", IdentitySource.Local, "beta", "Password1!");
+        harness.Users.Seed(new User(
+            new UserId("emerg-1"),
+            EmergencyAccessIdentity.DisplayName,
+            [new IdentityLink(IdentitySource.Local, EmergencyAccessIdentity.LocalUsername, DateTimeOffset.UtcNow)],
+            [new RoleId(BootstrapConstants.PlatformAdminRoleId)],
+            IsBreakGlassEligible: true));
+
+        var (page, total) = await harness.Service.GetUserPageAsync(1, 1);
+
+        total.Should().Be(2);
+        page.Should().ContainSingle();
+        page[0].IsBreakGlassEligible.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Ordinary_user_management_cannot_mutate_recovery_access()
+    {
+        var harness = Harness.Create();
+        var emergency = new User(
+            new UserId("emerg-1"),
+            EmergencyAccessIdentity.DisplayName,
+            [new IdentityLink(IdentitySource.Local, EmergencyAccessIdentity.LocalUsername, DateTimeOffset.UtcNow)],
+            [new RoleId(BootstrapConstants.PlatformAdminRoleId)],
+            IsBreakGlassEligible: true);
+        harness.Users.Seed(emergency);
+        harness.Credentials.Hashes["emerg-1"] = "h";
+        harness.Credentials.Disabled["emerg-1"] = false;
+        var userId = emergency.Id;
+        var roleId = new RoleId(BootstrapConstants.PlatformAdminRoleId);
+
+        (await AssertUnsafe(() => harness.Service.SetLocalPasswordAsync(userId, "Password1!").AsTask()))
+            .Should().Be(EmergencyAccessErrorCodes.UnsafeOperation);
+        (await AssertUnsafe(() => harness.Service.SetLocalCredentialDisabledAsync(userId, true).AsTask()))
+            .Should().Be(EmergencyAccessErrorCodes.UnsafeOperation);
+        (await AssertUnsafe(() => harness.Service.AssignRoleAsync(userId, roleId).AsTask()))
+            .Should().Be(EmergencyAccessErrorCodes.UnsafeOperation);
+        (await AssertUnsafe(() => harness.Service.RemoveRoleAsync(userId, roleId).AsTask()))
+            .Should().Be(EmergencyAccessErrorCodes.UnsafeOperation);
+        (await AssertUnsafe(() => harness.Service.AddIdentityLinkAsync(userId, IdentitySource.Entra, "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee").AsTask()))
+            .Should().Be(EmergencyAccessErrorCodes.UnsafeOperation);
+
+        harness.Credentials.Disabled["emerg-1"].Should().BeFalse();
+        harness.Roles.Assigned.Should().BeEmpty();
+        return;
+
+        static async Task<string> AssertUnsafe(Func<Task> act)
+        {
+            var ex = await act.Should().ThrowAsync<EmergencyAccessException>();
+            return ex.Which.Code;
+        }
+    }
+
     private sealed class Harness
     {
         public RecordingUsers Users { get; } = new();
@@ -165,6 +273,7 @@ public sealed class UserManagementServiceCreateUserTests
     {
         private readonly Dictionary<string, User> _users = new(StringComparer.Ordinal);
         public List<User> Added { get; } = [];
+        public void Seed(User user) => _users[user.Id.Value] = user;
 
         public ValueTask<int> GetUserCountAsync(CancellationToken cancellationToken = default) =>
             ValueTask.FromResult(_users.Count);
@@ -192,8 +301,11 @@ public sealed class UserManagementServiceCreateUserTests
         public ValueTask UpdateLastAuthenticatedAtAsync(IdentitySource source, string externalId, DateTimeOffset at, CancellationToken cancellationToken = default) =>
             ValueTask.CompletedTask;
 
-        public ValueTask<(IReadOnlyList<User> Page, int TotalCount)> GetPageAsync(int skip, int take, CancellationToken cancellationToken = default) =>
-            ValueTask.FromResult<(IReadOnlyList<User>, int)>((_users.Values.ToList(), _users.Count));
+        public ValueTask<(IReadOnlyList<User> Page, int TotalCount)> GetPageAsync(int skip, int take, CancellationToken cancellationToken = default)
+        {
+            var ordinary = _users.Values.Where(u => !u.IsBreakGlassEligible).ToList();
+            return ValueTask.FromResult<(IReadOnlyList<User>, int)>((ordinary.Skip(skip).Take(take).ToList(), ordinary.Count));
+        }
 
         public ValueTask AddIdentityLinkAsync(UserId userId, IdentitySource source, string externalId, CancellationToken cancellationToken = default) =>
             ValueTask.CompletedTask;

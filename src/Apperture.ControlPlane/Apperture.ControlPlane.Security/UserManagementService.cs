@@ -73,7 +73,10 @@ public sealed class UserManagementService : IUserManagementService
     public async ValueTask<User?> GetUserByIdAsync(UserId userId, CancellationToken cancellationToken = default)
     {
         await RequireUserReadAsync(cancellationToken);
-        return await _userRepository.GetByIdAsync(userId, cancellationToken);
+        var user = await _userRepository.GetByIdAsync(userId, cancellationToken);
+        if (user is not null && EmergencyAccessIdentity.IsSystemManaged(user))
+            return null;
+        return user;
     }
 
     /// <inheritdoc />
@@ -172,6 +175,12 @@ public sealed class UserManagementService : IUserManagementService
 
         if (source == IdentitySource.Local)
         {
+            if (EmergencyAccessIdentity.IsReservedLocalUsername(linkExternalId))
+            {
+                throw new EmergencyAccessException(
+                    EmergencyAccessErrorCodes.ReservedUsername,
+                    "That username is reserved for Emergency Access.");
+            }
             if (string.IsNullOrEmpty(password))
                 throw new InvalidOperationException("A password is required when creating a local user.");
             if (_localOptions.MinPasswordLength > 0 && password.Length < _localOptions.MinPasswordLength)
@@ -215,6 +224,20 @@ public sealed class UserManagementService : IUserManagementService
         var user = await _userRepository.GetByIdAsync(userId, cancellationToken);
         if (user is null)
             throw new IdentityLinkException(IdentityLinkErrorCodes.UserNotFound, $"User {userId.Value} not found.");
+
+        if (EmergencyAccessIdentity.IsSystemManaged(user))
+        {
+            throw new EmergencyAccessException(
+                EmergencyAccessErrorCodes.UnsafeOperation,
+                "Recovery Access is system-managed. Identity links cannot be changed through ordinary user administration.");
+        }
+
+        if (source == IdentitySource.Local && EmergencyAccessIdentity.IsReservedLocalUsername(linkExternalId))
+        {
+            throw new EmergencyAccessException(
+                EmergencyAccessErrorCodes.ReservedUsername,
+                "That username is reserved for Emergency Access.");
+        }
 
         if (user.IdentityLinks.Any(l => l.Source == source && l.ExternalId == linkExternalId))
             return;
@@ -263,6 +286,14 @@ public sealed class UserManagementService : IUserManagementService
             : externalId.Trim();
 
         var user = await _userRepository.GetByIdAsync(userId, cancellationToken);
+        if (user is not null && EmergencyAccessIdentity.IsSystemManaged(user))
+        {
+            if (_emergencyAccess is not null)
+                await _emergencyAccess.EnsureDestructiveChangeAllowedAsync(userId, "identity_link.remove", cancellationToken);
+            throw new EmergencyAccessException(
+                EmergencyAccessErrorCodes.UnsafeOperation,
+                "Recovery Access is system-managed. Identity links cannot be changed through ordinary user administration.");
+        }
         if (user is not null && source == IdentitySource.Local)
         {
             if (_emergencyAccess is not null)
@@ -292,6 +323,12 @@ public sealed class UserManagementService : IUserManagementService
         var user = await _userRepository.GetByIdAsync(userId, cancellationToken);
         if (user is null)
             throw new InvalidOperationException($"User {userId.Value} not found.");
+        if (EmergencyAccessIdentity.IsSystemManaged(user))
+        {
+            throw new EmergencyAccessException(
+                EmergencyAccessErrorCodes.UnsafeOperation,
+                "Recovery Access is system-managed. Role membership cannot be changed through ordinary user administration.");
+        }
         var role = await _roleRepository.GetAsync(roleId, cancellationToken);
         if (role is null)
             throw new InvalidOperationException($"Role {roleId.Value} not found.");
@@ -308,6 +345,14 @@ public sealed class UserManagementService : IUserManagementService
         var user = await _userRepository.GetByIdAsync(userId, cancellationToken);
         if (user is null)
             throw new InvalidOperationException($"User {userId.Value} not found.");
+        if (EmergencyAccessIdentity.IsSystemManaged(user))
+        {
+            if (_emergencyAccess is not null)
+                await _emergencyAccess.EnsureDestructiveChangeAllowedAsync(userId, "role.remove", cancellationToken);
+            throw new EmergencyAccessException(
+                EmergencyAccessErrorCodes.UnsafeOperation,
+                "Recovery Access is system-managed. Role membership cannot be changed through ordinary user administration.");
+        }
         var role = await _roleRepository.GetAsync(roleId, cancellationToken);
         if (role is null)
             throw new InvalidOperationException($"Role {roleId.Value} not found.");
@@ -336,6 +381,12 @@ public sealed class UserManagementService : IUserManagementService
         var user = await _userRepository.GetByIdAsync(userId, cancellationToken);
         if (user is null)
             throw new InvalidOperationException($"User {userId.Value} not found.");
+        if (EmergencyAccessIdentity.IsSystemManaged(user))
+        {
+            throw new EmergencyAccessException(
+                EmergencyAccessErrorCodes.UnsafeOperation,
+                "Recovery Access is system-managed. The local password must be changed through Emergency Access operator tooling.");
+        }
         if (!user.IdentityLinks.Any(l => l.Source == IdentitySource.Local))
             throw new InvalidOperationException("User has no Local identity link; cannot set local password.");
 
@@ -389,6 +440,15 @@ public sealed class UserManagementService : IUserManagementService
 
         if (disabled)
         {
+            if (EmergencyAccessIdentity.IsSystemManaged(user))
+            {
+                if (_emergencyAccess is not null)
+                    await _emergencyAccess.EnsureDestructiveChangeAllowedAsync(userId, "credential.disable", cancellationToken);
+                throw new EmergencyAccessException(
+                    EmergencyAccessErrorCodes.UnsafeOperation,
+                    "Recovery Access is system-managed. The local credential cannot be disabled through ordinary user administration.");
+            }
+
             if (_emergencyAccess is not null)
                 await _emergencyAccess.EnsureDestructiveChangeAllowedAsync(userId, "credential.disable", cancellationToken);
             var platformAdminRoleId = new RoleId(BootstrapConstants.PlatformAdminRoleId);

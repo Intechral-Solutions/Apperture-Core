@@ -25,4 +25,6 @@ public static class EmergencyAccessErrorCodes
     public const string UnsafeOperation = "emergency.access.unsafe_operation";
     public const string DuplicateUsername = "emergency.access.duplicate_username";
     public const string RoleNotFound = "emergency.access.role_not_found";
+    public const string ReservedUsername = "emergency.access.reserved_username";
+    public const string UsernameConflict = "emergency.access.username_conflict";
 }

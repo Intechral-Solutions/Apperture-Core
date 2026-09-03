@@ -54,6 +54,13 @@
                     </p>
                 </div>
                 <div class="ui-settings-card__body pt-4">
+                @if (!_profile.DisplayNameEditable)
+                {
+                    <p class="text-sm text-body">@_profile.DisplayName</p>
+                    <p class="mt-2 text-xs text-muted">Recovery Access is system-managed. The display name cannot be changed here.</p>
+                }
+                else
+                {
                 <form @onsubmit="SaveDisplayNameAsync" @onsubmit:preventDefault="true">
                     <label class="block text-sm font-medium text-heading" for="display-name">Display name</label>
                     <input id="display-name"
@@ -88,10 +95,18 @@
                         }
                     </div>
                 </form>
+                }
                 </div>
             </section>
 
-            <AvatarPicker DisplayName="@_profile.DisplayName" OnChanged="OnAvatarChangedAsync" />
+            @if (_profile.DisplayNameEditable)
+            {
+                <AvatarPicker DisplayName="@_profile.DisplayName" OnChanged="OnAvatarChangedAsync" />
+            }
+            else
+            {
+                <p class="text-xs text-muted">Avatar customization is not available for Recovery Access.</p>
+            }
             </div>
 
             <aside class="space-y-5">

@@ -13,7 +13,11 @@ public sealed record EmergencyAccessPosture(
     bool DesignatedIsPlatformAdministrator,
     bool LocalCredentialEnabled,
     bool NativeMfaEnrolled,
-    int UnusedRecoveryCodeCount);
+    int UnusedRecoveryCodeCount,
+    string? DesignatedUsername = null,
+    bool CanonicalIdentityApplied = false,
+    bool CanonicalUsernameConflict = false,
+    bool HasEntraIdentityLink = false);
 
 /// <summary>
 /// MFA enrollment material shown once. The secret is never persisted in this shape.
