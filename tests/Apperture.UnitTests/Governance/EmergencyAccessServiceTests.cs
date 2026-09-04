@@ -100,6 +100,19 @@ public sealed class EmergencyAccessServiceTests
     }
 
     [Fact]
+    public async Task Provision_rejects_a_weak_password_without_creating_the_account()
+    {
+        var harness = Harness.Empty();
+        harness.Roles.RoleExists = true;
+
+        var act = () => harness.Emergency.ProvisionAsync("password", new ActorId("cli")).AsTask();
+
+        await act.Should().ThrowAsync<PasswordPolicyException>();
+        harness.Users.All.Should().BeEmpty();
+        harness.Credentials.Disabled.Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task Provision_is_idempotent_when_recovery_access_already_exists()
     {
         var harness = Harness.Empty();

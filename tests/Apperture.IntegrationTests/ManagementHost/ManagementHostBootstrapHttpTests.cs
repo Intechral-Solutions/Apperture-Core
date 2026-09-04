@@ -42,7 +42,7 @@ public sealed class ManagementHostBootstrapHttpTests
         var client = _fixture.Factory!.CreateClient();
         var response = await client.PostAsJsonAsync(
             "/api/bootstrap/first-admin",
-            new FirstAdminRequest("Bootstrap Admin", "Local", $"bootstrap-admin-{Guid.NewGuid():N}"[..16], "Password1!"));
+            new FirstAdminRequest("Bootstrap Admin", "Local", $"bootstrap-admin-{Guid.NewGuid():N}"[..16], "unique-local-passphrase"));
 
         response.StatusCode.Should().Be(HttpStatusCode.Created);
         var body = await response.Content.ReadFromJsonAsync<FirstAdminResponse>();
@@ -73,7 +73,7 @@ public sealed class ManagementHostBootstrapHttpTests
 
         var response = await client.PostAsJsonAsync(
             "/api/bootstrap/first-admin",
-            new FirstAdminRequest("Another Admin", "Local", "another-admin", "Password1!"));
+            new FirstAdminRequest("Another Admin", "Local", "another-admin", "unique-local-passphrase"));
 
         response.StatusCode.Should().Be(HttpStatusCode.Conflict);
         var body = await response.Content.ReadFromJsonAsync<BootstrapErrorResponse>();
@@ -91,7 +91,7 @@ public sealed class ManagementHostBootstrapHttpTests
         await EnsureInitializedAsync(client);
         _ = await client.PostAsJsonAsync(
             "/api/bootstrap/first-admin",
-            new FirstAdminRequest("Audit Retry", "Local", "audit-retry-admin", "Password1!"));
+            new FirstAdminRequest("Audit Retry", "Local", "audit-retry-admin", "unique-local-passphrase"));
 
         await using var scope = _fixture.Factory!.Services.CreateAsyncScope();
         var audit = scope.ServiceProvider.GetRequiredService<IAuditService>();
@@ -107,7 +107,7 @@ public sealed class ManagementHostBootstrapHttpTests
 
         var create = await client.PostAsJsonAsync(
             "/api/bootstrap/first-admin",
-            new FirstAdminRequest("Bootstrap Admin", "Local", $"bootstrap-admin-{Guid.NewGuid():N}"[..16], "Password1!"));
+            new FirstAdminRequest("Bootstrap Admin", "Local", $"bootstrap-admin-{Guid.NewGuid():N}"[..16], "unique-local-passphrase"));
         create.StatusCode.Should().BeOneOf(HttpStatusCode.Created, HttpStatusCode.Conflict);
     }
 

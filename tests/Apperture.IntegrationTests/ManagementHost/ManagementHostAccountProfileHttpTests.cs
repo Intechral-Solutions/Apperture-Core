@@ -723,7 +723,7 @@ public sealed class ManagementHostAccountProfileHttpTests
                 "Account Test Admin",
                 "Local",
                 $"acct-admin-{Guid.NewGuid():N}"[..16],
-                "Password1!"));
+                "unique-local-passphrase"));
         response.StatusCode.Should().BeOneOf(HttpStatusCode.Created, HttpStatusCode.Conflict);
     }
 

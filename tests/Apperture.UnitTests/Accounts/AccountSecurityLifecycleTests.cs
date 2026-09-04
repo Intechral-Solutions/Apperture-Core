@@ -4,7 +4,6 @@ using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Identity;
 using FluentAssertions;
 using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.Options;
 using Xunit;
 
 namespace Apperture.UnitTests.Accounts;
@@ -68,11 +67,11 @@ public sealed class AccountSecurityLifecycleTests
     [Fact]
     public async Task Changing_email_keeps_the_current_verified_address_until_the_new_one_is_verified()
     {
-        var harness = Harness.LocalUser(password: "Current#1");
+        var harness = Harness.LocalUser(password: "unique-local-passphrase");
         await harness.Contact.RequestAsync(harness.User.Id, "old@example.com", null);
         await harness.Contact.VerifyAsync(harness.LastToken());
 
-        await harness.Contact.RequestAsync(harness.User.Id, "new@example.com", "Current#1");
+        await harness.Contact.RequestAsync(harness.User.Id, "new@example.com", "unique-local-passphrase");
 
         var user = harness.Users.Get(harness.User.Id.Value);
         user.EmailAddress.Should().Be("old@example.com");
@@ -135,7 +134,7 @@ public sealed class AccountSecurityLifecycleTests
     [Fact]
     public async Task Enabled_local_password_is_reported_only_when_local_sign_in_is_usable()
     {
-        var harness = Harness.LocalUser(password: "Current#1");
+        var harness = Harness.LocalUser(password: "unique-local-passphrase");
         var enabled = await harness.Contact.GetAsync(harness.User.Id);
         enabled.HasEnabledLocalPassword.Should().BeTrue();
 
@@ -162,7 +161,7 @@ public sealed class AccountSecurityLifecycleTests
         expired.Pending.Should().BeFalse();
 
         await harness.Invitations.SendSetupInvitationAsync(harness.User.Id, "invitee@example.com");
-        await harness.Invitations.CompletePasswordSetupAsync(harness.LastToken(), "Chosen#Password1");
+        await harness.Invitations.CompletePasswordSetupAsync(harness.LastToken(), "chosen-harbor-passphrase");
         harness.Credentials.Rows.Should().ContainKey(harness.User.Id.Value);
     }
 
@@ -192,10 +191,10 @@ public sealed class AccountSecurityLifecycleTests
         sent.DeliverySucceeded.Should().BeTrue();
         harness.Credentials.Rows.Should().BeEmpty();
 
-        await harness.Invitations.CompletePasswordSetupAsync(harness.LastToken(), "Chosen#Password1");
+        await harness.Invitations.CompletePasswordSetupAsync(harness.LastToken(), "chosen-harbor-passphrase");
 
         var cred = harness.Credentials.Rows[harness.User.Id.Value];
-        harness.Hasher.VerifyPassword("Chosen#Password1", cred.PasswordHash, cred.Salt).Should().BeTrue();
+        harness.Hasher.VerifyPassword("chosen-harbor-passphrase", cred.PasswordHash, cred.Salt).Should().BeTrue();
         cred.IsDisabled.Should().BeFalse();
         harness.Users.Get(harness.User.Id.Value).HasVerifiedContactEmail.Should().BeTrue();
         harness.Users.Get(harness.User.Id.Value).EmailAddress.Should().Be("invitee@example.com");
@@ -214,9 +213,9 @@ public sealed class AccountSecurityLifecycleTests
         await harness.Invitations.SendSetupInvitationAsync(harness.User.Id, "invitee@example.com");
         var second = harness.LastToken();
 
-        var stale = () => harness.Invitations.CompletePasswordSetupAsync(first, "Chosen#Password1").AsTask();
+        var stale = () => harness.Invitations.CompletePasswordSetupAsync(first, "chosen-harbor-passphrase").AsTask();
         await stale.Should().ThrowAsync<AccountSecurityException>();
-        await harness.Invitations.CompletePasswordSetupAsync(second, "Chosen#Password1");
+        await harness.Invitations.CompletePasswordSetupAsync(second, "chosen-harbor-passphrase");
         harness.Audit.HasAction(AccountSecurityAuditActionNames.InvitationResent).Should().BeTrue();
         harness.Audit.HasAction(AccountSecurityAuditActionNames.InvitationAccepted).Should().BeTrue();
     }
@@ -224,18 +223,19 @@ public sealed class AccountSecurityLifecycleTests
     [Fact]
     public async Task Password_reset_does_not_enable_a_disabled_local_credential()
     {
-        var harness = Harness.LocalUser(password: "OldPassword1!");
+        var harness = Harness.LocalUser(password: "old-harbor-passphrase");
         await harness.Contact.RequestAsync(harness.User.Id, "user@example.com", null);
         await harness.Contact.VerifyAsync(harness.LastToken());
         await harness.Credentials.SetDisabledAsync(harness.User.Id, true);
+        harness.Mail.Sent.Clear();
 
         await harness.Forgotten.RequestAsync("user@example.com");
-        await harness.Forgotten.CompleteAsync(harness.LastToken(), "NewPassword1!");
+        harness.Mail.Sent.Should().BeEmpty();
 
         var cred = harness.Credentials.Rows[harness.User.Id.Value];
         cred.IsDisabled.Should().BeTrue();
-        harness.Hasher.VerifyPassword("NewPassword1!", cred.PasswordHash, cred.Salt).Should().BeTrue();
-        harness.Audit.HasAction(AccountSecurityAuditActionNames.PasswordResetCompleted).Should().BeTrue();
+        harness.Hasher.VerifyPassword("old-harbor-passphrase", cred.PasswordHash, cred.Salt).Should().BeTrue();
+        harness.Tokens.All.Should().NotContain(t => t.Purpose == AccountActionTokenPurpose.PasswordReset && t.IsActive(harness.Clock.GetUtcNow()));
     }
 
     [Fact]
@@ -264,7 +264,7 @@ public sealed class AccountSecurityLifecycleTests
             [],
             IsBreakGlassEligible: false,
             PendingEmailAddress: "pending@example.com");
-        var harness = Harness.LocalUser(password: "Password1!", extraUsers: [recovery, entraOnly, unverified]);
+        var harness = Harness.LocalUser(extraUsers: [recovery, entraOnly, unverified]);
         await harness.Credentials.SetPasswordAsync(recovery.Id, "h", "s", "x");
         await harness.Contact.RequestAsync(harness.User.Id, "user@example.com", null);
         await harness.Contact.VerifyAsync(harness.LastToken());
@@ -278,6 +278,23 @@ public sealed class AccountSecurityLifecycleTests
 
         harness.Mail.Sent.Should().ContainSingle();
         harness.Mail.Sent[0].Recipient.Should().Be("user@example.com");
+    }
+
+    [Fact]
+    public async Task Forgot_password_is_eligible_for_enabled_local_credential_with_verified_email()
+    {
+        var harness = Harness.LocalUser();
+        await harness.Contact.RequestAsync(harness.User.Id, "user@example.com", null);
+        await harness.Contact.VerifyAsync(harness.LastToken());
+        harness.Mail.Sent.Clear();
+
+        await harness.Forgotten.RequestAsync("localuser");
+
+        harness.Mail.Sent.Should().ContainSingle();
+        harness.Tokens.All.Should().Contain(t => t.Purpose == AccountActionTokenPurpose.PasswordReset && t.IsActive(harness.Clock.GetUtcNow()));
+        await harness.Forgotten.CompleteAsync(harness.LastToken(), "chosen-harbor-passphrase");
+        harness.Hasher.VerifyPassword("chosen-harbor-passphrase", harness.Credentials.Rows[harness.User.Id.Value].PasswordHash, harness.Credentials.Rows[harness.User.Id.Value].Salt)
+            .Should().BeTrue();
     }
 
     [Fact]
@@ -333,7 +350,7 @@ public sealed class AccountSecurityLifecycleTests
         public string LastToken() => ExtractToken(Mail.Sent[^1].Body);
 
         public static Harness LocalUser(
-            string password = "Password1!",
+            string password = "unique-local-passphrase",
             bool withCredential = true,
             IReadOnlyList<User>? extraUsers = null)
         {
@@ -348,7 +365,7 @@ public sealed class AccountSecurityLifecycleTests
 
         public static Harness ForUser(
             User user,
-            string password = "Password1!",
+            string password = "unique-local-passphrase",
             bool withCredential = true,
             IReadOnlyList<User>? extraUsers = null)
         {
@@ -367,7 +384,6 @@ public sealed class AccountSecurityLifecycleTests
             var clock = new MutableTimeProvider();
             var tokenService = new AccountActionTokenService(tokens, clock);
             var links = new AccountSecurityLinkBuilder(new ConfigurationBuilder().Build());
-            var local = Options.Create(new LocalAuthOptions { Enabled = true, MinPasswordLength = 8 });
             return new Harness
             {
                 User = user,
@@ -379,8 +395,8 @@ public sealed class AccountSecurityLifecycleTests
                 Clock = clock,
                 Hasher = hasher,
                 Contact = new AccountContactService(users, credentials, hasher, tokenService, mail, links, audit),
-                Invitations = new AccountInvitationService(users, credentials, hasher, tokenService, tokens, mail, links, audit, local, clock),
-                Forgotten = new ForgottenPasswordService(users, credentials, hasher, tokenService, mail, links, audit, local)
+                Invitations = new AccountInvitationService(users, credentials, hasher, tokenService, tokens, mail, links, audit, clock),
+                Forgotten = new ForgottenPasswordService(users, credentials, hasher, tokenService, mail, links, audit)
             };
         }
     }

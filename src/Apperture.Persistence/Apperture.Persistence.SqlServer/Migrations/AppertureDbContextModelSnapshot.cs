@@ -22,6 +22,53 @@ namespace Apperture.Persistence.SqlServer.Migrations
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
 
+            modelBuilder.Entity("Apperture.Persistence.SqlServer.AccountActionTokenEntity", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<DateTimeOffset?>("ConsumedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("DestinationEmail")
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)");
+
+                    b.Property<DateTimeOffset>("ExpiresAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<int>("Purpose")
+                        .HasColumnType("int");
+
+                    b.Property<DateTimeOffset?>("RevokedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("TokenHash")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("UserId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TokenHash")
+                        .IsUnique()
+                        .HasDatabaseName("UX_AccountActionTokens_TokenHash");
+
+                    b.HasIndex("UserId", "Purpose")
+                        .HasDatabaseName("IX_AccountActionTokens_UserId_Purpose");
+
+                    b.ToTable("AccountActionTokens", (string)null);
+                });
+
             modelBuilder.Entity("Apperture.Persistence.SqlServer.AttentionIncidentEntity", b =>
                 {
                     b.Property<string>("Id")
@@ -393,6 +440,10 @@ namespace Apperture.Persistence.SqlServer.Migrations
                         .HasMaxLength(64)
                         .HasColumnType("nvarchar(64)");
 
+                    b.Property<string>("AuthenticationContextId")
+                        .HasMaxLength(8)
+                        .HasColumnType("nvarchar(8)");
+
                     b.Property<string>("Authority")
                         .IsRequired()
                         .HasMaxLength(512)
@@ -401,10 +452,6 @@ namespace Apperture.Persistence.SqlServer.Migrations
                     b.Property<string>("AzureTenantId")
                         .HasMaxLength(64)
                         .HasColumnType("nvarchar(64)");
-
-                    b.Property<string>("AuthenticationContextId")
-                        .HasMaxLength(8)
-                        .HasColumnType("nvarchar(8)");
 
                     b.Property<string>("CallbackPath")
                         .HasMaxLength(256)
@@ -2868,8 +2915,15 @@ namespace Apperture.Persistence.SqlServer.Migrations
                         .HasMaxLength(512)
                         .HasColumnType("nvarchar(512)");
 
+                    b.Property<DateTimeOffset?>("EmailVerifiedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
                     b.Property<bool>("IsBreakGlassEligible")
                         .HasColumnType("bit");
+
+                    b.Property<string>("PendingEmailAddress")
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)");
 
                     b.Property<byte[]>("RowVersion")
                         .IsConcurrencyToken()
@@ -2878,7 +2932,56 @@ namespace Apperture.Persistence.SqlServer.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("EmailAddress")
+                        .IsUnique()
+                        .HasDatabaseName("UX_Users_VerifiedContactEmail")
+                        .HasFilter("[EmailVerifiedAtUtc] IS NOT NULL AND [EmailAddress] IS NOT NULL");
+
+                    b.HasIndex("IsBreakGlassEligible")
+                        .IsUnique()
+                        .HasDatabaseName("UX_Users_EmergencyAccess")
+                        .HasFilter("[IsBreakGlassEligible] = 1");
+
                     b.ToTable("Users", (string)null);
+                });
+
+            modelBuilder.Entity("Apperture.Persistence.SqlServer.UserMfaRecoveryCodeEntity", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("Algorithm")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("CodeHash")
+                        .IsRequired()
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)");
+
+                    b.Property<DateTimeOffset?>("ConsumedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("Salt")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("UserId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("UserMfaRecoveryCodes", (string)null);
                 });
 
             modelBuilder.Entity("Apperture.Persistence.SqlServer.UserPreferenceEntity", b =>
@@ -2970,6 +3073,46 @@ namespace Apperture.Persistence.SqlServer.Migrations
                     b.HasIndex("RoleId");
 
                     b.ToTable("UserRoles", (string)null);
+                });
+
+            modelBuilder.Entity("Apperture.Persistence.SqlServer.UserTotpCredentialEntity", b =>
+                {
+                    b.Property<string>("UserId")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset?>("EnrolledAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<bool>("IsEnrolled")
+                        .HasColumnType("bit");
+
+                    b.Property<long?>("LastUsedStep")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTimeOffset?>("LastVerifiedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<byte[]>("ProtectedSecret")
+                        .IsRequired()
+                        .HasColumnType("varbinary(max)");
+
+                    b.Property<string>("ProtectorKeyId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.HasKey("UserId");
+
+                    b.ToTable("UserTotpCredentials", (string)null);
                 });
 
             modelBuilder.Entity("Apperture.Persistence.SqlServer.WorkflowCancelRequestEntity", b =>
@@ -3274,6 +3417,15 @@ namespace Apperture.Persistence.SqlServer.Migrations
                     b.ToTable("WorkflowStepInstances", (string)null);
                 });
 
+            modelBuilder.Entity("Apperture.Persistence.SqlServer.AccountActionTokenEntity", b =>
+                {
+                    b.HasOne("Apperture.Persistence.SqlServer.UserEntity", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("Apperture.Persistence.SqlServer.IdentityLinkEntity", b =>
                 {
                     b.HasOne("Apperture.Persistence.SqlServer.UserEntity", null)
@@ -3361,6 +3513,15 @@ namespace Apperture.Persistence.SqlServer.Migrations
                         .OnDelete(DeleteBehavior.Restrict);
                 });
 
+            modelBuilder.Entity("Apperture.Persistence.SqlServer.UserMfaRecoveryCodeEntity", b =>
+                {
+                    b.HasOne("Apperture.Persistence.SqlServer.UserEntity", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("Apperture.Persistence.SqlServer.UserPreferenceEntity", b =>
                 {
                     b.HasOne("Apperture.Persistence.SqlServer.UserEntity", null)
@@ -3387,6 +3548,15 @@ namespace Apperture.Persistence.SqlServer.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
+                    b.HasOne("Apperture.Persistence.SqlServer.UserEntity", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Apperture.Persistence.SqlServer.UserTotpCredentialEntity", b =>
+                {
                     b.HasOne("Apperture.Persistence.SqlServer.UserEntity", null)
                         .WithMany()
                         .HasForeignKey("UserId")

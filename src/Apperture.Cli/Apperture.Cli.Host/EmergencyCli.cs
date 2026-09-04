@@ -157,15 +157,9 @@ internal static class EmergencyCli
             return 0;
         }
 
-        var password = await ReadSecretAsync("Enter emergency local password:");
+        var password = await ReadAcceptedPasswordAsync("Enter emergency local password:");
         if (password is null)
             return 1;
-        var confirm = await ReadSecretAsync("Confirm password:");
-        if (!string.Equals(password, confirm, StringComparison.Ordinal))
-        {
-            Console.Error.WriteLine("Passwords do not match.");
-            return 1;
-        }
 
         var userId = await emergency.ProvisionAsync(password, CliActor);
         Console.WriteLine($"Provisioned Recovery Access userId={userId.Value}");
@@ -189,15 +183,9 @@ internal static class EmergencyCli
         var user = await ResolveUserAsync(users, args);
         if (user is null)
             return 1;
-        var password = await ReadSecretAsync("Enter new local password:");
+        var password = await ReadAcceptedPasswordAsync("Enter new local password:");
         if (password is null)
             return 1;
-        var confirm = await ReadSecretAsync("Confirm password:");
-        if (!string.Equals(password, confirm, StringComparison.Ordinal))
-        {
-            Console.Error.WriteLine("Passwords do not match.");
-            return 1;
-        }
 
         await emergency.SetLocalPasswordAsync(user.Id, password, CliActor);
         Console.WriteLine("Local password updated.");
@@ -287,6 +275,42 @@ internal static class EmergencyCli
         }
 
         return null;
+    }
+
+    private static async Task<string?> ReadAcceptedPasswordAsync(string prompt)
+    {
+        while (true)
+        {
+            var password = await ReadSecretAsync(prompt);
+            if (password is null)
+                return null;
+            var confirm = await ReadSecretAsync("Confirm password:");
+            if (!string.Equals(password, confirm, StringComparison.Ordinal))
+            {
+                Console.Error.WriteLine("Passwords do not match.");
+                if (Console.IsInputRedirected)
+                    return null;
+                continue;
+            }
+
+            try
+            {
+                LocalPasswordPolicy.Require(
+                    password,
+                    LocalPasswordPolicy.ForLocalIdentity(
+                        EmergencyAccessIdentity.LocalUsername,
+                        EmergencyAccessIdentity.DisplayName));
+                return password;
+            }
+            catch (PasswordPolicyException ex)
+            {
+                Console.Error.WriteLine(ex.Message);
+                foreach (var suggestion in ex.Evaluation.Suggestions)
+                    Console.Error.WriteLine(suggestion);
+                if (Console.IsInputRedirected)
+                    return null;
+            }
+        }
     }
 
     private static async Task<string?> ReadSecretAsync(string prompt)

@@ -34,7 +34,7 @@ public sealed class FirstAdminBootstrapServiceTests
         var users = new CapturingUserRepository();
         var service = new FirstAdminBootstrapService(users, new PresentRoleRepository());
 
-        var result = await service.TryCreateFirstAdminAsync("First admin", IdentitySource.Local, username, "Password1!");
+        var result = await service.TryCreateFirstAdminAsync("First admin", IdentitySource.Local, username, "unique-local-passphrase");
 
         result.Kind.Should().Be(FirstAdminBootstrapResultKind.DuplicateIdentityLink);
         users.Added.Should().BeEmpty();

@@ -3,7 +3,6 @@ using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Audit;
 using Apperture.Core.Domain.Identity;
 using Apperture.Shared.Kernel;
-using Microsoft.Extensions.Options;
 
 namespace Apperture.ControlPlane.Security;
 
@@ -19,7 +18,6 @@ public sealed class AccountInvitationService : IAccountInvitationService
     private readonly IAccountSecurityMailSender _mail;
     private readonly AccountSecurityLinkBuilder _links;
     private readonly IAuditService _audit;
-    private readonly IOptions<LocalAuthOptions> _local;
     private readonly TimeProvider _time;
 
     public AccountInvitationService(
@@ -31,7 +29,6 @@ public sealed class AccountInvitationService : IAccountInvitationService
         IAccountSecurityMailSender mail,
         AccountSecurityLinkBuilder links,
         IAuditService audit,
-        IOptions<LocalAuthOptions> local,
         TimeProvider time)
     {
         _users = users;
@@ -42,7 +39,6 @@ public sealed class AccountInvitationService : IAccountInvitationService
         _mail = mail;
         _links = links;
         _audit = audit;
-        _local = local;
         _time = time;
     }
 
@@ -95,7 +91,7 @@ public sealed class AccountInvitationService : IAccountInvitationService
 
     public async ValueTask CompletePasswordSetupAsync(string token, string newPassword, CancellationToken cancellationToken = default)
     {
-        ValidateNewPassword(newPassword);
+        RequirePassword(newPassword, user: null);
         var consumed = await _tokens.TryConsumeAsync(token, AccountActionTokenPurpose.PasswordSetup, cancellationToken)
             ?? throw new AccountSecurityException(AccountSecurityErrorCodes.TokenInvalid, "This setup link is invalid or has expired.");
 
@@ -103,6 +99,7 @@ public sealed class AccountInvitationService : IAccountInvitationService
             ?? throw new AccountSecurityException(AccountSecurityErrorCodes.TokenInvalid, "This setup link is invalid or has expired.");
         if (EmergencyAccessIdentity.IsSystemManaged(user))
             throw new AccountSecurityException(AccountSecurityErrorCodes.SystemManaged, "Recovery Access cannot use an onboarding invitation.");
+        RequirePassword(newPassword, user);
         var existing = await _credentials.GetByUserIdAsync(user.Id, cancellationToken);
         if (existing is not null)
             throw new AccountSecurityException(AccountSecurityErrorCodes.TokenInvalid, "This setup link is invalid or has expired.");
@@ -149,14 +146,18 @@ public sealed class AccountInvitationService : IAccountInvitationService
             LastDeliveryFailure: null);
     }
 
-    private void ValidateNewPassword(string newPassword)
+    private static void RequirePassword(string newPassword, User? user)
     {
-        var min = _local.Value.MinPasswordLength;
-        if (string.IsNullOrEmpty(newPassword) || (min > 0 && newPassword.Length < min))
+        try
         {
-            throw new AccountSecurityException(
-                AccountSecurityErrorCodes.PasswordRequired,
-                min > 0 ? $"Password must be at least {min} characters." : "A password is required.");
+            if (user is null)
+                LocalPasswordPolicy.Require(newPassword);
+            else
+                LocalPasswordPolicy.Require(newPassword, user);
+        }
+        catch (PasswordPolicyException ex)
+        {
+            throw new AccountSecurityException(AccountSecurityErrorCodes.PasswordRequired, ex.Message);
         }
     }
 

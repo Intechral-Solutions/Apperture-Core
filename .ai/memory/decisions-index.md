@@ -70,4 +70,4 @@ Architecture decision records (ADRs) live in [docs/02-decisions/](../../docs/02-
 | [Epic 120](../../docs/02-decisions/Epic120-Settings-Presentation-Demo-Gallery.md) | Settings presentation refinement and Development-gated demo input gallery |
 | [IAM-2](../../docs/02-decisions/S2D-iam2-strong-authentication.md) | Strong authentication and Entra-primary local-disable policy |
 | [IAM-3](../../docs/02-decisions/S2D-iam3-emergency-access-native-mfa.md) | Emergency Access via system-managed Recovery Access (`breakglass`), native TOTP MFA, recovery codes |
-| [IAM-4](../../docs/02-decisions/S2D-iam4-verified-contact-and-credential-lifecycle.md) | Verified contact email, hashed account-action tokens, Apperture setup invitations, password change/reset |
+| [IAM-4](../../docs/02-decisions/S2D-iam4-verified-contact-and-credential-lifecycle.md) | Verified contact email, hashed account-action tokens, Apperture setup invitations, password policy, password change/reset |

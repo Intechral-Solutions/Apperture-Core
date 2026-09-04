@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using Apperture.ControlPlane.Security;
 using Apperture.Core.Application;
+using Apperture.Core.Application.Accounts;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Audit;
 using Apperture.Core.Domain.Governance;
@@ -221,6 +222,24 @@ public sealed class AuthControllerAccountTests
     }
 
     [Fact]
+    public async Task ChangeLocalPassword_common_new_password_returns_bad_request()
+    {
+        var controller = NewController(
+            actor: new HumanActor(new ActorId(LocalUsername), LocalUsername, isBreakGlassSession: false),
+            resolvedUserId: TestUserId,
+            user: SampleUser(),
+            credential: new LocalCredentialData(TestUserId, "hash", "salt", "stub", IsDisabled: false));
+
+        var result = await controller.ChangeLocalPassword(
+            new ChangeLocalPasswordRequest("old-pass", "Password1!"),
+            CancellationToken.None);
+
+        var bad = result.Should().BeOfType<BadRequestObjectResult>().Subject;
+        var body = bad.Value.Should().BeOfType<LocalPasswordChangeErrorResponse>().Subject;
+        body.Code.Should().Be(LocalPasswordChangeErrorCodes.InvalidNewPassword);
+    }
+
+    [Fact]
     public async Task ChangeLocalPassword_no_local_credential_returns_bad_request()
     {
         var user = new User(
@@ -296,6 +315,23 @@ public sealed class AuthControllerAccountTests
         audit.Records.Should().ContainSingle(r => r.Action == "auth.local.password_change.failed");
     }
 
+    [Theory]
+    [InlineData("localuser")]
+    [InlineData("unknown@example.com")]
+    [InlineData("breakglass")]
+    public async Task ForgotPassword_always_returns_the_generic_acknowledgement(string identifier)
+    {
+        var forgotten = new RecordingForgottenPasswordService();
+        var controller = NewController(actor: null, forgottenPassword: forgotten);
+
+        var result = await controller.ForgotPassword(new ForgotPasswordRequest(identifier), CancellationToken.None);
+
+        var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var body = ok.Value.Should().BeOfType<ForgotPasswordResponse>().Subject;
+        body.Message.Should().Be(ForgottenPasswordService.GenericAcknowledgement);
+        forgotten.Identifiers.Should().Equal(identifier);
+    }
+
     private static User SampleUser() =>
         new(
             TestUserId,
@@ -324,7 +360,8 @@ public sealed class AuthControllerAccountTests
         CapturingAuditService? audit = null,
         LocalAuthOptions? localOptions = null,
         HttpContext? httpContext = null,
-        InMemoryUserPreferencesRepository? preferences = null)
+        InMemoryUserPreferencesRepository? preferences = null,
+        IForgottenPasswordService? forgottenPassword = null)
     {
         var controller = new AuthController(
             new ConfigurableUserRepository(user),
@@ -338,7 +375,8 @@ public sealed class AuthControllerAccountTests
             Options.Create(localOptions ?? new LocalAuthOptions { Enabled = true, MinPasswordLength = 8 }),
             Options.Create(new BreakGlassAuthOptions()),
             Options.Create(new EntraAuthOptions()),
-            new StubAuthUiPolicyRepository());
+            new StubAuthUiPolicyRepository(),
+            forgottenPassword: forgottenPassword);
 
         controller.ControllerContext = new ControllerContext
         {
@@ -479,6 +517,20 @@ public sealed class AuthControllerAccountTests
 
         public Task SaveAsync(InstanceAuthUiPolicy policy, byte[]? expectedRowVersion, CancellationToken cancellationToken = default) =>
             Task.CompletedTask;
+    }
+
+    private sealed class RecordingForgottenPasswordService : IForgottenPasswordService
+    {
+        public List<string> Identifiers { get; } = [];
+
+        public ValueTask RequestAsync(string identifier, CancellationToken cancellationToken = default)
+        {
+            Identifiers.Add(identifier);
+            return ValueTask.CompletedTask;
+        }
+
+        public ValueTask CompleteAsync(string token, string newPassword, CancellationToken cancellationToken = default) =>
+            throw new NotImplementedException();
     }
 
     private sealed class CapturingAuditService : IAuditService

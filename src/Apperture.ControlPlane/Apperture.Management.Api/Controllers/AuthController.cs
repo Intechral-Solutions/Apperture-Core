@@ -250,18 +250,6 @@ public sealed class AuthController : ControllerBase
                 LocalPasswordChangeErrorCodes.InvalidNewPassword));
         }
 
-        if (_localOptions.MinPasswordLength > 0 && request.NewPassword.Length < _localOptions.MinPasswordLength)
-        {
-            await AppendAuthAuditAsync(
-                AuthActionLocalPasswordChangeFailed,
-                new ActorId(userId.Value),
-                $"New password shorter than minimum ({_localOptions.MinPasswordLength})",
-                cancellationToken);
-            return BadRequest(new LocalPasswordChangeErrorResponse(
-                $"Password must be at least {_localOptions.MinPasswordLength} characters.",
-                LocalPasswordChangeErrorCodes.InvalidNewPassword));
-        }
-
         var user = await _userRepository.GetByIdAsync(userId, cancellationToken);
         if (user is null)
         {
@@ -332,6 +320,22 @@ public sealed class AuthController : ControllerBase
             return BadRequest(new LocalPasswordChangeErrorResponse(
                 "Current password is incorrect.",
                 LocalPasswordChangeErrorCodes.WrongCurrentPassword));
+        }
+
+        try
+        {
+            LocalPasswordPolicy.Require(request.NewPassword, user);
+        }
+        catch (PasswordPolicyException ex)
+        {
+            await AppendAuthAuditAsync(
+                AuthActionLocalPasswordChangeFailed,
+                new ActorId(userId.Value),
+                "New password rejected by policy",
+                cancellationToken);
+            return BadRequest(new LocalPasswordChangeErrorResponse(
+                ex.Message,
+                LocalPasswordChangeErrorCodes.InvalidNewPassword));
         }
 
         var (hash, salt) = _passwordHasher.HashPassword(request.NewPassword);

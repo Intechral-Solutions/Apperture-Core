@@ -5,7 +5,6 @@ using Apperture.Core.Domain.Governance;
 using Apperture.Core.Domain.Identity;
 using Apperture.Shared.Kernel;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 
 namespace Apperture.ControlPlane.Security;
 
@@ -14,7 +13,6 @@ public sealed class EmergencyAccessService : IEmergencyAccessService
 {
     public const string CliActorId = "emergency-cli";
     private const string AuditCategory = "auth";
-    private const int DefaultMinPasswordLength = 8;
 
     private readonly IUserRepository _users;
     private readonly IRoleRepository _roles;
@@ -23,7 +21,6 @@ public sealed class EmergencyAccessService : IEmergencyAccessService
     private readonly INativeMfaService _mfa;
     private readonly IAuditService _audit;
     private readonly TimeProvider _time;
-    private readonly IOptions<LocalAuthOptions>? _localOptions;
     private readonly ILogger<EmergencyAccessService> _logger;
 
     public EmergencyAccessService(
@@ -34,8 +31,7 @@ public sealed class EmergencyAccessService : IEmergencyAccessService
         INativeMfaService mfa,
         IAuditService audit,
         TimeProvider time,
-        ILogger<EmergencyAccessService> logger,
-        IOptions<LocalAuthOptions>? localOptions = null)
+        ILogger<EmergencyAccessService> logger)
     {
         _users = users;
         _roles = roles;
@@ -45,7 +41,6 @@ public sealed class EmergencyAccessService : IEmergencyAccessService
         _audit = audit;
         _time = time;
         _logger = logger;
-        _localOptions = localOptions;
     }
 
     /// <inheritdoc />
@@ -262,11 +257,11 @@ public sealed class EmergencyAccessService : IEmergencyAccessService
 
     private void ValidatePassword(string password)
     {
-        var min = _localOptions?.Value.MinPasswordLength > 0
-            ? _localOptions.Value.MinPasswordLength
-            : DefaultMinPasswordLength;
-        if (string.IsNullOrEmpty(password) || password.Length < min)
-            throw new InvalidOperationException($"Password must be at least {min} characters.");
+        LocalPasswordPolicy.Require(
+            password,
+            LocalPasswordPolicy.ForLocalIdentity(
+                EmergencyAccessIdentity.LocalUsername,
+                EmergencyAccessIdentity.DisplayName));
     }
 
     private static void EnsureEligibleForDesignation(User user, LocalCredentialData? credential)

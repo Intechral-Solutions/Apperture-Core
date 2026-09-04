@@ -208,8 +208,9 @@ public sealed class UserManagementService : IUserManagementService
             {
                 if (string.IsNullOrEmpty(password))
                     throw new InvalidOperationException("A password is required when creating a local user without a setup invitation.");
-                if (_localOptions.MinPasswordLength > 0 && password.Length < _localOptions.MinPasswordLength)
-                    throw new InvalidOperationException($"Password must be at least {_localOptions.MinPasswordLength} characters.");
+                LocalPasswordPolicy.Require(
+                    password,
+                    LocalPasswordPolicy.ForLocalIdentity(linkExternalId, displayName, contactEmail));
             }
         }
 
@@ -444,8 +445,7 @@ public sealed class UserManagementService : IUserManagementService
         if (!user.IdentityLinks.Any(l => l.Source == IdentitySource.Local))
             throw new InvalidOperationException("User has no Local identity link; cannot set local password.");
 
-        if (_localOptions.MinPasswordLength > 0 && (newPassword?.Length ?? 0) < _localOptions.MinPasswordLength)
-            throw new InvalidOperationException($"Password must be at least {_localOptions.MinPasswordLength} characters.");
+        LocalPasswordPolicy.Require(newPassword, user);
 
         var (hash, salt) = _passwordHasher.HashPassword(newPassword!);
         await _localCredentialRepository.SetPasswordAsync(userId, hash, salt, _passwordHasher.AlgorithmName, cancellationToken);

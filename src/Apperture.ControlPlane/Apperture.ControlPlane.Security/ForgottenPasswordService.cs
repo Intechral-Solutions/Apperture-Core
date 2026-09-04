@@ -3,7 +3,6 @@ using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Audit;
 using Apperture.Core.Domain.Identity;
 using Apperture.Shared.Kernel;
-using Microsoft.Extensions.Options;
 
 namespace Apperture.ControlPlane.Security;
 
@@ -19,7 +18,6 @@ public sealed class ForgottenPasswordService : IForgottenPasswordService
     private readonly IAccountSecurityMailSender _mail;
     private readonly AccountSecurityLinkBuilder _links;
     private readonly IAuditService _audit;
-    private readonly IOptions<LocalAuthOptions> _local;
 
     public ForgottenPasswordService(
         IUserRepository users,
@@ -28,8 +26,7 @@ public sealed class ForgottenPasswordService : IForgottenPasswordService
         IAccountActionTokenService tokens,
         IAccountSecurityMailSender mail,
         AccountSecurityLinkBuilder links,
-        IAuditService audit,
-        IOptions<LocalAuthOptions> local)
+        IAuditService audit)
     {
         _users = users;
         _credentials = credentials;
@@ -38,7 +35,6 @@ public sealed class ForgottenPasswordService : IForgottenPasswordService
         _mail = mail;
         _links = links;
         _audit = audit;
-        _local = local;
     }
 
     public async ValueTask RequestAsync(string identifier, CancellationToken cancellationToken = default)
@@ -63,7 +59,7 @@ public sealed class ForgottenPasswordService : IForgottenPasswordService
         var delivery = await _mail.SendAsync(
             user.EmailAddress!,
             "Reset your Apperture password",
-            $"Reset your Apperture local password by opening this one-time link:\n{_links.ResetPassword(issued.Plaintext)}\n\nThis link expires and can be used once. It will not turn local sign-in on if it is currently disabled.",
+            $"Reset your Apperture local password by opening this one-time link:\n{_links.ResetPassword(issued.Plaintext)}\n\nThis link expires and can be used once.",
             cancellationToken);
         await AuditAsync(
             AccountSecurityAuditActionNames.PasswordResetRequested,
@@ -91,10 +87,10 @@ public sealed class ForgottenPasswordService : IForgottenPasswordService
             throw new AccountSecurityException(AccountSecurityErrorCodes.TokenInvalid, "This reset link is invalid or has expired.");
 
         var cred = await _credentials.GetByUserIdAsync(user.Id, cancellationToken);
-        if (cred is null || !user.IdentityLinks.Any(l => l.Source == IdentitySource.Local))
+        if (cred is null || cred.IsDisabled || !user.IdentityLinks.Any(l => l.Source == IdentitySource.Local))
             throw new AccountSecurityException(AccountSecurityErrorCodes.TokenInvalid, "This reset link is invalid or has expired.");
 
-        ValidateNewPassword(newPassword);
+        RequirePassword(newPassword, user);
         var (hash, salt) = _hasher.HashPassword(newPassword);
         await _credentials.SetPasswordAsync(user.Id, hash, salt, _hasher.AlgorithmName, cancellationToken);
         await _tokens.RevokePasswordLifecycleTokensAsync(user.Id, cancellationToken);
@@ -125,17 +121,18 @@ public sealed class ForgottenPasswordService : IForgottenPasswordService
             return null;
 
         var cred = await _credentials.GetByUserIdAsync(user.Id, cancellationToken);
-        return cred is null ? null : user;
+        return cred is { IsDisabled: false } ? user : null;
     }
 
-    private void ValidateNewPassword(string newPassword)
+    private static void RequirePassword(string newPassword, User user)
     {
-        var min = _local.Value.MinPasswordLength;
-        if (string.IsNullOrEmpty(newPassword) || (min > 0 && newPassword.Length < min))
+        try
         {
-            throw new AccountSecurityException(
-                AccountSecurityErrorCodes.PasswordRequired,
-                min > 0 ? $"Password must be at least {min} characters." : "A password is required.");
+            LocalPasswordPolicy.Require(newPassword, user);
+        }
+        catch (PasswordPolicyException ex)
+        {
+            throw new AccountSecurityException(AccountSecurityErrorCodes.PasswordRequired, ex.Message);
         }
     }
 

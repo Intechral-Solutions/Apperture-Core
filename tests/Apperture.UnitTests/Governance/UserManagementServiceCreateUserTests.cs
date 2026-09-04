@@ -18,7 +18,7 @@ public sealed class UserManagementServiceCreateUserTests
     {
         var harness = Harness.Create(allowUserManage: false);
 
-        var act = () => harness.Service.CreateUserAsync("Operator", IdentitySource.Local, "operator", "Password1!").AsTask();
+        var act = () => harness.Service.CreateUserAsync("Operator", IdentitySource.Local, "operator", "unique-local-passphrase").AsTask();
 
         await act.Should().ThrowAsync<UnauthorizedAccessException>();
         harness.Users.Added.Should().BeEmpty();
@@ -30,7 +30,7 @@ public sealed class UserManagementServiceCreateUserTests
     {
         var harness = Harness.Create();
 
-        var userId = await harness.Service.CreateUserAsync("Operator", IdentitySource.Local, "  Operator  ", "Password1!");
+        var userId = await harness.Service.CreateUserAsync("Operator", IdentitySource.Local, "  Operator  ", "unique-local-passphrase");
 
         var user = await harness.Users.GetByIdAsync(userId);
         user.Should().NotBeNull();
@@ -38,7 +38,7 @@ public sealed class UserManagementServiceCreateUserTests
         user.IdentityLinks.Should().ContainSingle(l =>
             l.Source == IdentitySource.Local && l.ExternalId == "operator");
         user.AssignedRoleIds.Should().BeEmpty();
-        harness.Hasher.LastPassword.Should().Be("Password1!");
+        harness.Hasher.LastPassword.Should().Be("unique-local-passphrase");
         harness.Credentials.Hashes[userId.Value].Should().Be("h");
         harness.Credentials.Disabled[userId.Value].Should().BeFalse();
         harness.Audit.Actions.Should().Contain("user.created");
@@ -48,9 +48,9 @@ public sealed class UserManagementServiceCreateUserTests
     public async Task CreateUser_rejects_duplicate_local_username()
     {
         var harness = Harness.Create();
-        await harness.Service.CreateUserAsync("First", IdentitySource.Local, "operator", "Password1!");
+        await harness.Service.CreateUserAsync("First", IdentitySource.Local, "operator", "unique-local-passphrase");
 
-        var act = () => harness.Service.CreateUserAsync("Second", IdentitySource.Local, "OPERATOR", "Password1!").AsTask();
+        var act = () => harness.Service.CreateUserAsync("Second", IdentitySource.Local, "OPERATOR", "unique-local-passphrase").AsTask();
 
         await act.Should().ThrowAsync<InvalidOperationException>()
             .WithMessage("*already exists*");
@@ -83,10 +83,22 @@ public sealed class UserManagementServiceCreateUserTests
     }
 
     [Fact]
+    public async Task CreateUser_rejects_a_common_password()
+    {
+        var harness = Harness.Create();
+
+        var act = () => harness.Service.CreateUserAsync("Operator", IdentitySource.Local, "operator", "Password1!").AsTask();
+
+        await act.Should().ThrowAsync<PasswordPolicyException>();
+        harness.Users.Added.Should().BeEmpty();
+        harness.Credentials.Hashes.Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task AssignRole_without_role_assign_is_rejected()
     {
         var harness = Harness.Create(allowRoleAssign: false);
-        var userId = await harness.Service.CreateUserAsync("Operator", IdentitySource.Local, "operator", "Password1!");
+        var userId = await harness.Service.CreateUserAsync("Operator", IdentitySource.Local, "operator", "unique-local-passphrase");
 
         var act = () => harness.Service.AssignRoleAsync(userId, new RoleId(BootstrapConstants.PlatformAdminRoleId)).AsTask();
 
@@ -98,7 +110,7 @@ public sealed class UserManagementServiceCreateUserTests
     public async Task AssignRole_assigns_platform_administrator_when_authorized()
     {
         var harness = Harness.Create();
-        var userId = await harness.Service.CreateUserAsync("Second admin", IdentitySource.Local, "admin2", "Password1!");
+        var userId = await harness.Service.CreateUserAsync("Second admin", IdentitySource.Local, "admin2", "unique-local-passphrase");
         var roleId = new RoleId(BootstrapConstants.PlatformAdminRoleId);
 
         await harness.Service.AssignRoleAsync(userId, roleId);
@@ -115,7 +127,7 @@ public sealed class UserManagementServiceCreateUserTests
     {
         var harness = Harness.Create();
 
-        var act = () => harness.Service.CreateUserAsync("Operator", IdentitySource.Local, username, "Password1!").AsTask();
+        var act = () => harness.Service.CreateUserAsync("Operator", IdentitySource.Local, username, "unique-local-passphrase").AsTask();
 
         var ex = await act.Should().ThrowAsync<EmergencyAccessException>();
         ex.Which.Code.Should().Be(EmergencyAccessErrorCodes.ReservedUsername);
@@ -126,7 +138,7 @@ public sealed class UserManagementServiceCreateUserTests
     public async Task GetUserPage_excludes_the_designated_emergency_account()
     {
         var harness = Harness.Create();
-        await harness.Service.CreateUserAsync("Operator", IdentitySource.Local, "operator", "Password1!");
+        await harness.Service.CreateUserAsync("Operator", IdentitySource.Local, "operator", "unique-local-passphrase");
         harness.Users.Seed(new User(
             new UserId("emerg-1"),
             EmergencyAccessIdentity.DisplayName,
@@ -161,8 +173,8 @@ public sealed class UserManagementServiceCreateUserTests
     public async Task GetUserPage_paging_counts_only_ordinary_users()
     {
         var harness = Harness.Create();
-        await harness.Service.CreateUserAsync("Alpha", IdentitySource.Local, "alpha", "Password1!");
-        await harness.Service.CreateUserAsync("Beta", IdentitySource.Local, "beta", "Password1!");
+        await harness.Service.CreateUserAsync("Alpha", IdentitySource.Local, "alpha", "unique-local-passphrase");
+        await harness.Service.CreateUserAsync("Beta", IdentitySource.Local, "beta", "unique-local-passphrase");
         harness.Users.Seed(new User(
             new UserId("emerg-1"),
             EmergencyAccessIdentity.DisplayName,
@@ -193,7 +205,7 @@ public sealed class UserManagementServiceCreateUserTests
         var userId = emergency.Id;
         var roleId = new RoleId(BootstrapConstants.PlatformAdminRoleId);
 
-        (await AssertUnsafe(() => harness.Service.SetLocalPasswordAsync(userId, "Password1!").AsTask()))
+        (await AssertUnsafe(() => harness.Service.SetLocalPasswordAsync(userId, "unique-local-passphrase").AsTask()))
             .Should().Be(EmergencyAccessErrorCodes.UnsafeOperation);
         (await AssertUnsafe(() => harness.Service.SetLocalCredentialDisabledAsync(userId, true).AsTask()))
             .Should().Be(EmergencyAccessErrorCodes.UnsafeOperation);

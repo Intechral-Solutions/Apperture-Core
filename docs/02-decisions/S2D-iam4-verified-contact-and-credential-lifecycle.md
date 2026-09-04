@@ -102,9 +102,20 @@ Legacy administrator-supplied initial password remains an intentional alternate.
 ### Password change and reset
 
 - Change password requires the current password, uses `ILocalPasswordHasher`, does not flip `IsDisabled`, and revokes outstanding setup/reset tokens.
-- Forgot-password is eligible only for an ordinary user with a local identity, an existing local credential row, and a **verified** contact email.
-- Recovery Access, Entra-only users, unverified emails, and unknown identifiers produce the same outward acknowledgement.
-- Reset **must not** enable a disabled local credential. Enablement stays on the existing `credential.manage` + recent strong-auth policy.
+- Forgot-password is eligible only for an ordinary user with a local identity, an **existing and enabled** `LocalCredential`, and a **verified** contact email.
+- Recovery Access, Entra-only users, unverified emails, disabled local credentials, and unknown identifiers produce the same outward acknowledgement. No reset token is created and no mail is sent.
+- Reset cannot re-enable a disabled local credential because those accounts are ineligible at the lifecycle boundary. Enablement stays on the existing `credential.manage` + recent strong-auth policy.
+
+### Local password policy
+
+All password-establishing paths share one application/core evaluator (`IPasswordPolicyEvaluator` / `PasswordPolicyEvaluator`):
+
+- minimum 12 characters, maximum 128 (passphrases allowed; hashing endpoints reject abusive length);
+- no composition rules (uppercase, digit, or symbol are not required);
+- reject common/expected passwords and contextual terms (`apperture`, Recovery Access names, username, email local-part, display-name tokens);
+- accept at Fair or stronger (score 0–4). The built-in estimator is replaceable; unmaintained .NET zxcvbn ports were not adopted.
+
+The same evaluator is used by Emergency Access provision/set-password (CLI retries interactively), invitation setup, forgot-password completion, self-service change, first-admin bootstrap, Governance initial password, and local-credential set. Confirmation matching is a UI/CLI boundary check only.
 
 These remain distinct operations: change password, set/reset password, enable local authentication.
 
@@ -114,7 +125,7 @@ Username `breakglass` / display name Recovery Access is excluded from contact em
 
 ### Entra coexistence
 
-Entra-only users may have a verified contact email and no local credential. Entra-primary users with a disabled local credential can reset that password without restoring local login. Entra mail/UPN never auto-verifies contact email.
+Entra-only users may have a verified contact email and no local credential. Entra-primary users whose local sign-in is disabled are not eligible for forgot-password. Entra mail/UPN never auto-verifies contact email.
 
 ## Consequences
 

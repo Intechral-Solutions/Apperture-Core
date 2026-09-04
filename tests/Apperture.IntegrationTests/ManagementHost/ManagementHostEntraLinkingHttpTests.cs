@@ -222,7 +222,7 @@ public sealed class ManagementHostEntraLinkingHttpTests
             var bootstrap = _fixture.Factory.CreateClient();
             var created = await bootstrap.PostAsJsonAsync(
                 "/api/bootstrap/first-admin",
-                new FirstAdminRequest("Entra Link Admin", "Local", $"entra-admin-{Guid.NewGuid():N}"[..16], "Password1!"));
+                new FirstAdminRequest("Entra Link Admin", "Local", $"entra-admin-{Guid.NewGuid():N}"[..16], "unique-local-passphrase"));
             created.StatusCode.Should().BeOneOf(HttpStatusCode.Created, HttpStatusCode.Conflict);
         }
 
@@ -239,7 +239,7 @@ public sealed class ManagementHostEntraLinkingHttpTests
     {
         var response = await adminClient.PostAsJsonAsync(
             "/api/users",
-            new CreateUserRequest("Entra link test user", "Local", username, "Password1!"));
+            new CreateUserRequest("Entra link test user", "Local", username, "unique-local-passphrase"));
         response.StatusCode.Should().Be(HttpStatusCode.Created);
         var body = await response.Content.ReadFromJsonAsync<CreateUserResponse>(JsonOptions);
         return body!.UserId;

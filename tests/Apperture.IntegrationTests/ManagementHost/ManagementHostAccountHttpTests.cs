@@ -81,13 +81,13 @@ public sealed class ManagementHostAccountHttpTests
 
         var change = await client.PostAsJsonAsync(
             "/api/auth/local/change-password",
-            new ChangeLocalPasswordRequest("Password1!", newPassword));
+            new ChangeLocalPasswordRequest("unique-local-passphrase", newPassword));
         change.StatusCode.Should().Be(HttpStatusCode.NoContent);
 
         var loginClient = _fixture.Factory!.CreateClient();
         var loginOld = await loginClient.PostAsJsonAsync(
             "/api/auth/local/login",
-            new LocalLoginRequest(username, "Password1!"));
+            new LocalLoginRequest(username, "unique-local-passphrase"));
         loginOld.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
 
         var loginNew = await loginClient.PostAsJsonAsync(
@@ -97,7 +97,7 @@ public sealed class ManagementHostAccountHttpTests
 
         await client.PostAsJsonAsync(
             "/api/auth/local/change-password",
-            new ChangeLocalPasswordRequest(newPassword, "Password1!"));
+            new ChangeLocalPasswordRequest(newPassword, "unique-local-passphrase"));
     }
 
     [Fact]
@@ -121,7 +121,7 @@ public sealed class ManagementHostAccountHttpTests
         var client = _fixture.Factory!.CreateClient();
         var change = await client.PostAsJsonAsync(
             "/api/auth/local/change-password",
-            new ChangeLocalPasswordRequest("Password1!", "NewPassword9!"));
+            new ChangeLocalPasswordRequest("unique-local-passphrase", "NewPassword9!"));
         change.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 
@@ -133,7 +133,7 @@ public sealed class ManagementHostAccountHttpTests
 
         _ = await client.PostAsJsonAsync(
             "/api/auth/local/change-password",
-            new ChangeLocalPasswordRequest("Password1!", "AuditPassword9!"));
+            new ChangeLocalPasswordRequest("unique-local-passphrase", "AuditPassword9!"));
 
         await using var scope = _fixture.Factory!.Services.CreateAsyncScope();
         var audit = scope.ServiceProvider.GetRequiredService<IAuditService>();
@@ -144,7 +144,7 @@ public sealed class ManagementHostAccountHttpTests
 
         await client.PostAsJsonAsync(
             "/api/auth/local/change-password",
-            new ChangeLocalPasswordRequest("AuditPassword9!", "Password1!"));
+            new ChangeLocalPasswordRequest("AuditPassword9!", "unique-local-passphrase"));
     }
 
     private async Task EnsureFirstAdminAsync()
@@ -157,7 +157,7 @@ public sealed class ManagementHostAccountHttpTests
         var client = _fixture.Factory.CreateClient();
         var response = await client.PostAsJsonAsync(
             "/api/bootstrap/first-admin",
-            new FirstAdminRequest("Account Test Admin", "Local", $"acct-admin-{Guid.NewGuid():N}"[..16], "Password1!"));
+            new FirstAdminRequest("Account Test Admin", "Local", $"acct-admin-{Guid.NewGuid():N}"[..16], "unique-local-passphrase"));
         response.StatusCode.Should().BeOneOf(HttpStatusCode.Created, HttpStatusCode.Conflict);
     }
 
@@ -173,7 +173,7 @@ public sealed class ManagementHostAccountHttpTests
             .FirstAsync()
             .ConfigureAwait(false);
 
-        await EnsurePasswordIsAsync(localLink.ExternalId, "Password1!");
+        await EnsurePasswordIsAsync(localLink.ExternalId, "unique-local-passphrase");
 
         var client = _fixture.Factory.CreateClient();
         client.DefaultRequestHeaders.Add(ManagementTestAuthHandler.HeaderName, localLink.ExternalId);

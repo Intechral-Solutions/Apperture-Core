@@ -99,7 +99,8 @@ public sealed class DevTestUserBootstrapHostedService : IHostedService
 
         if (!string.IsNullOrEmpty(opts.Password) && localCredRepo is not null && passwordHasher is not null)
         {
-            var (hash, salt) = passwordHasher.HashPassword(opts.Password);
+            if (!TryHashDevPassword(opts.Password, username, displayName, passwordHasher, out var hash, out var salt))
+                return;
             await localCredRepo.SetPasswordAsync(userId, hash, salt, passwordHasher.AlgorithmName, cancellationToken);
         }
         else if (string.IsNullOrEmpty(opts.Password))
@@ -123,9 +124,34 @@ public sealed class DevTestUserBootstrapHostedService : IHostedService
         if (string.IsNullOrEmpty(opts.Password) || localCredRepo is null || passwordHasher is null)
             return;
 
-        var (hash, salt) = passwordHasher.HashPassword(opts.Password);
+        if (!TryHashDevPassword(opts.Password, username, null, passwordHasher, out var hash, out var salt))
+            return;
         await localCredRepo.SetPasswordAsync(userId, hash, salt, passwordHasher.AlgorithmName, cancellationToken)
             .ConfigureAwait(false);
         _logger?.LogDebug("Ensured DevTestUser password for {Username}.", username);
+    }
+
+    private bool TryHashDevPassword(
+        string password,
+        string username,
+        string? displayName,
+        ILocalPasswordHasher passwordHasher,
+        out string hash,
+        out string salt)
+    {
+        try
+        {
+            LocalPasswordPolicy.Require(password, LocalPasswordPolicy.ForLocalIdentity(username, displayName));
+        }
+        catch (PasswordPolicyException ex)
+        {
+            _logger?.LogWarning("DevTestUser password for {Username} was rejected: {Reason}", username, ex.Message);
+            hash = "";
+            salt = "";
+            return false;
+        }
+
+        (hash, salt) = passwordHasher.HashPassword(password);
+        return true;
     }
 }

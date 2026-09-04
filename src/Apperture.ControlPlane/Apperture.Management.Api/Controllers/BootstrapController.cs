@@ -76,12 +76,27 @@ public sealed class BootstrapController : ControllerBase
                 setupStatus.Initialized));
         }
 
-        var result = await _bootstrap.TryCreateFirstAdminAsync(
-            request.DisplayName.Trim(),
-            source,
-            request.ExternalId.Trim(),
-            request.Password,
-            cancellationToken);
+        FirstAdminBootstrapResult result;
+        try
+        {
+            result = await _bootstrap.TryCreateFirstAdminAsync(
+                request.DisplayName.Trim(),
+                source,
+                request.ExternalId.Trim(),
+                request.Password,
+                cancellationToken);
+        }
+        catch (PasswordPolicyException ex)
+        {
+            await AppendBootstrapAuditAsync(
+                AuditActionFirstAdminRejectedInvalidRequest,
+                "Password rejected by policy",
+                cancellationToken);
+            return BadRequest(new BootstrapErrorResponse(
+                ex.Message,
+                BootstrapErrorCodes.InvalidRequest,
+                setupStatus.Initialized));
+        }
 
         return result.Kind switch
         {

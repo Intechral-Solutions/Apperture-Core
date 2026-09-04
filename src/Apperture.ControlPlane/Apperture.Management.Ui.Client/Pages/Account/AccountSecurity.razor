@@ -6,6 +6,7 @@
 @using Apperture.Management.Ui.Client.Molecules
 @using Apperture.Management.Ui.Client.Organisms
 @using Apperture.Management.Ui.Client.Services
+@using Apperture.Core.Domain.Identity
 @using Apperture.Management.Ui.Shared
 @using Apperture.Management.Ui.Shared.Options
 @using Microsoft.Extensions.Options
@@ -138,25 +139,24 @@
                                            aria-invalid="@(_passwordError is not null ? "true" : null)"
                                            @bind="_currentPassword" />
                                 </div>
-                                <div>
-                                    <label class="block text-sm font-medium text-heading" for="new-password">New password</label>
-                                    <input id="new-password"
-                                           type="password"
-                                           autocomplete="new-password"
-                                           class="ui-input mt-1 max-w-md"
-                                           aria-describedby="@(_passwordError is null ? null : "password-error")"
-                                           aria-invalid="@(_passwordError is not null ? "true" : null)"
-                                           @bind="_newPassword" />
-                                </div>
+                                <PasswordSetupFields @ref="_passwordFields"
+                                                     Password="_newPassword"
+                                                     PasswordChanged="OnNewPasswordChanged"
+                                                     Confirmation="_confirmPassword"
+                                                     ConfirmationChanged="OnConfirmPasswordChanged"
+                                                     Context="_passwordContext"
+                                                     IsValidChanged="valid => _passwordSetupValid = valid" />
                                 @if (_passwordError is not null)
                                 {
                                     <p id="password-error" class="text-sm text-message-error" role="alert">@_passwordError</p>
                                 }
-                                <button type="submit"
-                                        class="btn btn-primary"
-                                        disabled="@_passwordBusy">
-                                    @(_passwordBusy ? "Updating…" : "Change password")
-                                </button>
+                                <ActionButton @ref="_passwordButton"
+                                              Type="submit"
+                                              DefaultText="Change password"
+                                              ActiveText="Updating…"
+                                              SuccessText="Password updated"
+                                              ErrorText="Update failed"
+                                              IsInactive="@(!CanChangePassword)" />
                             </form>
                             <p class="mt-3 text-sm text-muted">
                                 <a class="underline hover:text-heading" href="@AccountUiRoutes.ForgotPassword">Forgot password</a>
@@ -242,8 +242,15 @@
     private MeResponse? _me;
     private string _currentPassword = "";
     private string _newPassword = "";
+    private string _confirmPassword = "";
     private string? _passwordError;
-    private bool _passwordBusy;
+    private bool _passwordSetupValid;
+    private ActionButton? _passwordButton;
+    private PasswordSetupFields? _passwordFields;
+    private PasswordEvaluationContext? _passwordContext;
+
+    private bool CanChangePassword =>
+        !string.IsNullOrEmpty(_currentPassword) && _passwordSetupValid;
 
     private string? _linkMessage;
     private PageMessageKind _linkMessageKind = PageMessageKind.Info;
@@ -259,6 +266,7 @@
     {
         Session.Changed += OnSessionChanged;
         _me = Session.User;
+        _passwordContext = PasswordContextFromMe(_me);
         ReadLinkOutcomeFromQuery();
     }
 
@@ -316,30 +324,47 @@
     private void OnSessionChanged() => _ = InvokeAsync(() =>
     {
         _me = Session.User;
+        _passwordContext = PasswordContextFromMe(_me);
         StateHasChanged();
     });
 
+    private void OnNewPasswordChanged(string value) => _newPassword = value;
+    private void OnConfirmPasswordChanged(string value) => _confirmPassword = value;
+
     private async Task ChangePasswordAsync()
     {
+        if (!CanChangePassword)
+            return;
+
         _passwordError = null;
-        _passwordBusy = true;
+        if (_passwordButton is not null)
+            await _passwordButton.SetStateAsync(ActionButtonState.Active);
         try
         {
             await Client.ChangeLocalPasswordAsync(new ChangeLocalPasswordRequest(_currentPassword, _newPassword));
             _currentPassword = "";
             _newPassword = "";
-            Toasts.Show(ToastSeverity.Success, "Password updated.");
+            _confirmPassword = "";
+            _passwordSetupValid = false;
+            _passwordFields?.Reset();
+            if (_passwordButton is not null)
+                await _passwordButton.SetStateAsync(ActionButtonState.Success);
             await Session.RefreshAsync();
             _me = Session.User ?? _me;
+            _passwordContext = PasswordContextFromMe(_me);
         }
         catch (HttpRequestException ex)
         {
             _passwordError = ex.Message;
+            if (_passwordButton is not null)
+                await _passwordButton.SetStateAsync(ActionButtonState.Error);
         }
-        finally
-        {
-            _passwordBusy = false;
-        }
+    }
+
+    private static PasswordEvaluationContext PasswordContextFromMe(MeResponse? me)
+    {
+        var local = me?.IdentityLinks.FirstOrDefault(l => string.Equals(l.Source, "Local", StringComparison.OrdinalIgnoreCase));
+        return new PasswordEvaluationContext(Username: local?.DisplayLabel, DisplayName: me?.DisplayName);
     }
 
     private void SignOut()

@@ -48,6 +48,59 @@ public sealed class Iam4AccountLifecycleUiTests
         content.Should().Contain("Change password");
         content.Should().Contain("Forgot password");
         content.Should().Contain("does not enable local sign-in");
+        content.Should().Contain("PasswordSetupFields");
+        content.Should().Contain("ActionButton");
+        content.Should().Contain("_passwordFields?.Reset()");
+        content.Should().Contain("Session.RefreshAsync()");
+        content.Should().Contain("Password updated");
+    }
+
+    [Theory]
+    [InlineData("Pages/Account/AccountSetupPassword.razor")]
+    [InlineData("Pages/Account/AccountResetPassword.razor")]
+    [InlineData("Pages/Account/AccountSecurity.razor")]
+    [InlineData("Pages/Config/Governance/UserNew.razor")]
+    public void New_password_forms_use_confirmation_and_canonical_strength(string relativePath)
+    {
+        var content = ReadRepoFile($"{ClientRoot}/{relativePath}");
+
+        content.Should().Contain("PasswordSetupFields");
+        content.Should().Contain("Confirm");
+        content.Should().Contain("ActionButton");
+        content.Should().Contain("IsInactive");
+        content.Should().NotContain("uppercase");
+        content.Should().NotContain("special character");
+    }
+
+    [Fact]
+    public void Password_setup_fields_evaluate_locally_and_require_match()
+    {
+        var molecule = ReadRepoFile($"{ClientRoot}/Molecules/PasswordSetupFields.razor");
+        var indicator = ReadRepoFile($"{ClientRoot}/Atoms/PasswordStrengthIndicator.razor");
+
+        molecule.Should().Contain("PasswordSetupFormState.Evaluate");
+        molecule.Should().Contain("Passwords match");
+        molecule.Should().Contain("Passwords do not match");
+        molecule.Should().Contain("autocomplete=\"new-password\"");
+        molecule.Should().NotContain("ChangeLocalPasswordAsync");
+        indicator.Should().Contain("Password strength");
+        indicator.Should().Contain("aria-valuetext");
+        indicator.Should().Contain("StrengthLabel");
+    }
+
+    [Fact]
+    public void Account_mutations_use_action_button_feedback()
+    {
+        var forgot = ReadRepoFile($"{ClientRoot}/Pages/Account/AccountForgotPassword.razor");
+        var profile = ReadRepoFile($"{ClientRoot}/Pages/Account/AccountProfile.razor");
+        var detail = ReadRepoFile($"{ClientRoot}/Pages/Config/Governance/UserDetail.razor");
+
+        forgot.Should().Contain("ActionButton");
+        forgot.Should().Contain(ForgottenPasswordServiceGenericCopy);
+        profile.Should().Contain("ActionButton");
+        profile.Should().Contain("GetAccountProfileAsync() ?? _profile");
+        detail.Should().Contain("ActionButton");
+        detail.Should().Contain("Resend setup invitation");
     }
 
     [Fact]
@@ -96,6 +149,9 @@ public sealed class Iam4AccountLifecycleUiTests
         LoginRouteHelper.IsPublicPath(AccountUiRoutes.VerifyEmail).Should().BeTrue();
         LoginRouteHelper.IsLoginChooserPath(AccountUiRoutes.VerifyEmail).Should().BeFalse();
     }
+
+    private const string ForgottenPasswordServiceGenericCopy =
+        "If an eligible account matches, a reset email is on its way.";
 
     private static string ReadRepoFile(string relativePath)
     {

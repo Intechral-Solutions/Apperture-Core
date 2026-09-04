@@ -1,6 +1,7 @@
 @page "/config/governance/users/new"
 @layout ConfigLayout
 @using System.Net
+@using Apperture.Core.Domain.Identity
 @inject IManagementClient Client
 @inject IOperatorCapabilitiesService Capabilities
 @inject IToastService Toasts
@@ -76,16 +77,17 @@
                 </fieldset>
                 @if (!_sendInvitation)
                 {
-                    <div>
-                        <label class="block text-xs text-muted" for="new-user-password">Initial password</label>
-                        <input id="new-user-password"
-                               class="ui-input mt-1"
-                               type="password"
-                               @bind="_password"
-                               disabled="@_saving"
-                               autocomplete="new-password" />
-                        <p class="mt-1 text-xs text-muted">Use this only when you must set a temporary password yourself. The person should change it after first sign-in.</p>
-                    </div>
+                    <PasswordSetupFields Password="_password"
+                                         PasswordChanged="value => _password = value"
+                                         Confirmation="_confirmPassword"
+                                         ConfirmationChanged="value => _confirmPassword = value"
+                                         Context="PasswordContext"
+                                         PasswordId="new-user-password"
+                                         ConfirmId="new-user-password-confirm"
+                                         PasswordLabel="Initial password"
+                                         Disabled="@_saving"
+                                         IsValidChanged="valid => _passwordSetupValid = valid" />
+                    <p class="text-xs text-muted">Use this only when you must set a temporary password yourself. The person should change it after first sign-in.</p>
                 }
                 @if (_capabilities?.CanAssignRoles == true)
                 {
@@ -129,6 +131,8 @@
     private string _displayName = "";
     private string _username = "";
     private string _password = "";
+    private string _confirmPassword = "";
+    private bool _passwordSetupValid;
     private string _contactEmail = "";
     private bool _sendInvitation = true;
     private string _selectedRoleId = "";
@@ -139,7 +143,10 @@
         && !string.IsNullOrWhiteSpace(_username)
         && (_sendInvitation
             ? !string.IsNullOrWhiteSpace(_contactEmail)
-            : !string.IsNullOrEmpty(_password));
+            : _passwordSetupValid);
+
+    private PasswordEvaluationContext PasswordContext =>
+        new(Username: _username.Trim(), DisplayName: _displayName.Trim(), Email: _contactEmail.Trim());
 
     protected override async Task OnInitializedAsync()
     {

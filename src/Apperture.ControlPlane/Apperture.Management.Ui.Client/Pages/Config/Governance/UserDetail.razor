@@ -35,12 +35,15 @@
             </button>
             @if (CanSendSetupInvitation)
             {
-                <button type="button"
-                        class="ui-toolbar-btn"
-                        disabled="@_mutating"
-                        @onclick="ResendInvitationAsync">
-                    @(InvitationAlreadyIssued ? "Resend setup invitation" : "Send setup invitation")
-                </button>
+                <ActionButton @ref="_invitationToolbarButton"
+                              Variant="ActionButtonVariant.Secondary"
+                              Class="ui-toolbar-btn"
+                              DefaultText="@(InvitationAlreadyIssued ? "Resend setup invitation" : "Send setup invitation")"
+                              ActiveText="Sending…"
+                              SuccessText="Sent"
+                              ErrorText="Send failed"
+                              IsInactive="@_mutating"
+                              OnClick="_ => ResendInvitationAsync()" />
             }
         </Toolbar>
     </PageHeader>
@@ -102,12 +105,13 @@
                         <PageMessage Kind="PageMessageKind.Info"
                                      Title="Account setup is not finished"
                                      Message="This user has not chosen a password yet. Send a new invitation to their contact email. The previous link stops working." />
-                        <button type="button"
-                                class="btn btn-primary"
-                                disabled="@_mutating"
-                                @onclick="ResendInvitationAsync">
-                            @(_mutating ? "Sending…" : InvitationAlreadyIssued ? "Resend setup invitation" : "Send setup invitation")
-                        </button>
+                        <ActionButton @ref="_invitationButton"
+                                      DefaultText="@(InvitationAlreadyIssued ? "Resend setup invitation" : "Send setup invitation")"
+                                      ActiveText="Sending…"
+                                      SuccessText="Invitation sent"
+                                      ErrorText="Send failed"
+                                      IsInactive="@_mutating"
+                                      OnClick="_ => ResendInvitationAsync()" />
                     </div>
                 }
             </ManagementSection>
@@ -356,6 +360,8 @@
     private OperatorCapabilitiesDto? _capabilities;
     private bool _capabilitiesLoaded;
     private string? _dataLoadKey;
+    private ActionButton? _invitationButton;
+    private ActionButton? _invitationToolbarButton;
 
     private bool CanSendSetupInvitation =>
         _capabilities?.CanManageUsers == true
@@ -365,6 +371,14 @@
 
     private bool InvitationAlreadyIssued =>
         _user?.InvitationState is "pending" or "expired" or "accepted";
+
+    private async Task SetInvitationButtonsAsync(ActionButtonState state)
+    {
+        if (_invitationButton is not null)
+            await _invitationButton.SetStateAsync(state);
+        if (_invitationToolbarButton is not null)
+            await _invitationToolbarButton.SetStateAsync(state);
+    }
 
     protected override async Task OnInitializedAsync()
     {
@@ -653,19 +667,17 @@
 
         _mutating = true;
         _error = null;
+        await SetInvitationButtonsAsync(ActionButtonState.Active);
         try
         {
             var result = await Client.SendSetupInvitationAsync(_user.UserId, new SetupInvitationRequest(_user.PendingContactEmail ?? _user.ContactEmail));
-            if (result.DeliverySucceeded)
-                Toasts.Show(ToastSeverity.Success, "Setup invitation sent.");
-            else
-                Toasts.Show(ToastSeverity.Warning, "The invitation was regenerated, but email delivery failed.");
+            await SetInvitationButtonsAsync(result.DeliverySucceeded ? ActionButtonState.Success : ActionButtonState.Error);
             await LoadAsync();
         }
         catch (HttpRequestException ex)
         {
             _error = ex.Message;
-            Toasts.Show(ToastSeverity.Error, ex.Message);
+            await SetInvitationButtonsAsync(ActionButtonState.Error);
         }
         finally
         {

@@ -155,14 +155,23 @@
                                 </div>
                             }
                             <div class="flex flex-wrap gap-2">
-                                <button type="submit" class="btn btn-primary" disabled="@_contactBusy">
-                                    @(_contactBusy ? "Saving…" : _profile.ContactEmailStatus == "verified" ? "Change email" : "Save email")
-                                </button>
+                                <ActionButton @ref="_contactButton"
+                                              Type="submit"
+                                              DefaultText="@(_profile.ContactEmailStatus == "verified" ? "Change email" : "Save email")"
+                                              ActiveText="Saving…"
+                                              SuccessText="Saved"
+                                              ErrorText="Could not save"
+                                              IsInactive="@_contactBusy" />
                                 @if (_profile.ContactEmailStatus == "pending")
                                 {
-                                    <button type="button" class="btn btn-secondary" disabled="@_contactBusy" @onclick="ResendContactAsync">
-                                        Resend verification
-                                    </button>
+                                    <ActionButton @ref="_resendButton"
+                                                  Variant="ActionButtonVariant.Secondary"
+                                                  DefaultText="Resend verification"
+                                                  ActiveText="Sending…"
+                                                  SuccessText="Sent"
+                                                  ErrorText="Could not send"
+                                                  IsInactive="@_contactBusy"
+                                                  OnClick="_ => ResendContactAsync()" />
                                 }
                             </div>
                         </form>
@@ -294,6 +303,8 @@
     private string _contactCurrentPassword = "";
     private string? _contactError;
     private bool _contactBusy;
+    private ActionButton? _contactButton;
+    private ActionButton? _resendButton;
 
     private bool IsNameDirty =>
         _profile is not null
@@ -392,6 +403,8 @@
     {
         _contactError = null;
         _contactBusy = true;
+        if (_contactButton is not null)
+            await _contactButton.SetStateAsync(ActionButtonState.Active);
         try
         {
             var result = await Client.RequestContactEmailAsync(new RequestContactEmailRequest
@@ -401,14 +414,14 @@
             });
             _contactCurrentPassword = "";
             _profile = await Client.GetAccountProfileAsync() ?? _profile;
-            if (result.DeliverySucceeded)
-                Toasts.Show(ToastSeverity.Success, "Verification email sent.");
-            else
-                Toasts.Show(ToastSeverity.Warning, "The address was saved, but the verification email could not be sent.");
+            if (_contactButton is not null)
+                await _contactButton.SetStateAsync(result.DeliverySucceeded ? ActionButtonState.Success : ActionButtonState.Error);
         }
         catch (HttpRequestException ex)
         {
             _contactError = ex.Message;
+            if (_contactButton is not null)
+                await _contactButton.SetStateAsync(ActionButtonState.Error);
         }
         finally
         {
@@ -420,17 +433,19 @@
     {
         _contactError = null;
         _contactBusy = true;
+        if (_resendButton is not null)
+            await _resendButton.SetStateAsync(ActionButtonState.Active);
         try
         {
             var result = await Client.ResendContactEmailAsync();
-            if (result.DeliverySucceeded)
-                Toasts.Show(ToastSeverity.Success, "Verification email sent.");
-            else
-                Toasts.Show(ToastSeverity.Warning, "The verification email could not be sent.");
+            if (_resendButton is not null)
+                await _resendButton.SetStateAsync(result.DeliverySucceeded ? ActionButtonState.Success : ActionButtonState.Error);
         }
         catch (HttpRequestException ex)
         {
             _contactError = ex.Message;
+            if (_resendButton is not null)
+                await _resendButton.SetStateAsync(ActionButtonState.Error);
         }
         finally
         {

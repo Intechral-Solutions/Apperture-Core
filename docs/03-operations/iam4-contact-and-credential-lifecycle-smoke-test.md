@@ -19,7 +19,7 @@ If SMTP is unavailable in this development environment, complete every step that
 2. Open Account → Profile.
 3. Confirm **Microsoft identity email** / directory email (if present) is separate from **Contact email**.
 4. Enter a contact address you control. Do not treat it as verified yet.
-5. Status should be **Verification pending**.
+5. Status should be **Verification pending**. Save / resend use ActionButton pending and success states without a page reload.
 6. Open the verification link from the email (or the captured link in the SMTP gap).
 7. Status should become **Verified**.
 
@@ -40,15 +40,17 @@ If SMTP is unavailable in this development environment, complete every step that
 5. Do not enter a permanent password.
 6. Create the user. Governance detail should show Contact email pending, Password setup pending, Invitation pending.
 7. If the invitation expires, delivery fails, or the user still has no password, Governance → Users → that user must show **Resend setup invitation** (toolbar and user summary). Sending a new invitation invalidates the previous link.
-8. Open the invitation link and choose a password.
+8. Open the invitation link. Confirm password and strength feedback appear. Choose an accepted passphrase and matching confirmation.
 9. Sign out and sign in locally with the new username and password.
 
 ## 6. Password change
 
 1. While signed in locally, open Account → Security.
-2. Change the password with the current password.
-3. Sign out and sign in with the new password.
-4. Local sign-in must remain enabled (this user was not Entra-primary-disabled).
+2. Enter a new password and confirmation. Submit stays inactive until the password is accepted and the confirmation matches.
+3. Strength feedback and match status update while typing. Weak or common values (including `Password1!`) stay rejected. A long passphrase without symbols is accepted.
+4. Change password uses the current password. The button shows pending, then success, then the fields clear without a page reload. Local sign-in status stays current.
+5. Sign out and sign in with the new password.
+6. Local sign-in must remain enabled (this user was not Entra-primary-disabled).
 
 ## 7–9. Forgot-password reset, replay, anti-enumeration
 
@@ -67,14 +69,16 @@ If SMTP is unavailable in this development environment, complete every step that
 4. Suggested directory mail may appear as a convenience. Saving it must still send verification. It must not become verified solely because Graph/OIDC supplied it.
 5. Matching that address to another user must not create or link an `IdentityLink`.
 
-## 11. Password reset does not re-enable an Entra-primary-disabled credential
+## 11. Disabled local credentials are not eligible for forgot-password
 
-1. Use an Entra-primary user whose local credential is **Disabled**.
-2. If that user has a verified contact email, complete forgot-password reset.
-3. Account → Security / Governance detail must still show local sign-in **Disabled**.
-4. Enabling local sign-in remains the existing protected administrator action.
+1. Use an Entra-primary user whose local credential is **Disabled** and who has a verified contact email.
+2. Submit forgot-password with that username or contact email.
+3. The page/API must show the same generic acknowledgement as an unknown identifier.
+4. No reset email is sent and no usable reset token is created. Do not treat “mail suppressed after token issue” as success.
+5. Account → Security / Governance detail must still show local sign-in **Disabled**.
+6. Enabling local sign-in remains the existing protected administrator action.
 
-If the Entra-primary user has no local credential row, forgot-password must produce the generic acknowledgement and send no mail.
+If the Entra-primary user has no local credential row, the same generic acknowledgement and no-mail rule apply.
 
 ## 12. Recovery Access remains excluded and operational
 

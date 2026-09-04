@@ -63,6 +63,14 @@ public sealed class FirstAdminBootstrapService : IFirstAdminBootstrapService
             new[] { new RoleId(BootstrapConstants.PlatformAdminRoleId) },
             IsBreakGlassEligible: false);
 
+        if (source == IdentitySource.Local && !string.IsNullOrEmpty(password) &&
+            _localCredentialRepository is not null && _passwordHasher is not null)
+        {
+            LocalPasswordPolicy.Require(
+                password,
+                LocalPasswordPolicy.ForLocalIdentity(linkExternalId, displayName));
+        }
+
         await _userRepository.AddAsync(user, cancellationToken);
 
         if (source == IdentitySource.Local && !string.IsNullOrEmpty(password) &&

@@ -16,6 +16,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Apperture.Management.Client\Apperture.Management.Client.csproj" />
     <ProjectReference Include="..\Apperture.Management.Ui.Shared\Apperture.Management.Ui.Shared.csproj" />
+    <ProjectReference Include="..\..\Apperture.Core\Apperture.Core.Domain\Apperture.Core.Domain.csproj" />
   </ItemGroup>
   <Target Name="SyncCanonicalUiAppSettings" BeforeTargets="BeforeBuild">
     <Copy SourceFiles="$(UiAppSettingsCanonical)" DestinationFiles="$(UiAppSettingsWwwRoot)" SkipUnchangedFiles="true" Condition="Exists('$(UiAppSettingsCanonical)')" />

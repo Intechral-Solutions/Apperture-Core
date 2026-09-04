@@ -8,6 +8,7 @@ using Apperture.ModuleSdk.Integration.Configuration;
 using Apperture.Core.Application.Scheduling;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Governance;
+using Apperture.Core.Domain.Identity;
 using Apperture.ModuleSdk.Abstractions;
 using Apperture.Core.Application.RuntimeComposition;
 using Apperture.Core.Application.Recovery;
@@ -94,6 +95,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IAuditService, SqlAuditService>();
         services.AddScoped<ILocalCredentialRepository, SqlLocalCredentialRepository>();
         services.AddSingleton<ILocalPasswordHasher, LocalPasswordHasher>();
+        services.TryAddSingleton<IPasswordPolicyEvaluator, PasswordPolicyEvaluator>();
         services.AddScoped<IAccountActionTokenRepository, SqlAccountActionTokenRepository>();
         services.AddScoped<IAccountActionTokenService, AccountActionTokenService>();
         services.AddSingleton<AccountSecurityLinkBuilder>();

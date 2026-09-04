@@ -31,8 +31,8 @@ public sealed class Iam2UserCreationUiSurfaceTests
         content.Should().NotContain("IAM-2");
         content.Should().NotContain("IAM-4");
         content.Should().NotContain("first-admin");
-        content.Should().Contain("type=\"password\"");
-        content.Should().Contain("hashed");
+        content.Should().Contain("PasswordSetupFields");
+        content.Should().Contain("Set an initial password now");
     }
 
     [Fact]
