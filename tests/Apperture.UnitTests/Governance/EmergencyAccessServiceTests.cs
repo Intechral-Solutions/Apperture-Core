@@ -86,7 +86,7 @@ public sealed class EmergencyAccessServiceTests
         var harness = Harness.Empty();
         harness.Roles.RoleExists = true;
 
-        var userId = await harness.Emergency.ProvisionAsync("super-secret-pass", new ActorId("cli"));
+        var userId = await harness.Emergency.ProvisionAsync("quiet-maple-lantern-harbor", new ActorId("cli"));
 
         var user = harness.Users.Get(userId.Value)!;
         user.IsBreakGlassEligible.Should().BeTrue();
@@ -96,7 +96,7 @@ public sealed class EmergencyAccessServiceTests
         user.AssignedRoleIds.Should().Contain(AdminRole);
         harness.Credentials.Disabled[userId.Value].Should().BeFalse();
         harness.Audit.Actions.Should().Contain(EmergencyAccessAuditActionNames.Provisioned);
-        harness.Audit.Details.Should().NotContain("super-secret-pass");
+        harness.Audit.Details.Should().NotContain("quiet-maple-lantern-harbor");
     }
 
     [Fact]
@@ -117,7 +117,7 @@ public sealed class EmergencyAccessServiceTests
     {
         var harness = Harness.Empty();
         harness.Roles.RoleExists = true;
-        var first = await harness.Emergency.ProvisionAsync("super-secret-pass", new ActorId("cli"));
+        var first = await harness.Emergency.ProvisionAsync("quiet-maple-lantern-harbor", new ActorId("cli"));
 
         var second = await harness.Emergency.ProvisionAsync("another-password", new ActorId("cli"));
 
@@ -160,7 +160,7 @@ public sealed class EmergencyAccessServiceTests
             [],
             false));
 
-        var act = () => harness.Emergency.ProvisionAsync("super-secret-pass", new ActorId("cli")).AsTask();
+        var act = () => harness.Emergency.ProvisionAsync("quiet-maple-lantern-harbor", new ActorId("cli")).AsTask();
 
         var ex = await act.Should().ThrowAsync<EmergencyAccessException>();
         ex.Which.Code.Should().Be(EmergencyAccessErrorCodes.UsernameConflict);

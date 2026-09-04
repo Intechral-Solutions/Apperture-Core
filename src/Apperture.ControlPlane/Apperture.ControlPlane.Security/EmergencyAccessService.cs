@@ -257,7 +257,7 @@ public sealed class EmergencyAccessService : IEmergencyAccessService
 
     private void ValidatePassword(string password)
     {
-        LocalPasswordPolicy.Require(
+        LocalPasswordPolicy.RequireRecoveryAccess(
             password,
             LocalPasswordPolicy.ForLocalIdentity(
                 EmergencyAccessIdentity.LocalUsername,

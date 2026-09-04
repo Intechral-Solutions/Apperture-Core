@@ -77,7 +77,7 @@ public sealed class ManagementHostAccountHttpTests
     {
         AssertSqlAvailable();
         var (client, username) = await CreateAuthenticatedClientForFirstAdminAsync();
-        const string newPassword = "NewPassword9!";
+        const string newPassword = "chosen-harbor-lantern";
 
         var change = await client.PostAsJsonAsync(
             "/api/auth/local/change-password",
@@ -108,7 +108,7 @@ public sealed class ManagementHostAccountHttpTests
 
         var change = await client.PostAsJsonAsync(
             "/api/auth/local/change-password",
-            new ChangeLocalPasswordRequest("wrong-password", "NewPassword9!"));
+            new ChangeLocalPasswordRequest("wrong-password", "chosen-harbor-lantern"));
         change.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         var body = await change.Content.ReadFromJsonAsync<LocalPasswordChangeErrorResponse>(JsonOptions);
         body!.Code.Should().Be(LocalPasswordChangeErrorCodes.WrongCurrentPassword);
@@ -121,7 +121,7 @@ public sealed class ManagementHostAccountHttpTests
         var client = _fixture.Factory!.CreateClient();
         var change = await client.PostAsJsonAsync(
             "/api/auth/local/change-password",
-            new ChangeLocalPasswordRequest("unique-local-passphrase", "NewPassword9!"));
+            new ChangeLocalPasswordRequest("unique-local-passphrase", "chosen-harbor-lantern"));
         change.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 
@@ -133,7 +133,7 @@ public sealed class ManagementHostAccountHttpTests
 
         _ = await client.PostAsJsonAsync(
             "/api/auth/local/change-password",
-            new ChangeLocalPasswordRequest("unique-local-passphrase", "AuditPassword9!"));
+            new ChangeLocalPasswordRequest("unique-local-passphrase", "quiet-cedar-boardwalk"));
 
         await using var scope = _fixture.Factory!.Services.CreateAsyncScope();
         var audit = scope.ServiceProvider.GetRequiredService<IAuditService>();
@@ -144,7 +144,7 @@ public sealed class ManagementHostAccountHttpTests
 
         await client.PostAsJsonAsync(
             "/api/auth/local/change-password",
-            new ChangeLocalPasswordRequest("AuditPassword9!", "unique-local-passphrase"));
+            new ChangeLocalPasswordRequest("quiet-cedar-boardwalk", "unique-local-passphrase"));
     }
 
     private async Task EnsureFirstAdminAsync()
@@ -189,7 +189,7 @@ public sealed class ManagementHostAccountHttpTests
         if (login.StatusCode == HttpStatusCode.OK)
             return;
 
-        foreach (var alternate in new[] { "NewPassword9!", "AuditPassword9!" })
+        foreach (var alternate in new[] { "chosen-harbor-lantern", "quiet-cedar-boardwalk" })
         {
             var recovered = await loginClient.PostAsJsonAsync(
                 "/api/auth/local/login",

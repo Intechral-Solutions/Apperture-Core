@@ -108,16 +108,34 @@ Legacy administrator-supplied initial password remains an intentional alternate.
 
 ### Local password policy
 
-All password-establishing paths share one application/core evaluator (`IPasswordPolicyEvaluator` / `PasswordPolicyEvaluator`):
+All password-establishing paths share one application/core evaluator (`IPasswordPolicyEvaluator` / `PasswordPolicyEvaluator`) in `Apperture.Core.Domain`. The WASM client uses the same assembly for real-time feedback; the server and CLI independently enforce the same policy before accepting a password. There is no per-keystroke API.
 
-- minimum 12 characters, maximum 128 (passphrases allowed; hashing endpoints reject abusive length);
-- no composition rules (uppercase, digit, or symbol are not required);
-- reject common/expected passwords and contextual terms (`apperture`, Recovery Access names, username, email local-part, display-name tokens);
-- accept at Fair or stronger (score 0–4). The built-in estimator is replaceable; unmaintained .NET zxcvbn ports were not adopted.
+Guessability and acceptance are separate:
 
-The same evaluator is used by Emergency Access provision/set-password (CLI retries interactively), invitation setup, forgot-password completion, self-service change, first-admin bootstrap, Governance initial password, and local-credential set. Confirmation matching is a UI/CLI boundary check only.
+| Profile | Minimum length | Maximum | Minimum score | Use |
+|---|---|---|---|---|
+| Ordinary | 15 | 128 | 3 (safely unguessable) | Invitation setup, reset, change password, first-admin, Governance initial password |
+| Recovery Access | 20 | 128 | 3 | Emergency Access provision / set-password (CLI/operator tooling only) |
+
+Rationale: NIST SP 800-63B-4 SHOULD of 15 characters for memorized secrets, with no composition rules. Ordinary local sign-in is password-only, so acceptance requires zxcvbn score 3+. Recovery Access already requires native MFA, but the password protects platform recovery, so length is stricter. Existing stored credentials are not weakened or rehashed by this change; the profiles apply to future create/change/reset.
+
+Estimator: the `Zxcvbn` 0.1.1 NuGet package (MIT, net8.0, ~963 KB managed DLL, zxcvbn-ts 4.x port, published August 2026) sits behind `IPasswordPolicyEvaluator`. UI components do not reference the library. Older ports (`zxcvbn-core`, `zxcvbn-extra`, `zxcvbn.net`) were not used: they are unmaintained and do not track zxcvbn-ts. JavaScript/`zxcvbn-wasm` would duplicate scoring off the shared .NET path.
+
+Additional acceptance rules (not composition):
+
+- reject common/expected passwords;
+- reject contextual terms (`apperture`, Recovery Access names, username, email local-part, display-name tokens, profile extra terms);
+- context values stay inside evaluation; they are not rendered in operator-facing copy beyond a generic “account details” message.
+
+Confirmation matching is a UI/CLI boundary check only.
+
+The same evaluator is used by Emergency Access provision/set-password (CLI retries interactively), invitation setup, forgot-password completion, self-service change, first-admin bootstrap, Governance initial password, and local-credential set.
 
 These remain distinct operations: change password, set/reset password, enable local authentication.
+
+### Password UX (IAM-4 final pass)
+
+Live evaluation owns current field values in `PasswordSetupSession` and re-evaluates on every `oninput`. Parent `@bind` Parameters are not the source of truth during typing (that caused stale strength and false mismatch). Progressive validation: pristine fields show no ✓/✕; touched fields and a submit attempt reveal field indicators and an inline form message. Submit stays enabled; invalid submit does not start `ActionButton` pending. Successful password mutations clear the session and refresh displayed account state without a reload.
 
 ### Recovery Access
 

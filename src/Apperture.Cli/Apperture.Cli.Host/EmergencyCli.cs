@@ -295,7 +295,7 @@ internal static class EmergencyCli
 
             try
             {
-                LocalPasswordPolicy.Require(
+                LocalPasswordPolicy.RequireRecoveryAccess(
                     password,
                     LocalPasswordPolicy.ForLocalIdentity(
                         EmergencyAccessIdentity.LocalUsername,

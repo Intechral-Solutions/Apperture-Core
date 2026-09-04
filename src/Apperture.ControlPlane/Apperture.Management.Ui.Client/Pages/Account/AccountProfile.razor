@@ -6,6 +6,7 @@
 @using Apperture.Management.Ui.Client.Molecules
 @using Apperture.Management.Ui.Client.Organisms
 @using Apperture.Management.Ui.Client.Services
+@using Apperture.Core.Domain.Identity
 @using Apperture.Management.Ui.Shared
 @inject SessionStateService Session
 @inject IManagementClient Client
@@ -131,29 +132,36 @@
                         }
 
                         <form class="space-y-3" @onsubmit="SaveContactEmailAsync" @onsubmit:preventDefault="true">
-                            <div>
-                                <label class="block text-sm font-medium text-heading" for="contact-email">
-                                    @(_profile.ContactEmailStatus == "verified" ? "New contact email" : "Contact email")
-                                </label>
-                                <input id="contact-email"
-                                       type="email"
-                                       autocomplete="email"
-                                       class="ui-input mt-1 max-w-md"
-                                       placeholder="@(_profile.SuggestedContactEmail ?? "you@example.com")"
-                                       @bind="_contactDraft" />
-                            </div>
+                            <ValidatedFieldShell Label="@(_profile.ContactEmailStatus == "verified" ? "New contact email" : "Contact email")"
+                                                 For="contact-email"
+                                                 Validation="@ContactEmailValidation">
+                                <Control>
+                                    <input id="contact-email"
+                                           type="email"
+                                           autocomplete="email"
+                                           class="ui-input ui-input--adorned"
+                                           placeholder="@(_profile.SuggestedContactEmail ?? "you@example.com")"
+                                           value="@_contactDraft"
+                                           @oninput="OnContactDraftInput" />
+                                </Control>
+                            </ValidatedFieldShell>
                             @if (_profile.ContactEmailStatus == "verified" && _profile.HasEnabledLocalPassword)
                             {
-                                <div>
-                                    <label class="block text-sm font-medium text-heading" for="contact-current-password">Current local password</label>
-                                    <input id="contact-current-password"
-                                           type="password"
-                                           autocomplete="current-password"
-                                           class="ui-input mt-1 max-w-md"
-                                           @bind="_contactCurrentPassword" />
-                                    <p class="mt-1 text-xs text-muted">Required to change a verified contact email when local sign-in is enabled.</p>
-                                </div>
+                                <ValidatedFieldShell Label="Current local password"
+                                                     For="contact-current-password"
+                                                     Validation="@ContactPasswordValidation">
+                                    <Control>
+                                        <input id="contact-current-password"
+                                               type="password"
+                                               autocomplete="current-password"
+                                               class="ui-input ui-input--adorned"
+                                               value="@_contactCurrentPassword"
+                                               @oninput="OnContactPasswordInput" />
+                                    </Control>
+                                </ValidatedFieldShell>
+                                <p class="text-xs text-muted">Required to change a verified contact email when local sign-in is enabled.</p>
                             }
+                            <FormValidationFeedback Visible="@_showContactAttention" />
                             <div class="flex flex-wrap gap-2">
                                 <ActionButton @ref="_contactButton"
                                               Type="submit"
@@ -303,8 +311,41 @@
     private string _contactCurrentPassword = "";
     private string? _contactError;
     private bool _contactBusy;
+    private bool _contactEmailTouched;
+    private bool _contactPasswordTouched;
+    private bool _contactSubmitAttempted;
+    private bool _showContactAttention;
     private ActionButton? _contactButton;
     private ActionButton? _resendButton;
+
+    private bool RequiresContactPassword =>
+        _profile?.ContactEmailStatus == "verified" && _profile.HasEnabledLocalPassword;
+
+    private FieldValidationPresentation ContactEmailValidation
+    {
+        get
+        {
+            if (!_contactEmailTouched && !_contactSubmitAttempted)
+                return FieldValidationPresentation.Pristine;
+            return string.IsNullOrWhiteSpace(_contactDraft)
+                ? FieldValidationPresentation.Invalid("Enter a contact email.")
+                : FieldValidationPresentation.Valid;
+        }
+    }
+
+    private FieldValidationPresentation ContactPasswordValidation
+    {
+        get
+        {
+            if (!RequiresContactPassword)
+                return FieldValidationPresentation.Pristine;
+            if (!_contactPasswordTouched && !_contactSubmitAttempted)
+                return FieldValidationPresentation.Pristine;
+            return string.IsNullOrEmpty(_contactCurrentPassword)
+                ? FieldValidationPresentation.Invalid("Enter your current local password.")
+                : FieldValidationPresentation.Valid;
+        }
+    }
 
     private bool IsNameDirty =>
         _profile is not null
@@ -399,8 +440,30 @@
         }
     }
 
+    private void OnContactDraftInput(ChangeEventArgs args)
+    {
+        _contactDraft = args.Value?.ToString() ?? "";
+        _contactEmailTouched = true;
+        _contactError = null;
+    }
+
+    private void OnContactPasswordInput(ChangeEventArgs args)
+    {
+        _contactCurrentPassword = args.Value?.ToString() ?? "";
+        _contactPasswordTouched = true;
+        _contactError = null;
+    }
+
     private async Task SaveContactEmailAsync()
     {
+        _contactSubmitAttempted = true;
+        if (string.IsNullOrWhiteSpace(_contactDraft) || (RequiresContactPassword && string.IsNullOrEmpty(_contactCurrentPassword)))
+        {
+            _showContactAttention = true;
+            return;
+        }
+
+        _showContactAttention = false;
         _contactError = null;
         _contactBusy = true;
         if (_contactButton is not null)

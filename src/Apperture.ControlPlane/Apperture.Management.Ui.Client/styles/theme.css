@@ -73,6 +73,11 @@
     --color-error: #c24a46;
     --color-error-light: color-mix(in srgb, var(--color-error) 12%, var(--color-surface));
     --color-error-dark: color-mix(in srgb, var(--color-error) 72%, black);
+    --color-password-score-0: var(--color-error);
+    --color-password-score-1: #c2410c;
+    --color-password-score-2: #a16207;
+    --color-password-score-3: #4d7c0f;
+    --color-password-score-4: var(--color-success);
     --color-destructive: var(--color-error);
     --color-destructive-fg: #ffffff;
     --color-tint-teal: #e4eff1;
@@ -213,6 +218,11 @@
     --color-error: #e8595e;
     --color-error-light: color-mix(in oklch, var(--color-error) 14%, var(--color-surface));
     --color-error-dark: color-mix(in oklch, var(--color-error) 70%, white);
+    --color-password-score-0: var(--color-error);
+    --color-password-score-1: #fb923c;
+    --color-password-score-2: #facc15;
+    --color-password-score-3: #a3e635;
+    --color-password-score-4: var(--color-success);
     --color-destructive: var(--color-error);
     --color-destructive-fg: #ffffff;
     --color-tint-teal: color-mix(in srgb, var(--color-accent) 14%, var(--color-surface));

@@ -67,7 +67,7 @@ public sealed class Iam4AccountLifecycleUiTests
         content.Should().Contain("PasswordSetupFields");
         content.Should().Contain("Confirm");
         content.Should().Contain("ActionButton");
-        content.Should().Contain("IsInactive");
+        content.Should().Contain("FormValidationFeedback");
         content.Should().NotContain("uppercase");
         content.Should().NotContain("special character");
     }
@@ -77,15 +77,51 @@ public sealed class Iam4AccountLifecycleUiTests
     {
         var molecule = ReadRepoFile($"{ClientRoot}/Molecules/PasswordSetupFields.razor");
         var indicator = ReadRepoFile($"{ClientRoot}/Atoms/PasswordStrengthIndicator.razor");
+        var fieldIndicator = ReadRepoFile($"{ClientRoot}/Atoms/FieldValidationIndicator.razor");
+        var shell = ReadRepoFile($"{ClientRoot}/Molecules/ValidatedFieldShell.razor");
 
-        molecule.Should().Contain("PasswordSetupFormState.Evaluate");
+        molecule.Should().Contain("PasswordSetupSession");
+        molecule.Should().Contain("@oninput");
         molecule.Should().Contain("Passwords match");
-        molecule.Should().Contain("Passwords do not match");
         molecule.Should().Contain("autocomplete=\"new-password\"");
+        molecule.Should().Contain("Show password");
+        molecule.Should().Contain("Hide password");
+        molecule.Should().Contain("EyeIcon");
+        molecule.Should().Contain("ValidateForSubmit");
         molecule.Should().NotContain("ChangeLocalPasswordAsync");
+        molecule.Should().NotContain(">Show<");
+        molecule.Should().NotContain(">Hide<");
         indicator.Should().Contain("Password strength");
         indicator.Should().Contain("aria-valuetext");
-        indicator.Should().Contain("StrengthLabel");
+        indicator.Should().Contain("BandLabel");
+        indicator.Should().Contain("Neutral");
+        fieldIndicator.Should().Contain("FieldValidationPresentation.Pristine");
+        fieldIndicator.Should().Contain("role=\"tooltip\"");
+        shell.Should().Contain("ui-validated-field__adornments");
+        shell.Should().Contain("RenderFragment? Control");
+        molecule.Should().NotContain("using Zxcvbn");
+        indicator.Should().NotContain("using Zxcvbn");
+        fieldIndicator.Should().NotContain("using Zxcvbn");
+        shell.Should().NotContain("using Zxcvbn");
+    }
+
+    [Fact]
+    public void Password_forms_keep_the_action_enabled_and_validate_on_submit()
+    {
+        var setup = ReadRepoFile($"{ClientRoot}/Pages/Account/AccountSetupPassword.razor");
+        var reset = ReadRepoFile($"{ClientRoot}/Pages/Account/AccountResetPassword.razor");
+        var security = ReadRepoFile($"{ClientRoot}/Pages/Account/AccountSecurity.razor");
+        var create = ReadRepoFile($"{ClientRoot}/Pages/Config/Governance/UserNew.razor");
+
+        setup.Should().Contain("OnInvalidSubmit");
+        setup.Should().Contain("ValidateForSubmit");
+        setup.Should().NotContain("IsInactive");
+        reset.Should().Contain("ValidateForSubmit");
+        reset.Should().NotContain("IsInactive");
+        security.Should().Contain("ValidateForSubmit");
+        security.Should().NotContain("IsInactive=\"@(!CanChangePassword)\"");
+        create.Should().Contain("ValidateForSubmit");
+        create.Should().NotContain("IsInactive=\"@(!CanCreate)\"");
     }
 
     [Fact]

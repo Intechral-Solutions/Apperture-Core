@@ -40,17 +40,23 @@ If SMTP is unavailable in this development environment, complete every step that
 5. Do not enter a permanent password.
 6. Create the user. Governance detail should show Contact email pending, Password setup pending, Invitation pending.
 7. If the invitation expires, delivery fails, or the user still has no password, Governance → Users → that user must show **Resend setup invitation** (toolbar and user summary). Sending a new invitation invalidates the previous link.
-8. Open the invitation link. Confirm password and strength feedback appear. Choose an accepted passphrase and matching confirmation.
+8. Open the invitation link. Confirm the new-password field is empty, the eye control works, strength updates while typing, and matching confirmation is detected. Choose an accepted passphrase (at least 15 characters, not built from the username or `apperture`) and matching confirmation.
 9. Sign out and sign in locally with the new username and password.
 
 ## 6. Password change
 
 1. While signed in locally, open Account → Security.
-2. Enter a new password and confirmation. Submit stays inactive until the password is accepted and the confirmation matches.
-3. Strength feedback and match status update while typing. Weak or common values (including `Password1!`) stay rejected. A long passphrase without symbols is accepted.
-4. Change password uses the current password. The button shows pending, then success, then the fields clear without a page reload. Local sign-in status stays current.
-5. Sign out and sign in with the new password.
-6. Local sign-in must remain enabled (this user was not Entra-primary-disabled).
+2. New password fields must start empty (no value supplied by Apperture). Browser password-manager autofill is allowed.
+3. Type a new password. **Password strength must change live while typing** with no network call per keystroke.
+4. Strength colors/labels follow 0–4: 0 Weak/red, 1 Weak/orange, 2 Moderate/yellow, 3 Strong/chartreuse, 4 Strong/green. An untouched empty field stays visually neutral (not Weak).
+5. The eye control inside the field toggles visibility. Hidden = translucent eye, visible = opaque. Keyboard focus and “Show password” / “Hide password” labels must work.
+6. Matching confirmation is detected immediately. A mismatch is detected immediately after the confirmation field is edited.
+7. Pristine fields show no check or X. After edit, valid fields show a check; invalid fields show an X whose tooltip/focus text explains the problem.
+8. Submit stays enabled while the form is incomplete. Pressing it must reveal remaining invalid fields, show the inline form message (“Some information needs your attention…”), and **must not** start the mutation or ActionButton pending state.
+9. Strength can read Strong while policy still fails (for example too short, or contains the username). Those are different signals.
+10. A valid change uses the current password. ActionButton shows pending, then success. Fields, strength, and validation reset without a page reload. Local sign-in status stays current.
+11. Sign out and sign in with the new password.
+12. Local sign-in must remain enabled (this user was not Entra-primary-disabled).
 
 ## 7–9. Forgot-password reset, replay, anti-enumeration
 
@@ -91,6 +97,26 @@ If the Entra-primary user has no local credential row, the same generic acknowle
 
 1. Microsoft sign-in and sign-out still follow the IAM-3 sign-out rules (local session returns to `/login`; Entra session federates directory logout).
 2. Emergency local sign-in + MFA remains healthy. Do not treat any IAM-4 failure as a reason to revoke Recovery Access.
+
+## 15. Password UX checklist (IAM-4 final pass)
+
+Confirm all of the following on invitation setup, forgot-password reset, Account → Security change-password, and Governance “set an initial password now”:
+
+1. Password strength changes live while typing.
+2. Strength colors/labels follow the 0–4 mapping above.
+3. No password begins prepopulated by Apperture.
+4. Password visibility eye works.
+5. Matching passwords are detected correctly.
+6. Mismatched passwords are detected correctly.
+7. Pristine fields remain visually neutral.
+8. Invalid touched fields show X + useful validation.
+9. Valid fields show a checkmark.
+10. Invalid submit reveals remaining errors and does not call the mutation.
+11. Form-level feedback is visible inline.
+12. Valid password submit uses ActionButton pending/success feedback.
+13. Password-change UI refreshes immediately afterward (no manual reload).
+14. Existing disabled-local forgot-password eligibility remains correct (section 11).
+15. Recovery Access and Microsoft authentication regressions remain green (sections 12–14). Recovery Access must not gain the ordinary browser password UI.
 
 ## SMTP gap
 

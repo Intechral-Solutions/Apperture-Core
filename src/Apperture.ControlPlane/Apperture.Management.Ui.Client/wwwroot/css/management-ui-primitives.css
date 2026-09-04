@@ -1278,6 +1278,218 @@ textarea.ui-input {
   min-width: 7rem;
 }
 
+.ui-input.ui-input--adorned {
+  padding-right: calc(0.5rem + (var(--ui-adornment-slots, 2) * 1.75rem));
+}
+
+.ui-validated-field {
+  max-width: 28rem;
+}
+
+.ui-validated-field__label {
+  display: block;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  font-weight: 500;
+  color: var(--color-text-heading);
+}
+
+.ui-validated-field__control {
+  position: relative;
+  margin-top: 0.25rem;
+}
+
+.ui-validated-field__adornments {
+  position: absolute;
+  inset-inline-end: 0.4rem;
+  top: 0;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  gap: 0.125rem;
+  pointer-events: none;
+}
+
+.ui-validated-field__adornments > * {
+  pointer-events: auto;
+}
+
+.ui-password-setup {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.ui-password-visibility {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--color-icon);
+  border-radius: var(--r-md);
+  cursor: pointer;
+}
+
+.ui-password-visibility--hidden {
+  opacity: 0.45;
+}
+
+.ui-password-visibility--visible {
+  opacity: 1;
+}
+
+.ui-password-visibility:hover {
+  color: var(--color-text-heading);
+}
+
+.ui-password-visibility:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
+}
+
+.ui-field-validation {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  border-radius: var(--r-md);
+}
+
+.ui-field-validation--valid {
+  color: var(--color-success);
+}
+
+.ui-field-validation--invalid {
+  color: var(--color-error);
+  cursor: help;
+}
+
+.ui-field-validation--invalid:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
+}
+
+.ui-field-validation__tooltip {
+  display: none;
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 0.35rem);
+  z-index: 20;
+  min-width: 10rem;
+  max-width: 16rem;
+  padding: 0.35rem 0.5rem;
+  border-radius: var(--r-md);
+  background: var(--color-tooltip-bg);
+  color: var(--color-tooltip-fg);
+  font-size: 0.75rem;
+  line-height: 1.2;
+  white-space: normal;
+  text-align: left;
+  box-shadow: var(--shadow-card);
+}
+
+.ui-field-validation--invalid:hover .ui-field-validation__tooltip,
+.ui-field-validation--invalid:focus-visible .ui-field-validation__tooltip,
+.ui-field-validation--invalid:focus-within .ui-field-validation__tooltip {
+  display: block;
+}
+
+.ui-password-strength {
+  margin-top: 0.4rem;
+  width: 100%;
+}
+
+.ui-password-strength__row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+
+.ui-password-strength__label {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--color-text-heading);
+}
+
+.ui-password-strength__value {
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.ui-password-strength__meter {
+  margin-top: 0.25rem;
+  height: 0.35rem;
+  width: 100%;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--color-border);
+}
+
+.ui-password-strength__fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--color-border-strong);
+  transition: width 120ms ease, background-color 120ms ease;
+}
+
+.ui-password-strength--0 .ui-password-strength__value,
+.ui-password-strength--0 .ui-password-strength__fill { color: var(--color-password-score-0); background-color: var(--color-password-score-0); }
+.ui-password-strength--1 .ui-password-strength__value,
+.ui-password-strength--1 .ui-password-strength__fill { color: var(--color-password-score-1); background-color: var(--color-password-score-1); }
+.ui-password-strength--2 .ui-password-strength__value,
+.ui-password-strength--2 .ui-password-strength__fill { color: var(--color-password-score-2); background-color: var(--color-password-score-2); }
+.ui-password-strength--3 .ui-password-strength__value,
+.ui-password-strength--3 .ui-password-strength__fill { color: var(--color-password-score-3); background-color: var(--color-password-score-3); }
+.ui-password-strength--4 .ui-password-strength__value,
+.ui-password-strength--4 .ui-password-strength__fill { color: var(--color-password-score-4); background-color: var(--color-password-score-4); }
+
+.ui-password-strength--0 .ui-password-strength__value { background: none; }
+.ui-password-strength--1 .ui-password-strength__value { background: none; }
+.ui-password-strength--2 .ui-password-strength__value { background: none; }
+.ui-password-strength--3 .ui-password-strength__value { background: none; }
+.ui-password-strength--4 .ui-password-strength__value { background: none; }
+
+.ui-password-checks {
+  margin-top: 0.4rem;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 0.15rem;
+  font-size: 0.75rem;
+}
+
+.ui-password-checks__item--ok {
+  color: var(--color-success);
+  display: flex;
+  gap: 0.35rem;
+}
+
+.ui-password-checks__item--fail {
+  color: var(--color-error);
+  display: flex;
+  gap: 0.35rem;
+}
+
+.ui-password-match {
+  margin-top: 0.35rem;
+  font-size: 0.75rem;
+  color: var(--color-success);
+}
+
+.ui-form-validation-feedback {
+  max-width: 28rem;
+}
+
 .ui-segmented {
   display: inline-flex;
   align-items: stretch;
