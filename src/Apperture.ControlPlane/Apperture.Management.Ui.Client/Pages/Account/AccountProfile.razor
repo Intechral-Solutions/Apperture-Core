@@ -99,6 +99,81 @@
                 </div>
             </section>
 
+            @if (_profile.CanManageContactEmail)
+            {
+                <section class="ui-settings-card" aria-labelledby="contact-email-heading">
+                    <div class="ui-settings-card__header">
+                        <h2 id="contact-email-heading" class="ui-settings-card__title">Contact email</h2>
+                        <p class="ui-settings-card__help">
+                            Apperture uses this address for security messages such as password reset.
+                            It is not a Microsoft identity and does not sign you in.
+                        </p>
+                    </div>
+                    <div class="ui-settings-card__body pt-4 space-y-3">
+                        @if (_profile.ContactEmailStatus == "verified")
+                        {
+                            <p class="text-sm text-body">@_profile.ContactEmail</p>
+                            <p class="text-xs text-muted">Verified</p>
+                        }
+                        else if (_profile.ContactEmailStatus == "pending")
+                        {
+                            <p class="text-sm text-body">@(_profile.PendingContactEmail ?? _profile.ContactEmail)</p>
+                            <p class="text-xs text-muted">Verification pending</p>
+                        }
+                        else
+                        {
+                            <p class="text-sm text-muted">No contact email configured</p>
+                        }
+
+                        @if (_contactError is not null)
+                        {
+                            <p class="text-sm text-message-error" role="alert">@_contactError</p>
+                        }
+
+                        <form class="space-y-3" @onsubmit="SaveContactEmailAsync" @onsubmit:preventDefault="true">
+                            <div>
+                                <label class="block text-sm font-medium text-heading" for="contact-email">
+                                    @(_profile.ContactEmailStatus == "verified" ? "New contact email" : "Contact email")
+                                </label>
+                                <input id="contact-email"
+                                       type="email"
+                                       autocomplete="email"
+                                       class="ui-input mt-1 max-w-md"
+                                       placeholder="@(_profile.SuggestedContactEmail ?? "you@example.com")"
+                                       @bind="_contactDraft" />
+                            </div>
+                            @if (_profile.ContactEmailStatus == "verified" && _profile.HasEnabledLocalPassword)
+                            {
+                                <div>
+                                    <label class="block text-sm font-medium text-heading" for="contact-current-password">Current local password</label>
+                                    <input id="contact-current-password"
+                                           type="password"
+                                           autocomplete="current-password"
+                                           class="ui-input mt-1 max-w-md"
+                                           @bind="_contactCurrentPassword" />
+                                    <p class="mt-1 text-xs text-muted">Required to change a verified contact email when local sign-in is enabled.</p>
+                                </div>
+                            }
+                            <div class="flex flex-wrap gap-2">
+                                <button type="submit" class="btn btn-primary" disabled="@_contactBusy">
+                                    @(_contactBusy ? "Saving…" : _profile.ContactEmailStatus == "verified" ? "Change email" : "Save email")
+                                </button>
+                                @if (_profile.ContactEmailStatus == "pending")
+                                {
+                                    <button type="button" class="btn btn-secondary" disabled="@_contactBusy" @onclick="ResendContactAsync">
+                                        Resend verification
+                                    </button>
+                                }
+                            </div>
+                        </form>
+                    </div>
+                </section>
+            }
+            else if (Session.User?.EmergencyAccessAccount == true)
+            {
+                <p class="text-xs text-muted">Recovery Access does not use a contact email or email recovery.</p>
+            }
+
             @if (_profile.DisplayNameEditable)
             {
                 <AvatarPicker DisplayName="@_profile.DisplayName" OnChanged="OnAvatarChangedAsync" />
@@ -128,7 +203,7 @@
                     @if (!string.IsNullOrWhiteSpace(_profile.EmailAddress))
                     {
                         <div class="ui-settings-meta__row">
-                            <dt class="ui-settings-meta__label">Email</dt>
+                            <dt class="ui-settings-meta__label">@(string.Equals(_profile.SignInSource, "Entra", StringComparison.OrdinalIgnoreCase) ? "Microsoft identity email" : "Directory email")</dt>
                             <dd class="ui-settings-meta__value">@_profile.EmailAddress</dd>
                         </div>
                     }
@@ -215,6 +290,10 @@
     private string _displayNameDraft = "";
     private string? _displayNameError;
     private bool _savingName;
+    private string _contactDraft = "";
+    private string _contactCurrentPassword = "";
+    private string? _contactError;
+    private bool _contactBusy;
 
     private bool IsNameDirty =>
         _profile is not null
@@ -240,6 +319,7 @@
         {
             _profile = await Client.GetAccountProfileAsync();
             _displayNameDraft = _profile?.DisplayName ?? "";
+            _contactDraft = _profile?.PendingContactEmail ?? _profile?.ContactEmail ?? _profile?.SuggestedContactEmail ?? "";
         }
         catch (HttpRequestException ex)
         {
@@ -305,6 +385,56 @@
         {
             // The avatar service already holds the authoritative new avatar; a failed profile
             // re-read must not surface as an avatar error.
+        }
+    }
+
+    private async Task SaveContactEmailAsync()
+    {
+        _contactError = null;
+        _contactBusy = true;
+        try
+        {
+            var result = await Client.RequestContactEmailAsync(new RequestContactEmailRequest
+            {
+                Email = _contactDraft.Trim(),
+                CurrentPassword = string.IsNullOrEmpty(_contactCurrentPassword) ? null : _contactCurrentPassword
+            });
+            _contactCurrentPassword = "";
+            _profile = await Client.GetAccountProfileAsync() ?? _profile;
+            if (result.DeliverySucceeded)
+                Toasts.Show(ToastSeverity.Success, "Verification email sent.");
+            else
+                Toasts.Show(ToastSeverity.Warning, "The address was saved, but the verification email could not be sent.");
+        }
+        catch (HttpRequestException ex)
+        {
+            _contactError = ex.Message;
+        }
+        finally
+        {
+            _contactBusy = false;
+        }
+    }
+
+    private async Task ResendContactAsync()
+    {
+        _contactError = null;
+        _contactBusy = true;
+        try
+        {
+            var result = await Client.ResendContactEmailAsync();
+            if (result.DeliverySucceeded)
+                Toasts.Show(ToastSeverity.Success, "Verification email sent.");
+            else
+                Toasts.Show(ToastSeverity.Warning, "The verification email could not be sent.");
+        }
+        catch (HttpRequestException ex)
+        {
+            _contactError = ex.Message;
+        }
+        finally
+        {
+            _contactBusy = false;
         }
     }
 

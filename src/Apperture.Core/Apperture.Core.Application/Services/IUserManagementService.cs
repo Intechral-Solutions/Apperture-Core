@@ -1,3 +1,4 @@
+using Apperture.Core.Application.Accounts;
 using Apperture.Core.Domain.Identity;
 using Apperture.Shared.Kernel;
 
@@ -43,7 +44,21 @@ public interface IUserManagementService
     /// Creates a new user with one initial identity link. Local source requires a password hashed through
     /// the platform hasher (not a hash supplied by the caller). Requires user.manage.
     /// </summary>
-    ValueTask<UserId> CreateUserAsync(string displayName, IdentitySource source, string externalId, string? password = null, CancellationToken cancellationToken = default);
+    ValueTask<UserId> CreateUserAsync(
+        string displayName,
+        IdentitySource source,
+        string externalId,
+        string? password = null,
+        CancellationToken cancellationToken = default,
+        string? contactEmail = null,
+        bool sendSetupInvitation = false);
+
+    /// <summary>Sends or resends an Apperture account setup invitation. Requires user.manage.</summary>
+    ValueTask<AccountInvitationResult> SendSetupInvitationAsync(
+        UserId userId,
+        string? contactEmail = null,
+        CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException();
 
     /// <summary>
     /// Adds an identity link to a user. For Local, externalId is normalized (trim, lowercase). Requires user.manage.

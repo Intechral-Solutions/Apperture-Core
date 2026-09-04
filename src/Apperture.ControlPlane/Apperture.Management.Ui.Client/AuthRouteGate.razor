@@ -116,6 +116,7 @@ else
     {
         var path = new Uri(Nav.Uri).AbsolutePath;
         var pub = LoginRouteHelper.IsPublicPath(path);
+        var loginChooser = LoginRouteHelper.IsLoginChooserPath(path);
         var root = LoginRouteHelper.IsRootBootstrapPath(path);
         var wasCommitted = _shellCommitted;
 
@@ -129,7 +130,8 @@ else
             pub,
             root,
             _shellCommitted,
-            ShellBootstrap.IsReady);
+            ShellBootstrap.IsReady,
+            loginChooser);
 
         if (AuthShellAccess.ShouldCommitShell(next, pub, root))
             _shellCommitted = true;
@@ -241,7 +243,7 @@ else
             return;
         }
 
-        if (AuthShellAccess.ShouldRedirectAuthenticatedAwayFromLogin(Session.State, isPublic)
+        if (AuthShellAccess.ShouldRedirectAuthenticatedAwayFromLogin(Session.State, LoginRouteHelper.IsLoginChooserPath(path))
             && Session.User is not null)
         {
             _loginRedirectIssued = false;

@@ -38,6 +38,13 @@ public sealed class InMemoryUserRepository : IUserRepository
         ValueTask.FromResult(_users.Values.FirstOrDefault(u =>
             u.IdentityLinks.Any(l => l.Source == source && l.ExternalId == externalId)));
 
+    public ValueTask<User?> FindByVerifiedContactEmailAsync(
+        string normalizedEmail,
+        CancellationToken cancellationToken = default) =>
+        ValueTask.FromResult(_users.Values.FirstOrDefault(u =>
+            u.HasVerifiedContactEmail
+            && string.Equals(u.EmailAddress, normalizedEmail, StringComparison.Ordinal)));
+
     public ValueTask AddAsync(User user, CancellationToken cancellationToken = default)
     {
         _users[user.Id.Value] = user;
@@ -206,4 +213,100 @@ public sealed class RecordingAuditService : IAuditService
         ValueTask.FromResult(Records.FirstOrDefault(r => r.Id.Value == id));
 
     public bool HasAction(string action) => Records.Any(r => r.Action == action);
+
+    public bool DetailsContain(string fragment) =>
+        Records.Any(r => r.Details is not null && r.Details.Contains(fragment, StringComparison.Ordinal));
+}
+
+public sealed class InMemoryAccountActionTokenRepository : IAccountActionTokenRepository
+{
+    private readonly Dictionary<string, AccountActionTokenRecord> _byId = new(StringComparer.Ordinal);
+
+    public IReadOnlyCollection<AccountActionTokenRecord> All => _byId.Values;
+
+    public ValueTask AddAsync(AccountActionTokenRecord token, CancellationToken cancellationToken = default)
+    {
+        _byId[token.Id] = token;
+        return ValueTask.CompletedTask;
+    }
+
+    public ValueTask<AccountActionTokenRecord?> FindByHashAsync(string tokenHash, CancellationToken cancellationToken = default) =>
+        ValueTask.FromResult(_byId.Values.FirstOrDefault(t => t.TokenHash == tokenHash));
+
+    public ValueTask<IReadOnlyList<AccountActionTokenRecord>> ListActiveAsync(
+        UserId userId,
+        AccountActionTokenPurpose purpose,
+        DateTimeOffset now,
+        CancellationToken cancellationToken = default) =>
+        ValueTask.FromResult<IReadOnlyList<AccountActionTokenRecord>>(
+            _byId.Values.Where(t => t.UserId == userId && t.Purpose == purpose && t.IsActive(now)).ToList());
+
+    public ValueTask<AccountActionTokenRecord?> FindLatestAsync(
+        UserId userId,
+        AccountActionTokenPurpose purpose,
+        CancellationToken cancellationToken = default) =>
+        ValueTask.FromResult(_byId.Values
+            .Where(t => t.UserId == userId && t.Purpose == purpose)
+            .OrderByDescending(t => t.CreatedAtUtc)
+            .FirstOrDefault());
+
+    public ValueTask UpdateAsync(AccountActionTokenRecord token, CancellationToken cancellationToken = default)
+    {
+        _byId[token.Id] = token;
+        return ValueTask.CompletedTask;
+    }
+}
+
+public sealed class InMemoryLocalCredentialRepository : ILocalCredentialRepository
+{
+    private readonly Dictionary<string, LocalCredentialData> _rows = new(StringComparer.Ordinal);
+
+    public IReadOnlyDictionary<string, LocalCredentialData> Rows => _rows;
+
+    public ValueTask<LocalCredentialData?> GetByUserIdAsync(UserId userId, CancellationToken cancellationToken = default) =>
+        ValueTask.FromResult(_rows.TryGetValue(userId.Value, out var row) ? row : null);
+
+    public ValueTask SetPasswordAsync(UserId userId, string passwordHash, string salt, string algorithm, CancellationToken cancellationToken = default)
+    {
+        var existing = _rows.TryGetValue(userId.Value, out var row) ? row : null;
+        _rows[userId.Value] = new LocalCredentialData(
+            userId,
+            passwordHash,
+            salt,
+            algorithm,
+            existing?.IsDisabled ?? false);
+        return ValueTask.CompletedTask;
+    }
+
+    public ValueTask SetDisabledAsync(UserId userId, bool disabled, CancellationToken cancellationToken = default)
+    {
+        if (!_rows.TryGetValue(userId.Value, out var row))
+            throw new InvalidOperationException("Credential not found.");
+        _rows[userId.Value] = row with { IsDisabled = disabled };
+        return ValueTask.CompletedTask;
+    }
+}
+
+public sealed class RecordingAccountSecurityMailSender : IAccountSecurityMailSender
+{
+    public List<(string Recipient, string Subject, string Body)> Sent { get; } = [];
+    public bool Succeed { get; set; } = true;
+    public string? Failure { get; set; }
+
+    public ValueTask<AccountSecurityMailResult> SendAsync(
+        string recipient,
+        string subject,
+        string plainTextBody,
+        CancellationToken cancellationToken = default)
+    {
+        Sent.Add((recipient, subject, plainTextBody));
+        return ValueTask.FromResult(new AccountSecurityMailResult(Succeed, Succeed ? null : Failure ?? "smtp_failed"));
+    }
+}
+
+public sealed class MutableTimeProvider : TimeProvider
+{
+    public DateTimeOffset UtcNow { get; set; } = DateTimeOffset.Parse("2026-09-03T12:00:00Z");
+
+    public override DateTimeOffset GetUtcNow() => UtcNow;
 }

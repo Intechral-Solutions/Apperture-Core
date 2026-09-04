@@ -1,4 +1,5 @@
 using Apperture.Core.Application;
+using Apperture.Core.Application.Accounts;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Audit;
 using Apperture.Core.Domain.Governance;
@@ -29,6 +30,8 @@ public sealed class UserManagementService : IUserManagementService
     private readonly IOptionsMonitor<EntraAuthOptions>? _entraOptions;
     private readonly IStrongAuthenticationGate? _strongAuthentication;
     private readonly IEmergencyAccessService? _emergencyAccess;
+    private readonly IAccountInvitationService? _invitations;
+    private readonly IAccountActionTokenService? _actionTokens;
 
     public UserManagementService(
         IPrincipalContext principalContext,
@@ -44,12 +47,16 @@ public sealed class UserManagementService : IUserManagementService
         IEntraIdentityAssociationService? entraAssociation = null,
         IOptionsMonitor<EntraAuthOptions>? entraOptions = null,
         IStrongAuthenticationGate? strongAuthentication = null,
-        IEmergencyAccessService? emergencyAccess = null)
+        IEmergencyAccessService? emergencyAccess = null,
+        IAccountInvitationService? invitations = null,
+        IAccountActionTokenService? actionTokens = null)
     {
         _entraAssociation = entraAssociation;
         _entraOptions = entraOptions;
         _strongAuthentication = strongAuthentication;
         _emergencyAccess = emergencyAccess;
+        _invitations = invitations;
+        _actionTokens = actionTokens;
         _principalContext = principalContext;
         _principalToUserResolver = principalToUserResolver;
         _auth = auth;
@@ -160,7 +167,14 @@ public sealed class UserManagementService : IUserManagementService
         r is null ? "null" : $"{r.ResourceType}:{r.ScopeKey}";
 
     /// <inheritdoc />
-    public async ValueTask<UserId> CreateUserAsync(string displayName, IdentitySource source, string externalId, string? password = null, CancellationToken cancellationToken = default)
+    public async ValueTask<UserId> CreateUserAsync(
+        string displayName,
+        IdentitySource source,
+        string externalId,
+        string? password = null,
+        CancellationToken cancellationToken = default,
+        string? contactEmail = null,
+        bool sendSetupInvitation = false)
     {
         var actorId = await RequireUserManageAsync(cancellationToken);
         await AppendBreakGlassUseAuditIfNeededAsync("user.create", actorId, cancellationToken);
@@ -175,16 +189,28 @@ public sealed class UserManagementService : IUserManagementService
 
         if (source == IdentitySource.Local)
         {
+            if (sendSetupInvitation && _invitations is null)
+                throw new InvalidOperationException("Apperture setup invitations are not available.");
             if (EmergencyAccessIdentity.IsReservedLocalUsername(linkExternalId))
             {
                 throw new EmergencyAccessException(
                     EmergencyAccessErrorCodes.ReservedUsername,
                     "That username is reserved for Emergency Access.");
             }
-            if (string.IsNullOrEmpty(password))
-                throw new InvalidOperationException("A password is required when creating a local user.");
-            if (_localOptions.MinPasswordLength > 0 && password.Length < _localOptions.MinPasswordLength)
-                throw new InvalidOperationException($"Password must be at least {_localOptions.MinPasswordLength} characters.");
+            if (sendSetupInvitation)
+            {
+                if (!string.IsNullOrEmpty(password))
+                    throw new InvalidOperationException("Do not supply a password when sending a setup invitation.");
+                if (!ContactEmailAddress.IsValid(contactEmail))
+                    throw new AccountSecurityException(AccountSecurityErrorCodes.InvalidEmail, "A contact email is required for the setup invitation.");
+            }
+            else
+            {
+                if (string.IsNullOrEmpty(password))
+                    throw new InvalidOperationException("A password is required when creating a local user without a setup invitation.");
+                if (_localOptions.MinPasswordLength > 0 && password.Length < _localOptions.MinPasswordLength)
+                    throw new InvalidOperationException($"Password must be at least {_localOptions.MinPasswordLength} characters.");
+            }
         }
 
         var existing = await _userRepository.GetByIdentityLinkAsync(source, linkExternalId, cancellationToken);
@@ -208,7 +234,35 @@ public sealed class UserManagementService : IUserManagementService
         }
 
         await AppendAuditAsync("user.created", actorId, userId.Value, $"userId={userId.Value}", cancellationToken);
+
+        if (sendSetupInvitation && source == IdentitySource.Local)
+            await SendSetupInvitationCoreAsync(userId, contactEmail, cancellationToken);
+
         return userId;
+    }
+
+    /// <inheritdoc />
+    public async ValueTask<AccountInvitationResult> SendSetupInvitationAsync(
+        UserId userId,
+        string? contactEmail = null,
+        CancellationToken cancellationToken = default)
+    {
+        await RequireUserManageAsync(cancellationToken);
+        return await SendSetupInvitationCoreAsync(userId, contactEmail, cancellationToken);
+    }
+
+    private async ValueTask<AccountInvitationResult> SendSetupInvitationCoreAsync(
+        UserId userId,
+        string? contactEmail,
+        CancellationToken cancellationToken)
+    {
+        if (_invitations is null)
+            throw new InvalidOperationException("Apperture setup invitations are not available.");
+
+        var user = await _userRepository.GetByIdAsync(userId, cancellationToken)
+            ?? throw new InvalidOperationException($"User {userId.Value} not found.");
+        var email = contactEmail ?? user.PendingEmailAddress ?? user.EmailAddress;
+        return await _invitations.SendSetupInvitationAsync(userId, email ?? "", cancellationToken);
     }
 
     /// <inheritdoc />
@@ -395,6 +449,8 @@ public sealed class UserManagementService : IUserManagementService
 
         var (hash, salt) = _passwordHasher.HashPassword(newPassword!);
         await _localCredentialRepository.SetPasswordAsync(userId, hash, salt, _passwordHasher.AlgorithmName, cancellationToken);
+        if (_actionTokens is not null)
+            await _actionTokens.RevokePasswordLifecycleTokensAsync(userId, cancellationToken);
         await AppendAuditAsync("credential.password_set", actorId, userId.Value, $"userId={userId.Value}", cancellationToken);
     }
 

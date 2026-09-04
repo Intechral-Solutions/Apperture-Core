@@ -10,6 +10,11 @@ public sealed class LoginRouteHelperTests
     [InlineData("/login", true)]
     [InlineData("/login/", true)]
     [InlineData("/login/local", true)]
+    [InlineData("/account/verify-email", true)]
+    [InlineData("/account/setup-password", true)]
+    [InlineData("/account/reset-password", true)]
+    [InlineData("/account/forgot-password", true)]
+    [InlineData("/account/profile", false)]
     [InlineData("/dashboard", false)]
     public void IsPublicPath_Classifies(string path, bool expected) =>
         LoginRouteHelper.IsPublicPath(path).Should().Be(expected);

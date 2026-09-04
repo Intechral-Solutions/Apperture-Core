@@ -23,6 +23,12 @@ public interface IUserRepository
     ValueTask<User?> GetByIdentityLinkAsync(IdentitySource source, string externalId, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Finds the user whose <b>verified</b> contact email matches. Never used to create or link identities.
+    /// </summary>
+    ValueTask<User?> FindByVerifiedContactEmailAsync(string normalizedEmail, CancellationToken cancellationToken = default) =>
+        ValueTask.FromResult<User?>(null);
+
+    /// <summary>
     /// Adds a new user.
     /// </summary>
     ValueTask AddAsync(User user, CancellationToken cancellationToken = default);

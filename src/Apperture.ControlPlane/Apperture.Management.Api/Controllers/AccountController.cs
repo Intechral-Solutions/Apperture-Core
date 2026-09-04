@@ -30,17 +30,20 @@ public sealed class AccountController : ControllerBase
     private readonly IPrincipalToUserResolver _principalToUserResolver;
     private readonly IAccountProfileService _account;
     private readonly IRoleProvider _roleProvider;
+    private readonly IAccountContactService? _contact;
 
     public AccountController(
         IPrincipalContext principalContext,
         IPrincipalToUserResolver principalToUserResolver,
         IAccountProfileService account,
-        IRoleProvider roleProvider)
+        IRoleProvider roleProvider,
+        IAccountContactService? contact = null)
     {
         _principalContext = principalContext;
         _principalToUserResolver = principalToUserResolver;
         _account = account;
         _roleProvider = roleProvider;
+        _contact = contact;
     }
 
     [HttpGet("profile")]
@@ -58,6 +61,63 @@ public sealed class AccountController : ControllerBase
             return Forbid();
 
         return Ok(await ComposeProfileAsync(userId, snapshot, cancellationToken));
+    }
+
+    [HttpGet("contact-email")]
+    [ProducesResponseType(typeof(AccountContactEmailDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    public async Task<ActionResult<AccountContactEmailDto>> GetContactEmail(CancellationToken cancellationToken)
+    {
+        var userId = await ResolveUserIdAsync(cancellationToken);
+        if (userId is null || _contact is null)
+            return Forbid();
+
+        var snapshot = await _contact.GetAsync(userId, cancellationToken);
+        return Ok(ToContactDto(snapshot));
+    }
+
+    [HttpPost("contact-email")]
+    [ProducesResponseType(typeof(AccountContactMutationDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<AccountContactMutationDto>> RequestContactEmail(
+        [FromBody] RequestContactEmailRequest request,
+        CancellationToken cancellationToken)
+    {
+        var userId = await ResolveUserIdAsync(cancellationToken);
+        if (userId is null || _contact is null)
+            return Forbid();
+
+        try
+        {
+            var result = await _contact.RequestAsync(userId, request.Email ?? "", request.CurrentPassword, cancellationToken);
+            return Ok(ToContactMutationDto(result));
+        }
+        catch (AccountSecurityException ex)
+        {
+            return Conflict(new { message = ex.Message, code = ex.Code });
+        }
+    }
+
+    [HttpPost("contact-email/resend")]
+    [ProducesResponseType(typeof(AccountContactMutationDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<AccountContactMutationDto>> ResendContactEmail(CancellationToken cancellationToken)
+    {
+        var userId = await ResolveUserIdAsync(cancellationToken);
+        if (userId is null || _contact is null)
+            return Forbid();
+
+        try
+        {
+            var result = await _contact.ResendAsync(userId, cancellationToken);
+            return Ok(ToContactMutationDto(result));
+        }
+        catch (AccountSecurityException ex)
+        {
+            return Conflict(new { message = ex.Message, code = ex.Code });
+        }
     }
 
     [HttpPut("profile")]
@@ -332,13 +392,13 @@ public sealed class AccountController : ControllerBase
         CancellationToken cancellationToken)
     {
         var roles = await _roleProvider.GetRolesForUserAsync(userId, cancellationToken);
+        var contact = _contact is null ? null : await _contact.GetAsync(userId, cancellationToken);
         return new AccountProfileDto
         {
             UserId = snapshot.UserId,
             DisplayName = snapshot.DisplayName,
             DisplayNameEditable = snapshot.DisplayNameEditable,
-            // Email and principal come from the identity provider's claims, so they are presented
-            // read-only rather than as fields the platform owns.
+            // Identity-provider email is a sign-in claim snapshot, not the platform contact address.
             EmailAddress = ResolveEmailClaim(User),
             UserPrincipal = ResolveUserPrincipal(User),
             SignInSource = AccountMeSnapshotBuilder.ResolveSignInSource(User),
@@ -353,9 +413,34 @@ public sealed class AccountController : ControllerBase
                     LastAuthenticatedAtUtc = l.LastAuthenticatedAtUtc
                 })
                 .ToList(),
-            RoleNames = roles.Select(r => r.Name).ToList()
+            RoleNames = roles.Select(r => r.Name).ToList(),
+            ContactEmail = contact?.EmailAddress,
+            ContactEmailStatus = contact?.Status ?? "none",
+            PendingContactEmail = contact?.PendingEmailAddress,
+            SuggestedContactEmail = contact?.SuggestedEntraEmail,
+            CanManageContactEmail = contact?.CanManage ?? false,
+            HasEnabledLocalPassword = contact?.HasEnabledLocalPassword ?? false
         };
     }
+
+    private static AccountContactEmailDto ToContactDto(AccountContactSnapshot snapshot) => new()
+    {
+        EmailAddress = snapshot.EmailAddress,
+        Status = snapshot.Status,
+        VerifiedAtUtc = snapshot.VerifiedAtUtc,
+        PendingEmailAddress = snapshot.PendingEmailAddress,
+        SuggestedEntraEmail = snapshot.SuggestedEntraEmail,
+        CanManage = snapshot.CanManage,
+        EmergencyAccessAccount = snapshot.EmergencyAccessAccount,
+        HasEnabledLocalPassword = snapshot.HasEnabledLocalPassword
+    };
+
+    private static AccountContactMutationDto ToContactMutationDto(AccountContactMutationResult result) => new()
+    {
+        Contact = ToContactDto(result.Contact),
+        DeliverySucceeded = result.DeliverySucceeded,
+        DeliveryFailure = result.DeliveryFailure
+    };
 
     private static AccountAvatarDto ToDto(UserAvatar avatar) => AccountAvatarDtoMapper.ToDto(avatar);
 

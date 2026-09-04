@@ -94,6 +94,14 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IAuditService, SqlAuditService>();
         services.AddScoped<ILocalCredentialRepository, SqlLocalCredentialRepository>();
         services.AddSingleton<ILocalPasswordHasher, LocalPasswordHasher>();
+        services.AddScoped<IAccountActionTokenRepository, SqlAccountActionTokenRepository>();
+        services.AddScoped<IAccountActionTokenService, AccountActionTokenService>();
+        services.AddSingleton<AccountSecurityLinkBuilder>();
+        services.TryAddScoped<IEmailSmtpCredentialResolver, EmailSmtpCredentialResolver>();
+        services.AddScoped<IAccountSecurityMailSender, AccountSecurityMailSender>();
+        services.AddScoped<IAccountContactService, AccountContactService>();
+        services.AddScoped<IAccountInvitationService, AccountInvitationService>();
+        services.AddScoped<IForgottenPasswordService, ForgottenPasswordService>();
         services.AddScoped<IFirstAdminBootstrapService, FirstAdminBootstrapService>();
         services.AddScoped<IUserManagementService, UserManagementService>();
         services.AddScoped<IManagedContactManagementService, ManagedContactManagementService>();

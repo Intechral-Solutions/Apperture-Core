@@ -264,7 +264,14 @@ public sealed class RolesControllerTests
             _onSetPermissions?.Invoke(permissions);
         }
 
-        public ValueTask<Apperture.Core.Domain.Identity.UserId> CreateUserAsync(string displayName, Apperture.Core.Domain.Identity.IdentitySource source, string externalId, string? password = null, CancellationToken cancellationToken = default) =>
+        public ValueTask<Apperture.Core.Domain.Identity.UserId> CreateUserAsync(
+            string displayName,
+            Apperture.Core.Domain.Identity.IdentitySource source,
+            string externalId,
+            string? password = null,
+            CancellationToken cancellationToken = default,
+            string? contactEmail = null,
+            bool sendSetupInvitation = false) =>
             throw new NotImplementedException();
 
         public ValueTask AddIdentityLinkAsync(Apperture.Core.Domain.Identity.UserId userId, Apperture.Core.Domain.Identity.IdentitySource source, string externalId, CancellationToken cancellationToken = default) =>

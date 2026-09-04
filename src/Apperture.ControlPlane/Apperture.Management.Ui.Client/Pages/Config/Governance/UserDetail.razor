@@ -33,6 +33,15 @@
                     @onclick="LoadAsync">
                 Refresh
             </button>
+            @if (CanSendSetupInvitation)
+            {
+                <button type="button"
+                        class="ui-toolbar-btn"
+                        disabled="@_mutating"
+                        @onclick="ResendInvitationAsync">
+                    @(InvitationAlreadyIssued ? "Resend setup invitation" : "Send setup invitation")
+                </button>
+            }
         </Toolbar>
     </PageHeader>
 
@@ -82,7 +91,25 @@
                 <MetadataGrid>
                     <MetadataItem Label="User ID" Monospace="true" Value="@_user.UserId" />
                     <MetadataItem Label="Display name" Value="@_user.DisplayName" />
+                    <MetadataItem Label="Contact email" Value="@FormatContactEmail(_user)" />
+                    <MetadataItem Label="Password" Value="@FormatPasswordState(_user.PasswordState)" />
+                    <MetadataItem Label="Invitation" Value="@FormatInvitationState(_user.InvitationState)" />
+                    <MetadataItem Label="Local sign-in" Value="@FormatLocalSignInPolicy(_user.LocalSignInPolicy, _user.IsCredentialDisabled, _user.LocalRecoverySafeguard)" />
                 </MetadataGrid>
+                @if (CanSendSetupInvitation)
+                {
+                    <div class="mt-3 space-y-2">
+                        <PageMessage Kind="PageMessageKind.Info"
+                                     Title="Account setup is not finished"
+                                     Message="This user has not chosen a password yet. Send a new invitation to their contact email. The previous link stops working." />
+                        <button type="button"
+                                class="btn btn-primary"
+                                disabled="@_mutating"
+                                @onclick="ResendInvitationAsync">
+                            @(_mutating ? "Sending…" : InvitationAlreadyIssued ? "Resend setup invitation" : "Send setup invitation")
+                        </button>
+                    </div>
+                }
             </ManagementSection>
 
             <ManagementSection Title="Linked sign-in methods" Layer="ManagementSection.UiLayer.Detail">
@@ -329,6 +356,15 @@
     private OperatorCapabilitiesDto? _capabilities;
     private bool _capabilitiesLoaded;
     private string? _dataLoadKey;
+
+    private bool CanSendSetupInvitation =>
+        _capabilities?.CanManageUsers == true
+        && _user is { EmergencyAccessAccount: false }
+        && _user.IdentityLinks.Any(l => string.Equals(l.Source, "Local", StringComparison.OrdinalIgnoreCase))
+        && _user.HasLocalCredential != true;
+
+    private bool InvitationAlreadyIssued =>
+        _user?.InvitationState is "pending" or "expired" or "accepted";
 
     protected override async Task OnInitializedAsync()
     {
@@ -609,6 +645,56 @@
             _mutating = false;
         }
     }
+
+    private async Task ResendInvitationAsync()
+    {
+        if (_user is null)
+            return;
+
+        _mutating = true;
+        _error = null;
+        try
+        {
+            var result = await Client.SendSetupInvitationAsync(_user.UserId, new SetupInvitationRequest(_user.PendingContactEmail ?? _user.ContactEmail));
+            if (result.DeliverySucceeded)
+                Toasts.Show(ToastSeverity.Success, "Setup invitation sent.");
+            else
+                Toasts.Show(ToastSeverity.Warning, "The invitation was regenerated, but email delivery failed.");
+            await LoadAsync();
+        }
+        catch (HttpRequestException ex)
+        {
+            _error = ex.Message;
+            Toasts.Show(ToastSeverity.Error, ex.Message);
+        }
+        finally
+        {
+            _mutating = false;
+        }
+    }
+
+    private static string FormatContactEmail(UserDetailDto user) =>
+        user.ContactEmailStatus switch
+        {
+            "verified" => string.IsNullOrWhiteSpace(user.ContactEmail) ? "Verified" : $"{user.ContactEmail} · Verified",
+            "pending" => string.IsNullOrWhiteSpace(user.PendingContactEmail) ? "Pending" : $"{user.PendingContactEmail} · Pending",
+            _ => "None"
+        };
+
+    private static string FormatPasswordState(string? state) => state switch
+    {
+        "set" => "Set",
+        "setup_pending" => "Setup pending",
+        _ => "None"
+    };
+
+    private static string FormatInvitationState(string? state) => state switch
+    {
+        "pending" => "Pending",
+        "expired" => "Expired",
+        "accepted" => "Accepted",
+        _ => "None"
+    };
 
     private static string FormatEntraAssociation(string? status) => status switch
     {

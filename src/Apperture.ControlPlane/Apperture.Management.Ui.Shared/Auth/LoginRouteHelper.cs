@@ -2,12 +2,28 @@ namespace Apperture.Management.Ui.Shared.Auth;
 
 public static class LoginRouteHelper
 {
-    public static readonly string[] PublicPaths = ["/login", "/login/local"];
+    public static readonly string[] LoginChooserPaths = ["/login", "/login/local"];
+
+    public static readonly string[] AccountActionPublicPaths =
+    [
+        "/account/verify-email",
+        "/account/setup-password",
+        "/account/reset-password",
+        "/account/forgot-password"
+    ];
+
+    public static readonly string[] PublicPaths = [.. LoginChooserPaths, .. AccountActionPublicPaths];
 
     public static bool IsPublicPath(string absolutePath)
     {
         var path = NormalizeAbsolutePath(absolutePath);
         return PublicPaths.Any(p => string.Equals(path, p, StringComparison.OrdinalIgnoreCase));
+    }
+
+    public static bool IsLoginChooserPath(string absolutePath)
+    {
+        var path = NormalizeAbsolutePath(absolutePath);
+        return LoginChooserPaths.Any(p => string.Equals(path, p, StringComparison.OrdinalIgnoreCase));
     }
 
     /// <summary>

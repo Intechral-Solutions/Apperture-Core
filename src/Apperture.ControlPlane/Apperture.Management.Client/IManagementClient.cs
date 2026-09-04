@@ -484,6 +484,26 @@ public interface IManagementClient
     /// <summary>Self-service local password change (204). Throws <see cref="HttpRequestException"/> on failure.</summary>
     Task ChangeLocalPasswordAsync(ChangeLocalPasswordRequest request, CancellationToken cancellationToken = default);
 
+    /// <summary>Unauthenticated forgotten-password request. Always returns a generic acknowledgement.</summary>
+    Task<ForgotPasswordResponse> RequestPasswordResetAsync(ForgotPasswordRequest request, CancellationToken cancellationToken = default);
+
+    /// <summary>Consumes a one-time password-reset token.</summary>
+    Task CompletePasswordResetAsync(TokenPasswordRequest request, CancellationToken cancellationToken = default);
+
+    /// <summary>Consumes an Apperture account setup invitation.</summary>
+    Task CompletePasswordSetupAsync(TokenPasswordRequest request, CancellationToken cancellationToken = default);
+
+    /// <summary>Consumes a contact-email verification token.</summary>
+    Task VerifyContactEmailAsync(VerifyContactEmailRequest request, CancellationToken cancellationToken = default);
+
+    Task<AccountContactEmailDto> GetContactEmailAsync(CancellationToken cancellationToken = default);
+
+    Task<AccountContactMutationDto> RequestContactEmailAsync(RequestContactEmailRequest request, CancellationToken cancellationToken = default);
+
+    Task<AccountContactMutationDto> ResendContactEmailAsync(CancellationToken cancellationToken = default);
+
+    Task<SetupInvitationResponse> SendSetupInvitationAsync(string userId, SetupInvitationRequest? request = null, CancellationToken cancellationToken = default);
+
     /// <summary>Merged sign-in capabilities and chooser policy (anonymous).</summary>
     Task<AuthSignInOptionsDto> GetAuthSignInOptionsAsync(CancellationToken cancellationToken = default);
 
@@ -901,7 +921,17 @@ public sealed record CreateUserRequest(
     [property: JsonPropertyName("displayName")] string DisplayName,
     [property: JsonPropertyName("identitySource")] string IdentitySource,
     [property: JsonPropertyName("externalId")] string ExternalId,
-    [property: JsonPropertyName("password")] string? Password = null);
+    [property: JsonPropertyName("password")] string? Password = null,
+    [property: JsonPropertyName("contactEmail")] string? ContactEmail = null,
+    [property: JsonPropertyName("sendSetupInvitation")] bool SendSetupInvitation = false);
+
+public sealed record SetupInvitationRequest(
+    [property: JsonPropertyName("contactEmail")] string? ContactEmail);
+
+public sealed record SetupInvitationResponse(
+    [property: JsonPropertyName("deliverySucceeded")] bool DeliverySucceeded,
+    [property: JsonPropertyName("deliveryFailure")] string? DeliveryFailure,
+    [property: JsonPropertyName("expiresAtUtc")] DateTimeOffset ExpiresAtUtc);
 
 public sealed record CreateUserResponse(
     [property: JsonPropertyName("userId")] string UserId);
@@ -918,7 +948,12 @@ public sealed record UserDetailDto(
     [property: JsonPropertyName("localRecoverySafeguard")] bool LocalRecoverySafeguard = false,
     [property: JsonPropertyName("emergencyAccessAccount")] bool EmergencyAccessAccount = false,
     [property: JsonPropertyName("nativeMfaEnrolled")] bool NativeMfaEnrolled = false,
-    [property: JsonPropertyName("emergencyRecoveryCodesPresent")] bool EmergencyRecoveryCodesPresent = false);
+    [property: JsonPropertyName("emergencyRecoveryCodesPresent")] bool EmergencyRecoveryCodesPresent = false,
+    [property: JsonPropertyName("contactEmailStatus")] string ContactEmailStatus = "none",
+    [property: JsonPropertyName("contactEmail")] string? ContactEmail = null,
+    [property: JsonPropertyName("pendingContactEmail")] string? PendingContactEmail = null,
+    [property: JsonPropertyName("passwordState")] string PasswordState = "none",
+    [property: JsonPropertyName("invitationState")] string InvitationState = "none");
 
 public sealed record IdentityLinkDto(
     [property: JsonPropertyName("source")] string Source,
@@ -1632,6 +1667,19 @@ public sealed record AccountDeferredFeaturesDto(
 public sealed record ChangeLocalPasswordRequest(
     [property: JsonPropertyName("currentPassword")] string? CurrentPassword,
     [property: JsonPropertyName("newPassword")] string? NewPassword);
+
+public sealed record ForgotPasswordRequest(
+    [property: JsonPropertyName("identifier")] string? Identifier);
+
+public sealed record ForgotPasswordResponse(
+    [property: JsonPropertyName("message")] string Message);
+
+public sealed record TokenPasswordRequest(
+    [property: JsonPropertyName("token")] string? Token,
+    [property: JsonPropertyName("newPassword")] string? NewPassword);
+
+public sealed record VerifyContactEmailRequest(
+    [property: JsonPropertyName("token")] string? Token);
 
 public sealed record LocalPasswordChangeErrorResponse(
     [property: JsonPropertyName("message")] string Message,

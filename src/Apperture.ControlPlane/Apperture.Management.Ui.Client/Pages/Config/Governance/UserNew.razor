@@ -24,7 +24,7 @@
     else
     {
         <div class="ui-settings-callout">
-            Creates a platform user with a local username and an initial password. Dedicated password-setup and reset is not available yet; use a password the operator can change later.
+            Creates a local Apperture user. The usual path sends an account setup invitation so the person chooses their own password. This is not a Microsoft Entra invitation.
         </div>
 
         @if (!string.IsNullOrEmpty(_error))
@@ -53,15 +53,40 @@
                            placeholder="local sign-in username" />
                 </div>
                 <div>
-                    <label class="block text-xs text-muted" for="new-user-password">Initial password</label>
-                    <input id="new-user-password"
+                    <label class="block text-xs text-muted" for="new-user-email">Contact email</label>
+                    <input id="new-user-email"
                            class="ui-input mt-1"
-                           type="password"
-                           @bind="_password"
+                           type="email"
+                           @bind="_contactEmail"
                            disabled="@_saving"
-                           autocomplete="new-password" />
-                    <p class="mt-1 text-xs text-muted">Must meet the instance password-length requirement. The password is hashed; it is never stored or edited as a hash.</p>
+                           autocomplete="email"
+                           placeholder="name@example.com" />
+                    <p class="mt-1 text-xs text-muted">Required for a setup invitation. The address is unverified until the person opens the invitation.</p>
                 </div>
+                <fieldset class="space-y-2">
+                    <legend class="block text-xs text-muted">Credential setup</legend>
+                    <label class="flex items-start gap-2 text-sm">
+                        <input type="radio" name="credential-setup" checked="@_sendInvitation" disabled="@_saving" @onchange="@(() => _sendInvitation = true)" />
+                        <span>Send account setup invitation</span>
+                    </label>
+                    <label class="flex items-start gap-2 text-sm">
+                        <input type="radio" name="credential-setup" checked="@(!_sendInvitation)" disabled="@_saving" @onchange="@(() => _sendInvitation = false)" />
+                        <span>Set an initial password now</span>
+                    </label>
+                </fieldset>
+                @if (!_sendInvitation)
+                {
+                    <div>
+                        <label class="block text-xs text-muted" for="new-user-password">Initial password</label>
+                        <input id="new-user-password"
+                               class="ui-input mt-1"
+                               type="password"
+                               @bind="_password"
+                               disabled="@_saving"
+                               autocomplete="new-password" />
+                        <p class="mt-1 text-xs text-muted">Use this only when you must set a temporary password yourself. The person should change it after first sign-in.</p>
+                    </div>
+                }
                 @if (_capabilities?.CanAssignRoles == true)
                 {
                     <div>
@@ -104,13 +129,17 @@
     private string _displayName = "";
     private string _username = "";
     private string _password = "";
+    private string _contactEmail = "";
+    private bool _sendInvitation = true;
     private string _selectedRoleId = "";
 
     private bool CanCreate =>
         !_saving
         && !string.IsNullOrWhiteSpace(_displayName)
         && !string.IsNullOrWhiteSpace(_username)
-        && !string.IsNullOrEmpty(_password);
+        && (_sendInvitation
+            ? !string.IsNullOrWhiteSpace(_contactEmail)
+            : !string.IsNullOrEmpty(_password));
 
     protected override async Task OnInitializedAsync()
     {
@@ -147,7 +176,9 @@
                     _displayName.Trim(),
                     "Local",
                     _username.Trim(),
-                    _password));
+                    _sendInvitation ? null : _password,
+                    _contactEmail.Trim(),
+                    _sendInvitation));
 
             if (!string.IsNullOrEmpty(_selectedRoleId))
             {
@@ -165,7 +196,9 @@
                 }
             }
 
-            Toasts.Show(ToastSeverity.Success, "User created.");
+            Toasts.Show(ToastSeverity.Success, _sendInvitation
+                ? "User created. A setup invitation was sent if email delivery is configured."
+                : "User created.");
             if (_createButton is not null)
                 await _createButton.SetStateAsync(ActionButtonState.Success);
             Nav.NavigateTo("/config/governance/users/" + Uri.EscapeDataString(created.UserId));

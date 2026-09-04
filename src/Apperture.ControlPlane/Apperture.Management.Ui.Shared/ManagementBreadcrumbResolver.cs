@@ -85,6 +85,10 @@ public static class ManagementBreadcrumbResolver
         MatchAccountNotifications,
         MatchAccountPreferences,
         MatchAccountSecurity,
+        MatchAccountVerifyEmail,
+        MatchAccountSetupPassword,
+        MatchAccountResetPassword,
+        MatchAccountForgotPassword,
         MatchAccount,
         MatchPreferences,
         MatchPersonalNotificationInbox,
@@ -1135,6 +1139,42 @@ public static class ManagementBreadcrumbResolver
         if (!Matches(s, "account", "security"))
             return false;
         c = AccountTrail("Security");
+        return true;
+    }
+
+    private static bool MatchAccountVerifyEmail(string[] s, out IReadOnlyList<BreadcrumbItem>? c)
+    {
+        c = null;
+        if (!Matches(s, "account", "verify-email"))
+            return false;
+        c = Trail(("Verify contact email", null));
+        return true;
+    }
+
+    private static bool MatchAccountSetupPassword(string[] s, out IReadOnlyList<BreadcrumbItem>? c)
+    {
+        c = null;
+        if (!Matches(s, "account", "setup-password"))
+            return false;
+        c = Trail(("Set up password", null));
+        return true;
+    }
+
+    private static bool MatchAccountResetPassword(string[] s, out IReadOnlyList<BreadcrumbItem>? c)
+    {
+        c = null;
+        if (!Matches(s, "account", "reset-password"))
+            return false;
+        c = Trail(("Reset password", null));
+        return true;
+    }
+
+    private static bool MatchAccountForgotPassword(string[] s, out IReadOnlyList<BreadcrumbItem>? c)
+    {
+        c = null;
+        if (!Matches(s, "account", "forgot-password"))
+            return false;
+        c = Trail(("Forgot password", null));
         return true;
     }
 

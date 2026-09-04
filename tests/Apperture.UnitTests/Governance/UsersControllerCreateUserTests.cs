@@ -107,7 +107,14 @@ public sealed class UsersControllerCreateUserTests
 
         public List<(string DisplayName, IdentitySource Source, string ExternalId, string? Password)> CreateCalls { get; } = [];
 
-        public ValueTask<UserId> CreateUserAsync(string displayName, IdentitySource source, string externalId, string? password = null, CancellationToken cancellationToken = default)
+        public ValueTask<UserId> CreateUserAsync(
+            string displayName,
+            IdentitySource source,
+            string externalId,
+            string? password = null,
+            CancellationToken cancellationToken = default,
+            string? contactEmail = null,
+            bool sendSetupInvitation = false)
         {
             if (_throwOnCreate is not null)
                 throw _throwOnCreate;

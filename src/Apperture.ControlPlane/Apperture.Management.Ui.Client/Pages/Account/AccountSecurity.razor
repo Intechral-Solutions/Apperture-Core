@@ -106,11 +106,22 @@
                     </div>
                 </section>
 
+                <section class="ui-settings-card" aria-labelledby="local-signin-heading">
+                    <div class="ui-settings-card__header">
+                        <h2 id="local-signin-heading" class="ui-settings-card__title">Local sign-in</h2>
+                        <p class="ui-settings-card__help">@FormatLocalPasswordHelp(_me)</p>
+                    </div>
+                    <div class="ui-settings-card__body pt-3 text-sm">
+                        <p>Local sign-in: <span class="font-medium text-heading">@FormatCredentialStatus(_me.LocalCredentialStatus)</span></p>
+                        <p class="mt-1">Password: <span class="font-medium text-heading">@(_me.LocalCredentialStatus == "none" ? "Not configured" : "Configured")</span></p>
+                    </div>
+                </section>
+
                 <section class="ui-settings-card" aria-labelledby="password-heading">
                     <div class="ui-settings-card__header">
                         <h2 id="password-heading" class="ui-settings-card__title">Local password</h2>
                         <p class="ui-settings-card__help">
-                            @FormatLocalPasswordHelp(_me)
+                            Changing a password does not enable local sign-in when it is disabled.
                         </p>
                     </div>
                     <div class="ui-settings-card__body pt-3">
@@ -147,6 +158,9 @@
                                     @(_passwordBusy ? "Updating…" : "Change password")
                                 </button>
                             </form>
+                            <p class="mt-3 text-sm text-muted">
+                                <a class="underline hover:text-heading" href="@AccountUiRoutes.ForgotPassword">Forgot password</a>
+                            </p>
                         }
                         else
                         {

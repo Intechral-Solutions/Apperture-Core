@@ -50,6 +50,7 @@ public class AppertureDbContext : DbContext
     public DbSet<LocalCredentialEntity> LocalCredentials => Set<LocalCredentialEntity>();
     public DbSet<UserTotpCredentialEntity> UserTotpCredentials => Set<UserTotpCredentialEntity>();
     public DbSet<UserMfaRecoveryCodeEntity> UserMfaRecoveryCodes => Set<UserMfaRecoveryCodeEntity>();
+    public DbSet<AccountActionTokenEntity> AccountActionTokens => Set<AccountActionTokenEntity>();
     public DbSet<UserPreferenceEntity> UserPreferences => Set<UserPreferenceEntity>();
     public DbSet<UserProfileImageEntity> UserProfileImages => Set<UserProfileImageEntity>();
     public DbSet<ModuleInstallationStateEntity> ModuleInstallationStates => Set<ModuleInstallationStateEntity>();
@@ -604,6 +605,11 @@ public class AppertureDbContext : DbContext
             e.Property(x => x.Id).HasMaxLength(64);
             e.Property(x => x.DisplayName).HasMaxLength(256);
             e.Property(x => x.EmailAddress).HasMaxLength(512);
+            e.Property(x => x.PendingEmailAddress).HasMaxLength(512);
+            e.HasIndex(x => x.EmailAddress)
+                .HasDatabaseName("UX_Users_VerifiedContactEmail")
+                .IsUnique()
+                .HasFilter("[EmailVerifiedAtUtc] IS NOT NULL AND [EmailAddress] IS NOT NULL");
             e.Property(x => x.DisplayTimeZoneId).HasMaxLength(128);
             e.Property(x => x.AvatarKind).HasMaxLength(32);
             e.Property(x => x.AvatarOptionId).HasMaxLength(64);
@@ -712,6 +718,19 @@ public class AppertureDbContext : DbContext
             e.Property(x => x.Salt).IsRequired().HasMaxLength(256);
             e.Property(x => x.Algorithm).IsRequired().HasMaxLength(64);
             e.HasIndex(x => x.UserId);
+            e.HasOne<UserEntity>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<AccountActionTokenEntity>(e =>
+        {
+            e.ToTable("AccountActionTokens");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasMaxLength(64);
+            e.Property(x => x.UserId).HasMaxLength(64);
+            e.Property(x => x.TokenHash).IsRequired().HasMaxLength(128);
+            e.Property(x => x.DestinationEmail).HasMaxLength(512);
+            e.HasIndex(x => x.TokenHash).IsUnique().HasDatabaseName("UX_AccountActionTokens_TokenHash");
+            e.HasIndex(x => new { x.UserId, x.Purpose }).HasDatabaseName("IX_AccountActionTokens_UserId_Purpose");
             e.HasOne<UserEntity>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
         });
 

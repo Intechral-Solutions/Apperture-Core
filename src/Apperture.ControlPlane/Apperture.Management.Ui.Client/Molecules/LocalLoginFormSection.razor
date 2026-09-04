@@ -53,6 +53,12 @@
             <button type="submit" class="btn btn-primary w-full" disabled="@_busy">
                 @(_busy ? "Signing in…" : _awaitingMfa ? "Continue" : "Sign in")
             </button>
+            @if (!_awaitingMfa)
+            {
+                <p class="text-center text-sm">
+                    <a class="text-body underline hover:text-heading" href="@AccountUiRoutes.ForgotPassword">Forgot password</a>
+                </p>
+            }
             @if (_awaitingMfa)
             {
                 <button type="button" class="btn btn-secondary w-full" disabled="@_busy" @onclick="CancelMfa">

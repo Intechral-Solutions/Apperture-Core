@@ -16,7 +16,8 @@ public static class AuthShellAccess
         bool isPublicPath,
         bool isRootBootstrapPath = false,
         bool shellAlreadyCommitted = false,
-        bool appBootstrapReady = true)
+        bool appBootstrapReady = true,
+        bool isLoginChooserPath = false)
     {
         // Root "/" only hosts a bounce to /dashboard — never mount MainLayout there.
         if (isRootBootstrapPath)
@@ -25,7 +26,8 @@ public static class AuthShellAccess
         if (isPublicPath)
         {
             // After sign-in, stay on the minimal surface until navigation leaves /login.
-            return state is SessionLoadState.Authenticated;
+            // Account-action pages (verify / setup / reset) remain usable while signed in.
+            return isLoginChooserPath && state is SessionLoadState.Authenticated;
         }
 
         // Protected path: once shell was shown, keep it through Loading / cap re-warm.
@@ -86,8 +88,8 @@ public static class AuthShellAccess
     public static bool ShouldRedirectToLogin(SessionLoadState state, bool isPublicPath) =>
         !isPublicPath && state is SessionLoadState.Unauthenticated or SessionLoadState.Error;
 
-    public static bool ShouldRedirectAuthenticatedAwayFromLogin(SessionLoadState state, bool isPublicPath) =>
-        isPublicPath && state == SessionLoadState.Authenticated;
+    public static bool ShouldRedirectAuthenticatedAwayFromLogin(SessionLoadState state, bool isLoginChooserPath) =>
+        isLoginChooserPath && state == SessionLoadState.Authenticated;
 
     public static bool ShouldRedirectRootBootstrap(SessionLoadState state, bool isRootBootstrapPath) =>
         isRootBootstrapPath && state is SessionLoadState.Authenticated

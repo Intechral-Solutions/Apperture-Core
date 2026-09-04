@@ -43,7 +43,8 @@ public sealed class AuthShellAccessTests
                 capabilitiesReady,
                 isPublicPath,
                 isRootBootstrapPath,
-                shellAlreadyCommitted)
+                shellAlreadyCommitted,
+                isLoginChooserPath: isPublicPath)
             .Should().Be(expectedBlock);
     }
 
@@ -117,9 +118,22 @@ public sealed class AuthShellAccessTests
     [Fact]
     public void Authenticated_on_login_redirects_away()
     {
-        AuthShellAccess.ShouldRedirectAuthenticatedAwayFromLogin(SessionLoadState.Authenticated, isPublicPath: true)
+        AuthShellAccess.ShouldRedirectAuthenticatedAwayFromLogin(SessionLoadState.Authenticated, isLoginChooserPath: true)
             .Should().BeTrue();
-        AuthShellAccess.ShouldRedirectAuthenticatedAwayFromLogin(SessionLoadState.Unauthenticated, isPublicPath: true)
+        AuthShellAccess.ShouldRedirectAuthenticatedAwayFromLogin(SessionLoadState.Unauthenticated, isLoginChooserPath: true)
+            .Should().BeFalse();
+        AuthShellAccess.ShouldRedirectAuthenticatedAwayFromLogin(SessionLoadState.Authenticated, isLoginChooserPath: false)
+            .Should().BeFalse();
+    }
+
+    [Fact]
+    public void Authenticated_account_action_pages_stay_usable()
+    {
+        AuthShellAccess.ShouldBlockProtectedShell(
+                SessionLoadState.Authenticated,
+                capabilitiesReady: true,
+                isPublicPath: true,
+                isLoginChooserPath: false)
             .Should().BeFalse();
     }
 

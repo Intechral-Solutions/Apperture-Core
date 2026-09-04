@@ -231,7 +231,14 @@ public sealed class UsersControllerIdentityLinkTests
         public ValueTask SetRolePermissionsAsync(RoleId roleId, IReadOnlyList<PermissionDescriptor> permissions, CancellationToken cancellationToken = default) =>
             ValueTask.CompletedTask;
 
-        public ValueTask<UserId> CreateUserAsync(string displayName, IdentitySource source, string externalId, string? password = null, CancellationToken cancellationToken = default) =>
+        public ValueTask<UserId> CreateUserAsync(
+            string displayName,
+            IdentitySource source,
+            string externalId,
+            string? password = null,
+            CancellationToken cancellationToken = default,
+            string? contactEmail = null,
+            bool sendSetupInvitation = false) =>
             throw new NotImplementedException();
 
         public ValueTask RemoveIdentityLinkAsync(UserId userId, IdentitySource source, string externalId, CancellationToken cancellationToken = default) =>

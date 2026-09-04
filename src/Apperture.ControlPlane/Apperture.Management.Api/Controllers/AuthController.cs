@@ -48,6 +48,10 @@ public sealed class AuthController : ControllerBase
     private readonly IAuthenticationAssuranceEvaluator? _assuranceEvaluator;
     private readonly INativeMfaService? _nativeMfa;
     private readonly IPendingMfaLoginTicketService? _pendingMfaTickets;
+    private readonly IForgottenPasswordService? _forgottenPassword;
+    private readonly IAccountInvitationService? _invitations;
+    private readonly IAccountContactService? _contact;
+    private readonly IAccountActionTokenService? _actionTokens;
 
     public AuthController(
         IUserRepository userRepository,
@@ -65,7 +69,11 @@ public sealed class AuthController : ControllerBase
         IEntraPrimaryAuthenticationPolicy? entraPrimaryPolicy = null,
         IAuthenticationAssuranceEvaluator? assuranceEvaluator = null,
         INativeMfaService? nativeMfa = null,
-        IPendingMfaLoginTicketService? pendingMfaTickets = null)
+        IPendingMfaLoginTicketService? pendingMfaTickets = null,
+        IForgottenPasswordService? forgottenPassword = null,
+        IAccountInvitationService? invitations = null,
+        IAccountContactService? contact = null,
+        IAccountActionTokenService? actionTokens = null)
     {
         _userRepository = userRepository;
         _localCredentialRepository = localCredentialRepository;
@@ -83,6 +91,10 @@ public sealed class AuthController : ControllerBase
         _assuranceEvaluator = assuranceEvaluator;
         _nativeMfa = nativeMfa;
         _pendingMfaTickets = pendingMfaTickets;
+        _forgottenPassword = forgottenPassword;
+        _invitations = invitations;
+        _contact = contact;
+        _actionTokens = actionTokens;
     }
 
     /// <summary>Merged anonymous-safe sign-in capabilities and chooser policy for the management UI.</summary>
@@ -329,12 +341,93 @@ public sealed class AuthController : ControllerBase
             salt,
             _passwordHasher.AlgorithmName,
             cancellationToken);
+        if (_actionTokens is not null)
+            await _actionTokens.RevokePasswordLifecycleTokensAsync(userId, cancellationToken);
         await AppendAuthAuditAsync(
             AuthActionLocalPasswordChangeSuccess,
             new ActorId(userId.Value),
             null,
             cancellationToken);
         return NoContent();
+    }
+
+    /// <summary>Unauthenticated forgotten-password request. Always returns the same acknowledgement.</summary>
+    [HttpPost("forgot-password")]
+    [AllowAnonymous]
+    [ProducesResponseType(typeof(ForgotPasswordResponse), StatusCodes.Status200OK)]
+    public async Task<ActionResult<ForgotPasswordResponse>> ForgotPassword(
+        [FromBody] ForgotPasswordRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (_forgottenPassword is not null)
+            await _forgottenPassword.RequestAsync(request.Identifier ?? "", cancellationToken);
+        return Ok(new ForgotPasswordResponse(ForgottenPasswordService.GenericAcknowledgement));
+    }
+
+    /// <summary>Consumes a one-time password-reset token. Does not enable a disabled local credential.</summary>
+    [HttpPost("reset-password")]
+    [AllowAnonymous]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> ResetPassword(
+        [FromBody] TokenPasswordRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (_forgottenPassword is null)
+            return Conflict(new { message = "This reset link is invalid or has expired.", code = AccountSecurityErrorCodes.TokenInvalid });
+        try
+        {
+            await _forgottenPassword.CompleteAsync(request.Token ?? "", request.NewPassword ?? "", cancellationToken);
+            return NoContent();
+        }
+        catch (AccountSecurityException ex)
+        {
+            return Conflict(new { message = ex.Message, code = ex.Code });
+        }
+    }
+
+    /// <summary>Consumes an Apperture account setup invitation and sets the first local password.</summary>
+    [HttpPost("setup-password")]
+    [AllowAnonymous]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> SetupPassword(
+        [FromBody] TokenPasswordRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (_invitations is null)
+            return Conflict(new { message = "This setup link is invalid or has expired.", code = AccountSecurityErrorCodes.TokenInvalid });
+        try
+        {
+            await _invitations.CompletePasswordSetupAsync(request.Token ?? "", request.NewPassword ?? "", cancellationToken);
+            return NoContent();
+        }
+        catch (AccountSecurityException ex)
+        {
+            return Conflict(new { message = ex.Message, code = ex.Code });
+        }
+    }
+
+    /// <summary>Consumes a contact-email verification token.</summary>
+    [HttpPost("verify-contact-email")]
+    [AllowAnonymous]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> VerifyContactEmail(
+        [FromBody] VerifyContactEmailRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (_contact is null)
+            return Conflict(new { message = "This verification link is invalid or has expired.", code = AccountSecurityErrorCodes.TokenInvalid });
+        try
+        {
+            await _contact.VerifyAsync(request.Token ?? "", cancellationToken);
+            return NoContent();
+        }
+        catch (AccountSecurityException ex)
+        {
+            return Conflict(new { message = ex.Message, code = ex.Code });
+        }
     }
 
     /// <summary>
@@ -703,6 +796,14 @@ public sealed record AccountDeferredFeaturesDto(
     string Message);
 
 public sealed record ChangeLocalPasswordRequest(string? CurrentPassword, string? NewPassword);
+
+public sealed record ForgotPasswordRequest(string? Identifier);
+
+public sealed record ForgotPasswordResponse(string Message);
+
+public sealed record TokenPasswordRequest(string? Token, string? NewPassword);
+
+public sealed record VerifyContactEmailRequest(string? Token);
 
 /// <summary>Stable self-service password change error codes for clients.</summary>
 public static class LocalPasswordChangeErrorCodes

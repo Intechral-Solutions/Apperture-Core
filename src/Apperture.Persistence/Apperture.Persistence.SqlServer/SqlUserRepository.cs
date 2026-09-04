@@ -76,7 +76,10 @@ public sealed class SqlUserRepository : IUserRepository
             Id = user.Id.Value,
             DisplayName = user.DisplayName,
             IsBreakGlassEligible = user.IsBreakGlassEligible,
-            DisplayTimeZoneId = user.DisplayTimeZoneId
+            DisplayTimeZoneId = user.DisplayTimeZoneId,
+            EmailAddress = user.EmailAddress,
+            EmailVerifiedAtUtc = user.EmailVerifiedAtUtc,
+            PendingEmailAddress = user.PendingEmailAddress
         };
         ApplyAvatar(userEntity, user.Avatar);
         _db.Users.Add(userEntity);
@@ -105,6 +108,9 @@ public sealed class SqlUserRepository : IUserRepository
         entity.DisplayName = user.DisplayName;
         entity.IsBreakGlassEligible = user.IsBreakGlassEligible;
         entity.DisplayTimeZoneId = user.DisplayTimeZoneId;
+        entity.EmailAddress = user.EmailAddress;
+        entity.EmailVerifiedAtUtc = user.EmailVerifiedAtUtc;
+        entity.PendingEmailAddress = user.PendingEmailAddress;
         ApplyAvatar(entity, user.Avatar);
         await _db.SaveChangesAsync(cancellationToken);
     }
@@ -362,6 +368,22 @@ public sealed class SqlUserRepository : IUserRepository
             UserAvatar.FromStorage(
                 userEntity.AvatarKind,
                 userEntity.AvatarOptionId,
-                userEntity.AvatarImageKey));
+                userEntity.AvatarImageKey),
+            userEntity.EmailAddress,
+            userEntity.EmailVerifiedAtUtc,
+            userEntity.PendingEmailAddress);
+    }
+
+    /// <inheritdoc />
+    public async ValueTask<User?> FindByVerifiedContactEmailAsync(string normalizedEmail, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(normalizedEmail))
+            return null;
+
+        var entity = await _db.Users.AsNoTracking()
+            .FirstOrDefaultAsync(
+                e => e.EmailAddress == normalizedEmail && e.EmailVerifiedAtUtc != null,
+                cancellationToken);
+        return entity is null ? null : await GetByIdAsync(new UserId(entity.Id), cancellationToken);
     }
 }

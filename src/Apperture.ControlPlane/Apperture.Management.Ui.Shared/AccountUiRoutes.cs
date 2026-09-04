@@ -15,6 +15,11 @@ public static class AccountUiRoutes
     public const string Preferences = "/account/preferences";
     public const string Security = "/account/security";
 
+    public const string VerifyEmail = "/account/verify-email";
+    public const string SetupPassword = "/account/setup-password";
+    public const string ResetPassword = "/account/reset-password";
+    public const string ForgotPassword = "/account/forgot-password";
+
     /// <summary>Pre-AUP-1 path, kept as a redirect to <see cref="Preferences"/>.</summary>
     public const string LegacyPreferences = "/preferences";
 

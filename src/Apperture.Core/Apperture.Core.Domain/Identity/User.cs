@@ -19,7 +19,19 @@ public sealed record User(
     IReadOnlyList<RoleId> AssignedRoleIds,
     bool IsBreakGlassEligible,
     string? DisplayTimeZoneId = null,
-    UserAvatar? Avatar = null)
+    UserAvatar? Avatar = null,
+    string? EmailAddress = null,
+    DateTimeOffset? EmailVerifiedAtUtc = null,
+    string? PendingEmailAddress = null)
 {
     public UserAvatar EffectiveAvatar => Avatar ?? UserAvatar.Default;
+
+    /// <summary>Verified Apperture contact destination. Never an authentication key.</summary>
+    public bool HasVerifiedContactEmail =>
+        !string.IsNullOrWhiteSpace(EmailAddress) && EmailVerifiedAtUtc is not null;
+
+    public string ContactEmailStatus =>
+        HasVerifiedContactEmail ? "verified"
+        : !string.IsNullOrWhiteSpace(PendingEmailAddress) ? "pending"
+        : "none";
 }

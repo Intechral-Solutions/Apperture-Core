@@ -1574,6 +1574,89 @@ public sealed class ManagementClient : IManagementClient
         throw new HttpRequestException(message, null, response.StatusCode);
     }
 
+    public async Task<ForgotPasswordResponse> RequestPasswordResetAsync(ForgotPasswordRequest request, CancellationToken cancellationToken = default)
+    {
+        var response = await _http.PostAsJsonAsync("auth/forgot-password", request, cancellationToken).ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+        var body = await response.Content.ReadFromJsonAsync<ForgotPasswordResponse>(cancellationToken).ConfigureAwait(false);
+        return body ?? new ForgotPasswordResponse("If an eligible account matches, a reset email is on its way.");
+    }
+
+    public Task CompletePasswordResetAsync(TokenPasswordRequest request, CancellationToken cancellationToken = default) =>
+        PostTokenPasswordAsync("auth/reset-password", request, cancellationToken);
+
+    public Task CompletePasswordSetupAsync(TokenPasswordRequest request, CancellationToken cancellationToken = default) =>
+        PostTokenPasswordAsync("auth/setup-password", request, cancellationToken);
+
+    public async Task VerifyContactEmailAsync(VerifyContactEmailRequest request, CancellationToken cancellationToken = default)
+    {
+        var response = await _http.PostAsJsonAsync("auth/verify-contact-email", request, cancellationToken).ConfigureAwait(false);
+        if (response.IsSuccessStatusCode)
+            return;
+        var msg = await TryGetMessageFromResponseAsync(response, cancellationToken).ConfigureAwait(false);
+        throw new HttpRequestException(msg ?? "This verification link is invalid or has expired.", null, response.StatusCode);
+    }
+
+    public async Task<AccountContactEmailDto> GetContactEmailAsync(CancellationToken cancellationToken = default)
+    {
+        var dto = await _http.GetFromJsonAsync<AccountContactEmailDto>("account/contact-email", cancellationToken).ConfigureAwait(false);
+        return dto ?? new AccountContactEmailDto();
+    }
+
+    public async Task<AccountContactMutationDto> RequestContactEmailAsync(RequestContactEmailRequest request, CancellationToken cancellationToken = default)
+    {
+        var response = await _http.PostAsJsonAsync("account/contact-email", request, cancellationToken).ConfigureAwait(false);
+        if (!response.IsSuccessStatusCode)
+        {
+            var msg = await TryGetMessageFromResponseAsync(response, cancellationToken).ConfigureAwait(false);
+            throw new HttpRequestException(msg ?? "Could not update contact email.", null, response.StatusCode);
+        }
+
+        return await response.Content.ReadFromJsonAsync<AccountContactMutationDto>(cancellationToken).ConfigureAwait(false)
+            ?? new AccountContactMutationDto();
+    }
+
+    public async Task<AccountContactMutationDto> ResendContactEmailAsync(CancellationToken cancellationToken = default)
+    {
+        var response = await _http.PostAsync("account/contact-email/resend", content: null, cancellationToken).ConfigureAwait(false);
+        if (!response.IsSuccessStatusCode)
+        {
+            var msg = await TryGetMessageFromResponseAsync(response, cancellationToken).ConfigureAwait(false);
+            throw new HttpRequestException(msg ?? "Could not resend verification.", null, response.StatusCode);
+        }
+
+        return await response.Content.ReadFromJsonAsync<AccountContactMutationDto>(cancellationToken).ConfigureAwait(false)
+            ?? new AccountContactMutationDto();
+    }
+
+    public async Task<SetupInvitationResponse> SendSetupInvitationAsync(
+        string userId,
+        SetupInvitationRequest? request = null,
+        CancellationToken cancellationToken = default)
+    {
+        var response = await _http.PostAsJsonAsync(
+            $"users/{Uri.EscapeDataString(userId)}/setup-invitation",
+            request ?? new SetupInvitationRequest(null),
+            cancellationToken).ConfigureAwait(false);
+        if (!response.IsSuccessStatusCode)
+        {
+            var msg = await TryGetMessageFromResponseAsync(response, cancellationToken).ConfigureAwait(false);
+            throw new HttpRequestException(msg ?? "Could not send the setup invitation.", null, response.StatusCode);
+        }
+
+        return await response.Content.ReadFromJsonAsync<SetupInvitationResponse>(cancellationToken).ConfigureAwait(false)
+            ?? throw new InvalidOperationException("Setup invitation response was empty.");
+    }
+
+    private async Task PostTokenPasswordAsync(string path, TokenPasswordRequest request, CancellationToken cancellationToken)
+    {
+        var response = await _http.PostAsJsonAsync(path, request, cancellationToken).ConfigureAwait(false);
+        if (response.IsSuccessStatusCode)
+            return;
+        var msg = await TryGetMessageFromResponseAsync(response, cancellationToken).ConfigureAwait(false);
+        throw new HttpRequestException(msg ?? "This link is invalid or has expired.", null, response.StatusCode);
+    }
+
     public async Task<AuthSignInOptionsDto> GetAuthSignInOptionsAsync(CancellationToken cancellationToken = default)
     {
         using var response = await _http.GetAsync("auth/sign-in-options", cancellationToken).ConfigureAwait(false);

@@ -129,7 +129,14 @@ public sealed class Epic39GovernanceAdminTests
         public ValueTask SetRolePermissionsAsync(RoleId roleId, IReadOnlyList<PermissionDescriptor> permissions, CancellationToken cancellationToken = default) =>
             ValueTask.CompletedTask;
 
-        public ValueTask<UserId> CreateUserAsync(string displayName, IdentitySource source, string externalId, string? password = null, CancellationToken cancellationToken = default) =>
+        public ValueTask<UserId> CreateUserAsync(
+            string displayName,
+            IdentitySource source,
+            string externalId,
+            string? password = null,
+            CancellationToken cancellationToken = default,
+            string? contactEmail = null,
+            bool sendSetupInvitation = false) =>
             throw new NotImplementedException();
 
         public ValueTask AddIdentityLinkAsync(UserId userId, IdentitySource source, string externalId, CancellationToken cancellationToken = default) =>

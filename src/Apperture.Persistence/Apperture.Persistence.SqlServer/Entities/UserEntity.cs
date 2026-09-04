@@ -8,6 +8,8 @@ public sealed class UserEntity
     public string Id { get; set; } = "";
     public string DisplayName { get; set; } = "";
     public string? EmailAddress { get; set; }
+    public DateTimeOffset? EmailVerifiedAtUtc { get; set; }
+    public string? PendingEmailAddress { get; set; }
     public bool IsBreakGlassEligible { get; set; }
 
     /// <summary>Optional operator display timezone id (IANA preferred). Display only; execution stays UTC.</summary>

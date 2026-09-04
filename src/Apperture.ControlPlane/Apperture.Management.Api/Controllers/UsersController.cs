@@ -1,4 +1,5 @@
 using Apperture.ControlPlane.Security;
+using Apperture.Core.Application.Accounts;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Identity;
 using Apperture.Management.Api.Models;
@@ -20,19 +21,22 @@ public sealed class UsersController : ControllerBase
     private readonly IRoleProvider _roleProvider;
     private readonly IEntraPrimaryAuthenticationPolicy? _entraPrimaryPolicy;
     private readonly INativeMfaService? _nativeMfa;
+    private readonly IAccountInvitationService? _invitations;
 
     public UsersController(
         IUserManagementService userManagement,
         ILocalCredentialRepository localCredentialRepository,
         IRoleProvider roleProvider,
         IEntraPrimaryAuthenticationPolicy? entraPrimaryPolicy = null,
-        INativeMfaService? nativeMfa = null)
+        INativeMfaService? nativeMfa = null,
+        IAccountInvitationService? invitations = null)
     {
         _userManagement = userManagement;
         _localCredentialRepository = localCredentialRepository;
         _roleProvider = roleProvider;
         _entraPrimaryPolicy = entraPrimaryPolicy;
         _nativeMfa = nativeMfa;
+        _invitations = invitations;
     }
 
     /// <summary>
@@ -91,7 +95,10 @@ public sealed class UsersController : ControllerBase
             var unusedCodes = nativeMfaEnrolled && _nativeMfa is not null
                 ? await _nativeMfa.CountUnusedRecoveryCodesAsync(user.Id, cancellationToken)
                 : 0;
-            return Ok(ToDetailDto(user, hasLocalCredential, isCredentialDisabled, presentation, nativeMfaEnrolled, unusedCodes > 0));
+            var invitation = _invitations is null
+                ? null
+                : await _invitations.GetStatusAsync(user.Id, cancellationToken);
+            return Ok(ToDetailDto(user, hasLocalCredential, isCredentialDisabled, presentation, nativeMfaEnrolled, unusedCodes > 0, invitation));
         }
         catch (UnauthorizedAccessException)
         {
@@ -162,12 +169,18 @@ public sealed class UsersController : ControllerBase
                 source,
                 request.ExternalId.Trim(),
                 request.Password,
-                cancellationToken);
+                cancellationToken,
+                request.ContactEmail,
+                request.SendSetupInvitation);
             return CreatedAtAction(nameof(Get), new { id = userId.Value }, new CreateUserResponse(userId.Value));
         }
         catch (UnauthorizedAccessException)
         {
             return Forbid();
+        }
+        catch (AccountSecurityException ex)
+        {
+            return Conflict(new { message = ex.Message, code = ex.Code, deliveryFailed = ex.Code == AccountSecurityErrorCodes.SmtpNotConfigured });
         }
         catch (EmergencyAccessException ex)
         {
@@ -180,6 +193,36 @@ public sealed class UsersController : ControllerBase
         catch (InvalidOperationException ex) when (ex.Message.Contains("already exists"))
         {
             return Conflict(new { message = ex.Message });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+    }
+
+    /// <summary>Sends or resends an Apperture account setup invitation. Requires user.manage.</summary>
+    [HttpPost("{id}/setup-invitation")]
+    [ProducesResponseType(typeof(SetupInvitationResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<SetupInvitationResponse>> SendSetupInvitation(
+        string id,
+        [FromBody] SetupInvitationRequest? request,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var result = await _userManagement.SendSetupInvitationAsync(new UserId(id), request?.ContactEmail, cancellationToken);
+            return Ok(new SetupInvitationResponse(result.DeliverySucceeded, result.DeliveryFailure, result.ExpiresAtUtc));
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return Forbid();
+        }
+        catch (AccountSecurityException ex)
+        {
+            return Conflict(new { message = ex.Message, code = ex.Code });
         }
         catch (InvalidOperationException ex)
         {
@@ -449,8 +492,14 @@ public sealed class UsersController : ControllerBase
         bool? isCredentialDisabled,
         LocalAuthenticationPresentation? presentation = null,
         bool nativeMfaEnrolled = false,
-        bool emergencyRecoveryCodesPresent = false)
+        bool emergencyRecoveryCodesPresent = false,
+        AccountInvitationStatus? invitation = null)
     {
+        var hasLocalLink = user.IdentityLinks.Any(l => l.Source == IdentitySource.Local);
+        var invitationState = ResolveInvitationState(invitation, hasLocalCredential);
+        var passwordState = hasLocalCredential == true
+            ? "set"
+            : hasLocalLink ? "setup_pending" : "none";
         return new UserDetailDto(
             user.Id.Value,
             user.DisplayName,
@@ -463,7 +512,21 @@ public sealed class UsersController : ControllerBase
             presentation?.RecoverySafeguardActive ?? false,
             presentation?.EmergencyAccessAccount ?? user.IsBreakGlassEligible,
             nativeMfaEnrolled,
-            emergencyRecoveryCodesPresent);
+            emergencyRecoveryCodesPresent,
+            user.ContactEmailStatus,
+            user.EmailAddress,
+            user.PendingEmailAddress,
+            passwordState,
+            invitationState);
+    }
+
+    private static string ResolveInvitationState(AccountInvitationStatus? invitation, bool? hasLocalCredential)
+    {
+        if (hasLocalCredential == true)
+            return invitation is { Pending: false, Expired: false } ? "accepted" : "none";
+        if (invitation?.Pending == true)
+            return "pending";
+        return invitation is null ? "none" : "expired";
     }
 }
 
@@ -489,11 +552,26 @@ public sealed record UserDetailDto(
     bool LocalRecoverySafeguard = false,
     bool EmergencyAccessAccount = false,
     bool NativeMfaEnrolled = false,
-    bool EmergencyRecoveryCodesPresent = false);
+    bool EmergencyRecoveryCodesPresent = false,
+    string ContactEmailStatus = "none",
+    string? ContactEmail = null,
+    string? PendingContactEmail = null,
+    string PasswordState = "none",
+    string InvitationState = "none");
 
 public sealed record IdentityLinkDto(string Source, string ExternalId, DateTimeOffset? LastAuthenticatedAt);
 
-public sealed record CreateUserRequest(string DisplayName, string IdentitySource, string ExternalId, string? Password = null);
+public sealed record CreateUserRequest(
+    string DisplayName,
+    string IdentitySource,
+    string ExternalId,
+    string? Password = null,
+    string? ContactEmail = null,
+    bool SendSetupInvitation = false);
+
+public sealed record SetupInvitationRequest(string? ContactEmail);
+
+public sealed record SetupInvitationResponse(bool DeliverySucceeded, string? DeliveryFailure, DateTimeOffset ExpiresAtUtc);
 
 public sealed record CreateUserResponse(string UserId);
 

@@ -20,6 +20,47 @@ public sealed class AccountProfileDto
     public string? TimeZoneId { get; init; }
     public IReadOnlyList<AccountIdentityLinkDetailDto> IdentityLinks { get; init; } = [];
     public IReadOnlyList<string> RoleNames { get; init; } = [];
+
+    /// <summary>Platform-owned verified contact destination. Not an authentication identity.</summary>
+    public string? ContactEmail { get; init; }
+
+    /// <summary><c>verified</c>, <c>pending</c>, or <c>none</c>.</summary>
+    public string ContactEmailStatus { get; init; } = "none";
+
+    public string? PendingContactEmail { get; init; }
+
+    /// <summary>Untrusted Entra mail/UPN snapshot offered only as a suggestion.</summary>
+    public string? SuggestedContactEmail { get; init; }
+
+    public bool CanManageContactEmail { get; init; }
+
+    /// <summary>True when the account has an enabled local password that can prove an email change.</summary>
+    public bool HasEnabledLocalPassword { get; init; }
+}
+
+public sealed class AccountContactEmailDto
+{
+    public string? EmailAddress { get; init; }
+    public string Status { get; init; } = "none";
+    public DateTimeOffset? VerifiedAtUtc { get; init; }
+    public string? PendingEmailAddress { get; init; }
+    public string? SuggestedEntraEmail { get; init; }
+    public bool CanManage { get; init; }
+    public bool EmergencyAccessAccount { get; init; }
+    public bool HasEnabledLocalPassword { get; init; }
+}
+
+public sealed class AccountContactMutationDto
+{
+    public AccountContactEmailDto Contact { get; init; } = new();
+    public bool DeliverySucceeded { get; init; }
+    public string? DeliveryFailure { get; init; }
+}
+
+public sealed class RequestContactEmailRequest
+{
+    public string? Email { get; init; }
+    public string? CurrentPassword { get; init; }
 }
 
 public sealed class AccountIdentityLinkDetailDto
