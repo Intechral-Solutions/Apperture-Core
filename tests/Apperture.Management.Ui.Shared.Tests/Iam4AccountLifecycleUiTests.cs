@@ -81,12 +81,14 @@ public sealed class Iam4AccountLifecycleUiTests
         var shell = ReadRepoFile($"{ClientRoot}/Molecules/ValidatedFieldShell.razor");
 
         molecule.Should().Contain("PasswordSetupSession");
+        molecule.Should().Contain("DebouncedPasswordEvaluationScheduler");
         molecule.Should().Contain("@oninput");
         molecule.Should().Contain("Passwords match");
         molecule.Should().Contain("autocomplete=\"new-password\"");
         molecule.Should().Contain("Show password");
         molecule.Should().Contain("Hide password");
         molecule.Should().Contain("EyeIcon");
+        molecule.Should().Contain("TogglePasswordVisibility");
         molecule.Should().Contain("ValidateForSubmit");
         molecule.Should().NotContain("ChangeLocalPasswordAsync");
         molecule.Should().NotContain(">Show<");

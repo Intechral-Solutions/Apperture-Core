@@ -17,6 +17,8 @@ public sealed class PasswordPolicyEvaluator : IPasswordPolicyEvaluator
         "recovery", "emergency"
     ];
 
+    // Built once per process. Dictionaries stay in this analyzer; userInputs are a
+    // lightweight per-call overlay and do not reload the bundled ranked lists.
     private static readonly ZxcvbnAnalyzer Analyzer = CreateAnalyzer();
 
     public PasswordEvaluationResult Evaluate(

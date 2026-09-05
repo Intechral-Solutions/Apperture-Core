@@ -135,7 +135,7 @@ These remain distinct operations: change password, set/reset password, enable lo
 
 ### Password UX (IAM-4 final pass)
 
-Live evaluation owns current field values in `PasswordSetupSession` and re-evaluates on every `oninput`. Parent `@bind` Parameters are not the source of truth during typing (that caused stale strength and false mismatch). Progressive validation: pristine fields show no ✓/✕; touched fields and a submit attempt reveal field indicators and an inline form message. Submit stays enabled; invalid submit does not start `ActionButton` pending. Successful password mutations clear the session and refresh displayed account state without a reload.
+Live values live in `PasswordSetupSession`. Each keystroke updates the field and confirmation match immediately. Zxcvbn scoring is coalesced and deferred (~150 ms after input is quiet) so typing never waits on the estimator. `OnParametersSet` does not rescore unless the password, profile, or context terms actually changed. Confirmation, visibility toggles, and unrelated fields do not call the estimator. Submit flushes any pending score before the client will treat the form as ready; the server remains authoritative. Progressive validation: pristine fields show no ✓/✕; touched fields and a submit attempt reveal field indicators and an inline form message. Submit stays enabled; invalid submit does not start `ActionButton` pending. Successful password mutations clear the session and refresh displayed account state without a reload.
 
 ### Recovery Access
 

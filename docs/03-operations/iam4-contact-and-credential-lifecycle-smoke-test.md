@@ -47,7 +47,7 @@ If SMTP is unavailable in this development environment, complete every step that
 
 1. While signed in locally, open Account → Security.
 2. New password fields must start empty (no value supplied by Apperture). Browser password-manager autofill is allowed.
-3. Type a new password. **Password strength must change live while typing** with no network call per keystroke.
+3. Type a new password. Characters must appear immediately at normal typing speed, including past 15–30 characters. **Password strength may trail by a fraction of a second**; it must not block the input. No network call per keystroke. Confirmation and the current-password field must stay responsive after the new password is long.
 4. Strength colors/labels follow 0–4: 0 Weak/red, 1 Weak/orange, 2 Moderate/yellow, 3 Strong/chartreuse, 4 Strong/green. An untouched empty field stays visually neutral (not Weak).
 5. The eye control inside the field toggles visibility. Hidden = translucent eye, visible = opaque. Keyboard focus and “Show password” / “Hide password” labels must work.
 6. Matching confirmation is detected immediately. A mismatch is detected immediately after the confirmation field is edited.
@@ -102,7 +102,7 @@ If the Entra-primary user has no local credential row, the same generic acknowle
 
 Confirm all of the following on invitation setup, forgot-password reset, Account → Security change-password, and Governance “set an initial password now”:
 
-1. Password strength changes live while typing.
+1. Password characters appear immediately; strength updates shortly after typing pauses (no multi-second lag).
 2. Strength colors/labels follow the 0–4 mapping above.
 3. No password begins prepopulated by Apperture.
 4. Password visibility eye works.
