@@ -198,6 +198,13 @@ internal sealed class EntraOpenIdConnectOptionsConfigurer : IConfigureNamedOptio
 
         if (!outcome.Succeeded)
         {
+            if (!isLinking
+                && string.Equals(outcome.FailureCode, EntraLinkFailureCodes.AccountNotLinked, StringComparison.Ordinal))
+            {
+                if (await TryIssueAccessRequestSessionAsync(ctx, objectId, tenantId))
+                    return;
+            }
+
             FailWithRedirect(ctx, isLinking, isStepUp: false, outcome.FailureCode ?? EntraLinkFailureCodes.AccountNotLinked);
             return;
         }
@@ -273,6 +280,38 @@ internal sealed class EntraOpenIdConnectOptionsConfigurer : IConfigureNamedOptio
         var returnPath = EntraStepUpFlowConstants.GetReturnPath(ctx.Properties);
         ctx.Response.Redirect(ManagementUiRedirects.Build(_configuration, returnPath, "steppedUp", "1"));
         ctx.HandleResponse();
+    }
+
+    private async Task<bool> TryIssueAccessRequestSessionAsync(TokenValidatedContext ctx, string objectId, string tenantId)
+    {
+        var registrations = ctx.HttpContext.RequestServices.GetService<IEntraInstanceRegistrationRepository>();
+        if (registrations is null)
+            return false;
+
+        var registration = await registrations.GetActiveAsync(ctx.HttpContext.RequestAborted);
+        if (registration is null || !registration.Enabled)
+            return false;
+
+        var principal = EntraAccessRequestAuthentication.CreatePrincipal(
+            tenantId,
+            objectId,
+            registration.Id,
+            DateTimeOffset.UtcNow,
+            ctx.Principal?.FindFirst("name")?.Value,
+            ctx.Principal?.FindFirst("preferred_username")?.Value,
+            ctx.Principal?.FindFirst("email")?.Value);
+
+        var properties = new AuthenticationProperties
+        {
+            IsPersistent = false,
+            ExpiresUtc = DateTimeOffset.UtcNow.Add(EntraAccessRequestAuthentication.Lifetime),
+            AllowRefresh = false
+        };
+
+        await ctx.HttpContext.SignInAsync(EntraAccessRequestAuthentication.Scheme, principal, properties);
+        ctx.Response.Redirect(ManagementUiRedirects.Build(_configuration, EntraLinkFlowConstants.AccessRequestPath));
+        ctx.HandleResponse();
+        return true;
     }
 
     private void FailWithRedirect(TokenValidatedContext ctx, bool isLinking, bool isStepUp, string failureCode)

@@ -67,6 +67,8 @@ public sealed class AccountContactService : IAccountContactService
 
         if (user.HasVerifiedContactEmail)
             await RequireChangeProofAsync(user, currentPassword, cancellationToken);
+        else
+            RequireRecentAccountVerification();
 
         var owner = await _users.FindByVerifiedContactEmailAsync(normalized, cancellationToken);
         if (owner is not null && owner.Id != user.Id)
@@ -97,6 +99,7 @@ public sealed class AccountContactService : IAccountContactService
     public async ValueTask<AccountContactMutationResult> ResendAsync(UserId userId, CancellationToken cancellationToken = default)
     {
         var user = await RequireOrdinaryUserAsync(userId, cancellationToken);
+        RequireRecentAccountVerification();
         var pending = user.PendingEmailAddress
             ?? throw new AccountSecurityException(AccountSecurityErrorCodes.InvalidEmail, "No verification is pending.");
 
@@ -149,6 +152,8 @@ public sealed class AccountContactService : IAccountContactService
             $"userId={user.Id.Value}",
             cancellationToken);
     }
+
+    private void RequireRecentAccountVerification() => _accountVerification?.Require();
 
     private async ValueTask RequireChangeProofAsync(User user, string? currentPassword, CancellationToken cancellationToken)
     {

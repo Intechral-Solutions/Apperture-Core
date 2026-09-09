@@ -68,6 +68,12 @@ public sealed class EntraTenantListItemResponse
 
     [JsonPropertyName("rowVersionBase64")]
     public string? RowVersionBase64 { get; init; }
+
+    [JsonPropertyName("allowMemberAccessRequests")]
+    public bool AllowMemberAccessRequests { get; init; }
+
+    [JsonPropertyName("allowGuestAccessRequests")]
+    public bool AllowGuestAccessRequests { get; init; }
 }
 
 public sealed class CreateEntraTenantRequestBody
@@ -95,6 +101,12 @@ public sealed class CreateEntraTenantRequestBody
 
     [JsonPropertyName("authenticationContextId")]
     public string? AuthenticationContextId { get; set; }
+
+    [JsonPropertyName("allowMemberAccessRequests")]
+    public bool AllowMemberAccessRequests { get; set; }
+
+    [JsonPropertyName("allowGuestAccessRequests")]
+    public bool AllowGuestAccessRequests { get; set; }
 
     /// <summary>Write-only. Plaintext is stored in ISecretStore; never returned.</summary>
     [JsonPropertyName("clientSecret")]
@@ -129,6 +141,12 @@ public sealed class UpdateEntraTenantRequestBody
 
     [JsonPropertyName("authenticationContextId")]
     public string? AuthenticationContextId { get; set; }
+
+    [JsonPropertyName("allowMemberAccessRequests")]
+    public bool AllowMemberAccessRequests { get; set; }
+
+    [JsonPropertyName("allowGuestAccessRequests")]
+    public bool AllowGuestAccessRequests { get; set; }
 
     /// <summary>Write-only. When set, replaces the stored secret. Omit or leave blank to keep the existing secret.</summary>
     [JsonPropertyName("clientSecret")]

@@ -249,6 +249,15 @@ public sealed class EntraIdentityAssociationService : IEntraIdentityAssociationS
         string objectId,
         CancellationToken cancellationToken = default)
     {
+        var registration = await GetActiveRegistrationAsync(cancellationToken);
+        return await BuildPendingAdminLinkAsync(objectId, registration, cancellationToken);
+    }
+
+    public async ValueTask<IdentityLink> BuildPendingAdminLinkAsync(
+        string objectId,
+        EntraInstanceRegistration? registration,
+        CancellationToken cancellationToken = default)
+    {
         var normalized = EntraTokenClaims.Normalize(objectId);
         if (!EntraTokenClaims.IsValidObjectId(normalized))
         {
@@ -257,7 +266,7 @@ public sealed class EntraIdentityAssociationService : IEntraIdentityAssociationS
                 "Entra external id must be the directory object id (oid) as a GUID, not an email, UPN, or token subject.");
         }
 
-        var registration = await GetActiveRegistrationAsync(cancellationToken);
+        registration ??= await GetActiveRegistrationAsync(cancellationToken);
         var tenantId = ResolveActiveTenantId(registration);
         var snapshot = await TryGetDirectorySnapshotAsync(registration, normalized!, cancellationToken);
 

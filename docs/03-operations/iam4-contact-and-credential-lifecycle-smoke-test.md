@@ -10,6 +10,7 @@ This is an **Apperture account** lifecycle. It is not a Microsoft Entra B2B invi
 - Management UI (dev default `http://localhost:9001`) and Management.Host are running.
 - Restart Management.Host (or the Aspire app) so migration `20260903180000_Iam4_VerifiedContactAndActionTokens` applies.
 - SMTP: platform email host and from-address must be configured (`Notifications:Email` / platform settings). Security mail ignores the notification dry-run `Enabled` flag, but it still needs a reachable SMTP host.
+- First contact email and resend now require recent account verification on the **API** as well as the UI. Token verification is unchanged. Recovery Access remains excluded.
 
 If SMTP is unavailable in this development environment, complete every step that does not depend on delivery, then use the **SMTP gap** section. Do not weaken production token or mail design to work around the gap.
 

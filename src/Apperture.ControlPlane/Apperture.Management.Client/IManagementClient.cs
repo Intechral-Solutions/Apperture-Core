@@ -860,6 +860,43 @@ public interface IManagementClient
     /// <summary>Creates a local or Entra-linked platform user. Requires user.manage. Throws on 400/403/409.</summary>
     Task<CreateUserResponse> CreateUserAsync(CreateUserRequest request, CancellationToken cancellationToken = default);
 
+    /// <summary>Enabled Entra registrations available for directory provisioning. Requires user.manage.</summary>
+    Task<IReadOnlyList<EntraProvisioningRegistrationDto>> GetEntraProvisioningRegistrationsAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>Searches a configured Microsoft directory. Continuation tokens are opaque; never Graph URLs.</summary>
+    Task<EntraProvisioningDirectoryPageDto> SearchEntraProvisioningDirectoryAsync(
+        string registrationId,
+        string? search = null,
+        string? continuation = null,
+        int top = 25,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>Provisions one or more directory users. Each person is processed independently.</summary>
+    Task<EntraProvisioningBatchResultDto> ProvisionFromEntraDirectoryAsync(
+        EntraDirectoryProvisionRequest request,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>Lists pending Microsoft access requests. Requires user.manage.</summary>
+    Task<EntraAccessRequestListDto> GetEntraAccessRequestsAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>Approves a pending access request and provisions the user.</summary>
+    Task<EntraProvisioningPersonResultDto> ApproveEntraAccessRequestAsync(
+        string requestId,
+        EntraAccessRequestDecisionRequest request,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>Rejects a pending access request. Does not create a user.</summary>
+    Task RejectEntraAccessRequestAsync(string requestId, CancellationToken cancellationToken = default);
+
+    /// <summary>Limited pre-provisioning session. Returns null when the limited cookie is absent.</summary>
+    Task<EntraAccessRequestSessionDto?> GetAccessRequestSessionAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>Submits an access request for the limited Microsoft identity.</summary>
+    Task<EntraAccessRequestSessionDto> SubmitAccessRequestAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>Clears the limited access-request cookie.</summary>
+    Task SignOutAccessRequestAsync(CancellationToken cancellationToken = default);
+
     /// <summary>Gets a user by id. Requires user.read.</summary>
     Task<UserDetailDto?> GetUserAsync(string userId, CancellationToken cancellationToken = default);
 
@@ -1785,7 +1822,9 @@ public sealed record EntraTenantListItemDto(
     [property: JsonPropertyName("lastDirectoryDiscoveryUtc")] DateTimeOffset? LastDirectoryDiscoveryUtc = null,
     [property: JsonPropertyName("lastDirectoryDiscoverySummary")] string? LastDirectoryDiscoverySummary = null,
     [property: JsonPropertyName("lastDirectoryDiscoveryDetail")] string? LastDirectoryDiscoveryDetail = null,
-    [property: JsonPropertyName("rowVersionBase64")] string? RowVersionBase64 = null);
+    [property: JsonPropertyName("rowVersionBase64")] string? RowVersionBase64 = null,
+    [property: JsonPropertyName("allowMemberAccessRequests")] bool AllowMemberAccessRequests = false,
+    [property: JsonPropertyName("allowGuestAccessRequests")] bool AllowGuestAccessRequests = false);
 
 public sealed record CreateEntraTenantRequest(
     [property: JsonPropertyName("displayName")] string DisplayName,
@@ -1796,7 +1835,9 @@ public sealed record CreateEntraTenantRequest(
     [property: JsonPropertyName("enabled")] bool Enabled = true,
     [property: JsonPropertyName("azureTenantId")] string? AzureTenantId = null,
     [property: JsonPropertyName("clientSecret")] string? ClientSecret = null,
-    [property: JsonPropertyName("authenticationContextId")] string? AuthenticationContextId = null);
+    [property: JsonPropertyName("authenticationContextId")] string? AuthenticationContextId = null,
+    [property: JsonPropertyName("allowMemberAccessRequests")] bool AllowMemberAccessRequests = false,
+    [property: JsonPropertyName("allowGuestAccessRequests")] bool AllowGuestAccessRequests = false);
 
 public sealed record UpdateEntraTenantRequest(
     [property: JsonPropertyName("displayName")] string DisplayName,
@@ -1808,7 +1849,9 @@ public sealed record UpdateEntraTenantRequest(
     [property: JsonPropertyName("rowVersionBase64")] string? RowVersionBase64,
     [property: JsonPropertyName("azureTenantId")] string? AzureTenantId = null,
     [property: JsonPropertyName("clientSecret")] string? ClientSecret = null,
-    [property: JsonPropertyName("authenticationContextId")] string? AuthenticationContextId = null);
+    [property: JsonPropertyName("authenticationContextId")] string? AuthenticationContextId = null,
+    [property: JsonPropertyName("allowMemberAccessRequests")] bool AllowMemberAccessRequests = false,
+    [property: JsonPropertyName("allowGuestAccessRequests")] bool AllowGuestAccessRequests = false);
 
 public sealed record ValidationResultDto(
     [property: JsonPropertyName("success")] bool Success,
@@ -1858,3 +1901,79 @@ public sealed record UpdateAuthUiPolicyRequest(
     [property: JsonPropertyName("preferEntraInChooser")] bool PreferEntraInChooser,
     [property: JsonPropertyName("autoRedirectToEntra")] bool AutoRedirectToEntra,
     [property: JsonPropertyName("rowVersionBase64")] string? RowVersionBase64);
+
+public sealed record EntraProvisioningRegistrationDto(
+    [property: JsonPropertyName("id")] string Id,
+    [property: JsonPropertyName("displayName")] string DisplayName,
+    [property: JsonPropertyName("isActive")] bool IsActive,
+    [property: JsonPropertyName("allowMemberAccessRequests")] bool AllowMemberAccessRequests,
+    [property: JsonPropertyName("allowGuestAccessRequests")] bool AllowGuestAccessRequests);
+
+public sealed record EntraProvisioningDirectoryPageDto(
+    [property: JsonPropertyName("success")] bool Success,
+    [property: JsonPropertyName("summary")] string Summary,
+    [property: JsonPropertyName("technicalDetail")] string? TechnicalDetail,
+    [property: JsonPropertyName("registrationId")] string RegistrationId,
+    [property: JsonPropertyName("registrationDisplayName")] string? RegistrationDisplayName,
+    [property: JsonPropertyName("continuationToken")] string? ContinuationToken,
+    [property: JsonPropertyName("items")] IReadOnlyList<EntraProvisioningDirectoryUserDto> Items);
+
+public sealed record EntraProvisioningDirectoryUserDto(
+    [property: JsonPropertyName("objectId")] string ObjectId,
+    [property: JsonPropertyName("displayName")] string DisplayName,
+    [property: JsonPropertyName("userPrincipalName")] string? UserPrincipalName,
+    [property: JsonPropertyName("mail")] string? Mail,
+    [property: JsonPropertyName("userType")] string? UserType,
+    [property: JsonPropertyName("accountEnabled")] bool AccountEnabled,
+    [property: JsonPropertyName("appertureStatus")] string AppertureStatus,
+    [property: JsonPropertyName("provisionedUserId")] string? ProvisionedUserId);
+
+public sealed record EntraDirectoryProvisionRequest(
+    [property: JsonPropertyName("registrationId")] string RegistrationId,
+    [property: JsonPropertyName("objectIds")] IReadOnlyList<string> ObjectIds,
+    [property: JsonPropertyName("initialRoleId")] string? InitialRoleId,
+    [property: JsonPropertyName("sendWelcomeEmail")] bool SendWelcomeEmail);
+
+public sealed record EntraProvisioningBatchResultDto(
+    [property: JsonPropertyName("results")] IReadOnlyList<EntraProvisioningPersonResultDto> Results);
+
+public sealed record EntraProvisioningPersonResultDto(
+    [property: JsonPropertyName("succeeded")] bool Succeeded,
+    [property: JsonPropertyName("objectId")] string ObjectId,
+    [property: JsonPropertyName("userId")] string? UserId,
+    [property: JsonPropertyName("displayName")] string? DisplayName,
+    [property: JsonPropertyName("errorCode")] string? ErrorCode,
+    [property: JsonPropertyName("errorMessage")] string? ErrorMessage,
+    [property: JsonPropertyName("welcomeMailAttempted")] bool WelcomeMailAttempted,
+    [property: JsonPropertyName("welcomeMailDelivered")] bool WelcomeMailDelivered,
+    [property: JsonPropertyName("welcomeMailFailureSummary")] string? WelcomeMailFailureSummary);
+
+public sealed record EntraAccessRequestListDto(
+    [property: JsonPropertyName("pendingCount")] int PendingCount,
+    [property: JsonPropertyName("items")] IReadOnlyList<EntraAccessRequestItemDto> Items);
+
+public sealed record EntraAccessRequestItemDto(
+    [property: JsonPropertyName("id")] string Id,
+    [property: JsonPropertyName("displayName")] string? DisplayName,
+    [property: JsonPropertyName("directoryAddress")] string? DirectoryAddress,
+    [property: JsonPropertyName("registrationDisplayName")] string RegistrationDisplayName,
+    [property: JsonPropertyName("userType")] string? UserType,
+    [property: JsonPropertyName("requestedAtUtc")] DateTimeOffset RequestedAtUtc,
+    [property: JsonPropertyName("registrationId")] string RegistrationId,
+    [property: JsonPropertyName("tenantId")] string TenantId,
+    [property: JsonPropertyName("providerObjectId")] string ProviderObjectId);
+
+public sealed record EntraAccessRequestDecisionRequest(
+    [property: JsonPropertyName("initialRoleId")] string? InitialRoleId,
+    [property: JsonPropertyName("sendWelcomeEmail")] bool SendWelcomeEmail);
+
+public sealed record EntraAccessRequestSessionDto(
+    [property: JsonPropertyName("state")] string State,
+    [property: JsonPropertyName("displayName")] string? DisplayName,
+    [property: JsonPropertyName("directoryAddress")] string? DirectoryAddress,
+    [property: JsonPropertyName("userType")] string? UserType,
+    [property: JsonPropertyName("registrationDisplayName")] string? RegistrationDisplayName,
+    [property: JsonPropertyName("canRequest")] bool CanRequest,
+    [property: JsonPropertyName("message")] string? Message,
+    [property: JsonPropertyName("pendingRequestId")] string? PendingRequestId,
+    [property: JsonPropertyName("requestedAtUtc")] DateTimeOffset? RequestedAtUtc);

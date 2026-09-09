@@ -58,4 +58,10 @@ public sealed class EntraInstanceRegistration
     public string? LastDirectoryDiscoverySummary { get; init; }
 
     public string? LastDirectoryDiscoveryDetail { get; init; }
+
+    /// <summary>When true, directory Members may submit an Apperture access request after Microsoft sign-in.</summary>
+    public bool AllowMemberAccessRequests { get; init; }
+
+    /// <summary>When true, directory Guests may submit an access request. Off by default for Identity v1.</summary>
+    public bool AllowGuestAccessRequests { get; init; }
 }

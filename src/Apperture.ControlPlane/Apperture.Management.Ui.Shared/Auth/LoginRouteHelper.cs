@@ -9,7 +9,8 @@ public static class LoginRouteHelper
         "/account/verify-email",
         "/account/setup-password",
         "/account/reset-password",
-        "/account/forgot-password"
+        "/account/forgot-password",
+        "/access-request"
     ];
 
     public static readonly string[] PublicPaths = [.. LoginChooserPaths, .. AccountActionPublicPaths];
@@ -19,6 +20,9 @@ public static class LoginRouteHelper
         var path = NormalizeAbsolutePath(absolutePath);
         return PublicPaths.Any(p => string.Equals(path, p, StringComparison.OrdinalIgnoreCase));
     }
+
+    public static bool IsAccessRequestPath(string absolutePath) =>
+        string.Equals(NormalizeAbsolutePath(absolutePath), "/access-request", StringComparison.OrdinalIgnoreCase);
 
     public static bool IsLoginChooserPath(string absolutePath)
     {

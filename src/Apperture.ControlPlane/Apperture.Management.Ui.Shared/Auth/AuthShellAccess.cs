@@ -66,14 +66,14 @@ public static class AuthShellAccess
         SessionLoadState state,
         bool isPublicPath) =>
         isPublicPath
-        || state is SessionLoadState.Unauthenticated or SessionLoadState.Error;
+        || state is SessionLoadState.Unauthenticated or SessionLoadState.Error or SessionLoadState.AccessRequestSession;
 
     public static string GetBlockingMessage(SessionLoadState state, bool capabilitiesReady)
     {
         if (state is SessionLoadState.Unknown or SessionLoadState.Loading)
             return "Loading session…";
 
-        if (state is SessionLoadState.Unauthenticated or SessionLoadState.Error)
+        if (state is SessionLoadState.Unauthenticated or SessionLoadState.Error or SessionLoadState.AccessRequestSession)
             return "Redirecting to sign-in…";
 
         if (state == SessionLoadState.Authenticated && !capabilitiesReady)
@@ -88,6 +88,9 @@ public static class AuthShellAccess
     public static bool ShouldRedirectToLogin(SessionLoadState state, bool isPublicPath) =>
         !isPublicPath && state is SessionLoadState.Unauthenticated or SessionLoadState.Error;
 
+    public static bool ShouldRedirectToAccessRequest(SessionLoadState state, bool isAccessRequestPath) =>
+        !isAccessRequestPath && state == SessionLoadState.AccessRequestSession;
+
     public static bool ShouldRedirectAuthenticatedAwayFromLogin(SessionLoadState state, bool isLoginChooserPath) =>
         isLoginChooserPath && state == SessionLoadState.Authenticated;
 
@@ -95,6 +98,7 @@ public static class AuthShellAccess
         isRootBootstrapPath && state is SessionLoadState.Authenticated
             or SessionLoadState.ForbiddenUnlinked
             or SessionLoadState.Unauthenticated
+            or SessionLoadState.AccessRequestSession
             or SessionLoadState.Error;
 
     /// <summary>Whether authenticated shell services (menus, dashboard) may start loading.</summary>

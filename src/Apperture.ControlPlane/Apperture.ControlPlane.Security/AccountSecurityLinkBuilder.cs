@@ -22,6 +22,13 @@ public sealed class AccountSecurityLinkBuilder
 
     public string ResetPassword(string token) => Build(ResetPasswordPath, token);
 
+    public string SignInWithMicrosoft()
+    {
+        var configured = _configuration[UiBaseKey];
+        var baseUrl = string.IsNullOrWhiteSpace(configured) ? DevelopmentBaseUrl : configured.TrimEnd('/');
+        return $"{baseUrl}/signin";
+    }
+
     public string Build(string relativePath, string token)
     {
         var configured = _configuration[UiBaseKey];

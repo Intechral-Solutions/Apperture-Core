@@ -55,6 +55,7 @@
                             <th class="p-2">Active</th>
                             <th class="p-2">OID</th>
                             <th class="p-2">Dir</th>
+                            <th class="p-2">Requests</th>
                             <th class="p-2">Secret</th>
                             <th class="p-2"></th>
                         </tr>
@@ -75,6 +76,7 @@
                                 <td class="p-2">@(r.IsActive ? "Yes" : "—")</td>
                                 <td class="p-2" title="@r.LastOpenIdValidationSummary">@ShortStatus(r.OpenIdConfigurationStatus ?? "")</td>
                                 <td class="p-2" title="@r.LastDirectoryDiscoverySummary">@ShortStatus(r.DirectoryDiscoveryStatus ?? "")</td>
+                                <td class="p-2">@RequestPolicyLabel(r)</td>
                                 <td class="p-2">@(r.ClientSecretConfigured || r.DeploymentSecretConfigured ? "ok" : "missing")</td>
                                 <td class="p-2 space-y-1 whitespace-nowrap text-right">
                                     <div class="space-x-2">
@@ -139,6 +141,14 @@
                         <input type="checkbox" @bind="_editingEnabled" />
                         Enabled
                     </label>
+                    <label class="flex items-start gap-2 text-xs">
+                        <input type="checkbox" @bind="_editingAllowMemberRequests" />
+                        <span>Allow directory members to request Apperture access after Microsoft sign-in. Off by default.</span>
+                    </label>
+                    <label class="flex items-start gap-2 text-xs">
+                        <input type="checkbox" @bind="_editingAllowGuestRequests" />
+                        <span>Allow guest identities to request access. Off by default. Member/Guest comes from the directory, not the email domain.</span>
+                    </label>
                     @if (!string.IsNullOrEmpty(_formError))
                     {
                         <PageMessage Kind="PageMessageKind.Error" Message="@_formError" />
@@ -179,6 +189,14 @@
                                @bind="_newClientSecret" />
                     </label>
                     <p class="text-xs text-muted">Stored in the platform secret store. Deployment <span class="font-mono">Entra:ClientSecret</span> is used only when no stored secret exists.</p>
+                    <label class="flex items-start gap-2 text-xs">
+                        <input type="checkbox" @bind="_newAllowMemberRequests" />
+                        <span>Allow directory members to request Apperture access after Microsoft sign-in. Off by default.</span>
+                    </label>
+                    <label class="flex items-start gap-2 text-xs">
+                        <input type="checkbox" @bind="_newAllowGuestRequests" />
+                        <span>Allow guest identities to request access. Off by default.</span>
+                    </label>
                     @if (!string.IsNullOrEmpty(_formError))
                     {
                         <PageMessage Kind="PageMessageKind.Error" Message="@_formError" />
@@ -216,10 +234,25 @@
     private string _editingClientSecret = "";
     private bool _editingSecretConfigured;
     private bool _editingEnabled;
+    private bool _editingAllowMemberRequests;
+    private bool _editingAllowGuestRequests;
+    private bool _newAllowMemberRequests;
+    private bool _newAllowGuestRequests;
     private string? _editingRowVersion;
 
     private static string ShortStatus(string? s) =>
         string.IsNullOrEmpty(s) ? "—" : (s.Length > 12 ? s[..12] + "…" : s);
+
+    private static string RequestPolicyLabel(EntraTenantListItemDto r)
+    {
+        if (r.AllowMemberAccessRequests && r.AllowGuestAccessRequests)
+            return "Members and guests";
+        if (r.AllowMemberAccessRequests)
+            return "Members";
+        if (r.AllowGuestAccessRequests)
+            return "Guests";
+        return "Off";
+    }
 
     protected override async Task OnInitializedAsync()
     {
@@ -255,6 +288,8 @@
         _editingClientSecret = "";
         _editingSecretConfigured = r.ClientSecretConfigured || r.DeploymentSecretConfigured;
         _editingEnabled = r.Enabled;
+        _editingAllowMemberRequests = r.AllowMemberAccessRequests;
+        _editingAllowGuestRequests = r.AllowGuestAccessRequests;
         _editingRowVersion = r.RowVersionBase64;
     }
 
@@ -285,7 +320,9 @@
                     _editingRowVersion,
                     string.IsNullOrWhiteSpace(_editingAzureTenantId) ? null : _editingAzureTenantId.Trim(),
                     ClientSecret: string.IsNullOrWhiteSpace(_editingClientSecret) ? null : _editingClientSecret,
-                    AuthenticationContextId: string.IsNullOrWhiteSpace(_editingAuthenticationContextId) ? null : _editingAuthenticationContextId.Trim()));
+                    AuthenticationContextId: string.IsNullOrWhiteSpace(_editingAuthenticationContextId) ? null : _editingAuthenticationContextId.Trim(),
+                    AllowMemberAccessRequests: _editingAllowMemberRequests,
+                    AllowGuestAccessRequests: _editingAllowGuestRequests));
             _editing = null;
             _editingClientSecret = "";
             await ReloadAsync();
@@ -317,13 +354,17 @@
                 Enabled: true,
                 AzureTenantId: string.IsNullOrWhiteSpace(_newAzureTenantId) ? null : _newAzureTenantId.Trim(),
                 ClientSecret: string.IsNullOrWhiteSpace(_newClientSecret) ? null : _newClientSecret,
-                AuthenticationContextId: string.IsNullOrWhiteSpace(_newAuthenticationContextId) ? null : _newAuthenticationContextId.Trim()));
+                AuthenticationContextId: string.IsNullOrWhiteSpace(_newAuthenticationContextId) ? null : _newAuthenticationContextId.Trim(),
+                AllowMemberAccessRequests: _newAllowMemberRequests,
+                AllowGuestAccessRequests: _newAllowGuestRequests));
             _newDisplay = "";
             _newAuthority = "";
             _newClientId = "";
             _newAzureTenantId = null;
             _newAuthenticationContextId = null;
             _newClientSecret = "";
+            _newAllowMemberRequests = false;
+            _newAllowGuestRequests = false;
             await ReloadAsync();
             await SignInOptions.RefreshAsync();
             Toasts.Show(ToastSeverity.Success, $"Created registration {created.DisplayName}.");

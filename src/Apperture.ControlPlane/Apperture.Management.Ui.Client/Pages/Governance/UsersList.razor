@@ -16,6 +16,10 @@
             @if (_capabilities?.CanManageUsers == true)
             {
                 <a href="/config/governance/users/new" class="ui-toolbar-btn">New user</a>
+                <a href="/config/governance/users/from-entra" class="ui-toolbar-btn">Add from Microsoft Entra</a>
+                <a href="/config/governance/users/requests" class="ui-toolbar-btn">
+                    @(_pendingRequestCount > 0 ? $"Requests ({_pendingRequestCount})" : "Requests")
+                </a>
             }
             <button type="button"
                     class="ui-toolbar-btn"
@@ -114,6 +118,7 @@
     private string? _error;
     private OperatorCapabilitiesDto? _capabilities;
     private bool _capabilitiesLoaded;
+    private int _pendingRequestCount;
 
     protected override async Task OnInitializedAsync()
     {
@@ -132,6 +137,18 @@
         try
         {
             _page = await Client.GetUserPageAsync(_skip, PageSize);
+            if (_capabilities?.CanManageUsers == true)
+            {
+                try
+                {
+                    var requests = await Client.GetEntraAccessRequestsAsync();
+                    _pendingRequestCount = requests.PendingCount;
+                }
+                catch
+                {
+                    _pendingRequestCount = 0;
+                }
+            }
         }
         catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.Forbidden)
         {

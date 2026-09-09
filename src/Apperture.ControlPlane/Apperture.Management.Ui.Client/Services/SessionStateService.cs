@@ -43,8 +43,11 @@ public sealed class SessionStateService
             if (me is null)
             {
                 User = null;
-                State = SessionLoadState.Unauthenticated;
                 ErrorMessage = null;
+                var access = await _client.GetAccessRequestSessionAsync(cancellationToken);
+                State = access is null
+                    ? SessionLoadState.Unauthenticated
+                    : SessionLoadState.AccessRequestSession;
             }
             else
             {

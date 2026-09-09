@@ -38,6 +38,15 @@ public static class AuthenticationServiceCollectionExtensions
                 options.SlidingExpiration = true;
                 ManagementCookieAuthentication.Configure(options);
             })
+            .AddCookie(EntraAccessRequestAuthentication.Scheme, options =>
+            {
+                options.Cookie.Name = EntraAccessRequestAuthentication.CookieName;
+                options.ExpireTimeSpan = EntraAccessRequestAuthentication.Lifetime;
+                options.SlidingExpiration = false;
+                options.LoginPath = "/signin";
+                options.LogoutPath = "/signout";
+                ManagementCookieAuthentication.Configure(options);
+            })
             .AddOpenIdConnect(OpenIdConnectScheme, options =>
             {
                 // Keep OIDC options valid even before Entra runtime config overlays are applied.

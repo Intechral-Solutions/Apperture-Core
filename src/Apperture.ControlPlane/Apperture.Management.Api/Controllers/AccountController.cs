@@ -108,6 +108,10 @@ public sealed class AccountController : ControllerBase
             var result = await _contact.RequestAsync(userId, request.Email ?? "", request.CurrentPassword, cancellationToken);
             return Ok(ToContactMutationDto(result));
         }
+        catch (RecentAccountVerificationException ex)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, new { message = ex.Message, code = ex.Code });
+        }
         catch (AccountSecurityException ex)
         {
             return Conflict(new { message = ex.Message, code = ex.Code });
@@ -188,6 +192,10 @@ public sealed class AccountController : ControllerBase
         {
             var result = await _contact.ResendAsync(userId, cancellationToken);
             return Ok(ToContactMutationDto(result));
+        }
+        catch (RecentAccountVerificationException ex)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, new { message = ex.Message, code = ex.Code });
         }
         catch (AccountSecurityException ex)
         {

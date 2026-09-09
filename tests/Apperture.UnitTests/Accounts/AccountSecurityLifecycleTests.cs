@@ -11,6 +11,55 @@ namespace Apperture.UnitTests.Accounts;
 public sealed class AccountSecurityLifecycleTests
 {
     [Fact]
+    public async Task First_contact_email_requires_recent_account_verification()
+    {
+        var harness = Harness.LocalUser(accountVerification: StubRecentAccountVerification.Unsatisfied());
+
+        var act = () => harness.Contact.RequestAsync(harness.User.Id, "user@example.com", null).AsTask();
+
+        await act.Should().ThrowAsync<RecentAccountVerificationException>()
+            .Where(ex => ex.Code == RecentAccountVerificationErrorCodes.Required);
+        harness.Users.Get(harness.User.Id.Value).PendingEmailAddress.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task First_contact_email_succeeds_after_recent_account_verification()
+    {
+        var harness = Harness.LocalUser(accountVerification: StubRecentAccountVerification.Satisfied());
+
+        var requested = await harness.Contact.RequestAsync(harness.User.Id, "user@example.com", null);
+
+        requested.Contact.Status.Should().Be("pending");
+        harness.Users.Get(harness.User.Id.Value).PendingEmailAddress.Should().Be("user@example.com");
+    }
+
+    [Fact]
+    public async Task Resend_verification_requires_recent_account_verification()
+    {
+        var harness = Harness.LocalUser(accountVerification: StubRecentAccountVerification.Satisfied());
+        await harness.Contact.RequestAsync(harness.User.Id, "user@example.com", null);
+        var gated = Harness.Reuse(harness, StubRecentAccountVerification.Unsatisfied());
+
+        var act = () => gated.Contact.ResendAsync(harness.User.Id).AsTask();
+
+        await act.Should().ThrowAsync<RecentAccountVerificationException>()
+            .Where(ex => ex.Code == RecentAccountVerificationErrorCodes.Required);
+    }
+
+    [Fact]
+    public async Task Token_verification_does_not_require_recent_account_verification()
+    {
+        var harness = Harness.LocalUser(accountVerification: StubRecentAccountVerification.Satisfied());
+        await harness.Contact.RequestAsync(harness.User.Id, "user@example.com", null);
+        var token = harness.LastToken();
+        var ungated = Harness.Reuse(harness, StubRecentAccountVerification.Unsatisfied());
+
+        await ungated.Contact.VerifyAsync(token);
+
+        harness.Users.Get(harness.User.Id.Value).HasVerifiedContactEmail.Should().BeTrue();
+    }
+
+    [Fact]
     public async Task Unverified_address_stays_unverified_until_token_is_consumed()
     {
         var harness = Harness.LocalUser();
@@ -352,7 +401,8 @@ public sealed class AccountSecurityLifecycleTests
         public static Harness LocalUser(
             string password = "unique-local-passphrase",
             bool withCredential = true,
-            IReadOnlyList<User>? extraUsers = null)
+            IReadOnlyList<User>? extraUsers = null,
+            IRecentAccountVerificationGate? accountVerification = null)
         {
             var user = new User(
                 new UserId("usr-local"),
@@ -360,14 +410,15 @@ public sealed class AccountSecurityLifecycleTests
                 [new IdentityLink(IdentitySource.Local, "localuser", DateTimeOffset.UtcNow)],
                 [],
                 IsBreakGlassEligible: false);
-            return ForUser(user, password, withCredential, extraUsers);
+            return ForUser(user, password, withCredential, extraUsers, accountVerification);
         }
 
         public static Harness ForUser(
             User user,
             string password = "unique-local-passphrase",
             bool withCredential = true,
-            IReadOnlyList<User>? extraUsers = null)
+            IReadOnlyList<User>? extraUsers = null,
+            IRecentAccountVerificationGate? accountVerification = null)
         {
             var users = new InMemoryUserRepository([user, .. extraUsers ?? []]);
             var credentials = new InMemoryLocalCredentialRepository();
@@ -394,10 +445,66 @@ public sealed class AccountSecurityLifecycleTests
                 Audit = audit,
                 Clock = clock,
                 Hasher = hasher,
-                Contact = new AccountContactService(users, credentials, hasher, tokenService, mail, links, audit),
+                Contact = new AccountContactService(users, credentials, hasher, tokenService, mail, links, audit, accountVerification: accountVerification),
                 Invitations = new AccountInvitationService(users, credentials, hasher, tokenService, tokens, mail, links, audit, clock),
                 Forgotten = new ForgottenPasswordService(users, credentials, hasher, tokenService, mail, links, audit)
             };
+        }
+
+        public static Harness Reuse(Harness source, IRecentAccountVerificationGate accountVerification)
+        {
+            var tokenService = new AccountActionTokenService(source.Tokens, source.Clock);
+            var links = new AccountSecurityLinkBuilder(new ConfigurationBuilder().Build());
+            return new Harness
+            {
+                User = source.User,
+                Users = source.Users,
+                Credentials = source.Credentials,
+                Tokens = source.Tokens,
+                Mail = source.Mail,
+                Audit = source.Audit,
+                Clock = source.Clock,
+                Hasher = source.Hasher,
+                Contact = new AccountContactService(
+                    source.Users,
+                    source.Credentials,
+                    source.Hasher,
+                    tokenService,
+                    source.Mail,
+                    links,
+                    source.Audit,
+                    accountVerification: accountVerification),
+                Invitations = source.Invitations,
+                Forgotten = source.Forgotten
+            };
+        }
+    }
+
+    private sealed class StubRecentAccountVerification : IRecentAccountVerificationGate
+    {
+        private readonly RecentAccountVerification _current;
+
+        private StubRecentAccountVerification(RecentAccountVerification current) => _current = current;
+
+        public static StubRecentAccountVerification Satisfied() =>
+            new(new RecentAccountVerification(
+                RecentAccountVerificationMechanisms.LocalPassword,
+                DateTimeOffset.UtcNow.AddMinutes(-1),
+                DateTimeOffset.UtcNow.AddMinutes(14),
+                IsSatisfied: true));
+
+        public static StubRecentAccountVerification Unsatisfied() => new(RecentAccountVerification.None);
+
+        public RecentAccountVerification GetCurrent() => _current;
+
+        public void Require()
+        {
+            if (!_current.IsSatisfied)
+            {
+                throw new RecentAccountVerificationException(
+                    RecentAccountVerificationErrorCodes.Required,
+                    "Verify your identity to manage these account settings.");
+            }
         }
     }
 }

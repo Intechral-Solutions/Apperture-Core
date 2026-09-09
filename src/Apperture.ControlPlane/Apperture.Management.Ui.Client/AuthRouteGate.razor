@@ -232,6 +232,12 @@ else
                 return;
             }
 
+            if (Session.State == SessionLoadState.AccessRequestSession)
+            {
+                Nav.NavigateTo("/access-request", replace: true);
+                return;
+            }
+
             if (AuthShellAccess.ShouldRedirectToLogin(Session.State, isPublicPath: false))
             {
                 if (_loginRedirectIssued)
@@ -256,6 +262,12 @@ else
         if (isPublic)
         {
             _loginRedirectIssued = false;
+            return;
+        }
+
+        if (AuthShellAccess.ShouldRedirectToAccessRequest(Session.State, LoginRouteHelper.IsAccessRequestPath(path)))
+        {
+            Nav.NavigateTo("/access-request", replace: true);
             return;
         }
 

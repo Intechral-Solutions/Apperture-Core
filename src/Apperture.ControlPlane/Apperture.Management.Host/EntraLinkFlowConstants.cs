@@ -20,6 +20,8 @@ internal static class EntraLinkFlowConstants
 
     public const string LoginPath = "/login";
 
+    public const string AccessRequestPath = "/access-request";
+
     public static bool IsLinkPurpose(AuthenticationProperties? properties) =>
         properties?.Items.TryGetValue(PurposeItemKey, out var purpose) == true
         && string.Equals(purpose, LinkPurposeValue, StringComparison.Ordinal);

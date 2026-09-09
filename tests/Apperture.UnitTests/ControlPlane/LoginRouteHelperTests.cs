@@ -14,6 +14,7 @@ public sealed class LoginRouteHelperTests
     [InlineData("/account/setup-password", true)]
     [InlineData("/account/reset-password", true)]
     [InlineData("/account/forgot-password", true)]
+    [InlineData("/access-request", true)]
     [InlineData("/account/profile", false)]
     [InlineData("/dashboard", false)]
     public void IsPublicPath_Classifies(string path, bool expected) =>

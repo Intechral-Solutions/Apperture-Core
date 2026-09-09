@@ -1325,6 +1325,116 @@ public sealed class ManagementClient : IManagementClient
         return body ?? throw new InvalidOperationException("Create user succeeded without a user id.");
     }
 
+    public async Task<IReadOnlyList<EntraProvisioningRegistrationDto>> GetEntraProvisioningRegistrationsAsync(
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.GetAsync("users/entra/registrations", cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode == HttpStatusCode.Forbidden)
+            throw new HttpRequestException("Not authorized to manage users.", null, HttpStatusCode.Forbidden);
+        response.EnsureSuccessStatusCode();
+        var list = await response.Content.ReadFromJsonAsync<EntraProvisioningRegistrationDto[]>(cancellationToken).ConfigureAwait(false);
+        return list ?? Array.Empty<EntraProvisioningRegistrationDto>();
+    }
+
+    public async Task<EntraProvisioningDirectoryPageDto> SearchEntraProvisioningDirectoryAsync(
+        string registrationId,
+        string? search = null,
+        string? continuation = null,
+        int top = 25,
+        CancellationToken cancellationToken = default)
+    {
+        var qs = $"?registrationId={Uri.EscapeDataString(registrationId)}&top={top}";
+        if (!string.IsNullOrWhiteSpace(search))
+            qs += $"&search={Uri.EscapeDataString(search.Trim())}";
+        if (!string.IsNullOrWhiteSpace(continuation))
+            qs += $"&continuation={Uri.EscapeDataString(continuation)}";
+        using var response = await _http.GetAsync("users/entra/directory" + qs, cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode == HttpStatusCode.Forbidden)
+            throw new HttpRequestException("Not authorized to manage users.", null, HttpStatusCode.Forbidden);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<EntraProvisioningDirectoryPageDto>(cancellationToken).ConfigureAwait(false)
+            ?? new EntraProvisioningDirectoryPageDto(false, "No directory results were returned.", null, registrationId, null, null, []);
+    }
+
+    public async Task<EntraProvisioningBatchResultDto> ProvisionFromEntraDirectoryAsync(
+        EntraDirectoryProvisionRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.PostAsJsonAsync("users/entra", request, cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode == HttpStatusCode.Forbidden)
+            throw new HttpRequestException("Not authorized to manage users.", null, HttpStatusCode.Forbidden);
+        if (!response.IsSuccessStatusCode)
+            await EnsureSuccessOrThrowAsync(response, cancellationToken).ConfigureAwait(false);
+        return await response.Content.ReadFromJsonAsync<EntraProvisioningBatchResultDto>(cancellationToken).ConfigureAwait(false)
+            ?? new EntraProvisioningBatchResultDto([]);
+    }
+
+    public async Task<EntraAccessRequestListDto> GetEntraAccessRequestsAsync(CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.GetAsync("users/entra/access-requests", cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode == HttpStatusCode.Forbidden)
+            throw new HttpRequestException("Not authorized to manage users.", null, HttpStatusCode.Forbidden);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<EntraAccessRequestListDto>(cancellationToken).ConfigureAwait(false)
+            ?? new EntraAccessRequestListDto(0, []);
+    }
+
+    public async Task<EntraProvisioningPersonResultDto> ApproveEntraAccessRequestAsync(
+        string requestId,
+        EntraAccessRequestDecisionRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.PostAsJsonAsync(
+            $"users/entra/access-requests/{Uri.EscapeDataString(requestId)}/approve",
+            request,
+            cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode == HttpStatusCode.Forbidden)
+            throw new HttpRequestException("Not authorized to manage users.", null, HttpStatusCode.Forbidden);
+        if (!response.IsSuccessStatusCode)
+            await EnsureSuccessOrThrowAsync(response, cancellationToken).ConfigureAwait(false);
+        return await response.Content.ReadFromJsonAsync<EntraProvisioningPersonResultDto>(cancellationToken).ConfigureAwait(false)
+            ?? throw new InvalidOperationException("Approve succeeded without a result.");
+    }
+
+    public async Task RejectEntraAccessRequestAsync(string requestId, CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.PostAsync(
+            $"users/entra/access-requests/{Uri.EscapeDataString(requestId)}/reject",
+            null,
+            cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode == HttpStatusCode.Forbidden)
+            throw new HttpRequestException("Not authorized to manage users.", null, HttpStatusCode.Forbidden);
+        if (!response.IsSuccessStatusCode)
+            await EnsureSuccessOrThrowAsync(response, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<EntraAccessRequestSessionDto?> GetAccessRequestSessionAsync(CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.GetAsync("access-requests/session", cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
+            return null;
+        if (!response.IsSuccessStatusCode)
+            return null;
+        return await response.Content.ReadFromJsonAsync<EntraAccessRequestSessionDto>(cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<EntraAccessRequestSessionDto> SubmitAccessRequestAsync(CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.PostAsync("access-requests", null, cancellationToken).ConfigureAwait(false);
+        if (!response.IsSuccessStatusCode)
+            await EnsureSuccessOrThrowAsync(response, cancellationToken).ConfigureAwait(false);
+        return await response.Content.ReadFromJsonAsync<EntraAccessRequestSessionDto>(cancellationToken).ConfigureAwait(false)
+            ?? throw new InvalidOperationException("Access request succeeded without a session.");
+    }
+
+    public async Task SignOutAccessRequestAsync(CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.PostAsync("access-requests/sign-out", null, cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode == HttpStatusCode.Unauthorized)
+            return;
+        response.EnsureSuccessStatusCode();
+    }
+
     public async Task<UserDetailDto?> GetUserAsync(string userId, CancellationToken cancellationToken = default)
     {
         return await _http.GetFromJsonAsync<UserDetailDto>($"users/{Uri.EscapeDataString(userId)}", cancellationToken).ConfigureAwait(false);

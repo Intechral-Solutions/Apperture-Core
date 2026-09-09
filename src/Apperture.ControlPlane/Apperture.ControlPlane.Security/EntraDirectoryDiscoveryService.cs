@@ -16,6 +16,14 @@ public sealed class EntraDirectoryDiscoveryService : IEntraDirectoryDiscoverySer
         EntraDirectoryDiscoveryContext context,
         string? search,
         int top,
+        CancellationToken cancellationToken = default) =>
+        await SearchUsersAsync(context, search, top, skipToken: null, cancellationToken).ConfigureAwait(false);
+
+    public async Task<DirectoryDiscoveryResult<IReadOnlyList<EntraDirectoryUser>>> SearchUsersAsync(
+        EntraDirectoryDiscoveryContext context,
+        string? search,
+        int top,
+        string? skipToken,
         CancellationToken cancellationToken = default)
     {
         top = Math.Clamp(top, 1, MaxTop);
@@ -26,26 +34,27 @@ public sealed class EntraDirectoryDiscoveryService : IEntraDirectoryDiscoverySer
         try
         {
             var graph = CreateGraphClient(context);
-            var users = await graph.Users.GetAsync(
-                requestConfiguration =>
-                {
-                    requestConfiguration.QueryParameters.Top = top;
-                    requestConfiguration.QueryParameters.Select =
-                        ["id", "displayName", "userPrincipalName", "mail"];
-                    var filter = BuildUserFilter(search);
-                    if (!string.IsNullOrEmpty(filter))
-                        requestConfiguration.QueryParameters.Filter = filter;
-                },
-                cancellationToken).ConfigureAwait(false);
+            var filter = BuildUserFilter(search);
+            var request = graph.Users.ToGetRequestInformation(requestConfiguration =>
+            {
+                requestConfiguration.QueryParameters.Top = top;
+                requestConfiguration.QueryParameters.Select =
+                    ["id", "displayName", "userPrincipalName", "mail", "userType", "accountEnabled"];
+                if (!string.IsNullOrEmpty(filter))
+                    requestConfiguration.QueryParameters.Filter = filter;
+            });
+            if (!string.IsNullOrWhiteSpace(skipToken))
+                request.QueryParameters["%24skiptoken"] = skipToken.Trim();
+
+            var users = await graph.RequestAdapter.SendAsync(
+                request,
+                Microsoft.Graph.Models.UserCollectionResponse.CreateFromDiscriminatorValue,
+                cancellationToken: cancellationToken).ConfigureAwait(false);
 
             var list = users?.Value ?? [];
             var mapped = list
                 .Where(u => u.Id is not null)
-                .Select(u => new EntraDirectoryUser(
-                    u.Id!,
-                    u.DisplayName ?? "",
-                    u.UserPrincipalName,
-                    u.Mail))
+                .Select(MapUser)
                 .ToList();
 
             return new DirectoryDiscoveryResult<IReadOnlyList<EntraDirectoryUser>>(
@@ -53,7 +62,8 @@ public sealed class EntraDirectoryDiscoveryService : IEntraDirectoryDiscoverySer
                 DiscoveryFailureCategory.None,
                 "Users retrieved from Microsoft Graph.",
                 null,
-                mapped);
+                mapped,
+                TryGetSkipToken(users?.OdataNextLink));
         }
         catch (ApiException ex)
         {
@@ -138,7 +148,7 @@ public sealed class EntraDirectoryDiscoveryService : IEntraDirectoryDiscoverySer
                 requestConfiguration =>
                 {
                     requestConfiguration.QueryParameters.Select =
-                        ["id", "displayName", "userPrincipalName", "mail"];
+                        ["id", "displayName", "userPrincipalName", "mail", "userType", "accountEnabled"];
                 },
                 cancellationToken).ConfigureAwait(false);
 
@@ -150,11 +160,7 @@ public sealed class EntraDirectoryDiscoveryService : IEntraDirectoryDiscoverySer
                     null,
                     null);
 
-            var dto = new EntraDirectoryUser(
-                u.Id,
-                u.DisplayName ?? "",
-                u.UserPrincipalName,
-                u.Mail);
+            var dto = MapUser(u);
             return new DirectoryDiscoveryResult<EntraDirectoryUser?>(
                 true,
                 DiscoveryFailureCategory.None,
@@ -242,6 +248,38 @@ public sealed class EntraDirectoryDiscoveryService : IEntraDirectoryDiscoverySer
         {
             return Transient<EntraDirectoryGroup?>(ex, "group get by id");
         }
+    }
+
+    private static EntraDirectoryUser MapUser(Microsoft.Graph.Models.User u) =>
+        new(
+            u.Id!,
+            u.DisplayName ?? "",
+            u.UserPrincipalName,
+            u.Mail,
+            u.UserType,
+            u.AccountEnabled);
+
+    private static string? TryGetSkipToken(string? nextLink)
+    {
+        if (string.IsNullOrWhiteSpace(nextLink) || !Uri.TryCreate(nextLink, UriKind.Absolute, out var uri))
+            return null;
+        if (!uri.Host.Equals("graph.microsoft.com", StringComparison.OrdinalIgnoreCase))
+            return null;
+        var query = uri.Query.TrimStart('?');
+        foreach (var part in query.Split('&', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var eq = part.IndexOf('=', StringComparison.Ordinal);
+            if (eq <= 0)
+                continue;
+            var name = Uri.UnescapeDataString(part[..eq]);
+            if (name.Equals("$skiptoken", StringComparison.OrdinalIgnoreCase)
+                || name.Equals("$skipToken", StringComparison.OrdinalIgnoreCase))
+            {
+                return Uri.UnescapeDataString(part[(eq + 1)..]);
+            }
+        }
+
+        return null;
     }
 
     private static GraphServiceClient CreateGraphClient(EntraDirectoryDiscoveryContext context)

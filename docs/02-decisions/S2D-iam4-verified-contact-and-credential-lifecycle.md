@@ -74,8 +74,8 @@ Delivery failure does not claim success. Unauthenticated forgot-password still r
 | Action | Proof |
 |---|---|
 | Unlock Secured account | Recent account verification (below) |
-| Add first contact email | Authenticated session. The Account UI requires recent account verification first. |
-| Resend verification | Authenticated session. The Account UI requires recent account verification first. |
+| Add first contact email | Recent account verification (UI and API). Token verification is unchanged. |
+| Resend verification | Recent account verification (UI and API). Token verification is unchanged. |
 | Change verified email | Recent account verification, or enabled local credential → current password; else Entra → recent strong authentication, except `NotConfigured` (Entra session is enough) |
 | Change password | Recent account verification, or current password |
 | Consume setup / reset / verify token | Token only |

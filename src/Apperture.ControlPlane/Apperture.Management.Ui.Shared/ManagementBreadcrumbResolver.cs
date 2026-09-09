@@ -27,6 +27,8 @@ public static class ManagementBreadcrumbResolver
         MatchConfigNotificationDefinitionsList,
         MatchConfigNotificationsLanding,
         MatchConfigGovernanceUserRoleDerivedAccess,
+        MatchConfigGovernanceUserFromEntra,
+        MatchConfigGovernanceUserRequests,
         MatchConfigGovernanceUserNew,
         MatchConfigGovernanceUserDetail,
         MatchConfigGovernanceUsersList,
@@ -513,6 +515,30 @@ public static class ManagementBreadcrumbResolver
             ("Users", "/config/governance/users"),
             ("User", $"/config/governance/users/{s[3]}"),
             ("Role-derived access", null));
+        return true;
+    }
+
+    private static bool MatchConfigGovernanceUserFromEntra(string[] s, out IReadOnlyList<BreadcrumbItem>? c)
+    {
+        c = null;
+        if (!Matches(s, "config", "governance", "users", "from-entra"))
+            return false;
+        c = Config(
+            ("Governance", "/config/governance"),
+            ("Users", "/config/governance/users"),
+            ("Add from Microsoft Entra", null));
+        return true;
+    }
+
+    private static bool MatchConfigGovernanceUserRequests(string[] s, out IReadOnlyList<BreadcrumbItem>? c)
+    {
+        c = null;
+        if (!Matches(s, "config", "governance", "users", "requests"))
+            return false;
+        c = Config(
+            ("Governance", "/config/governance"),
+            ("Users", "/config/governance/users"),
+            ("Requests", null));
         return true;
     }
 

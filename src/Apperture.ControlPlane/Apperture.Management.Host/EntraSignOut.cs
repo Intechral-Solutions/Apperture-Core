@@ -59,11 +59,13 @@ internal static class EntraSignOut
             var properties = await CreateFederatedPropertiesAsync(ctx, configuration);
             // Do not pass RedirectUri to cookie sign-out: that would bounce to the UI before Entra end-session.
             await ctx.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+            await ctx.SignOutAsync(EntraAccessRequestAuthentication.Scheme);
             await ctx.SignOutAsync(OpenIdConnectDefaults.AuthenticationScheme, properties);
             return;
         }
 
         await ctx.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+        await ctx.SignOutAsync(EntraAccessRequestAuthentication.Scheme);
         ctx.Response.Redirect(login);
     }
 

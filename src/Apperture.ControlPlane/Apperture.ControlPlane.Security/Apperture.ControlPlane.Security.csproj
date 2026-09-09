@@ -44,4 +44,7 @@
     <ProjectReference Include="..\..\Apperture.Connectors\Apperture.Connectors.CampusNexus\Apperture.Connectors.CampusNexus.csproj" />
     <ProjectReference Include="..\..\Apperture.ConnectorResolution\Apperture.ConnectorResolution.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Apperture.UnitTests" />
+  </ItemGroup>
 </Project>

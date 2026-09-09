@@ -16,7 +16,9 @@ public sealed record EntraDirectoryUser(
     string ObjectId,
     string DisplayName,
     string? UserPrincipalName,
-    string? Mail);
+    string? Mail,
+    string? UserType = null,
+    bool? AccountEnabled = null);
 
 /// <summary>
 /// Normalized Entra directory group for admin browse/import preparation.
@@ -35,4 +37,5 @@ public sealed record DirectoryDiscoveryResult<T>(
     DiscoveryFailureCategory FailureCategory,
     string Summary,
     string? TechnicalDetail,
-    T? Data = default);
+    T? Data = default,
+    string? ContinuationToken = null);

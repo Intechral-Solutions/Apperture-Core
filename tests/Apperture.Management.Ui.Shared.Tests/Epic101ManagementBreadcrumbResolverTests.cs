@@ -31,6 +31,8 @@ public sealed class Epic101ManagementBreadcrumbResolverTests
         [InlineData("/config/governance", "Config", "Governance")]
         [InlineData("/config/governance/users", "Config", "Governance", "Users")]
         [InlineData("/config/governance/users/new", "Config", "Governance", "Users", "New")]
+        [InlineData("/config/governance/users/from-entra", "Config", "Governance", "Users", "Add from Microsoft Entra")]
+        [InlineData("/config/governance/users/requests", "Config", "Governance", "Users", "Requests")]
         [InlineData("/config/governance/users/u-1", "Config", "Governance", "Users", "User")]
     [InlineData("/config/notifications", "Config", "Notifications")]
     [InlineData("/config/notifications/definitions", "Config", "Notifications", "Definitions")]

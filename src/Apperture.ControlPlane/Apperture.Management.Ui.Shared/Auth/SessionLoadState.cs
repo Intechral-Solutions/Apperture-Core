@@ -8,5 +8,6 @@ public enum SessionLoadState
     Unauthenticated,
     Authenticated,
     ForbiddenUnlinked,
+    AccessRequestSession,
     Error
 }

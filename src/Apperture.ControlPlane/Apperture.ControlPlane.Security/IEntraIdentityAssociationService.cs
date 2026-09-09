@@ -1,3 +1,4 @@
+using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Identity;
 
 namespace Apperture.ControlPlane.Security;
@@ -66,4 +67,14 @@ public interface IEntraIdentityAssociationService
     ValueTask<IdentityLink> BuildPendingAdminLinkAsync(
         string objectId,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Same as <see cref="BuildPendingAdminLinkAsync(string,CancellationToken)"/> against a specific
+    /// registration (directory picker), not only the OIDC-active registration.
+    /// </summary>
+    ValueTask<IdentityLink> BuildPendingAdminLinkAsync(
+        string objectId,
+        EntraInstanceRegistration registration,
+        CancellationToken cancellationToken = default) =>
+        BuildPendingAdminLinkAsync(objectId, cancellationToken);
 }

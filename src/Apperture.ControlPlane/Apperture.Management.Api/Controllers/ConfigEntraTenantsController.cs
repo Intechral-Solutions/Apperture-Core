@@ -1,5 +1,6 @@
 using Apperture.ControlPlane.Security;
 using Apperture.Core.Application.Services;
+using Apperture.Core.Domain.Audit;
 using Apperture.Core.Domain.Governance;
 using Apperture.Core.Security.Secrets.Abstractions;
 using Apperture.Management.Api.Models;
@@ -27,6 +28,7 @@ public sealed class ConfigEntraTenantsController : ControllerBase
     private readonly IEntraDirectoryDiscoveryService _directoryDiscovery;
     private readonly EntraClientSecretMaterialProvisioner _clientSecretProvisioner;
     private readonly ISecretResolver _secretResolver;
+    private readonly IAuditService? _audit;
 
     public ConfigEntraTenantsController(
         IEntraInstanceRegistrationRepository repository,
@@ -38,7 +40,8 @@ public sealed class ConfigEntraTenantsController : ControllerBase
         IEntraOpenIdConnectConfigurationValidator openIdValidator,
         IEntraDirectoryDiscoveryService directoryDiscovery,
         EntraClientSecretMaterialProvisioner clientSecretProvisioner,
-        ISecretResolver secretResolver)
+        ISecretResolver secretResolver,
+        IAuditService? audit = null)
     {
         _repository = repository;
         _principalContext = principalContext;
@@ -50,6 +53,7 @@ public sealed class ConfigEntraTenantsController : ControllerBase
         _directoryDiscovery = directoryDiscovery;
         _clientSecretProvisioner = clientSecretProvisioner;
         _secretResolver = secretResolver;
+        _audit = audit;
     }
 
     [HttpGet]
@@ -110,7 +114,9 @@ public sealed class ConfigEntraTenantsController : ControllerBase
             Enabled = body.Enabled,
             IsActive = false,
             AzureTenantId = string.IsNullOrWhiteSpace(body.AzureTenantId) ? null : body.AzureTenantId.Trim(),
-            AuthenticationContextId = authenticationContextId
+            AuthenticationContextId = authenticationContextId,
+            AllowMemberAccessRequests = body.AllowMemberAccessRequests,
+            AllowGuestAccessRequests = body.AllowGuestAccessRequests
         };
 
         var created = await _repository.AddAsync(draft, cancellationToken);
@@ -187,6 +193,8 @@ public sealed class ConfigEntraTenantsController : ControllerBase
             LastDirectoryDiscoveryUtc = existing.LastDirectoryDiscoveryUtc,
             LastDirectoryDiscoverySummary = existing.LastDirectoryDiscoverySummary,
             LastDirectoryDiscoveryDetail = existing.LastDirectoryDiscoveryDetail,
+            AllowMemberAccessRequests = body.AllowMemberAccessRequests,
+            AllowGuestAccessRequests = body.AllowGuestAccessRequests,
             ClientSecretRef = existing.ClientSecretRef
         };
 
@@ -207,6 +215,26 @@ public sealed class ConfigEntraTenantsController : ControllerBase
         try
         {
             await _repository.UpdateAsync(updatedModel, expected, cancellationToken);
+            if (_audit is not null
+                && (existing.AllowMemberAccessRequests != body.AllowMemberAccessRequests
+                    || existing.AllowGuestAccessRequests != body.AllowGuestAccessRequests))
+            {
+                var actor = await _principalContext.GetCurrentActorAsync(cancellationToken);
+                if (actor is not null)
+                {
+                    await _audit.AppendAsync(
+                        new AuditRecord(
+                            new AuditRecordId(Guid.NewGuid().ToString("N")),
+                            new ActorId(actor.Id.Value),
+                            EntraAccessRequestAuditActionNames.PolicyChanged,
+                            new ResourceDescriptor(ResourceTypeConstants.InstanceConfiguration, ScopeKeyConstants.Instance),
+                            EntraAccessRequestAuditActionNames.Outcome,
+                            DateTimeOffset.UtcNow,
+                            new CorrelationId(null),
+                            $"registrationId={existing.Id} members={body.AllowMemberAccessRequests} guests={body.AllowGuestAccessRequests}"),
+                        cancellationToken);
+                }
+            }
         }
         catch (DbUpdateConcurrencyException)
         {
@@ -534,7 +562,9 @@ public sealed class ConfigEntraTenantsController : ControllerBase
             LastDirectoryDiscoveryUtc = e.LastDirectoryDiscoveryUtc,
             LastDirectoryDiscoverySummary = e.LastDirectoryDiscoverySummary,
             LastDirectoryDiscoveryDetail = e.LastDirectoryDiscoveryDetail,
-            RowVersionBase64 = e.RowVersion is { Length: > 0 } ? Convert.ToBase64String(e.RowVersion) : null
+            RowVersionBase64 = e.RowVersion is { Length: > 0 } ? Convert.ToBase64String(e.RowVersion) : null,
+            AllowMemberAccessRequests = e.AllowMemberAccessRequests,
+            AllowGuestAccessRequests = e.AllowGuestAccessRequests
         };
     }
 

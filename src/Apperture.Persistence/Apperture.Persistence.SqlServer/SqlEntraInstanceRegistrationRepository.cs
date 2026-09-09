@@ -64,7 +64,9 @@ public sealed class SqlEntraInstanceRegistrationRepository : IEntraInstanceRegis
             DirectoryDiscoveryStatus = (int)dirStatus,
             LastDirectoryDiscoveryUtc = registration.LastDirectoryDiscoveryUtc,
             LastDirectoryDiscoverySummary = registration.LastDirectoryDiscoverySummary,
-            LastDirectoryDiscoveryDetail = registration.LastDirectoryDiscoveryDetail
+            LastDirectoryDiscoveryDetail = registration.LastDirectoryDiscoveryDetail,
+            AllowMemberAccessRequests = registration.AllowMemberAccessRequests,
+            AllowGuestAccessRequests = registration.AllowGuestAccessRequests
         };
         _db.EntraInstanceRegistrations.Add(e);
         await _db.SaveChangesAsync(cancellationToken);
@@ -93,6 +95,8 @@ public sealed class SqlEntraInstanceRegistrationRepository : IEntraInstanceRegis
             ? null
             : registration.AuthenticationContextId.Trim();
         e.Enabled = registration.Enabled;
+        e.AllowMemberAccessRequests = registration.AllowMemberAccessRequests;
+        e.AllowGuestAccessRequests = registration.AllowGuestAccessRequests;
         if (!registration.Enabled && e.IsActive)
             e.IsActive = false;
         e.UpdatedUtc = DateTimeOffset.UtcNow;
@@ -199,6 +203,8 @@ public sealed class SqlEntraInstanceRegistrationRepository : IEntraInstanceRegis
             DirectoryDiscoveryStatus = (DirectoryDiscoveryStatus)e.DirectoryDiscoveryStatus,
             LastDirectoryDiscoveryUtc = e.LastDirectoryDiscoveryUtc,
             LastDirectoryDiscoverySummary = e.LastDirectoryDiscoverySummary,
-            LastDirectoryDiscoveryDetail = e.LastDirectoryDiscoveryDetail
+            LastDirectoryDiscoveryDetail = e.LastDirectoryDiscoveryDetail,
+            AllowMemberAccessRequests = e.AllowMemberAccessRequests,
+            AllowGuestAccessRequests = e.AllowGuestAccessRequests
         };
 }

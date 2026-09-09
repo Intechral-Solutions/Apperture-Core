@@ -61,6 +61,7 @@ public class AppertureDbContext : DbContext
     public DbSet<SchedulerDispatchHeartbeatEntity> SchedulerDispatchHeartbeats => Set<SchedulerDispatchHeartbeatEntity>();
     public DbSet<InstanceAuthUiPolicyEntity> InstanceAuthUiPolicies => Set<InstanceAuthUiPolicyEntity>();
     public DbSet<EntraInstanceRegistrationEntity> EntraInstanceRegistrations => Set<EntraInstanceRegistrationEntity>();
+    public DbSet<EntraAccessRequestEntity> EntraAccessRequests => Set<EntraAccessRequestEntity>();
     public DbSet<PlatformSettingValueEntity> PlatformSettingValues => Set<PlatformSettingValueEntity>();
     public DbSet<AttentionIncidentEntity> AttentionIncidents => Set<AttentionIncidentEntity>();
     public DbSet<AttentionIncidentNotificationEntity> AttentionIncidentNotifications => Set<AttentionIncidentNotificationEntity>();
@@ -830,6 +831,28 @@ public class AppertureDbContext : DbContext
             e.Property(x => x.LastDirectoryDiscoveryDetail).HasMaxLength(4000);
             e.Property(x => x.RowVersion).IsRowVersion();
             e.HasIndex(x => x.IsActive).IsUnique().HasFilter("[IsActive] = 1");
+        });
+
+        modelBuilder.Entity<EntraAccessRequestEntity>(e =>
+        {
+            e.ToTable("EntraAccessRequests");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasMaxLength(64);
+            e.Property(x => x.RegistrationId).HasMaxLength(64);
+            e.Property(x => x.TenantId).HasMaxLength(64);
+            e.Property(x => x.ProviderObjectId).HasMaxLength(64);
+            e.Property(x => x.DisplayNameSnapshot).HasMaxLength(256);
+            e.Property(x => x.UserPrincipalNameSnapshot).HasMaxLength(512);
+            e.Property(x => x.MailSnapshot).HasMaxLength(512);
+            e.Property(x => x.UserTypeSnapshot).HasMaxLength(32);
+            e.Property(x => x.ReviewedByUserId).HasMaxLength(64);
+            e.Property(x => x.ProvisionedUserId).HasMaxLength(64);
+            e.Property(x => x.RowVersion).IsRowVersion();
+            e.HasIndex(x => new { x.RegistrationId, x.TenantId, x.ProviderObjectId, x.Status });
+            e.HasIndex(x => new { x.RegistrationId, x.TenantId, x.ProviderObjectId })
+                .IsUnique()
+                .HasFilter("[Status] = 0");
+            e.HasIndex(x => x.Status);
         });
 
         modelBuilder.Entity<PlatformSettingValueEntity>(e =>

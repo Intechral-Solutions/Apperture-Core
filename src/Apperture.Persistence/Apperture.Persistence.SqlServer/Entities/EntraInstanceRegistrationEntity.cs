@@ -45,4 +45,8 @@ public sealed class EntraInstanceRegistrationEntity
     public string? LastDirectoryDiscoverySummary { get; set; }
 
     public string? LastDirectoryDiscoveryDetail { get; set; }
+
+    public bool AllowMemberAccessRequests { get; set; }
+
+    public bool AllowGuestAccessRequests { get; set; }
 }

@@ -106,6 +106,10 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IAccountInvitationService, AccountInvitationService>();
         services.AddScoped<IForgottenPasswordService, ForgottenPasswordService>();
         services.AddScoped<IFirstAdminBootstrapService, FirstAdminBootstrapService>();
+        services.AddScoped<IEntraAccessRequestRepository, SqlEntraAccessRequestRepository>();
+        services.AddScoped<IEntraProvisioningDirectoryService, EntraProvisioningDirectoryService>();
+        services.AddScoped<IUserProvisioningService, UserProvisioningService>();
+        services.AddScoped<IEntraAccessRequestService, EntraAccessRequestService>();
         services.AddScoped<IUserManagementService, UserManagementService>();
         services.AddScoped<IManagedContactManagementService, ManagedContactManagementService>();
         // Module permission registration must run before role repair so platform-admin gets module-scoped workflow.execute etc.

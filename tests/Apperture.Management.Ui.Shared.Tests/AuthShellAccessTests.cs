@@ -66,6 +66,8 @@ public sealed class AuthShellAccessTests
             .Should().BeTrue();
         AuthShellAccess.ShouldReleaseShellCommit(SessionLoadState.Authenticated, isPublicPath: false)
             .Should().BeFalse();
+        AuthShellAccess.ShouldReleaseShellCommit(SessionLoadState.AccessRequestSession, isPublicPath: false)
+            .Should().BeTrue();
     }
 
     [Fact]
@@ -157,8 +159,25 @@ public sealed class AuthShellAccessTests
     [InlineData(SessionLoadState.Unknown, false)]
     [InlineData(SessionLoadState.Loading, false)]
     [InlineData(SessionLoadState.Error, false)]
+    [InlineData(SessionLoadState.AccessRequestSession, false)]
     public void MayLoadAuthenticatedShellData_gates_menus(SessionLoadState state, bool expected) =>
         AuthShellAccess.MayLoadAuthenticatedShellData(state).Should().Be(expected);
+
+    [Fact]
+    public void Access_request_session_redirects_away_from_protected_routes()
+    {
+        AuthShellAccess.ShouldRedirectToAccessRequest(SessionLoadState.AccessRequestSession, isAccessRequestPath: false)
+            .Should().BeTrue();
+        AuthShellAccess.ShouldRedirectToAccessRequest(SessionLoadState.AccessRequestSession, isAccessRequestPath: true)
+            .Should().BeFalse();
+        AuthShellAccess.ShouldRedirectToLogin(SessionLoadState.AccessRequestSession, isPublicPath: false)
+            .Should().BeFalse();
+        AuthShellAccess.ShouldBlockProtectedShell(
+                SessionLoadState.AccessRequestSession,
+                capabilitiesReady: true,
+                isPublicPath: false)
+            .Should().BeTrue();
+    }
 
     [Fact]
     public void Blocking_message_for_unauthenticated_is_redirect_copy()

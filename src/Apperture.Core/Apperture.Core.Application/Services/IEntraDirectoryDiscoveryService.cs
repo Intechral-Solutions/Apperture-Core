@@ -11,6 +11,18 @@ public interface IEntraDirectoryDiscoveryService
         int top,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Same as <see cref="SearchUsersAsync(EntraDirectoryDiscoveryContext,string?,int,CancellationToken)"/>
+    /// with an opaque Graph skip token previously returned by this service. Callers must not pass a raw Graph URL.
+    /// </summary>
+    Task<DirectoryDiscoveryResult<IReadOnlyList<EntraDirectoryUser>>> SearchUsersAsync(
+        EntraDirectoryDiscoveryContext context,
+        string? search,
+        int top,
+        string? skipToken,
+        CancellationToken cancellationToken = default) =>
+        SearchUsersAsync(context, search, top, cancellationToken);
+
     Task<DirectoryDiscoveryResult<IReadOnlyList<EntraDirectoryGroup>>> SearchGroupsAsync(
         EntraDirectoryDiscoveryContext context,
         string? search,
