@@ -1,3 +1,4 @@
+@page "/account"
 @page "/account/security"
 @layout MainLayout
 @implements IDisposable
@@ -11,6 +12,7 @@
 @using Microsoft.AspNetCore.Components.Forms
 @using Apperture.Management.Ui.Shared.Options
 @using Microsoft.Extensions.Options
+@using Blazor.Heroicons.Outline
 @inject SessionStateService Session
 @inject IManagementClient Client
 @inject ShellHostNavigation HostNav
@@ -21,34 +23,34 @@
 
 <div class="ui-settings-page">
     <PageHeader Eyebrow="Account settings"
-                Title="Security"
-                Subtitle="How you sign in, and where each control lives." />
+                Title="Account"
+                Subtitle="Sign-in methods, contact email, and password." />
 
     <AccountSectionNav />
 
     @if (Session.State is SessionLoadState.Unknown or SessionLoadState.Loading)
     {
-        <p class="mt-6 text-sm text-muted" role="status">Loading your account…</p>
+        <p class="mt-8 text-sm text-muted" role="status">Loading your account…</p>
     }
     else if (_me is null)
     {
-        <p class="mt-6 text-sm text-muted">Sign in to view your security settings.</p>
+        <p class="mt-8 text-sm text-muted">Sign in to view your account settings.</p>
     }
     else
     {
-        <div class="ui-settings-grid mt-6">
-            <div class="space-y-5">
+        <div class="ui-settings-grid mt-8">
+            <div class="space-y-8">
                 <section class="ui-settings-card" aria-labelledby="signin-heading">
                     <div class="ui-settings-card__header">
                         <h2 id="signin-heading" class="ui-settings-card__title">Sign-in methods</h2>
                         <p class="ui-settings-card__help">
-                            Administrators add and remove sign-in methods for your account.
+                            How you authenticate to this instance. Administrators add and remove methods.
                         </p>
                     </div>
-                    <div class="ui-settings-card__body pt-3">
+                    <div class="ui-settings-card__body">
                         @if (_linkMessage is not null)
                         {
-                            <div class="mb-3">
+                            <div class="mb-4">
                                 <PageMessage Kind="@_linkMessageKind" Message="@_linkMessage" />
                             </div>
                         }
@@ -61,14 +63,14 @@
                             <ul class="divide-y divide-default text-sm">
                                 @foreach (var link in _me.IdentityLinks)
                                 {
-                                    <li class="py-2">
+                                    <li class="py-3 first:pt-0 last:pb-0">
                                         <div class="flex flex-wrap items-baseline justify-between gap-2">
                                             <span class="font-medium text-heading">@FormatSignInSource(link.Source)</span>
                                             <span class="text-xs text-muted">@link.DisplayLabel</span>
                                         </div>
                                         @if (IsEntra(link.Source))
                                         {
-                                            <p class="mt-1 text-xs text-muted">
+                                            <p class="mt-1.5 text-xs text-muted">
                                                 @if (link.LastAuthenticatedAtUtc is not null)
                                                 {
                                                     <span>Connected · Primary sign-in method. Last used <TimestampDisplay Value="link.LastAuthenticatedAtUtc" CssClass="text-xs text-muted" /></span>
@@ -81,7 +83,7 @@
                                         }
                                         else if (link.LastAuthenticatedAtUtc is not null)
                                         {
-                                            <p class="mt-1 text-xs text-muted">
+                                            <p class="mt-1.5 text-xs text-muted">
                                                 Last used <TimestampDisplay Value="link.LastAuthenticatedAtUtc" CssClass="text-xs text-muted" />
                                             </p>
                                         }
@@ -92,14 +94,14 @@
 
                         @if (EntraAvailable && !HasEntraLink && !_me.EmergencyAccessAccount)
                         {
-                            <div class="mt-4 border-t border-default pt-3">
+                            <div class="ui-microsoft-connect">
                                 <p class="text-sm text-muted">
-                                    Connect your Microsoft work account so you can sign in with it. After it is
-                                    connected, Microsoft Entra becomes your primary sign-in method and local
-                                    password sign-in is disabled. Your password is kept for administrator recovery.
+                                    Connect a Microsoft work account to use it for sign-in. Microsoft then
+                                    becomes your primary method and local password sign-in is disabled. The
+                                    password is kept for administrator recovery.
                                 </p>
                                 <button type="button"
-                                        class="btn btn-secondary mt-2"
+                                        class="ui-btn-microsoft"
                                         @onclick="ConnectMicrosoftAccount">
                                     Connect Microsoft account
                                 </button>
@@ -108,70 +110,36 @@
                     </div>
                 </section>
 
-                <section class="ui-settings-card" aria-labelledby="local-signin-heading">
+                <section class="ui-settings-card" aria-labelledby="session-heading">
                     <div class="ui-settings-card__header">
-                        <h2 id="local-signin-heading" class="ui-settings-card__title">Local sign-in</h2>
-                        <p class="ui-settings-card__help">@FormatLocalPasswordHelp(_me)</p>
+                        <h2 id="session-heading" class="ui-settings-card__title">This session</h2>
+                        <p class="ui-settings-card__help">
+                            Signing out clears your Apperture session and returns you to the sign-in page.
+                            When Microsoft sign-in is enabled, it also ends the directory session.
+                        </p>
                     </div>
-                    <div class="ui-settings-card__body pt-3 text-sm">
-                        <p>Local sign-in: <span class="font-medium text-heading">@FormatCredentialStatus(_me.LocalCredentialStatus)</span></p>
-                        <p class="mt-1">Password: <span class="font-medium text-heading">@(_me.LocalCredentialStatus == "none" ? "Not configured" : "Configured")</span></p>
+                    <div class="ui-settings-card__body">
+                        <button type="button"
+                                class="btn btn-secondary"
+                                @onclick="SignOut">
+                            Sign out
+                        </button>
                     </div>
                 </section>
 
-                <section class="ui-settings-card" aria-labelledby="password-heading">
-                    <div class="ui-settings-card__header">
-                        <h2 id="password-heading" class="ui-settings-card__title">Local password</h2>
-                        <p class="ui-settings-card__help">
-                            Changing a password does not enable local sign-in when it is disabled.
-                        </p>
-                    </div>
-                    <div class="ui-settings-card__body pt-3">
-                        @if (_me.CanChangeLocalPassword)
-                        {
-                            <EditForm Model="_formModel" OnValidSubmit="ChangePasswordAsync" OnInvalidSubmit="OnPasswordInvalid" class="space-y-3">
-                                <ValidatedFieldShell Label="Current password"
-                                                     For="current-password"
-                                                     Validation="@CurrentPasswordValidation">
-                                    <Control>
-                                        <input id="current-password"
-                                               type="password"
-                                               autocomplete="current-password"
-                                               class="ui-input ui-input--adorned"
-                                               aria-describedby="@(_passwordError is null ? null : "password-error")"
-                                               aria-invalid="@(CurrentPasswordValidation.Kind == FieldValidationKind.Invalid ? "true" : null)"
-                                               value="@_currentPassword"
-                                               @oninput="OnCurrentPasswordInput" />
-                                    </Control>
-                                </ValidatedFieldShell>
-                                <PasswordSetupFields @ref="_passwordFields"
-                                                     PasswordChanged="OnNewPasswordChanged"
-                                                     ConfirmationChanged="OnConfirmPasswordChanged"
-                                                     Context="_passwordContext"
-                                                     IsValidChanged="valid => _passwordSetupValid = valid" />
-                                <FormValidationFeedback Visible="@_showPasswordAttention" />
-                                @if (_passwordError is not null)
-                                {
-                                    <p id="password-error" class="text-sm text-message-error" role="alert">@_passwordError</p>
-                                }
-                                <ActionButton @ref="_passwordButton"
-                                              Type="submit"
-                                              DefaultText="Change password"
-                                              ActiveText="Updating…"
-                                              SuccessText="Password updated"
-                                              ErrorText="Update failed" />
-                            </EditForm>
-                            <p class="mt-3 text-sm text-muted">
-                                <a class="underline hover:text-heading" href="@AccountUiRoutes.ForgotPassword">Forgot password</a>
+                @if (HasEntraLink)
+                {
+                    <section class="ui-settings-card" aria-labelledby="provider-heading">
+                        <div class="ui-settings-card__header">
+                            <h2 id="provider-heading" class="ui-settings-card__title">Managed by Microsoft Entra ID</h2>
+                            <p class="ui-settings-card__help">
+                                Multi-factor authentication, passkeys, and password recovery for your
+                                organizational identity are managed by your organization's directory, not by
+                                Apperture.
                             </p>
-                        }
-                        else
-                        {
-                            <PageMessage Kind="PageMessageKind.Info"
-                                         Message="@PasswordChangeUnavailableMessage(_me)" />
-                        }
-                    </div>
-                </section>
+                        </div>
+                    </section>
+                }
 
                 @if (_me.EmergencyAccessAccount || _me.NativeMfaEnrolled)
                 {
@@ -192,47 +160,231 @@
                     </section>
                 }
 
-                @if (HasEntraLink)
+                @if (!_me.EmergencyAccessAccount)
                 {
-                    <section class="ui-settings-card" aria-labelledby="provider-heading">
-                        <div class="ui-settings-card__header">
-                            <h2 id="provider-heading" class="ui-settings-card__title">Managed by Microsoft Entra ID</h2>
-                            <p class="ui-settings-card__help">
-                                Multi-factor authentication, passkeys, and password recovery for your
-                                organizational identity are managed by your organization's directory, not by
-                                Apperture. Change them through your organization's account portal.
+                    <section class="ui-secured-account" aria-labelledby="secured-heading">
+                        <div class="ui-secured-account__header">
+                            <h2 id="secured-heading" class="ui-secured-account__title">Secured account</h2>
+                            <p class="ui-secured-account__help">
+                                Contact email and local password. Verification is required before these
+                                settings can be viewed or changed.
                             </p>
+                        </div>
+                        <div class="ui-secured-account__frame">
+                            <div class="ui-secured-account__content"
+                                 data-locked="@(IsLocked ? "true" : "false")"
+                                 @attributes="SecuredContentAttributes">
+                                @if (IsLocked)
+                                {
+                                    <div class="space-y-5" aria-hidden="true">
+                                        <div class="ui-secured-skeleton"></div>
+                                        <div class="ui-secured-skeleton ui-secured-skeleton--short"></div>
+                                        <div class="ui-secured-skeleton"></div>
+                                    </div>
+                                }
+                                else
+                                {
+                                    <div class="space-y-8">
+                                        @if (_contact is not null && _contact.CanManage)
+                                        {
+                                            <div class="ui-secured-block" aria-labelledby="contact-email-heading">
+                                                <h3 id="contact-email-heading" class="ui-secured-block__title">Contact email</h3>
+                                                <p class="ui-secured-block__help">
+                                                    Apperture uses this address for security messages such as password reset.
+                                                    It is not a Microsoft identity and does not sign you in.
+                                                </p>
+                                                <div class="ui-secured-block__body">
+                                                    @if (_contact.Status == "verified")
+                                                    {
+                                                        <p class="text-sm text-body">@_contact.EmailAddress</p>
+                                                        <p class="mt-1 text-xs text-muted">Verified</p>
+                                                    }
+                                                    else if (_contact.Status == "pending")
+                                                    {
+                                                        <p class="text-sm text-body">@(_contact.PendingEmailAddress ?? _contact.EmailAddress)</p>
+                                                        <p class="mt-1 text-xs text-muted">Verification pending</p>
+                                                    }
+                                                    else
+                                                    {
+                                                        <p class="text-sm text-muted">No contact email configured</p>
+                                                    }
+
+                                                    @if (_contactError is not null)
+                                                    {
+                                                        <p class="mt-3 text-sm text-message-error" role="alert">@_contactError</p>
+                                                    }
+
+                                                    <form class="mt-4 space-y-4" @onsubmit="SaveContactEmailAsync" @onsubmit:preventDefault="true">
+                                                        <ValidatedFieldShell Label="@(_contact.Status == "verified" ? "New contact email" : "Contact email")"
+                                                                             For="contact-email"
+                                                                             Validation="@ContactEmailValidation">
+                                                            <Control>
+                                                                <input id="contact-email"
+                                                                       type="email"
+                                                                       autocomplete="email"
+                                                                       class="ui-input ui-input--adorned"
+                                                                       placeholder="@(_contact.SuggestedEntraEmail ?? "you@example.com")"
+                                                                       value="@_contactDraft"
+                                                                       @oninput="OnContactDraftInput" />
+                                                            </Control>
+                                                        </ValidatedFieldShell>
+                                                        <FormValidationFeedback Visible="@_showContactAttention" />
+                                                        <div class="flex flex-wrap gap-2">
+                                                            <ActionButton @ref="_contactButton"
+                                                                          Type="submit"
+                                                                          DefaultText="@(_contact.Status == "verified" ? "Change email" : "Save email")"
+                                                                          ActiveText="Saving…"
+                                                                          SuccessText="Saved"
+                                                                          ErrorText="Could not save"
+                                                                          IsInactive="@_contactBusy" />
+                                                            @if (_contact.Status == "pending")
+                                                            {
+                                                                <ActionButton @ref="_resendButton"
+                                                                              Variant="ActionButtonVariant.Secondary"
+                                                                              DefaultText="Resend verification"
+                                                                              ActiveText="Sending…"
+                                                                              SuccessText="Sent"
+                                                                              ErrorText="Could not send"
+                                                                              IsInactive="@_contactBusy"
+                                                                              OnClick="_ => ResendContactAsync()" />
+                                                            }
+                                                        </div>
+                                                    </form>
+                                                </div>
+                                            </div>
+                                        }
+
+                                        <div class="ui-secured-block" aria-labelledby="local-signin-heading">
+                                            <h3 id="local-signin-heading" class="ui-secured-block__title">Local sign-in</h3>
+                                            <p class="ui-secured-block__help">@FormatLocalPasswordHelp(_me)</p>
+                                            <div class="ui-secured-block__body text-sm">
+                                                <p>Local sign-in: <span class="font-medium text-heading">@FormatCredentialStatus(_me.LocalCredentialStatus)</span></p>
+                                                <p class="mt-1.5">Password: <span class="font-medium text-heading">@(_me.LocalCredentialStatus == "none" ? "Not configured" : "Configured")</span></p>
+                                            </div>
+                                        </div>
+
+                                        <div class="ui-secured-block" aria-labelledby="password-heading">
+                                            <h3 id="password-heading" class="ui-secured-block__title">Local password</h3>
+                                            <p class="ui-secured-block__help">
+                                                Changing a password does not enable local sign-in when it is disabled.
+                                            </p>
+                                            <div class="ui-secured-block__body">
+                                                @if (_me.CanChangeLocalPassword)
+                                                {
+                                                    <EditForm Model="_formModel" OnValidSubmit="ChangePasswordAsync" OnInvalidSubmit="OnPasswordInvalid" class="space-y-4">
+                                                        <PasswordSetupFields @ref="_passwordFields"
+                                                                             PasswordChanged="OnNewPasswordChanged"
+                                                                             ConfirmationChanged="OnConfirmPasswordChanged"
+                                                                             Context="_passwordContext"
+                                                                             IsValidChanged="valid => _passwordSetupValid = valid" />
+                                                        <FormValidationFeedback Visible="@_showPasswordAttention" />
+                                                        @if (_passwordError is not null)
+                                                        {
+                                                            <p id="password-error" class="text-sm text-message-error" role="alert">@_passwordError</p>
+                                                        }
+                                                        <ActionButton @ref="_passwordButton"
+                                                                      Type="submit"
+                                                                      DefaultText="Change password"
+                                                                      ActiveText="Updating…"
+                                                                      SuccessText="Password updated"
+                                                                      ErrorText="Update failed" />
+                                                    </EditForm>
+                                                    <p class="mt-4 text-sm text-muted">
+                                                        <a class="underline hover:text-heading" href="@AccountUiRoutes.ForgotPassword">Forgot password</a>
+                                                    </p>
+                                                }
+                                                else
+                                                {
+                                                    <PageMessage Kind="PageMessageKind.Info"
+                                                                 Message="@PasswordChangeUnavailableMessage(_me)" />
+                                                }
+                                            </div>
+                                        </div>
+                                    </div>
+                                }
+                            </div>
+
+                            @if (IsLocked)
+                            {
+                                <div class="ui-secured-account__veil">
+                                    <div class="ui-secured-account__card"
+                                         role="dialog"
+                                         aria-modal="true"
+                                         aria-labelledby="unlock-title"
+                                         aria-describedby="unlock-help">
+                                        <div class="ui-secured-account__card-title" id="unlock-title">
+                                            <LockClosedIcon class="ui-secured-account__lock" />
+                                            <span>Verify to manage account settings</span>
+                                        </div>
+                                        <p id="unlock-help" class="ui-secured-account__card-help">
+                                            Confirm it is you before viewing or changing contact email and password.
+                                        </p>
+                                        @if (CanUseLocalPassword)
+                                        {
+                                            <form class="ui-unlock-row" @onsubmit="VerifyLocalPasswordAsync" @onsubmit:preventDefault="true">
+                                                <label class="sr-only" for="secured-current-password">Current password</label>
+                                                <input id="secured-current-password"
+                                                       type="password"
+                                                       autocomplete="current-password"
+                                                       class="ui-input"
+                                                       placeholder="Current password"
+                                                       value="@_unlockPassword"
+                                                       disabled="@_unlockBusy"
+                                                       aria-invalid="@(_unlockError is not null ? "true" : null)"
+                                                       aria-describedby="@(_unlockError is null ? null : "unlock-error")"
+                                                       @oninput="OnUnlockPasswordInput" />
+                                                <button type="submit"
+                                                        class="ui-unlock-submit"
+                                                        disabled="@_unlockBusy"
+                                                        aria-label="Verify">
+                                                    <ArrowRightIcon class="h-4 w-4" />
+                                                </button>
+                                            </form>
+                                            @if (HasEntraLink)
+                                            {
+                                                <p class="mt-3 text-center text-xs text-muted">
+                                                    <button type="button"
+                                                            class="underline hover:text-heading"
+                                                            disabled="@_unlockBusy"
+                                                            @onclick="VerifyWithMicrosoft">
+                                                        Verify with Microsoft
+                                                    </button>
+                                                </p>
+                                            }
+                                        }
+                                        else
+                                        {
+                                            <button type="button"
+                                                    class="ui-btn-microsoft ui-btn-microsoft--compact"
+                                                    disabled="@_unlockBusy"
+                                                    @onclick="VerifyWithMicrosoft">
+                                                Verify with Microsoft
+                                            </button>
+                                        }
+                                        @if (_unlockError is not null)
+                                        {
+                                            <p id="unlock-error" class="mt-3 text-sm text-message-error" role="alert">@_unlockError</p>
+                                        }
+                                    </div>
+                                </div>
+                            }
                         </div>
                     </section>
                 }
-
-                <section class="ui-settings-card" aria-labelledby="session-heading">
-                    <div class="ui-settings-card__header">
-                        <h2 id="session-heading" class="ui-settings-card__title">This session</h2>
-                        <p class="ui-settings-card__help">
-                            Signing out clears your Apperture session and returns you to the sign-in page.
-                            When Microsoft sign-in is enabled, it also ends the directory session.
-                        </p>
-                    </div>
-                    <div class="ui-settings-card__body pt-3">
-                        <div class="flex flex-wrap gap-2">
-                            <button type="button"
-                                    class="btn btn-secondary"
-                                    @onclick="SignOut">
-                                Sign out
-                            </button>
-                        </div>
-                    </div>
-                </section>
+                else
+                {
+                    <p class="text-sm text-muted">Recovery Access does not use a contact email or email recovery.</p>
+                }
             </div>
 
-            <aside class="space-y-5">
+            <aside class="space-y-8">
                 <div class="ui-settings-callout">
                     <div>
-                        <div class="ui-settings-callout__title">Directory-managed controls</div>
+                        <div class="ui-settings-callout__title">Microsoft account and contact email</div>
                         <p class="ui-settings-callout__body">
-                            MFA, passkeys, and recovery for organizational identities live in your
-                            directory — not in Apperture personal settings.
+                            A Microsoft account is how you sign in. Contact email is the verified address
+                            Apperture uses for notifications and recovery. They stay independent even when
+                            the addresses match.
                         </p>
                     </div>
                 </div>
@@ -244,29 +396,28 @@
 @code {
     private readonly object _formModel = new();
     private MeResponse? _me;
-    private string _currentPassword = "";
+    private AccountContactEmailDto? _contact;
     private string _newPassword = "";
     private string _confirmPassword = "";
     private string? _passwordError;
     private bool _passwordSetupValid;
-    private bool _currentPasswordTouched;
-    private bool _passwordSubmitAttempted;
     private bool _showPasswordAttention;
     private ActionButton? _passwordButton;
     private PasswordSetupFields? _passwordFields;
     private PasswordEvaluationContext? _passwordContext;
+    private string _unlockPassword = "";
+    private string? _unlockError;
+    private bool _unlockBusy;
+    private CancellationTokenSource? _relockCts;
 
-    private FieldValidationPresentation CurrentPasswordValidation
-    {
-        get
-        {
-            if (!_currentPasswordTouched && !_passwordSubmitAttempted)
-                return FieldValidationPresentation.Pristine;
-            return string.IsNullOrEmpty(_currentPassword)
-                ? FieldValidationPresentation.Invalid("Enter your current password.")
-                : FieldValidationPresentation.Valid;
-        }
-    }
+    private string _contactDraft = "";
+    private string? _contactError;
+    private bool _contactBusy;
+    private bool _contactEmailTouched;
+    private bool _contactSubmitAttempted;
+    private bool _showContactAttention;
+    private ActionButton? _contactButton;
+    private ActionButton? _resendButton;
 
     private string? _linkMessage;
     private PageMessageKind _linkMessageKind = PageMessageKind.Info;
@@ -278,18 +429,51 @@
     private bool EntraAvailable =>
         ShellOpts.Value.UseEntraSignIn || (SignInOptions.Current?.EntraSignInEnabled ?? false);
 
-    protected override void OnInitialized()
+    private bool CanUseLocalPassword =>
+        _me is { EmergencyAccessAccount: false, LocalCredentialStatus: "active" };
+
+    private bool IsLocked =>
+        _me is { EmergencyAccessAccount: false }
+        && !(_me.HasRecentAccountVerification
+             && _me.RecentAccountVerificationExpiresAtUtc is DateTimeOffset expires
+             && expires > DateTimeOffset.UtcNow);
+
+    private Dictionary<string, object> SecuredContentAttributes =>
+        IsLocked
+            ? new Dictionary<string, object> { ["inert"] = true, ["aria-hidden"] = "true" }
+            : new Dictionary<string, object> { ["aria-hidden"] = "false" };
+
+    private FieldValidationPresentation ContactEmailValidation
+    {
+        get
+        {
+            if (!_contactEmailTouched && !_contactSubmitAttempted)
+                return FieldValidationPresentation.Pristine;
+            return string.IsNullOrWhiteSpace(_contactDraft)
+                ? FieldValidationPresentation.Invalid("Enter a contact email.")
+                : FieldValidationPresentation.Valid;
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
     {
         Session.Changed += OnSessionChanged;
         _me = Session.User;
         _passwordContext = PasswordContextFromMe(_me);
         ReadLinkOutcomeFromQuery();
+        await RefreshVerificationAsync();
+        if (!IsLocked)
+            await LoadContactAsync();
+        ScheduleRelock();
     }
 
-    /// <summary>
-    /// The host redirects back here after a linking round trip. A failure means no Microsoft identity was
-    /// bound and the existing local session was kept, so the message is informational rather than fatal.
-    /// </summary>
+    public void Dispose()
+    {
+        Session.Changed -= OnSessionChanged;
+        _relockCts?.Cancel();
+        _relockCts?.Dispose();
+    }
+
     private void ReadLinkOutcomeFromQuery()
     {
         var query = new Uri(Nav.Uri).Query;
@@ -307,7 +491,7 @@
         if (parameters["steppedUp"] == "1")
         {
             _linkMessageKind = PageMessageKind.Info;
-            _linkMessage = "Strong authentication completed. You can continue with the administrator action.";
+            _linkMessage = "Verification completed. You can manage your account settings.";
             return;
         }
 
@@ -335,37 +519,157 @@
         Nav.NavigateTo(new Uri(host, "signin/link").ToString(), forceLoad: true);
     }
 
-    public void Dispose() => Session.Changed -= OnSessionChanged;
+    private void VerifyWithMicrosoft()
+    {
+        var host = HostNav.GetManagementHostBase(Nav);
+        var returnPath = AccountUiRoutes.Account;
+        Nav.NavigateTo(
+            new Uri(host, "signin/step-up?returnUrl=" + Uri.EscapeDataString(returnPath)).ToString(),
+            forceLoad: true);
+    }
 
-    private void OnSessionChanged() => _ = InvokeAsync(() =>
+    private void OnSessionChanged() => _ = InvokeAsync(async () =>
     {
         _me = Session.User;
         _passwordContext = PasswordContextFromMe(_me);
+        if (!IsLocked)
+            await LoadContactAsync();
+        else
+            _contact = null;
+        ScheduleRelock();
         StateHasChanged();
     });
+
+    private async Task RefreshVerificationAsync()
+    {
+        try
+        {
+            await Session.RefreshAsync();
+            _me = Session.User ?? _me;
+            _passwordContext = PasswordContextFromMe(_me);
+        }
+        catch (HttpRequestException)
+        {
+            // Keep the last known session snapshot; the lock stays conservative.
+        }
+    }
+
+    private async Task LoadContactAsync()
+    {
+        if (_me?.EmergencyAccessAccount == true)
+            return;
+
+        try
+        {
+            _contact = await Client.GetContactEmailAsync();
+            _contactDraft = _contact.PendingEmailAddress ?? _contact.EmailAddress ?? _contact.SuggestedEntraEmail ?? "";
+        }
+        catch (HttpRequestException)
+        {
+            _contact = null;
+        }
+    }
+
+    private void ScheduleRelock()
+    {
+        _relockCts?.Cancel();
+        _relockCts?.Dispose();
+        _relockCts = null;
+
+        if (_me?.RecentAccountVerificationExpiresAtUtc is not DateTimeOffset expires)
+            return;
+
+        var delay = expires - DateTimeOffset.UtcNow;
+        if (delay <= TimeSpan.Zero)
+        {
+            _ = InvokeAsync(OnVerificationExpiredAsync);
+            return;
+        }
+
+        _relockCts = new CancellationTokenSource();
+        var token = _relockCts.Token;
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await Task.Delay(delay, token);
+                await InvokeAsync(OnVerificationExpiredAsync);
+            }
+            catch (OperationCanceledException)
+            {
+                // Replaced or disposed.
+            }
+        }, token);
+    }
+
+    private async Task OnVerificationExpiredAsync()
+    {
+        await RefreshVerificationAsync();
+        if (IsLocked)
+        {
+            _contact = null;
+            _unlockPassword = "";
+            _newPassword = "";
+            _confirmPassword = "";
+            _passwordFields?.Reset();
+        }
+        else
+        {
+            await LoadContactAsync();
+            ScheduleRelock();
+        }
+
+        StateHasChanged();
+    }
+
+    private void OnUnlockPasswordInput(ChangeEventArgs args)
+    {
+        _unlockPassword = args.Value?.ToString() ?? "";
+        _unlockError = null;
+    }
+
+    private async Task VerifyLocalPasswordAsync()
+    {
+        if (_unlockBusy)
+            return;
+
+        _unlockBusy = true;
+        _unlockError = null;
+        var submitted = _unlockPassword;
+        _unlockPassword = "";
+        try
+        {
+            await Client.VerifySecuredAccountAsync(new VerifySecuredAccountRequest(submitted));
+            await RefreshVerificationAsync();
+            if (!IsLocked)
+                await LoadContactAsync();
+            ScheduleRelock();
+        }
+        catch (HttpRequestException ex)
+        {
+            _unlockError = string.IsNullOrWhiteSpace(ex.Message)
+                ? "That password is incorrect."
+                : ex.Message;
+        }
+        finally
+        {
+            _unlockBusy = false;
+        }
+    }
 
     private void OnNewPasswordChanged(string value) => _newPassword = value;
     private void OnConfirmPasswordChanged(string value) => _confirmPassword = value;
 
-    private void OnCurrentPasswordInput(ChangeEventArgs args)
-    {
-        _currentPassword = args.Value?.ToString() ?? "";
-        _currentPasswordTouched = true;
-        _passwordError = null;
-    }
-
     private void OnPasswordInvalid()
     {
-        _passwordSubmitAttempted = true;
         _showPasswordAttention = true;
         _passwordFields?.ValidateForSubmit();
     }
 
     private async Task ChangePasswordAsync()
     {
-        _passwordSubmitAttempted = true;
         var setupValid = _passwordFields is null || _passwordFields.ValidateForSubmit();
-        if (string.IsNullOrEmpty(_currentPassword) || !setupValid)
+        if (!setupValid)
         {
             _showPasswordAttention = true;
             return;
@@ -377,19 +681,17 @@
             await _passwordButton.SetStateAsync(ActionButtonState.Active);
         try
         {
-            await Client.ChangeLocalPasswordAsync(new ChangeLocalPasswordRequest(_currentPassword, _newPassword));
-            _currentPassword = "";
+            await Client.ChangeLocalPasswordAsync(new ChangeLocalPasswordRequest(null, _newPassword));
             _newPassword = "";
             _confirmPassword = "";
             _passwordSetupValid = false;
-            _currentPasswordTouched = false;
-            _passwordSubmitAttempted = false;
             _passwordFields?.Reset();
             if (_passwordButton is not null)
                 await _passwordButton.SetStateAsync(ActionButtonState.Success);
             await Session.RefreshAsync();
             _me = Session.User ?? _me;
             _passwordContext = PasswordContextFromMe(_me);
+            ScheduleRelock();
         }
         catch (HttpRequestException ex)
         {
@@ -397,6 +699,75 @@
             _passwordFields?.ApplyServerError(ex.Message);
             if (_passwordButton is not null)
                 await _passwordButton.SetStateAsync(ActionButtonState.Error);
+        }
+    }
+
+    private void OnContactDraftInput(ChangeEventArgs args)
+    {
+        _contactDraft = args.Value?.ToString() ?? "";
+        _contactEmailTouched = true;
+        _contactError = null;
+    }
+
+    private async Task SaveContactEmailAsync()
+    {
+        _contactSubmitAttempted = true;
+        if (string.IsNullOrWhiteSpace(_contactDraft))
+        {
+            _showContactAttention = true;
+            return;
+        }
+
+        _showContactAttention = false;
+        _contactError = null;
+        _contactBusy = true;
+        if (_contactButton is not null)
+            await _contactButton.SetStateAsync(ActionButtonState.Active);
+        try
+        {
+            var result = await Client.RequestContactEmailAsync(new RequestContactEmailRequest
+            {
+                Email = _contactDraft.Trim()
+            });
+            _contact = result.Contact;
+            _contactDraft = _contact.PendingEmailAddress ?? _contact.EmailAddress ?? _contactDraft;
+            if (_contactButton is not null)
+                await _contactButton.SetStateAsync(result.DeliverySucceeded ? ActionButtonState.Success : ActionButtonState.Error);
+        }
+        catch (HttpRequestException ex)
+        {
+            _contactError = ex.Message;
+            if (_contactButton is not null)
+                await _contactButton.SetStateAsync(ActionButtonState.Error);
+        }
+        finally
+        {
+            _contactBusy = false;
+        }
+    }
+
+    private async Task ResendContactAsync()
+    {
+        _contactError = null;
+        _contactBusy = true;
+        if (_resendButton is not null)
+            await _resendButton.SetStateAsync(ActionButtonState.Active);
+        try
+        {
+            var result = await Client.ResendContactEmailAsync();
+            _contact = result.Contact;
+            if (_resendButton is not null)
+                await _resendButton.SetStateAsync(result.DeliverySucceeded ? ActionButtonState.Success : ActionButtonState.Error);
+        }
+        catch (HttpRequestException ex)
+        {
+            _contactError = ex.Message;
+            if (_resendButton is not null)
+                await _resendButton.SetStateAsync(ActionButtonState.Error);
+        }
+        finally
+        {
+            _contactBusy = false;
         }
     }
 
@@ -414,7 +785,7 @@
     private static string FormatSignInSource(string source) => source switch
     {
         "Local" => "Local username and password",
-        "Entra" => "Microsoft Entra ID",
+        "Entra" => "Microsoft account",
         _ => source
     };
 
@@ -433,7 +804,7 @@
         if (me.LocalSignInPolicy == "recovery_safeguard")
             return "Enabled for emergency platform recovery. This local credential is temporarily retained because no independent emergency administrator has been configured yet.";
         if (me.LocalSignInPolicy == "disabled" || me.LocalCredentialStatus == "disabled")
-            return "Disabled. Your local password sign-in is disabled because your Microsoft account is connected. A Platform Administrator can restore local authentication for account recovery. The password itself has not been deleted.";
+            return "Disabled. Local password sign-in is disabled because your Microsoft account is connected. A Platform Administrator can restore local authentication for account recovery. The password itself has not been deleted.";
         if (me.LocalCredentialStatus == "active")
             return "Enabled. You can sign in with your local username and password.";
         return "Not configured.";

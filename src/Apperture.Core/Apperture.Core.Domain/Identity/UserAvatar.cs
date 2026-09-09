@@ -48,9 +48,9 @@ public sealed record UserAvatar(
         }
 
         if (string.Equals(kind, UserAvatarStorageKinds.BuiltIn, StringComparison.Ordinal)
-            && BuiltInAvatarCatalog.IsKnownOptionId(builtInOptionId))
+            && BuiltInAvatarCatalog.CanonicalizeOptionId(builtInOptionId) is { } canonical)
         {
-            return new UserAvatar(UserAvatarKind.BuiltIn, builtInOptionId!.Trim(), null);
+            return new UserAvatar(UserAvatarKind.BuiltIn, canonical, null);
         }
 
         return Default;

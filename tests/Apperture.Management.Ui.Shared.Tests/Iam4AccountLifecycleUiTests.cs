@@ -26,17 +26,32 @@ public sealed class Iam4AccountLifecycleUiTests
     }
 
     [Fact]
-    public void Profile_distinguishes_contact_email_from_directory_email()
+    public void Profile_distinguishes_directory_email_from_contact_email()
     {
         var content = ReadRepoFile($"{ClientRoot}/Pages/Account/AccountProfile.razor");
 
-        content.Should().Contain("Contact email");
         content.Should().Contain("Microsoft identity email");
+        content.Should().Contain("Recovery Access does not use a contact email");
+        content.Should().Contain("AccountUiRoutes.Account");
+        content.Should().NotContain("id=\"contact-email\"");
+        content.Should().NotContain("Current local password");
+    }
+
+    [Fact]
+    public void Account_hosts_contact_email_inside_the_secured_section()
+    {
+        var content = ReadRepoFile($"{ClientRoot}/Pages/Account/AccountSecurity.razor");
+
+        content.Should().Contain("Secured account");
+        content.Should().Contain("Contact email");
         content.Should().Contain("Verification pending");
         content.Should().Contain("No contact email configured");
-        content.Should().Contain("Recovery Access does not use a contact email");
-        content.Should().Contain("HasEnabledLocalPassword");
-        content.Should().Contain("Current local password");
+        content.Should().Contain("Verify to manage account settings");
+        content.Should().Contain("VerifySecuredAccountAsync");
+        content.Should().Contain("autocomplete=\"current-password\"");
+        content.Should().Contain("Verify with Microsoft");
+        content.Should().Contain("signin/step-up");
+        content.Should().NotContain("Current local password");
     }
 
     [Fact]
@@ -135,8 +150,10 @@ public sealed class Iam4AccountLifecycleUiTests
 
         forgot.Should().Contain("ActionButton");
         forgot.Should().Contain(ForgottenPasswordServiceGenericCopy);
-        profile.Should().Contain("ActionButton");
         profile.Should().Contain("GetAccountProfileAsync() ?? _profile");
+        var account = ReadRepoFile($"{ClientRoot}/Pages/Account/AccountSecurity.razor");
+        account.Should().Contain("ActionButton");
+        account.Should().Contain("RequestContactEmailAsync");
         detail.Should().Contain("ActionButton");
         detail.Should().Contain("Resend setup invitation");
     }

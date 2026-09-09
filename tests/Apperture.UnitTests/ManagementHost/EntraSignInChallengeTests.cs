@@ -91,7 +91,7 @@ public sealed class EntraSignInChallengeTests
     {
         var properties = EntraLinkFlowConstants.CreateChallengeProperties(Config(), "usr-1", returnUrl: null);
 
-        properties.RedirectUri.Should().Be("http://localhost:9001/account/security?linked=1");
+        properties.RedirectUri.Should().Be("http://localhost:9001/account?linked=1");
         properties.Prompt.Should().Be("login");
         EntraLinkFlowConstants.IsLinkPurpose(properties).Should().BeTrue();
         EntraLinkFlowConstants.GetInitiatingUserId(properties).Should().Be("usr-1");
@@ -110,7 +110,7 @@ public sealed class EntraSignInChallengeTests
     {
         var properties = EntraLinkFlowConstants.CreateChallengeProperties(Config(), "usr-1", "https://evil.example");
 
-        properties.RedirectUri.Should().Be("http://localhost:9001/account/security?linked=1");
+        properties.RedirectUri.Should().Be("http://localhost:9001/account?linked=1");
     }
 
     [Fact]

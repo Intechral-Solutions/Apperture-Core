@@ -73,13 +73,28 @@ Delivery failure does not claim success. Unauthenticated forgot-password still r
 
 | Action | Proof |
 |---|---|
-| Add first contact email | Authenticated session |
-| Resend verification | Authenticated session |
-| Change verified email | Enabled local credential → current password; else Entra → recent strong authentication, except `NotConfigured` (Entra session is enough) |
-| Change password | Current password (existing self-service) |
+| Unlock Secured account | Recent account verification (below) |
+| Add first contact email | Authenticated session. The Account UI requires recent account verification first. |
+| Resend verification | Authenticated session. The Account UI requires recent account verification first. |
+| Change verified email | Recent account verification, or enabled local credential → current password; else Entra → recent strong authentication, except `NotConfigured` (Entra session is enough) |
+| Change password | Recent account verification, or current password |
 | Consume setup / reset / verify token | Token only |
 | Admin send/resend invitation | `user.manage` |
 | Forgot-password request | Unauthenticated; always generic acknowledgement |
+| Enable local sign-in (`credential.manage`) | Recent **strong** authentication. Password-only account verification is not enough. |
+
+### Recent account verification
+
+Ordinary Account mutations after unlock use a short-lived **recent account verification** window, not a client-only unlock flag.
+
+Satisfied by any of:
+
+- a freshly verified current local password (cookie claims `apperture.auth.account.verification.*`);
+- existing recent strong authentication (Entra Authentication Context, native TOTP, recovery code).
+
+Lifetime: **15 minutes**, the same `AuthenticationAssurance:RecentStrongAuthenticationLifetime` used for recent strong authentication (`AuthenticationAssuranceOptions.DefaultRecentLifetime`).
+
+Password-only proof is **not** MFA and does **not** satisfy `IStrongAuthenticationGate` / `credential.manage`. Recovery Access does not use this unlock workflow.
 
 Do not invent a second-factor requirement for local users who have none.
 

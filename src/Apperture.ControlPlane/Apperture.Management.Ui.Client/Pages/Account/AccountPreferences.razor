@@ -42,8 +42,8 @@
     }
     else
     {
-        <div class="ui-settings-grid mt-6">
-            <div class="space-y-5">
+        <div class="ui-settings-grid mt-8">
+            <div class="space-y-8">
                 <section class="ui-settings-card" aria-labelledby="appearance-heading">
                     <div class="ui-settings-card__header">
                         <h2 id="appearance-heading" class="ui-settings-card__title">Appearance</h2>
@@ -52,7 +52,7 @@
                             other browsers.
                         </p>
                     </div>
-                    <div class="ui-settings-card__body pt-4">
+                    <div class="ui-settings-card__body">
                         <ThemeCardGroup Value="_appearance"
                                         ValueChanged="SetAppearanceAsync"
                                         Disabled="_saving"
@@ -72,7 +72,7 @@
                             and stored timestamps stay in UTC.
                         </p>
                     </div>
-                    <div class="ui-settings-card__body pt-4 space-y-6">
+                    <div class="ui-settings-card__body space-y-6">
                         <TimeZoneSelector Value="@_timeZoneId"
                                           ValueChanged="OnTimeZoneChanged"
                                           Disabled="@_saving"
@@ -139,7 +139,7 @@
                             preferences.
                         </p>
                     </div>
-                    <div class="ui-settings-card__body pt-4">
+                    <div class="ui-settings-card__body">
                         <div class="ui-settings-meta">
                             <div class="ui-settings-meta__row">
                                 <span class="ui-settings-meta__label">Mail delivery</span>
@@ -165,7 +165,7 @@
                             What this browser is using right now for theme and timezone display.
                         </p>
                     </div>
-                    <div class="ui-settings-card__body pt-4">
+                    <div class="ui-settings-card__body">
                         <div class="ui-settings-meta">
                             <div class="ui-settings-meta__row">
                                 <span class="ui-settings-meta__label">Browser timezone</span>

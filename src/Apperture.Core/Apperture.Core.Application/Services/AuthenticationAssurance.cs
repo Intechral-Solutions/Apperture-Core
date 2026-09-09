@@ -36,6 +36,7 @@ public sealed class AuthenticationAssuranceOptions
 
     /// <summary>
     /// How long a recorded strong-authentication assurance remains valid for sensitive operations.
+    /// The same window is reused for recent account verification (local-password unlock).
     /// </summary>
     public TimeSpan RecentStrongAuthenticationLifetime { get; set; } = DefaultRecentLifetime;
 }

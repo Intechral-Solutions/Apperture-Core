@@ -61,6 +61,30 @@ public sealed class AuthMeResponseJsonTests
         me!.DisplayTimeZoneId.Should().Be("America/Chicago");
     }
 
+    [Fact]
+    public void MeResponse_deserializes_recent_account_verification()
+    {
+        const string json = """
+            {
+              "userId":"usr_1",
+              "displayName":"Ada",
+              "roles":["platform-admin"],
+              "userPrincipal":"ada@contoso.com",
+              "signInSource":"Local",
+              "identityLinks":[],
+              "localCredentialStatus":"active",
+              "roleNames":["Platform administrator"],
+              "canChangeLocalPassword":true,
+              "hasRecentAccountVerification":true,
+              "recentAccountVerificationExpiresAtUtc":"2026-09-04T18:45:00Z"
+            }
+            """;
+        var me = JsonSerializer.Deserialize<MeResponse>(json, ClientJsonOptions());
+        me.Should().NotBeNull();
+        me!.HasRecentAccountVerification.Should().BeTrue();
+        me.RecentAccountVerificationExpiresAtUtc.Should().Be(new DateTimeOffset(2026, 9, 4, 18, 45, 0, TimeSpan.Zero));
+    }
+
     private static JsonSerializerOptions ClientJsonOptions() =>
         new() { PropertyNameCaseInsensitive = true, PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
 }

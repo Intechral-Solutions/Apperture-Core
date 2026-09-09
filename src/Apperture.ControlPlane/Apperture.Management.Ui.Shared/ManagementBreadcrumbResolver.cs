@@ -1138,7 +1138,7 @@ public static class ManagementBreadcrumbResolver
         c = null;
         if (!Matches(s, "account", "security"))
             return false;
-        c = AccountTrail("Security");
+        c = Trail(("Account", null));
         return true;
     }
 

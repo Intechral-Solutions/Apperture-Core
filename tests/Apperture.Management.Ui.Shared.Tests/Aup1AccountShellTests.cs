@@ -17,7 +17,7 @@ public sealed class Aup1AccountShellTests
             AccountUiRoutes.Profile,
             AccountUiRoutes.Notifications,
             AccountUiRoutes.Preferences,
-            AccountUiRoutes.Security);
+            AccountUiRoutes.Account);
     }
 
     [Fact]
@@ -28,16 +28,19 @@ public sealed class Aup1AccountShellTests
     }
 
     [Fact]
-    public void The_account_root_resolves_to_profile_so_the_redirect_and_navigation_agree()
+    public void The_account_root_resolves_to_the_account_section()
     {
-        AccountUiRoutes.ResolveSection(AccountUiRoutes.Root)!.Href.Should().Be(AccountUiRoutes.Profile);
+        var section = AccountUiRoutes.ResolveSection(AccountUiRoutes.Root);
+        section!.Href.Should().Be(AccountUiRoutes.Account);
+        section.Label.Should().Be("Account");
     }
 
     [Theory]
     [InlineData("/account/profile", "/account/profile")]
     [InlineData("/account/notifications", "/account/notifications")]
     [InlineData("/account/preferences", "/account/preferences")]
-    [InlineData("/account/security", "/account/security")]
+    [InlineData("/account/security", "/account")]
+    [InlineData("/account", "/account")]
     [InlineData("/ACCOUNT/PROFILE", "/account/profile")]
     [InlineData("/account/profile/", "/account/profile")]
     [InlineData("/account/profile?tab=x", "/account/profile")]
@@ -71,13 +74,23 @@ public sealed class Aup1AccountShellTests
     [InlineData("/account/profile", "Profile")]
     [InlineData("/account/notifications", "Notifications")]
     [InlineData("/account/preferences", "Appearance & regional")]
-    [InlineData("/account/security", "Security")]
-    public void Each_account_section_resolves_a_titled_breadcrumb_under_an_account_parent(string path, string title)
+    public void Each_nested_account_section_resolves_a_titled_breadcrumb_under_an_account_parent(string path, string title)
     {
         var orientation = ManagementBreadcrumbResolver.ResolveOrientation(path);
 
         orientation.Title.Should().Be(title);
         orientation.Parents.Should().ContainSingle(p => p.Label == "Account" && p.Href == AccountUiRoutes.Root);
+    }
+
+    [Theory]
+    [InlineData("/account")]
+    [InlineData("/account/security")]
+    public void The_account_section_avoids_a_duplicate_account_breadcrumb(string path)
+    {
+        var orientation = ManagementBreadcrumbResolver.ResolveOrientation(path);
+
+        orientation.Title.Should().Be("Account");
+        orientation.Parents.Should().BeEmpty();
     }
 
     [Fact]

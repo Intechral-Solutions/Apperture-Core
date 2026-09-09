@@ -85,6 +85,8 @@ public sealed class AuthControllerAccountTests
         body.Avatar!.Kind.Should().Be(UserAvatarStorageKinds.BuiltIn);
         body.Avatar.BuiltInOptionId.Should().Be(BuiltInAvatarCatalog.DefaultOptionId);
         body.Avatar.ImageUrl.Should().BeNull("built-in artwork is drawn by the client, not fetched");
+        body.HasRecentAccountVerification.Should().BeFalse();
+        body.RecentAccountVerificationExpiresAtUtc.Should().BeNull();
     }
 
     [Fact]
@@ -178,6 +180,48 @@ public sealed class AuthControllerAccountTests
         hasher.HashCalls.Should().Be(1);
         credentialRepo.SetPasswordCalls.Should().Be(1);
         audit.Records.Should().ContainSingle(r => r.Action == "auth.local.password_change.success");
+    }
+
+    [Fact]
+    public async Task ChangeLocalPassword_with_recent_account_verification_omits_current_password()
+    {
+        var credentialRepo = new MutableCredentialRepository(
+            new LocalCredentialData(TestUserId, "hash", "salt", "stub", IsDisabled: false));
+        var hasher = new TrackingPasswordHasher(verifyCurrent: false);
+        var controller = NewController(
+            actor: new HumanActor(new ActorId(LocalUsername), LocalUsername, isBreakGlassSession: false),
+            resolvedUserId: TestUserId,
+            user: SampleUser(),
+            credentialRepo: credentialRepo,
+            passwordHasher: hasher,
+            accountVerification: StubAccountVerification.Satisfied());
+
+        var result = await controller.ChangeLocalPassword(
+            new ChangeLocalPasswordRequest(null, "new-password-ok"),
+            CancellationToken.None);
+
+        result.Should().BeOfType<NoContentResult>();
+        credentialRepo.SetPasswordCalls.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task ChangeLocalPassword_without_verification_or_current_password_is_forbidden()
+    {
+        var controller = NewController(
+            actor: new HumanActor(new ActorId(LocalUsername), LocalUsername, isBreakGlassSession: false),
+            resolvedUserId: TestUserId,
+            user: SampleUser(),
+            credential: new LocalCredentialData(TestUserId, "hash", "salt", "stub", IsDisabled: false),
+            accountVerification: StubAccountVerification.Unsatisfied());
+
+        var result = await controller.ChangeLocalPassword(
+            new ChangeLocalPasswordRequest(null, "new-password-ok"),
+            CancellationToken.None);
+
+        var forbidden = result.Should().BeOfType<ObjectResult>().Subject;
+        forbidden.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
+        var body = forbidden.Value.Should().BeOfType<LocalPasswordChangeErrorResponse>().Subject;
+        body.Code.Should().Be(LocalPasswordChangeErrorCodes.RecentVerificationRequired);
     }
 
     [Fact]
@@ -361,7 +405,8 @@ public sealed class AuthControllerAccountTests
         LocalAuthOptions? localOptions = null,
         HttpContext? httpContext = null,
         InMemoryUserPreferencesRepository? preferences = null,
-        IForgottenPasswordService? forgottenPassword = null)
+        IForgottenPasswordService? forgottenPassword = null,
+        IRecentAccountVerificationGate? accountVerification = null)
     {
         var controller = new AuthController(
             new ConfigurableUserRepository(user),
@@ -376,7 +421,8 @@ public sealed class AuthControllerAccountTests
             Options.Create(new BreakGlassAuthOptions()),
             Options.Create(new EntraAuthOptions()),
             new StubAuthUiPolicyRepository(),
-            forgottenPassword: forgottenPassword);
+            forgottenPassword: forgottenPassword,
+            accountVerification: accountVerification);
 
         controller.ControllerContext = new ControllerContext
         {
@@ -531,6 +577,30 @@ public sealed class AuthControllerAccountTests
 
         public ValueTask CompleteAsync(string token, string newPassword, CancellationToken cancellationToken = default) =>
             throw new NotImplementedException();
+    }
+
+    private sealed class StubAccountVerification : IRecentAccountVerificationGate
+    {
+        private readonly RecentAccountVerification _current;
+
+        private StubAccountVerification(RecentAccountVerification current) => _current = current;
+
+        public static StubAccountVerification Satisfied() =>
+            new(new RecentAccountVerification(
+                RecentAccountVerificationMechanisms.LocalPassword,
+                DateTimeOffset.UtcNow.AddMinutes(-1),
+                DateTimeOffset.UtcNow.AddMinutes(14),
+                IsSatisfied: true));
+
+        public static StubAccountVerification Unsatisfied() => new(RecentAccountVerification.None);
+
+        public RecentAccountVerification GetCurrent() => _current;
+
+        public void Require()
+        {
+            if (!_current.IsSatisfied)
+                throw new RecentAccountVerificationException(RecentAccountVerificationErrorCodes.Required, "Verify your identity.");
+        }
     }
 
     private sealed class CapturingAuditService : IAuditService

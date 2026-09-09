@@ -34,7 +34,7 @@ public sealed class EntraStepUpFlowConstantsTests
     {
         var properties = EntraStepUpFlowConstants.CreateChallengeProperties(Config(), "usr-1", "c1", returnUrl);
 
-        properties.RedirectUri.Should().StartWith("http://localhost:9001/account/security");
+        properties.RedirectUri.Should().StartWith("http://localhost:9001/account?");
         properties.RedirectUri.Should().NotContain("evil");
     }
 }

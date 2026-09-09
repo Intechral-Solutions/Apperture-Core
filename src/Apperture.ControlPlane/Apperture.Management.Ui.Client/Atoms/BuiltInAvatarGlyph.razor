@@ -1,60 +1,23 @@
 @*
-    Platform-owned avatar artwork, drawn inline so it needs no network request, stays crisp at every
-    size, and follows the current theme through currentColor. Purely decorative: the accessible name
-    for an avatar always comes from adjacent text, never from the illustration.
+    Platform-owned avatar artwork. Files live at images/account/avatars/{option-id}.jpg.
+    Decorative: the accessible name comes from adjacent text, never from the illustration.
 *@
-<svg class="@CssClass"
-     viewBox="0 0 64 64"
-     role="img"
+@using Apperture.Core.Domain.Identity
+
+<img src="@ImageSrc"
+     alt=""
+     class="@($"{CssClass} object-cover bg-black")"
+     width="64"
+     height="64"
      aria-hidden="@(string.IsNullOrWhiteSpace(Title) ? "true" : "false")"
-     focusable="false"
-     xmlns="http://www.w3.org/2000/svg">
-    @if (!string.IsNullOrWhiteSpace(Title))
-    {
-        <title>@Title</title>
-    }
-    <circle cx="32" cy="32" r="32" fill="currentColor" class="text-surface-muted" />
-    <g fill="currentColor" class="@FigureClass">
-        @switch (Normalized)
-        {
-            case "neutral-bold":
-                <circle cx="32" cy="24" r="11" />
-                <path d="M32 38c-9.4 0-17 6.3-17 14.2V56h34v-3.8C49 44.3 41.4 38 32 38Z" />
-                break;
-
-            case "short-hair":
-                <path d="M21 23a11 11 0 0 1 22 0v2h-2.4a9.6 9.6 0 0 0-17.2 0H21v-2Z" />
-                <circle cx="32" cy="26" r="9.5" />
-                <path d="M32 39c-8.8 0-16 5.9-16 13.3V56h32v-3.7C48 44.9 40.8 39 32 39Z" />
-                break;
-
-            case "long-hair":
-                <path d="M32 12c-6.6 0-12 5.1-12 11.4V45c0 1.4 1.2 2.6 2.7 2.6h1.5V25.6h15.6V47.6h1.5c1.5 0 2.7-1.2 2.7-2.6V23.4C44 17.1 38.6 12 32 12Z" />
-                <circle cx="32" cy="27" r="9" />
-                <path d="M32 39.5c-8.6 0-15.6 5.8-15.6 13V56h31.2v-3.5c0-7.2-7-13-15.6-13Z" />
-                break;
-
-            default:
-                <circle cx="32" cy="25" r="9.5" />
-                <path d="M32 38.5c-8.8 0-16 5.8-16 13V56h32v-4.5c0-7.2-7.2-13-16-13Z" />
-                break;
-        }
-    </g>
-</svg>
+     title="@Title" />
 
 @code {
-    /// <summary>Curated option id. Anything unrecognized falls back to the neutral illustration.</summary>
     [Parameter] public string? OptionId { get; set; }
 
-    [Parameter] public string CssClass { get; set; } = "h-10 w-10";
+    [Parameter] public string CssClass { get; set; } = "h-10 w-10 rounded-full";
 
-    /// <summary>
-    /// Set only when the illustration is the sole carrier of meaning. Left empty the glyph is marked
-    /// decorative, which is correct when a label sits beside it.
-    /// </summary>
     [Parameter] public string? Title { get; set; }
 
-    private string Normalized => string.IsNullOrWhiteSpace(OptionId) ? "neutral" : OptionId.Trim();
-
-    private string FigureClass => Normalized == "neutral-bold" ? "text-heading" : "text-muted";
+    private string ImageSrc => BuiltInAvatarCatalog.ImagePath(OptionId);
 }

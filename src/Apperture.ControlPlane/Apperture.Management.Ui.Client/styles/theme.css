@@ -126,6 +126,9 @@
     --color-callout-info-border: var(--color-tint-teal-line);
     --color-toast-info-accent: var(--color-accent);
     --color-toast-neutral-accent: var(--color-border-strong);
+    --color-microsoft: #0b5cab;
+    --color-microsoft-hover: #094e92;
+    --color-microsoft-border: #094e92;
     --color-btn-primary-bg: var(--color-accent);
     --color-btn-primary-border: var(--color-accent);
     --color-btn-primary-fg: var(--color-accent-on);
@@ -272,6 +275,9 @@
     --color-callout-info-border: var(--color-accent-line);
     --color-toast-info-accent: var(--color-accent);
     --color-toast-neutral-accent: var(--color-text-muted);
+    --color-microsoft: #0e6bc2;
+    --color-microsoft-hover: #1a7ad4;
+    --color-microsoft-border: #1a7ad4;
     --color-btn-primary-bg: var(--color-accent);
     --color-btn-primary-border: var(--color-accent);
     --color-btn-primary-fg: var(--color-accent-on);

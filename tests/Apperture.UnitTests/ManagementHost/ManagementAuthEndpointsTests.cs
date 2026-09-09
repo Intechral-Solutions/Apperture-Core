@@ -97,7 +97,7 @@ public sealed class ManagementAuthEndpointsTests
 
         response.StatusCode.Should().Be(HttpStatusCode.Redirect);
         response.Headers.Location!.ToString().Should().StartWith(IdpAuthorize);
-        capture.RedirectUri.Should().Be("http://localhost:9001/account/security?linked=1");
+        capture.RedirectUri.Should().Be("http://localhost:9001/account?linked=1");
         capture.IsLinkPurpose.Should().BeTrue();
         capture.InitiatingUserId.Should().Be(LinkedUserId);
     }

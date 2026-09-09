@@ -38,10 +38,10 @@
             </div>
         </div>
 
-        <fieldset class="mt-6">
+        <fieldset class="mt-7">
             <legend class="text-sm font-medium text-heading">Choose an illustration</legend>
             <p class="mt-1 text-sm text-muted">
-                A small set of neutral illustrations. Your choice is presentation only — it tells the
+                Three default illustrations. Your choice is presentation only — it tells the
                 platform nothing about you.
             </p>
 
@@ -84,7 +84,7 @@
             }
         </fieldset>
 
-        <div class="mt-6 border-t border-default pt-4">
+        <div class="mt-7 border-t border-default pt-5">
             <label class="text-sm font-medium text-heading" for="avatar-upload">Upload a photo</label>
             <p id="avatar-upload-help" class="mt-1 text-sm text-muted">
                 JPEG, PNG, or WebP, up to @MaxUploadMegabytes MB. The image is cropped to a square, resized,
@@ -123,7 +123,7 @@
                      IsBusy="_busy"
                      OnConfirm="RemovePhotoAsync"
                      OnCancel="() => _confirmRemoveOpen = false">
-    Your stored photo will be deleted and your avatar returns to the neutral illustration. You can
+    Your stored photo will be deleted and your avatar returns to the default illustration. You can
     upload a new photo at any time.
 </ConfirmActionDialog>
 
@@ -156,7 +156,7 @@
 
             var optionId = Avatars.Avatar?.BuiltInOptionId;
             var match = _options.FirstOrDefault(o => string.Equals(o.Id, optionId, StringComparison.Ordinal));
-            return match is null ? "Using the neutral illustration" : $"Using the {match.DisplayName} illustration";
+            return match is null ? "Using the default illustration" : $"Using {match.DisplayName}";
         }
     }
 

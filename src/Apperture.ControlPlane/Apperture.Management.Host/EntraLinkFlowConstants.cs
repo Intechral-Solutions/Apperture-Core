@@ -15,8 +15,8 @@ internal static class EntraLinkFlowConstants
     public const string UserIdItemKey = "apperture.auth.userId";
     public const string LinkPurposeValue = "link-entra";
 
-    /// <summary>Where the UI returns after a self-service link attempt.</summary>
-    public const string AccountSecurityPath = "/account/security";
+    /// <summary>Where the UI returns after a self-service link or step-up attempt.</summary>
+    public const string AccountSecurityPath = "/account";
 
     public const string LoginPath = "/login";
 

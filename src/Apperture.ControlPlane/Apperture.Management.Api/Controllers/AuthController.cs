@@ -52,6 +52,7 @@ public sealed class AuthController : ControllerBase
     private readonly IAccountInvitationService? _invitations;
     private readonly IAccountContactService? _contact;
     private readonly IAccountActionTokenService? _actionTokens;
+    private readonly IRecentAccountVerificationGate? _accountVerification;
 
     public AuthController(
         IUserRepository userRepository,
@@ -73,7 +74,8 @@ public sealed class AuthController : ControllerBase
         IForgottenPasswordService? forgottenPassword = null,
         IAccountInvitationService? invitations = null,
         IAccountContactService? contact = null,
-        IAccountActionTokenService? actionTokens = null)
+        IAccountActionTokenService? actionTokens = null,
+        IRecentAccountVerificationGate? accountVerification = null)
     {
         _userRepository = userRepository;
         _localCredentialRepository = localCredentialRepository;
@@ -95,6 +97,7 @@ public sealed class AuthController : ControllerBase
         _invitations = invitations;
         _contact = contact;
         _actionTokens = actionTokens;
+        _accountVerification = accountVerification;
     }
 
     /// <summary>Merged anonymous-safe sign-in capabilities and chooser policy for the management UI.</summary>
@@ -167,6 +170,7 @@ public sealed class AuthController : ControllerBase
                 && EntraAuthenticationContextId.TryNormalize(_entraOptions.AuthenticationContextId) is not null)
             || (await (_nativeMfa?.IsEnrolledAsync(uid, cancellationToken) ?? ValueTask.FromResult(false)));
         var nativeMfaEnrolled = _nativeMfa is not null && await _nativeMfa.IsEnrolledAsync(uid, cancellationToken);
+        var accountVerification = _accountVerification?.GetCurrent() ?? RecentAccountVerification.None;
         return Ok(new MeResponse(
             user.Id.Value,
             user.DisplayName,
@@ -194,7 +198,9 @@ public sealed class AuthController : ControllerBase
             assurance.RequirementSatisfied && assurance.IsRecent,
             strongConfigured,
             presentation?.EmergencyAccessAccount ?? user.IsBreakGlassEligible,
-            nativeMfaEnrolled));
+            nativeMfaEnrolled,
+            accountVerification.IsSatisfied,
+            accountVerification.ExpiresAtUtc));
     }
 
     /// <summary>
@@ -238,7 +244,7 @@ public sealed class AuthController : ControllerBase
                 LocalPasswordChangeErrorCodes.LocalAuthDisabled));
         }
 
-        if (request.CurrentPassword is null || request.NewPassword is null)
+        if (request.NewPassword is null)
         {
             await AppendAuthAuditAsync(
                 AuthActionLocalPasswordChangeFailed,
@@ -246,7 +252,7 @@ public sealed class AuthController : ControllerBase
                 "Missing password fields",
                 cancellationToken);
             return BadRequest(new LocalPasswordChangeErrorResponse(
-                "Current and new password are required.",
+                "A new password is required.",
                 LocalPasswordChangeErrorCodes.InvalidNewPassword));
         }
 
@@ -310,16 +316,32 @@ public sealed class AuthController : ControllerBase
                 LocalPasswordChangeErrorCodes.CredentialDisabled));
         }
 
-        if (!_passwordHasher.VerifyPassword(request.CurrentPassword, credential.PasswordHash, credential.Salt))
+        var recentlyVerified = _accountVerification?.GetCurrent().IsSatisfied == true;
+        if (!recentlyVerified)
         {
-            await AppendAuthAuditAsync(
-                AuthActionLocalPasswordChangeFailed,
-                new ActorId(userId.Value),
-                "Current password verification failed",
-                cancellationToken);
-            return BadRequest(new LocalPasswordChangeErrorResponse(
-                "Current password is incorrect.",
-                LocalPasswordChangeErrorCodes.WrongCurrentPassword));
+            if (string.IsNullOrEmpty(request.CurrentPassword)
+                || !_passwordHasher.VerifyPassword(request.CurrentPassword, credential.PasswordHash, credential.Salt))
+            {
+                await AppendAuthAuditAsync(
+                    AuthActionLocalPasswordChangeFailed,
+                    new ActorId(userId.Value),
+                    string.IsNullOrEmpty(request.CurrentPassword)
+                        ? "Recent account verification required"
+                        : "Current password verification failed",
+                    cancellationToken);
+                if (string.IsNullOrEmpty(request.CurrentPassword))
+                {
+                    return StatusCode(
+                        StatusCodes.Status403Forbidden,
+                        new LocalPasswordChangeErrorResponse(
+                            "Verify your identity to change your password.",
+                            LocalPasswordChangeErrorCodes.RecentVerificationRequired));
+                }
+
+                return BadRequest(new LocalPasswordChangeErrorResponse(
+                    "Current password is incorrect.",
+                    LocalPasswordChangeErrorCodes.WrongCurrentPassword));
+            }
         }
 
         try
@@ -786,7 +808,9 @@ public sealed record MeResponse(
     bool HasRecentStrongAuthentication = false,
     bool StrongAuthenticationConfigured = false,
     bool EmergencyAccessAccount = false,
-    bool NativeMfaEnrolled = false);
+    bool NativeMfaEnrolled = false,
+    bool HasRecentAccountVerification = false,
+    DateTimeOffset? RecentAccountVerificationExpiresAtUtc = null);
 
 public sealed record AccountIdentityLinkDto(
     string Source,
@@ -817,6 +841,7 @@ public static class LocalPasswordChangeErrorCodes
     public const string CredentialDisabled = "auth.local_password.credential_disabled";
     public const string InvalidNewPassword = "auth.local_password.invalid_new";
     public const string LocalAuthDisabled = "auth.local_password.local_auth_disabled";
+    public const string RecentVerificationRequired = "auth.account_verification.required";
 }
 
 public sealed record LocalPasswordChangeErrorResponse(string Message, string Code);

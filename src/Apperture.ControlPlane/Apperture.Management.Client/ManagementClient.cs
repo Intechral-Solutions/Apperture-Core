@@ -1629,6 +1629,21 @@ public sealed class ManagementClient : IManagementClient
             ?? new AccountContactMutationDto();
     }
 
+    public async Task<RecentAccountVerificationDto> VerifySecuredAccountAsync(
+        VerifySecuredAccountRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var response = await _http.PostAsJsonAsync("account/secured/verify", request, cancellationToken).ConfigureAwait(false);
+        if (!response.IsSuccessStatusCode)
+        {
+            var msg = await TryGetMessageFromResponseAsync(response, cancellationToken).ConfigureAwait(false);
+            throw new HttpRequestException(msg ?? "Verification failed.", null, response.StatusCode);
+        }
+
+        return await response.Content.ReadFromJsonAsync<RecentAccountVerificationDto>(cancellationToken).ConfigureAwait(false)
+            ?? new RecentAccountVerificationDto();
+    }
+
     public async Task<SetupInvitationResponse> SendSetupInvitationAsync(
         string userId,
         SetupInvitationRequest? request = null,

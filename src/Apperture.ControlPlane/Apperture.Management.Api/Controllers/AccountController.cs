@@ -5,6 +5,8 @@ using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Identity;
 using Apperture.Management.Api.Models;
 using Apperture.Management.Client;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Net.Http.Headers;
@@ -31,19 +33,31 @@ public sealed class AccountController : ControllerBase
     private readonly IAccountProfileService _account;
     private readonly IRoleProvider _roleProvider;
     private readonly IAccountContactService? _contact;
+    private readonly IUserRepository? _users;
+    private readonly ILocalCredentialRepository? _credentials;
+    private readonly ILocalPasswordHasher? _passwordHasher;
+    private readonly IRecentAccountVerificationGate? _accountVerification;
 
     public AccountController(
         IPrincipalContext principalContext,
         IPrincipalToUserResolver principalToUserResolver,
         IAccountProfileService account,
         IRoleProvider roleProvider,
-        IAccountContactService? contact = null)
+        IAccountContactService? contact = null,
+        IUserRepository? users = null,
+        ILocalCredentialRepository? credentials = null,
+        ILocalPasswordHasher? passwordHasher = null,
+        IRecentAccountVerificationGate? accountVerification = null)
     {
         _principalContext = principalContext;
         _principalToUserResolver = principalToUserResolver;
         _account = account;
         _roleProvider = roleProvider;
         _contact = contact;
+        _users = users;
+        _credentials = credentials;
+        _passwordHasher = passwordHasher;
+        _accountVerification = accountVerification;
     }
 
     [HttpGet("profile")]
@@ -98,6 +112,67 @@ public sealed class AccountController : ControllerBase
         {
             return Conflict(new { message = ex.Message, code = ex.Code });
         }
+    }
+
+    [HttpPost("secured/verify")]
+    [ProducesResponseType(typeof(RecentAccountVerificationDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<RecentAccountVerificationDto>> VerifySecuredAccount(
+        [FromBody] VerifySecuredAccountRequest request,
+        CancellationToken cancellationToken)
+    {
+        var userId = await ResolveUserIdAsync(cancellationToken);
+        if (userId is null || _users is null || _credentials is null || _passwordHasher is null)
+            return Forbid();
+
+        var user = await _users.GetByIdAsync(userId, cancellationToken);
+        if (user is null)
+            return Forbid();
+
+        if (EmergencyAccessIdentity.IsSystemManaged(user))
+        {
+            return Conflict(new
+            {
+                message = "Recovery Access does not use this account verification step.",
+                code = AccountSecurityErrorCodes.SystemManaged
+            });
+        }
+
+        var credential = await _credentials.GetByUserIdAsync(userId, cancellationToken);
+        if (credential is null || credential.IsDisabled)
+        {
+            return Conflict(new
+            {
+                message = "Verify with Microsoft to manage these account settings.",
+                code = RecentAccountVerificationErrorCodes.LocalPasswordUnavailable
+            });
+        }
+
+        if (string.IsNullOrEmpty(request.CurrentPassword)
+            || !_passwordHasher.VerifyPassword(request.CurrentPassword, credential.PasswordHash, credential.Salt))
+        {
+            return BadRequest(new
+            {
+                message = "That password is incorrect.",
+                code = RecentAccountVerificationErrorCodes.InvalidPassword
+            });
+        }
+
+        await RecordLocalPasswordVerificationAsync(cancellationToken);
+
+        var verification = _accountVerification?.GetCurrent() ?? new RecentAccountVerification(
+            RecentAccountVerificationMechanisms.LocalPassword,
+            DateTimeOffset.UtcNow,
+            DateTimeOffset.UtcNow + AuthenticationAssuranceOptions.DefaultRecentLifetime,
+            IsSatisfied: true);
+
+        return Ok(new RecentAccountVerificationDto
+        {
+            IsSatisfied = verification.IsSatisfied,
+            ExpiresAtUtc = verification.ExpiresAtUtc,
+            Mechanism = verification.Mechanism
+        });
     }
 
     [HttpPost("contact-email/resend")]
@@ -468,6 +543,28 @@ public sealed class AccountController : ControllerBase
     {
         ModelState.AddModelError(field, message);
         return ValidationProblem(ModelState);
+    }
+
+    private async Task RecordLocalPasswordVerificationAsync(CancellationToken cancellationToken)
+    {
+        var existing = await HttpContext.AuthenticateAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+        if (existing.Principal?.Identity is not ClaimsIdentity source)
+            throw new RecentAccountVerificationException(
+                RecentAccountVerificationErrorCodes.Required,
+                "Verify your identity to manage these account settings.");
+
+        var merged = (ClaimsIdentity)source.Clone();
+        RecentAccountVerificationClaims.Replace(
+            merged,
+            RecentAccountVerificationMechanisms.LocalPassword,
+            DateTimeOffset.UtcNow);
+        var principal = new ClaimsPrincipal(merged);
+        await HttpContext.SignInAsync(
+            CookieAuthenticationDefaults.AuthenticationScheme,
+            principal,
+            existing.Properties);
+        HttpContext.User = principal;
+        _ = cancellationToken;
     }
 
     private async Task<UserId?> ResolveUserIdAsync(CancellationToken cancellationToken)

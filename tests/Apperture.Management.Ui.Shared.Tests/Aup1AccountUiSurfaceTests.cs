@@ -37,12 +37,23 @@ public sealed class Aup1AccountUiSurfaceTests
     }
 
     [Fact]
-    public void The_account_root_and_the_legacy_preferences_path_both_redirect()
+    public void The_account_page_owns_the_canonical_root_and_keeps_the_former_security_path()
+    {
+        var content = ReadRepoFile($"{ClientRoot}/Pages/Account/AccountSecurity.razor");
+
+        content.Should().Contain("@page \"/account\"");
+        content.Should().Contain("@page \"/account/security\"");
+        content.Should().Contain("Title=\"Account\"");
+        content.Should().NotContain("Title=\"Security\"");
+    }
+
+    [Fact]
+    public void The_legacy_preferences_path_still_redirects()
     {
         var content = ReadRepoFile($"{ClientRoot}/Pages/Account/AccountRedirect.razor");
 
-        content.Should().Contain("@page \"/account\"");
         content.Should().Contain("@page \"/preferences\"");
+        content.Should().NotContain("@page \"/account\"");
         content.Should().Contain("replace: true", "a redirect should not add a history entry");
     }
 
@@ -68,7 +79,8 @@ public sealed class Aup1AccountUiSurfaceTests
         content.Should().Contain("AccountUiRoutes.Profile");
         content.Should().Contain("AccountUiRoutes.Notifications");
         content.Should().Contain("AccountUiRoutes.Preferences");
-        content.Should().Contain("AccountUiRoutes.Security");
+        content.Should().Contain("AccountUiRoutes.Account");
+        content.Should().Contain(">Account</a>");
         content.Should().Contain("<AccountAvatar");
         content.Should().Contain("Sign out");
         content.Should().Contain("GetSignOutUrl");
@@ -194,6 +206,17 @@ public sealed class Aup1AccountUiSurfaceTests
         content.Should().Contain("type=\"radio\"");
         content.Should().Contain("@option.DisplayName", "an illustration must never be the only label");
         content.Should().Contain("Selected", "selection state must be conveyed textually, not by colour alone");
+        content.Should().Contain("Three default illustrations");
+        var glyph = ReadRepoFile($"{ClientRoot}/Atoms/BuiltInAvatarGlyph.razor");
+        glyph.Should().Contain("BuiltInAvatarCatalog.ImagePath");
+        glyph.Should().Contain("<img");
+        glyph.Should().Contain(".jpg");
+        FileExists($"{ClientRoot}/wwwroot/images/account/avatars/option-a.jpg").Should().BeTrue();
+        FileExists($"{ClientRoot}/wwwroot/images/account/avatars/option-b.jpg").Should().BeTrue();
+        FileExists($"{ClientRoot}/wwwroot/images/account/avatars/option-c.jpg").Should().BeTrue();
+        FileExists($"{ClientRoot}/wwwroot/images/account/avatars/option-a.svg").Should().BeFalse();
+        FileExists($"{ClientRoot}/wwwroot/images/account/avatars/option-b.svg").Should().BeFalse();
+        FileExists($"{ClientRoot}/wwwroot/images/account/avatars/option-c.svg").Should().BeFalse();
     }
 
     [Fact]

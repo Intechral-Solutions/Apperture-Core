@@ -502,6 +502,9 @@ public interface IManagementClient
 
     Task<AccountContactMutationDto> ResendContactEmailAsync(CancellationToken cancellationToken = default);
 
+    /// <summary>Records recent account verification using the current local password.</summary>
+    Task<RecentAccountVerificationDto> VerifySecuredAccountAsync(VerifySecuredAccountRequest request, CancellationToken cancellationToken = default);
+
     Task<SetupInvitationResponse> SendSetupInvitationAsync(string userId, SetupInvitationRequest? request = null, CancellationToken cancellationToken = default);
 
     /// <summary>Merged sign-in capabilities and chooser policy (anonymous).</summary>
@@ -1651,7 +1654,9 @@ public sealed record MeResponse(
     [property: JsonPropertyName("hasRecentStrongAuthentication")] bool HasRecentStrongAuthentication = false,
     [property: JsonPropertyName("strongAuthenticationConfigured")] bool StrongAuthenticationConfigured = false,
     [property: JsonPropertyName("emergencyAccessAccount")] bool EmergencyAccessAccount = false,
-    [property: JsonPropertyName("nativeMfaEnrolled")] bool NativeMfaEnrolled = false);
+    [property: JsonPropertyName("nativeMfaEnrolled")] bool NativeMfaEnrolled = false,
+    [property: JsonPropertyName("hasRecentAccountVerification")] bool HasRecentAccountVerification = false,
+    [property: JsonPropertyName("recentAccountVerificationExpiresAtUtc")] DateTimeOffset? RecentAccountVerificationExpiresAtUtc = null);
 
 public sealed record AccountIdentityLinkDto(
     [property: JsonPropertyName("source")] string Source,
@@ -1680,6 +1685,14 @@ public sealed record TokenPasswordRequest(
 
 public sealed record VerifyContactEmailRequest(
     [property: JsonPropertyName("token")] string? Token);
+
+public sealed record VerifySecuredAccountRequest(
+    [property: JsonPropertyName("currentPassword")] string? CurrentPassword);
+
+public sealed record RecentAccountVerificationDto(
+    [property: JsonPropertyName("isSatisfied")] bool IsSatisfied = false,
+    [property: JsonPropertyName("expiresAtUtc")] DateTimeOffset? ExpiresAtUtc = null,
+    [property: JsonPropertyName("mechanism")] string? Mechanism = null);
 
 public sealed record LocalPasswordChangeErrorResponse(
     [property: JsonPropertyName("message")] string Message,

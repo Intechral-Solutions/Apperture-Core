@@ -152,8 +152,8 @@ public sealed class Uix7CssPipelineTests
     {
         var generated = ReadRepoFile(GeneratedCss);
 
-        SemanticTokens(generated, ":root").Should().HaveCount(146);
-        SemanticTokens(generated, ".dark").Should().HaveCount(140);
+        SemanticTokens(generated, ":root").Should().HaveCount(149);
+        SemanticTokens(generated, ".dark").Should().HaveCount(143);
     }
 
     // --- Primitives stay separate ---

@@ -44,8 +44,8 @@
     }
     else
     {
-        <div class="ui-settings-grid mt-6">
-            <div class="space-y-5">
+        <div class="ui-settings-grid mt-8">
+            <div class="space-y-8">
             <section class="ui-settings-card" aria-labelledby="display-name-heading">
                 <div class="ui-settings-card__header">
                     <h2 id="display-name-heading" class="ui-settings-card__title">Display name</h2>
@@ -54,7 +54,7 @@
                         not overwrite it from your identity provider.
                     </p>
                 </div>
-                <div class="ui-settings-card__body pt-4">
+                <div class="ui-settings-card__body">
                 @if (!_profile.DisplayNameEditable)
                 {
                     <p class="text-sm text-body">@_profile.DisplayName</p>
@@ -100,93 +100,7 @@
                 </div>
             </section>
 
-            @if (_profile.CanManageContactEmail)
-            {
-                <section class="ui-settings-card" aria-labelledby="contact-email-heading">
-                    <div class="ui-settings-card__header">
-                        <h2 id="contact-email-heading" class="ui-settings-card__title">Contact email</h2>
-                        <p class="ui-settings-card__help">
-                            Apperture uses this address for security messages such as password reset.
-                            It is not a Microsoft identity and does not sign you in.
-                        </p>
-                    </div>
-                    <div class="ui-settings-card__body pt-4 space-y-3">
-                        @if (_profile.ContactEmailStatus == "verified")
-                        {
-                            <p class="text-sm text-body">@_profile.ContactEmail</p>
-                            <p class="text-xs text-muted">Verified</p>
-                        }
-                        else if (_profile.ContactEmailStatus == "pending")
-                        {
-                            <p class="text-sm text-body">@(_profile.PendingContactEmail ?? _profile.ContactEmail)</p>
-                            <p class="text-xs text-muted">Verification pending</p>
-                        }
-                        else
-                        {
-                            <p class="text-sm text-muted">No contact email configured</p>
-                        }
-
-                        @if (_contactError is not null)
-                        {
-                            <p class="text-sm text-message-error" role="alert">@_contactError</p>
-                        }
-
-                        <form class="space-y-3" @onsubmit="SaveContactEmailAsync" @onsubmit:preventDefault="true">
-                            <ValidatedFieldShell Label="@(_profile.ContactEmailStatus == "verified" ? "New contact email" : "Contact email")"
-                                                 For="contact-email"
-                                                 Validation="@ContactEmailValidation">
-                                <Control>
-                                    <input id="contact-email"
-                                           type="email"
-                                           autocomplete="email"
-                                           class="ui-input ui-input--adorned"
-                                           placeholder="@(_profile.SuggestedContactEmail ?? "you@example.com")"
-                                           value="@_contactDraft"
-                                           @oninput="OnContactDraftInput" />
-                                </Control>
-                            </ValidatedFieldShell>
-                            @if (_profile.ContactEmailStatus == "verified" && _profile.HasEnabledLocalPassword)
-                            {
-                                <ValidatedFieldShell Label="Current local password"
-                                                     For="contact-current-password"
-                                                     Validation="@ContactPasswordValidation">
-                                    <Control>
-                                        <input id="contact-current-password"
-                                               type="password"
-                                               autocomplete="current-password"
-                                               class="ui-input ui-input--adorned"
-                                               value="@_contactCurrentPassword"
-                                               @oninput="OnContactPasswordInput" />
-                                    </Control>
-                                </ValidatedFieldShell>
-                                <p class="text-xs text-muted">Required to change a verified contact email when local sign-in is enabled.</p>
-                            }
-                            <FormValidationFeedback Visible="@_showContactAttention" />
-                            <div class="flex flex-wrap gap-2">
-                                <ActionButton @ref="_contactButton"
-                                              Type="submit"
-                                              DefaultText="@(_profile.ContactEmailStatus == "verified" ? "Change email" : "Save email")"
-                                              ActiveText="Saving…"
-                                              SuccessText="Saved"
-                                              ErrorText="Could not save"
-                                              IsInactive="@_contactBusy" />
-                                @if (_profile.ContactEmailStatus == "pending")
-                                {
-                                    <ActionButton @ref="_resendButton"
-                                                  Variant="ActionButtonVariant.Secondary"
-                                                  DefaultText="Resend verification"
-                                                  ActiveText="Sending…"
-                                                  SuccessText="Sent"
-                                                  ErrorText="Could not send"
-                                                  IsInactive="@_contactBusy"
-                                                  OnClick="_ => ResendContactAsync()" />
-                                }
-                            </div>
-                        </form>
-                    </div>
-                </section>
-            }
-            else if (Session.User?.EmergencyAccessAccount == true)
+            @if (Session.User?.EmergencyAccessAccount == true)
             {
                 <p class="text-xs text-muted">Recovery Access does not use a contact email or email recovery.</p>
             }
@@ -201,16 +115,16 @@
             }
             </div>
 
-            <aside class="space-y-5">
+            <aside class="space-y-8">
             <section class="ui-settings-card" aria-labelledby="identity-heading">
                 <div class="ui-settings-card__header">
                     <h2 id="identity-heading" class="ui-settings-card__title">Identity</h2>
                     <p class="ui-settings-card__help">
-                        These values come from the identity provider you sign in with, so they cannot be
-                        edited here.
+                        These values come from the identity provider you sign in with. Contact email
+                        is managed on Account and stays independent of them.
                     </p>
                 </div>
-                <div class="ui-settings-card__body pt-4">
+                <div class="ui-settings-card__body">
                 <dl class="ui-settings-meta">
                     <div class="ui-settings-meta__row">
                         <dt class="ui-settings-meta__label">Sign-in method</dt>
@@ -280,8 +194,8 @@
                                 </ul>
                             }
                             <p class="mt-2 text-sm text-muted">
-                                Manage sign-in methods from
-                                <a class="underline hover:text-heading" href="@AccountUiRoutes.Security">Security</a>.
+                                Manage sign-in methods, contact email, and password from
+                                <a class="underline hover:text-heading" href="@AccountUiRoutes.Account">Account</a>.
                             </p>
                         </div>
                     </div>
@@ -307,45 +221,6 @@
     private string _displayNameDraft = "";
     private string? _displayNameError;
     private bool _savingName;
-    private string _contactDraft = "";
-    private string _contactCurrentPassword = "";
-    private string? _contactError;
-    private bool _contactBusy;
-    private bool _contactEmailTouched;
-    private bool _contactPasswordTouched;
-    private bool _contactSubmitAttempted;
-    private bool _showContactAttention;
-    private ActionButton? _contactButton;
-    private ActionButton? _resendButton;
-
-    private bool RequiresContactPassword =>
-        _profile?.ContactEmailStatus == "verified" && _profile.HasEnabledLocalPassword;
-
-    private FieldValidationPresentation ContactEmailValidation
-    {
-        get
-        {
-            if (!_contactEmailTouched && !_contactSubmitAttempted)
-                return FieldValidationPresentation.Pristine;
-            return string.IsNullOrWhiteSpace(_contactDraft)
-                ? FieldValidationPresentation.Invalid("Enter a contact email.")
-                : FieldValidationPresentation.Valid;
-        }
-    }
-
-    private FieldValidationPresentation ContactPasswordValidation
-    {
-        get
-        {
-            if (!RequiresContactPassword)
-                return FieldValidationPresentation.Pristine;
-            if (!_contactPasswordTouched && !_contactSubmitAttempted)
-                return FieldValidationPresentation.Pristine;
-            return string.IsNullOrEmpty(_contactCurrentPassword)
-                ? FieldValidationPresentation.Invalid("Enter your current local password.")
-                : FieldValidationPresentation.Valid;
-        }
-    }
 
     private bool IsNameDirty =>
         _profile is not null
@@ -371,7 +246,6 @@
         {
             _profile = await Client.GetAccountProfileAsync();
             _displayNameDraft = _profile?.DisplayName ?? "";
-            _contactDraft = _profile?.PendingContactEmail ?? _profile?.ContactEmail ?? _profile?.SuggestedContactEmail ?? "";
         }
         catch (HttpRequestException ex)
         {
@@ -440,86 +314,10 @@
         }
     }
 
-    private void OnContactDraftInput(ChangeEventArgs args)
-    {
-        _contactDraft = args.Value?.ToString() ?? "";
-        _contactEmailTouched = true;
-        _contactError = null;
-    }
-
-    private void OnContactPasswordInput(ChangeEventArgs args)
-    {
-        _contactCurrentPassword = args.Value?.ToString() ?? "";
-        _contactPasswordTouched = true;
-        _contactError = null;
-    }
-
-    private async Task SaveContactEmailAsync()
-    {
-        _contactSubmitAttempted = true;
-        if (string.IsNullOrWhiteSpace(_contactDraft) || (RequiresContactPassword && string.IsNullOrEmpty(_contactCurrentPassword)))
-        {
-            _showContactAttention = true;
-            return;
-        }
-
-        _showContactAttention = false;
-        _contactError = null;
-        _contactBusy = true;
-        if (_contactButton is not null)
-            await _contactButton.SetStateAsync(ActionButtonState.Active);
-        try
-        {
-            var result = await Client.RequestContactEmailAsync(new RequestContactEmailRequest
-            {
-                Email = _contactDraft.Trim(),
-                CurrentPassword = string.IsNullOrEmpty(_contactCurrentPassword) ? null : _contactCurrentPassword
-            });
-            _contactCurrentPassword = "";
-            _profile = await Client.GetAccountProfileAsync() ?? _profile;
-            if (_contactButton is not null)
-                await _contactButton.SetStateAsync(result.DeliverySucceeded ? ActionButtonState.Success : ActionButtonState.Error);
-        }
-        catch (HttpRequestException ex)
-        {
-            _contactError = ex.Message;
-            if (_contactButton is not null)
-                await _contactButton.SetStateAsync(ActionButtonState.Error);
-        }
-        finally
-        {
-            _contactBusy = false;
-        }
-    }
-
-    private async Task ResendContactAsync()
-    {
-        _contactError = null;
-        _contactBusy = true;
-        if (_resendButton is not null)
-            await _resendButton.SetStateAsync(ActionButtonState.Active);
-        try
-        {
-            var result = await Client.ResendContactEmailAsync();
-            if (_resendButton is not null)
-                await _resendButton.SetStateAsync(result.DeliverySucceeded ? ActionButtonState.Success : ActionButtonState.Error);
-        }
-        catch (HttpRequestException ex)
-        {
-            _contactError = ex.Message;
-            if (_resendButton is not null)
-                await _resendButton.SetStateAsync(ActionButtonState.Error);
-        }
-        finally
-        {
-            _contactBusy = false;
-        }
-    }
-
     private static string FormatSignInSource(string source) => source switch
     {
         "Local" => "Local username and password",
-        "Entra" => "Microsoft Entra ID",
+        "Entra" => "Microsoft account",
         _ => source
     };
 }

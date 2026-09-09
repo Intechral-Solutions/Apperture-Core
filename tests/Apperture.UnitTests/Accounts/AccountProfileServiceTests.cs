@@ -74,7 +74,7 @@ public sealed class AccountProfileServiceTests
             [],
             true));
 
-        var act = () => fixture.Service.SelectBuiltInAvatarAsync(Owner, "long-hair").AsTask();
+        var act = () => fixture.Service.SelectBuiltInAvatarAsync(Owner, "option-b").AsTask();
         var ex = await act.Should().ThrowAsync<EmergencyAccessException>();
         ex.Which.Code.Should().Be(EmergencyAccessErrorCodes.UnsafeOperation);
     }
@@ -296,11 +296,11 @@ public sealed class AccountProfileServiceTests
     {
         var fixture = new Fixture();
 
-        var avatar = await fixture.Service.SelectBuiltInAvatarAsync(Owner, "long-hair");
+        var avatar = await fixture.Service.SelectBuiltInAvatarAsync(Owner, "option-b");
 
         avatar.Kind.Should().Be(UserAvatarKind.BuiltIn);
-        avatar.BuiltInOptionId.Should().Be("long-hair");
-        fixture.Users.Get(Owner.Value).EffectiveAvatar.BuiltInOptionId.Should().Be("long-hair");
+        avatar.BuiltInOptionId.Should().Be("option-b");
+        fixture.Users.Get(Owner.Value).EffectiveAvatar.BuiltInOptionId.Should().Be("option-b");
     }
 
     [Theory]
@@ -470,7 +470,7 @@ public sealed class AccountProfileServiceTests
         var fixture = new Fixture();
         await fixture.Service.UploadAvatarAsync(Owner, ValidUpload());
 
-        await fixture.Service.SelectBuiltInAvatarAsync(Owner, "short-hair");
+        await fixture.Service.SelectBuiltInAvatarAsync(Owner, "option-c");
 
         fixture.Images.Rows.Where(r => r.UserId == Owner.Value).Should()
             .BeEmpty("switching to artwork must not leave the photo behind");

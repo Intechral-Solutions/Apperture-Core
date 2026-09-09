@@ -250,11 +250,11 @@ public sealed class ManagementHostAccountProfileHttpTests
 
         try
         {
-            var response = await client.PutAsJsonAsync("/api/account/avatar/selection", new { optionId = "long-hair" });
+            var response = await client.PutAsJsonAsync("/api/account/avatar/selection", new { optionId = "option-b" });
             response.StatusCode.Should().Be(HttpStatusCode.OK);
 
             var me = await client.GetFromJsonAsync<MeResponse>("/api/auth/me", JsonOptions);
-            me!.Avatar!.BuiltInOptionId.Should().Be("long-hair");
+            me!.Avatar!.BuiltInOptionId.Should().Be("option-b");
         }
         finally
         {

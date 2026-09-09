@@ -17,15 +17,19 @@ public sealed class AccountDomainModelTests
     {
         // AUP-1 ships a curated set, not a marketplace. A growing catalog is a product decision that
         // should require changing this expectation on purpose.
-        BuiltInAvatarCatalog.Options.Should().HaveCount(4);
+        BuiltInAvatarCatalog.Options.Should().HaveCount(3);
     }
 
     [Fact]
-    public void The_default_option_is_neutral_and_comes_first()
+    public void The_default_option_is_option_a_and_comes_first()
     {
-        BuiltInAvatarCatalog.DefaultOptionId.Should().Be("neutral");
-        BuiltInAvatarCatalog.DefaultOption.Id.Should().Be("neutral");
+        BuiltInAvatarCatalog.DefaultOptionId.Should().Be("option-a");
+        BuiltInAvatarCatalog.DefaultOption.Id.Should().Be("option-a");
         BuiltInAvatarCatalog.Options[0].Id.Should().Be(BuiltInAvatarCatalog.DefaultOptionId);
+        BuiltInAvatarCatalog.Options.Select(o => o.DisplayName).Should().Equal("Option A", "Option B", "Option C");
+        BuiltInAvatarCatalog.ImagePath("option-a").Should().Be("images/account/avatars/option-a.jpg");
+        BuiltInAvatarCatalog.ImagePath("option-b").Should().Be("images/account/avatars/option-b.jpg");
+        BuiltInAvatarCatalog.ImagePath("option-c").Should().Be("images/account/avatars/option-c.jpg");
     }
 
     [Fact]
@@ -99,11 +103,12 @@ public sealed class AccountDomainModelTests
     [Fact]
     public void A_built_in_avatar_round_trips_through_storage()
     {
-        var stored = UserAvatar.ForBuiltIn("short-hair");
+        var stored = UserAvatar.ForBuiltIn("option-c");
 
         var restored = UserAvatar.FromStorage(stored.StorageKind, stored.BuiltInOptionId, stored.ImageKey);
 
         restored.Should().Be(stored);
+        restored.BuiltInOptionId.Should().Be("option-c");
     }
 
     [Fact]
@@ -119,6 +124,19 @@ public sealed class AccountDomainModelTests
         UserAvatar.FromStorage(UserAvatarStorageKinds.BuiltIn, "retired-option", null).Should().Be(UserAvatar.Default);
     }
 
+    [Theory]
+    [InlineData("neutral", "option-a")]
+    [InlineData("neutral-bold", "option-a")]
+    [InlineData("long-hair", "option-b")]
+    [InlineData("short-hair", "option-c")]
+    [InlineData("option-a", "option-a")]
+    public void Legacy_illustration_ids_canonicalize_onto_the_three_options(string stored, string expected)
+    {
+        BuiltInAvatarCatalog.CanonicalizeOptionId(stored).Should().Be(expected);
+        UserAvatar.FromStorage(UserAvatarStorageKinds.BuiltIn, stored, null).BuiltInOptionId.Should().Be(expected);
+        UserAvatar.ForBuiltIn(stored).BuiltInOptionId.Should().Be(expected);
+    }
+
     [Fact]
     public void The_version_token_changes_when_a_custom_image_is_replaced()
     {
@@ -132,8 +150,8 @@ public sealed class AccountDomainModelTests
     [Fact]
     public void The_version_token_changes_when_a_different_illustration_is_chosen()
     {
-        UserAvatar.ForBuiltIn("long-hair").VersionToken
-            .Should().NotBe(UserAvatar.ForBuiltIn("neutral").VersionToken);
+        UserAvatar.ForBuiltIn("option-b").VersionToken
+            .Should().NotBe(UserAvatar.ForBuiltIn("option-a").VersionToken);
     }
 
     [Fact]

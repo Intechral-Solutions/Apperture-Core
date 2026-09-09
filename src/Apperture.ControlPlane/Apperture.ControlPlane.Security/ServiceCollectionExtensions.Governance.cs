@@ -78,6 +78,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IEntraPrimaryAuthenticationPolicy, EntraPrimaryAuthenticationPolicy>();
         services.AddScoped<IAuthenticationAssuranceEvaluator, AuthenticationAssuranceEvaluator>();
         services.AddScoped<IStrongAuthenticationGate, StrongAuthenticationGate>();
+        services.AddScoped<IRecentAccountVerificationGate, RecentAccountVerificationGate>();
         services.AddScoped<IUserPreferencesRepository, SqlUserPreferencesRepository>();
         services.AddScoped<IUserProfileImageStore, SqlUserProfileImageStore>();
         services.AddSingleton<IProfileImageNormalizer, SkiaProfileImageNormalizer>();

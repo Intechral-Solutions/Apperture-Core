@@ -4,8 +4,8 @@ namespace Apperture.Management.Ui.Shared;
 public sealed record AccountSection(string Label, string Href, string Description);
 
 /// <summary>
-/// Routes for the personal account area. The account root and the legacy <c>/preferences</c> path
-/// both redirect into this set so existing links and bookmarks keep working.
+/// Routes for the personal account area. The Account section lives at the account root. The former
+/// Security path and the standalone <c>/preferences</c> path remain as compatibility aliases.
 /// </summary>
 public static class AccountUiRoutes
 {
@@ -13,6 +13,11 @@ public static class AccountUiRoutes
     public const string Profile = "/account/profile";
     public const string Notifications = "/account/notifications";
     public const string Preferences = "/account/preferences";
+
+    /// <summary>Canonical Account section. Same destination as <see cref="Root"/>.</summary>
+    public const string Account = Root;
+
+    /// <summary>Former Security path. Kept so bookmarks and Entra return URLs still resolve.</summary>
     public const string Security = "/account/security";
 
     public const string VerifyEmail = "/account/verify-email";
@@ -31,12 +36,12 @@ public static class AccountUiRoutes
         new("Profile", Profile, "Your name, photo, and identity."),
         new("Notifications", Notifications, "Which notifications reach you, and how."),
         new("Appearance & regional", Preferences, "Theme, timezone, and clock format."),
-        new("Security", Security, "Password and sign-in methods."),
+        new("Account", Account, "Sign-in methods, contact email, and password."),
     ];
 
     /// <summary>
     /// Matches a path to its account section so the section navigation can mark the current item.
-    /// The account root resolves to Profile, matching the redirect.
+    /// The account root and the former Security path both resolve to Account.
     /// </summary>
     public static AccountSection? ResolveSection(string? path)
     {
@@ -44,8 +49,9 @@ public static class AccountUiRoutes
             return null;
 
         var normalized = Normalize(path);
-        if (string.Equals(normalized, Root, StringComparison.OrdinalIgnoreCase))
-            return Sections[0];
+        if (string.Equals(normalized, Root, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(normalized, Security, StringComparison.OrdinalIgnoreCase))
+            return Sections[^1];
 
         return Sections.FirstOrDefault(s => string.Equals(s.Href, normalized, StringComparison.OrdinalIgnoreCase));
     }

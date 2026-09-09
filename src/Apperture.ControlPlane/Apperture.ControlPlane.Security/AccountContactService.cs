@@ -18,6 +18,7 @@ public sealed class AccountContactService : IAccountContactService
     private readonly AccountSecurityLinkBuilder _links;
     private readonly IAuditService _audit;
     private readonly IStrongAuthenticationGate? _strongAuth;
+    private readonly IRecentAccountVerificationGate? _accountVerification;
 
     public AccountContactService(
         IUserRepository users,
@@ -27,7 +28,8 @@ public sealed class AccountContactService : IAccountContactService
         IAccountSecurityMailSender mail,
         AccountSecurityLinkBuilder links,
         IAuditService audit,
-        IStrongAuthenticationGate? strongAuth = null)
+        IStrongAuthenticationGate? strongAuth = null,
+        IRecentAccountVerificationGate? accountVerification = null)
     {
         _users = users;
         _credentials = credentials;
@@ -37,6 +39,7 @@ public sealed class AccountContactService : IAccountContactService
         _links = links;
         _audit = audit;
         _strongAuth = strongAuth;
+        _accountVerification = accountVerification;
     }
 
     public async ValueTask<AccountContactSnapshot> GetAsync(UserId userId, CancellationToken cancellationToken = default)
@@ -149,6 +152,9 @@ public sealed class AccountContactService : IAccountContactService
 
     private async ValueTask RequireChangeProofAsync(User user, string? currentPassword, CancellationToken cancellationToken)
     {
+        if (_accountVerification?.GetCurrent().IsSatisfied == true)
+            return;
+
         var cred = await _credentials.GetByUserIdAsync(user.Id, cancellationToken);
         if (cred is { IsDisabled: false })
         {
