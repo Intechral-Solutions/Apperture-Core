@@ -15,6 +15,7 @@
 | [runtime-connection-resolution.md](runtime-connection-resolution.md) | Runtime slot-bound resolution; binding → connection → material → factory → client; secret boundary |
 | [runtime-step-execution.md](runtime-step-execution.md) | Step execution context; slot-bound dependency resolution in workflow steps; disposal and failure semantics |
 | [control-plane.md](control-plane.md) | Management API, UI, responsibilities |
+| [control-panel-ui.md](control-panel-ui.md) | Management shell (rail + Control Panel) |
 | [instance-plane.md](instance-plane.md) | Worker, SQL enqueue/claim/inline execution today; DTFx as future adapter; one module per process |
 | [tenancy-model.md](tenancy-model.md) | Single-tenant Instance, auditability |
 | [federated-instance-relationships.md](federated-instance-relationships.md) | Federated cross-instance trust, scoped delegation, and auditable management boundary |
@@ -23,3 +24,5 @@
 | [instance-owned-scheduling.md](instance-owned-scheduling.md) | Portable scheduling model with instance-owned execution |
 | [c4/](c4/) | C4 diagrams |
 | [diagrams/](diagrams/) | Architecture diagrams |
+
+In-flight change records (not architecture): [transitions/](transitions/).
