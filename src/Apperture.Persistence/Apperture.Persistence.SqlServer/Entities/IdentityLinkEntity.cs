@@ -12,7 +12,7 @@ public sealed class IdentityLinkEntity
     public string ExternalId { get; set; } = "";
     public DateTimeOffset? LastAuthenticatedAt { get; set; }
 
-    /// <summary>Entra directory (tenant) id. Null for local links and for Entra links created before IAM-1.</summary>
+    /// <summary>Entra directory (tenant) id. Null for local links. Required for Entra links.</summary>
     public string? TenantId { get; set; }
 
     /// <summary>Provenance only (no foreign key): the Entra registration the link was created against.</summary>

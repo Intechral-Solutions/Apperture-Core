@@ -648,7 +648,9 @@ public class AppertureDbContext : DbContext
 
         modelBuilder.Entity<IdentityLinkEntity>(e =>
         {
-            e.ToTable("IdentityLinks");
+            e.ToTable("IdentityLinks", t => t.HasCheckConstraint(
+                "CK_IdentityLinks_EntraRequiresTenant",
+                "[Source] <> 0 OR ([TenantId] IS NOT NULL AND DATALENGTH([TenantId]) > 0)"));
             e.HasKey(x => x.Id);
             e.Property(x => x.Id).HasMaxLength(64);
             e.Property(x => x.UserId).HasMaxLength(64);
@@ -660,7 +662,14 @@ public class AppertureDbContext : DbContext
             e.Property(x => x.UserPrincipalNameSnapshot).HasMaxLength(512);
             e.Property(x => x.MailSnapshot).HasMaxLength(512);
             e.Property<byte[]>("RowVersion").IsRowVersion();
-            e.HasIndex(x => new { x.Source, x.ExternalId }).IsUnique();
+            e.HasIndex(x => new { x.Source, x.ExternalId })
+                .IsUnique()
+                .HasDatabaseName("UX_IdentityLinks_Local_Source_ExternalId")
+                .HasFilter("[Source] = 1");
+            e.HasIndex(x => new { x.Source, x.TenantId, x.ExternalId })
+                .IsUnique()
+                .HasDatabaseName("UX_IdentityLinks_Entra_Source_TenantId_ExternalId")
+                .HasFilter("[Source] = 0 AND [TenantId] IS NOT NULL");
             e.HasOne<UserEntity>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Restrict);
         });
 
@@ -849,8 +858,9 @@ public class AppertureDbContext : DbContext
             e.Property(x => x.ProvisionedUserId).HasMaxLength(64);
             e.Property(x => x.RowVersion).IsRowVersion();
             e.HasIndex(x => new { x.RegistrationId, x.TenantId, x.ProviderObjectId, x.Status });
-            e.HasIndex(x => new { x.RegistrationId, x.TenantId, x.ProviderObjectId })
+            e.HasIndex(x => new { x.TenantId, x.ProviderObjectId })
                 .IsUnique()
+                .HasDatabaseName("UX_EntraAccessRequests_PendingTenantIdentity")
                 .HasFilter("[Status] = 0");
             e.HasIndex(x => x.Status);
         });

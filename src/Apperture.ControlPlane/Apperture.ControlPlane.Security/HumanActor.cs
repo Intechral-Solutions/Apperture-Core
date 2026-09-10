@@ -20,15 +20,21 @@ public sealed class HumanActor : IActor
     public IdentitySource? PreferredIdentitySource { get; }
 
     /// <summary>
+    /// Directory (tenant) id from a validated Microsoft token. Required to resolve Entra identity links.
+    /// </summary>
+    public string? TenantId { get; }
+
+    /// <summary>
     /// True when the session was established via the break-glass login endpoint. The authorization evaluator grants all permission checks for such sessions.
     /// </summary>
     public bool IsBreakGlassSession { get; }
 
-    public HumanActor(ActorId id, string? displayName = null, IdentitySource? preferredIdentitySource = null, bool isBreakGlassSession = false)
+    public HumanActor(ActorId id, string? displayName = null, IdentitySource? preferredIdentitySource = null, bool isBreakGlassSession = false, string? tenantId = null)
     {
         Id = id;
         DisplayName = displayName;
         PreferredIdentitySource = preferredIdentitySource;
         IsBreakGlassSession = isBreakGlassSession;
+        TenantId = tenantId;
     }
 }

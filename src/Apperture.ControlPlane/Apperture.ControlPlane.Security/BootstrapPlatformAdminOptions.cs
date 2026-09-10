@@ -32,6 +32,9 @@ public sealed class BootstrapPlatformAdminPrincipalOptions
     /// <summary>Entra: object id (oid) or subject; Local: username (normalized on assignment).</summary>
     public string ExternalId { get; set; } = "";
 
+    /// <summary>Entra: directory tenant id (tid). Required when <see cref="IdentitySource"/> is Entra.</summary>
+    public string? TenantId { get; set; }
+
     /// <summary>Optional display name when <see cref="BootstrapPlatformAdminOptions.CreateUserIfMissing"/> creates a user.</summary>
     public string? DisplayName { get; set; }
 }

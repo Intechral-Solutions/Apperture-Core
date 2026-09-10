@@ -25,7 +25,7 @@ No JIT provisioning in v1.
 
 Self-service linking is no longer deferred. IAM-1 keeps everything above and adds:
 
-- A Microsoft identity is keyed by **`oid` + `tid`** only. The token `tid` must equal the active Entra registration's tenant; email, UPN, `preferred_username`, `amr`, `acr` and `auth_time` are never used for identity or authorization, and `sub` is kept only as diagnostic provenance.
+- A Microsoft identity is keyed by **`oid` + `tid`**. Lookup and uniqueness are `Source + TenantId + ExternalId`. The token `tid` must equal the active Entra registration's tenant; email, UPN, `preferred_username`, `amr`, `acr` and `auth_time` are never used for identity or authorization, and `sub` is kept only as diagnostic provenance.
 - **`GET /signin/link`** on Management.Host starts a linking challenge from an already authenticated local session, carrying the initiating platform user id in `AuthenticationProperties`. **Connect Microsoft account** on `/account/security` drives it.
 - An admin association created from the directory picker or a pasted object id stays **pending** (`LastAuthenticatedAt` null) until the operator's first successful Entra sign-in proves it.
 - Each platform user may hold **at most one** Entra link, and an Entra link only counts as an alternate sign-in path once it is proven and Entra is configured, so a pending link can never strand the last Platform Administrator.

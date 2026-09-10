@@ -160,16 +160,26 @@ public sealed class EntraProvisioningDirectoryService : IEntraProvisioningDirect
         IReadOnlyList<EntraDirectoryUser> users,
         CancellationToken cancellationToken)
     {
-        var pending = await _requests.FindPendingByObjectIdsAsync(
-            registrationId,
-            users.Select(u => u.ObjectId).ToList(),
-            cancellationToken);
+        var registration = await _registrations.GetByIdAsync(registrationId, cancellationToken);
+        var tenantId = registration is null
+            ? null
+            : EntraTokenClaims.Normalize(EntraDirectoryTenantResolver.TryResolveGraphTenantId(registration));
+        var pending = string.IsNullOrEmpty(tenantId)
+            ? []
+            : await _requests.FindPendingByObjectIdsAsync(
+                tenantId,
+                users.Select(u => u.ObjectId).ToList(),
+                cancellationToken);
         var pendingByOid = pending.ToDictionary(r => r.ProviderObjectId, StringComparer.OrdinalIgnoreCase);
 
         var mapped = new List<EntraProvisioningDirectoryUser>(users.Count);
         foreach (var user in users)
         {
-            var owner = await _users.GetByIdentityLinkAsync(IdentitySource.Entra, user.ObjectId, cancellationToken);
+            var owner = string.IsNullOrEmpty(tenantId)
+                ? null
+                : await _users.GetByIdentityLinkAsync(
+                    ProviderIdentityKey.Entra(tenantId, user.ObjectId),
+                    cancellationToken);
             EntraDirectoryAppertureStatus status;
             string? provisionedUserId = null;
             if (owner is not null)

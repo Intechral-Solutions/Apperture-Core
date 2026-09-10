@@ -68,7 +68,7 @@ public sealed class EntraIdentityAssociationServiceTests
         var outcome = await harness.Service.CompleteSignInAsync(Assertion());
 
         outcome.Succeeded.Should().BeTrue();
-        harness.Repository.ProofCalls.Should().ContainSingle(c => c.ExternalId == Oid && c.ProvenAt == Now);
+        harness.Repository.ProofCalls.Should().ContainSingle(c => c.ExternalId == Oid && c.ProvenAt == Now && c.TenantId == ActiveTenantId);
         harness.Audit.Actions.Should().Contain(EntraLinkAuditActionNames.Proven);
     }
 
@@ -76,7 +76,7 @@ public sealed class EntraIdentityAssociationServiceTests
     public async Task First_sign_in_of_a_pending_association_applies_entra_primary_policy()
     {
         var harness = new Harness();
-        harness.Repository.Seed(NewUser("usr-1", EntraLink(Oid, provenAt: null, tenantId: null)));
+        harness.Repository.Seed(NewUser("usr-1", EntraLink(Oid, provenAt: null, tenantId: ActiveTenantId)));
 
         await harness.Service.CompleteSignInAsync(Assertion());
 
@@ -106,20 +106,7 @@ public sealed class EntraIdentityAssociationServiceTests
     }
 
     [Fact]
-    public async Task Legacy_link_without_tenant_gets_tenant_completed_on_matching_sign_in()
-    {
-        var harness = new Harness();
-        harness.Repository.Seed(NewUser("usr-1", EntraLink(Oid, provenAt: Now.AddDays(-3), tenantId: null)));
-
-        var outcome = await harness.Service.CompleteSignInAsync(Assertion());
-
-        outcome.Succeeded.Should().BeTrue();
-        harness.Repository.ProofCalls.Should().ContainSingle(c => c.TenantIdWhenMissing == ActiveTenantId);
-        harness.Audit.Actions.Should().Contain(EntraLinkAuditActionNames.LegacyTenantCompleted);
-    }
-
-    [Fact]
-    public async Task Stored_tenant_that_contradicts_the_token_is_rejected()
+    public async Task Sign_in_does_not_resolve_a_matching_oid_from_another_tenant()
     {
         var harness = new Harness();
         harness.Repository.Seed(NewUser("usr-1", EntraLink(Oid, provenAt: Now, tenantId: OtherTenantId)));
@@ -127,7 +114,23 @@ public sealed class EntraIdentityAssociationServiceTests
         var outcome = await harness.Service.CompleteSignInAsync(Assertion());
 
         outcome.Succeeded.Should().BeFalse();
-        outcome.FailureCode.Should().Be(EntraLinkFailureCodes.TenantMismatch);
+        outcome.FailureCode.Should().Be(EntraLinkFailureCodes.AccountNotLinked);
+        harness.Audit.Actions.Should().Contain(EntraLinkAuditActionNames.RejectedUnlinked);
+        harness.Audit.Actions.Should().NotContain(EntraLinkAuditActionNames.TenantMismatch);
+    }
+
+    [Fact]
+    public async Task Same_oid_in_two_tenants_are_distinct_identities()
+    {
+        var harness = new Harness();
+        harness.Repository.Seed(
+            NewUser("usr-a", EntraLink(Oid, provenAt: Now, tenantId: ActiveTenantId)),
+            NewUser("usr-b", EntraLink(Oid, provenAt: Now, tenantId: OtherTenantId)));
+
+        var outcome = await harness.Service.CompleteSignInAsync(Assertion());
+
+        outcome.Succeeded.Should().BeTrue();
+        outcome.UserId!.Value.Should().Be("usr-a");
     }
 
     [Fact]
@@ -183,6 +186,20 @@ public sealed class EntraIdentityAssociationServiceTests
         outcome.FailureCode.Should().Be(EntraLinkFailureCodes.Collision);
         harness.Repository.AddedLinks.Should().BeEmpty();
         harness.Audit.Actions.Should().Contain(EntraLinkAuditActionNames.Collision);
+    }
+
+    [Fact]
+    public async Task Self_link_of_the_same_oid_in_another_tenant_is_not_a_collision()
+    {
+        var harness = new Harness();
+        harness.Repository.Seed(
+            NewUser("usr-1", LocalLink("operator")),
+            NewUser("usr-2", EntraLink(Oid, provenAt: Now, tenantId: OtherTenantId)));
+
+        var outcome = await harness.Service.CompleteLinkAsync(new UserId("usr-1"), Assertion());
+
+        outcome.Succeeded.Should().BeTrue();
+        harness.Repository.AddedLinks.Should().ContainSingle(l => l.UserId.Value == "usr-1");
     }
 
     [Fact]
@@ -416,7 +433,7 @@ public sealed class EntraIdentityAssociationServiceTests
             Task.FromResult(new DirectoryDiscoveryResult<EntraDirectoryGroup?>(true, DiscoveryFailureCategory.None, "ok", null, null));
     }
 
-    internal sealed record ProofCall(string ExternalId, DateTimeOffset ProvenAt, string? TenantIdWhenMissing);
+    internal sealed record ProofCall(string TenantId, string ExternalId, DateTimeOffset ProvenAt);
 
     internal sealed class RecordingEntraPrimaryPolicy : IEntraPrimaryAuthenticationPolicy
     {
@@ -465,8 +482,10 @@ public sealed class EntraIdentityAssociationServiceTests
             ValueTask.FromResult(_users.GetValueOrDefault(id.Value));
 
         public ValueTask<User?> GetByIdentityLinkAsync(IdentitySource source, string externalId, CancellationToken cancellationToken = default) =>
-            ValueTask.FromResult(_users.Values.FirstOrDefault(u =>
-                u.IdentityLinks.Any(l => l.Source == source && string.Equals(l.ExternalId, externalId, StringComparison.OrdinalIgnoreCase))));
+            GetByIdentityLinkAsync(ProviderIdentityKey.FromSourceAndExternalId(source, externalId), cancellationToken);
+
+        public ValueTask<User?> GetByIdentityLinkAsync(ProviderIdentityKey identity, CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(_users.Values.FirstOrDefault(u => u.IdentityLinks.Any(identity.Matches)));
 
         public ValueTask AddAsync(User user, CancellationToken cancellationToken = default)
         {
@@ -483,7 +502,13 @@ public sealed class EntraIdentityAssociationServiceTests
 
         public ValueTask UpdateLastAuthenticatedAtAsync(IdentitySource source, string externalId, DateTimeOffset at, CancellationToken cancellationToken = default)
         {
-            ProofCalls.Add(new ProofCall(externalId, at, null));
+            ProofCalls.Add(new ProofCall("", externalId, at));
+            return ValueTask.CompletedTask;
+        }
+
+        public ValueTask UpdateLastAuthenticatedAtAsync(ProviderIdentityKey identity, DateTimeOffset at, CancellationToken cancellationToken = default)
+        {
+            ProofCalls.Add(new ProofCall(identity.TenantId ?? "", identity.ExternalId, at));
             return ValueTask.CompletedTask;
         }
 
@@ -510,14 +535,14 @@ public sealed class EntraIdentityAssociationServiceTests
             ValueTask.CompletedTask;
 
         public ValueTask CompleteEntraLinkProofAsync(
-            string externalId,
+            string tenantId,
+            string objectId,
             DateTimeOffset provenAt,
-            string? tenantIdWhenMissing,
             string? registrationIdWhenMissing,
             string? providerSubject,
             CancellationToken cancellationToken = default)
         {
-            ProofCalls.Add(new ProofCall(externalId, provenAt, tenantIdWhenMissing));
+            ProofCalls.Add(new ProofCall(tenantId, objectId, provenAt));
             return ValueTask.CompletedTask;
         }
     }

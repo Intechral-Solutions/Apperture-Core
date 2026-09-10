@@ -16,6 +16,7 @@ public sealed class UserProvisioningServiceTests
 {
     private const string Oid = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
     private const string Tid = "11111111-2222-3333-4444-555555555555";
+    private const string OtherTid = "99999999-8888-7777-6666-555555555555";
     private const string OtherOid = "bbbbbbbb-cccc-dddd-eeee-ffffffffffff";
 
     [Fact]
@@ -102,6 +103,25 @@ public sealed class UserProvisioningServiceTests
         var ex = await act.Should().ThrowAsync<UserProvisioningException>();
         ex.Which.Code.Should().Be(UserProvisioningErrorCodes.DuplicateIdentity);
         harness.Users.Added.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Same_oid_in_a_different_tenant_is_not_a_duplicate()
+    {
+        var harness = Harness.Create();
+        harness.Users.Seed(new User(
+            new UserId("existing"),
+            "Other tenant",
+            [new IdentityLink(IdentitySource.Entra, Oid, DateTimeOffset.UtcNow, OtherTid, "reg-other")],
+            [],
+            IsBreakGlassEligible: false));
+
+        var result = await harness.Service.ProvisionFromEntraDirectoryAsync(
+            new EntraDirectoryProvisioningRequest("reg-1", Oid));
+
+        result.UserId.Value.Should().NotBe("existing");
+        harness.Users.Added.Should().ContainSingle(u =>
+            u.IdentityLinks.Any(l => l.ExternalId == Oid && l.TenantId == Tid));
     }
 
     [Fact]
@@ -353,24 +373,24 @@ public sealed class UserProvisioningServiceTests
             ValueTask.FromResult(Items.GetValueOrDefault(id));
 
         public ValueTask<EntraAccessRequest?> FindPendingAsync(
-            string registrationId, string tenantId, string objectId, CancellationToken cancellationToken = default) =>
+            string tenantId, string objectId, CancellationToken cancellationToken = default) =>
             ValueTask.FromResult(Items.Values.FirstOrDefault(r =>
                 r.Status == EntraAccessRequestStatus.Pending
-                && r.RegistrationId == registrationId
                 && string.Equals(r.TenantId, tenantId, StringComparison.OrdinalIgnoreCase)
                 && string.Equals(r.ProviderObjectId, objectId, StringComparison.OrdinalIgnoreCase)));
 
         public ValueTask<IReadOnlyList<EntraAccessRequest>> FindPendingByObjectIdsAsync(
-            string registrationId, IReadOnlyList<string> objectIds, CancellationToken cancellationToken = default) =>
+            string tenantId, IReadOnlyList<string> objectIds, CancellationToken cancellationToken = default) =>
             ValueTask.FromResult<IReadOnlyList<EntraAccessRequest>>(Items.Values
-                .Where(r => r.Status == EntraAccessRequestStatus.Pending && r.RegistrationId == registrationId)
+                .Where(r => r.Status == EntraAccessRequestStatus.Pending
+                    && string.Equals(r.TenantId, tenantId, StringComparison.OrdinalIgnoreCase)
+                    && objectIds.Contains(r.ProviderObjectId, StringComparer.OrdinalIgnoreCase))
                 .ToList());
 
         public ValueTask<EntraAccessRequest?> FindLatestAsync(
-            string registrationId, string tenantId, string objectId, CancellationToken cancellationToken = default) =>
+            string tenantId, string objectId, CancellationToken cancellationToken = default) =>
             ValueTask.FromResult(Items.Values
-                .Where(r => r.RegistrationId == registrationId
-                    && string.Equals(r.TenantId, tenantId, StringComparison.OrdinalIgnoreCase)
+                .Where(r => string.Equals(r.TenantId, tenantId, StringComparison.OrdinalIgnoreCase)
                     && string.Equals(r.ProviderObjectId, objectId, StringComparison.OrdinalIgnoreCase))
                 .OrderByDescending(r => r.RequestedAtUtc)
                 .FirstOrDefault());
@@ -383,10 +403,10 @@ public sealed class UserProvisioningServiceTests
             ValueTask.FromResult(Items.Values.Count(r => r.Status == EntraAccessRequestStatus.Pending));
 
         public ValueTask<int> CountRecentForIdentityAsync(
-            string registrationId, string tenantId, string objectId, DateTimeOffset sinceUtc, CancellationToken cancellationToken = default) =>
+            string tenantId, string objectId, DateTimeOffset sinceUtc, CancellationToken cancellationToken = default) =>
             ValueTask.FromResult(Items.Values.Count(r =>
-                r.RegistrationId == registrationId
-                && r.RequestedAtUtc >= sinceUtc
+                r.RequestedAtUtc >= sinceUtc
+                && string.Equals(r.TenantId, tenantId, StringComparison.OrdinalIgnoreCase)
                 && string.Equals(r.ProviderObjectId, objectId, StringComparison.OrdinalIgnoreCase)));
 
         public ValueTask AddAsync(EntraAccessRequest request, CancellationToken cancellationToken = default)
@@ -416,15 +436,19 @@ public sealed class UserProvisioningServiceTests
             ValueTask.FromResult(_users.GetValueOrDefault(id.Value));
 
         public ValueTask<User?> GetByIdentityLinkAsync(IdentitySource source, string externalId, CancellationToken cancellationToken = default) =>
-            ValueTask.FromResult(_users.Values.FirstOrDefault(u =>
-                u.IdentityLinks.Any(l => l.Source == source && string.Equals(l.ExternalId, externalId, StringComparison.OrdinalIgnoreCase))));
+            GetByIdentityLinkAsync(ProviderIdentityKey.FromSourceAndExternalId(source, externalId), cancellationToken);
+
+        public ValueTask<User?> GetByIdentityLinkAsync(ProviderIdentityKey identity, CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(_users.Values.FirstOrDefault(u => u.IdentityLinks.Any(identity.Matches)));
 
         public ValueTask AddAsync(User user, CancellationToken cancellationToken = default)
         {
             foreach (var link in user.IdentityLinks)
             {
-                var existing = _users.Values.FirstOrDefault(u =>
-                    u.IdentityLinks.Any(l => l.Source == link.Source && string.Equals(l.ExternalId, link.ExternalId, StringComparison.OrdinalIgnoreCase)));
+                var key = link.Source == IdentitySource.Entra
+                    ? ProviderIdentityKey.Entra(link.TenantId ?? "", link.ExternalId)
+                    : ProviderIdentityKey.Local(link.ExternalId);
+                var existing = _users.Values.FirstOrDefault(u => u.IdentityLinks.Any(key.Matches));
                 if (existing is not null)
                     throw new InvalidOperationException("An identity link with this source and external id already exists.");
             }

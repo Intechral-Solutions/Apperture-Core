@@ -256,6 +256,12 @@ public sealed class UserManagementServiceIdentityLinkTests
             return ValueTask.FromResult(match);
         }
 
+        public ValueTask<User?> GetByIdentityLinkAsync(ProviderIdentityKey identity, CancellationToken cancellationToken = default)
+        {
+            var match = _users.Values.FirstOrDefault(u => u.IdentityLinks.Any(identity.Matches));
+            return ValueTask.FromResult(match);
+        }
+
         public ValueTask AddAsync(User user, CancellationToken cancellationToken = default)
         {
             _users[user.Id] = user;

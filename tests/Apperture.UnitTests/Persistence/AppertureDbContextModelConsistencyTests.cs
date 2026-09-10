@@ -16,6 +16,6 @@ public sealed class AppertureDbContextModelConsistencyTests
 
         using var db = new AppertureDbContext(options);
         db.Database.HasPendingModelChanges().Should().BeFalse(
-            "the EF model snapshot must include IAM-3 native MFA and IAM-4 contact/token tables so a future migration does not recreate them");
+            "the EF model snapshot must include tenant-scoped Entra identity uniqueness so a future migration does not recreate the indexes");
     }
 }

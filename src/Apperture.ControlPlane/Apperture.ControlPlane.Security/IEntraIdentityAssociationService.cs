@@ -44,8 +44,7 @@ public sealed record EntraAssociationOutcome(bool Succeeded, UserId? UserId, str
 public interface IEntraIdentityAssociationService
 {
     /// <summary>
-    /// Completes a normal Entra sign-in: resolves the object id to its platform user, proves a pending link,
-    /// and completes legacy tenant metadata when the token's directory matches the active registration.
+    /// Completes a normal Entra sign-in: resolves tenant id + object id to its platform user and proves a pending link.
     /// </summary>
     ValueTask<EntraAssociationOutcome> CompleteSignInAsync(
         EntraIdentityAssertion assertion,

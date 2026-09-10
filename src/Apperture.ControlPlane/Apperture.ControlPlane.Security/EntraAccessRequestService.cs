@@ -56,7 +56,9 @@ public sealed class EntraAccessRequestService : IEntraAccessRequestService
         EntraAccessRequestPrincipal principal,
         CancellationToken cancellationToken = default)
     {
-        var owner = await _users.GetByIdentityLinkAsync(IdentitySource.Entra, principal.ObjectId, cancellationToken);
+        var owner = await _users.GetByIdentityLinkAsync(
+            ProviderIdentityKey.Entra(principal.TenantId, principal.ObjectId),
+            cancellationToken);
         if (owner is not null)
         {
             return Snapshot(
@@ -79,7 +81,6 @@ public sealed class EntraAccessRequestService : IEntraAccessRequestService
         }
 
         var pending = await _requests.FindPendingAsync(
-            principal.RegistrationId,
             principal.TenantId,
             principal.ObjectId,
             cancellationToken);
@@ -96,7 +97,6 @@ public sealed class EntraAccessRequestService : IEntraAccessRequestService
         }
 
         var latest = await _requests.FindLatestAsync(
-            principal.RegistrationId,
             principal.TenantId,
             principal.ObjectId,
             cancellationToken);
@@ -199,7 +199,6 @@ public sealed class EntraAccessRequestService : IEntraAccessRequestService
         }
 
         var recent = await _requests.CountRecentForIdentityAsync(
-            principal.RegistrationId,
             principal.TenantId,
             principal.ObjectId,
             _clock.GetUtcNow() - RateLimitWindow,
@@ -237,7 +236,6 @@ public sealed class EntraAccessRequestService : IEntraAccessRequestService
         catch (Exception)
         {
             var raced = await _requests.FindPendingAsync(
-                principal.RegistrationId,
                 principal.TenantId,
                 principal.ObjectId,
                 cancellationToken);

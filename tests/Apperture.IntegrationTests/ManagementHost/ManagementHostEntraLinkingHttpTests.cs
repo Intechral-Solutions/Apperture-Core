@@ -16,6 +16,8 @@ namespace Apperture.IntegrationTests.ManagementHost;
 public sealed class ManagementHostEntraLinkingHttpTests
 {
     private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNameCaseInsensitive = true };
+    private const string ActiveTenantId = "11111111-1111-1111-1111-111111111111";
+    private const string OtherTenantId = "22222222-2222-2222-2222-222222222222";
 
     private readonly BootstrapHttpFixture _fixture;
 
@@ -31,6 +33,7 @@ public sealed class ManagementHostEntraLinkingHttpTests
     public async Task Admin_can_add_entra_link_to_existing_user()
     {
         AssertSqlAvailable();
+        await EnsureActiveRegistrationAsync();
         var admin = await EnsureAdminClientAsync();
         var targetUserId = await CreateLocalUserAsync(admin, $"link-target-{Guid.NewGuid():N}"[..16]);
 
@@ -213,8 +216,62 @@ public sealed class ManagementHostEntraLinkingHttpTests
 
     private sealed record RoleListItem(string Id, string Name, string? Description, bool IsSystemRole);
 
+    [Fact]
+    public async Task Sign_in_with_the_same_oid_from_another_tenant_does_not_resolve_the_user()
+    {
+        AssertSqlAvailable();
+        await EnsureActiveRegistrationAsync();
+        var admin = await EnsureAdminClientAsync();
+        var entraOid = Guid.NewGuid().ToString();
+        var targetUserId = await CreateLocalUserAsync(admin, $"xtenant-{Guid.NewGuid():N}"[..16]);
+        var added = await admin.PostAsJsonAsync(
+            $"/api/users/{targetUserId}/identity-links",
+            new AddIdentityLinkRequest("Entra", entraOid));
+        added.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        var otherTenantClient = CreateTestClient(entraOid, "Entra", OtherTenantId);
+        var otherTenantMe = await otherTenantClient.GetAsync("/api/auth/me");
+        otherTenantMe.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+
+        var matchingClient = CreateTestClient(entraOid, "Entra", ActiveTenantId);
+        var matchingMe = await matchingClient.GetAsync("/api/auth/me");
+        matchingMe.StatusCode.Should().Be(HttpStatusCode.OK);
+        var body = await matchingMe.Content.ReadFromJsonAsync<MeResponse>(JsonOptions);
+        body!.UserId.Should().Be(targetUserId);
+    }
+
+    private async Task EnsureActiveRegistrationAsync()
+    {
+        await using var scope = _fixture.Factory!.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppertureDbContext>();
+        var existing = await db.EntraInstanceRegistrations.FirstOrDefaultAsync(r => r.IsActive);
+        if (existing is null)
+        {
+            db.EntraInstanceRegistrations.Add(new EntraInstanceRegistrationEntity
+            {
+                Id = "reg-iam5-http",
+                DisplayName = "Integration directory",
+                Authority = $"https://login.microsoftonline.com/{ActiveTenantId}/v2.0",
+                ClientId = Guid.NewGuid().ToString(),
+                Enabled = true,
+                IsActive = true,
+                AzureTenantId = ActiveTenantId,
+                CreatedUtc = DateTimeOffset.UtcNow,
+                UpdatedUtc = DateTimeOffset.UtcNow
+            });
+            await db.SaveChangesAsync();
+            return;
+        }
+
+        existing.AzureTenantId = ActiveTenantId;
+        existing.Enabled = true;
+        existing.Authority = $"https://login.microsoftonline.com/{ActiveTenantId}/v2.0";
+        await db.SaveChangesAsync();
+    }
+
     private async Task<HttpClient> EnsureAdminClientAsync()
     {
+        await EnsureActiveRegistrationAsync();
         await using var scope = _fixture.Factory!.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<AppertureDbContext>();
         if (!await db.Users.AnyAsync().ConfigureAwait(false))
@@ -245,12 +302,19 @@ public sealed class ManagementHostEntraLinkingHttpTests
         return body!.UserId;
     }
 
-    private HttpClient CreateTestClient(string externalId, string identitySource)
+    private HttpClient CreateTestClient(string externalId, string identitySource, string? tenantId = null)
     {
         var client = _fixture.Factory!.CreateClient();
         client.DefaultRequestHeaders.Add(ManagementTestAuthHandler.HeaderName, externalId);
         if (!string.Equals(identitySource, "Local", StringComparison.OrdinalIgnoreCase))
             client.DefaultRequestHeaders.Add(ManagementTestAuthHandler.IdentitySourceHeaderName, identitySource);
+        if (string.Equals(identitySource, "Entra", StringComparison.OrdinalIgnoreCase))
+        {
+            client.DefaultRequestHeaders.Add(
+                ManagementTestAuthHandler.TenantIdHeaderName,
+                tenantId ?? ActiveTenantId);
+        }
+
         return client;
     }
 }

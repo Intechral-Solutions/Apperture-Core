@@ -18,9 +18,27 @@ public interface IUserRepository
     ValueTask<User?> GetByIdAsync(UserId id, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Gets a user by identity link (source + external id). Returns null when no link exists.
+    /// Gets a user by identity link. Local identities use source + external id.
+    /// Entra callers should use <see cref="GetByIdentityLinkAsync(ProviderIdentityKey, CancellationToken)"/>
+    /// so tenant id is part of the lookup. Passing <see cref="IdentitySource.Entra"/> here is rejected
+    /// by the SQL repository.
     /// </summary>
     ValueTask<User?> GetByIdentityLinkAsync(IdentitySource source, string externalId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Gets a user by canonical identity key. Entra lookups are tenant + object id.
+    /// </summary>
+    ValueTask<User?> GetByIdentityLinkAsync(ProviderIdentityKey identity, CancellationToken cancellationToken = default)
+    {
+        if (identity.Source == IdentitySource.Entra)
+        {
+            throw new ArgumentException(
+                "Entra identity lookup requires a tenant-scoped query (Source + TenantId + ExternalId). Implement GetByIdentityLinkAsync(ProviderIdentityKey). Do not resolve by object id and filter tenant afterward.",
+                nameof(identity));
+        }
+
+        return GetByIdentityLinkAsync(identity.Source, identity.ExternalId, cancellationToken);
+    }
 
     /// <summary>
     /// Finds the user whose <b>verified</b> contact email matches. Never used to create or link identities.
@@ -40,8 +58,25 @@ public interface IUserRepository
 
     /// <summary>
     /// Updates the last authenticated timestamp for the identity link with the given source and external id.
+    /// Local identities use this overload. Entra proof uses
+    /// <see cref="UpdateLastAuthenticatedAtAsync(ProviderIdentityKey, DateTimeOffset, CancellationToken)"/>.
     /// </summary>
     ValueTask UpdateLastAuthenticatedAtAsync(IdentitySource source, string externalId, DateTimeOffset at, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Updates the last authenticated timestamp. Entra updates are tenant-scoped.
+    /// </summary>
+    ValueTask UpdateLastAuthenticatedAtAsync(ProviderIdentityKey identity, DateTimeOffset at, CancellationToken cancellationToken = default)
+    {
+        if (identity.Source == IdentitySource.Entra)
+        {
+            throw new ArgumentException(
+                "Entra last-authenticated updates require a tenant-scoped repository implementation. Use ProviderIdentityKey.Entra(tenantId, objectId).",
+                nameof(identity));
+        }
+
+        return UpdateLastAuthenticatedAtAsync(identity.Source, identity.ExternalId, at, cancellationToken);
+    }
 
     /// <summary>
     /// Gets a page of users with their identity links and role ids. For auth-admin listing.
@@ -71,7 +106,7 @@ public interface IUserRepository
 
     /// <summary>
     /// Adds an identity link to an existing user. ExternalId for Local must be normalized (trim, lowercase) by the caller.
-    /// Throws if (Source, ExternalId) already exists for any user.
+    /// Throws if a matching identity already exists for any user (Local: source + external id; Entra: source + tenant + oid).
     /// </summary>
     ValueTask AddIdentityLinkAsync(UserId userId, IdentitySource source, string externalId, CancellationToken cancellationToken = default);
 
@@ -82,38 +117,54 @@ public interface IUserRepository
 
     /// <summary>
     /// Finds the owner and full record of a single identity link, or null when no link exists.
+    /// Entra lookups must include tenant id.
     /// </summary>
     async ValueTask<IdentityLinkOwner?> FindIdentityLinkAsync(
-        IdentitySource source,
-        string externalId,
+        ProviderIdentityKey identity,
         CancellationToken cancellationToken = default)
     {
-        var user = await GetByIdentityLinkAsync(source, externalId, cancellationToken);
-        var link = user?.IdentityLinks.FirstOrDefault(l =>
-            l.Source == source
-            && string.Equals(l.ExternalId, externalId, StringComparison.OrdinalIgnoreCase));
+        var user = await GetByIdentityLinkAsync(identity, cancellationToken);
+        var link = user?.IdentityLinks.FirstOrDefault(identity.Matches);
         return user is null || link is null ? null : new IdentityLinkOwner(user.Id, link);
     }
 
     /// <summary>
-    /// Adds an identity link including its provider metadata (tenant, provenance, snapshots).
-    /// Throws if (Source, ExternalId) already exists for any user.
+    /// Finds a local (or other non-Entra) identity link. Entra callers must use
+    /// <see cref="FindIdentityLinkAsync(ProviderIdentityKey, CancellationToken)"/>.
     /// </summary>
-    ValueTask AddIdentityLinkAsync(UserId userId, IdentityLink link, CancellationToken cancellationToken = default) =>
-        AddIdentityLinkAsync(userId, link.Source, link.ExternalId, cancellationToken);
+    ValueTask<IdentityLinkOwner?> FindIdentityLinkAsync(
+        IdentitySource source,
+        string externalId,
+        CancellationToken cancellationToken = default) =>
+        FindIdentityLinkAsync(ProviderIdentityKey.FromSourceAndExternalId(source, externalId), cancellationToken);
 
     /// <summary>
-    /// Marks an Entra link proven and completes metadata a legacy row may be missing. Tenant id is only
-    /// written when the stored value is null, so an existing tenant binding is never silently changed.
+    /// Adds an identity link including its provider metadata (tenant, provenance, snapshots).
+    /// Throws if a matching identity already exists for any user.
+    /// </summary>
+    ValueTask AddIdentityLinkAsync(UserId userId, IdentityLink link, CancellationToken cancellationToken = default)
+    {
+        if (link.Source == IdentitySource.Entra)
+        {
+            throw new InvalidOperationException(
+                "Entra identity links require tenant id. Implement AddIdentityLinkAsync(UserId, IdentityLink) so uniqueness is Source + TenantId + ExternalId.");
+        }
+
+        return AddIdentityLinkAsync(userId, link.Source, link.ExternalId, cancellationToken);
+    }
+
+    /// <summary>
+    /// Marks an Entra link proven. Lookup is tenant + object id. Registration id is provenance only
+    /// and is written when the stored value is null.
     /// </summary>
     ValueTask CompleteEntraLinkProofAsync(
-        string externalId,
+        string tenantId,
+        string objectId,
         DateTimeOffset provenAt,
-        string? tenantIdWhenMissing,
         string? registrationIdWhenMissing,
         string? providerSubject,
         CancellationToken cancellationToken = default) =>
-        UpdateLastAuthenticatedAtAsync(IdentitySource.Entra, externalId, provenAt, cancellationToken);
+        UpdateLastAuthenticatedAtAsync(ProviderIdentityKey.Entra(tenantId, objectId), provenAt, cancellationToken);
 }
 
 /// <summary>

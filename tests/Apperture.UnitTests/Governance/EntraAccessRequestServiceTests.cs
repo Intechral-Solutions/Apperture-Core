@@ -101,6 +101,22 @@ public sealed class EntraAccessRequestServiceTests
     }
 
     [Fact]
+    public async Task Same_oid_in_another_tenant_is_not_already_provisioned()
+    {
+        var harness = Harness.Create(allowMembers: true);
+        harness.Users.Seed(new User(
+            new UserId("u-other"),
+            "Other tenant",
+            [new IdentityLink(IdentitySource.Entra, Oid, DateTimeOffset.UtcNow, "99999999-8888-7777-6666-555555555555", "reg-other")],
+            [],
+            IsBreakGlassEligible: false));
+
+        var snapshot = await harness.Service.GetSessionSnapshotAsync(Principal());
+        snapshot.State.Should().Be(EntraAccessRequestSessionStates.Eligible);
+        snapshot.CanRequest.Should().BeTrue();
+    }
+
+    [Fact]
     public async Task Reject_does_not_create_a_user()
     {
         var harness = Harness.Create(allowMembers: true);
@@ -247,20 +263,23 @@ public sealed class EntraAccessRequestServiceTests
             ValueTask.FromResult(Items.GetValueOrDefault(id));
 
         public ValueTask<EntraAccessRequest?> FindPendingAsync(
-            string registrationId, string tenantId, string objectId, CancellationToken cancellationToken = default) =>
+            string tenantId, string objectId, CancellationToken cancellationToken = default) =>
             ValueTask.FromResult(Items.Values.FirstOrDefault(r =>
                 r.Status == EntraAccessRequestStatus.Pending
-                && r.RegistrationId == registrationId
+                && string.Equals(r.TenantId, tenantId, StringComparison.OrdinalIgnoreCase)
                 && string.Equals(r.ProviderObjectId, objectId, StringComparison.OrdinalIgnoreCase)));
 
         public ValueTask<IReadOnlyList<EntraAccessRequest>> FindPendingByObjectIdsAsync(
-            string registrationId, IReadOnlyList<string> objectIds, CancellationToken cancellationToken = default) =>
-            ValueTask.FromResult<IReadOnlyList<EntraAccessRequest>>(Items.Values.Where(r => r.Status == EntraAccessRequestStatus.Pending).ToList());
+            string tenantId, IReadOnlyList<string> objectIds, CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult<IReadOnlyList<EntraAccessRequest>>(Items.Values.Where(r =>
+                r.Status == EntraAccessRequestStatus.Pending
+                && string.Equals(r.TenantId, tenantId, StringComparison.OrdinalIgnoreCase)).ToList());
 
         public ValueTask<EntraAccessRequest?> FindLatestAsync(
-            string registrationId, string tenantId, string objectId, CancellationToken cancellationToken = default) =>
+            string tenantId, string objectId, CancellationToken cancellationToken = default) =>
             ValueTask.FromResult(Items.Values
-                .Where(r => string.Equals(r.ProviderObjectId, objectId, StringComparison.OrdinalIgnoreCase))
+                .Where(r => string.Equals(r.TenantId, tenantId, StringComparison.OrdinalIgnoreCase)
+                    && string.Equals(r.ProviderObjectId, objectId, StringComparison.OrdinalIgnoreCase))
                 .OrderByDescending(r => r.RequestedAtUtc)
                 .FirstOrDefault());
 
@@ -271,12 +290,16 @@ public sealed class EntraAccessRequestServiceTests
             ValueTask.FromResult(Items.Values.Count(r => r.Status == EntraAccessRequestStatus.Pending));
 
         public ValueTask<int> CountRecentForIdentityAsync(
-            string registrationId, string tenantId, string objectId, DateTimeOffset sinceUtc, CancellationToken cancellationToken = default) =>
-            ValueTask.FromResult(Items.Values.Count(r => r.RequestedAtUtc >= sinceUtc));
+            string tenantId, string objectId, DateTimeOffset sinceUtc, CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(Items.Values.Count(r =>
+                r.RequestedAtUtc >= sinceUtc
+                && string.Equals(r.TenantId, tenantId, StringComparison.OrdinalIgnoreCase)
+                && string.Equals(r.ProviderObjectId, objectId, StringComparison.OrdinalIgnoreCase)));
 
         public ValueTask AddAsync(EntraAccessRequest request, CancellationToken cancellationToken = default)
         {
             if (Items.Values.Any(r => r.Status == EntraAccessRequestStatus.Pending
+                && string.Equals(r.TenantId, request.TenantId, StringComparison.OrdinalIgnoreCase)
                 && string.Equals(r.ProviderObjectId, request.ProviderObjectId, StringComparison.OrdinalIgnoreCase)))
             {
                 throw new InvalidOperationException("pending exists");
@@ -303,8 +326,9 @@ public sealed class EntraAccessRequestServiceTests
         public ValueTask<int> GetUserCountAsync(CancellationToken cancellationToken = default) => ValueTask.FromResult(_users.Count);
         public ValueTask<User?> GetByIdAsync(UserId id, CancellationToken cancellationToken = default) => ValueTask.FromResult(_users.GetValueOrDefault(id.Value));
         public ValueTask<User?> GetByIdentityLinkAsync(IdentitySource source, string externalId, CancellationToken cancellationToken = default) =>
-            ValueTask.FromResult(_users.Values.FirstOrDefault(u =>
-                u.IdentityLinks.Any(l => l.Source == source && string.Equals(l.ExternalId, externalId, StringComparison.OrdinalIgnoreCase))));
+            GetByIdentityLinkAsync(ProviderIdentityKey.FromSourceAndExternalId(source, externalId), cancellationToken);
+        public ValueTask<User?> GetByIdentityLinkAsync(ProviderIdentityKey identity, CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(_users.Values.FirstOrDefault(u => u.IdentityLinks.Any(identity.Matches)));
         public ValueTask AddAsync(User user, CancellationToken cancellationToken = default)
         {
             _users[user.Id.Value] = user;

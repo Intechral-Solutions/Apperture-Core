@@ -69,6 +69,10 @@ public static class ClaimsPrincipalToActorMapper
         var breakGlassClaim = principal.FindFirst(BreakGlassClaimType)?.Value;
         var isBreakGlassSession = string.Equals(breakGlassClaim, "1", StringComparison.Ordinal);
 
-        return new HumanActor(new ActorId(id), displayName, preferredSource, isBreakGlassSession);
+        var tenantId = preferredSource == IdentitySource.Entra
+            ? EntraTokenClaims.TryGetTenantId(principal)
+            : null;
+
+        return new HumanActor(new ActorId(id), displayName, preferredSource, isBreakGlassSession, tenantId);
     }
 }

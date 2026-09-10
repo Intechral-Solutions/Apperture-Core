@@ -501,11 +501,12 @@ namespace Apperture.Persistence.SqlServer.Migrations
 
                     b.HasIndex("Status");
 
-                    b.HasIndex("RegistrationId", "TenantId", "ProviderObjectId", "Status");
-
-                    b.HasIndex("RegistrationId", "TenantId", "ProviderObjectId")
+                    b.HasIndex("TenantId", "ProviderObjectId")
                         .IsUnique()
+                        .HasDatabaseName("UX_EntraAccessRequests_PendingTenantIdentity")
                         .HasFilter("[Status] = 0");
+
+                    b.HasIndex("RegistrationId", "TenantId", "ProviderObjectId", "Status");
 
                     b.ToTable("EntraAccessRequests", (string)null);
                 });
@@ -735,9 +736,19 @@ namespace Apperture.Persistence.SqlServer.Migrations
                     b.HasIndex("UserId");
 
                     b.HasIndex("Source", "ExternalId")
-                        .IsUnique();
+                        .IsUnique()
+                        .HasDatabaseName("UX_IdentityLinks_Local_Source_ExternalId")
+                        .HasFilter("[Source] = 1");
 
-                    b.ToTable("IdentityLinks", (string)null);
+                    b.HasIndex("Source", "TenantId", "ExternalId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_IdentityLinks_Entra_Source_TenantId_ExternalId")
+                        .HasFilter("[Source] = 0 AND [TenantId] IS NOT NULL");
+
+                    b.ToTable("IdentityLinks", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_IdentityLinks_EntraRequiresTenant", "[Source] <> 0 OR ([TenantId] IS NOT NULL AND DATALENGTH([TenantId]) > 0)");
+                        });
                 });
 
             modelBuilder.Entity("Apperture.Persistence.SqlServer.InstanceAttentionRoutingEntity", b =>

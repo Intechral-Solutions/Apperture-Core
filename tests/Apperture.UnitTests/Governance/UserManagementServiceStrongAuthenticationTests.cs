@@ -175,7 +175,7 @@ public sealed class UserManagementServiceStrongAuthenticationTests
             ValueTask.FromResult<(IReadOnlyList<User>, int)>(([_user], 1));
         public ValueTask AddIdentityLinkAsync(UserId userId, IdentitySource source, string externalId, CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
         public ValueTask RemoveIdentityLinkAsync(UserId userId, IdentitySource source, string externalId, CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
-        public ValueTask CompleteEntraLinkProofAsync(string externalId, DateTimeOffset provenAt, string? tenantIdWhenMissing, string? registrationIdWhenMissing, string? providerSubject, CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
+        public ValueTask CompleteEntraLinkProofAsync(string tenantId, string objectId, DateTimeOffset provenAt, string? registrationIdWhenMissing, string? providerSubject, CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
     }
 
     private sealed class StubPrincipal : IPrincipalContext

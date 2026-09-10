@@ -23,7 +23,15 @@ Manual local creation remains on `UserManagementService.CreateUserAsync` so exis
 
 ### Directory identity
 
-Graph `user.id` is the Entra object id (`oid`). Provisioned status and access-request uniqueness use `TenantId + ObjectId` (registration-scoped). Email and UPN are snapshots only.
+Graph `user.id` is the Entra object id (`oid`). Authoritative identity and uniqueness are `TenantId + ObjectId` (`Source + TenantId + ExternalId` on `IdentityLink`). Registration id is provenance only: two registrations for the same tenant must not create two Apperture Entra identities for the same directory object. Email and UPN are snapshots only.
+
+Persistent uniqueness:
+
+- Local: unique `(Source, ExternalId)` where `Source = Local`.
+- Entra: unique `(Source, TenantId, ExternalId)` where `Source = Entra` and `TenantId` is present.
+- Entra rows without `TenantId` are invalid; upgrade fails rather than inventing tenant ids.
+
+At most one **active** Entra registration exists (`IsActive = 1` filtered unique). Multiple inactive registrations may exist; they do not create a separate identity namespace.
 
 ### Admin directory provisioning
 
@@ -58,7 +66,7 @@ Eligibility is re-checked through Graph. Failures fail closed (`eligibility_unav
 
 ### Access-request lifecycle
 
-`EntraAccessRequests` stores pending/approved/rejected rows. At most one Pending row per `(RegistrationId, TenantId, ProviderObjectId)`. Historical decisions are retained. Repeated submit returns the existing pending row.
+`EntraAccessRequests` stores pending/approved/rejected rows. At most one Pending row per `(TenantId, ProviderObjectId)`. Registration id is provenance, not part of pending uniqueness. Historical decisions are retained. Repeated submit returns the existing pending row.
 
 Approval re-reads the pending row, invokes `ProvisionFromAccessRequestAsync`, and records `ProvisionedUserId`. The Entra link is **proven** using the request's `AuthenticatedAtUtc` (that identity already completed Apperture's OIDC pipeline). Approval does not create an application session.
 

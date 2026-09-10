@@ -60,8 +60,25 @@ public sealed class SqlUserRepository : IUserRepository
     /// <inheritdoc />
     public async ValueTask<User?> GetByIdentityLinkAsync(IdentitySource source, string externalId, CancellationToken cancellationToken = default)
     {
+        if (source == IdentitySource.Entra)
+        {
+            throw new ArgumentException(
+                "Entra identity lookup requires tenant id and object id. Use ProviderIdentityKey.Entra(tenantId, objectId).",
+                nameof(source));
+        }
+
         var link = await _db.IdentityLinks.AsNoTracking()
             .FirstOrDefaultAsync(l => l.Source == (int)source && l.ExternalId == externalId, cancellationToken);
+        if (link is null)
+            return null;
+
+        return await GetByIdAsync(new UserId(link.UserId), cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public async ValueTask<User?> GetByIdentityLinkAsync(ProviderIdentityKey identity, CancellationToken cancellationToken = default)
+    {
+        var link = await FindLinkEntityAsync(identity, tracking: false, cancellationToken);
         if (link is null)
             return null;
 
@@ -85,7 +102,11 @@ public sealed class SqlUserRepository : IUserRepository
         _db.Users.Add(userEntity);
 
         foreach (var link in user.IdentityLinks)
+        {
+            if (await IdentityExistsAsync(link, cancellationToken))
+                throw new InvalidOperationException("An identity link with this source and external id already exists.");
             _db.IdentityLinks.Add(ToEntity(user.Id, link));
+        }
 
         foreach (var roleId in user.AssignedRoleIds)
         {
@@ -96,7 +117,7 @@ public sealed class SqlUserRepository : IUserRepository
             });
         }
 
-        await _db.SaveChangesAsync(cancellationToken);
+        await SaveIdentityChangesAsync(cancellationToken);
     }
 
     /// <inheritdoc />
@@ -168,12 +189,54 @@ public sealed class SqlUserRepository : IUserRepository
     /// <inheritdoc />
     public async ValueTask UpdateLastAuthenticatedAtAsync(IdentitySource source, string externalId, DateTimeOffset at, CancellationToken cancellationToken = default)
     {
+        if (source == IdentitySource.Entra)
+        {
+            throw new ArgumentException(
+                "Entra last-authenticated updates require tenant id and object id. Use ProviderIdentityKey.Entra(tenantId, objectId).",
+                nameof(source));
+        }
+
+        await UpdateLastAuthenticatedAtCoreAsync(
+            l => l.Source == (int)source && l.ExternalId == externalId,
+            source,
+            externalId,
+            at,
+            cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public async ValueTask UpdateLastAuthenticatedAtAsync(ProviderIdentityKey identity, DateTimeOffset at, CancellationToken cancellationToken = default)
+    {
+        if (identity.Source == IdentitySource.Entra)
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(identity.TenantId);
+            await UpdateLastAuthenticatedAtCoreAsync(
+                l => l.Source == (int)IdentitySource.Entra
+                    && l.TenantId == identity.TenantId
+                    && l.ExternalId == identity.ExternalId,
+                identity.Source,
+                identity.ExternalId,
+                at,
+                cancellationToken);
+            return;
+        }
+
+        await UpdateLastAuthenticatedAtAsync(identity.Source, identity.ExternalId, at, cancellationToken);
+    }
+
+    private async ValueTask UpdateLastAuthenticatedAtCoreAsync(
+        System.Linq.Expressions.Expression<Func<IdentityLinkEntity, bool>> match,
+        IdentitySource source,
+        string externalId,
+        DateTimeOffset at,
+        CancellationToken cancellationToken)
+    {
         try
         {
             var writeOnlyIfOlderThan = at - LastAuthenticatedAtWriteInterval;
 
             await _db.IdentityLinks
-                .Where(l => l.Source == (int)source && l.ExternalId == externalId)
+                .Where(match)
                 .Where(l => l.LastAuthenticatedAt == null || l.LastAuthenticatedAt < writeOnlyIfOlderThan)
                 .ExecuteUpdateAsync(
                     setters => setters.SetProperty(l => l.LastAuthenticatedAt, at),
@@ -226,9 +289,13 @@ public sealed class SqlUserRepository : IUserRepository
     /// <inheritdoc />
     public async ValueTask AddIdentityLinkAsync(UserId userId, IdentitySource source, string externalId, CancellationToken cancellationToken = default)
     {
-        var exists = await _db.IdentityLinks.AnyAsync(
-            l => l.Source == (int)source && l.ExternalId == externalId, cancellationToken);
-        if (exists)
+        if (source == IdentitySource.Entra)
+        {
+            throw new InvalidOperationException(
+                "Entra identity links require tenant id. Use AddIdentityLinkAsync(UserId, IdentityLink).");
+        }
+
+        if (await IdentityExistsAsync(source, externalId, tenantId: null, cancellationToken))
             throw new InvalidOperationException("An identity link with this source and external id already exists.");
 
         var userExists = await _db.Users.AnyAsync(u => u.Id == userId.Value, cancellationToken);
@@ -244,15 +311,13 @@ public sealed class SqlUserRepository : IUserRepository
             LastAuthenticatedAt = null,
             LinkedAt = DateTimeOffset.UtcNow
         });
-        await _db.SaveChangesAsync(cancellationToken);
+        await SaveIdentityChangesAsync(cancellationToken);
     }
 
     /// <inheritdoc />
     public async ValueTask AddIdentityLinkAsync(UserId userId, IdentityLink link, CancellationToken cancellationToken = default)
     {
-        var exists = await _db.IdentityLinks.AnyAsync(
-            l => l.Source == (int)link.Source && l.ExternalId == link.ExternalId, cancellationToken);
-        if (exists)
+        if (await IdentityExistsAsync(link, cancellationToken))
             throw new InvalidOperationException("An identity link with this source and external id already exists.");
 
         var userExists = await _db.Users.AnyAsync(u => u.Id == userId.Value, cancellationToken);
@@ -260,7 +325,7 @@ public sealed class SqlUserRepository : IUserRepository
             throw new InvalidOperationException($"User {userId.Value} not found.");
 
         _db.IdentityLinks.Add(ToEntity(userId, link));
-        await _db.SaveChangesAsync(cancellationToken);
+        await SaveIdentityChangesAsync(cancellationToken);
     }
 
     /// <inheritdoc />
@@ -269,28 +334,42 @@ public sealed class SqlUserRepository : IUserRepository
         string externalId,
         CancellationToken cancellationToken = default)
     {
+        if (source == IdentitySource.Entra)
+        {
+            throw new ArgumentException(
+                "Entra identity lookup requires tenant id and object id. Use ProviderIdentityKey.Entra(tenantId, objectId).",
+                nameof(source));
+        }
+
         var link = await _db.IdentityLinks.AsNoTracking()
             .FirstOrDefaultAsync(l => l.Source == (int)source && l.ExternalId == externalId, cancellationToken);
         return link is null ? null : new IdentityLinkOwner(new UserId(link.UserId), ToDomain(link));
     }
 
     /// <inheritdoc />
+    public async ValueTask<IdentityLinkOwner?> FindIdentityLinkAsync(
+        ProviderIdentityKey identity,
+        CancellationToken cancellationToken = default)
+    {
+        var link = await FindLinkEntityAsync(identity, tracking: false, cancellationToken);
+        return link is null ? null : new IdentityLinkOwner(new UserId(link.UserId), ToDomain(link));
+    }
+
+    /// <inheritdoc />
     public async ValueTask CompleteEntraLinkProofAsync(
-        string externalId,
+        string tenantId,
+        string objectId,
         DateTimeOffset provenAt,
-        string? tenantIdWhenMissing,
         string? registrationIdWhenMissing,
         string? providerSubject,
         CancellationToken cancellationToken = default)
     {
-        var link = await _db.IdentityLinks
-            .FirstOrDefaultAsync(l => l.Source == (int)IdentitySource.Entra && l.ExternalId == externalId, cancellationToken);
+        var key = ProviderIdentityKey.Entra(tenantId, objectId);
+        var link = await FindLinkEntityAsync(key, tracking: true, cancellationToken);
         if (link is null)
             return;
 
         link.LastAuthenticatedAt = provenAt;
-        if (string.IsNullOrEmpty(link.TenantId) && !string.IsNullOrEmpty(tenantIdWhenMissing))
-            link.TenantId = tenantIdWhenMissing;
         if (string.IsNullOrEmpty(link.RegistrationId) && !string.IsNullOrEmpty(registrationIdWhenMissing))
             link.RegistrationId = registrationIdWhenMissing;
         if (!string.IsNullOrEmpty(providerSubject))
@@ -304,8 +383,9 @@ public sealed class SqlUserRepository : IUserRepository
         {
             _logger.LogDebug(
                 ex,
-                "Ignored optimistic concurrency while completing Entra link proof for {ExternalId}.",
-                externalId);
+                "Ignored optimistic concurrency while completing Entra link proof for {TenantId}/{ExternalId}.",
+                key.TenantId,
+                key.ExternalId);
         }
     }
 
@@ -323,6 +403,79 @@ public sealed class SqlUserRepository : IUserRepository
 
         _db.IdentityLinks.Remove(link);
         await _db.SaveChangesAsync(cancellationToken);
+    }
+
+    private async ValueTask<IdentityLinkEntity?> FindLinkEntityAsync(
+        ProviderIdentityKey identity,
+        bool tracking,
+        CancellationToken cancellationToken)
+    {
+        var query = tracking ? _db.IdentityLinks : _db.IdentityLinks.AsNoTracking();
+        if (identity.Source == IdentitySource.Entra)
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(identity.TenantId);
+            return await query.FirstOrDefaultAsync(
+                l => l.Source == (int)IdentitySource.Entra
+                    && l.TenantId == identity.TenantId
+                    && l.ExternalId == identity.ExternalId,
+                cancellationToken);
+        }
+
+        return await query.FirstOrDefaultAsync(
+            l => l.Source == (int)identity.Source && l.ExternalId == identity.ExternalId,
+            cancellationToken);
+    }
+
+    private ValueTask<bool> IdentityExistsAsync(IdentityLink link, CancellationToken cancellationToken) =>
+        IdentityExistsAsync(link.Source, link.ExternalId, link.TenantId, cancellationToken);
+
+    private async ValueTask<bool> IdentityExistsAsync(
+        IdentitySource source,
+        string externalId,
+        string? tenantId,
+        CancellationToken cancellationToken)
+    {
+        if (source == IdentitySource.Entra)
+        {
+            var key = ProviderIdentityKey.Entra(
+                tenantId ?? throw new InvalidOperationException("Entra identity links require a tenant id."),
+                externalId);
+            return await _db.IdentityLinks.AnyAsync(
+                l => l.Source == (int)IdentitySource.Entra
+                    && l.TenantId == key.TenantId
+                    && l.ExternalId == key.ExternalId,
+                cancellationToken);
+        }
+
+        return await _db.IdentityLinks.AnyAsync(
+            l => l.Source == (int)source && l.ExternalId == externalId,
+            cancellationToken);
+    }
+
+    private async ValueTask SaveIdentityChangesAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _db.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException ex) when (IsUniqueConstraintViolation(ex))
+        {
+            throw new InvalidOperationException("An identity link with this source and external id already exists.", ex);
+        }
+    }
+
+    private static bool IsUniqueConstraintViolation(DbUpdateException ex)
+    {
+        for (var inner = ex.InnerException; inner is not null; inner = inner.InnerException)
+        {
+            if (inner is Microsoft.Data.SqlClient.SqlException sql
+                && (sql.Number == 2601 || sql.Number == 2627))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static IdentityLinkEntity ToEntity(UserId userId, IdentityLink link) => new()

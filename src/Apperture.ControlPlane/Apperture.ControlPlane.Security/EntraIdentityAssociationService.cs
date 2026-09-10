@@ -109,35 +109,27 @@ public sealed class EntraIdentityAssociationService : IEntraIdentityAssociationS
             return EntraAssociationOutcome.Failure(EntraLinkFailureCodes.TenantMismatch);
         }
 
-        var owner = await _userRepository.FindIdentityLinkAsync(IdentitySource.Entra, objectId!, cancellationToken);
+        var owner = await _userRepository.FindIdentityLinkAsync(
+            ProviderIdentityKey.Entra(tokenTenantId!, objectId!),
+            cancellationToken);
         if (owner is null)
         {
             await AuditAsync(EntraLinkAuditActionNames.RejectedUnlinked, objectId!, null, "reason=no_link", cancellationToken);
             return EntraAssociationOutcome.Failure(EntraLinkFailureCodes.AccountNotLinked);
         }
 
-        if (!string.IsNullOrEmpty(owner.Link.TenantId) &&
-            !EntraTokenClaims.TenantMatches(tokenTenantId, owner.Link.TenantId))
-        {
-            await AuditAsync(EntraLinkAuditActionNames.TenantMismatch, objectId!, owner.UserId.Value, "reason=stored_tenant_differs", cancellationToken);
-            return EntraAssociationOutcome.Failure(EntraLinkFailureCodes.TenantMismatch);
-        }
-
         var wasPending = !owner.Link.IsProven;
-        var legacyTenantCompleted = string.IsNullOrEmpty(owner.Link.TenantId);
 
         await _userRepository.CompleteEntraLinkProofAsync(
+            tokenTenantId!,
             objectId!,
             _timeProvider.GetUtcNow(),
-            tokenTenantId,
             registration?.Id,
             assertion!.Subject,
             cancellationToken);
 
         if (wasPending)
             await AuditAsync(EntraLinkAuditActionNames.Proven, objectId!, owner.UserId.Value, null, cancellationToken);
-        if (legacyTenantCompleted)
-            await AuditAsync(EntraLinkAuditActionNames.LegacyTenantCompleted, objectId!, owner.UserId.Value, $"tenantId={tokenTenantId}", cancellationToken);
 
         // Re-evaluate on every successful Entra authentication. A previously deferred last-admin
         // disable must not stick once another Entra-independent Platform Administrator exists.
@@ -175,7 +167,9 @@ public sealed class EntraIdentityAssociationService : IEntraIdentityAssociationS
             return EntraAssociationOutcome.Failure(EntraLinkFailureCodes.TenantMismatch);
         }
 
-        var existing = await _userRepository.FindIdentityLinkAsync(IdentitySource.Entra, objectId!, cancellationToken);
+        var existing = await _userRepository.FindIdentityLinkAsync(
+            ProviderIdentityKey.Entra(tokenTenantId!, objectId!),
+            cancellationToken);
         if (existing is not null && existing.UserId.Value != initiatingUserId.Value)
         {
             await AuditAsync(EntraLinkAuditActionNames.Collision, objectId!, initiatingUserId.Value, "reason=oid_owned_by_other_user", cancellationToken);
@@ -224,9 +218,9 @@ public sealed class EntraIdentityAssociationService : IEntraIdentityAssociationS
         // Already this user's identity: prove it (admin-created pending link) and stay idempotent.
         var wasPending = !existing.Link.IsProven;
         await _userRepository.CompleteEntraLinkProofAsync(
+            tokenTenantId!,
             objectId!,
             now,
-            tokenTenantId,
             registration?.Id,
             assertion!.Subject,
             cancellationToken);

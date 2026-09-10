@@ -7,18 +7,16 @@ public interface IEntraAccessRequestRepository
     ValueTask<EntraAccessRequest?> GetByIdAsync(string id, CancellationToken cancellationToken = default);
 
     ValueTask<EntraAccessRequest?> FindPendingAsync(
-        string registrationId,
         string tenantId,
         string objectId,
         CancellationToken cancellationToken = default);
 
     ValueTask<IReadOnlyList<EntraAccessRequest>> FindPendingByObjectIdsAsync(
-        string registrationId,
+        string tenantId,
         IReadOnlyList<string> objectIds,
         CancellationToken cancellationToken = default);
 
     ValueTask<EntraAccessRequest?> FindLatestAsync(
-        string registrationId,
         string tenantId,
         string objectId,
         CancellationToken cancellationToken = default);
@@ -28,7 +26,6 @@ public interface IEntraAccessRequestRepository
     ValueTask<int> CountPendingAsync(CancellationToken cancellationToken = default);
 
     ValueTask<int> CountRecentForIdentityAsync(
-        string registrationId,
         string tenantId,
         string objectId,
         DateTimeOffset sinceUtc,

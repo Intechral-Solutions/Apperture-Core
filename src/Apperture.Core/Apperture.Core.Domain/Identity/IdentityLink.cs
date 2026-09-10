@@ -8,7 +8,7 @@ namespace Apperture.Core.Domain.Identity;
 /// <param name="Source">Authentication source.</param>
 /// <param name="ExternalId">Authoritative external identifier: Entra object id (oid), or normalized local username.</param>
 /// <param name="LastAuthenticatedAt">Proof marker. Null means pending, non-null means proven.</param>
-/// <param name="TenantId">Entra directory (tenant) id the object id belongs to. Null for local links and legacy Entra links.</param>
+/// <param name="TenantId">Entra directory (tenant) id the object id belongs to. Required for Entra links; null for local links.</param>
 /// <param name="RegistrationId">Provenance only: the Entra instance registration this link was created against.</param>
 /// <param name="LinkedAt">When the link was created.</param>
 /// <param name="ProviderSubject">Diagnostic token subject (<c>sub</c>). Never an identity key.</param>

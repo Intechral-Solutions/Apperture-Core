@@ -35,8 +35,12 @@ public sealed class InMemoryUserRepository : IUserRepository
         IdentitySource source,
         string externalId,
         CancellationToken cancellationToken = default) =>
-        ValueTask.FromResult(_users.Values.FirstOrDefault(u =>
-            u.IdentityLinks.Any(l => l.Source == source && l.ExternalId == externalId)));
+        GetByIdentityLinkAsync(ProviderIdentityKey.FromSourceAndExternalId(source, externalId), cancellationToken);
+
+    public ValueTask<User?> GetByIdentityLinkAsync(
+        ProviderIdentityKey identity,
+        CancellationToken cancellationToken = default) =>
+        ValueTask.FromResult(_users.Values.FirstOrDefault(u => u.IdentityLinks.Any(identity.Matches)));
 
     public ValueTask<User?> FindByVerifiedContactEmailAsync(
         string normalizedEmail,

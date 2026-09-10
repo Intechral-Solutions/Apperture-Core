@@ -90,7 +90,9 @@ public sealed class EntraStepUpService : IEntraStepUpService
             return EntraAssociationOutcome.Failure(EntraStepUpFailureCodes.TenantMismatch);
         }
 
-        var owner = await _userRepository.FindIdentityLinkAsync(IdentitySource.Entra, objectId!, cancellationToken);
+        var owner = await _userRepository.FindIdentityLinkAsync(
+            ProviderIdentityKey.Entra(tokenTenantId!, objectId!),
+            cancellationToken);
         if (owner is null)
         {
             await AuditAsync(StrongAuthenticationAuditActionNames.StepUpIdentityMismatch, initiatingUserId.Value, objectId, "reason=no_link", cancellationToken);
@@ -112,13 +114,6 @@ public sealed class EntraStepUpService : IEntraStepUpService
         {
             await AuditAsync(StrongAuthenticationAuditActionNames.StepUpFailed, initiatingUserId.Value, objectId, "reason=unproven", cancellationToken);
             return EntraAssociationOutcome.Failure(EntraStepUpFailureCodes.Unproven);
-        }
-
-        if (!string.IsNullOrEmpty(owner.Link.TenantId) &&
-            !EntraTokenClaims.TenantMatches(tokenTenantId, owner.Link.TenantId))
-        {
-            await AuditAsync(StrongAuthenticationAuditActionNames.StepUpTenantMismatch, initiatingUserId.Value, objectId, "reason=stored_tenant_differs", cancellationToken);
-            return EntraAssociationOutcome.Failure(EntraStepUpFailureCodes.TenantMismatch);
         }
 
         var contextSatisfied = returnedAuthenticationContexts.Any(v =>

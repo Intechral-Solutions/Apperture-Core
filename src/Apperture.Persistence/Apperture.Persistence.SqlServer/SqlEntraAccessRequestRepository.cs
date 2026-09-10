@@ -18,15 +18,13 @@ public sealed class SqlEntraAccessRequestRepository : IEntraAccessRequestReposit
     }
 
     public async ValueTask<EntraAccessRequest?> FindPendingAsync(
-        string registrationId,
         string tenantId,
         string objectId,
         CancellationToken cancellationToken = default)
     {
         var e = await _db.EntraAccessRequests.AsNoTracking()
             .FirstOrDefaultAsync(
-                x => x.RegistrationId == registrationId
-                    && x.TenantId == tenantId
+                x => x.TenantId == tenantId
                     && x.ProviderObjectId == objectId
                     && x.Status == (int)EntraAccessRequestStatus.Pending,
                 cancellationToken);
@@ -34,7 +32,7 @@ public sealed class SqlEntraAccessRequestRepository : IEntraAccessRequestReposit
     }
 
     public async ValueTask<IReadOnlyList<EntraAccessRequest>> FindPendingByObjectIdsAsync(
-        string registrationId,
+        string tenantId,
         IReadOnlyList<string> objectIds,
         CancellationToken cancellationToken = default)
     {
@@ -43,7 +41,7 @@ public sealed class SqlEntraAccessRequestRepository : IEntraAccessRequestReposit
 
         var ids = objectIds.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
         var rows = await _db.EntraAccessRequests.AsNoTracking()
-            .Where(x => x.RegistrationId == registrationId
+            .Where(x => x.TenantId == tenantId
                 && x.Status == (int)EntraAccessRequestStatus.Pending
                 && ids.Contains(x.ProviderObjectId))
             .ToListAsync(cancellationToken);
@@ -51,14 +49,12 @@ public sealed class SqlEntraAccessRequestRepository : IEntraAccessRequestReposit
     }
 
     public async ValueTask<EntraAccessRequest?> FindLatestAsync(
-        string registrationId,
         string tenantId,
         string objectId,
         CancellationToken cancellationToken = default)
     {
         var e = await _db.EntraAccessRequests.AsNoTracking()
-            .Where(x => x.RegistrationId == registrationId
-                && x.TenantId == tenantId
+            .Where(x => x.TenantId == tenantId
                 && x.ProviderObjectId == objectId)
             .OrderByDescending(x => x.RequestedAtUtc)
             .FirstOrDefaultAsync(cancellationToken);
@@ -78,14 +74,12 @@ public sealed class SqlEntraAccessRequestRepository : IEntraAccessRequestReposit
         await _db.EntraAccessRequests.CountAsync(x => x.Status == (int)EntraAccessRequestStatus.Pending, cancellationToken);
 
     public async ValueTask<int> CountRecentForIdentityAsync(
-        string registrationId,
         string tenantId,
         string objectId,
         DateTimeOffset sinceUtc,
         CancellationToken cancellationToken = default) =>
         await _db.EntraAccessRequests.CountAsync(
-            x => x.RegistrationId == registrationId
-                && x.TenantId == tenantId
+            x => x.TenantId == tenantId
                 && x.ProviderObjectId == objectId
                 && x.RequestedAtUtc >= sinceUtc,
             cancellationToken);

@@ -214,6 +214,13 @@ public sealed class UserManagementService : IUserManagementService
             }
         }
 
+        if (source == IdentitySource.Entra)
+        {
+            throw new IdentityLinkException(
+                IdentityLinkErrorCodes.InvalidEntraExternalId,
+                "Microsoft identities are added from the directory or by linking, not by creating a user with an object id alone.");
+        }
+
         var existing = await _userRepository.GetByIdentityLinkAsync(source, linkExternalId, cancellationToken);
         if (existing is not null)
             throw new InvalidOperationException("An identity link with this source and external id already exists.");
@@ -297,14 +304,6 @@ public sealed class UserManagementService : IUserManagementService
         if (user.IdentityLinks.Any(l => l.Source == source && l.ExternalId == linkExternalId))
             return;
 
-        var existing = await _userRepository.GetByIdentityLinkAsync(source, linkExternalId, cancellationToken);
-        if (existing is not null)
-        {
-            throw new IdentityLinkException(
-                IdentityLinkErrorCodes.ExternalIdInUse,
-                "An identity link with this source and external id is already attached to another user.");
-        }
-
         if (source == IdentitySource.Entra && _entraAssociation is not null)
         {
             if (user.IdentityLinks.Any(l => l.Source == IdentitySource.Entra))
@@ -314,17 +313,40 @@ public sealed class UserManagementService : IUserManagementService
                     "This user already has a Microsoft identity linked. Remove the existing link first.");
             }
 
-            // Pending on purpose: an administrator association is proven only by a successful sign-in,
-            // and it never disables local sign-in.
             var pendingLink = await _entraAssociation.BuildPendingAdminLinkAsync(linkExternalId, cancellationToken);
+            if (string.IsNullOrEmpty(pendingLink.TenantId))
+            {
+                throw new IdentityLinkException(
+                    IdentityLinkErrorCodes.InvalidEntraExternalId,
+                    "Microsoft identities can only be linked when a directory tenant is configured.");
+            }
+
+            var existingEntra = await _userRepository.GetByIdentityLinkAsync(
+                ProviderIdentityKey.Entra(pendingLink.TenantId, pendingLink.ExternalId),
+                cancellationToken);
+            if (existingEntra is not null)
+            {
+                throw new IdentityLinkException(
+                    IdentityLinkErrorCodes.ExternalIdInUse,
+                    "An identity link with this source and external id is already attached to another user.");
+            }
+
             await _userRepository.AddIdentityLinkAsync(userId, pendingLink, cancellationToken);
             await AppendAuditAsync(
                 EntraLinkAuditActionNames.Pending,
                 actorId,
                 userId.Value,
-                $"userId={userId.Value} oid={pendingLink.ExternalId} tenantId={pendingLink.TenantId ?? "unknown"}",
+                $"userId={userId.Value} oid={pendingLink.ExternalId} tenantId={pendingLink.TenantId}",
                 cancellationToken);
             return;
+        }
+
+        var existing = await _userRepository.GetByIdentityLinkAsync(source, linkExternalId, cancellationToken);
+        if (existing is not null)
+        {
+            throw new IdentityLinkException(
+                IdentityLinkErrorCodes.ExternalIdInUse,
+                "An identity link with this source and external id is already attached to another user.");
         }
 
         await _userRepository.AddIdentityLinkAsync(userId, source, linkExternalId, cancellationToken);

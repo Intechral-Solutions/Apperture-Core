@@ -8,7 +8,7 @@ This is **not** a Microsoft Entra B2B invitation test. It does not create guests
 
 - IAM-1 through IAM-4 remain healthy: local sign-in, Microsoft sign-in/sign-out, Recovery Access local + MFA, Account / Secured account.
 - Management UI (dev default `http://localhost:9001`) and Management.Host are running.
-- Restart Management.Host (or the Aspire app) so migration `20260909120000_Iam5_EntraDirectoryProvisioningAndAccessRequests` applies.
+- Restart Management.Host (or the Aspire app) so migrations through `20260909180000_Iam5_EntraTenantScopedIdentityUniqueness` apply. The earlier IAM-5 table/policy migration remains required. Entra identity uniqueness is now tenant + object id; the same object id in another tenant is a different person.
 - An enabled Entra registration exists with a working confidential client secret and existing `User.Read.All` application permission (admin consent). IAM-5 does not add Graph permissions.
 - SMTP: optional welcome/access-granted mail uses the same transactional mail transport as account-security mail. If SMTP is unavailable, complete every step that does not depend on delivery and note the gap. Do not treat Graph `mail` as verified Apperture contact email.
 
@@ -21,7 +21,7 @@ If you do not have two unprovisioned directory Members plus one existing Entra-l
 3. Open **Add from Microsoft Entra**.
 4. If more than one enabled registration exists, select the intended directory.
 5. Search by display name, mail, or user principal name.
-6. Confirm people who already have an Apperture Entra identity show **Already in Apperture**. Status must not flip because email or UPN matches a different object id.
+6. Confirm people who already have an Apperture Entra identity **in this tenant** show **Already in Apperture**. Status must not flip because email or UPN matches a different object id, and must not flip because the same object id exists in a different tenant.
 7. Confirm disabled directory accounts cannot be selected.
 8. Select an unprovisioned **Member**. Guest may be selected only if you intend to provision a guest.
 9. Choose an initial role if you have role-assignment permission; otherwise leave None.

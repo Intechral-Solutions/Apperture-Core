@@ -76,7 +76,17 @@ public sealed class UserProvisioningService : IUserProvisioningService
                 "That Microsoft directory registration is disabled.");
         }
 
-        var existing = await _users.GetByIdentityLinkAsync(IdentitySource.Entra, objectId!, cancellationToken);
+        var tenantId = EntraTokenClaims.Normalize(EntraDirectoryTenantResolver.TryResolveGraphTenantId(registration));
+        if (string.IsNullOrEmpty(tenantId))
+        {
+            throw new UserProvisioningException(
+                UserProvisioningErrorCodes.RegistrationNotFound,
+                "That Microsoft directory registration does not have a tenant id.");
+        }
+
+        var existing = await _users.GetByIdentityLinkAsync(
+            ProviderIdentityKey.Entra(tenantId, objectId!),
+            cancellationToken);
         if (existing is not null)
         {
             throw new UserProvisioningException(
@@ -136,7 +146,7 @@ public sealed class UserProvisioningService : IUserProvisioningService
             registration.DisplayName,
             cancellationToken);
 
-        var reconciled = await ReconcilePendingAsync(registration.Id, objectId!, userId, actorId, cancellationToken);
+        var reconciled = await ReconcilePendingAsync(tenantId, objectId!, userId, actorId, cancellationToken);
 
         return new UserProvisioningResult(
             userId,
@@ -169,7 +179,17 @@ public sealed class UserProvisioningService : IUserProvisioningService
         }
 
         var objectId = EntraTokenClaims.Normalize(accessRequest.ProviderObjectId);
-        var existing = await _users.GetByIdentityLinkAsync(IdentitySource.Entra, objectId!, cancellationToken);
+        var tenantId = EntraTokenClaims.Normalize(accessRequest.TenantId);
+        if (string.IsNullOrEmpty(tenantId) || !EntraTokenClaims.IsValidObjectId(objectId))
+        {
+            throw new UserProvisioningException(
+                UserProvisioningErrorCodes.InvalidObjectId,
+                "That access request does not have a Microsoft tenant and object id.");
+        }
+
+        var existing = await _users.GetByIdentityLinkAsync(
+            ProviderIdentityKey.Entra(tenantId, objectId!),
+            cancellationToken);
         if (existing is not null)
         {
             var already = accessRequest with
@@ -267,20 +287,13 @@ public sealed class UserProvisioningService : IUserProvisioningService
     }
 
     private async ValueTask<string?> ReconcilePendingAsync(
-        string registrationId,
+        string tenantId,
         string objectId,
         UserId userId,
         ActorId actorId,
         CancellationToken cancellationToken)
     {
-        var registration = await _registrations.GetByIdAsync(registrationId, cancellationToken);
-        var tenantId = registration is null
-            ? null
-            : EntraTokenClaims.Normalize(EntraDirectoryTenantResolver.TryResolveGraphTenantId(registration));
-        if (string.IsNullOrEmpty(tenantId))
-            return null;
-
-        var pending = await _requests.FindPendingAsync(registrationId, tenantId, objectId, cancellationToken);
+        var pending = await _requests.FindPendingAsync(tenantId, objectId, cancellationToken);
         if (pending is null)
             return null;
 
