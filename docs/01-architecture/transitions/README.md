@@ -17,3 +17,4 @@ When the change is done: fold the outcome into an ADR and the real architecture 
 | Set | Status |
 |-----|--------|
 | [nav-overhaul/](nav-overhaul/) | Management UI navigation — overhaul about to start |
+| [application-contexts/](application-contexts/) | Evidence snapshot of current surfaces before any Application/Context planning |
