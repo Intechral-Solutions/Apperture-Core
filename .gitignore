@@ -102,3 +102,5 @@ s1-test.log
 # Ad-hoc local debug/session logs
 debug-*.log
 *.debug.log
+
+.vs/
