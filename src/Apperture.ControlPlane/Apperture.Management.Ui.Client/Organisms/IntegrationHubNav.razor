@@ -8,15 +8,15 @@
 @inject NavigationManager Nav
 
 <nav class="ui-tabs" aria-label="Integration sections">
-    @foreach (var section in _visibleSections)
+    @foreach (var tab in _visibleSections)
     {
-        var isCurrent = IsCurrent(section);
-        <a href="@section.Href"
+        var isCurrent = IsCurrent(tab);
+        <a href="@tab.Href"
            aria-current="@(isCurrent ? "page" : null)"
-           title="@section.Description"
+           title="@tab.Description"
            data-state="@(isCurrent ? "active" : "inactive")"
            class="ui-tabs__link">
-            @section.Label
+            @tab.Label
         </a>
     }
 </nav>
@@ -62,8 +62,8 @@
 
     private string CurrentPath() => new Uri(Nav.Uri).AbsolutePath;
 
-    private bool IsCurrent(IntegrationHubSection section) =>
-        string.Equals(IntegrationUiRoutes.ResolveSectionKey(_path), section.Key, StringComparison.Ordinal);
+    private bool IsCurrent(IntegrationHubSection tab) =>
+        string.Equals(IntegrationUiRoutes.ResolveSectionKey(_path), tab.Key, StringComparison.Ordinal);
 
     public void Dispose() => Nav.LocationChanged -= OnLocationChanged;
 }
