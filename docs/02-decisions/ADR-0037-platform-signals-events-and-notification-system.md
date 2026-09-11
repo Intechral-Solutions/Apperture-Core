@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted (notification foundation delivered in Epic 77). Module SDK authoring conventions: [ADR-0038](./ADR-0038-platform-signals-sdk-conventions.md).
+Accepted (notification foundation delivered in Epic 77). **NTF-C (2026-09-10) completed legacy Attention email removal** — production delivery is the platform pipeline only (activation, reminder, escalation, resolved). Module SDK authoring conventions: [ADR-0038](./ADR-0038-platform-signals-sdk-conventions.md). The Context table below is the pre-cutover landscape.
 
 ## Context
 

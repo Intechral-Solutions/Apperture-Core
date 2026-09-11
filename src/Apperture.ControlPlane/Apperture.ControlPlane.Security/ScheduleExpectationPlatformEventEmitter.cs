@@ -9,20 +9,21 @@ using Microsoft.Extensions.Options;
 namespace Apperture.ControlPlane.Security;
 
 /// <summary>
-/// Epic 77 Phase 1: dual-emits platform events alongside attention incident transitions (does not replace incidents or email).
+/// Emits schedule-expectation platform events when an Attention incident opens or resolves.
+/// Does not send email. Reminder and escalation instances are created from still-active observation, not from these events.
 /// </summary>
-public sealed class ScheduleExpectationPlatformEventDualEmitter
+public sealed class ScheduleExpectationPlatformEventEmitter
 {
     private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
 
     private readonly IPlatformEventEmitter _emitter;
     private readonly IOptions<PlatformEventsOptions> _options;
-    private readonly ILogger<ScheduleExpectationPlatformEventDualEmitter> _logger;
+    private readonly ILogger<ScheduleExpectationPlatformEventEmitter> _logger;
 
-    public ScheduleExpectationPlatformEventDualEmitter(
+    public ScheduleExpectationPlatformEventEmitter(
         IPlatformEventEmitter emitter,
         IOptions<PlatformEventsOptions> options,
-        ILogger<ScheduleExpectationPlatformEventDualEmitter> logger)
+        ILogger<ScheduleExpectationPlatformEventEmitter> logger)
     {
         _emitter = emitter;
         _options = options;
@@ -61,7 +62,7 @@ public sealed class ScheduleExpectationPlatformEventDualEmitter
         {
             _logger.LogWarning(
                 ex,
-                "Platform event dual-emit failed for integration {IntegrationId} transition {Transition}.",
+                "Schedule-expectation platform event emit failed for integration {IntegrationId} transition {Transition}.",
                 integrationId.Value,
                 observe.Transition);
         }

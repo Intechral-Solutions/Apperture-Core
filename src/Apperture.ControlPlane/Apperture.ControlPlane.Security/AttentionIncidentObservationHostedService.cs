@@ -71,7 +71,7 @@ public sealed class AttentionIncidentObservationHostedService : BackgroundServic
         var integrations = scope.ServiceProvider.GetRequiredService<IIntegrationRepository>();
         var readiness = scope.ServiceProvider.GetRequiredService<IIntegrationReadinessService>();
         var tracker = scope.ServiceProvider.GetRequiredService<IAttentionIncidentTracker>();
-        var platformEvents = scope.ServiceProvider.GetRequiredService<ScheduleExpectationPlatformEventDualEmitter>();
+        var platformEvents = scope.ServiceProvider.GetRequiredService<ScheduleExpectationPlatformEventEmitter>();
         var notificationEvaluation = scope.ServiceProvider.GetRequiredService<INotificationEvaluateOnlyCoordinator>();
         var clock = scope.ServiceProvider.GetRequiredService<TimeProvider>();
         var observedAt = clock.GetUtcNow();

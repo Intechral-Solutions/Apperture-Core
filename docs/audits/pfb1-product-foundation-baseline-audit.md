@@ -159,7 +159,7 @@ Use for foundation confidence — **not** a release-candidate gate.
 | `Notifications:Email` SmtpHost, FromAddress | **required** for email |
 | SMTP password secret / env | **required** for email |
 | Notification evaluation/instances/delivery flags | **required** for pipeline |
-| `Notifications:UsePlatformPipeline:Enabled` | **recommended** |
+| `Notifications:UsePlatformPipeline:Enabled` | **removed** (NTF-C, 2026-09-10 — one pipeline) |
 | `PlatformEvents:Enabled` | **required** for platform notifications |
 | `AttentionIncidents:Observation:Enabled` | **recommended** |
 | Schedule assignment plane `local` | **required** |

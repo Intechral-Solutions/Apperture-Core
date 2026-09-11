@@ -1,5 +1,11 @@
 # Epic 77 — Expected run missing notification cutover runbook
 
+**Historical.** The cutover completed under NTF-C (2026-09-10). There is one production path: Attention / platform event → rule evaluation → notification instance → outbox → SMTP / inbox. Escalation is a platform notification kind. See [NTF-C closure report](../01-architecture/transitions/ntf-c-legacy-removal/closure-report.md). Do not use the flag sequences below on a current host — `Notifications:UsePlatformPipeline` no longer exists.
+
+The remainder of this file is the original operator guide kept for history.
+
+---
+
 Operator guide for moving `expected_run_missing` notifications from Epic 69 (`AttentionIncidentNotificationOrchestrator` + ledger) to the platform notification pipeline (platform events → rule evaluation → notification instances → delivery outbox → SMTP).
 
 **Related:** [Epic 77 implementation plan](../02-decisions/Epic77-Platform-Signals-and-Notification-System-Implementation-Plan.md), [ADR-0037](../02-decisions/ADR-0037-platform-signals-events-and-notification-system.md), [Epic 69 attention notifications](../02-decisions/Epic69-Attention-Notification-Policy-and-Delivery-Evidence.md), [UAT checklist](./epic77-notification-system-uat-checklist.md), [Backlog](./epic77-notification-system-backlog.md).
@@ -223,7 +229,7 @@ Sign-off is **evidence only** — completing the script does not enable producti
 | Topic | Guidance |
 |-------|----------|
 | **Platform path** | Resolved notification instances are driven by `apperture.schedule.expected_run.cleared` platform events |
-| **Emission** | `ScheduleExpectationPlatformEventDualEmitter` emits cleared events on `AttentionIncidentObserveTransition.Resolved` when `PlatformEvents:Enabled=true` |
+| **Emission** | `ScheduleExpectationPlatformEventEmitter` emits cleared events on `AttentionIncidentObserveTransition.Resolved` when `PlatformEvents:Enabled=true` |
 | **Gap** | If platform events are disabled, resolved platform instances will not be created from events; Epic 69 may still send resolved email via orchestrator |
 | **Incident-only evaluation** | Reminder instances use incident observation path; activation/resolved from events require platform events enabled |
 | **Backlog** | If incidents can resolve without observation cycle, ensure cleared events are emitted on all resolve transitions — do not enable partial cutover without verifying resolve path in your deployment |

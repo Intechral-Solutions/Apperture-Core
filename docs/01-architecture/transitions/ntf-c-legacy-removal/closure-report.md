@@ -83,21 +83,25 @@ EF model snapshot updated. Legacy ledger rows were **not** migrated. Operational
 - Integration notifications page no longer has cutover readiness, parity, or sign-off
 - Config diagnostics no longer expose `UsePlatformPipeline` or dual-send warnings
 - Schedule diagnostics no longer list Epic 69 ledger rows
-- Current architecture docs describe one production path; this transition set is marked complete
-- Historical ADRs (S12, Epic 77 plan) kept; status notes added where useful
+- `ScheduleExpectationPlatformEventDualEmitter` renamed to `ScheduleExpectationPlatformEventEmitter`
+- Current architecture docs describe one production path (signal catalog, template schema, settings registry, management configuration, application-context inventory)
+- Historical ADRs/runbook/audits kept; marked completed rather than rewritten (S8C, S8D, S12, Epic 77C, ADR-0037, Epic 77 runbook)
+- Production Windows/Azure appsettings examples leave Evaluation/Instances/Delivery off as operational SMTP gating, with comments that this is not a leftover cutover switch
 
 ## 8. Tests and builds
 
-Executed 2026-09-10 (local):
+Executed 2026-09-10 (this continuation; `--no-dependencies` / `--no-build` to avoid locked host binaries):
 
 | Suite | Result |
 |-------|--------|
-| UnitTests filter `Notifications` / `ExpectedRunMissing` / `NotificationConfiguration` / `PlatformSettingsServiceValidation` | **149 passed** |
-| `Apperture.Management.Ui.Shared.Tests` | **716 passed** |
-| Builds: Core.Application, ControlPlane.Security, Persistence.SqlServer, Management.Api, Management.Ui.Shared, UnitTests (`--no-dependencies`) | **succeeded** |
-| Management Host / WorkerHost / ArchTests full rebuild | **file-lock** from running `Apperture.Management.Host` (pid 40476) and `WorkerHost` (pid 28496). Compile of the changed libraries succeeded; host output copy failed. |
+| UnitTests filter Notifications / ExpectedRunMissing / NotificationConfiguration / ScheduleExpectationPlatformEventEmitter / PlatformSettings / RuntimeVisibleDevMetadata / IntegrationScheduleDiagnostics | **185 passed** |
+| Same project, broader filter adding Inbox / Outbox / Recipient / Attention | **236 passed** |
+| `Apperture.Management.Ui.Shared.Tests` (full) | **716 passed** |
+| `Apperture.ArchTests` (full) | **38 passed** |
+| Builds: ControlPlane.Security, Persistence.SqlServer, Management.Api, UnitTests, Ui.Shared.Tests, ArchTests | **succeeded** |
+| Management Host / WorkerHost output copy | **file-lock** from running `Apperture.Management.Host` (pid 7828) and `Apperture.RuntimeHost.Windows.WorkerHost` (pid 60204). Library compile succeeded; host/worker DLL copy failed (MSB3027). |
 
-Targeted coverage includes activation, reminders, escalation threshold/routing/ack/dedupe, resolved per-recipient outbox, outbox failure without a second escalation instance, still-active → reminder+escalation evaluation, platform-event append not emitting escalation, and configuration safety.
+Targeted coverage includes activation, reminders, escalation threshold/routing/ack/dedupe, resolved per-recipient outbox, outbox failure without a second escalation instance, still-active → reminder+escalation evaluation, platform-event append not emitting escalation, inbox, recipient resolution, and configuration safety.
 
 ## 9. Notification debt intentionally left open
 

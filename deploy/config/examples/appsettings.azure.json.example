@@ -31,6 +31,7 @@
   "PlatformEvents": {
     "Enabled": false
   },
+  "_Notifications_Comment": "Independent operational toggles. Leave off until SMTP (Notifications:Email) and recipients are configured. There is no UsePlatformPipeline switch — this is the only delivery architecture.",
   "Notifications": {
     "Evaluation": { "Enabled": false },
     "Instances": { "Enabled": false },

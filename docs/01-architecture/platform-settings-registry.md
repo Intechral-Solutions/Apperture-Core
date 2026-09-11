@@ -22,7 +22,7 @@
 
 **Epic 120 (settings presentation + demo gallery):** Compact setting rows, category tabs on `/config/platform-settings`, and Development-gated demo definitions (`demo.settings.*`) under the **Settings gallery** tab. Demo settings exercise all `InputKind` values (including provider-backed select/multi-select via `platform.connectorDefinitions`). They persist like normal settings for UI/audit exercise only — **no runtime `IOptions` consumption**, no new production keys. Gating: `IHostEnvironment.IsDevelopment()` or `PlatformSettings:DemoGallery:Enabled`. See [Epic120-Settings-Presentation-Demo-Gallery.md](../02-decisions/Epic120-Settings-Presentation-Demo-Gallery.md).
 
-Phase 1 includes nine platform-owned keys for notification cutover, `PlatformEvents.Enabled`, and attention observation controls. Appsettings remains boot defaults only; runtime updates never write back to JSON files.
+Phase 1 includes platform-owned keys for `PlatformEvents.Enabled`, notification Evaluation / Instances / Delivery, and attention observation controls. `Notifications:UsePlatformPipeline` was removed by NTF-C. Appsettings remains boot defaults only; runtime updates never write back to JSON files.
 
 **Decision anchor:** [ADR-0039: Environment, startup, bootstrap, and platform settings](../02-decisions/ADR-0039-environment-startup-bootstrap-and-platform-settings.md).
 
@@ -233,7 +233,7 @@ At runtime, effective configuration should resolve in a **documented, testable o
 Validation runs **at write time** when operators or APIs change registry values:
 
 - Type and range checks
-- Cross-setting rules (e.g. notification cutover dangerous combinations — see [epic77 cutover runbook](../03-operations/epic77-expected-run-missing-notification-cutover-runbook.md))
+- Cross-setting rules (e.g. enabling Delivery without SMTP host/from — see notification diagnostics)
 - Permission checks (governance actions)
 
 Failed validation rejects the change; startup is not blocked for invalid *stored* values if break-glass env overrides exist (policy TBD at implementation).

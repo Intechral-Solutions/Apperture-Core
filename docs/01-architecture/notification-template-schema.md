@@ -189,15 +189,16 @@ Modules ship default template in manifest alongside static rule:
 
 Instance admins may override **template** on user-owned copies only; built-in module templates are read-only (subscription-only mutability).
 
-## Epic 69 template mapping
+## Expected-run-missing kind mapping
 
-| Epic 69 kind | `notification.kind` | Variant key |
+| Occurrence | `notification.kind` | Variant key |
 |--------------|----------------------|-------------|
 | Activated | `activation` | `variants.activation` |
 | Reminder | `reminder` | `variants.reminder` |
+| Escalation | `escalation` | `variants.escalation` |
 | Resolved | `resolved` | `variants.resolved` |
 
-Default platform template embeds current plain-text bodies from `AttentionIncidentNotificationOrchestrator` as starting `bodyTextTemplate` values.
+Default platform templates carry operator-facing body text for each kind. Escalation is a first-class platform kind (NTF-C); there is no separate Attention email composer.
 
 ## Managed contact rendering
 

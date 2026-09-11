@@ -4,7 +4,7 @@ Canonical guide for **environment/startup configuration**: which `appsettings` f
 
 **This document is not the operator settings control plane.** Phase 1 platform-managed settings use the [platform settings registry](../01-architecture/platform-settings-registry.md) and are edited in Management UI at `/config/platform-settings` (operator UX: Epic 111; Epic 112 adds `StringArray` / MultiSelect foundation). `appsettings` still provides boot defaults. API `PUT` accepts `value` for scalar settings and `values` (string array) for `StringArray` settings; neither writes back to JSON files.
 
-For notification cutover flags and staging values, see [epic77-expected-run-missing-notification-cutover-runbook.md](epic77-expected-run-missing-notification-cutover-runbook.md). For bootstrap credentials and secrets boundaries, see [bootstrap-and-secrets-boundary.md](../01-architecture/bootstrap-and-secrets-boundary.md).
+For notification Evaluation / Instances / Delivery / Email flags, see Management Host `appsettings.json` and [NTF-C closure](../01-architecture/transitions/ntf-c-legacy-removal/closure-report.md). The historical Epic 77 cutover runbook is no longer an operator procedure. For bootstrap credentials and secrets boundaries, see [bootstrap-and-secrets-boundary.md](../01-architecture/bootstrap-and-secrets-boundary.md).
 
 ## Configuration layers (summary)
 
@@ -96,9 +96,8 @@ Each ASP.NET Core host uses the default configuration chain (simplified):
 | `LocalAuth` | `LocalAuthOptions` | Local username/password auth |
 | `Entra` | `EntraAuthOptions` | Microsoft Entra OIDC |
 | `PlatformEvents` | `PlatformEventsOptions` | Event-driven notification path |
-| `Notifications` | `Notification*Options` | Evaluation, instances, delivery, pipeline cutover |
+| `Notifications` | `Notification*Options` | Evaluation, instances, delivery, email SMTP |
 | `AttentionIncidents` | `AttentionIncidentObservationOptions` | Observation loop |
-| `AttentionNotifications` | `AttentionNotificationOptions` | Epic 69 expected-run-missing path |
 | `ApiBaseUrl` | UI `HttpClient` / WASM | Relative `/api` when API and UI share origin |
 | `ShellUi` | `ShellUiOptions` | Entra sign-in, management host URL for redirects |
 | `ControlPanelMenuOptions` | `ControlPanelMenuOptions` | Menu JSON source |
@@ -148,7 +147,7 @@ Each ASP.NET Core host uses the default configuration chain (simplified):
 
 **Separate SQL volumes:** Aspire (`apperture-aspire-sql`) and docker-compose (`apperture-sqlserver`) are independent. Dev users/passwords are not shared between paths. Under AppHost, `DevTestUser` / `BootstrapPlatformAdmin` in `appsettings.Development.json` seed the **Aspire** database (Management.Host runs migrations on startup; WorkerHost waits for the API).
 
-**What still comes from appsettings templates:** `DevTestUser`, `BootstrapPlatformAdmin`, notification cutover flags, UI shell config. Copy [`appsettings.docker-dev.json.example`](../../deploy/config/examples/appsettings.docker-dev.json.example) once for Management.Host regardless of orchestration path.
+**What still comes from appsettings templates:** `DevTestUser`, `BootstrapPlatformAdmin`, notification Evaluation / Instances / Delivery / Email, UI shell config. Copy [`appsettings.docker-dev.json.example`](../../deploy/config/examples/appsettings.docker-dev.json.example) once for Management.Host regardless of orchestration path.
 
 **Ui.Client:** Blazor WASM bundle served by Ui.Server — not a separate AppHost process. Split-host API routing uses [`ManagementUiDevApiRouting`](../../src/Apperture.ControlPlane/Apperture.Management.Ui.Shared/Options/ManagementUiDevApiRouting.cs) (:9001 → :9000).
 
@@ -212,7 +211,7 @@ To verify the catalog at runtime (after Management.Host is up), call `GET /api/c
 
 ## Worker configuration rules
 
-- Worker **does not** need `DevTestUser`, `BootstrapPlatformAdmin`, or notification cutover blocks from the Management Host dev template.
+- Worker **does not** need `DevTestUser`, `BootstrapPlatformAdmin`, or notification Evaluation / Instances / Delivery blocks from the Management Host dev template.
 - Worker needs bootstrap SQL connectivity (`SqlServer` server/database/user) and runtime flags (`PlatformEvents`, logging).
 - Dev password: environment variables from dev scripts, not committed JSON.
 

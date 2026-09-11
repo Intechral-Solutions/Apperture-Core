@@ -1,6 +1,6 @@
 # Escalation semantics (from current production code)
 
-Evidence: `AttentionIncidentNotificationOrchestrator.TryEscalationAsync` and `SqlAttentionIncidentNotificationLedger.HasNonSuppressedEscalationAttemptAsync`. Not from stale docs.
+Evidence (as of the NTF-C start snapshot): `AttentionIncidentNotificationOrchestrator.TryEscalationAsync` and `SqlAttentionIncidentNotificationLedger.HasNonSuppressedEscalationAttemptAsync`. Those types were then removed after the platform path preserved these semantics. Not from stale docs.
 
 ## When it runs
 

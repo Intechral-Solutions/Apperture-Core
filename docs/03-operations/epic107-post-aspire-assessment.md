@@ -178,7 +178,7 @@ Azure production may prefer deployment-injected config + Key Vault references, b
 
 ### Best first candidates (Phase 1)
 
-1. **Notification cutover flags** — `Notifications.Evaluation/Instances/Delivery/UsePlatformPipeline.Enabled` plus delivery poll/batch numerics (instance scope)
+1. **Notification pipeline flags** — `Notifications.Evaluation/Instances/Delivery.Enabled` plus delivery poll/batch numerics (instance scope). `UsePlatformPipeline` was removed by NTF-C.
 2. **`PlatformEvents.Enabled`** (instance scope)
 3. **`AttentionIncidents.Observation.Enabled`** and interval
 

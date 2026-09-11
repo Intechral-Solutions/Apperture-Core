@@ -771,12 +771,11 @@ Execution: `StartRequestWorker` polls start-request tables, processors claim (`C
 
 ### Pipeline — CONFIRMED
 
-Two delivery paths currently coexist, gated by `Notifications:UsePlatformPipeline`:
+**One production delivery path** (NTF-C complete — see [closure-report.md](../ntf-c-legacy-removal/closure-report.md)):
 
-1. **Platform pipeline** — definitions → rule evaluation → instances → outbox → SMTP + in-app inbox.
-2. **Legacy Attention path** — `AttentionIncidentNotificationOrchestrator` writes `AttentionIncidentNotifications` and sends email directly. Invoked only when `PlatformNotificationCutoverGate.ShouldInvokeEpic69Orchestrator` is true (`Notifications:UsePlatformPipeline` **false**). Code/definition default is false; committed Management Host `appsettings.json` sets the flag **true** (legacy skipped). See [NTF-C blocker report](../ntf-c-legacy-removal/blocker-report.md).
+Attention / platform event → rule evaluation → notification instance → recipient resolution → delivery outbox → SMTP / personal inbox.
 
-Feature flags (`NotificationInstanceOptions`, `NotificationDeliveryOptions`, `NotificationEvaluationOptions`, `NotificationPipelineOptions`): Evaluation, Instances, Delivery, UsePlatformPipeline.
+Kinds: `activation`, `reminder`, `escalation`, `resolved`. Escalation uses Attention routing (`EscalationAfter`, escalation team, ack suppression) and one instance per incident. Feature flags that remain: `NotificationEvaluationOptions`, `NotificationInstanceOptions`, `NotificationDeliveryOptions`. There is no `UsePlatformPipeline` switch.
 
 Registration: `NotificationsServiceCollectionExtensions.AddAppertureNotifications`.
 
@@ -839,19 +838,19 @@ Legacy ledger is a **parallel** attempt log (`AttentionIncidentNotificationEntit
 
 ### Attention integration — CONFIRMED
 
-**Incidents:** `AttentionIncidentEntity` — `ConditionKey` (observed code uses `AttentionConditionKeys.ExpectedRunMissing`), status Active/Resolved, acknowledgement fields. Observer: `AttentionIncidentObservationHostedService` → `IAttentionIncidentTracker.ObserveScheduleExpectationAsync`. Also emits platform events via `ScheduleExpectationPlatformEventDualEmitter`.
+**Incidents:** `AttentionIncidentEntity` — `ConditionKey` (observed code uses `AttentionConditionKeys.ExpectedRunMissing`), status Active/Resolved, acknowledgement fields. Observer: `AttentionIncidentObservationHostedService` → `IAttentionIncidentTracker.ObserveScheduleExpectationAsync`. Platform events emit via `ScheduleExpectationPlatformEventEmitter` on Opened/Resolved. Still-active observation evaluates reminder and escalation instances.
 
 **Routing:** `InstanceAttentionRoutings` / `IntegrationAttentionRoutings` — enabled, reminder/escalation intervals, primary/escalation operational teams. APIs: `GET/PUT api/attention-routing/defaults`, `GET/PUT api/integrations/{id}/attention-routing`. UI: `/attention/routing-defaults`, `/attention/operational-teams`, `/config/contacts`.
 
 **How Attention feeds notifications:** built-in expected-run-missing instances use `IAttentionRecipientResolver` for suppression (policy disabled, no route, acknowledgement, duplicates) and reminder gating. Recipient source token: `attentionRoutingIntegrationOverride`. Instance column `AttentionIncidentId` is the join key for diagnostics.
 
-**Cutover:** when `UsePlatformPipeline=true`, Epic 69 orchestrator is skipped so only the platform pipeline delivers (`PlatformNotificationCutoverGate`).
+**Delivery:** platform pipeline only. The Attention incident/routing subsystem remains; the legacy Attention email orchestrator and ledger are gone.
 
 ### Diagnostics — CONFIRMED
 
-Service: `NotificationDeliveryDiagnosticsService`. API: `NotificationDiagnosticsController` → `api/notification-diagnostics` (`/smtp-test`, `/platform-pipeline-test`, `/configuration`, `/cutover-status`, `/health`, `/by-integration/{id}`, `/by-incident/{id}`, expected-run-missing parity endpoints).
+Service: `NotificationDeliveryDiagnosticsService`. API: `NotificationDiagnosticsController` → `api/notification-diagnostics` (`/smtp-test`, `/platform-pipeline-test`, `/configuration`, `/health`, `/by-integration/{id}`, `/by-incident/{id}`).
 
-Integration schedule diagnostics also surface recent platform instances **and** Epic 69 ledger rows (`IntegrationScheduleDiagnosticsService`).
+Integration schedule diagnostics surface recent platform notification instances (`IntegrationScheduleDiagnosticsService`). There is no legacy Attention ledger read.
 
 ### APIs and UI
 
@@ -867,7 +866,7 @@ Integration schedule diagnostics also surface recent platform instances **and** 
 
 UI routes: see §1 Notifications.
 
-**CONFIRMED defaults:** C# and platform-setting definition default `UsePlatformPipeline=false`. Management Host committed `appsettings.json` sets it **true**. WorkerHost does not host the pipeline. Escalation email exists **only** on the legacy orchestrator (`NotificationKinds` has no escalation). Digest/SMS/push: constants/UI exist for digest; **no digest dispatcher found**. Observed Attention `ConditionKey` in this path: `expected_run_missing`.
+**CONFIRMED:** WorkerHost does not host the notification pipeline. Escalation is a platform `NotificationKinds.Escalation` instance (once per incident) with outbox retries. Digest/SMS/push: constants/UI exist for digest; **no digest dispatcher found**. Observed Attention `ConditionKey` in this path: `expected_run_missing`.
 
 ---
 

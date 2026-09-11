@@ -1,6 +1,8 @@
 # Epic 77C — Platform Notification Pipeline Cutover Hardening
 
-Epic 77C adds operator-facing cutover status and reusable preflight checks for moving expected-run-missing notifications from Epic 69 to the platform pipeline.
+> **Historical.** NTF-C (2026-09-10) completed the cutover and removed the dual path, `UsePlatformPipeline`, cutover-status, and preflight APIs. Current production delivery is the platform pipeline only. See [NTF-C closure](../01-architecture/transitions/ntf-c-legacy-removal/closure-report.md).
+
+Epic 77C added operator-facing cutover status and reusable preflight checks for moving expected-run-missing notifications from Epic 69 to the platform pipeline.
 
 ## Cutover status API
 

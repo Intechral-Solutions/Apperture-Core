@@ -8,7 +8,7 @@ namespace Apperture.UnitTests.Conventions;
 /// Prevents internal development metadata (epic/track/agent labels) from leaking into
 /// curated runtime-visible seed/demo/menu/setting surfaces.
 /// Docs, ADRs, audits, tests, migrations, and code comments are intentionally out of scope.
-/// Broader operator UI cutover copy (legacy attention path labels) is a documented follow-up.
+/// Operator UI must not carry epic/track labels. Notification delivery no longer has a cutover dual-path.
 /// </summary>
 public sealed class RuntimeVisibleDevMetadataGuardTests
 {

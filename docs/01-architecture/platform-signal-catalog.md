@@ -21,8 +21,8 @@ This document defines canonical **platform event types**, indexed fields for rul
 
 | Type | Owner | Status | Emitter today |
 |------|-------|--------|---------------|
-| `apperture.schedule.expected_run.missing` | Platform | **shipped** | `ScheduleExpectationPlatformEventDualEmitter` |
-| `apperture.schedule.expected_run.cleared` | Platform | **shipped** | `ScheduleExpectationPlatformEventDualEmitter` |
+| `apperture.schedule.expected_run.missing` | Platform | **shipped** | `ScheduleExpectationPlatformEventEmitter` |
+| `apperture.schedule.expected_run.cleared` | Platform | **shipped** | `ScheduleExpectationPlatformEventEmitter` |
 | `apperture.execution.run.failed` | Platform | **shipped** | `ExecutionLifecyclePlatformEventEmitter` (worker; flag `PlatformEvents:ExecutionLifecycle:Enabled`) |
 | `apperture.execution.run.completed` | Platform | **shipped** | `ExecutionLifecyclePlatformEventEmitter` (worker; flag `PlatformEvents:ExecutionLifecycle:Enabled`) |
 | `apperture.governance.audit.privileged_action` | Platform | **future** | None |
@@ -89,7 +89,7 @@ All catalog types use the envelope in ADR-0037 (`specversion` `1.0`, `dataconten
 | `schedule.name` | string? | Schedule name |
 | `incident.id` | string? | Incident id if linked |
 | `incident.startedAt` | datetime? | Incident start |
-| `notification.kind` | string | `activation`, `reminder`, `resolved` |
+| `notification.kind` | string | `activation`, `reminder`, `escalation`, `resolved` |
 | `instance.baseUrl` | string | Management UI base |
 
 ---

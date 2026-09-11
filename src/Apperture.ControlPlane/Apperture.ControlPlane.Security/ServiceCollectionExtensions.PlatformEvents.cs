@@ -36,7 +36,7 @@ public static class PlatformEventsServiceCollectionExtensions
         services.AddScoped<IPlatformEventStore, SqlPlatformEventStore>();
         services.AddScoped<IPlatformEventEmitter, PlatformEventEmitter>();
         services.AddScoped<IPlatformEventAuthoringCatalogService, PlatformEventAuthoringCatalogService>();
-        services.AddScoped<ScheduleExpectationPlatformEventDualEmitter>();
+        services.AddScoped<ScheduleExpectationPlatformEventEmitter>();
         return services;
     }
 }

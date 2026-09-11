@@ -15,11 +15,11 @@
 Foundation baseline (operator/on-prem-dev operable — not a finished release):
 
 - Operator shell (auth, dashboard, integrations, runs/schedules triage, procedure launch)
-- **Platform notification pipeline** (`UsePlatformPipeline` on in Management.Host committed config)
+- **Platform notification pipeline** (the only production path after NTF-C, 2026-09-10; `UsePlatformPipeline` no longer exists)
 - Manual email delivery **confirmed**
 - HelloWorld `demo.completed` E2E **verified**: emit → S13A poller → instance → inbox/outbox → SMTP
 
-Legacy Epic 69: **retained temporarily** with S12 removal criteria (escalation gap). Prefer platform; do not dual-send.
+Legacy Epic 69: **removed by NTF-C (2026-09-10)** after platform escalation shipped. Historical S12 criteria are closed.
 
 Scheduling Aspire timer plane mismatch: **resolved under SWM-1–SWM-12** (not a stabilization reopen).
 

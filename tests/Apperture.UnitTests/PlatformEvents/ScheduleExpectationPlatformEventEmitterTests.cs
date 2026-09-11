@@ -11,9 +11,9 @@ using Xunit;
 
 namespace Apperture.UnitTests.PlatformEvents;
 
-public sealed class ScheduleExpectationPlatformEventDualEmitterTests
+public sealed class ScheduleExpectationPlatformEventEmitterTests
 {
-    private static readonly IntegrationId IntId = new("int-dual");
+    private static readonly IntegrationId IntId = new("int-emit");
 
     private static ScheduleExpectationSnapshot Snapshot(ScheduleExpectationEvaluationStatus status) =>
         new(
@@ -36,10 +36,10 @@ public sealed class ScheduleExpectationPlatformEventDualEmitterTests
     public async Task Opened_emits_missing_event()
     {
         var emitter = new Mock<IPlatformEventEmitter>();
-        var sut = new ScheduleExpectationPlatformEventDualEmitter(
+        var sut = new ScheduleExpectationPlatformEventEmitter(
             emitter.Object,
             Options.Create(new PlatformEventsOptions { Enabled = true }),
-            NullLogger<ScheduleExpectationPlatformEventDualEmitter>.Instance);
+            NullLogger<ScheduleExpectationPlatformEventEmitter>.Instance);
 
         var at = DateTimeOffset.Parse("2026-05-15T12:00:00Z");
         await sut.TryEmitForObserveResultAsync(
@@ -61,10 +61,10 @@ public sealed class ScheduleExpectationPlatformEventDualEmitterTests
     public async Task Resolved_emits_cleared_event()
     {
         var emitter = new Mock<IPlatformEventEmitter>();
-        var sut = new ScheduleExpectationPlatformEventDualEmitter(
+        var sut = new ScheduleExpectationPlatformEventEmitter(
             emitter.Object,
             Options.Create(new PlatformEventsOptions { Enabled = true }),
-            NullLogger<ScheduleExpectationPlatformEventDualEmitter>.Instance);
+            NullLogger<ScheduleExpectationPlatformEventEmitter>.Instance);
 
         await sut.TryEmitForObserveResultAsync(
             IntId,
@@ -83,10 +83,10 @@ public sealed class ScheduleExpectationPlatformEventDualEmitterTests
     public async Task ObservedStillActive_does_not_emit()
     {
         var emitter = new Mock<IPlatformEventEmitter>();
-        var sut = new ScheduleExpectationPlatformEventDualEmitter(
+        var sut = new ScheduleExpectationPlatformEventEmitter(
             emitter.Object,
             Options.Create(new PlatformEventsOptions { Enabled = true }),
-            NullLogger<ScheduleExpectationPlatformEventDualEmitter>.Instance);
+            NullLogger<ScheduleExpectationPlatformEventEmitter>.Instance);
 
         await sut.TryEmitForObserveResultAsync(
             IntId,
@@ -103,10 +103,10 @@ public sealed class ScheduleExpectationPlatformEventDualEmitterTests
     public async Task When_disabled_does_not_emit()
     {
         var emitter = new Mock<IPlatformEventEmitter>();
-        var sut = new ScheduleExpectationPlatformEventDualEmitter(
+        var sut = new ScheduleExpectationPlatformEventEmitter(
             emitter.Object,
             Options.Create(new PlatformEventsOptions { Enabled = false }),
-            NullLogger<ScheduleExpectationPlatformEventDualEmitter>.Instance);
+            NullLogger<ScheduleExpectationPlatformEventEmitter>.Instance);
 
         await sut.TryEmitForObserveResultAsync(
             IntId,

@@ -1,6 +1,8 @@
 # S8D — Epic 69 Email Parity / Legacy Attention Email Alignment
 
-Epic S8D aligns the legacy Epic 69 attention email path with the platform S8B/S8C email pipeline when the legacy path is still active.
+> **Historical.** NTF-C (2026-09-10) removed the Epic 69 orchestrator and `UsePlatformPipeline`. All production email uses the platform pipeline. See [NTF-C closure](../01-architecture/transitions/ntf-c-legacy-removal/closure-report.md).
+
+Epic S8D aligned the legacy Epic 69 attention email path with the platform S8B/S8C email pipeline while the legacy path was still active.
 
 ## v1 path choice
 

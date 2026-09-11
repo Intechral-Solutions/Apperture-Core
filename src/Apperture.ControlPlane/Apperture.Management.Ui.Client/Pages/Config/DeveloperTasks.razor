@@ -7,7 +7,7 @@
                 Subtitle="Stabilization utilities, deferred features, and diagnostics. Not part of the primary operator workflow." />
 
     <PageMessage Kind="PageMessageKind.Info"
-                 Message="These pages are useful during platform development and cutover. Day-to-day operations use Dashboard, Control Center, Integrations, Runs, and Schedules." />
+                 Message="These pages are useful during platform development. Day-to-day operations use Dashboard, Control Center, Integrations, Runs, and Schedules." />
 
     <ManagementSection Title="Deferred dashboard management" Layer="@ManagementSection.UiLayer.Summary">
         <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -35,7 +35,7 @@
                                    Description="Direct Management WorkerHost start/stop is not supported in v1. runtime-worker/start returns 410. Use Aspire or Manage.ps1."
                                    Href="@DeveloperTaskRoutes.WorkerHostingGuidanceDoc" />
             <ManagementSummaryCard Title="Notification diagnostics"
-                                   Description="Cutover parity checks for expected-run-missing (read-only)."
+                                   Description="Delivery health, SMTP test, and platform pipeline verification (read-only unless you run an admin test)."
                                    Href="@DeveloperTaskRoutes.NotificationDiagnostics" />
             <ManagementSummaryCard Title="Nested navigation demo"
                                    Description="Internal shell navigation depth demo."
