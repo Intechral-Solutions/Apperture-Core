@@ -1,6 +1,7 @@
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Environment;
 using Apperture.Core.Domain.Integration;
+using Apperture.Core.Domain.ResourceContexts;
 using Apperture.Core.Domain.Scheduling;
 using Microsoft.EntityFrameworkCore;
 
@@ -22,9 +23,20 @@ public sealed class SqlScheduleRepository : IScheduleRepository
         return e is null ? null : ToDefinition(e);
     }
 
-    public async ValueTask<IReadOnlyList<ScheduleDefinition>> ListDefinitionsAsync(CancellationToken ct = default)
+    public ValueTask<IReadOnlyList<ScheduleDefinition>> ListDefinitionsAsync(CancellationToken ct = default) =>
+        ListDefinitionsAsync(resourceContextId: null, ct);
+
+    public async ValueTask<IReadOnlyList<ScheduleDefinition>> ListDefinitionsAsync(
+        ResourceContextId? resourceContextId,
+        CancellationToken ct = default)
     {
-        var entities = await _db.ScheduleDefinitions.AsNoTracking().ToListAsync(ct);
+        var query = _db.ScheduleDefinitions.AsNoTracking().AsQueryable();
+
+        // Context filtering happens in SQL, never by loading the table and filtering afterwards.
+        if (resourceContextId is not null)
+            query = query.Where(e => e.ResourceContextId == resourceContextId.Value);
+
+        var entities = await query.ToListAsync(ct);
         return entities.Select(ToDefinition).ToList();
     }
 
@@ -55,6 +67,8 @@ public sealed class SqlScheduleRepository : IScheduleRepository
         e.ExecutionPolicyRef = d.ExecutionPolicyRef;
         e.Version = d.Version;
         e.IntegrationId = d.IntegrationId?.Value;
+        // Ownership is established at create time. CTX-1 has no move operation, so UpdateDefinitionAsync
+        // deliberately does not rewrite ResourceContextId.
         if (d.Lifecycle is { } life)
         {
             e.LastScheduleEnabledAtUtc = life.LastScheduleEnabledAtUtc;
@@ -301,7 +315,11 @@ public sealed class SqlScheduleRepository : IScheduleRepository
             e.ExecutionPolicyRef,
             e.Version,
             e.IntegrationId is not null ? new IntegrationId(e.IntegrationId) : null,
-            life);
+            life)
+        {
+            ResourceContextId = new ResourceContextId(
+                string.IsNullOrWhiteSpace(e.ResourceContextId) ? ResourceContextIds.SharedValue : e.ResourceContextId)
+        };
     }
 
     private static ScheduleDefinitionEntity ToDefinitionEntity(ScheduleDefinition d)
@@ -310,6 +328,10 @@ public sealed class SqlScheduleRepository : IScheduleRepository
         {
             Id = d.Id.Value,
             IntegrationId = d.IntegrationId?.Value,
+            // Safety net for direct-repository callers. The authoritative ownership resolution
+            // (standalone -> Shared; Integration-attached -> the Integration's context) lives in
+            // IScheduleManagementService.CreateScheduleAsync.
+            ResourceContextId = d.ResourceContextId?.Value ?? ResourceContextIds.SharedValue,
             Name = d.Name,
             RecurrenceExpression = d.RecurrenceExpression,
             TimeZone = d.TimeZone,

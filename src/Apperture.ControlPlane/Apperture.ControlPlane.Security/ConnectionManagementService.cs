@@ -3,6 +3,7 @@ using Apperture.Core.Application.Connector;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Connector;
 using Apperture.Core.Domain.Governance;
+using Apperture.Core.Domain.ResourceContexts;
 using Apperture.Shared.Kernel;
 
 namespace Apperture.ControlPlane.Security;
@@ -18,6 +19,7 @@ public sealed class ConnectionManagementService : IConnectionManagementService
     private readonly IConnectorDefinitionRegistry _connectorRegistry;
     private readonly IConnectionVerificationService _connectionVerification;
     private readonly ConnectionSecretMaterialProvisioner _secretProvisioner;
+    private readonly IResourceContextService _resourceContexts;
 
     public ConnectionManagementService(
         IPrincipalContext principalContext,
@@ -25,7 +27,8 @@ public sealed class ConnectionManagementService : IConnectionManagementService
         IConnectionRepository connectionRepository,
         IConnectorDefinitionRegistry connectorRegistry,
         IConnectionVerificationService connectionVerification,
-        ConnectionSecretMaterialProvisioner secretProvisioner)
+        ConnectionSecretMaterialProvisioner secretProvisioner,
+        IResourceContextService resourceContexts)
     {
         _principalContext = principalContext;
         _authorizationEvaluation = authorizationEvaluation;
@@ -33,10 +36,17 @@ public sealed class ConnectionManagementService : IConnectionManagementService
         _connectorRegistry = connectorRegistry;
         _connectionVerification = connectionVerification;
         _secretProvisioner = secretProvisioner;
+        _resourceContexts = resourceContexts;
     }
 
     /// <inheritdoc />
-    public async ValueTask<IReadOnlyList<Connection>> ListConnectionsAsync(CancellationToken cancellationToken = default)
+    public ValueTask<IReadOnlyList<Connection>> ListConnectionsAsync(CancellationToken cancellationToken = default) =>
+        ListConnectionsAsync(resourceContextId: null, cancellationToken);
+
+    /// <inheritdoc />
+    public async ValueTask<IReadOnlyList<Connection>> ListConnectionsAsync(
+        ResourceContextId? resourceContextId,
+        CancellationToken cancellationToken = default)
     {
         var actor = await _principalContext.GetCurrentActorAsync(cancellationToken);
         if (actor is null)
@@ -52,7 +62,7 @@ public sealed class ConnectionManagementService : IConnectionManagementService
             throw new UnauthorizedAccessException("Not authorized to list connections.");
 
         var scopeKey = ScopeKeyConstants.Instance;
-        return await _connectionRepository.GetVisibleAsync(scopeKey, cancellationToken);
+        return await _connectionRepository.GetVisibleAsync(scopeKey, resourceContextId, cancellationToken);
     }
 
     /// <inheritdoc />
@@ -100,6 +110,13 @@ public sealed class ConnectionManagementService : IConnectionManagementService
         if (def is null)
             throw new InvalidOperationException($"Connector definition {request.ConnectorDefinitionId.Value} not found.");
 
+        // Ownership defaults to the reserved Shared ResourceContext when the caller supplies none, so
+        // existing create clients stay compatible. A supplied context must exist and be Active.
+        // Ownership never affects secret provisioning below: secret refs are opaque and stay put.
+        var owningContext = await _resourceContexts
+            .ResolveForNewOwnershipAsync(request.ResourceContextId, cancellationToken)
+            .ConfigureAwait(false);
+
         var id = new ConnectionId(Guid.NewGuid().ToString("N")[..24]);
 
         var normalizedConfig = ConnectionSecretMaterialProvisioner.NormalizeToDeclaredFieldKeys(request.Config, def);
@@ -135,7 +152,10 @@ public sealed class ConnectionManagementService : IConnectionManagementService
             mergedSecretRefs,
             request.ScopeKey,
             request.OwnerId,
-            ConnectionState.Active);
+            ConnectionState.Active)
+        {
+            ResourceContextId = owningContext.Id
+        };
 
         await _connectionRepository.AddAsync(connection, cancellationToken);
         return connection;

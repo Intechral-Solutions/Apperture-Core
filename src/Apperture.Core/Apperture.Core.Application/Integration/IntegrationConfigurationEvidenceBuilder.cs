@@ -151,6 +151,7 @@ public sealed class IntegrationConfigurationEvidenceBuilder
                 integration.ModuleId,
                 requirement.Key,
                 requirement.CapabilityContractType,
+                integration.ResourceContextId,
                 cancellationToken)
             .ConfigureAwait(false);
 

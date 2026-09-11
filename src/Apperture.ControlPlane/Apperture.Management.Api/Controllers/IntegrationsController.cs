@@ -1,6 +1,7 @@
 using Apperture.Core.Application.Integration;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Integration;
+using Apperture.Core.Domain.ResourceContexts;
 using Apperture.Management.Api.Models;
 using Apperture.Management.Client;
 using DomainIntegration = Apperture.Core.Domain.Integration.Integration;
@@ -25,6 +26,7 @@ public sealed class IntegrationsController : ControllerBase
     private readonly IAttentionRoutingManagementService _attentionRoutingManagement;
     private readonly IPrincipalContext _principalContext;
     private readonly TimeProvider _timeProvider;
+    private readonly IResourceContextService _resourceContexts;
 
     public IntegrationsController(
         IIntegrationManagementService integrationService,
@@ -34,7 +36,8 @@ public sealed class IntegrationsController : ControllerBase
         IAttentionIncidentTracker attentionIncidentTracker,
         IAttentionRoutingManagementService attentionRoutingManagement,
         IPrincipalContext principalContext,
-        TimeProvider timeProvider)
+        TimeProvider timeProvider,
+        IResourceContextService resourceContexts)
     {
         _integrationService = integrationService;
         _readinessService = readinessService;
@@ -44,23 +47,53 @@ public sealed class IntegrationsController : ControllerBase
         _attentionRoutingManagement = attentionRoutingManagement;
         _principalContext = principalContext;
         _timeProvider = timeProvider;
+        _resourceContexts = resourceContexts;
     }
 
     /// <summary>
     /// Lists integrations visible to the current actor.
     /// </summary>
+    /// <param name="contextId">
+    /// Optional owning ResourceContext filter. Omitted (the default) returns the same global set this
+    /// endpoint has always returned. An unknown ResourceContext is rejected with 400 rather than
+    /// silently returning nothing.
+    /// </param>
     [HttpGet]
-    public async Task<ActionResult<IReadOnlyList<IntegrationDto>>> List(CancellationToken cancellationToken)
+    public async Task<ActionResult<IReadOnlyList<IntegrationDto>>> List(
+        [FromQuery] string? contextId,
+        CancellationToken cancellationToken)
     {
         try
         {
-            var integrations = await _integrationService.ListIntegrationsAsync(cancellationToken);
-            return Ok(integrations.Select(ToDto).ToList());
+            var (contextFilter, contextError) = await ResolveContextFilterAsync(contextId, cancellationToken);
+            if (contextError is not null)
+                return BadRequest(new { error = contextError });
+
+            var integrations = await _integrationService.ListIntegrationsAsync(contextFilter, cancellationToken);
+            var contexts = await _resourceContexts.ListAsync(includeArchived: true, cancellationToken);
+            return Ok(integrations.Select(i => ToDto(i, contexts)).ToList());
         }
         catch (UnauthorizedAccessException)
         {
             return Forbid();
         }
+    }
+
+    /// <summary>
+    /// Resolves an optional <c>contextId</c> query value. Returns a null filter when absent.
+    /// </summary>
+    private async Task<(ResourceContextId? Filter, string? Error)> ResolveContextFilterAsync(
+        string? contextId,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(contextId))
+            return (null, null);
+
+        var id = new ResourceContextId(contextId);
+        var resolved = await _resourceContexts.GetAsync(id, cancellationToken);
+        return resolved is null
+            ? (null, $"ResourceContext '{contextId}' not found.")
+            : (id, null);
     }
 
     /// <summary>
@@ -349,7 +382,7 @@ public sealed class IntegrationsController : ControllerBase
             var integration = await _integrationService.GetIntegrationAsync(new IntegrationId(id), cancellationToken);
             if (integration is null)
                 return NotFound();
-            return Ok(ToDto(integration));
+            return Ok(await ToDtoAsync(integration, cancellationToken));
         }
         catch (UnauthorizedAccessException)
         {
@@ -365,9 +398,14 @@ public sealed class IntegrationsController : ControllerBase
     {
         try
         {
-            var request = new Apperture.Core.Application.Integration.CreateIntegrationRequest(body.DisplayName, body.ModuleId, body.ScopeKey, body.Settings);
+            var request = new Apperture.Core.Application.Integration.CreateIntegrationRequest(
+                body.DisplayName,
+                body.ModuleId,
+                body.ScopeKey,
+                body.Settings,
+                string.IsNullOrWhiteSpace(body.ResourceContextId) ? null : new ResourceContextId(body.ResourceContextId));
             var integration = await _integrationService.CreateIntegrationAsync(request, cancellationToken);
-            return CreatedAtAction(nameof(Get), new { id = integration.Id.Value }, ToDto(integration));
+            return CreatedAtAction(nameof(Get), new { id = integration.Id.Value }, await ToDtoAsync(integration, cancellationToken));
         }
         catch (UnauthorizedAccessException)
         {
@@ -392,7 +430,7 @@ public sealed class IntegrationsController : ControllerBase
                 integrationState = parsed;
             var request = new Apperture.Core.Application.Integration.UpdateIntegrationRequest(body.DisplayName, integrationState, body.Settings);
             var integration = await _integrationService.UpdateIntegrationAsync(new IntegrationId(id), request, cancellationToken);
-            return Ok(ToDto(integration));
+            return Ok(await ToDtoAsync(integration, cancellationToken));
         }
         catch (UnauthorizedAccessException)
         {
@@ -417,7 +455,7 @@ public sealed class IntegrationsController : ControllerBase
         try
         {
             var integration = await _integrationService.ActivateIntegrationAsync(new IntegrationId(id), cancellationToken);
-            return Ok(ToDto(integration));
+            return Ok(await ToDtoAsync(integration, cancellationToken));
         }
         catch (UnauthorizedAccessException)
         {
@@ -438,7 +476,7 @@ public sealed class IntegrationsController : ControllerBase
         try
         {
             var integration = await _integrationService.DeactivateIntegrationAsync(new IntegrationId(id), cancellationToken);
-            return Ok(ToDto(integration));
+            return Ok(await ToDtoAsync(integration, cancellationToken));
         }
         catch (UnauthorizedAccessException)
         {
@@ -471,15 +509,34 @@ public sealed class IntegrationsController : ControllerBase
         }
     }
 
-    private static IntegrationDto ToDto(DomainIntegration i) => new(
-        i.Id.Value,
-        i.DisplayName,
-        i.ModuleId,
-        i.ScopeKey,
-        i.State.ToString(),
-        i.Settings,
-        i.CreatedAt,
-        i.UpdatedAt);
+    /// <summary>
+    /// Maps an Integration to its DTO, resolving the ResourceContext reference from a pre-fetched set.
+    /// </summary>
+    /// <remarks>
+    /// The caller passes the whole (small) ResourceContext dimension so mapping a list costs one query
+    /// rather than one query per row.
+    /// </remarks>
+    private static IntegrationDto ToDto(DomainIntegration i, IReadOnlyList<ResourceContext> resourceContexts)
+    {
+        var owning = resourceContexts.FirstOrDefault(c => string.Equals(c.Id.Value, i.ResourceContextId.Value, StringComparison.Ordinal));
+        return new IntegrationDto(
+            i.Id.Value,
+            i.DisplayName,
+            i.ModuleId,
+            i.ScopeKey,
+            i.State.ToString(),
+            i.Settings,
+            i.CreatedAt,
+            i.UpdatedAt,
+            i.ResourceContextId.Value,
+            owning?.ToRef());
+    }
+
+    private async Task<IntegrationDto> ToDtoAsync(DomainIntegration i, CancellationToken cancellationToken)
+    {
+        var contexts = await _resourceContexts.ListAsync(includeArchived: true, cancellationToken);
+        return ToDto(i, contexts);
+    }
 
     private static Apperture.Management.Client.IntegrationFleetRowDto ToFleetDto(IntegrationFleetRowProjection r) =>
         new(
@@ -662,6 +719,9 @@ public sealed class IntegrationsController : ControllerBase
             s.IntegrationRowEscalationOperationalTeamId);
 }
 
+/// <param name="ScopeKey">Authorization scope. Unrelated to <paramref name="ResourceContextId"/>.</param>
+/// <param name="ResourceContextId">Owning ResourceContext id.</param>
+/// <param name="ResourceContext">Owning ResourceContext reference for display.</param>
 public sealed record IntegrationDto(
     string Id,
     string DisplayName,
@@ -670,13 +730,20 @@ public sealed record IntegrationDto(
     string State,
     IReadOnlyDictionary<string, string>? Settings,
     DateTimeOffset CreatedAt,
-    DateTimeOffset UpdatedAt);
+    DateTimeOffset UpdatedAt,
+    string? ResourceContextId = null,
+    ResourceContextRef? ResourceContext = null);
 
+/// <param name="ResourceContextId">
+/// Optional owning ResourceContext. Omitted means the reserved Shared context, so existing clients
+/// remain compatible. An unknown or archived context is rejected.
+/// </param>
 public sealed record CreateIntegrationRequestBody(
     string DisplayName,
     string ModuleId,
     string? ScopeKey,
-    IReadOnlyDictionary<string, string>? Settings = null);
+    IReadOnlyDictionary<string, string>? Settings = null,
+    string? ResourceContextId = null);
 
 public sealed record UpdateIntegrationRequestBody(
     string? DisplayName,

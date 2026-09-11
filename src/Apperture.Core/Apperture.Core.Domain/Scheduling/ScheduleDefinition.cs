@@ -1,4 +1,5 @@
 using Apperture.Core.Domain.Integration;
+using Apperture.Core.Domain.ResourceContexts;
 
 namespace Apperture.Core.Domain.Scheduling;
 
@@ -18,4 +19,23 @@ public sealed record ScheduleDefinition(
     string? ExecutionPolicyRef,
     int Version,
     IntegrationId? IntegrationId = null,
-    ScheduleLifecycleEvidence? Lifecycle = null);
+    ScheduleLifecycleEvidence? Lifecycle = null)
+{
+    /// <summary>
+    /// The ResourceContext that owns this Schedule. Required in storage.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A Schedule owns a direct ResourceContext rather than deriving one from its Integration:
+    /// standalone Schedules are legal and have no Integration to derive from.
+    /// </para>
+    /// <para>
+    /// <c>null</c> means <i>not yet resolved</i> — the value a caller supplies before the authoritative
+    /// schedule application service assigns ownership. Resolution rules: a standalone Schedule defaults
+    /// to Shared; an Integration-attached Schedule inherits its Integration's ResourceContext, and an
+    /// explicitly supplied context must equal the Integration's or the create is rejected. Schedules
+    /// loaded from persistence always carry a value.
+    /// </para>
+    /// </remarks>
+    public ResourceContextId? ResourceContextId { get; init; }
+}

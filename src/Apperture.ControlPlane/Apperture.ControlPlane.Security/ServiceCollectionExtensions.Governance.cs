@@ -166,6 +166,9 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IScheduleCreateTimeZoneDefaults, ScheduleCreateTimeZoneDefaults>();
         services.AddScoped<IRecoveryGovernanceService, RecoveryGovernanceService>();
         services.AddScoped<IOperatorCapabilitiesQueryService, OperatorCapabilitiesQueryService>();
+        services.AddResourceContextPersistence();
+        // Schedule creation resolves ownership against the owning Integration's ResourceContext.
+        services.TryAddScoped<IIntegrationRepository, SqlIntegrationRepository>();
         services.AddScoped<IScheduleManagementService, SqlScheduleManagementService>();
         services.AddScoped<IControlActionAvailabilityProjection, ControlActionAvailabilityProjection>();
         services.AddScoped<IControlActivityQueryService, ControlActivityQueryService>();

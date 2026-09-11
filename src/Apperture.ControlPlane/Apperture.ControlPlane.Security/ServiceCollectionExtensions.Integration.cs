@@ -18,6 +18,7 @@ public static class IntegrationServiceCollectionExtensions
     /// </summary>
     public static IServiceCollection AddAppertureIntegrationWorkflows(this IServiceCollection services)
     {
+        services.AddResourceContextPersistence();
         services.AddScoped<IIntegrationRepository, SqlIntegrationRepository>();
         services.AddScoped<IAttentionIncidentTracker, SqlAttentionIncidentTracker>();
         services.AddScoped<IAttentionRecipientResolver, SqlAttentionRecipientResolver>();

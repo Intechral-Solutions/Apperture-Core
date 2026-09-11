@@ -1,4 +1,5 @@
 using Apperture.Core.Application.RuntimeComposition;
+using Apperture.Core.Application.ResourceContexts;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Environment;
 using Apperture.Core.Domain.Scheduling;
@@ -191,6 +192,9 @@ public sealed class Epic36MultiHostSchedulerTests
         services.AddScoped<IScheduleRepository, SqlScheduleRepository>();
         services.AddSingleton<ISchedulerClaimOptions>(new DefaultSchedulerClaimOptions(5));
         services.AddSingleton(TimeProvider.System);
+        services.AddScoped<IResourceContextRepository, SqlResourceContextRepository>();
+        services.AddScoped<IResourceContextService, ResourceContextService>();
+        services.AddScoped<IIntegrationRepository, SqlIntegrationRepository>();
         services.AddScoped<IScheduleManagementService, SqlScheduleManagementService>();
 
         await using var scope = services.BuildServiceProvider().CreateAsyncScope();
@@ -232,6 +236,9 @@ public sealed class Epic36MultiHostSchedulerTests
         services.AddScoped<IScheduleRepository, SqlScheduleRepository>();
         services.AddSingleton<ISchedulerClaimOptions>(new DefaultSchedulerClaimOptions(5));
         services.AddSingleton(TimeProvider.System);
+        services.AddScoped<IResourceContextRepository, SqlResourceContextRepository>();
+        services.AddScoped<IResourceContextService, ResourceContextService>();
+        services.AddScoped<IIntegrationRepository, SqlIntegrationRepository>();
         services.AddScoped<IScheduleManagementService, SqlScheduleManagementService>();
         await using var scope = services.BuildServiceProvider().CreateAsyncScope();
         var detail = await scope.ServiceProvider.GetRequiredService<IScheduleManagementService>()
@@ -263,6 +270,9 @@ public sealed class Epic36MultiHostSchedulerTests
         services.AddScoped<IScheduleRepository, SqlScheduleRepository>();
         services.AddSingleton<ISchedulerClaimOptions>(new DefaultSchedulerClaimOptions(5));
         services.AddSingleton(TimeProvider.System);
+        services.AddScoped<IResourceContextRepository, SqlResourceContextRepository>();
+        services.AddScoped<IResourceContextService, ResourceContextService>();
+        services.AddScoped<IIntegrationRepository, SqlIntegrationRepository>();
         services.AddScoped<IScheduleManagementService, SqlScheduleManagementService>();
 
         await using var scope = services.BuildServiceProvider().CreateAsyncScope();
@@ -295,6 +305,9 @@ public sealed class Epic36MultiHostSchedulerTests
         services.AddScoped<IScheduleRepository, SqlScheduleRepository>();
         services.AddSingleton<ISchedulerClaimOptions>(new DefaultSchedulerClaimOptions(5));
         services.AddSingleton(TimeProvider.System);
+        services.AddScoped<IResourceContextRepository, SqlResourceContextRepository>();
+        services.AddScoped<IResourceContextService, ResourceContextService>();
+        services.AddScoped<IIntegrationRepository, SqlIntegrationRepository>();
         services.AddScoped<IScheduleManagementService, SqlScheduleManagementService>();
 
         await using var scope = services.BuildServiceProvider().CreateAsyncScope();

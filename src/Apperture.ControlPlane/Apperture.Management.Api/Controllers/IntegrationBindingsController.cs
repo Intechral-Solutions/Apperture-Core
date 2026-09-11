@@ -97,6 +97,7 @@ public sealed class IntegrationBindingsController : ControllerBase
                 integration.ModuleId,
                 slotName,
                 contractType,
+                integration.ResourceContextId,
                 cancellationToken);
             return Ok(connections.Select(c => new { Id = c.Id.Value, c.Name, ConnectorDefinitionId = c.ConnectorDefinitionId.Value }).ToList());
         }

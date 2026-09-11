@@ -1,7 +1,9 @@
+using Apperture.Core.Application.ResourceContexts;
 using Apperture.Core.Application.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 
 namespace Apperture.Persistence.SqlServer;
@@ -89,6 +91,22 @@ public static class ServiceCollectionExtensions
         SqlPersistenceOptions? options = null)
     {
         return services.AddApperturePersistence(_ => connectionString, options);
+    }
+
+    /// <summary>
+    /// Registers ResourceContext persistence and the supported ResourceContext lifecycle service.
+    /// Requires AddApperturePersistence (DbContext) to be registered first.
+    /// </summary>
+    /// <remarks>
+    /// Registered with TryAdd so the several feature areas that depend on ResourceContext ownership can
+    /// each call this without producing duplicate registrations.
+    /// </remarks>
+    public static IServiceCollection AddResourceContextPersistence(this IServiceCollection services)
+    {
+        services.TryAddScoped<IResourceContextRepository, SqlResourceContextRepository>();
+        services.TryAddScoped<IResourceContextService, ResourceContextService>();
+        services.TryAddSingleton(TimeProvider.System);
+        return services;
     }
 
     /// <summary>

@@ -4,6 +4,7 @@ using Apperture.Core.Application.PlatformSettings;
 using Apperture.Core.Application.Scheduling;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Connector;
+using Apperture.Core.Domain.ResourceContexts;
 using Apperture.Core.Domain.Integration;
 using Apperture.Core.Domain.Scheduling;
 using Apperture.ModuleSdk.Abstractions;
@@ -193,7 +194,7 @@ public sealed class IntegrationReadinessServiceTests
         connRepo.Setup(x => x.GetByIdAsync(connId, It.IsAny<CancellationToken>())).ReturnsAsync(connection);
 
         var elig = new Mock<IBindingEligibilityService>();
-        elig.Setup(x => x.GetEligibleConnectionsAsync("Sample.Mod", "Db", "System.Data.IDbConnection", It.IsAny<CancellationToken>()))
+        elig.Setup(x => x.GetEligibleConnectionsAsync("Sample.Mod", "Db", "System.Data.IDbConnection", It.IsAny<ResourceContextId?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<Connection> { connection });
 
         var schedRepo = new Mock<IScheduleRepository>();
@@ -311,7 +312,7 @@ public sealed class IntegrationReadinessServiceTests
         connRepo.Setup(x => x.GetByIdAsync(connId, It.IsAny<CancellationToken>())).ReturnsAsync(connection);
 
         var elig = new Mock<IBindingEligibilityService>();
-        elig.Setup(x => x.GetEligibleConnectionsAsync("Sample.Mod", "Db", "System.Data.IDbConnection", It.IsAny<CancellationToken>()))
+        elig.Setup(x => x.GetEligibleConnectionsAsync("Sample.Mod", "Db", "System.Data.IDbConnection", It.IsAny<ResourceContextId?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<Connection>());
 
         var schedRepo = new Mock<IScheduleRepository>();
@@ -352,7 +353,7 @@ public sealed class IntegrationReadinessServiceTests
         var connRepo = new Mock<IConnectionRepository>();
         connRepo.Setup(x => x.GetByIdAsync(connId, It.IsAny<CancellationToken>())).ReturnsAsync(connection);
         var elig = new Mock<IBindingEligibilityService>();
-        elig.Setup(x => x.GetEligibleConnectionsAsync("Sample.Mod", "Db", "System.Data.IDbConnection", It.IsAny<CancellationToken>())).ReturnsAsync(new List<Connection> { connection });
+        elig.Setup(x => x.GetEligibleConnectionsAsync("Sample.Mod", "Db", "System.Data.IDbConnection", It.IsAny<ResourceContextId?>(), It.IsAny<CancellationToken>())).ReturnsAsync(new List<Connection> { connection });
         var schedRepo = new Mock<IScheduleRepository>();
         schedRepo.Setup(x => x.GetByIntegrationIdAsync(IntId, It.IsAny<CancellationToken>())).ReturnsAsync(Array.Empty<ScheduleDefinition>());
 
@@ -576,7 +577,7 @@ public sealed class IntegrationReadinessServiceTests
         connRepo.Setup(x => x.GetByIdAsync(connId, It.IsAny<CancellationToken>())).ReturnsAsync(connection);
 
         var elig = new Mock<IBindingEligibilityService>();
-        elig.Setup(x => x.GetEligibleConnectionsAsync("Sample.Mod", "Db", "System.Data.IDbConnection", It.IsAny<CancellationToken>()))
+        elig.Setup(x => x.GetEligibleConnectionsAsync("Sample.Mod", "Db", "System.Data.IDbConnection", It.IsAny<ResourceContextId?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<Connection> { connection });
 
         var schedRepo = new Mock<IScheduleRepository>();
@@ -663,7 +664,7 @@ public sealed class IntegrationReadinessServiceTests
         connRepo.Setup(x => x.GetByIdAsync(connId, It.IsAny<CancellationToken>())).ReturnsAsync(connection);
 
         var elig = new Mock<IBindingEligibilityService>();
-        elig.Setup(x => x.GetEligibleConnectionsAsync("Sample.Mod", "Db", "System.Data.IDbConnection", It.IsAny<CancellationToken>()))
+        elig.Setup(x => x.GetEligibleConnectionsAsync("Sample.Mod", "Db", "System.Data.IDbConnection", It.IsAny<ResourceContextId?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<Connection> { connection });
 
         var schedRepo = new Mock<IScheduleRepository>();
@@ -765,7 +766,7 @@ public sealed class IntegrationReadinessServiceTests
         connRepo.Setup(x => x.GetByIdAsync(connId, It.IsAny<CancellationToken>())).ReturnsAsync(connection);
 
         var elig = new Mock<IBindingEligibilityService>();
-        elig.Setup(x => x.GetEligibleConnectionsAsync("Sample.Mod", "Db", "System.Data.IDbConnection", It.IsAny<CancellationToken>()))
+        elig.Setup(x => x.GetEligibleConnectionsAsync("Sample.Mod", "Db", "System.Data.IDbConnection", It.IsAny<ResourceContextId?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<Connection> { connection });
 
         var schedRepo = new Mock<IScheduleRepository>();
@@ -845,7 +846,7 @@ public sealed class IntegrationReadinessServiceTests
         connRepo.Setup(x => x.GetByIdAsync(connId, It.IsAny<CancellationToken>())).ReturnsAsync(connection);
 
         var elig = new Mock<IBindingEligibilityService>();
-        elig.Setup(x => x.GetEligibleConnectionsAsync("Sample.Mod", "Db", "System.Data.IDbConnection", It.IsAny<CancellationToken>()))
+        elig.Setup(x => x.GetEligibleConnectionsAsync("Sample.Mod", "Db", "System.Data.IDbConnection", It.IsAny<ResourceContextId?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<Connection> { connection });
 
         var schedRepo = new Mock<IScheduleRepository>();
@@ -949,7 +950,7 @@ public sealed class IntegrationReadinessServiceTests
         connRepo.Setup(x => x.GetByIdAsync(connId, It.IsAny<CancellationToken>())).ReturnsAsync(connection);
 
         var elig = new Mock<IBindingEligibilityService>();
-        elig.Setup(x => x.GetEligibleConnectionsAsync("Sample.Mod", "Db", "System.Data.IDbConnection", It.IsAny<CancellationToken>()))
+        elig.Setup(x => x.GetEligibleConnectionsAsync("Sample.Mod", "Db", "System.Data.IDbConnection", It.IsAny<ResourceContextId?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<Connection> { connection });
 
         var schedRepo = new Mock<IScheduleRepository>();

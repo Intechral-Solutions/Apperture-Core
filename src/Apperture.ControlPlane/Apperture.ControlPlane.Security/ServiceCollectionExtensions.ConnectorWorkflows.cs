@@ -16,6 +16,7 @@ public static class ConnectorWorkflowServiceCollectionExtensions
     /// </summary>
     public static IServiceCollection AddAppertureConnectorWorkflows(this IServiceCollection services)
     {
+        services.AddResourceContextPersistence();
         services.AddScoped<IConnectionRepository, SqlConnectionRepository>();
         services.AddScoped<IBindingRepository, SqlBindingRepository>();
         services.AddSingleton<IModuleSlotRegistry, InMemoryModuleSlotRegistry>();

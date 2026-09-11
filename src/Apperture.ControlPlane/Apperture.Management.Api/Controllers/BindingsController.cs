@@ -18,8 +18,13 @@ public sealed class BindingsController : ControllerBase
     }
 
     /// <summary>
-    /// Gets the binding for a slot.
+    /// Gets the slot binding that no Integration owns.
     /// </summary>
+    /// <remarks>
+    /// Integration-owned bindings are not visible here and never were safe to expose here: without the
+    /// Integration identity there is nothing to choose between two Integrations of the same module.
+    /// Use <c>GET /api/integrations/{integrationId}/bindings</c> for those.
+    /// </remarks>
     [HttpGet("binding")]
     public async Task<ActionResult<BindingDto?>> Get(string moduleId, string slotName, CancellationToken cancellationToken)
     {
@@ -61,7 +66,13 @@ public sealed class BindingsController : ControllerBase
     {
         try
         {
-            var connections = await _bindingService.GetEligibleConnectionsAsync(moduleId, slotName, contractType, cancellationToken);
+            // Module-scoped discovery has no owning Integration, so no ResourceContext filter applies.
+            var connections = await _bindingService.GetEligibleConnectionsAsync(
+                moduleId,
+                slotName,
+                contractType,
+                owningResourceContextId: null,
+                cancellationToken);
             return Ok(connections.Select(c => new { Id = c.Id.Value, c.Name, ConnectorDefinitionId = c.ConnectorDefinitionId.Value }).ToList());
         }
         catch (UnauthorizedAccessException)

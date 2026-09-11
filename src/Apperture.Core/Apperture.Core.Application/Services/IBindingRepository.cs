@@ -9,10 +9,23 @@ namespace Apperture.Core.Application.Services;
 public interface IBindingRepository
 {
     /// <summary>
-    /// Gets the binding for a slot. Returns null if none exists.
-    /// Legacy: returns first match for (moduleId, slotName). Integration-scoped resolution is deferred.
+    /// Gets the binding for a slot that is <b>not owned by any Integration</b> (<c>IntegrationId</c> is
+    /// null). Returns null if none exists.
     /// </summary>
-    ValueTask<Binding?> GetBySlotAsync(string moduleId, string slotName, CancellationToken cancellationToken = default);
+    /// <remarks>
+    /// <para>
+    /// This is the only contextless slot lookup the platform supports. It exists for genuinely global
+    /// bindings — capability bindings created without an Integration, and pre-Integration legacy rows.
+    /// </para>
+    /// <para>
+    /// It must never return an Integration-owned binding. Selecting the first instance-wide match for
+    /// <c>(ModuleId, SlotName)</c> would let one Integration resolve another Integration's Connection as
+    /// soon as two Integrations of the same module exist. Integration-scoped resolution requires the
+    /// Integration identity that disambiguates it: use
+    /// <see cref="GetBySlotAndIntegrationAsync"/>.
+    /// </para>
+    /// </remarks>
+    ValueTask<Binding?> GetUnownedBySlotAsync(string moduleId, string slotName, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Gets all bindings owned by the given Integration. Epic 50.

@@ -38,6 +38,7 @@ public class AppertureDbContext : DbContext
     public DbSet<SecretAuditEntity> SecretAudits => Set<SecretAuditEntity>();
     public DbSet<EnrollmentTokenEntity> EnrollmentTokens => Set<EnrollmentTokenEntity>();
     public DbSet<RuntimeIdentityEntity> RuntimeIdentities => Set<RuntimeIdentityEntity>();
+    public DbSet<ResourceContextEntity> ResourceContexts => Set<ResourceContextEntity>();
     public DbSet<ConnectionEntity> Connections => Set<ConnectionEntity>();
     public DbSet<IntegrationEntity> Integrations => Set<IntegrationEntity>();
     public DbSet<BindingEntity> Bindings => Set<BindingEntity>();
@@ -537,6 +538,28 @@ public class AppertureDbContext : DbContext
             e.Property(x => x.DeclaredScopesJson).HasMaxLength(4096);
         });
 
+        // ResourceContexts is the ownership/namespace dimension. Real foreign keys from the three
+        // context-owned resource tables are a deliberate exception to this codebase's string-correlation
+        // convention between operator aggregates: that convention exists to avoid coupling aggregate
+        // lifecycles, whereas this is a small dimension table and the FK buys a structural guarantee
+        // that a context owning resources cannot be removed out from under them.
+        modelBuilder.Entity<ResourceContextEntity>(e =>
+        {
+            e.ToTable("ResourceContexts");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasMaxLength(64);
+            e.Property(x => x.Name).HasMaxLength(256).IsRequired();
+            e.Property(x => x.Slug).HasMaxLength(128).IsRequired();
+            e.Property(x => x.Kind).HasMaxLength(32).IsRequired();
+            e.Property(x => x.State).HasMaxLength(32).IsRequired();
+            e.Property(x => x.IsReserved).IsRequired();
+            e.Property(x => x.Description).HasMaxLength(1024);
+            e.Property(x => x.CreatedAtUtc);
+            e.Property(x => x.UpdatedAtUtc);
+            e.Property(x => x.RowVersion).IsRowVersion();
+            e.HasIndex(x => x.Slug).HasDatabaseName("UX_ResourceContexts_Slug").IsUnique();
+        });
+
         modelBuilder.Entity<ConnectionEntity>(e =>
         {
             e.ToTable("Connections");
@@ -547,12 +570,18 @@ public class AppertureDbContext : DbContext
             e.Property(x => x.ConfigJson).HasMaxLength(4096);
             e.Property(x => x.SecretRefsJson).HasMaxLength(4096);
             e.Property(x => x.ScopeKey).HasMaxLength(256);
+            e.Property(x => x.ResourceContextId).HasMaxLength(64).IsRequired();
             e.Property(x => x.OwnerId).HasMaxLength(256);
             e.Property(x => x.State);
             e.Property(x => x.LastVerificationStatus);
             e.Property(x => x.LastVerificationAtUtc);
             e.Property(x => x.LastVerificationSummary).HasMaxLength(512);
             e.Property(x => x.RowVersion).IsRowVersion();
+            e.HasIndex(x => x.ResourceContextId).HasDatabaseName("IX_Connections_ResourceContextId");
+            e.HasOne<ResourceContextEntity>()
+                .WithMany()
+                .HasForeignKey(x => x.ResourceContextId)
+                .OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity<IntegrationEntity>(e =>
@@ -563,9 +592,15 @@ public class AppertureDbContext : DbContext
             e.Property(x => x.DisplayName).HasMaxLength(256);
             e.Property(x => x.ModuleId).HasMaxLength(128);
             e.Property(x => x.ScopeKey).HasMaxLength(256);
+            e.Property(x => x.ResourceContextId).HasMaxLength(64).IsRequired();
             e.Property(x => x.State);
             e.Property(x => x.SettingsJson).HasMaxLength(8192);
             e.Property<byte[]>("RowVersion").IsRowVersion();
+            e.HasIndex(x => x.ResourceContextId).HasDatabaseName("IX_Integrations_ResourceContextId");
+            e.HasOne<ResourceContextEntity>()
+                .WithMany()
+                .HasForeignKey(x => x.ResourceContextId)
+                .OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity<BindingEntity>(e =>
@@ -743,11 +778,17 @@ public class AppertureDbContext : DbContext
             e.HasKey(x => x.Id);
             e.Property(x => x.Id).HasMaxLength(64);
             e.Property(x => x.IntegrationId).HasMaxLength(64);
+            e.Property(x => x.ResourceContextId).HasMaxLength(64).IsRequired();
             e.Property(x => x.Name).HasMaxLength(256);
             e.Property(x => x.RecurrenceExpression).HasMaxLength(256);
             e.Property(x => x.TimeZone).HasMaxLength(128);
             e.Property(x => x.TargetJobConfigurationJson).HasColumnType("nvarchar(max)");
             e.Property(x => x.ExecutionPolicyRef).HasMaxLength(256);
+            e.HasIndex(x => x.ResourceContextId).HasDatabaseName("IX_ScheduleDefinitions_ResourceContextId");
+            e.HasOne<ResourceContextEntity>()
+                .WithMany()
+                .HasForeignKey(x => x.ResourceContextId)
+                .OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity<ScheduleAssignmentEntity>(e =>

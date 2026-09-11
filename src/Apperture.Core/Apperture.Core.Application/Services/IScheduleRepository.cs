@@ -1,5 +1,6 @@
 using Apperture.Core.Domain.Environment;
 using Apperture.Core.Domain.Integration;
+using Apperture.Core.Domain.ResourceContexts;
 using Apperture.Core.Domain.Scheduling;
 
 namespace Apperture.Core.Application.Services;
@@ -11,6 +12,26 @@ public interface IScheduleRepository
 {
     ValueTask<ScheduleDefinition?> GetDefinitionAsync(ScheduleId id, CancellationToken cancellationToken = default);
     ValueTask<IReadOnlyList<ScheduleDefinition>> ListDefinitionsAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Lists schedule definitions, optionally restricted to one owning ResourceContext.
+    /// </summary>
+    /// <param name="resourceContextId">
+    /// Owning ResourceContext to filter by, or null for the default global behavior (no context filter).
+    /// </param>
+    /// <remarks>
+    /// A store-backed implementation must push the context filter into the query. The default
+    /// implementation here exists only so in-memory test doubles keep working; it is not a query plan.
+    /// </remarks>
+    async ValueTask<IReadOnlyList<ScheduleDefinition>> ListDefinitionsAsync(
+        ResourceContextId? resourceContextId,
+        CancellationToken cancellationToken = default)
+    {
+        var all = await ListDefinitionsAsync(cancellationToken).ConfigureAwait(false);
+        if (resourceContextId is null)
+            return all;
+        return all.Where(d => string.Equals(d.ResourceContextId?.Value, resourceContextId.Value, StringComparison.Ordinal)).ToList();
+    }
 
     /// <summary>
     /// Gets schedules owned by the given Integration. Epic 50.

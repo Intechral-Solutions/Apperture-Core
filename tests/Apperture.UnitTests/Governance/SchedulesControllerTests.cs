@@ -4,6 +4,7 @@ using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Environment;
 using Apperture.Core.Domain.Scheduling;
 using Apperture.Management.Api.Controllers;
+using Apperture.UnitTests.ResourceContexts;
 using FluentAssertions;
 using Microsoft.AspNetCore.Mvc;
 using Xunit;
@@ -21,7 +22,7 @@ public sealed class SchedulesControllerTests
         var scheduleGovernance = new StubScheduleGovernanceService(canManage: false);
         var scheduleManagement = new StubScheduleManagementService();
         var validation = new ScheduleValidationService();
-        var controller = new SchedulesController(scheduleGovernance, scheduleManagement, validation, PassthroughCreateTimeZoneDefaults.Instance, StubSchedulerStatusQueryService.Healthy);
+        var controller = new SchedulesController(scheduleGovernance, scheduleManagement, validation, PassthroughCreateTimeZoneDefaults.Instance, StubSchedulerStatusQueryService.Healthy, ResourceContextTestFactory.SharedOnly());
 
         var result = await controller.GetCapabilities(CancellationToken.None);
 
@@ -34,7 +35,7 @@ public sealed class SchedulesControllerTests
         var scheduleGovernance = new StubScheduleGovernanceService(canManage: true);
         var scheduleManagement = new StubScheduleManagementService();
         var validation = new ScheduleValidationService();
-        var controller = new SchedulesController(scheduleGovernance, scheduleManagement, validation, PassthroughCreateTimeZoneDefaults.Instance, StubSchedulerStatusQueryService.Healthy);
+        var controller = new SchedulesController(scheduleGovernance, scheduleManagement, validation, PassthroughCreateTimeZoneDefaults.Instance, StubSchedulerStatusQueryService.Healthy, ResourceContextTestFactory.SharedOnly());
 
         var result = await controller.GetCapabilities(CancellationToken.None);
 
@@ -55,9 +56,10 @@ public sealed class SchedulesControllerTests
             scheduleManagement,
             validation,
             PassthroughCreateTimeZoneDefaults.Instance,
-            StubSchedulerStatusQueryService.Healthy);
+            StubSchedulerStatusQueryService.Healthy,
+            ResourceContextTestFactory.SharedOnly());
 
-        var result = await controller.List(CancellationToken.None);
+        var result = await controller.List(contextId: null, CancellationToken.None);
 
         result.Result.Should().BeOfType<OkObjectResult>();
         var ok = (OkObjectResult)result.Result!;
@@ -82,7 +84,8 @@ public sealed class SchedulesControllerTests
             scheduleManagement,
             validation,
             PassthroughCreateTimeZoneDefaults.Instance,
-            StubSchedulerStatusQueryService.Healthy);
+            StubSchedulerStatusQueryService.Healthy,
+            ResourceContextTestFactory.SharedOnly());
 
         var result = await controller.Get("sched-detail-1", "local", CancellationToken.None);
 
@@ -103,7 +106,7 @@ public sealed class SchedulesControllerTests
         var scheduleManagement = new CreateCapableStubScheduleManagementService();
         var validation = new ScheduleValidationService();
         var defaults = new CapturingCreateTimeZoneDefaults("America/Los_Angeles");
-        var controller = new SchedulesController(scheduleGovernance, scheduleManagement, validation, defaults, StubSchedulerStatusQueryService.Healthy);
+        var controller = new SchedulesController(scheduleGovernance, scheduleManagement, validation, defaults, StubSchedulerStatusQueryService.Healthy, ResourceContextTestFactory.SharedOnly());
         var body = new CreateScheduleRequestBody(
             "Hourly sync",
             "0 * * * *",
@@ -133,7 +136,7 @@ public sealed class SchedulesControllerTests
         var scheduleGovernance = new StubScheduleGovernanceService(canManage: true);
         var scheduleManagement = new CreateCapableStubScheduleManagementService();
         var validation = new ScheduleValidationService();
-        var controller = new SchedulesController(scheduleGovernance, scheduleManagement, validation, PassthroughCreateTimeZoneDefaults.Instance, StubSchedulerStatusQueryService.Healthy);
+        var controller = new SchedulesController(scheduleGovernance, scheduleManagement, validation, PassthroughCreateTimeZoneDefaults.Instance, StubSchedulerStatusQueryService.Healthy, ResourceContextTestFactory.SharedOnly());
         var body = new CreateScheduleRequestBody(
             "Hourly sync",
             "0 * * * *",
@@ -161,7 +164,7 @@ public sealed class SchedulesControllerTests
         var scheduleGovernance = new StubScheduleGovernanceService(canManage: true);
         var scheduleManagement = new StubScheduleManagementService();
         var validation = new ScheduleValidationService();
-        var controller = new SchedulesController(scheduleGovernance, scheduleManagement, validation, PassthroughCreateTimeZoneDefaults.Instance, StubSchedulerStatusQueryService.Healthy);
+        var controller = new SchedulesController(scheduleGovernance, scheduleManagement, validation, PassthroughCreateTimeZoneDefaults.Instance, StubSchedulerStatusQueryService.Healthy, ResourceContextTestFactory.SharedOnly());
         var body = new CreateScheduleRequestBody(
             "Bad",
             "not valid cron",
@@ -186,7 +189,7 @@ public sealed class SchedulesControllerTests
         var scheduleGovernance = new StubScheduleGovernanceService(canManage: false);
         var scheduleManagement = new StubScheduleManagementService();
         var validation = new ScheduleValidationService();
-        var controller = new SchedulesController(scheduleGovernance, scheduleManagement, validation, PassthroughCreateTimeZoneDefaults.Instance, StubSchedulerStatusQueryService.Healthy);
+        var controller = new SchedulesController(scheduleGovernance, scheduleManagement, validation, PassthroughCreateTimeZoneDefaults.Instance, StubSchedulerStatusQueryService.Healthy, ResourceContextTestFactory.SharedOnly());
         var body = new CreateScheduleRequestBody("X", "0 * * * *", "UTC", true, 0, "{\"workflowDefinitionId\":\"wf1\"}", null, "local");
 
         var result = await controller.Create(body, CancellationToken.None);
@@ -200,7 +203,7 @@ public sealed class SchedulesControllerTests
         var scheduleGovernance = new StubScheduleGovernanceService(canManage: true);
         var scheduleManagement = new StubScheduleManagementService();
         var validation = new ScheduleValidationService();
-        var controller = new SchedulesController(scheduleGovernance, scheduleManagement, validation, PassthroughCreateTimeZoneDefaults.Instance, StubSchedulerStatusQueryService.Healthy);
+        var controller = new SchedulesController(scheduleGovernance, scheduleManagement, validation, PassthroughCreateTimeZoneDefaults.Instance, StubSchedulerStatusQueryService.Healthy, ResourceContextTestFactory.SharedOnly());
         var body = new CreateScheduleRequestBody(
             "No integration",
             "0 * * * *",
@@ -223,7 +226,7 @@ public sealed class SchedulesControllerTests
         var scheduleGovernance = new StubScheduleGovernanceService(canManage: true);
         var scheduleManagement = new UpdateCapableStubScheduleManagementService();
         var validation = new ScheduleValidationService();
-        var controller = new SchedulesController(scheduleGovernance, scheduleManagement, validation, PassthroughCreateTimeZoneDefaults.Instance, StubSchedulerStatusQueryService.Healthy);
+        var controller = new SchedulesController(scheduleGovernance, scheduleManagement, validation, PassthroughCreateTimeZoneDefaults.Instance, StubSchedulerStatusQueryService.Healthy, ResourceContextTestFactory.SharedOnly());
         var body = new UpdateScheduleRequestBody(RecurrenceExpression: "invalid cron");
 
         var result = await controller.Update("s1", body, CancellationToken.None);
@@ -237,7 +240,7 @@ public sealed class SchedulesControllerTests
         var scheduleGovernance = new StubScheduleGovernanceService(canManage: true);
         var scheduleManagement = new UpdateCapableStubScheduleManagementService();
         var validation = new ScheduleValidationService();
-        var controller = new SchedulesController(scheduleGovernance, scheduleManagement, validation, PassthroughCreateTimeZoneDefaults.Instance, StubSchedulerStatusQueryService.Healthy);
+        var controller = new SchedulesController(scheduleGovernance, scheduleManagement, validation, PassthroughCreateTimeZoneDefaults.Instance, StubSchedulerStatusQueryService.Healthy, ResourceContextTestFactory.SharedOnly());
         var body = new UpdateScheduleRequestBody(Name: "NewName", TargetJobType: 1);
 
         var result = await controller.Update("s1", body, CancellationToken.None);
@@ -253,7 +256,7 @@ public sealed class SchedulesControllerTests
         var scheduleGovernance = new StubScheduleGovernanceService(canManage: true);
         var scheduleManagement = new UpdateCapableStubScheduleManagementService();
         var validation = new ScheduleValidationService();
-        var controller = new SchedulesController(scheduleGovernance, scheduleManagement, validation, PassthroughCreateTimeZoneDefaults.Instance, StubSchedulerStatusQueryService.Healthy);
+        var controller = new SchedulesController(scheduleGovernance, scheduleManagement, validation, PassthroughCreateTimeZoneDefaults.Instance, StubSchedulerStatusQueryService.Healthy, ResourceContextTestFactory.SharedOnly());
         var body = new UpdateScheduleRequestBody(Name: "NewName", TargetJobConfiguration: "{\"workflowDefinitionId\":\"other\"}");
 
         var result = await controller.Update("s1", body, CancellationToken.None);
@@ -267,7 +270,7 @@ public sealed class SchedulesControllerTests
         var scheduleGovernance = new StubScheduleGovernanceService(canManage: false);
         var scheduleManagement = new UpdateCapableStubScheduleManagementService();
         var validation = new ScheduleValidationService();
-        var controller = new SchedulesController(scheduleGovernance, scheduleManagement, validation, PassthroughCreateTimeZoneDefaults.Instance, StubSchedulerStatusQueryService.Healthy);
+        var controller = new SchedulesController(scheduleGovernance, scheduleManagement, validation, PassthroughCreateTimeZoneDefaults.Instance, StubSchedulerStatusQueryService.Healthy, ResourceContextTestFactory.SharedOnly());
         var body = new UpdateScheduleRequestBody(Name: "NewName");
 
         var result = await controller.Update("s1", body, CancellationToken.None);

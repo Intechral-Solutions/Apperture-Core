@@ -4,6 +4,7 @@ using Apperture.Core.Application.Scheduling;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Environment;
 using Apperture.Core.Domain.Integration;
+using Apperture.Core.Domain.ResourceContexts;
 using Apperture.Core.Domain.Scheduling;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -22,19 +23,22 @@ public sealed class SchedulesController : ControllerBase
     private readonly IScheduleValidationService _scheduleValidation;
     private readonly IScheduleCreateTimeZoneDefaults _createTimeZoneDefaults;
     private readonly ISchedulerStatusQueryService _schedulerStatus;
+    private readonly IResourceContextService _resourceContexts;
 
     public SchedulesController(
         IScheduleGovernanceService scheduleGovernance,
         IScheduleManagementService scheduleManagement,
         IScheduleValidationService scheduleValidation,
         IScheduleCreateTimeZoneDefaults createTimeZoneDefaults,
-        ISchedulerStatusQueryService schedulerStatus)
+        ISchedulerStatusQueryService schedulerStatus,
+        IResourceContextService resourceContexts)
     {
         _scheduleGovernance = scheduleGovernance;
         _scheduleManagement = scheduleManagement;
         _scheduleValidation = scheduleValidation;
         _createTimeZoneDefaults = createTimeZoneDefaults;
         _schedulerStatus = schedulerStatus;
+        _resourceContexts = resourceContexts;
     }
 
     [HttpGet("capabilities")]
@@ -49,13 +53,28 @@ public sealed class SchedulesController : ControllerBase
         return Ok(new ScheduleCapabilitiesDto(true));
     }
 
+    /// <param name="contextId">
+    /// Optional owning ResourceContext filter. Omitted (the default) returns the same global set this
+    /// endpoint has always returned. An unknown ResourceContext is rejected with 400.
+    /// </param>
     [HttpGet]
     [ProducesResponseType(typeof(IReadOnlyList<ScheduleDto>), StatusCodes.Status200OK)]
-    public async Task<ActionResult<IReadOnlyList<ScheduleDto>>> List(CancellationToken cancellationToken = default)
+    public async Task<ActionResult<IReadOnlyList<ScheduleDto>>> List(
+        [FromQuery] string? contextId,
+        CancellationToken cancellationToken = default)
     {
         if (!await _scheduleGovernance.CanManageAsync(cancellationToken))
             return Forbid();
-        var definitions = await _scheduleManagement.ListDefinitionsAsync(cancellationToken);
+
+        ResourceContextId? contextFilter = null;
+        if (!string.IsNullOrWhiteSpace(contextId))
+        {
+            contextFilter = new ResourceContextId(contextId);
+            if (await _resourceContexts.GetAsync(contextFilter, cancellationToken) is null)
+                return BadRequest(new { errors = new[] { $"ResourceContext '{contextId}' not found." } });
+        }
+
+        var definitions = await _scheduleManagement.ListDefinitionsAsync(contextFilter, cancellationToken);
         if (definitions.Any(d => d.IntegrationId is null))
             TryAppendWarningHeader(LegacyScheduleWarningHeader);
 
@@ -79,7 +98,10 @@ public sealed class SchedulesController : ControllerBase
             TryAppendWarningHeader(LegacyScheduleWarningHeader);
 
         var workerStatus = await TryGetWorkerRuntimeStatusAsync(cancellationToken);
-        return Ok(ToDetailDto(detail, planeId.Value, DateTimeOffset.UtcNow, workerStatus));
+        var owningContext = detail.Definition.ResourceContextId is { } ownerId
+            ? await _resourceContexts.GetAsync(ownerId, cancellationToken)
+            : null;
+        return Ok(ToDetailDto(detail, planeId.Value, DateTimeOffset.UtcNow, workerStatus, owningContext));
     }
 
     [HttpPost]
@@ -123,11 +145,28 @@ public sealed class SchedulesController : ControllerBase
             target,
             body.ExecutionPolicyRef,
             Version: 1,
-            integrationId);
-        await _scheduleManagement.CreateScheduleAsync(definition, cancellationToken);
+            integrationId)
+        {
+            ResourceContextId = string.IsNullOrWhiteSpace(body.ResourceContextId)
+                ? null
+                : new ResourceContextId(body.ResourceContextId)
+        };
+
+        ScheduleDefinition created;
+        try
+        {
+            // The management service owns the authoritative ownership rule (inherit from the
+            // Integration; reject a mismatch). The controller only forwards the caller's request.
+            created = await _scheduleManagement.CreateScheduleAsync(definition, cancellationToken);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { errors = new[] { ex.Message } });
+        }
+
         var planeId = new RuntimePlaneId(body.RuntimePlaneId ?? "local");
-        await _scheduleManagement.AssignToRuntimePlaneAsync(definition.Id, planeId, null, cancellationToken);
-        return CreatedAtAction(nameof(Get), new { id }, ToDto(definition, DateTimeOffset.UtcNow, workerRuntimeStatus: null));
+        await _scheduleManagement.AssignToRuntimePlaneAsync(created.Id, planeId, null, cancellationToken);
+        return CreatedAtAction(nameof(Get), new { id }, ToDto(created, DateTimeOffset.UtcNow, workerRuntimeStatus: null));
     }
 
     [HttpPatch("{id}")]
@@ -229,14 +268,16 @@ public sealed class SchedulesController : ControllerBase
             clarity.NextFireUtc,
             clarity.ScheduleTimeZoneId,
             clarity.HealthStatus,
-            clarity.StatusReasons.Select(r => new ScheduleStatusReasonDto(r.Code, r.Message)).ToList());
+            clarity.StatusReasons.Select(r => new ScheduleStatusReasonDto(r.Code, r.Message)).ToList(),
+            d.ResourceContextId?.Value);
     }
 
     private static ScheduleDetailDto ToDetailDto(
         ScheduleWithExecutionState detail,
         string runtimePlaneId,
         DateTimeOffset asOfUtc,
-        string? workerRuntimeStatus)
+        string? workerRuntimeStatus,
+        ResourceContext? owningResourceContext)
     {
         var d = detail.Definition;
         var state = detail.ExecutionState;
@@ -272,7 +313,9 @@ public sealed class SchedulesController : ControllerBase
             clarity.NextFireUtc,
             clarity.ScheduleTimeZoneId,
             clarity.HealthStatus,
-            clarity.StatusReasons.Select(r => new ScheduleStatusReasonDto(r.Code, r.Message)).ToList());
+            clarity.StatusReasons.Select(r => new ScheduleStatusReasonDto(r.Code, r.Message)).ToList(),
+            d.ResourceContextId?.Value,
+            owningResourceContext?.ToRef());
     }
 
     private void TryAppendWarningHeader(string value)
@@ -301,7 +344,8 @@ public sealed record ScheduleDto(
     DateTimeOffset? NextFireUtc = null,
     string? ScheduleTimeZoneId = null,
     string? HealthStatus = null,
-    IReadOnlyList<ScheduleStatusReasonDto>? StatusReasons = null);
+    IReadOnlyList<ScheduleStatusReasonDto>? StatusReasons = null,
+    string? ResourceContextId = null);
 
 /// <summary>
 /// Schedule with execution state for operator visibility. Epic 28, Epic 36 (claim visibility).
@@ -329,8 +373,15 @@ public sealed record ScheduleDetailDto(
     DateTimeOffset? NextFireUtc = null,
     string? ScheduleTimeZoneId = null,
     string? HealthStatus = null,
-    IReadOnlyList<ScheduleStatusReasonDto>? StatusReasons = null);
+    IReadOnlyList<ScheduleStatusReasonDto>? StatusReasons = null,
+    string? ResourceContextId = null,
+    ResourceContextRef? ResourceContext = null);
 
+/// <param name="ResourceContextId">
+/// Optional owning ResourceContext. For an Integration-attached schedule it must equal the
+/// Integration's ResourceContext; omitted, the schedule inherits it. A standalone schedule defaults
+/// to the reserved Shared context.
+/// </param>
 public sealed record CreateScheduleRequestBody(
     string Name,
     string RecurrenceExpression,
@@ -340,7 +391,8 @@ public sealed record CreateScheduleRequestBody(
     string? TargetJobConfiguration = null,
     string? ExecutionPolicyRef = null,
     string? RuntimePlaneId = "local",
-    string? IntegrationId = null);
+    string? IntegrationId = null,
+    string? ResourceContextId = null);
 
 /// <summary>
 /// Epic 38: Target kind and configuration are immutable after creation.

@@ -7,6 +7,7 @@ using Apperture.Core.Domain.Environment;
 using Apperture.Core.Domain.Governance;
 using Apperture.Core.Domain.Scheduling;
 using Apperture.Management.Api.Controllers;
+using Apperture.UnitTests.ResourceContexts;
 using Apperture.ModuleSdk.Abstractions;
 using Apperture.RuntimePlane.Abstractions;
 using Apperture.Shared.Kernel;
@@ -67,7 +68,7 @@ public sealed class Epic34CorrectivePassTests
         var gov = new StubScheduleGovernanceService(canManage: false);
         var mgmt = new StubScheduleManagementService();
         var validation = new ScheduleValidationService();
-        var controller = new SchedulesController(gov, mgmt, validation, PassthroughCreateTimeZoneDefaults.Instance, StubSchedulerStatus.Instance);
+        var controller = new SchedulesController(gov, mgmt, validation, PassthroughCreateTimeZoneDefaults.Instance, StubSchedulerStatus.Instance, ResourceContextTestFactory.SharedOnly());
         var result = await controller.Enable("s1", CancellationToken.None);
         result.Should().BeOfType<ForbidResult>();
     }
@@ -78,7 +79,7 @@ public sealed class Epic34CorrectivePassTests
         var gov = new StubScheduleGovernanceService(canManage: true);
         var mgmt = new StubScheduleManagementService();
         var validation = new ScheduleValidationService();
-        var controller = new SchedulesController(gov, mgmt, validation, PassthroughCreateTimeZoneDefaults.Instance, StubSchedulerStatus.Instance);
+        var controller = new SchedulesController(gov, mgmt, validation, PassthroughCreateTimeZoneDefaults.Instance, StubSchedulerStatus.Instance, ResourceContextTestFactory.SharedOnly());
         var result = await controller.Enable("s1", CancellationToken.None);
         result.Should().BeOfType<OkResult>();
     }
@@ -89,7 +90,7 @@ public sealed class Epic34CorrectivePassTests
         var gov = new StubScheduleGovernanceService(canManage: false);
         var mgmt = new StubScheduleManagementService();
         var validation = new ScheduleValidationService();
-        var controller = new SchedulesController(gov, mgmt, validation, PassthroughCreateTimeZoneDefaults.Instance, StubSchedulerStatus.Instance);
+        var controller = new SchedulesController(gov, mgmt, validation, PassthroughCreateTimeZoneDefaults.Instance, StubSchedulerStatus.Instance, ResourceContextTestFactory.SharedOnly());
         var result = await controller.Disable("s1", CancellationToken.None);
         result.Should().BeOfType<ForbidResult>();
     }

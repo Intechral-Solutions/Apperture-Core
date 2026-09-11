@@ -6,6 +6,19 @@ Audience: the agent implementing CTX-1, and the reviewer approving this directio
 
 Evidence base: current code read this pass (entities, repositories, authorization, module DbContexts, migration conventions), plus `docs/01-architecture/transitions/application-contexts/current-inventory.md` §11–§12 (prior hazard catalogue, re-verified where load-bearing), ADR-0040, and the NAV-1 / HUB-1 closure reports.
 
+> **Superseded in three places by CTX-1 implementation evidence.** This document stands as written; the
+> corrections are recorded in [`ctx1-closure.md`](./ctx1-closure.md) §12 rather than edited into the body.
+>
+> 1. **§2.4 hard delete** — "an Application created and never used can be deleted" is withdrawn.
+>    ResourceContexts are archive-only, with no delete operation on any supported contract. A foreign key
+>    proves a context owns nothing *now*; it cannot prove it never owned anything, and CTX-2 needs every
+>    recorded id to keep resolving. The FK remains as structural backup.
+> 2. **§2.3 reserved slugs** — only `shared` and `system` are reserved. `apps`, `new` and `api` are not,
+>    until a slug-addressed route actually defines them.
+> 3. **§10-R2 `GetBySlotAsync`** — closed in CTX-1 rather than "before CTX-3", and closed by restricting
+>    the contextless lookup to bindings no Integration owns, not by adding a context filter: the resolver
+>    has no owning context to supply on that path.
+
 ---
 
 ## 1. Executive recommendation

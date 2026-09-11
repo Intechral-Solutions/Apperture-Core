@@ -1,5 +1,6 @@
 using Apperture.Core.Application.Integration;
 using Apperture.Core.Domain.Integration;
+using Apperture.Core.Domain.ResourceContexts;
 using DomainIntegration = Apperture.Core.Domain.Integration.Integration;
 
 namespace Apperture.Core.Application.Services;
@@ -13,6 +14,26 @@ public interface IIntegrationManagementService
     /// Lists integrations visible to the current actor.
     /// </summary>
     ValueTask<IReadOnlyList<DomainIntegration>> ListIntegrationsAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Lists integrations visible to the current actor, optionally restricted to one owning ResourceContext.
+    /// </summary>
+    /// <param name="resourceContextId">
+    /// Owning ResourceContext to filter by, or null for the default global behavior (no context filter).
+    /// </param>
+    /// <remarks>
+    /// The default implementation exists only so in-memory test doubles keep working; the production
+    /// implementation pushes the filter down to the repository query.
+    /// </remarks>
+    async ValueTask<IReadOnlyList<DomainIntegration>> ListIntegrationsAsync(
+        ResourceContextId? resourceContextId,
+        CancellationToken cancellationToken = default)
+    {
+        var all = await ListIntegrationsAsync(cancellationToken).ConfigureAwait(false);
+        if (resourceContextId is null)
+            return all;
+        return all.Where(i => string.Equals(i.ResourceContextId.Value, resourceContextId.Value, StringComparison.Ordinal)).ToList();
+    }
 
     /// <summary>
     /// Gets an integration by id. Returns null if not found or not visible.

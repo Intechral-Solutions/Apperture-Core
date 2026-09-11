@@ -237,6 +237,7 @@ public sealed class IntegrationDispatchReadinessEvaluator : IIntegrationDispatch
                         integration.ModuleId,
                         slot.SlotName,
                         slot.ContractType,
+                        integration.ResourceContextId,
                         cancellationToken).ConfigureAwait(false);
                     if (!eligible.Any(c => c.Id.Value == connId.Value))
                     {

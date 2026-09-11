@@ -1,6 +1,8 @@
 using System.Linq;
+using Apperture.Core.Application.ResourceContexts;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Connector;
+using Apperture.Core.Domain.ResourceContexts;
 
 namespace Apperture.Core.Application.Services;
 
@@ -28,6 +30,7 @@ public sealed class BindingEligibilityService : IBindingEligibilityService
         string moduleId,
         string slotName,
         string contractType,
+        ResourceContextId? owningResourceContextId = null,
         CancellationToken cancellationToken = default)
     {
         var active = await _connectionRepository.GetActiveAsync(cancellationToken);
@@ -42,6 +45,15 @@ public sealed class BindingEligibilityService : IBindingEligibilityService
 
             if (!IsCompatible(conn.ConnectorDefinitionId, contract))
                 continue;
+
+            // ResourceContext reference rule: a Connection is only eligible for an Integration in its
+            // own context or in Shared. Eligibility is discovery, not integrity: the binding mutation
+            // path re-checks this independently.
+            if (owningResourceContextId is not null
+                && !ResourceContextReferenceRule.CanReference(owningResourceContextId, conn.ResourceContextId))
+            {
+                continue;
+            }
 
             eligible.Add(conn);
         }

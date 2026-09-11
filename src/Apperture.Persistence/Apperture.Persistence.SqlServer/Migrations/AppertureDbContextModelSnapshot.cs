@@ -273,6 +273,11 @@ namespace Apperture.Persistence.SqlServer.Migrations
                         .HasMaxLength(256)
                         .HasColumnType("nvarchar(256)");
 
+                    b.Property<string>("ResourceContextId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
                     b.Property<byte[]>("RowVersion")
                         .IsConcurrencyToken()
                         .ValueGeneratedOnAddOrUpdate()
@@ -291,6 +296,9 @@ namespace Apperture.Persistence.SqlServer.Migrations
                         .HasColumnType("int");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("ResourceContextId")
+                        .HasDatabaseName("IX_Connections_ResourceContextId");
 
                     b.ToTable("Connections", (string)null);
                 });
@@ -734,6 +742,11 @@ namespace Apperture.Persistence.SqlServer.Migrations
                         .HasMaxLength(128)
                         .HasColumnType("nvarchar(128)");
 
+                    b.Property<string>("ResourceContextId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
                     b.Property<byte[]>("RowVersion")
                         .IsConcurrencyToken()
                         .ValueGeneratedOnAddOrUpdate()
@@ -754,6 +767,9 @@ namespace Apperture.Persistence.SqlServer.Migrations
                         .HasColumnType("datetimeoffset");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("ResourceContextId")
+                        .HasDatabaseName("IX_Integrations_ResourceContextId");
 
                     b.ToTable("Integrations", (string)null);
                 });
@@ -2315,6 +2331,59 @@ namespace Apperture.Persistence.SqlServer.Migrations
                     b.ToTable("PlatformSettingValues", (string)null);
                 });
 
+            modelBuilder.Entity("Apperture.Persistence.SqlServer.ResourceContextEntity", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(1024)
+                        .HasColumnType("nvarchar(1024)");
+
+                    b.Property<bool>("IsReserved")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<string>("Slug")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("State")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Slug")
+                        .IsUnique()
+                        .HasDatabaseName("UX_ResourceContexts_Slug");
+
+                    b.ToTable("ResourceContexts", (string)null);
+                });
+
             modelBuilder.Entity("Apperture.Persistence.SqlServer.RoleEntity", b =>
                 {
                     b.Property<string>("Id")
@@ -2510,6 +2579,11 @@ namespace Apperture.Persistence.SqlServer.Migrations
                         .HasMaxLength(256)
                         .HasColumnType("nvarchar(256)");
 
+                    b.Property<string>("ResourceContextId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
                     b.Property<string>("TargetJobConfigurationJson")
                         .HasColumnType("nvarchar(max)");
 
@@ -2525,6 +2599,9 @@ namespace Apperture.Persistence.SqlServer.Migrations
                         .HasColumnType("int");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("ResourceContextId")
+                        .HasDatabaseName("IX_ScheduleDefinitions_ResourceContextId");
 
                     b.ToTable("ScheduleDefinitions", (string)null);
                 });
@@ -3355,11 +3432,29 @@ namespace Apperture.Persistence.SqlServer.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("Apperture.Persistence.SqlServer.ConnectionEntity", b =>
+                {
+                    b.HasOne("Apperture.Persistence.SqlServer.ResourceContextEntity", null)
+                        .WithMany()
+                        .HasForeignKey("ResourceContextId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("Apperture.Persistence.SqlServer.IdentityLinkEntity", b =>
                 {
                     b.HasOne("Apperture.Persistence.SqlServer.UserEntity", null)
                         .WithMany()
                         .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Apperture.Persistence.SqlServer.IntegrationEntity", b =>
+                {
+                    b.HasOne("Apperture.Persistence.SqlServer.ResourceContextEntity", null)
+                        .WithMany()
+                        .HasForeignKey("ResourceContextId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });
@@ -3440,6 +3535,15 @@ namespace Apperture.Persistence.SqlServer.Migrations
                         .WithMany()
                         .HasForeignKey("PrincipalUserId")
                         .OnDelete(DeleteBehavior.Restrict);
+                });
+
+            modelBuilder.Entity("Apperture.Persistence.SqlServer.ScheduleDefinitionEntity", b =>
+                {
+                    b.HasOne("Apperture.Persistence.SqlServer.ResourceContextEntity", null)
+                        .WithMany()
+                        .HasForeignKey("ResourceContextId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("Apperture.Persistence.SqlServer.UserMfaRecoveryCodeEntity", b =>
