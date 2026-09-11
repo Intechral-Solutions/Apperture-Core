@@ -1,14 +1,22 @@
 namespace Apperture.Management.Ui.Shared;
 
-/// <summary>BDS-5 — demo-scoped customer business-record UI routes (not final Records navigation).</summary>
+/// <summary>
+/// Canonical Business Data customer routes, plus legacy /demo/customers aliases.
+/// </summary>
 public static class DemoCustomerUiRoutes
 {
-    public const string List = "/demo/customers";
+    public const string List = BusinessDataUiRoutes.Customers;
+    public const string LegacyList = "/demo/customers";
 
     public static string Detail(string businessKey) =>
-        $"{List}/{Uri.EscapeDataString(businessKey.Trim())}";
+        BusinessDataUiRoutes.CustomerDetail(businessKey);
 
-    /// <summary>BDS-6 — cross-run activity for a demo customer.</summary>
     public static string Activity(string businessKey) =>
-        $"{Detail(businessKey)}/activity";
+        BusinessDataUiRoutes.CustomerActivity(businessKey);
+
+    public static string LegacyDetail(string businessKey) =>
+        $"{LegacyList}/{Uri.EscapeDataString(businessKey.Trim())}";
+
+    public static string LegacyActivity(string businessKey) =>
+        $"{LegacyDetail(businessKey)}/activity";
 }

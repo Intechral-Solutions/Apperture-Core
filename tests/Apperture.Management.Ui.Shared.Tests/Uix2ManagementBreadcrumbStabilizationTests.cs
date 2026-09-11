@@ -23,9 +23,9 @@ public sealed class Uix2ManagementBreadcrumbStabilizationTests
     }
 
     [Theory]
-    [InlineData("/runs/run-1", "Automation", "Runs", "Run")]
+    [InlineData("/runs/run-1", "Control Center", "Runs", "Run")]
     [InlineData("/integrations/int-1", "Integrations", "Integration")]
-    [InlineData("/demo/customers/C-100", "Config", "Developer & internal", "Demo Customers", "C-100")]
+    [InlineData("/demo/customers/C-100", "Business Data", "Customers", "C-100")]
     public void Resolve_detail_routes_without_prior_state(string path, params string[] expectedLabels)
     {
         ManagementBreadcrumbResolver.Resolve(path).Select(c => c.Label).Should().Equal(expectedLabels);
@@ -48,7 +48,7 @@ public sealed class Uix2ManagementBreadcrumbStabilizationTests
     public void Resolve_ignores_query_and_fragment(string path)
     {
         var crumbs = ManagementBreadcrumbResolver.Resolve(path);
-        crumbs.Select(c => c.Label).Should().Equal("Automation", "Runs", "Run");
+        crumbs.Select(c => c.Label).Should().Equal("Control Center", "Runs", "Run");
         crumbs[^2].Href.Should().Be("/runs");
     }
 
@@ -112,7 +112,7 @@ public sealed class Uix2ManagementBreadcrumbStabilizationTests
     {
         using var state = new ManagementBreadcrumbLocationState();
         state.Initialize("https://app.local/runs/run-1");
-        state.Parents.Select(c => c.Label).Should().Equal("Automation", "Runs");
+        state.Parents.Select(c => c.Label).Should().Equal("Control Center", "Runs");
         state.Orientation.Title.Should().Be("Run");
     }
 
@@ -123,7 +123,7 @@ public sealed class Uix2ManagementBreadcrumbStabilizationTests
         state.Initialize("https://app.local/dashboard");
         state.TryApplyLocation("https://app.local/runs").Should().BeTrue();
         state.Orientation.Title.Should().Be("Runs");
-        state.Parents.Should().ContainSingle(c => c.Label == "Automation");
+        state.Parents.Should().ContainSingle(c => c.Label == "Control Center");
     }
 
     [Fact]
@@ -140,7 +140,7 @@ public sealed class Uix2ManagementBreadcrumbStabilizationTests
         state.Orientation.Title.Should().Be("Integration");
 
         state.TryApplyLocation("https://app.local/demo/customers/C-100").Should().BeTrue();
-        state.Parents.Select(c => c.Label).Should().Equal("Config", "Developer & internal", "Demo Customers");
+        state.Parents.Select(c => c.Label).Should().Equal("Business Data", "Customers");
     }
 
     [Fact]
@@ -384,14 +384,15 @@ public sealed class Uix2ManagementBreadcrumbStabilizationTests
     }
 
     [Fact]
-    public void DashboardHome_defers_data_load_until_after_first_paint()
+    public void DashboardHome_redirects_to_control_center_after_menus_fetch()
     {
         var content = File.ReadAllText(ClientPath("Pages", "Dashboard", "DashboardHome.razor"));
-        content.Should().Contain("OnAfterRender");
-        content.Should().Contain("LoadDashboardAsync");
         content.Should().Contain("WhenFetchedAsync");
-        content.Should().Contain("GetDashboardDefaultAsync");
-        content.Should().NotContain("OnInitializedAsync");
+        content.Should().Contain("NavigateTo");
+        content.Should().Contain("ShellSectionRoutes.ControlCenterHome");
+        content.Should().Contain("replace: true");
+        content.Should().NotContain("LoadDashboardAsync");
+        content.Should().NotContain("GetDashboardDefaultAsync");
     }
 
     [Fact]
@@ -456,12 +457,13 @@ public sealed class Uix2ManagementBreadcrumbStabilizationTests
     }
 
     [Fact]
-    public void Dashboard_route_subtitle_matches_PageHeader_copy()
+    public void Dashboard_route_redirects_and_shares_control_center_title()
     {
-        var routeSubtitle = ManagementBreadcrumbResolver.ResolveOrientation("/dashboard").Subtitle;
+        var route = ManagementBreadcrumbResolver.ResolveOrientation("/dashboard");
+        route.Title.Should().Be("Control Center");
+        route.Subtitle.Should().Be("Redirects to Control Center.");
         var page = File.ReadAllText(ClientPath("Pages", "Dashboard", "DashboardHome.razor"));
-        routeSubtitle.Should().NotBeNullOrWhiteSpace();
-        page.Should().Contain(routeSubtitle!);
+        page.Should().Contain("ShellSectionRoutes.ControlCenterHome");
     }
 
     [Fact]

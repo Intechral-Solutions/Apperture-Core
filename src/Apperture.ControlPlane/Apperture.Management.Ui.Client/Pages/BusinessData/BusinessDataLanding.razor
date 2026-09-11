@@ -1,0 +1,18 @@
+@page "/business-data"
+@layout ConfigLayout
+
+<div class="p-4 ui-page-stack">
+    <PageHeader Title="Business Data"
+                Eyebrow="Collections"
+                Subtitle="Records that operators work with across integrations. Collections are not owned by the integrations that process them." />
+
+    <ManagementSection Title="Collections" Layer="@ManagementSection.UiLayer.Summary">
+        <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <ManagementSummaryCard Title="Customers"
+                                   Description="Customer records correlated across import and API polling sources."
+                                   Href="@BusinessDataUiRoutes.Customers">
+                <StatusPill Label="@DemoCustomerUiHelpers.DemoBadge" Semantic="@ManagementStatusSemantic.Neutral" />
+            </ManagementSummaryCard>
+        </div>
+    </ManagementSection>
+</div>

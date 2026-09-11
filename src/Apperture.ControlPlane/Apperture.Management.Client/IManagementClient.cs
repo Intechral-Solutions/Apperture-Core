@@ -114,6 +114,18 @@ public interface IManagementClient
     Task<ControlCenterDto> GetControlCenterAsync(CancellationToken cancellationToken = default);
     Task<DashboardDefaultDto> GetDashboardDefaultAsync(CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Administrative inventory explorer (resources or activity). Omits types the caller cannot access.
+    /// </summary>
+    Task<InventoryQueryResult> GetInventoryAsync(
+        string mode = "resources",
+        string? type = null,
+        string? q = null,
+        string? status = null,
+        string? sort = null,
+        int take = 100,
+        CancellationToken cancellationToken = default);
+
     Task<HostEffectiveModuleSnapshotDto> GetRuntimeCompositionAsync(CancellationToken cancellationToken = default);
 
     Task<IReadOnlyList<RuntimeControlRequestDto>> GetRuntimeShutdownRequestsAsync(

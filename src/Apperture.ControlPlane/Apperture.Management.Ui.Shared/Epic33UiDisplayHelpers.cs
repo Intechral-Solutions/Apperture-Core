@@ -124,7 +124,7 @@ public static class Epic33UiDisplayHelpers
             "audit" when !string.IsNullOrEmpty(targetId) => GetAuditLinkForRun(targetId),
             "module" when !string.IsNullOrEmpty(targetId) => $"/modules/{Uri.EscapeDataString(targetId)}",
             "schedule" when !string.IsNullOrEmpty(targetId) => $"/schedules/{Uri.EscapeDataString(targetId)}",
-            "blocked_work" => "/control/blocked-work",
+            "blocked_work" => RunStatusFacets.BlockedRunsHref,
             "runtime_health" => "/control/center",
             _ => "#"
         };

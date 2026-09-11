@@ -7,15 +7,17 @@ public static class DemoCustomerUiHelpers
 {
     public const int DefaultPageSize = 50;
 
-    public const string PageTitle = "Demo Customers";
+    public const string DemoBadge = "Demo";
+
+    public const string PageTitle = "Customers";
 
     public const string PageSubtitle =
-        "Sample customer records correlated from FileImport and ApiPolling.";
+        "Customer records correlated across import and API polling sources.";
 
     public const string DemoScopeBanner =
-        "This is a demo projection, not the final platform BusinessRecord model.";
+        "This collection uses sandbox sample data. It is not a production business-record store.";
 
-    public const string EmptyTitle = "No demo customers yet";
+    public const string EmptyTitle = "No customers yet";
 
     public const string EmptyMessage =
         "No customer records have been projected yet. Run Sample.FileImport and/or Sample.ApiPolling, then refresh.";
@@ -23,7 +25,7 @@ public static class DemoCustomerUiHelpers
     public const string EmptySearchTitle = "No matching customers";
 
     public const string EmptySearchMessage =
-        "No demo customers match the current search or filters.";
+        "No customers match the current search or filters.";
 
     public const string EmptyConflictsTitle = "No conflicts";
 
@@ -31,13 +33,13 @@ public static class DemoCustomerUiHelpers
         "No demo customers currently have soft conflicts across FileImport and ApiPolling.";
 
     public const string ForbiddenMessage =
-        "You do not have permission to view demo customer records (requires integration read).";
+        "You do not have permission to view customer records (requires integration read).";
 
     public const string NotFoundMessage =
-        "That demo customer was not found. It may not have been observed yet, or the business key is incorrect.";
+        "That customer was not found. It may not have been observed yet, or the business key is incorrect.";
 
     public const string LoadErrorMessage =
-        "Could not load demo customer records.";
+        "Could not load customer records.";
 
     public const string SourceKindAll = "";
     public const string SourceKindFileImport = "file_import";

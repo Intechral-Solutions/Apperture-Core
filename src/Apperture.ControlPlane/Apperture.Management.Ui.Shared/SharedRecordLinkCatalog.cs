@@ -26,7 +26,7 @@ public static class SharedRecordLinkCatalog
     public const string CustomerRecordType = "customer";
 
     /// <summary>Operator-facing label for the demo customer reverse link.</summary>
-    public const string CustomerLinkLabel = "Open demo customer";
+    public const string CustomerLinkLabel = "Open customer";
 
     /// <summary>
     /// Try to resolve a shared-record link from item metadata and optional subject key.

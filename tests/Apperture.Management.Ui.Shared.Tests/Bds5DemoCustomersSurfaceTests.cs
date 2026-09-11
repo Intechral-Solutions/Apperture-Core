@@ -12,13 +12,13 @@ public sealed class Bds5DemoCustomersSurfaceTests
     [Fact]
     public void Routes_are_demo_scoped_not_final_records()
     {
-        DemoCustomerUiRoutes.List.Should().Be("/demo/customers");
-        DemoCustomerUiRoutes.Detail("C-100").Should().Be("/demo/customers/C-100");
+        DemoCustomerUiRoutes.List.Should().Be("/business-data/customers");
+        DemoCustomerUiRoutes.Detail("C-100").Should().Be("/business-data/customers/C-100");
         DeveloperTaskRoutes.DemoCustomers.Should().Be(DemoCustomerUiRoutes.List);
 
-        DemoCustomerUiHelpers.PageTitle.Should().Be("Demo Customers");
-        DemoCustomerUiHelpers.DemoScopeBanner.Should().Contain("demo projection");
-        DemoCustomerUiHelpers.DemoScopeBanner.Should().Contain("BusinessRecord");
+        DemoCustomerUiHelpers.PageTitle.Should().Be("Customers");
+        DemoCustomerUiHelpers.DemoBadge.Should().Be("Demo");
+        DemoCustomerUiHelpers.DemoScopeBanner.Should().Contain("sandbox");
         DemoCustomerUiHelpers.PageTitle.Should().NotContain("Records");
     }
 
@@ -31,21 +31,21 @@ public sealed class Bds5DemoCustomersSurfaceTests
             .Where(h => !string.IsNullOrWhiteSpace(h))
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-        hrefs.Should().NotContain(DemoCustomerUiRoutes.List);
+        hrefs.Should().Contain(DemoCustomerUiRoutes.List);
+        hrefs.Should().NotContain(DemoCustomerUiRoutes.LegacyList);
         hrefs.Should().NotContain(h => h!.Contains("/records", StringComparison.OrdinalIgnoreCase));
         hrefs.Should().Contain(ShellSectionRoutes.DeveloperTasks);
     }
 
     [Fact]
-    public void DeveloperTasks_links_demo_customers_card()
+    public void DeveloperTasks_does_not_own_customers()
     {
         var content = File.ReadAllText(RepoPath(
             "src/Apperture.ControlPlane/Apperture.Management.Ui.Client/Pages/Config/DeveloperTasks.razor"));
 
-        content.Should().Contain("Demo Customers");
-        content.Should().Contain("DeveloperTaskRoutes.DemoCustomers");
-        content.Should().Contain("demo projection");
-        content.Should().NotContain("final Records");
+        content.Should().NotContain("Demo Customers");
+        content.Should().NotContain("DeveloperTaskRoutes.DemoCustomers");
+        content.Should().Contain("Control Center");
     }
 
     [Fact]
@@ -54,7 +54,7 @@ public sealed class Bds5DemoCustomersSurfaceTests
         var content = File.ReadAllText(RepoPath(
             "src/Apperture.ControlPlane/Apperture.Management.Ui.Client/Pages/Demo/DemoCustomersList.razor"));
 
-        content.Should().Contain("@page \"/demo/customers\"");
+        content.Should().Contain("@page \"/business-data/customers\"");
         content.Should().Contain("GetDemoCustomerRecordsAsync");
         content.Should().Contain("DemoCustomerUiHelpers.BuildListFilter");
         content.Should().Contain(">Customer<");
@@ -83,7 +83,7 @@ public sealed class Bds5DemoCustomersSurfaceTests
         var content = File.ReadAllText(RepoPath(
             "src/Apperture.ControlPlane/Apperture.Management.Ui.Client/Pages/Demo/DemoCustomerDetail.razor"));
 
-        content.Should().Contain("@page \"/demo/customers/{BusinessKey}\"");
+        content.Should().Contain("@page \"/business-data/customers/{BusinessKey}\"");
         content.Should().Contain("GetDemoCustomerRecordAsync");
         content.Should().Contain("Sources");
         content.Should().Contain("Conflicts");
@@ -166,14 +166,14 @@ public sealed class Bds5DemoCustomersSurfaceTests
     }
 
     [Fact]
-    public void Breadcrumbs_resolve_demo_customers_under_developer_tasks()
+    public void Breadcrumbs_resolve_customers_under_business_data()
     {
         var list = ManagementBreadcrumbResolver.Resolve(DemoCustomerUiRoutes.List);
-        list.Select(c => c.Label).Should().Equal("Config", "Developer & internal", "Demo Customers");
+        list.Select(c => c.Label).Should().Equal("Business Data", "Customers");
         list[^1].IsCurrent.Should().BeTrue();
 
         var detail = ManagementBreadcrumbResolver.Resolve(DemoCustomerUiRoutes.Detail("C-100"));
-        detail.Select(c => c.Label).Should().Equal("Config", "Developer & internal", "Demo Customers", "C-100");
+        detail.Select(c => c.Label).Should().Equal("Business Data", "Customers", "C-100");
         detail.Should().Contain(c => c.Href == DemoCustomerUiRoutes.List);
 
         ManagementBreadcrumbResolver.Resolve("/demo/nested-nav").Should().BeEmpty();

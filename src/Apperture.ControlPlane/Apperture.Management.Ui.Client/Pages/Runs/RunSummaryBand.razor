@@ -91,7 +91,7 @@
                                Href="@Epic33UiDisplayHelpers.GetAuditLinkForRun(RunId)" />
         <ManagementSummaryCard Title="Blocked work"
                                Description="Recovery and retry eligibility."
-                               Href="/control/blocked-work" />
+                               Href="@RunStatusFacets.BlockedRunsHref" />
         @if (!string.IsNullOrWhiteSpace(Detail.CorrelationKey))
         {
             <ManagementSummaryCard Title="Runs with same correlation"

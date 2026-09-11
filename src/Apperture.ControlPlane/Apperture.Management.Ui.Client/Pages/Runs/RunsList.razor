@@ -12,10 +12,25 @@
 @inject IOperatorDisplayTimeZone DisplayTimeZone
 
 <div class="p-4 ui-page-stack">
-    <PageHeader Eyebrow="Automation"
+    <PageHeader Eyebrow="Control Center"
                 Title="Runs"
                 Subtitle="Run history and remediation. Prioritize failures and recent outcomes; open a row for actions and diagnostics.">
         <Toolbar>
+            <label class="block text-xs text-muted">
+                Status
+                <select class="ui-input mt-1 text-sm"
+                        disabled="@_loading"
+                        value="@QueryStatus"
+                        @onchange="OnStatusFacetChanged">
+                    <option value="">All</option>
+                    <option value="running">Running</option>
+                    <option value="failed">Failed</option>
+                    <option value="@RunStatusFacets.Blocked">Blocked</option>
+                    <option value="completed">Completed</option>
+                    <option value="cancelled">Cancelled</option>
+                    <option value="parked">Parked</option>
+                </select>
+            </label>
             <label class="flex items-center gap-2 text-sm text-body">
                 <input type="checkbox" class="h-4 w-4" @bind="_showProblemsOnly" />
                 Needs attention
@@ -28,6 +43,12 @@
             </button>
         </Toolbar>
     </PageHeader>
+
+    @if (RunStatusFacets.IsBlockedFacet(QueryStatus))
+    {
+        <PageMessage Kind="PageMessageKind.Info"
+                     Message="Blocked is a derived run facet: failed runs waiting on deferred work. Open a run to retry eligible workflows. Scheduler cycle and stale-run recovery stay on Control Center." />
+    }
 
     @if (_error is not null)
     {
@@ -88,7 +109,7 @@
                                        Href="/schedules" />
                 <ManagementSummaryCard Title="Blocked work"
                                        Description="Deferred runs and retry recovery."
-                                       Href="/control/blocked-work" />
+                                       Href="@RunStatusFacets.BlockedRunsHref" />
                 <ManagementSummaryCard Title="Integrations"
                                        Description="Deployment units owning workflows and procedures."
                                        Href="/integrations" />
@@ -305,6 +326,14 @@
         $"{QueryCorrelationKey ?? ""}\u001f{QueryStatus ?? ""}\u001f{QueryCreatedFromRaw ?? ""}\u001f{QueryIntegrationId ?? ""}\u001f{QueryModuleId ?? ""}\u001f{_executionKindFilter ?? ""}";
 
     private void ShowAllRuns() => _showProblemsOnly = false;
+
+    private void OnStatusFacetChanged(ChangeEventArgs e)
+    {
+        var next = e.Value?.ToString();
+        Nav.NavigateTo(string.IsNullOrWhiteSpace(next)
+            ? "/runs"
+            : $"/runs?status={Uri.EscapeDataString(next)}");
+    }
 
     private async Task LoadAsync()
     {

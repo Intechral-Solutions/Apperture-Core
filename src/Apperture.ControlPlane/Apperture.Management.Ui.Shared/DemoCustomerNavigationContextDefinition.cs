@@ -19,14 +19,14 @@ public sealed class DemoCustomerNavigationContextDefinition : IManagementNavigat
         var detailHref = DemoCustomerUiRoutes.Detail(trimmed);
         IReadOnlyList<BreadcrumbItem> prefix =
         [
-            new BreadcrumbItem("Demo Customers", DemoCustomerUiRoutes.List),
+            new BreadcrumbItem("Customers", DemoCustomerUiRoutes.List),
             new BreadcrumbItem(trimmed, detailHref),
         ];
 
         context = new ManagementResolvedNavigationContext(
             prefix,
             detailHref,
-            $"Back to demo customer {trimmed}");
+            $"Back to customer {trimmed}");
         return true;
     }
 }

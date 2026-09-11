@@ -19,7 +19,7 @@ public static class AuthShellAccess
         bool appBootstrapReady = true,
         bool isLoginChooserPath = false)
     {
-        // Root "/" only hosts a bounce to /dashboard — never mount MainLayout there.
+        // Root "/" only hosts a bounce to Control Center — never mount MainLayout there.
         if (isRootBootstrapPath)
             return true;
 

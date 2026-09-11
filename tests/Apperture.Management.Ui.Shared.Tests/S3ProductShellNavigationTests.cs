@@ -14,8 +14,8 @@ public sealed class S3ProductShellNavigationTests
     public void DashboardMenu_ExcludesDeferredItems_FromPrimaryNavigation()
     {
         var menus = ControlPanelMenuDefinitions.GetDefaultMenus();
-        var dashboard = menus[SectionOwnerConstants.Dashboard];
-        dashboard.Items.Should().ContainSingle(i => i.Href == ShellSectionRoutes.DashboardHome);
+        var dashboard = menus[SectionOwnerConstants.ControlCenter];
+        dashboard.Items.Should().ContainSingle(i => i.Href == ShellSectionRoutes.ControlCenterHome);
         foreach (var route in DeveloperTaskRoutes.DeferredDashboardRoutes)
             dashboard.Items.Should().NotContain(i => i.Href == route);
     }
@@ -26,29 +26,30 @@ public sealed class S3ProductShellNavigationTests
         var menus = ControlPanelMenuDefinitions.GetDefaultMenus();
         var config = menus[SectionOwnerConstants.Config];
         config.Items.Should().Contain(i =>
-            i.Text == "Developer & internal" && i.Href == ShellSectionRoutes.DeveloperTasks);
+            i.Text == "System" && i.Children!.Any(c =>
+                c.Text == "Developer & internal" && c.Href == ShellSectionRoutes.DeveloperTasks));
     }
 
     [Fact]
     public void ConfigMenu_GroupsPlatformMaintenance_WithSettingsAndModules()
     {
         var menus = ControlPanelMenuDefinitions.GetDefaultMenus();
-        var maintenance = menus[SectionOwnerConstants.Config].Items
-            .FirstOrDefault(i => i.Text == "Platform maintenance");
-        maintenance.Should().NotBeNull();
-        maintenance!.Children.Should().NotBeNullOrEmpty();
-        maintenance.Children!.Select(c => c.Href).Should().Contain("/config/platform-settings");
-        maintenance.Children!.Select(c => c.Href).Should().Contain("/modules");
+        var system = menus[SectionOwnerConstants.Config].Items
+            .FirstOrDefault(i => i.Text == "System");
+        system.Should().NotBeNull();
+        system!.Children.Should().NotBeNullOrEmpty();
+        system.Children!.Select(c => c.Href).Should().Contain("/config/platform-settings");
+        system.Children!.Select(c => c.Href).Should().Contain("/modules");
     }
 
     [Fact]
-    public void NotificationsMenu_ExcludesDiagnostics_FromPrimaryChildren()
+    public void NotificationsMenu_IncludesDiagnostics_UnderAttention()
     {
         var menus = ControlPanelMenuDefinitions.GetDefaultMenus();
-        var notifications = menus[SectionOwnerConstants.Config].Items
-            .First(i => i.Text == "Notifications");
+        var attention = menus[SectionOwnerConstants.Config].Items.First(i => i.Text == "Attention");
+        var notifications = attention.Children!.First(i => i.Text == "Notifications");
         notifications.Children!.Select(c => c.Href)
-            .Should().NotContain(DeveloperTaskRoutes.NotificationDiagnostics);
+            .Should().Contain(DeveloperTaskRoutes.NotificationDiagnostics);
         notifications.Children!.Select(c => c.Href).Should().Contain("/config/notifications/definitions");
         notifications.Children!.Select(c => c.Href).Should().Contain("/config/notifications/instances");
         notifications.Children!.Select(c => c.Href).Should().Contain("/config/notifications/delivery");
@@ -75,7 +76,7 @@ public sealed class S3ProductShellNavigationTests
         {
             allHrefs.Should().NotContain(route);
             RouteToSectionResolver.Resolve(route, menus.GetValueOrDefault, menus.Keys)
-                .Should().Be(SectionOwnerConstants.Dashboard);
+                .Should().Be(SectionOwnerConstants.Config);
         }
     }
 

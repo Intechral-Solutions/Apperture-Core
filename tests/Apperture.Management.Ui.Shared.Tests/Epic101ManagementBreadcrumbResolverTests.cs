@@ -8,24 +8,24 @@ namespace Apperture.Management.Ui.Shared.Tests;
 public sealed class Epic101ManagementBreadcrumbResolverTests
 {
     [Theory]
-    [InlineData("/dashboard", "Dashboard")]
-    [InlineData("/control/center", "Operations", "Control Center")]
-    [InlineData("/control/blocked-work", "Operations", "Blocked Work")]
-    [InlineData("/control/audit", "Operations", "Audit")]
-    [InlineData("/execute", "Operations", "Execute")]
-    [InlineData("/runs", "Automation", "Runs")]
-    [InlineData("/runs/run-1", "Automation", "Runs", "Run")]
-    [InlineData("/schedules", "Automation", "Schedules")]
-    [InlineData("/schedules/new", "Automation", "Schedules", "New")]
-    [InlineData("/schedules/sch-1", "Automation", "Schedules", "Schedule")]
+    [InlineData("/dashboard", "Control Center")]
+    [InlineData("/control/center", "Control Center")]
+    [InlineData("/control/blocked-work", "Control Center", "Runs")]
+    [InlineData("/control/audit", "Control Center", "Audit")]
+    [InlineData("/execute", "Control Center", "Execute")]
+    [InlineData("/runs", "Control Center", "Runs")]
+    [InlineData("/runs/run-1", "Control Center", "Runs", "Run")]
+    [InlineData("/schedules", "Config", "Inventory", "Schedules")]
+    [InlineData("/schedules/new", "Config", "Inventory", "Schedules", "New")]
+    [InlineData("/schedules/sch-1", "Config", "Inventory", "Schedules", "Schedule")]
     [InlineData("/integrations", "Integrations")]
     [InlineData("/integrations/new", "Integrations", "New")]
     [InlineData("/integrations/int-1", "Integrations", "Integration")]
     [InlineData("/integrations/int-1/notifications", "Integrations", "Integration", "Notifications")]
     [InlineData("/integrations/int-1/schedule-diagnostics", "Integrations", "Integration", "Schedule diagnostics")]
-    [InlineData("/connections", "Connections")]
-    [InlineData("/connections/new", "Connections", "New")]
-    [InlineData("/connections/conn-1", "Connections", "Connection")]
+    [InlineData("/connections", "Config", "Inventory", "Connections")]
+    [InlineData("/connections/new", "Config", "Inventory", "Connections", "New")]
+    [InlineData("/connections/conn-1", "Config", "Inventory", "Connections", "Connection")]
     [InlineData("/config", "Config", "Overview")]
     [InlineData("/config/auth", "Config", "Auth")]
         [InlineData("/config/governance", "Config", "Governance")]
@@ -34,12 +34,12 @@ public sealed class Epic101ManagementBreadcrumbResolverTests
         [InlineData("/config/governance/users/from-entra", "Config", "Governance", "Users", "Add from Microsoft Entra")]
         [InlineData("/config/governance/users/requests", "Config", "Governance", "Users", "Requests")]
         [InlineData("/config/governance/users/u-1", "Config", "Governance", "Users", "User")]
-    [InlineData("/config/notifications", "Config", "Notifications")]
-    [InlineData("/config/notifications/definitions", "Config", "Notifications", "Definitions")]
-    [InlineData("/config/notifications/definitions/new", "Config", "Notifications", "Definitions", "New")]
-    [InlineData("/config/notifications/definitions/def-1", "Config", "Notifications", "Definitions", "Definition")]
-    [InlineData("/config/notifications/definitions/def-1/edit", "Config", "Notifications", "Definitions", "Definition", "Edit")]
-    [InlineData("/config/notifications/instances/inst-1", "Config", "Notifications", "Instances", "Instance")]
+    [InlineData("/config/notifications", "Config", "Attention", "Notifications")]
+    [InlineData("/config/notifications/definitions", "Config", "Attention", "Notifications", "Definitions")]
+    [InlineData("/config/notifications/definitions/new", "Config", "Attention", "Notifications", "Definitions", "New")]
+    [InlineData("/config/notifications/definitions/def-1", "Config", "Attention", "Notifications", "Definitions", "Definition")]
+    [InlineData("/config/notifications/definitions/def-1/edit", "Config", "Attention", "Notifications", "Definitions", "Definition", "Edit")]
+    [InlineData("/config/notifications/instances/inst-1", "Config", "Attention", "Notifications", "Instances", "Instance")]
     [InlineData("/config/contacts", "Config", "Attention", "Managed contacts")]
     [InlineData("/config/contacts/c-1", "Config", "Attention", "Managed contacts", "Contact")]
     [InlineData("/attention/operational-teams", "Config", "Attention", "Operational teams")]
@@ -71,10 +71,10 @@ public sealed class Epic101ManagementBreadcrumbResolverTests
     {
         var o = ManagementBreadcrumbResolver.ResolveOrientation("/runs/run-1");
         o.Title.Should().Be("Run");
-        o.Parents.Select(c => c.Label).Should().Equal("Automation", "Runs");
+        o.Parents.Select(c => c.Label).Should().Equal("Control Center", "Runs");
         o.Parents.Should().OnlyContain(c => !c.IsCurrent && !string.IsNullOrWhiteSpace(c.Href));
         ManagementBreadcrumbResolver.Resolve("/runs/run-1").Select(c => c.Label)
-            .Should().Equal("Automation", "Runs", "Run");
+            .Should().Equal("Control Center", "Runs", "Run");
     }
 
     [Fact]

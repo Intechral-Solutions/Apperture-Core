@@ -1,0 +1,228 @@
+@page "/config/inventory"
+@layout ConfigLayout
+@inject IManagementClient Client
+@inject NavigationManager Nav
+
+<div class="p-4 ui-page-stack">
+    <PageHeader Eyebrow="Config"
+                Title="Inventory"
+                Subtitle="Administrative explorer for configuration records and recent activity. Open an item to work with it on its own page." />
+
+    <ManagementSection Title="Browse" Layer="@ManagementSection.UiLayer.Summary">
+        <div class="flex flex-col gap-3">
+            <SegmentedControl TValue="string"
+                              Items="_modeItems"
+                              Value="_mode"
+                              ValueChanged="OnModeChangedAsync"
+                              Disabled="_loading"
+                              IdPrefix="inventory-mode"
+                              aria-label="Inventory mode" />
+
+            <div class="flex flex-wrap items-end gap-3 text-sm">
+                <label class="flex flex-col gap-1">
+                    <span class="text-xs text-muted">Search</span>
+                    <input class="ui-input"
+                           @bind="_q"
+                           @bind:event="oninput"
+                           placeholder="Name, id, or type"
+                           disabled="@_loading" />
+                </label>
+                <label class="flex flex-col gap-1">
+                    <span class="text-xs text-muted">Type</span>
+                    <select class="ui-input ui-input--narrow" @bind="_type" disabled="@_loading">
+                        <option value="">Any</option>
+                        @foreach (var type in _availableTypes)
+                        {
+                            <option value="@type">@TypeLabel(type)</option>
+                        }
+                    </select>
+                </label>
+                @if (_statusOptions.Count > 0)
+                {
+                    <label class="flex flex-col gap-1">
+                        <span class="text-xs text-muted">Status</span>
+                        <select class="ui-input ui-input--narrow" @bind="_status" disabled="@_loading">
+                            <option value="">Any</option>
+                            @foreach (var status in _statusOptions)
+                            {
+                                <option value="@status">@status</option>
+                            }
+                        </select>
+                    </label>
+                }
+                <label class="flex flex-col gap-1">
+                    <span class="text-xs text-muted">Sort</span>
+                    <select class="ui-input ui-input--narrow" @bind="_sort" disabled="@_loading">
+                        <option value="updated">Updated</option>
+                        <option value="name">Name</option>
+                        <option value="status">Status</option>
+                    </select>
+                </label>
+                <button type="button" class="btn btn-secondary" disabled="@_loading" @onclick="LoadAsync">Apply</button>
+            </div>
+        </div>
+    </ManagementSection>
+
+    @if (!string.IsNullOrEmpty(_error))
+    {
+        <ErrorState Message="@_error" />
+    }
+    else if (_loading)
+    {
+        <LoadingState Message="Loading inventory…" />
+    }
+    else if (_items.Count == 0)
+    {
+        <EmptyState Title="Nothing to show"
+                    Message="No records match the current filters, or none of the explored types are available to you." />
+    }
+    else
+    {
+        <ManagementSection Title="@(_mode == "activity" ? "Activity" : "Resources")"
+                           Layer="@ManagementSection.UiLayer.Detail">
+            <div class="ui-data-table overflow-x-auto">
+                <table class="ui-data-table__table min-w-full text-left text-body">
+                    <thead>
+                        <tr>
+                            <th>Type</th>
+                            <th>Name</th>
+                            <th>Status</th>
+                            <th>Updated</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var item in _items)
+                        {
+                            <tr>
+                                <td>@item.TypeLabel</td>
+                                <td class="font-medium text-heading">@item.Name</td>
+                                <td>
+                                    @if (!string.IsNullOrWhiteSpace(item.StatusLabel) || !string.IsNullOrWhiteSpace(item.Status))
+                                    {
+                                        <StatusPill Label="@(item.StatusLabel ?? item.Status)"
+                                                    Semantic="@StatusSemantic(item)" />
+                                    }
+                                    else
+                                    {
+                                        <span class="text-muted">—</span>
+                                    }
+                                </td>
+                                <td class="text-xs text-muted">@(item.UpdatedAtUtc?.UtcDateTime.ToString("u") ?? "—")</td>
+                                <td><a class="underline" href="@item.Href">Open</a></td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </ManagementSection>
+    }
+</div>
+
+@code {
+    private static readonly SegmentedControl<string>.Item[] _modeItems =
+    [
+        new("resources", "Resources"),
+        new("activity", "Activity")
+    ];
+
+    private static readonly Dictionary<string, string> TypeLabels = new(StringComparer.Ordinal)
+    {
+        ["module"] = "Module",
+        ["integration"] = "Integration",
+        ["connection"] = "Connection",
+        ["schedule"] = "Schedule",
+        ["notificationDefinition"] = "Notification definition",
+        ["run"] = "Run",
+        ["auditEvent"] = "Audit event"
+    };
+
+    private string _mode = "resources";
+    private string _q = "";
+    private string _type = "";
+    private string _status = "";
+    private string _sort = "updated";
+    private bool _loading = true;
+    private string? _error;
+    private IReadOnlyList<InventoryItemDto> _items = [];
+    private IReadOnlyList<string> _availableTypes = [];
+    private IReadOnlyList<string> _statusOptions = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        var query = NavigationQueryHelper.ParseQuery(Nav.ToAbsoluteUri(Nav.Uri).Query);
+        if (query.TryGetValue("mode", out var mode) && !string.IsNullOrWhiteSpace(mode))
+            _mode = string.Equals(mode, "activity", StringComparison.OrdinalIgnoreCase) ? "activity" : "resources";
+        if (query.TryGetValue("q", out var q))
+            _q = q;
+        if (query.TryGetValue("type", out var type))
+            _type = type;
+        if (query.TryGetValue("status", out var status))
+            _status = status;
+        if (query.TryGetValue("sort", out var sort) && !string.IsNullOrWhiteSpace(sort))
+            _sort = sort;
+        await LoadAsync();
+    }
+
+    private async Task OnModeChangedAsync(string mode)
+    {
+        if (string.Equals(_mode, mode, StringComparison.Ordinal))
+            return;
+        _mode = mode;
+        _type = "";
+        _status = "";
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _error = null;
+        try
+        {
+            var result = await Client.GetInventoryAsync(
+                _mode,
+                string.IsNullOrWhiteSpace(_type) ? null : _type,
+                string.IsNullOrWhiteSpace(_q) ? null : _q.Trim(),
+                string.IsNullOrWhiteSpace(_status) ? null : _status,
+                _sort);
+            _items = result.Items;
+            _availableTypes = result.AvailableTypes;
+            _statusOptions = result.Items
+                .Select(i => i.Status)
+                .Where(s => !string.IsNullOrWhiteSpace(s))
+                .Cast<string>()
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(s => s, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            if (!string.IsNullOrWhiteSpace(_status)
+                && !_statusOptions.Contains(_status, StringComparer.OrdinalIgnoreCase))
+            {
+                _statusOptions = _statusOptions.Append(_status).OrderBy(s => s, StringComparer.OrdinalIgnoreCase).ToList();
+            }
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+            _items = [];
+            _availableTypes = [];
+            _statusOptions = [];
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private static string TypeLabel(string type) =>
+        TypeLabels.TryGetValue(type, out var label) ? label : type;
+
+    private static ManagementStatusSemantic StatusSemantic(InventoryItemDto item)
+    {
+        if (string.Equals(item.Type, "run", StringComparison.Ordinal))
+            return ManagementUiSemantics.MapRunLifecycleStatus(item.Status);
+        if (string.Equals(item.Type, "integration", StringComparison.Ordinal))
+            return ManagementUiSemantics.MapIntegrationState(item.Status);
+        return EntityRecentActivityComposer.MapStatusSemantic(item.Status);
+    }
+}

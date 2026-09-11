@@ -10,9 +10,9 @@
 @implements IDisposable
 
 <div class="p-4 ui-page-stack">
-    <PageHeader Eyebrow="Operations"
+    <PageHeader Eyebrow="Control Center"
                 Title="Control Center"
-                Subtitle="What needs attention now — blocked work, failures, and recent outcomes. Use Dashboard for a cross-domain summary.">
+                Subtitle="What needs attention now — blocked runs, failures, and recent outcomes.">
         <Toolbar>
             <button type="button"
                     class="ui-toolbar-btn"
@@ -59,7 +59,7 @@
             <div class="ui-summary-card-grid">
                 <ManagementSummaryCard Title="Blocked work"
                                        Description="Inspect deferred and retry-eligible work."
-                                       Href="/control/blocked-work"
+                                       Href="@RunStatusFacets.BlockedRunsHref"
                                        Attention="@(BlockedWorkCount > 0 ? "Warning" : null)" />
                 <ManagementSummaryCard Title="Integrations"
                                        Description="Fleet health and remediation."
@@ -172,7 +172,7 @@
                     }
                     @if (blockedWorkCount > 0)
                     {
-                        <DrillInLink Href="/control/blocked-work">@blockedWorkCount blocked work item(s)</DrillInLink>
+                        <DrillInLink Href="@RunStatusFacets.BlockedRunsHref">@blockedWorkCount blocked run(s)</DrillInLink>
                     }
                     <DrillInLink Href="/control/audit">Audit</DrillInLink>
                 </div>

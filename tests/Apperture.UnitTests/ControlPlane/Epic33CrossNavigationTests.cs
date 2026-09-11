@@ -11,48 +11,47 @@ namespace Apperture.UnitTests.ControlPlane;
 public sealed class Epic33CrossNavigationTests
 {
     [Fact]
-    public void Menu_Operations_HasControlCenter_BlockedWork_Audit()
+    public void Menu_ControlCenter_HasOverview_Runs_Audit()
     {
         var menus = ControlPanelMenuDefinitions.GetDefaultMenus();
-        menus.Should().ContainKey("Operations");
+        menus.Should().ContainKey(SectionOwnerConstants.ControlCenter);
 
-        var operations = menus["Operations"];
-        var hrefs = operations.Items.Select(i => i.Href).ToList();
+        var hrefs = menus[SectionOwnerConstants.ControlCenter].Items.Select(i => i.Href).ToList();
         hrefs.Should().Contain("/control/center");
-        hrefs.Should().Contain("/control/blocked-work");
+        hrefs.Should().Contain("/runs");
         hrefs.Should().Contain("/control/audit");
+        hrefs.Should().NotContain("/control/blocked-work");
     }
 
     [Fact]
-    public void Menu_ConfigContainsModules_AndAutomationContainsSchedules()
+    public void Menu_ConfigContainsModules_AndInventoryDiscoversSchedules()
     {
         var menus = ControlPanelMenuDefinitions.GetDefaultMenus();
-        menus.Should().ContainKey("Automation");
+        menus.Should().NotContainKey("Automation");
         menus.Should().ContainKey(SectionOwnerConstants.Config);
 
-        menus["Automation"].Items.Select(i => i.Href).Should().Contain("/schedules");
+        menus[SectionOwnerConstants.Config].Items.Should().Contain(i => i.Href == ShellSectionRoutes.Inventory);
         var config = menus[SectionOwnerConstants.Config];
-        var maintenance = config.Items.FirstOrDefault(i => i.Text == "Platform maintenance");
-        maintenance.Should().NotBeNull();
-        maintenance!.Children!.Should().Contain(i => i.Text == "Modules" && i.Href == "/modules");
+        var system = config.Items.FirstOrDefault(i => i.Text == "System");
+        system.Should().NotBeNull();
+        system!.Children!.Should().Contain(i => i.Text == "Modules" && i.Href == "/modules");
     }
 
     [Fact]
-    public void Menu_OperationsAndConfigContainExpectedCrossLinks()
+    public void Menu_ControlCenterAndConfigContainExpectedCrossLinks()
     {
         var menus = ControlPanelMenuDefinitions.GetDefaultMenus();
-        var operationsHrefs = menus["Operations"].Items.Select(i => i.Href).ToHashSet();
+        var controlHrefs = menus[SectionOwnerConstants.ControlCenter].Items.Select(i => i.Href).ToHashSet();
 
-        operationsHrefs.Should().Contain("/control/center");
-        operationsHrefs.Should().Contain("/control/blocked-work");
-        operationsHrefs.Should().Contain("/control/audit");
+        controlHrefs.Should().Contain("/control/center");
+        controlHrefs.Should().Contain("/runs");
+        controlHrefs.Should().Contain("/control/audit");
         var config = menus[SectionOwnerConstants.Config];
-        var maintenance = config.Items.First(i => i.Text == "Platform maintenance");
-        maintenance.Children!.Should().Contain(i => i.Href == "/modules");
+        var system = config.Items.First(i => i.Text == "System");
+        system.Children!.Should().Contain(i => i.Href == "/modules");
 
-        var automationHrefs = menus["Automation"].Items.Select(i => i.Href).ToHashSet();
-        automationHrefs.Should().Contain("/runs");
-        automationHrefs.Should().Contain("/schedules");
+        controlHrefs.Should().Contain("/runs");
+        config.Items.Should().Contain(i => i.Href == ShellSectionRoutes.Inventory);
     }
 
     [Fact]
@@ -65,9 +64,9 @@ public sealed class Epic33CrossNavigationTests
     [Fact]
     public void ModuleDetail_BlockedWorkLink()
     {
-        const string blockedWorkHref = "/control/blocked-work";
+        const string blockedWorkHref = "/runs?status=blocked";
         Epic33UiDisplayHelpers.GetRecoveryAuditLink().Should().StartWith("/control/audit");
-        blockedWorkHref.Should().Be("/control/blocked-work");
+        blockedWorkHref.Should().Be(RunStatusFacets.BlockedRunsHref);
     }
 
     [Fact]
@@ -87,10 +86,10 @@ public sealed class Epic33CrossNavigationTests
     [Fact]
     public void RunDetail_BlockedWorkLink_And_ModuleLinkFormat()
     {
-        const string blockedWorkHref = "/control/blocked-work";
+        const string blockedWorkHref = "/runs?status=blocked";
         const string moduleLinkFormat = "/modules/{moduleId}";
 
-        blockedWorkHref.Should().Be("/control/blocked-work");
+        blockedWorkHref.Should().Be(RunStatusFacets.BlockedRunsHref);
         moduleLinkFormat.Replace("{moduleId}", "m1").Should().Be("/modules/m1");
     }
 

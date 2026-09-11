@@ -184,7 +184,7 @@ public sealed class Epic33UiTruthfulnessTests
         Epic33UiDisplayHelpers.GetRunInvestigationHintHref("audit", "r1").Should().Be("/control/audit?runId=r1");
         Epic33UiDisplayHelpers.GetRunInvestigationHintHref("module", "m1").Should().Be("/modules/m1");
         Epic33UiDisplayHelpers.GetRunInvestigationHintHref("schedule", "s1").Should().Be("/schedules/s1");
-        Epic33UiDisplayHelpers.GetRunInvestigationHintHref("blocked_work", null).Should().Be("/control/blocked-work");
+        Epic33UiDisplayHelpers.GetRunInvestigationHintHref("blocked_work", null).Should().Be("/runs?status=blocked");
         Epic33UiDisplayHelpers.GetRunInvestigationHintHref("runtime_health", null).Should().Be("/control/center");
         Epic33UiDisplayHelpers.GetRunInvestigationHintHref("audit", null).Should().Be("#");
     }

@@ -16,26 +16,34 @@ The Control Panel UI provides the navigation shell for the Apperture Management 
 
 ## Terminology
 
-- **Domain** — A grouping of related menu items (e.g. Operations, Automation, Integrations). Replaces "Module" from IntegrationCenter.
+- **Domain** — A grouping of related menu items that maps to a rail icon (Control Center, Integrations, Business Data, Config). Replaces "Module" from IntegrationCenter.
 - **Control Panel** — The sliding side panel showing domain submenu items. Replaces "Module menu" from IntegrationCenter.
 
 ## Current top-level domains
 
-- **Dashboard** (top logo owner)
-- **Operations**
-- **Automation**
-- **Integrations**
-- **Connections**
-- **Config** (bottom gear owner)
+Canonical rail (see [ADR-0040](../02-decisions/ADR-0040-operator-information-architecture.md)):
 
-`Config` is the primary home for module lifecycle management (`/modules`), while `Integrations` and `Connections` remain operational domains.
-The `Automation` domain contains **Runs** (`/runs`) and **Schedules** (`/schedules`) — run history and schedule definitions (Epic 100).
+```
+[Logo] Control Center
+Integrations
+Business Data
+----------------
+[Gear] Config
+```
 
-**Operations menu (Epic 99–100):** Control Center, Blocked Work, **Execute**, **Audit**, **Attention** (Operational teams, Routing defaults). Legacy start routes and demo/broken entries are not in the menu but remain routable where pages exist.
+Operations, Automation, Connections, and Dashboard are **not** rail domains.
 
-**Config menu (Epic 99–100):** **Overview** (`/config`), Authentication, Governance, Notifications (with children), **Managed contacts**, **Modules**. Create/detail routes stay off-menu; list pages expose create CTAs.
+**Control Center** (logo): overview (`/control/center`), **Runs**, **Execute**, **Audit**. `/` and `/dashboard` redirect here. Blocked work is the Runs facet `/runs?status=blocked` (legacy `/control/blocked-work` redirects).
 
-**Orientation (Epic 100):** **Dashboard** is the high-level summary home; **Control Center** is the live operational console. Hub pages include short cross-references; no route moves.
+**Integrations:** fleet list `/integrations`. Connections and schedules stay their own models; they are not Integrations children.
+
+**Business Data:** collections landing `/business-data` and **Customers** `/business-data/customers` (demo/sandbox projection with a demo badge; `/demo/customers` redirects).
+
+**Config** (gear): **Overview**, **Inventory**, **Governance**, **Attention** (operational teams, routing defaults, managed contacts, Notifications including diagnostics), **System** (platform settings, modules, authentication, developer & internal). Create/detail routes stay off-menu.
+
+UI aggregation is not domain ownership: Connections, Schedules, Runs, and Business Data keep their own models. Inventory and Control Center discover them; they do not become Config or Integration entities.
+
+**Orientation:** Control Center is the sole operator home. Deferred Dashboard Panel routes (`/dashboard/manage`, `/add`, `/layout`, `/delete`) remain under Developer & Internal.
 
 ## State Flow
 
@@ -46,18 +54,20 @@ The `Automation` domain contains **Runs** (`/runs`) and **Schedules** (`/schedul
 ## API Contract
 
 - **Endpoint:** `GET /api/menus`
-- **Response:** `Dictionary<string, DomainMenu>` where `DomainMenu` = `{ Title?, Items: DomainMenuItem[] }`, `DomainMenuItem` = `{ Text, Href?, Icon?, Children? }`
+- **Response:** `Dictionary<string, DomainMenu>` where `DomainMenu` = `{ Title?, Items: DomainMenuItem[] }`, `DomainMenuItem` = `{ Text, Href?, Icon?, Children?, RequiredCapability? }`
+- **Capability filter:** items with `RequiredCapability` are omitted when the operator lacks that token. Empty domains are dropped except Control Center and Config (custom-zone owners). Menu hiding is never a substitute for page/API authorization.
+- **Module contributions:** enabled `IModuleNavigationProvider` items attach only to known rail domains (Control Center, Integrations, Business Data, Config). Arbitrary new rail domains are ignored.
 - **Configuration:** `ControlPanelMenuOptions.JsonSource` (default: `/api/menus`)
 
 ## Operator console (current baseline)
 
-- **Default landing view:** `/` redirects to `/dashboard` (`OperatorLanding` → platform summary cards). The **Control Center** (`/control/center`) is the primary operational console under the Operations domain, not the root landing route.
-- **Dashboard home:** `/dashboard` renders the shared default operator summary (`GET /api/dashboard/default`) with permission-aware card omission and drill-ins (see Epics 45–47).
-- **Control center:** `/control/center` provides a cohesive operator facade (targets + recent activity + attention) and links into drill-down pages.
-- **Runs console:** `/runs` list + `/runs/{id}` detail. Detail renders backend truth only: lifecycle events, step history, and external-control request trail.
-- **Control actions:** cancel/retry/park/resume are issued via the existing Management API endpoints and are shown as cooperative/queued until the worker applies them (operator observes outcomes via refresh/poll).
-- **Operation start:** `/operations/start` provides operation-centric discovery and execution. Inputs are metadata-driven from operation definition schema, not module custom UI.
-- **Workflow start:** `/workflows/start` provides a minimal workflow start surface using the existing modules/workflows listing endpoints and `POST /workflows/{id}/start`.
+- **Default landing:** `/` and post-login redirect to `/control/center`. `/dashboard` replaces to Control Center after menus fetch.
+- **Control Center:** live triage (`GET /api/control/center`) — health, blocked runs, recent outcomes, scheduler cycle. Unique dashboard-card data that is not already on Control Center (governance / authentication posture) is summarized on Config overview.
+- **Runs:** `/runs` list + `/runs/{id}` detail. `status=blocked` is a **derived facet** (`failed` + `[Blocked] ` failure summary), not a stored lifecycle status. Per-run retry stays on run detail.
+- **Config Inventory:** `/config/inventory` searches configuration records (modules, integrations, connections, schedules, notification definitions) and recent activity (runs, audit). Opening a row goes to the canonical page.
+- **Execute:** `/execute` starts operations and workflows. Legacy `/operations/start` and `/workflows/start` remain stubs to Execute.
+- **Control actions:** cancel/retry/park/resume via existing Management API endpoints; operator observes outcomes via refresh/poll.
+- **Personal inbox / account:** `/me/notifications` and `/account/*` stay top-bar, not rail.
 
 ## UI modernization and layering
 

@@ -14,7 +14,7 @@ public sealed class Uix4ContextualBreadcrumbsTests
     public void Run_detail_without_context_keeps_canonical_trail()
     {
         var o = ManagementBreadcrumbResolver.ResolveOrientation("/runs/run-1");
-        o.Parents.Select(p => p.Label).Should().Equal("Automation", "Runs");
+        o.Parents.Select(p => p.Label).Should().Equal("Control Center", "Runs");
         o.Title.Should().Be("Run");
     }
 
@@ -25,20 +25,20 @@ public sealed class Uix4ContextualBreadcrumbsTests
             "/runs/run-1",
             DemoCustomer("C-100"));
 
-        o.Parents.Select(p => p.Label).Should().Equal("Demo Customers", "C-100");
+        o.Parents.Select(p => p.Label).Should().Equal("Customers", "C-100");
         o.Parents.Select(p => p.Href).Should().Equal(
             DemoCustomerUiRoutes.List,
             DemoCustomerUiRoutes.Detail("C-100"));
         o.Parents.Should().OnlyContain(p => p.IsLinked);
         o.Title.Should().Be("Run");
 
-        // Must not prepend onto Automation/Runs.
-        o.Parents.Select(p => p.Label).Should().NotContain("Automation");
+        // Must not prepend onto Control Center/Runs.
+        o.Parents.Select(p => p.Label).Should().NotContain("Control Center");
         o.Parents.Select(p => p.Label).Should().NotContain("Runs");
 
         ManagementBreadcrumbResolver.Resolve("/runs/run-1", DemoCustomer("C-100"))
             .Select(c => c.Label)
-            .Should().Equal("Demo Customers", "C-100", "Run");
+            .Should().Equal("Customers", "C-100", "Run");
     }
 
     [Theory]
@@ -55,7 +55,7 @@ public sealed class Uix4ContextualBreadcrumbsTests
             "/runs/run-1",
             new ManagementBreadcrumbNavigationContext(type, key));
 
-        o.Parents.Select(p => p.Label).Should().Equal("Automation", "Runs");
+        o.Parents.Select(p => p.Label).Should().Equal("Control Center", "Runs");
         o.Title.Should().Be("Run");
     }
 
@@ -74,7 +74,7 @@ public sealed class Uix4ContextualBreadcrumbsTests
     public void Context_on_runs_list_does_not_alter_trail()
     {
         var o = ManagementBreadcrumbResolver.ResolveOrientation("/runs", DemoCustomer("C-100"));
-        o.Parents.Select(p => p.Label).Should().Equal("Automation");
+        o.Parents.Select(p => p.Label).Should().Equal("Control Center");
         o.Title.Should().Be("Runs");
     }
 
@@ -83,14 +83,14 @@ public sealed class Uix4ContextualBreadcrumbsTests
     {
         var contextual = ManagementBreadcrumbResolver.ResolveOrientationFromNavigationUri(
             "/runs/run-1?group=g1&item=i1&from=demo-customer&fromKey=C-100");
-        contextual.Parents.Select(p => p.Label).Should().Equal("Demo Customers", "C-100");
+        contextual.Parents.Select(p => p.Label).Should().Equal("Customers", "C-100");
 
         var canonical = ManagementBreadcrumbResolver.ResolveOrientationFromNavigationUri("/runs/run-1");
-        canonical.Parents.Select(p => p.Label).Should().Equal("Automation", "Runs");
+        canonical.Parents.Select(p => p.Label).Should().Equal("Control Center", "Runs");
 
         var malformed = ManagementBreadcrumbResolver.ResolveOrientationFromNavigationUri(
             "/runs/run-1?from=unknown&fromKey=C-100");
-        malformed.Parents.Select(p => p.Label).Should().Equal("Automation", "Runs");
+        malformed.Parents.Select(p => p.Label).Should().Equal("Control Center", "Runs");
     }
 
     [Fact]
@@ -98,7 +98,7 @@ public sealed class Uix4ContextualBreadcrumbsTests
     {
         var o = ManagementBreadcrumbResolver.ResolveOrientationFromNavigationUri(
             "/runs/run-1?from=demo-customer&fromKey=C-100#section");
-        o.Parents.Select(p => p.Label).Should().Equal("Demo Customers", "C-100");
+        o.Parents.Select(p => p.Label).Should().Equal("Customers", "C-100");
     }
 
     [Fact]
@@ -106,17 +106,17 @@ public sealed class Uix4ContextualBreadcrumbsTests
     {
         var tracker = new ManagementShellOrientationTracker();
         var first = tracker.ForceApply("/runs/run-1");
-        first.Parents.Select(p => p.Label).Should().Equal("Automation", "Runs");
+        first.Parents.Select(p => p.Label).Should().Equal("Control Center", "Runs");
 
         tracker.TryApply(
                 "/runs/run-1?from=demo-customer&fromKey=C-100",
                 out var contextual)
             .Should().BeTrue();
-        contextual.Parents.Select(p => p.Label).Should().Equal("Demo Customers", "C-100");
+        contextual.Parents.Select(p => p.Label).Should().Equal("Customers", "C-100");
 
         tracker.TryApply("/runs/run-1", out var back)
             .Should().BeTrue();
-        back.Parents.Select(p => p.Label).Should().Equal("Automation", "Runs");
+        back.Parents.Select(p => p.Label).Should().Equal("Control Center", "Runs");
     }
 
     [Fact]
@@ -130,7 +130,7 @@ public sealed class Uix4ContextualBreadcrumbsTests
                 out var orientation)
             .Should().BeTrue();
 
-        orientation.Parents.Select(p => p.Label).Should().Equal("Demo Customers", "C-100");
+        orientation.Parents.Select(p => p.Label).Should().Equal("Customers", "C-100");
         orientation.Title.Should().Be("Run");
     }
 
@@ -139,11 +139,11 @@ public sealed class Uix4ContextualBreadcrumbsTests
     {
         var state = new ManagementBreadcrumbLocationState();
         state.Initialize("/runs/run-1");
-        state.Parents.Select(p => p.Label).Should().Equal("Automation", "Runs");
+        state.Parents.Select(p => p.Label).Should().Equal("Control Center", "Runs");
 
         state.TryApplyLocation("/runs/run-1?from=demo-customer&fromKey=C-9")
             .Should().BeTrue();
-        state.Parents.Select(p => p.Label).Should().Equal("Demo Customers", "C-9");
+        state.Parents.Select(p => p.Label).Should().Equal("Customers", "C-9");
         state.Parents[^1].Href.Should().Be(DemoCustomerUiRoutes.Detail("C-9"));
     }
 
@@ -156,9 +156,9 @@ public sealed class Uix4ContextualBreadcrumbsTests
                 out var resolved)
             .Should().BeTrue();
 
-        resolved.BreadcrumbPrefix.Select(p => p.Label).Should().Equal("Demo Customers", "C-100");
+        resolved.BreadcrumbPrefix.Select(p => p.Label).Should().Equal("Customers", "C-100");
         resolved.ReturnHref.Should().Be(DemoCustomerUiRoutes.Detail("C-100"));
-        resolved.ReturnLabel.Should().Be("Back to demo customer C-100");
+        resolved.ReturnLabel.Should().Be("Back to customer C-100");
         resolved.ReturnLabel.Should().NotContain("UIX");
         resolved.ReturnLabel.Should().NotContain("BDS");
     }
@@ -167,13 +167,13 @@ public sealed class Uix4ContextualBreadcrumbsTests
     public void Ordinary_routes_remain_unchanged_with_no_context()
     {
         ManagementBreadcrumbResolver.Resolve("/dashboard").Select(c => c.Label)
-            .Should().Equal("Dashboard");
+            .Should().Equal("Control Center");
         ManagementBreadcrumbResolver.Resolve("/schedules/s-1").Select(c => c.Label)
-            .Should().Equal("Automation", "Schedules", "Schedule");
+            .Should().Equal("Config", "Inventory", "Schedules", "Schedule");
         ManagementBreadcrumbResolver.Resolve("/config").Select(c => c.Label)
             .Should().Equal("Config", "Overview");
         ManagementBreadcrumbResolver.Resolve(DemoCustomerUiRoutes.List).Select(c => c.Label)
-            .Should().Contain("Demo Customers");
+            .Should().Contain("Customers");
         ManagementBreadcrumbResolver.Resolve("/login").Should().BeEmpty();
     }
 

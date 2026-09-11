@@ -14,7 +14,7 @@ public sealed class SharedRecordLinkCatalogTests
         SharedRecordLinkCatalog.TryResolve(meta, subjectKey: "C-100", out var link)
             .Should().BeTrue();
         link.Should().NotBeNull();
-        link!.Href.Should().Be("/demo/customers/C-100");
+        link!.Href.Should().Be("/business-data/customers/C-100");
         link.Href.Should().NotContain("from=");
         link.Label.Should().Be(SharedRecordLinkCatalog.CustomerLinkLabel);
         link.Label.Should().NotContain("BDS");
@@ -29,7 +29,7 @@ public sealed class SharedRecordLinkCatalogTests
 
         SharedRecordLinkCatalog.TryResolve(meta, subjectKey: "C-002", out var link)
             .Should().BeTrue();
-        link!.Href.Should().Be("/demo/customers/C-002");
+        link!.Href.Should().Be("/business-data/customers/C-002");
         link.BusinessKey.Should().Be("C-002");
     }
 

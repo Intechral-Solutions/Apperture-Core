@@ -47,7 +47,20 @@ public sealed class RunQueryService : IRunQueryService
     {
         var query = _db.OperationRuns.AsNoTracking().AsQueryable();
         if (!string.IsNullOrWhiteSpace(filter?.Status))
-            query = query.Where(r => r.Status == filter.Status);
+        {
+            if (string.Equals(filter.Status, "blocked", StringComparison.OrdinalIgnoreCase))
+            {
+                var blockedPrefix = RunFailureCapture.DeferredWorkBlockedPrefix;
+                query = query.Where(r =>
+                    r.Status == WorkflowLifecycleStatusNames.Failed
+                    && r.FailureSummary != null
+                    && r.FailureSummary.StartsWith(blockedPrefix));
+            }
+            else
+            {
+                query = query.Where(r => r.Status == filter.Status);
+            }
+        }
         if (!string.IsNullOrWhiteSpace(filter?.OperationDefinitionId))
             query = query.Where(r => r.DefinitionId == filter.OperationDefinitionId);
         if (!string.IsNullOrWhiteSpace(filter?.CorrelationKey))

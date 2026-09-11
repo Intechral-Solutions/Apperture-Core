@@ -55,7 +55,7 @@ public static class LoginRouteHelper
         return t;
     }
 
-    public static string DefaultPostLoginPath => "/dashboard";
+    public static string DefaultPostLoginPath => "/control/center";
 
     /// <summary>Reads <c>returnUrl</c> from a URI query string (first occurrence).</summary>
     public static string? GetReturnUrlRaw(string absoluteUri)

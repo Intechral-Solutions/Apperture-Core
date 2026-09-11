@@ -169,6 +169,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IScheduleManagementService, SqlScheduleManagementService>();
         services.AddScoped<IControlActionAvailabilityProjection, ControlActionAvailabilityProjection>();
         services.AddScoped<IControlActivityQueryService, ControlActivityQueryService>();
+        services.AddScoped<IInventoryQueryService, InventoryQueryService>();
         services.AddScoped<IControlAttentionQueryService, ControlAttentionQueryService>();
         services.AddScoped<IControlCenterQueryService, ControlCenterQueryService>();
         services.AddScoped<IDashboardCardProvider, RuntimeHealthDashboardCardProvider>();

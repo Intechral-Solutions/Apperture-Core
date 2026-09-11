@@ -385,8 +385,8 @@ public sealed class DashboardExpansionTests
         var card = await sut.BuildAsync();
 
         card.Should().NotBeNull();
-        card!.NavigationHref.Should().Be("/control/blocked-work");
-        card.NavigationLabel.Should().Be("Open blocked work");
+        card!.NavigationHref.Should().Be("/runs?status=blocked");
+        card.NavigationLabel.Should().Be("Open blocked runs");
     }
 
     [Fact]

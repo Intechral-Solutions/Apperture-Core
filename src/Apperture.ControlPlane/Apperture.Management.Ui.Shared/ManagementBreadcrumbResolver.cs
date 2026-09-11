@@ -79,6 +79,11 @@ public static class ManagementBreadcrumbResolver
         MatchDemoCustomerActivity,
         MatchDemoCustomerDetail,
         MatchDemoCustomersList,
+        MatchBusinessDataCustomerActivity,
+        MatchBusinessDataCustomerDetail,
+        MatchBusinessDataCustomersList,
+        MatchBusinessDataLanding,
+        MatchConfigInventory,
         MatchConfigLanding,
         MatchIntegrationsList,
         MatchRuntimeShutdownRequestDetail,
@@ -211,7 +216,9 @@ public static class ManagementBreadcrumbResolver
         IReadOnlyList<BreadcrumbItem> parents)
     {
         var list = parents.ToList();
-        if (list.Count > 0 && list[0].Label.Equals("Automation", StringComparison.Ordinal))
+        if (list.Count > 0
+            && (list[0].Label.Equals("Automation", StringComparison.Ordinal)
+                || list[0].Label.Equals("Control Center", StringComparison.Ordinal)))
             list.RemoveAt(0);
         if (list.Count > 0
             && list[0].Label.Equals("Runs", StringComparison.Ordinal)
@@ -227,11 +234,15 @@ public static class ManagementBreadcrumbResolver
             p = "/";
 
         if (NavPathMatching.IsPathUnder(p, "/control/center"))
-            return "What needs attention now — blocked work, failures, and recent outcomes. Use Dashboard for a cross-domain summary.";
+            return "What needs attention now — blocked runs, failures, and recent outcomes.";
         if (p.Equals("/dashboard", StringComparison.OrdinalIgnoreCase))
-            return "What is healthy, what needs attention, and where to act next. For live triage, open Control Center.";
+            return "Redirects to Control Center.";
         if (p.Equals("/runs", StringComparison.OrdinalIgnoreCase))
-            return "Automation run history.";
+            return "Run history and remediation. Use status=blocked for deferred blocked work.";
+        if (p.Equals("/business-data", StringComparison.OrdinalIgnoreCase))
+            return "Business collections for this instance. Customers is currently a demo/sandbox projection.";
+        if (p.Equals("/config/inventory", StringComparison.OrdinalIgnoreCase))
+            return "Search configuration records and recent activity, then open the canonical page.";
         if (p.Equals("/schedules", StringComparison.OrdinalIgnoreCase))
             return "Schedule definitions and firing.";
         if (p.Equals("/integrations", StringComparison.OrdinalIgnoreCase))
@@ -239,7 +250,7 @@ public static class ManagementBreadcrumbResolver
         if (p.Equals("/connections", StringComparison.OrdinalIgnoreCase))
             return "Connection instances and connector definitions.";
         if (p.Equals("/config", StringComparison.OrdinalIgnoreCase))
-            return "Authentication, governance, notifications, attention, and platform maintenance.";
+            return "Inventory, governance, attention, and system settings.";
         if (p.Equals("/execute", StringComparison.OrdinalIgnoreCase))
             return "Start operations and workflows.";
         if (p.Equals(DemoCustomerUiRoutes.List, StringComparison.OrdinalIgnoreCase)
@@ -317,24 +328,28 @@ public static class ManagementBreadcrumbResolver
         Trail([(SectionOwnerConstants.Config, ShellSectionRoutes.ConfigHome), .. tail]);
 
     private static IReadOnlyList<BreadcrumbItem> Operations(params (string Label, string? Href)[] tail) =>
-        Trail([("Operations", "/control/center"), .. tail]);
+        Trail([("Control Center", "/control/center"), .. tail]);
 
     private static IReadOnlyList<BreadcrumbItem> Automation(params (string Label, string? Href)[] tail) =>
-        Trail([("Automation", "/runs"), .. tail]);
+        Trail([("Control Center", "/control/center"), .. tail]);
+
+    private static IReadOnlyList<BreadcrumbItem> BusinessData(params (string Label, string? Href)[] tail) =>
+        Trail([("Business Data", ShellSectionRoutes.BusinessDataHome), .. tail]);
 
     private static IReadOnlyList<BreadcrumbItem> Integrations(params (string Label, string? Href)[] tail) =>
         Trail([("Integrations", "/integrations"), .. tail]);
 
     private static IReadOnlyList<BreadcrumbItem> Connections(params (string Label, string? Href)[] tail) =>
-        Trail([("Connections", "/connections"), .. tail]);
+        Trail([(SectionOwnerConstants.Config, ShellSectionRoutes.ConfigHome), ("Inventory", ShellSectionRoutes.Inventory), ("Connections", "/connections"), .. tail]);
 
     private static IReadOnlyList<BreadcrumbItem> Notifications(params (string Label, string? Href)[] tail)
     {
-        var segments = new (string Label, string? Href)[2 + tail.Length];
+        var segments = new (string Label, string? Href)[3 + tail.Length];
         segments[0] = (SectionOwnerConstants.Config, ShellSectionRoutes.ConfigHome);
-        segments[1] = ("Notifications", "/config/notifications");
+        segments[1] = ("Attention", "/attention/operational-teams");
+        segments[2] = ("Notifications", "/config/notifications");
         if (tail.Length > 0)
-            Array.Copy(tail, 0, segments, 2, tail.Length);
+            Array.Copy(tail, 0, segments, 3, tail.Length);
         return Trail(segments);
     }
 
@@ -499,7 +514,7 @@ public static class ManagementBreadcrumbResolver
         c = null;
         if (!Matches(s, "config", "notifications"))
             return false;
-        c = Config(("Notifications", null));
+        c = Notifications();
         return true;
     }
 
@@ -827,7 +842,8 @@ public static class ManagementBreadcrumbResolver
         c = null;
         if (!Matches(s, "schedules", "new"))
             return false;
-        c = Automation(
+        c = Config(
+            ("Inventory", ShellSectionRoutes.Inventory),
             ("Schedules", "/schedules"),
             ("New", null));
         return true;
@@ -838,7 +854,8 @@ public static class ManagementBreadcrumbResolver
         c = null;
         if (!Matches(s, "schedules", "{id}"))
             return false;
-        c = Automation(
+        c = Config(
+            ("Inventory", ShellSectionRoutes.Inventory),
             ("Schedules", "/schedules"),
             ("Schedule", null));
         return true;
@@ -849,7 +866,9 @@ public static class ManagementBreadcrumbResolver
         c = null;
         if (!Matches(s, "schedules"))
             return false;
-        c = Automation(("Schedules", null));
+        c = Config(
+            ("Inventory", ShellSectionRoutes.Inventory),
+            ("Schedules", null));
         return true;
     }
 
@@ -860,7 +879,7 @@ public static class ManagementBreadcrumbResolver
         c = null;
         if (!Matches(s, "control", "center"))
             return false;
-        c = Operations(("Control Center", null));
+        c = Trail(("Control Center", null));
         return true;
     }
 
@@ -869,7 +888,7 @@ public static class ManagementBreadcrumbResolver
         c = null;
         if (!Matches(s, "control", "blocked-work"))
             return false;
-        c = Operations(("Blocked Work", null));
+        c = Operations(("Runs", RunStatusFacets.BlockedRunsHref));
         return true;
     }
 
@@ -985,7 +1004,10 @@ public static class ManagementBreadcrumbResolver
         c = null;
         if (!Matches(s, "connections"))
             return false;
-        c = Trail(("Connections", null));
+        c = Trail(
+            (SectionOwnerConstants.Config, ShellSectionRoutes.ConfigHome),
+            ("Inventory", ShellSectionRoutes.Inventory),
+            ("Connections", null));
         return true;
     }
 
@@ -1040,7 +1062,7 @@ public static class ManagementBreadcrumbResolver
         c = null;
         if (!Matches(s, "dashboard"))
             return false;
-        c = Trail(("Dashboard", null));
+        c = Trail(("Control Center", ShellSectionRoutes.ControlCenterHome));
         return true;
     }
 
@@ -1050,16 +1072,13 @@ public static class ManagementBreadcrumbResolver
     {
         c = null;
         if (s.Length != 4
-            || !s[0].Equals("demo", StringComparison.OrdinalIgnoreCase)
-            || !s[1].Equals("customers", StringComparison.OrdinalIgnoreCase)
+            || !IsCustomersCollection(s)
             || string.IsNullOrWhiteSpace(s[2])
             || !s[3].Equals("activity", StringComparison.OrdinalIgnoreCase))
             return false;
-        c = Trail(
-            ("Config", ShellSectionRoutes.ConfigHome),
-            ("Developer & internal", ShellSectionRoutes.DeveloperTasks),
-            ("Demo Customers", DemoCustomerUiRoutes.List),
-            (s[2], DemoCustomerUiRoutes.Detail(s[2])),
+        c = BusinessData(
+            ("Customers", BusinessDataUiRoutes.Customers),
+            (s[2], BusinessDataUiRoutes.CustomerDetail(s[2])),
             ("Activity", null));
         return true;
     }
@@ -1068,14 +1087,11 @@ public static class ManagementBreadcrumbResolver
     {
         c = null;
         if (s.Length != 3
-            || !s[0].Equals("demo", StringComparison.OrdinalIgnoreCase)
-            || !s[1].Equals("customers", StringComparison.OrdinalIgnoreCase)
+            || !IsCustomersCollection(s)
             || string.IsNullOrWhiteSpace(s[2]))
             return false;
-        c = Trail(
-            ("Config", ShellSectionRoutes.ConfigHome),
-            ("Developer & internal", ShellSectionRoutes.DeveloperTasks),
-            ("Demo Customers", DemoCustomerUiRoutes.List),
+        c = BusinessData(
+            ("Customers", BusinessDataUiRoutes.Customers),
             (s[2], null));
         return true;
     }
@@ -1083,12 +1099,42 @@ public static class ManagementBreadcrumbResolver
     private static bool MatchDemoCustomersList(string[] s, out IReadOnlyList<BreadcrumbItem>? c)
     {
         c = null;
-        if (!Matches(s, "demo", "customers"))
+        if (!IsCustomersCollection(s) || s.Length != 2)
             return false;
-        c = Trail(
-            ("Config", ShellSectionRoutes.ConfigHome),
-            ("Developer & internal", ShellSectionRoutes.DeveloperTasks),
-            ("Demo Customers", null));
+        c = BusinessData(("Customers", null));
+        return true;
+    }
+
+    private static bool IsCustomersCollection(string[] s) =>
+        s.Length >= 2
+        && s[1].Equals("customers", StringComparison.OrdinalIgnoreCase)
+        && (s[0].Equals("demo", StringComparison.OrdinalIgnoreCase)
+            || s[0].Equals("business-data", StringComparison.OrdinalIgnoreCase));
+
+    private static bool MatchBusinessDataCustomerActivity(string[] s, out IReadOnlyList<BreadcrumbItem>? c) =>
+        MatchDemoCustomerActivity(s, out c);
+
+    private static bool MatchBusinessDataCustomerDetail(string[] s, out IReadOnlyList<BreadcrumbItem>? c) =>
+        MatchDemoCustomerDetail(s, out c);
+
+    private static bool MatchBusinessDataCustomersList(string[] s, out IReadOnlyList<BreadcrumbItem>? c) =>
+        MatchDemoCustomersList(s, out c);
+
+    private static bool MatchBusinessDataLanding(string[] s, out IReadOnlyList<BreadcrumbItem>? c)
+    {
+        c = null;
+        if (!Matches(s, "business-data"))
+            return false;
+        c = Trail(("Business Data", null));
+        return true;
+    }
+
+    private static bool MatchConfigInventory(string[] s, out IReadOnlyList<BreadcrumbItem>? c)
+    {
+        c = null;
+        if (!Matches(s, "config", "inventory"))
+            return false;
+        c = Config(("Inventory", null));
         return true;
     }
 

@@ -6,24 +6,28 @@ namespace Apperture.Management.Ui.Shared.Tests;
 
 public sealed class Epic99RouteMenuTruthCleanupTests
 {
-    private static IReadOnlyList<string> OperationsHrefs()
+    private static IReadOnlyList<string> ControlCenterHrefs()
     {
         var menus = ControlPanelMenuDefinitions.GetDefaultMenus();
-        return menus["Operations"].Items.Select(i => i.Href).Where(h => h is not null).Cast<string>().ToList();
+        return menus[SectionOwnerConstants.ControlCenter].Items
+            .Select(i => i.Href)
+            .Where(h => h is not null)
+            .Cast<string>()
+            .ToList();
     }
 
     [Fact]
-    public void Operations_menu_does_not_include_api_explorer_or_demo_nested_nav()
+    public void Control_center_menu_does_not_include_api_explorer_or_demo_nested_nav()
     {
-        var hrefs = OperationsHrefs();
+        var hrefs = ControlCenterHrefs();
         hrefs.Should().NotContain("/tools/explorer");
         hrefs.Should().NotContain("/demo/nested-nav");
     }
 
     [Fact]
-    public void Operations_menu_has_single_execute_entry_not_legacy_starts()
+    public void Control_center_menu_has_single_execute_entry_not_legacy_starts()
     {
-        var hrefs = OperationsHrefs();
+        var hrefs = ControlCenterHrefs();
         hrefs.Should().Contain("/execute");
         hrefs.Should().NotContain("/operations/start");
         hrefs.Should().NotContain("/workflows/start");
@@ -41,13 +45,13 @@ public sealed class Epic99RouteMenuTruthCleanupTests
     }
 
     [Fact]
-    public void Config_modules_is_grouped_under_platform_maintenance()
+    public void Config_modules_is_grouped_under_system()
     {
         var menus = ControlPanelMenuDefinitions.GetDefaultMenus();
-        var maintenance = menus[SectionOwnerConstants.Config].Items
-            .FirstOrDefault(i => i.Text == "Platform maintenance");
-        maintenance.Should().NotBeNull();
-        var modules = maintenance!.Children!.FirstOrDefault(c => c.Text == "Modules");
+        var system = menus[SectionOwnerConstants.Config].Items
+            .FirstOrDefault(i => i.Text == "System");
+        system.Should().NotBeNull();
+        var modules = system!.Children!.FirstOrDefault(c => c.Text == "Modules");
         modules.Should().NotBeNull();
         modules!.Href.Should().Be("/modules");
         modules.Children.Should().BeNullOrEmpty();

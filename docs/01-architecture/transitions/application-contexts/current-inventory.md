@@ -37,19 +37,16 @@ These concepts do **not** exist as platform entities, columns, or loaded SPIs to
 
 The Blazor client seeds that tree, then replaces it with `GET /api/menus` (`MenusController`). All operator pages below are **Blazor WASM** (`Apperture.Management.Ui.Client`), served by `Apperture.Management.Ui.Server`. Host cookie/OIDC paths (`/signin`, `/signout`, `/signin-oidc`) are ASP.NET endpoints on `Apperture.Management.Host`, not Blazor pages.
 
-**Docs lag (CONFIRMED, not used as truth):**
+**Docs (CONFIRMED):** [control-panel-ui.md](../../control-panel-ui.md) and [ADR-0040](../../../02-decisions/ADR-0040-operator-information-architecture.md) describe the live shell. Historical snapshot: [nav-overhaul/before.md](../nav-overhaul/before.md). Destination map: [nav-overhaul/mapping.md](../nav-overhaul/mapping.md).
 
-- `docs/01-architecture/control-panel-ui.md` still puts Attention under Operations and omits Config’s Attention / Platform maintenance / Developer groups.
-- `docs/01-architecture/transitions/nav-overhaul/before.md` is close but stale on `/access-request` (that page exists) and on `/demo` as a Config rail domain (`RouteToSectionResolver` does not map `/demo`).
-
-**Nav-item feature flags:** none. **Nav-item permission filters:** none. `GET /api/menus` is `[Authorize]` and may append enabled-module contributions; it does **not** filter by `OperatorCapabilitiesDto`. Pages hide **content** after load (ForbiddenState / HTTP 403). Operators without a permission still see the nav entry.
+**Nav-item feature flags:** none. **Nav-item permission filters:** `GET /api/menus` applies `DomainMenuCapabilityFilter` using `OperatorCapabilitiesDto`. Items with `RequiredCapability` are omitted when the operator lacks the token. Empty domains are dropped except Control Center and Config. Page/API authorization remains independent (ForbiddenState / HTTP 403). Gaps with no view token today are not hidden: Runs, Execute, Control Center overview, Developer & Internal; Modules uses `CanManageModules` only.
 
 ### Chrome and navigation components
 
 | Role | Class / file |
 |------|----------------|
 | Router | `App.razor` — `Router` + `RouteView` `DefaultLayout=MainLayout`, wrapped in `AuthRouteGate` |
-| Root bounce | `Routes.razor` (`@page "/"`) → `OperatorLanding` → `/dashboard` |
+| Root bounce | `Routes.razor` (`@page "/"`) → `OperatorLanding` → `/control/center` |
 | Authenticated shell | `MainLayout.razor` — rail + Control Panel + top bar |
 | Config content wrapper | `ConfigLayout.razor` — `@layout MainLayout`; CSS wrapper only, **no extra sidebar** |
 | Auth / public shell | `AuthLayout.razor` — no rail, no top bar |
@@ -65,95 +62,89 @@ The Blazor client seeds that tree, then replaces it with `GET /api/menus` (`Menu
 
 **Rail construction (`NavRail.BuildMenuItems`):**
 
-1. Logo (top) → Dashboard; click opens Control Panel for `"Dashboard"` and navigates to `/dashboard`.
-2. Middle loop: `DomainMenuService.GetMiddleDomains()` = every domain except `"Dashboard"` and `"Config"` (`SectionOwnerConstants`).
+1. Logo (top) → Control Center; click opens Control Panel for `"Control Center"` and navigates to `/control/center`. `SectionOwnerConstants.Dashboard` is an alias for that string.
+2. Middle loop: `DomainMenuService.GetMiddleDomains()` = every domain except Control Center and Config (`SectionOwnerConstants.GetMiddleDomains`).
 3. Gear (bottom, hardcoded) → `"Config"`; click opens Control Panel and navigates to `/config`.
 
-Default middle order is dictionary insertion order: **Operations → Automation → Integrations → Connections**.
+Default middle order is dictionary insertion order: **Integrations → Business Data**.
 
 ### Hierarchy (Control Panel / rail)
 
 ```
 Nav rail
-├── [logo] Dashboard                          SectionOwnerConstants.Dashboard
-│   └── Dashboard home                        /dashboard
-├── Operations
+├── [logo] Control Center                     SectionOwnerConstants.ControlCenter
 │   ├── Control Center                        /control/center
-│   ├── Blocked Work                          /control/blocked-work
+│   ├── Runs                                  /runs
 │   ├── Execute                               /execute
 │   └── Audit                                 /control/audit
-├── Automation
-│   ├── Runs                                  /runs
-│   └── Schedules                             /schedules
 ├── Integrations
 │   └── Integrations                          /integrations
-├── Connections
-│   └── Connections                           /connections
+├── Business Data
+│   ├── Collections                           /business-data
+│   └── Customers                             /business-data/customers
 └── [gear] Config                             SectionOwnerConstants.Config
     ├── Overview                              /config
-    ├── Authentication                        /config/auth
-    │   ├── Sign-in experience                /config/auth/sign-in
-    │   └── Entra tenants                     /config/auth/tenants
+    ├── Inventory                             /config/inventory
     ├── Governance                            /config/governance
     │   ├── Permission catalog                /config/governance/catalog
     │   ├── Roles                             /config/governance/roles
     │   └── Users                             /config/governance/users
-    ├── Notifications                         /config/notifications
-    │   ├── Definitions                       /config/notifications/definitions
-    │   ├── Instances                         /config/notifications/instances
-    │   └── Delivery                          /config/notifications/delivery
     ├── Attention                             /attention/operational-teams   (Id: config-attention)
     │   ├── Operational teams                 /attention/operational-teams
     │   ├── Routing defaults                  /attention/routing-defaults
-    │   └── Managed contacts                  /config/contacts
-    ├── Platform maintenance                  /config/platform-settings      (Id: config-platform-maintenance)
-    │   ├── Platform settings                 /config/platform-settings
-    │   └── Modules                           /modules
-    └── Developer & internal                  /config/developer              (Id: config-developer)
+    │   ├── Managed contacts                  /config/contacts
+    │   └── Notifications                     /config/notifications
+    │       ├── Definitions                   /config/notifications/definitions
+    │       ├── Instances                     /config/notifications/instances
+    │       ├── Delivery                      /config/notifications/delivery
+    │       └── Diagnostics                   /config/notifications/diagnostics
+    └── System                                /config/platform-settings      (Id: config-system)
+        ├── Platform settings                 /config/platform-settings
+        ├── Modules                           /modules
+        ├── Authentication                    /config/auth
+        │   ├── Sign-in experience            /config/auth/sign-in
+        │   └── Entra tenants                 /config/auth/tenants
+        └── Developer & internal              /config/developer              (Id: config-developer)
 ```
 
-**Not in this tree:** create/detail routes, diagnostics, demo customers, account, inbox, auth pages, module-contributed items (runtime only).
+**Not in this tree:** create/detail routes, connections list, schedules list, account, inbox, auth pages, deferred dashboard tools, module-contributed items (runtime only). `/control/blocked-work` and `/demo/customers` exist as redirects. `/dashboard` redirects to Control Center.
 
 ### Rail domain vs URL prefix (`RouteToSectionResolver`)
 
 | Path prefix | Rail domain |
 |-------------|-------------|
-| `/config…` | Config |
-| `/modules…` | Config |
-| `/attention…` | Config |
-| `/` or `/dashboard…` | Dashboard |
-| href match under Operations | Operations |
-| `/runs…`, `/schedules…` | Automation |
+| `/config…`, `/modules…`, `/attention…`, `/connections…`, `/schedules…`, `/dashboard/manage\|add\|layout\|delete` | Config |
+| `/control…`, `/runs…`, `/execute…`, `/runtimes…`, `/` or exact `/dashboard` | Control Center |
 | `/integrations…` | Integrations |
-| `/connections…` | Connections |
-| `/account…`, `/me…`, `/demo…`, `/runtimes…`, `/workflows…`, `/operations/start` | **empty** (no rail highlight) |
+| `/business-data…`, `/demo/customers…` | Business Data |
+| `/account…`, `/me…`, `/demo/nested-nav`, `/workflows…`, `/operations/start` | **empty** (no rail highlight) |
 
-Confirmed by `ShellSectionOwnerTests.RouteResolver_DemoNestedNav_NotInMenu_ReturnsEmpty`. `/demo/customers` uses the same resolver → empty rail. Breadcrumbs still hang Demo Customers off Config → Developer.
+`/demo/nested-nav` stays empty (`ShellSectionOwnerTests`). Customers use Business Data.
 
 ### Surfaces by area
 
 Legend: **menu** = Control Panel item; **hub** = landing card; **child** = reachable from a list/detail; **alias** = redirect; **public** = AuthLayout.
 
-#### Operations / Control Center
+#### Control Center
 
 Layout: default `MainLayout`.
 
 | Label | Route | Page class | Kind | Page gate |
 |-------|-------|------------|------|-----------|
 | Control Center | `/control/center` | `ControlCenter` | menu | Page always loads; health/scheduler UI gated by `CanViewRuntimeHealth` |
-| Blocked Work | `/control/blocked-work` | `BlockedWork` | menu | `CanManageRecovery` only for “Trigger scheduler cycle” |
+| Blocked runs | `/runs?status=blocked` | `RunsList` facet; `/control/blocked-work` redirects | facet | `CanManageRecovery` only for “Trigger scheduler cycle” on Control Center |
 | Execute | `/execute` | `ExecutionStart` | menu | No capability prefetch in the page |
-| Audit | `/control/audit` | `AuditTimeline` | menu | HTTP 403 → forbidden UI, not a nav hide |
+| Audit | `/control/audit` | `AuditTimeline` | menu | HTTP 403 → forbidden UI; menu uses `CanViewAudit` |
 | Start operation (legacy) | `/operations/start` | `OperationStart` | child | Stub linking to `/execute?kind=operation`. Off-rail |
 | Shutdown requests | `/runtimes/{RuntimeId}/controls/shutdown/requests` | `RuntimeShutdownRequestsList` | child | Off-rail |
 
-Control Center hub cards also link Integrations, Runs, Schedules, Blocked work, Audit (cross-domain).
+Control Center hub cards also link Integrations, Runs, Schedules, blocked runs, Audit (cross-domain).
 
 #### Config
 
-Landing: `/config` (`ConfigLanding`) uses `ConfigLayout`. Hub cards: Authentication, Governance, Notifications, Attention, Platform settings, Modules, Developer tasks.
+Landing: `/config` (`ConfigLanding`) uses `ConfigLayout`. Hub cards: Inventory, Governance, Attention, System. Inventory (`/config/inventory`, `Inventory.razor`) is `GET /api/inventory` — configuration records plus recent activity, not a Resource Catalog.
 
-#### Authentication (Config)
+#### Authentication (Config → System)
 
 `ConfigLayout`. Overview `/config/auth` gated by `CanViewAuthConfiguration \|\| CanManageAuthUiPolicy \|\| CanManageEntraTenants`. Child: Sign-in `/config/auth/sign-in`, Entra tenants `/config/auth/tenants`, directory users/groups under `/config/auth/entra/{RegistrationId}/…`. Alias: `/config/security/sign-in` → `/config/auth/sign-in`.
 
@@ -163,7 +154,7 @@ Permission catalog, Roles, Users at `/config/governance/…`. Access requests `/
 
 #### Notifications (three surfaces)
 
-1. **Platform admin** — Config → Notifications (`ConfigLayout`): definitions, instances, delivery. Diagnostics `/config/notifications/diagnostics` is a hub card, **not** a Control Panel child. Gate: `CanViewNotificationDefinitions` (diagnostics also requires `CanViewIntegrations`).
+1. **Platform admin** — Config → Attention → Notifications (`ConfigLayout`): definitions, instances, delivery, diagnostics. Gate: `CanViewNotificationDefinitions` (diagnostics also requires `CanViewIntegrations`).
 2. **Personal inbox** — top-bar bell → `/me/notifications`. Off-rail.
 3. **Per-integration** — `/integrations/{id}/notifications`. Gate: `CanViewIntegrations && CanViewNotificationDefinitions`.
 
@@ -171,14 +162,15 @@ Permission catalog, Roles, Users at `/config/governance/…`. Access requests `/
 
 Parent: Config Control Panel group **Attention** (not Operations). `/attention/*` uses default `MainLayout` (no `ConfigLayout`); `/config/contacts` uses `ConfigLayout`. Rail still highlights Config. Create/edit teams gated by `CanManageSchedules`. Contacts gated by `CanViewManagedContacts`. Alias: `/attention/contact-groups` → operational teams.
 
-#### Platform maintenance
+#### System (was Platform maintenance)
 
-- Platform settings `/config/platform-settings` (`PlatformSettings`, `ConfigLayout`) — `CanViewPlatformSettings \|\| CanManagePlatformSettings`.
-- Modules `/modules` (`ModulesList`, default `MainLayout`) — **no page-level capability check**; lifecycle actions use `CanManageModules`.
+- Platform settings `/config/platform-settings` (`PlatformSettings`, `ConfigLayout`) — `CanViewPlatformSettings || CanManagePlatformSettings`.
+- Modules `/modules` (`ModulesList`, default `MainLayout`) — **no page-level capability check**; lifecycle actions and the menu item use `CanManageModules`.
+- Authentication nested under System (see above).
 
 #### Developer & internal
 
-Landing `/config/developer` (`DeveloperTasks`). **No capability gate on the hub.** Cards include deferred dashboard manage/add/delete/layout, Control Center, notification diagnostics, nested-nav demo `/demo/nested-nav`, Demo Customers `/demo/customers`, account preferences.
+Landing `/config/developer` (`DeveloperTasks`). **No capability gate on the hub.** Cards include deferred dashboard manage/add/delete/layout, Control Center, nested-nav demo `/demo/nested-nav`, account preferences. Customers are **not** listed here.
 
 #### Integrations / Connections / Schedules / Runs
 
@@ -191,19 +183,21 @@ Landing `/config/developer` (`DeveloperTasks`). **No capability gate on the hub.
 
 #### Audit Log
 
-Operations menu label **Audit**. Route `/control/audit`, page `AuditTimeline`. Not under Config.
+Control Center menu label **Audit**. Route `/control/audit`, page `AuditTimeline`. Not under Config.
 
-#### Business-data / demo-customer
+#### Business Data / customers
 
-**No** `/business-data` or `/records` Blazor routes. Demo projection only:
+Transitional collections surface. Customers remain the demo projection:
 
 | Label | Route | Page | Layout | Gate |
 |-------|-------|------|--------|------|
-| Demo Customers | `/demo/customers` | `DemoCustomersList` | `ConfigLayout` | `CanViewIntegrations` |
-| Detail | `/demo/customers/{BusinessKey}` | `DemoCustomerDetail` | `ConfigLayout` | same |
+| Collections | `/business-data` | `BusinessDataLanding` | `ConfigLayout` | none on landing |
+| Customers | `/business-data/customers` | `DemoCustomersList` | `ConfigLayout` | `CanViewIntegrations` |
+| Detail | `/business-data/customers/{BusinessKey}` | `DemoCustomerDetail` | `ConfigLayout` | same |
 | Activity | `…/activity` | `DemoCustomerActivity` | `ConfigLayout` | same |
+| Legacy | `/demo/customers…` | `DemoCustomersLegacyRedirect` | — | replace redirect |
 
-API: `demo/business-records/customers` via `ManagementClient`. Comments in `DemoCustomerUiRoutes` / `DeveloperTaskRoutes`: not final Records nav. Breadcrumbs: Config → Developer → Demo Customers. **Rail domain empty.**
+API: `demo/business-records/customers` via `ManagementClient`. No `BusinessRecord` table. Breadcrumbs: Business Data → Customers. Rail domain **Business Data**.
 
 #### Personal account and public auth
 
@@ -213,9 +207,9 @@ Public `AuthLayout` (`LoginRouteHelper.PublicPaths`): `/login`, `/login/local`, 
 
 #### Module-contributed nav
 
-`MenusController.GetMenus` starts from `GetDefaultMenus()`, then appends `NavigationContributionDescriptor` from **enabled** modules (`IModuleNavigationProvider` → `Domain`, `Label`, `Route`). Duplicate hrefs skipped. New domain keys become extra middle-rail icons.
+`MenusController.GetMenus` starts from `GetDefaultMenus()`, then appends `NavigationContributionDescriptor` from **enabled** modules (`IModuleNavigationProvider` → `Domain`, `Label`, `Route`) **only when `Domain` is in `SectionOwnerConstants.KnownRailDomains`**. Duplicate hrefs skipped. Unknown domains are ignored (no extra rail icons). Then capability filter runs.
 
-**CONFIRMED:** interface exists; **no production module implements it** (only unit-test stubs). Live extra rail items depend on enabled modules at runtime.
+**CONFIRMED:** interface exists; **no production module implements it** (only unit-test stubs). Live extra items depend on enabled modules at runtime and still cannot create new rail domains.
 
 ---
 
@@ -953,24 +947,21 @@ Module-owned DBs (separate DbContexts, **not** the demo projection):
 
 ## 9. Dashboard / Control Center
 
-These are **two different operator surfaces**, not one widget system.
+These are **two different operator surfaces**, not one widget system. After the information-architecture change, **Control Center is the only home**. `/dashboard` (`DashboardHome.razor`) waits for menus then `NavigateTo("/control/center", replace: true)`.
 
-| | Dashboard | Control Center |
+| | `/dashboard` | Control Center |
 |---|---|---|
-| Route | `/dashboard` | `/control/center` |
-| Role | Cross-domain **summary cards** | Live **triage console** |
-| API | `GET api/dashboard/default` | `GET api/control/center` (+ health/scheduler) |
+| Route | redirect | `/control/center` |
+| Role | Compatibility URL | Live **triage console** |
+| API | unused on that page | `GET api/control/center` (+ health/scheduler) |
 
-### Dashboard — CONFIRMED
+`GET api/dashboard/default` still exists for deferred Dashboard Panel work and Config overview cards that are unique vs Control Center (governance / authentication posture). Card providers remain registered. Blocked-work card href is `/runs?status=blocked`.
 
-**Live:** `DashboardHome.razor` (`/dashboard`)
+### Dashboard — CONFIRMED (deferred / redirect)
 
-- Header + “Quick links” (`ManagementSummaryCard`s to Control Center, Integrations, Runs, Schedules, My notifications).
-- “Operational summary” grid of permission-aware cards from `GET api/dashboard/default`.
-- Each card: title, summary, up to **4 facts**, attention tint, optional nav href.
-- Sort: attention severity first, then provider `Order`.
+**Live:** `DashboardHome.razor` (`/dashboard`) redirects to Control Center.
 
-**Deferred stubs (not implemented):** `/dashboard/manage`, `/dashboard/layout`, `/dashboard/add`, `/dashboard/delete` — all say “not yet available in v1.”
+**Deferred stubs:** `/dashboard/manage`, `/dashboard/layout`, `/dashboard/add`, `/dashboard/delete` — Developer & Internal only; still “not yet available in v1.”
 
 **No chart library / chart card type.** Card `Type` is `"summary"` (or `"system"` for the partial-load placeholder). Facts are label/value strings rendered as `<dl>`. Control Center has one **HTML table** (observed worker hosts), not a dashboard chart.
 
@@ -984,7 +975,7 @@ Contract (`Apperture.ControlPlane.Dashboard`):
 | Order | Id | Provider | Data source | Facts (hardcoded) | Nav |
 |---|---|---|---|---|---|
 | 10 | `runtime-health` | `RuntimeHealthDashboardCardProvider` | `IRuntimeHealthQueryService` | degradation reasons, blocked work, anomalies | blocked-work / schedules / run / control center |
-| 12 | `blocked-work` | `BlockedWorkDashboardCardProvider` | `IRecoveryQueryService` | blocked runs, retry-eligible | `/control/blocked-work` |
+| 12 | `blocked-work` | `BlockedWorkDashboardCardProvider` | `IRecoveryQueryService` | blocked runs, retry-eligible | `/runs?status=blocked` |
 | 14 | `integrations-fleet` | `IntegrationsDashboardCardProvider` | `IIntegrationReadinessService.ListFleetAsync` | total, not runnable, blocking, 7d failures, expected-run silence | integrations list or single id |
 | 20 | `needs-attention` | `AttentionDashboardCardProvider` | `IControlAttentionQueryService` (24h, take 20) | open items, highest severity | `/control/center` |
 | 25 | `executions-24h` | `ExecutionsDashboardCardProvider` | `IRunQueryService` last 24h | visible/failed/in progress/completed/cancelled/other | `/runs?...` |

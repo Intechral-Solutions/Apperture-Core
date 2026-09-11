@@ -9,6 +9,7 @@
 | [ADR-0037](ADR-0037-platform-signals-events-and-notification-system.md) | Platform signals and notification system (Epic 77) |
 | [ADR-0038](ADR-0038-platform-signals-sdk-conventions.md) | Module SDK signal conventions (Epic 103A) |
 | [ADR-0039](ADR-0039-environment-startup-bootstrap-and-platform-settings.md) | Environment, startup, bootstrap, and platform settings layers (105B; Phase 1 settings Epic 109) |
+| [ADR-0040](ADR-0040-operator-information-architecture.md) | Operator information architecture (Control Center / Integrations / Business Data / Config rail) |
 
 ### Foundation sequence (Epics 105–117)
 

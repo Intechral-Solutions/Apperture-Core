@@ -37,7 +37,7 @@ public sealed class ManagementAuthEndpointsTests
 
         response.StatusCode.Should().Be(HttpStatusCode.Redirect);
         response.Headers.Location!.ToString().Should().StartWith(IdpAuthorize);
-        capture.RedirectUri.Should().Be("http://localhost:9001/dashboard");
+        capture.RedirectUri.Should().Be("http://localhost:9001/control/center");
         capture.RedirectUri.Should().NotContain("/signin");
     }
 
@@ -67,7 +67,7 @@ public sealed class ManagementAuthEndpointsTests
         var response = await client.GetAsync(path);
 
         response.StatusCode.Should().Be(HttpStatusCode.Redirect);
-        capture.RedirectUri.Should().Be("http://localhost:9001/dashboard");
+        capture.RedirectUri.Should().Be("http://localhost:9001/control/center");
     }
 
     [Fact]
@@ -81,7 +81,7 @@ public sealed class ManagementAuthEndpointsTests
         var response = await client.GetAsync("/signin");
 
         response.StatusCode.Should().Be(HttpStatusCode.Redirect);
-        response.Headers.Location!.ToString().Should().Be("http://localhost:9001/dashboard");
+        response.Headers.Location!.ToString().Should().Be("http://localhost:9001/control/center");
         capture.RedirectUri.Should().BeNull();
     }
 

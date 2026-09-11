@@ -24,7 +24,7 @@ public sealed class EntraSignInChallengeTests
     {
         var properties = EntraSignInChallenge.CreateProperties(Config(), returnUrl: null);
 
-        properties.RedirectUri.Should().Be("http://localhost:9001/dashboard");
+        properties.RedirectUri.Should().Be("http://localhost:9001/control/center");
         properties.RedirectUri.Should().NotContain("/signin");
     }
 
@@ -51,9 +51,9 @@ public sealed class EntraSignInChallengeTests
     [InlineData("users")]
     public void Unsafe_or_reserved_return_urls_are_replaced_with_the_dashboard(string? returnUrl)
     {
-        EntraSignInChallenge.ResolveReturnPath(returnUrl).Should().Be("/dashboard");
+        EntraSignInChallenge.ResolveReturnPath(returnUrl).Should().Be("/control/center");
         var properties = EntraSignInChallenge.CreateProperties(Config(), returnUrl);
-        properties.RedirectUri.Should().Be("http://localhost:9001/dashboard");
+        properties.RedirectUri.Should().Be("http://localhost:9001/control/center");
     }
 
     [Fact]
@@ -63,7 +63,7 @@ public sealed class EntraSignInChallengeTests
 
         EntraSignInChallenge.EnsureSafePostAuthenticationRedirect(properties, Config());
 
-        properties.RedirectUri.Should().Be("http://localhost:9001/dashboard");
+        properties.RedirectUri.Should().Be("http://localhost:9001/control/center");
     }
 
     [Fact]
@@ -83,7 +83,7 @@ public sealed class EntraSignInChallengeTests
 
         EntraSignInChallenge.EnsureSafePostAuthenticationRedirect(properties, Config());
 
-        properties.RedirectUri.Should().Be("http://localhost:9001/dashboard");
+        properties.RedirectUri.Should().Be("http://localhost:9001/control/center");
     }
 
     [Fact]

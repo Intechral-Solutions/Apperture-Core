@@ -29,7 +29,7 @@ public sealed class BlockedWorkDashboardCardProvider : IDashboardCardProvider
             Type: "summary",
             Title: "Blocked Work",
             Order: Order,
-            NavigationHref: "/control/blocked-work",
+            NavigationHref: "/runs?status=blocked",
             Attention: attention,
             Summary: list.Count == 0 ? "No blocked work" : $"{list.Count} blocked run(s)",
             Facts:

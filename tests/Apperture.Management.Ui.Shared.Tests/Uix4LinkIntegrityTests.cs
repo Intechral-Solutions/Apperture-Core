@@ -23,9 +23,9 @@ public sealed class Uix4LinkIntegrityTests
     [Fact]
     public void Demo_customer_routes_match_helpers()
     {
-        DemoCustomerUiRoutes.List.Should().Be("/demo/customers");
-        DemoCustomerUiRoutes.Detail("C-100").Should().Be("/demo/customers/C-100");
-        DemoCustomerUiRoutes.Detail("a b").Should().Be("/demo/customers/a%20b");
+        DemoCustomerUiRoutes.List.Should().Be("/business-data/customers");
+        DemoCustomerUiRoutes.Detail("C-100").Should().Be("/business-data/customers/C-100");
+        DemoCustomerUiRoutes.Detail("a b").Should().Be("/business-data/customers/a%20b");
     }
 
     [Fact]

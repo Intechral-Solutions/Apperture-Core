@@ -112,7 +112,7 @@ public sealed class Uix3AffectedRecordNavigationTests
             .Should().BeTrue();
 
         affordance!.Href.Should().Be(DemoCustomerUiRoutes.Detail("C-100"));
-        affordance.Label.Should().Be("Back to demo customer C-100");
+        affordance.Label.Should().Be("Back to customer C-100");
         affordance.Label.Should().NotContain("UIX");
         affordance.Label.Should().NotContain("BDS");
     }

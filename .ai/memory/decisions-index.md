@@ -49,6 +49,7 @@ Architecture decision records (ADRs) live in [docs/02-decisions/](../../docs/02-
 | [Epic 99](../../docs/02-decisions/Epic99-Route-Menu-Truth-Cleanup.md) | Route/menu truth cleanup (remove broken/demo menu entries; Config contacts) |
 | [Epic 100](../../docs/02-decisions/Epic100-Management-Shell-Domain-Navigation-Restructure.md) | Shell domain labels, menu grouping, hub orientation copy |
 | [Epic 101](../../docs/02-decisions/Epic101-Top-Bar-Breadcrumbs-and-Parent-Context-Links.md) | Top-bar breadcrumbs and parent-context links (route resolver, no entity API) |
+| [ADR-0040](../../docs/02-decisions/ADR-0040-operator-information-architecture.md) | Operator information architecture (Control Center / Integrations / Business Data / Config) |
 | [Management platform configuration](../../docs/03-operations/management-platform-configuration.md) | Canonical appsettings inventory, dev/deploy setup, topology examples (`deploy/config/`) |
 | [ADR-0039](../../docs/02-decisions/ADR-0039-environment-startup-bootstrap-and-platform-settings.md) | Environment, startup, bootstrap, and platform settings layers (105B); Aspire local orchestration (106) |
 | [Epic 105A](../../docs/02-decisions/Epic105A-Environment-Startup-Inventory.md) | Appsettings and deploy/config rationalization; startup inventory |

@@ -216,7 +216,7 @@
                            Help="Linked operational context and audit.">
             <div class="flex flex-wrap gap-2">
                 <DrillInLink Href="@Epic33UiDisplayHelpers.GetAuditLinkForRun(RunId)">View audit for this run</DrillInLink>
-                <DrillInLink Href="/control/blocked-work">Blocked work / recovery</DrillInLink>
+                <DrillInLink Href="@RunStatusFacets.BlockedRunsHref">Blocked runs</DrillInLink>
             </div>
             @if (_blockedWork is not null)
             {
@@ -225,7 +225,7 @@
                     <div class="text-xs text-muted">@_blockedWork.BlockedReason</div>
                     @if (_blockedWork.RetryEligibleNow && string.Equals(_blockedWork.DefinitionKind, "workflow", StringComparison.OrdinalIgnoreCase))
                     {
-                        <DrillInLink Href="/control/blocked-work">Retry from Blocked Work page</DrillInLink>
+                        <DrillInLink Href="@RunStatusFacets.BlockedRunsHref">Retry from blocked runs</DrillInLink>
                     }
                     else if (!string.IsNullOrEmpty(_blockedWork.RetryEligibleReason))
                     {

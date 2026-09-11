@@ -7,7 +7,7 @@
                 Subtitle="Stabilization utilities, deferred features, and diagnostics. Not part of the primary operator workflow." />
 
     <PageMessage Kind="PageMessageKind.Info"
-                 Message="These pages are useful during platform development. Day-to-day operations use Dashboard, Control Center, Integrations, Runs, and Schedules." />
+                 Message="These pages are useful during platform development. Day-to-day operations use Control Center, Integrations, Business Data, and Runs." />
 
     <ManagementSection Title="Deferred dashboard management" Layer="@ManagementSection.UiLayer.Summary">
         <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -40,9 +40,6 @@
             <ManagementSummaryCard Title="Nested navigation demo"
                                    Description="Internal shell navigation depth demo."
                                    Href="@DeveloperTaskRoutes.NestedNavDemo" />
-            <ManagementSummaryCard Title="Demo Customers"
-                                   Description="Sample customer records correlated from FileImport and ApiPolling (demo projection — not the final BusinessRecord model)."
-                                   Href="@DeveloperTaskRoutes.DemoCustomers" />
             <ManagementSummaryCard Title="Account preferences"
                                    Description="Personal appearance, timezone, and clock settings for the signed-in operator."
                                    Href="@DeveloperTaskRoutes.Preferences" />

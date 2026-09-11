@@ -11,7 +11,7 @@ namespace Apperture.Management.Host;
 internal static class EntraSignInChallenge
 {
     /// <summary>Canonical authenticated landing route in the management UI (same as local sign-in).</summary>
-    public const string DefaultReturnPath = "/dashboard";
+    public const string DefaultReturnPath = "/control/center";
 
     public static AuthenticationProperties CreateProperties(IConfiguration configuration, string? returnUrl)
     {

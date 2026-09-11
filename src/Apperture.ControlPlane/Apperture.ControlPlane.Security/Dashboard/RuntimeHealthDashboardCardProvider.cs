@@ -11,7 +11,7 @@ internal static class RuntimeHealthDashboardNavigation
     public static (string Href, string Label) Resolve(RuntimeHealthSnapshot snapshot)
     {
         if (snapshot.BlockedDeferredWork.Count > 0)
-            return ("/control/blocked-work", "Open blocked work");
+            return ("/runs?status=blocked", "Open blocked runs");
 
         var scheduleAttention = snapshot.ScheduleDiagnostics.Any(s =>
             string.Equals(s.ScheduleHealthStatus, ScheduleHealthStatus.Blocked, StringComparison.OrdinalIgnoreCase)

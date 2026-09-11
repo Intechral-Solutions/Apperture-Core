@@ -8,16 +8,17 @@ namespace Apperture.UnitTests.ControlPlane;
 public sealed class ShellSectionRoutesTests
 {
     [Fact]
-    public void DashboardHome_MatchesMenuDashboardHome()
+    public void ControlCenterHome_MatchesMenuControlCenter()
     {
         var menus = ControlPanelMenuDefinitions.GetDefaultMenus();
-        var item = menus[SectionOwnerConstants.Dashboard].Items.First(i => i.Text == "Dashboard home");
-        item.Href.Should().Be(ShellSectionRoutes.DashboardHome);
+        var item = menus[SectionOwnerConstants.ControlCenter].Items.First(i => i.Text == "Control Center");
+        item.Href.Should().Be(ShellSectionRoutes.ControlCenterHome);
     }
 
     [Fact]
-    public void LogoAndMenus_UseSameDashboardLanding_AsCanonicalEntry()
+    public void LogoAndMenus_UseSameControlCenterLanding()
     {
+        ShellSectionRoutes.ControlCenterHome.Should().Be("/control/center");
         ShellSectionRoutes.DashboardHome.Should().Be("/dashboard");
     }
 }

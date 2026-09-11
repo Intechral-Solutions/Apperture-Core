@@ -4,26 +4,42 @@
 <div class="p-4 ui-page-stack">
     <PageHeader Title="Configuration"
                 Eyebrow="Config"
-                Subtitle="Platform administration for authentication, governance, notifications, and attention routing. Day-to-day operations use Integrations, Control Center, and Runs." />
+                Subtitle="Inventory, governance, Attention configuration, and system settings. Day-to-day operations stay on Control Center, Integrations, and Runs." />
 
-    <ManagementSection Title="Platform administration" Layer="@ManagementSection.UiLayer.Summary">
+    <ManagementSection Title="Inventory" Layer="@ManagementSection.UiLayer.Summary">
         <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-            <ManagementSummaryCard Title="Authentication"
-                                   Description="Sign-in experience, chooser policy, and Entra tenant validation."
-                                   Href="/config/auth" />
-            <ManagementSummaryCard Title="Governance"
-                                   Description="Roles, users, permission catalog, and role assignment."
-                                   Href="/config/governance" />
-            <ManagementSummaryCard Title="Notifications"
-                                   Description="Definitions, instances, and delivery health."
-                                   Href="/config/notifications" />
-            <ManagementSummaryCard Title="Attention"
-                                   Description="Operational teams, routing defaults, and managed contacts."
-                                   Href="/attention/operational-teams" />
+            <ManagementSummaryCard Title="Inventory"
+                                   Description="Search and open modules, integrations, connections, schedules, notification definitions, runs, and audit events."
+                                   Href="@ShellSectionRoutes.Inventory" />
         </div>
     </ManagementSection>
 
-    <ManagementSection Title="Platform maintenance" Layer="@ManagementSection.UiLayer.Summary">
+    <ManagementSection Title="Governance" Layer="@ManagementSection.UiLayer.Summary">
+        <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <ManagementSummaryCard Title="Governance"
+                                   Description="Roles, users, permission catalog, and role assignment."
+                                   Href="/config/governance" />
+        </div>
+    </ManagementSection>
+
+    <ManagementSection Title="Attention" Layer="@ManagementSection.UiLayer.Summary">
+        <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <ManagementSummaryCard Title="Operational teams"
+                                   Description="Teams used for Attention routing."
+                                   Href="/attention/operational-teams" />
+            <ManagementSummaryCard Title="Routing defaults"
+                                   Description="Reminder and escalation intervals and default teams."
+                                   Href="/attention/routing-defaults" />
+            <ManagementSummaryCard Title="Managed contacts"
+                                   Description="People and addresses used in routing."
+                                   Href="/config/contacts" />
+            <ManagementSummaryCard Title="Notifications"
+                                   Description="Definitions, instances, delivery, and diagnostics."
+                                   Href="/config/notifications" />
+        </div>
+    </ManagementSection>
+
+    <ManagementSection Title="System" Layer="@ManagementSection.UiLayer.Summary">
         <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
             <ManagementSummaryCard Title="Platform settings"
                                    Description="Instance-scoped runtime flags with database overrides."
@@ -31,12 +47,10 @@
             <ManagementSummaryCard Title="Modules"
                                    Description="Installed module lifecycle, validation, and links to runs and audit."
                                    Href="/modules" />
-        </div>
-    </ManagementSection>
-
-    <ManagementSection Title="Developer & internal" Layer="@ManagementSection.UiLayer.Summary">
-        <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-            <ManagementSummaryCard Title="Developer tasks"
+            <ManagementSummaryCard Title="Authentication"
+                                   Description="Sign-in experience, chooser policy, and Entra tenant validation."
+                                   Href="/config/auth" />
+            <ManagementSummaryCard Title="Developer & internal"
                                    Description="Deferred dashboard tools, diagnostics, and internal demos."
                                    Href="@ShellSectionRoutes.DeveloperTasks" />
         </div>

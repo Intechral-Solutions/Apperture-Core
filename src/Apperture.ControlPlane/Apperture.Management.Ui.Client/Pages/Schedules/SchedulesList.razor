@@ -9,7 +9,7 @@
 @inject NavigationManager Nav
 
 <div class="p-4 ui-page-stack">
-    <PageHeader Eyebrow="Automation"
+    <PageHeader Eyebrow="Config"
                 Title="Schedules"
                 Subtitle="Schedule health and targets at a glance. Open a row for timing, outcomes, and actions.">
         <Toolbar>
@@ -85,7 +85,7 @@
                                        Href="/control/center" />
                 <ManagementSummaryCard Title="Blocked work"
                                        Description="Deferred runs and retry recovery."
-                                       Href="/control/blocked-work" />
+                                       Href="@RunStatusFacets.BlockedRunsHref" />
             </div>
         </ManagementSection>
 

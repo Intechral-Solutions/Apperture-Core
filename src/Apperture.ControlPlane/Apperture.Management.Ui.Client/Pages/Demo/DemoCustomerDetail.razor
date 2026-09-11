@@ -1,14 +1,15 @@
-@page "/demo/customers/{BusinessKey}"
+@page "/business-data/customers/{BusinessKey}"
 @layout ConfigLayout
 @inject IManagementClient Client
 @inject IOperatorCapabilitiesService Capabilities
 
 <div class="p-4 ui-page-stack">
     <PageHeader Title="@(_record is null ? "Demo customer" : DemoCustomerUiHelpers.CustomerDisplayName(_record))"
-                Eyebrow="Developer · Demo data"
+                Eyebrow="Business Data"
                 Subtitle="@DemoCustomerUiHelpers.PageSubtitle">
         <Toolbar>
-            <a href="@DemoCustomerUiRoutes.List" class="ui-toolbar-btn text-sm">← Demo Customers</a>
+            <StatusPill Label="@DemoCustomerUiHelpers.DemoBadge" Semantic="@ManagementStatusSemantic.Neutral" />
+            <a href="@DemoCustomerUiRoutes.List" class="ui-toolbar-btn text-sm">← Customers</a>
             <button type="button"
                     class="ui-toolbar-btn text-sm"
                     disabled="@_loading"

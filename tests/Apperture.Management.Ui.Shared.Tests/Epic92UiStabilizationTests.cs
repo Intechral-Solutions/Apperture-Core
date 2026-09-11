@@ -84,7 +84,6 @@ public sealed class Epic92UiStabilizationTests
         {
             "src/Apperture.ControlPlane/Apperture.Management.Ui.Client/Pages/Runs/RunDetail.razor",
             "src/Apperture.ControlPlane/Apperture.Management.Ui.Client/Pages/Schedules/ScheduleDetail.razor",
-            "src/Apperture.ControlPlane/Apperture.Management.Ui.Client/Pages/Control/BlockedWork.razor",
             "src/Apperture.ControlPlane/Apperture.Management.Ui.Client/Pages/Modules/ModuleDetail.razor",
         })
         {

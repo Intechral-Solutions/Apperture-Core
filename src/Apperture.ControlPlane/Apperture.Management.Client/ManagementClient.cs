@@ -436,6 +436,32 @@ public sealed class ManagementClient : IManagementClient
         return dto ?? new ControlCenterDto([], [], []);
     }
 
+    public async Task<InventoryQueryResult> GetInventoryAsync(
+        string mode = "resources",
+        string? type = null,
+        string? q = null,
+        string? status = null,
+        string? sort = null,
+        int take = 100,
+        CancellationToken cancellationToken = default)
+    {
+        var pairs = new List<string>
+        {
+            $"mode={Uri.EscapeDataString(mode)}",
+            $"take={take.ToString(CultureInfo.InvariantCulture)}"
+        };
+        Add(pairs, "type", type);
+        Add(pairs, "q", q);
+        Add(pairs, "status", status);
+        Add(pairs, "sort", sort);
+        var query = "?" + string.Join("&", pairs);
+        var dto = await _http.GetFromJsonAsync<InventoryQueryResult>(
+            $"inventory{query}",
+            ApiJsonReadOptions,
+            cancellationToken).ConfigureAwait(false);
+        return dto ?? new InventoryQueryResult([], []);
+    }
+
     public async Task<DashboardDefaultDto> GetDashboardDefaultAsync(CancellationToken cancellationToken = default)
     {
         var dto = await _http.GetFromJsonAsync<DashboardDefaultDto>("dashboard/default", cancellationToken).ConfigureAwait(false);

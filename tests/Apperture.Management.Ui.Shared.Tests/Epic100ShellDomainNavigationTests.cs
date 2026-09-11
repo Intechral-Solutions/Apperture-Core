@@ -7,21 +7,22 @@ namespace Apperture.Management.Ui.Shared.Tests;
 public sealed class Epic100ShellDomainNavigationTests
 {
     [Fact]
-    public void Automation_menu_labels_runs_and_schedules()
+    public void Control_center_menu_labels_runs_and_does_not_own_schedules()
     {
         var menus = ControlPanelMenuDefinitions.GetDefaultMenus();
-        var automation = menus["Automation"].Items;
-        automation.Should().Contain(i => i.Text == "Runs" && i.Href == "/runs");
-        automation.Should().Contain(i => i.Text == "Schedules" && i.Href == "/schedules");
-        automation.Should().NotContain(i => i.Text == "History");
-        automation.Should().NotContain(i => i.Text == "Scheduling");
+        var control = menus[SectionOwnerConstants.ControlCenter].Items;
+        control.Should().Contain(i => i.Text == "Runs" && i.Href == "/runs");
+        control.Should().NotContain(i => i.Text == "Schedules");
+        control.Should().NotContain(i => i.Text == "History");
+        control.Should().NotContain(i => i.Text == "Scheduling");
+        menus.Should().NotContainKey("Automation");
     }
 
     [Fact]
-    public void Operations_menu_orders_console_before_execute_before_audit()
+    public void Control_center_menu_orders_overview_before_execute_before_audit()
     {
         var menus = ControlPanelMenuDefinitions.GetDefaultMenus();
-        var items = menus["Operations"].Items;
+        var items = menus[SectionOwnerConstants.ControlCenter].Items;
         var labels = items.Select(i => i.Text).ToList();
         labels.IndexOf("Control Center").Should().BeLessThan(labels.IndexOf("Execute"));
         labels.IndexOf("Execute").Should().BeLessThan(labels.IndexOf("Audit"));
@@ -30,15 +31,16 @@ public sealed class Epic100ShellDomainNavigationTests
     }
 
     [Fact]
-    public void Config_attention_is_grouped_with_teams_routing_and_contacts()
+    public void Config_attention_is_grouped_with_teams_routing_contacts_and_notifications()
     {
         var menus = ControlPanelMenuDefinitions.GetDefaultMenus();
-        menus["Operations"].Items.Should().NotContain(i => i.Text == "Attention");
+        menus.Should().NotContainKey("Operations");
         var attention = menus[SectionOwnerConstants.Config].Items.First(i => i.Text == "Attention");
         attention.Children.Should().NotBeNullOrEmpty();
         attention.Children!.Select(c => c.Href).Should().Contain("/attention/operational-teams");
         attention.Children!.Select(c => c.Href).Should().Contain("/attention/routing-defaults");
         attention.Children!.Select(c => c.Href).Should().Contain("/config/contacts");
+        attention.Children!.Select(c => c.Href).Should().Contain("/config/notifications");
     }
 
     [Fact]
@@ -59,7 +61,7 @@ public sealed class Epic100ShellDomainNavigationTests
         config[0].Text.Should().Be("Overview");
         config[0].Href.Should().Be("/config");
         config.Should().NotContain(i => i.Text == "Managed contacts" && i.Href == "/config/contacts");
-        var maintenance = config.First(i => i.Text == "Platform maintenance");
-        maintenance.Children!.Should().Contain(i => i.Text == "Modules" && i.Href == "/modules");
+        var system = config.First(i => i.Text == "System");
+        system.Children!.Should().Contain(i => i.Text == "Modules" && i.Href == "/modules");
     }
 }

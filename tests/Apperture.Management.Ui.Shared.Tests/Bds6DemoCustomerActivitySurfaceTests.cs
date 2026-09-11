@@ -11,7 +11,7 @@ public sealed class Bds6DemoCustomerActivitySurfaceTests
     [Fact]
     public void Activity_route_and_helpers_are_wired()
     {
-        DemoCustomerUiRoutes.Activity("C-100").Should().Be("/demo/customers/C-100/activity");
+        DemoCustomerUiRoutes.Activity("C-100").Should().Be("/business-data/customers/C-100/activity");
         DemoCustomerUiRoutes.Activity("a b").Should().Contain("activity");
 
         var filter = DemoCustomerActivityUiHelpers.BuildFilter(
@@ -93,11 +93,10 @@ public sealed class Bds6DemoCustomerActivitySurfaceTests
     [Fact]
     public void Breadcrumb_activity_route_is_route_derived()
     {
-        var crumbs = ManagementBreadcrumbResolver.Resolve("/demo/customers/C-100/activity");
+        var crumbs = ManagementBreadcrumbResolver.Resolve("/business-data/customers/C-100/activity");
         crumbs.Select(c => c.Label).Should().Equal(
-            "Config",
-            "Developer & internal",
-            "Demo Customers",
+            "Business Data",
+            "Customers",
             "C-100",
             "Activity");
         crumbs[^2].Href.Should().Be(DemoCustomerUiRoutes.Detail("C-100"));
@@ -111,7 +110,7 @@ public sealed class Bds6DemoCustomerActivitySurfaceTests
             FindRepoRoot(),
             "src", "Apperture.ControlPlane", "Apperture.Management.Ui.Client",
             "Pages", "Demo", "DemoCustomerActivity.razor"));
-        activity.Should().Contain("@page \"/demo/customers/{BusinessKey}/activity\"");
+        activity.Should().Contain("@page \"/business-data/customers/{BusinessKey}/activity\"");
         activity.Should().Contain("GetDemoCustomerActivityAsync");
         activity.Should().Contain("Needs attention");
         activity.Should().Contain("BuildAffectedHref");
@@ -133,8 +132,8 @@ public sealed class Bds6DemoCustomerActivitySurfaceTests
     public void Link_integrity_activity_route_and_context_clearing()
     {
         AffectedRecordNavigation.WithoutContext(
-                "/demo/customers/C-100/activity?from=demo-customer&fromKey=C-100")
-            .Should().Be("/demo/customers/C-100/activity");
+                "/business-data/customers/C-100/activity?from=demo-customer&fromKey=C-100")
+            .Should().Be("/business-data/customers/C-100/activity");
 
         ManagementNavigationContextCatalog.SupportedTypes
             .Should().Contain(ManagementNavigationReturnContext.DemoCustomerType);
