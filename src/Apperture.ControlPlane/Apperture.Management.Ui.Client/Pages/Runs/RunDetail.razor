@@ -225,7 +225,7 @@
                     <div class="text-xs text-muted">@_blockedWork.BlockedReason</div>
                     @if (_blockedWork.RetryEligibleNow && string.Equals(_blockedWork.DefinitionKind, "workflow", StringComparison.OrdinalIgnoreCase))
                     {
-                        <DrillInLink Href="@RunStatusFacets.BlockedRunsHref">Retry from blocked runs</DrillInLink>
+                        <div class="text-xs text-muted">Eligible for retry — use the Retry (new run) button above.</div>
                     }
                     else if (!string.IsNullOrEmpty(_blockedWork.RetryEligibleReason))
                     {

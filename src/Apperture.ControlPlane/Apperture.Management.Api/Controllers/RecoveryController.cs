@@ -47,6 +47,15 @@ public sealed class RecoveryController : ControllerBase
 
     /// <summary>
     /// Lists blocked deferred work with remediation eligibility.
+    /// NAV-1 stabilization note (independent-review F-08): the standalone Blocked Work page that
+    /// called this list endpoint and <see cref="RetryBlockedWork"/> was folded into the Runs
+    /// "blocked" status facet, which has no list-level retry action of its own. Kept undeleted
+    /// rather than removed -- it is a documented API contract (docs/04-api/contracts.md) with no
+    /// internal-only carve-out, and its eligibility reasons / inspection-only guidance for
+    /// operation-kind blocked work are richer than the surviving <c>runs/{id}/retry</c> path.
+    /// <see cref="RecoveryController.GetBlockedWork"/> (single-item) still has a UI caller
+    /// (run detail); this list endpoint and the retry endpoint currently do not. Candidate for a
+    /// future execution-domain pass to restore as UI rather than remove.
     /// </summary>
     [HttpGet("blocked-work")]
     [ProducesResponseType(typeof(IReadOnlyList<BlockedWorkRemediationEntry>), StatusCodes.Status200OK)]

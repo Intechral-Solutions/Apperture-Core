@@ -169,7 +169,7 @@ public sealed class Uix4ContextualBreadcrumbsTests
         ManagementBreadcrumbResolver.Resolve("/dashboard").Select(c => c.Label)
             .Should().Equal("Control Center");
         ManagementBreadcrumbResolver.Resolve("/schedules/s-1").Select(c => c.Label)
-            .Should().Equal("Config", "Inventory", "Schedules", "Schedule");
+            .Should().Equal("Schedules", "Schedule");
         ManagementBreadcrumbResolver.Resolve("/config").Select(c => c.Label)
             .Should().Equal("Config", "Overview");
         ManagementBreadcrumbResolver.Resolve(DemoCustomerUiRoutes.List).Select(c => c.Label)

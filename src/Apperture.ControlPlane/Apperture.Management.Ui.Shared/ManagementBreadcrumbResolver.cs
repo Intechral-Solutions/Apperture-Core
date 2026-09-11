@@ -339,8 +339,18 @@ public static class ManagementBreadcrumbResolver
     private static IReadOnlyList<BreadcrumbItem> Integrations(params (string Label, string? Href)[] tail) =>
         Trail([("Integrations", "/integrations"), .. tail]);
 
+    /// <summary>
+    /// Connections are a first-class off-rail resource with their own model and URL (ADR-0040
+    /// rule 3) -- Config Inventory only discovers them, it does not own them. The breadcrumb
+    /// root must not assert Config/Inventory ancestry, mirroring how Integrations' own trail
+    /// carries no synthetic parent.
+    /// </summary>
     private static IReadOnlyList<BreadcrumbItem> Connections(params (string Label, string? Href)[] tail) =>
-        Trail([(SectionOwnerConstants.Config, ShellSectionRoutes.ConfigHome), ("Inventory", ShellSectionRoutes.Inventory), ("Connections", "/connections"), .. tail]);
+        Trail([("Connections", "/connections"), .. tail]);
+
+    /// <summary>Schedules: same off-rail, first-class rationale as <see cref="Connections"/>.</summary>
+    private static IReadOnlyList<BreadcrumbItem> Schedules(params (string Label, string? Href)[] tail) =>
+        Trail([("Schedules", "/schedules"), .. tail]);
 
     private static IReadOnlyList<BreadcrumbItem> Notifications(params (string Label, string? Href)[] tail)
     {
@@ -842,10 +852,7 @@ public static class ManagementBreadcrumbResolver
         c = null;
         if (!Matches(s, "schedules", "new"))
             return false;
-        c = Config(
-            ("Inventory", ShellSectionRoutes.Inventory),
-            ("Schedules", "/schedules"),
-            ("New", null));
+        c = Schedules(("New", null));
         return true;
     }
 
@@ -854,10 +861,7 @@ public static class ManagementBreadcrumbResolver
         c = null;
         if (!Matches(s, "schedules", "{id}"))
             return false;
-        c = Config(
-            ("Inventory", ShellSectionRoutes.Inventory),
-            ("Schedules", "/schedules"),
-            ("Schedule", null));
+        c = Schedules(("Schedule", null));
         return true;
     }
 
@@ -866,9 +870,7 @@ public static class ManagementBreadcrumbResolver
         c = null;
         if (!Matches(s, "schedules"))
             return false;
-        c = Config(
-            ("Inventory", ShellSectionRoutes.Inventory),
-            ("Schedules", null));
+        c = Trail(("Schedules", null));
         return true;
     }
 
@@ -1004,10 +1006,7 @@ public static class ManagementBreadcrumbResolver
         c = null;
         if (!Matches(s, "connections"))
             return false;
-        c = Trail(
-            (SectionOwnerConstants.Config, ShellSectionRoutes.ConfigHome),
-            ("Inventory", ShellSectionRoutes.Inventory),
-            ("Connections", null));
+        c = Trail(("Connections", null));
         return true;
     }
 

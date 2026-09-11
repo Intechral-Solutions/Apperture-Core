@@ -172,6 +172,12 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IInventoryQueryService, InventoryQueryService>();
         services.AddScoped<IControlAttentionQueryService, ControlAttentionQueryService>();
         services.AddScoped<IControlCenterQueryService, ControlCenterQueryService>();
+        // Orphaned from the operator UI since NAV-1 (Control Center is the sole home); no
+        // production caller remains. Kept registered undeleted pending a dedicated removal pass
+        // rather than deleted blindly -- see DashboardController's doc comment and
+        // docs/audits/nav1-architecture-review.md (F-01). The role/auth-posture query services
+        // these providers wrap (IRoleProvider, IAuthenticationAdminOverviewService, etc.) are
+        // independently useful and must not be removed alongside this.
         services.AddScoped<IDashboardCardProvider, RuntimeHealthDashboardCardProvider>();
         services.AddScoped<IDashboardCardProvider, BlockedWorkDashboardCardProvider>();
         services.AddScoped<IDashboardCardProvider, IntegrationsDashboardCardProvider>();

@@ -955,7 +955,7 @@ These are **two different operator surfaces**, not one widget system. After the 
 | Role | Compatibility URL | Live **triage console** |
 | API | unused on that page | `GET api/control/center` (+ health/scheduler) |
 
-`GET api/dashboard/default` still exists for deferred Dashboard Panel work and Config overview cards that are unique vs Control Center (governance / authentication posture). Card providers remain registered. Blocked-work card href is `/runs?status=blocked`.
+`GET api/dashboard/default` and its ten `IDashboardCardProvider` implementations have **no remaining production UI caller** (verified NAV-1 post-review stabilization pass). They are kept registered undeleted only because the endpoint is a documented API contract (`docs/04-api/contracts.md`-adjacent surface) and a safe removal spans a whole project plus dedicated tests — not because deferred Dashboard Panel work or Config overview still consume them. The one genuinely useful signal they carried (the auth "no viable sign-in path" warning) is now surfaced on Config overview via `ConfigAuthPostureUiHelpers`, reading `GET api/config/auth-overview` directly — a small helper, not the card framework. The governance role-count card was not restored. Blocked-work card href is `/runs?status=blocked` (the card itself is unreferenced).
 
 ### Dashboard — CONFIRMED (deferred / redirect)
 

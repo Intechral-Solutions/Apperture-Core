@@ -5,6 +5,16 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Apperture.Management.Api.Controllers;
 
+/// <summary>
+/// Orphaned from the operator UI since NAV-1 retired Dashboard as a competing operational home
+/// (Control Center is now the sole home; <c>/dashboard</c> is a redirect). No production caller
+/// remains -- verified NAV-1 stabilization pass (independent-review F-01 / 7C). Kept undeleted
+/// pending a dedicated removal pass rather than deleted blindly here: this endpoint, the ten
+/// <see cref="IDashboardCardProvider"/> implementations, and <see cref="IDashboardDefaultViewService"/>
+/// span a whole project plus their own unit tests, and a safe removal is a separately-reviewable
+/// change, not a stabilization-pass edit. Do not build the future Dashboard Panel engine against
+/// this controller -- see docs/01-architecture/transitions/nav-overhaul/closure-report.md.
+/// </summary>
 [ApiController]
 [Route("api/dashboard")]
 [Authorize]

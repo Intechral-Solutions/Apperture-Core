@@ -62,7 +62,7 @@ UI aggregation is not domain ownership: Connections, Schedules, Runs, and Busine
 ## Operator console (current baseline)
 
 - **Default landing:** `/` and post-login redirect to `/control/center`. `/dashboard` replaces to Control Center after menus fetch.
-- **Control Center:** live triage (`GET /api/control/center`) — health, blocked runs, recent outcomes, scheduler cycle. Unique dashboard-card data that is not already on Control Center (governance / authentication posture) is summarized on Config overview.
+- **Control Center:** live triage (`GET /api/control/center`) — health, blocked runs, recent outcomes, scheduler cycle. The authentication-posture warning that is not already on Control Center is summarized on Config overview via `ConfigAuthPostureUiHelpers` (post-review stabilization) — a small, direct read of `GET api/config/auth-overview`, not the retired Dashboard card framework (`GET api/dashboard/default`, `IDashboardCardProvider`), which has no remaining UI caller and is kept undeleted only as a documented API contract pending a dedicated removal pass.
 - **Runs:** `/runs` list + `/runs/{id}` detail. `status=blocked` is a **derived facet** (`failed` + `[Blocked] ` failure summary), not a stored lifecycle status. Per-run retry stays on run detail.
 - **Config Inventory:** `/config/inventory` searches configuration records (modules, integrations, connections, schedules, notification definitions) and recent activity (runs, audit). Opening a row goes to the canonical page.
 - **Execute:** `/execute` starts operations and workflows. Legacy `/operations/start` and `/workflows/start` remain stubs to Execute.

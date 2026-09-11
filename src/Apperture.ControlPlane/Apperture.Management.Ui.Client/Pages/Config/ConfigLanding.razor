@@ -1,10 +1,20 @@
 @page "/config"
 @layout ConfigLayout
+@using Apperture.Management.Client
+@using Apperture.Management.Ui.Shared
+@inject IManagementClient Client
 
 <div class="p-4 ui-page-stack">
     <PageHeader Title="Configuration"
                 Eyebrow="Config"
                 Subtitle="Inventory, governance, Attention configuration, and system settings. Day-to-day operations stay on Control Center, Integrations, and Runs." />
+
+    @if (_authWarning is not null)
+    {
+        <PageMessage Kind="PageMessageKind.Warning" Message="@_authWarning">
+            <a class="underline" href="/config/auth">Review authentication</a>
+        </PageMessage>
+    }
 
     <ManagementSection Title="Inventory" Layer="@ManagementSection.UiLayer.Summary">
         <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -56,3 +66,28 @@
         </div>
     </ManagementSection>
 </div>
+
+@code {
+    private string? _authWarning;
+
+    // NAV-1 stabilization (independent-review F-01 / 7A): the retired Dashboard's
+    // auth-warnings card carried a proactive "no viable sign-in path" signal that had no
+    // replacement surface after Control Center became the sole home. Restored here as a small,
+    // capability-safe summary rather than a new card framework. GetConfigAuthOverviewAsync
+    // already returns null on 401/403, so operators without the auth-read/manage capability
+    // simply see nothing.
+    protected override async Task OnInitializedAsync()
+    {
+        ConfigAuthOverviewDto? overview;
+        try
+        {
+            overview = await Client.GetConfigAuthOverviewAsync();
+        }
+        catch (HttpRequestException)
+        {
+            overview = null;
+        }
+
+        _authWarning = ConfigAuthPostureUiHelpers.ResolveWarning(overview);
+    }
+}

@@ -53,7 +53,7 @@ Operations, Automation, Connections, and Dashboard are not rail domains.
 | Provider | Decision |
 |----------|----------|
 | Runtime Health, Blocked Work, Integrations, Needs Attention, Executions, Recent Activity, Schedules, Audit | Already on Control Center (or its drill-ins). Do not duplicate. Update Blocked Work hrefs to `/runs?status=blocked`. |
-| Governance, Authentication Posture | Unique vs Control Center. Surface on Config landing via existing dashboard card data. Canonical pages remain `/config/governance` and `/config/auth`. |
+| Governance, Authentication Posture | Unique vs Control Center. **Post-review stabilization:** the authentication "no viable sign-in path" warning is surfaced on Config landing via `ConfigAuthPostureUiHelpers` (a small, capability-safe summary reading the same `IAuthenticationAdminOverviewService` data the old `auth-warnings` card used) — not the retired dashboard card framework. Governance's role-count summary was not restored (lower-value; role management itself is one click away at `/config/governance`). Canonical pages remain `/config/governance` and `/config/auth`. |
 
 Dashboard Panel engine (`/dashboard/manage` etc.) stays deferred.
 
