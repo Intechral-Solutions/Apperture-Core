@@ -1,0 +1,245 @@
+@page "/integrations/{IntegrationId}/schedules"
+@using Apperture.Management.Client
+@using Apperture.Management.Ui.Client.Organisms
+@using Apperture.Management.Ui.Client.Services
+@using Apperture.Management.Ui.Shared
+@inject IManagementClient Client
+@inject IOperatorCapabilitiesService Capabilities
+@inject IToastService Toasts
+
+<div class="p-4 ui-page-stack">
+    <PageHeader @key="@IntegrationId"
+                Eyebrow="Integrations"
+                Title="@EntityShellTitles.Detail(_integration?.DisplayName, "Integration")"
+                Subtitle="Schedules">
+        <Toolbar>
+            <button type="button" class="ui-toolbar-btn" disabled="@_loading" @onclick="LoadAsync">Refresh</button>
+        </Toolbar>
+    </PageHeader>
+    <IntegrationHubNav IntegrationId="@IntegrationId" ShowNotificationsTab="@_showNotificationsTab" />
+
+    @if (!_capabilitiesLoaded)
+    {
+        <LoadingState />
+    }
+    else if (!_canView)
+    {
+        <ForbiddenState Message="You do not have permission to view integration schedules." />
+    }
+    else if (_loading)
+    {
+        <LoadingState Message="Loading schedules…" />
+    }
+    else if (_integration is null)
+    {
+        <EmptyState Title="Integration not found" Message="The requested integration could not be loaded." />
+    }
+    else
+    {
+        @if (!string.IsNullOrEmpty(_actionMessage))
+        {
+            <ActionFeedback Kind="@_actionFeedbackKind" Message="@_actionMessage" />
+        }
+
+        <p class="text-xs text-muted max-w-3xl">
+            Schedules shown here are correlated to this integration via <span class="font-mono">IntegrationId</span>.
+            A schedule remains a first-class resource — it also appears in the global
+            <a class="underline" href="/schedules">Schedules</a> list and Config Inventory.
+        </p>
+
+        <ManagementSection Title="Schedules"
+                           Layer="ManagementSection.UiLayer.Detail"
+                           Help="Recurring workflow triggers owned by this integration.">
+            @if (_schedules is { Count: > 0 })
+            {
+                <ul class="space-y-1">
+                    @foreach (var s in _schedules)
+                    {
+                        <li class="flex flex-wrap items-center justify-between gap-2">
+                            <DrillInLink Href="@("/schedules/" + Uri.EscapeDataString(s.Id))">@s.Name</DrillInLink>
+                            <span class="text-muted text-xs flex items-center gap-2">
+                                @(s.Enabled ? "Enabled" : "Disabled")
+                                @if (s.NextFireUtc is not null)
+                                {
+                                    <span>· next <TimestampDisplay Value="@s.NextFireUtc" /></span>
+                                }
+                            </span>
+                        </li>
+                    }
+                </ul>
+                <div class="mt-2">
+                    <DrillInLink Href="@IntegrationUiRoutes.ScheduleDiagnostics(IntegrationId)">Schedule diagnostics</DrillInLink>
+                </div>
+            }
+            else
+            {
+                <EmptyState Message="No schedules yet. Add a schedule to run workflows on a recurring basis.">
+                    @if (_canManage)
+                    {
+                        <button type="button" class="mt-3 ui-toolbar-btn" @onclick="StartAddSchedule">Add schedule</button>
+                    }
+                </EmptyState>
+            }
+            @if (_canManage && _schedules is { Count: > 0 })
+            {
+                @if (_addingSchedule)
+                {
+                    <div class="ui-section-panel mt-3 space-y-3">
+                        <div>
+                            <label class="block text-xs text-muted">Name</label>
+                            <input class="ui-input mt-1 w-full text-sm" @bind="_scheduleName" placeholder="e.g. Daily sync" />
+                        </div>
+                        <div>
+                            <label class="block text-xs text-muted">Cron expression</label>
+                            <input class="ui-input mt-1 w-full text-sm font-mono" @bind="_scheduleCron" placeholder="0 0 * * *" />
+                        </div>
+                        <div>
+                            <label class="block text-xs text-muted">Time zone</label>
+                            <input class="ui-input mt-1 w-full text-sm" @bind="_scheduleTimeZone" placeholder="America/Los_Angeles" />
+                            <div class="mt-1 text-xs text-muted">IANA id (e.g. UTC, America/Los_Angeles). Cron uses this zone; fires stored as UTC. Leave blank to use the platform default (Scheduling.DefaultTimeZoneId).</div>
+                        </div>
+                        <div>
+                            <label class="block text-xs text-muted">Workflow</label>
+                            <select class="ui-input mt-1 w-full text-sm" @bind="_scheduleWorkflowId">
+                                <option value="">Select…</option>
+                                @if (_workflows is not null)
+                                {
+                                    @foreach (var w in _workflows)
+                                    {
+                                        <option value="@w.Id">@w.Name</option>
+                                    }
+                                }
+                            </select>
+                        </div>
+                        <div class="flex gap-2">
+                            <button type="button" class="btn btn-primary text-xs" @onclick="CreateScheduleAsync" disabled="@(_scheduleSaving || string.IsNullOrWhiteSpace(_scheduleName) || string.IsNullOrWhiteSpace(_scheduleCron) || string.IsNullOrWhiteSpace(_scheduleWorkflowId))">Create</button>
+                            <button type="button" class="btn btn-secondary text-xs" @onclick="CancelAddSchedule">Cancel</button>
+                        </div>
+                    </div>
+                }
+                else
+                {
+                    <button type="button" class="btn btn-secondary text-xs mt-2" @onclick="StartAddSchedule">Add schedule</button>
+                }
+            }
+        </ManagementSection>
+    }
+</div>
+
+@code {
+    [Parameter] public string IntegrationId { get; set; } = "";
+
+    private IntegrationDto? _integration;
+    private IReadOnlyList<ScheduleDto>? _schedules;
+    private IReadOnlyList<WorkflowDto>? _workflows;
+
+    private bool _capabilitiesLoaded;
+    private bool _canView;
+    private bool _canManage;
+    private bool _showNotificationsTab;
+    private bool _loading = true;
+    private string? _actionMessage;
+    private PageMessageKind _actionFeedbackKind = PageMessageKind.Info;
+
+    private bool _addingSchedule;
+    private string _scheduleName = "";
+    private string _scheduleCron = "0 0 * * *";
+    private string _scheduleTimeZone = "";
+    private string _scheduleWorkflowId = "";
+    private bool _scheduleSaving;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var caps = await Capabilities.GetCapabilitiesAsync();
+        _canView = caps.CanViewIntegrations;
+        _canManage = caps.CanManageIntegrations;
+        _showNotificationsTab = caps.CanViewNotificationDefinitions;
+        _capabilitiesLoaded = true;
+
+        if (_canView)
+            await LoadAsync();
+        else
+            _loading = false;
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        try
+        {
+            _integration = await Client.GetIntegrationAsync(IntegrationId);
+            if (_integration is null)
+                return;
+
+            try { _schedules = await Client.GetIntegrationSchedulesAsync(IntegrationId); }
+            catch (HttpRequestException)
+            {
+                // Fall back to the operator-detail's embedded schedule summaries if the dedicated
+                // endpoint is unavailable, matching Overview's existing degrade-gracefully pattern.
+                var detail = await Client.GetIntegrationOperatorDetailAsync(IntegrationId);
+                _schedules = detail?.Schedules.Select(s => new ScheduleDto(
+                    s.Id, s.Name, s.RecurrenceExpression, "UTC", s.Enabled, 0, null, 1, s.IntegrationId)).ToList();
+            }
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private void SetActionFeedback(string message, PageMessageKind kind = PageMessageKind.Info)
+    {
+        _actionMessage = message;
+        _actionFeedbackKind = kind;
+    }
+
+    private async Task StartAddSchedule()
+    {
+        _addingSchedule = true;
+        _scheduleName = "";
+        _scheduleCron = "0 0 * * *";
+        _scheduleTimeZone = "";
+        _scheduleWorkflowId = "";
+        if (_integration is not null)
+            _workflows = await Client.GetWorkflowsAsync(_integration.ModuleId);
+    }
+
+    private void CancelAddSchedule() => _addingSchedule = false;
+
+    private async Task CreateScheduleAsync()
+    {
+        if (_integration is null || !_canManage || string.IsNullOrWhiteSpace(_scheduleName) || string.IsNullOrWhiteSpace(_scheduleCron) || string.IsNullOrWhiteSpace(_scheduleWorkflowId))
+            return;
+        _scheduleSaving = true;
+        try
+        {
+            var targetConfig = System.Text.Json.JsonSerializer.Serialize(new { workflowDefinitionId = _scheduleWorkflowId });
+            await Client.CreateIntegrationScheduleAsync(IntegrationId, new CreateIntegrationScheduleRequest(
+                _scheduleName.Trim(),
+                _scheduleCron.Trim(),
+                string.IsNullOrWhiteSpace(_scheduleTimeZone) ? null : _scheduleTimeZone.Trim(),
+                true,
+                0,
+                targetConfig));
+            SetActionFeedback("Schedule created.");
+            Toasts.Show(ToastSeverity.Success, "Schedule created.");
+            _addingSchedule = false;
+            await LoadAsync();
+        }
+        catch (HttpRequestException ex)
+        {
+            SetActionFeedback(ex.Message, PageMessageKind.Error);
+            Toasts.Show(ToastSeverity.Error, ex.Message);
+        }
+        catch (ScheduleValidationException ex)
+        {
+            var validationMsg = string.Join(" ", ex.Errors);
+            SetActionFeedback(validationMsg, PageMessageKind.Error);
+            Toasts.Show(ToastSeverity.Error, validationMsg);
+        }
+        finally
+        {
+            _scheduleSaving = false;
+        }
+    }
+}

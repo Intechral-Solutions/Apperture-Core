@@ -18,13 +18,12 @@
             <div class="mt-1 font-mono text-xs text-muted break-all">@IntegrationId</div>
         </ChildContent>
         <Toolbar>
-            <a href="@IntegrationUiRoutes.Detail(IntegrationId)" class="ui-toolbar-btn text-sm">Integration detail</a>
-            <a href="@IntegrationUiRoutes.Settings(IntegrationId)" class="ui-toolbar-btn text-sm">Settings</a>
             <a href="@IntegrationUiRoutes.ScheduleDiagnostics(IntegrationId)" class="ui-toolbar-btn text-sm">Schedule diagnostics</a>
             <a href="@ConfigDiagnosticsHref" class="ui-toolbar-btn text-sm">Full diagnostics</a>
             <button type="button" class="ui-toolbar-btn text-sm disabled:opacity-50" disabled="@_busy" @onclick="LoadAsync">Refresh</button>
         </Toolbar>
     </PageHeader>
+    <IntegrationHubNav IntegrationId="@IntegrationId" ShowNotificationsTab="true" />
 
     @if (!_capabilitiesLoaded)
     {

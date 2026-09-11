@@ -3,6 +3,7 @@
 @using Apperture.Management.Client
 @using Apperture.Management.Ui.Client.Organisms
 @using Apperture.Management.Ui.Client.Services
+@using Apperture.Management.Ui.Client.Organisms
 @using Apperture.Management.Ui.Shared
 @inject IManagementClient Client
 @inject IOperatorCapabilitiesService Capabilities
@@ -12,13 +13,11 @@
     <PageHeader @key="@IntegrationId"
                 Eyebrow="Integrations"
                 Title="@EntityShellTitles.Detail(_integrationName, "Integration")"
-                Subtitle="Settings">
+                Subtitle="Configuration">
         <ChildContent>
             <div class="mt-1 font-mono text-xs text-muted break-all">@IntegrationId</div>
         </ChildContent>
         <Toolbar>
-            <a href="@IntegrationUiRoutes.Detail(IntegrationId)" class="ui-toolbar-btn">Integration detail</a>
-            <a href="@IntegrationUiRoutes.Notifications(IntegrationId)" class="ui-toolbar-btn">Notifications</a>
             <a href="@IntegrationUiRoutes.ScheduleDiagnostics(IntegrationId)" class="ui-toolbar-btn">Schedule diagnostics</a>
             <button type="button"
                     class="ui-toolbar-btn"
@@ -28,6 +27,7 @@
             </button>
         </Toolbar>
     </PageHeader>
+    <IntegrationHubNav IntegrationId="@IntegrationId" ShowNotificationsTab="@_showNotificationsTab" />
 
     @if (!_capabilitiesLoaded)
     {
@@ -133,6 +133,7 @@
   private bool _capabilitiesLoaded;
   private bool _canView;
   private bool _canManage;
+  private bool _showNotificationsTab;
   private bool _busy;
   private bool _settingsLoading = true;
   private bool _integrationMissing;
@@ -152,6 +153,7 @@
     var caps = await Capabilities.GetCapabilitiesAsync();
     _canView = caps.CanViewIntegrations;
     _canManage = caps.CanUpdateIntegrations;
+    _showNotificationsTab = caps.CanViewNotificationDefinitions;
     _capabilitiesLoaded = true;
 
     if (_canView)

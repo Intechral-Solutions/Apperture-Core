@@ -26,6 +26,12 @@ public sealed class Epic101ManagementBreadcrumbResolverTests
     [InlineData("/integrations/int-1", "Integrations", "Integration")]
     [InlineData("/integrations/int-1/notifications", "Integrations", "Integration", "Notifications")]
     [InlineData("/integrations/int-1/schedule-diagnostics", "Integrations", "Integration", "Schedule diagnostics")]
+    // HUB-1: contextual Integration hub sections. "Integration" is a fixed route-derived label,
+    // not the real display name — that lives in the shell top-bar Title (ShellOrientationService).
+    [InlineData("/integrations/int-1/settings", "Integrations", "Integration", "Configuration")]
+    [InlineData("/integrations/int-1/connections", "Integrations", "Integration", "Connections")]
+    [InlineData("/integrations/int-1/schedules", "Integrations", "Integration", "Schedules")]
+    [InlineData("/integrations/int-1/runs", "Integrations", "Integration", "Runs")]
     [InlineData("/connections", "Connections")]
     [InlineData("/connections/new", "Connections", "New")]
     [InlineData("/connections/conn-1", "Connections", "Connection")]

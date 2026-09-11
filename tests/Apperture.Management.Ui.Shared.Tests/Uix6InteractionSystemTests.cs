@@ -132,7 +132,11 @@ public sealed class Uix6InteractionSystemTests
 
         integration.Should().Contain("ConfirmActionEmphasis.Destructive");
         integration.Should().Contain("Delete integration?");
-        integration.Should().Contain("Remove binding?");
+
+        // HUB-1: binding management (and its confirmation dialog) moved to the dedicated
+        // Connections hub section.
+        var connections = ReadComponent("Pages/Integrations/IntegrationConnections.razor");
+        connections.Should().Contain("Remove binding?");
 
         var connection = ReadComponent("Pages/Connections/ConnectionDetail.razor");
         connection.Should().Contain("ConfirmActionEmphasis.Caution");

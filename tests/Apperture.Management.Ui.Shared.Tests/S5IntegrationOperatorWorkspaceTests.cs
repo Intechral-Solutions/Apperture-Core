@@ -58,12 +58,17 @@ public sealed class S5IntegrationOperatorWorkspaceTests
     [Fact]
     public void IntegrationDetail_prioritizes_operator_sections()
     {
+        // HUB-1: Overview is now the operator-focused hub landing section. Full binding/settings
+        // configuration management moved to the dedicated Connections/Configuration hub sections
+        // (IntegrationConnections.razor / IntegrationSettings.razor); Overview keeps only a
+        // condensed readiness summary linking out to Connections for detail.
         var path = RepoPath("src/Apperture.ControlPlane/Apperture.Management.Ui.Client/Pages/Integrations/IntegrationDetail.razor");
         var content = File.ReadAllText(path);
         content.Should().Contain("Title=\"Needs attention\"");
         content.Should().Contain("RecentOutcomeSummary");
-        content.IndexOf("Title=\"Recent activity\"").Should().BeLessThan(content.IndexOf("Title=\"Configuration\""));
-        content.Should().Contain("ManagementAdvancedSection Title=\"Advanced configuration and diagnostics\"");
+        content.IndexOf("Title=\"Recent activity\"").Should().BeLessThan(content.IndexOf("Title=\"Procedures\""));
+        content.Should().Contain("ManagementAdvancedSection Title=\"Identity and diagnostics\"");
+        content.Should().Contain("IntegrationUiRoutes.Connections(IntegrationId)");
     }
 
     [Fact]

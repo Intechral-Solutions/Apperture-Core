@@ -1,0 +1,543 @@
+@page "/integrations/{IntegrationId}/connections"
+@using Apperture.Management.Client
+@using Apperture.Management.Ui.Client.Organisms
+@using Apperture.Management.Ui.Client.Services
+@using Apperture.Management.Ui.Shared
+@inject IManagementClient Client
+@inject IOperatorCapabilitiesService Capabilities
+@inject IToastService Toasts
+
+<div class="p-4 ui-page-stack">
+    <PageHeader @key="@IntegrationId"
+                Eyebrow="Integrations"
+                Title="@EntityShellTitles.Detail(_integration?.DisplayName, "Integration")"
+                Subtitle="Connections">
+        <Toolbar>
+            <button type="button" class="ui-toolbar-btn" disabled="@_loading" @onclick="LoadAsync">Refresh</button>
+        </Toolbar>
+    </PageHeader>
+    <IntegrationHubNav IntegrationId="@IntegrationId" ShowNotificationsTab="@_showNotificationsTab" />
+
+    @if (!_capabilitiesLoaded)
+    {
+        <LoadingState />
+    }
+    else if (!_canView)
+    {
+        <ForbiddenState Message="You do not have permission to view integration connections." />
+    }
+    else if (_loading)
+    {
+        <LoadingState Message="Loading connections…" />
+    }
+    else if (_integration is null)
+    {
+        <EmptyState Title="Integration not found" Message="The requested integration could not be loaded." />
+    }
+    else
+    {
+        @if (!string.IsNullOrEmpty(_actionMessage))
+        {
+            <ActionFeedback Kind="@_actionFeedbackKind" Message="@_actionMessage" />
+        }
+
+        <p class="text-xs text-muted max-w-3xl">
+            Connections shown here are not owned by this integration — they remain reusable, first-class
+            connections. This page shows the requirements this integration declares and which connections
+            currently satisfy them.
+        </p>
+
+        <IntegrationConfigurationOverview IntegrationId="@IntegrationId"
+                                          Readiness="@_readiness"
+                                          Declarations="@_declarations"
+                                          Bindings="@_bindingSummaries"
+                                          SettingRows="@_settingRows"
+                                          ProcedureList="@_procedureList"
+                                          Schedules="@_schedules"
+                                          ScheduleCount="@(_schedules?.Count ?? 0)"
+                                          ConnectionNames="@_connectionNames"
+                                          CanManageIntegrations="@(_canManage)"
+                                          OnBindRequirement="BindRequirementAsync"
+                                          OnUnbindBinding="UnbindSummaryBindingAsync" />
+
+        <ManagementSection Title="Bindings"
+                           Layer="ManagementSection.UiLayer.Detail"
+                           Help="Module slots, and the connections currently bound to them. Bindings belong to this integration; connections remain reusable and may be bound by more than one integration.">
+            @if (_bindings is { Count: > 0 })
+            {
+                <ul class="space-y-1">
+                    @foreach (var b in _bindings)
+                    {
+                        <li class="flex items-center justify-between gap-2">
+                            <div>
+                                <DrillInLink Href="@("/connections/" + Uri.EscapeDataString(b.ConnectionId ?? ""))">@b.SlotName</DrillInLink>
+                                <span class="text-muted text-xs ml-1">@IntegrationConfigurationOperatorUiHelpers.FormatCapabilityLabel(null, b.ContractType)</span>
+                                @if (!string.IsNullOrEmpty(b.ConnectionId))
+                                {
+                                    @if (_connectionNames.TryGetValue(b.ConnectionId, out var connName))
+                                    {
+                                        <span class="text-muted text-xs">→ @connName</span>
+                                    }
+                                    @if (_bindingVerificationByConnectionId.TryGetValue(b.ConnectionId, out var verificationState))
+                                    {
+                                        <span class="text-muted text-xs">· @IntegrationConfigurationOperatorUiHelpers.FormatVerificationStatusLabel(verificationState)</span>
+                                    }
+                                }
+                            </div>
+                            @if (_canManage)
+                            {
+                                <button type="button" class="btn btn-danger text-xs" @onclick="() => RequestRemoveBinding(b)">Remove</button>
+                            }
+                        </li>
+                    }
+                </ul>
+            }
+            else
+            {
+                <EmptyState Message="No bindings. Bind a required slot above, or add one manually below." />
+            }
+            @if (_canManage)
+            {
+                @if (_addingBinding)
+                {
+                    <div class="ui-section-panel mt-3 space-y-3">
+                        @if (!string.IsNullOrEmpty(_bindingError))
+                        {
+                            <PageMessage Kind="PageMessageKind.Warning" Message="@_bindingError" />
+                        }
+                        <div>
+                            <label class="block text-xs text-muted">Slot</label>
+                            <select class="ui-input mt-1 w-full text-sm" @bind="_bindingSlot" @bind:after="OnBindingSlotChanged">
+                                <option value="">Select…</option>
+                                @if (_moduleSlots is not null)
+                                {
+                                    @foreach (var s in _moduleSlots)
+                                    {
+                                        <option value="@s.SlotName">@s.SlotName (@IntegrationConfigurationOperatorUiHelpers.FormatCapabilityLabel(null, s.ContractType))</option>
+                                    }
+                                }
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-xs text-muted">Connection</label>
+                            <select class="ui-input mt-1 w-full text-sm" @bind="_bindingConnectionId">
+                                <option value="">Select…</option>
+                                @if (_eligibleConnections is not null)
+                                {
+                                    @foreach (var c in _eligibleConnections)
+                                    {
+                                        <option value="@c.Id">@c.Name</option>
+                                    }
+                                }
+                            </select>
+                            @if (!string.IsNullOrEmpty(_bindingSlot) && (_eligibleConnections?.Count ?? 0) == 0)
+                            {
+                                <div class="mt-1 text-xs text-warning">
+                                    No compatible connection currently exists for this slot. Create one in flow, then bind it immediately.
+                                </div>
+                            }
+                        </div>
+                        @if (_addingConnectionInFlow)
+                        {
+                            <div class="ui-section-panel space-y-3">
+                                <div class="text-xs font-semibold text-heading">Create connection in flow</div>
+                                @if (!string.IsNullOrEmpty(_inFlowCreateError))
+                                {
+                                    <PageMessage Kind="PageMessageKind.Warning" Message="@_inFlowCreateError" />
+                                }
+                                <div>
+                                    <label class="block text-xs text-muted">Connector definition</label>
+                                    <select class="ui-input mt-1 w-full text-sm" @bind="_inFlowConnectorDefinitionId" @bind:after="OnInFlowConnectorDefinitionChangedAsync">
+                                        <option value="">Select…</option>
+                                        @foreach (var def in _connectorDefinitions)
+                                        {
+                                            <option value="@def.Id">@def.Name (@def.Id)</option>
+                                        }
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-xs text-muted">Connection name</label>
+                                    <input class="ui-input mt-1 w-full text-sm"
+                                           @bind="_inFlowConnectionName"
+                                           placeholder="e.g. Campus Nexus Production" />
+                                </div>
+                                @if (SelectedInFlowConnectorDefinition is not null)
+                                {
+                                    <ConnectorConnectionFieldInputs Definition="SelectedInFlowConnectorDefinition"
+                                                                    ConfigValues="_inFlowConfigValues"
+                                                                    SecretValues="_inFlowSecretValues" />
+                                }
+                                <div class="flex gap-2">
+                                    <button type="button"
+                                            class="btn btn-primary text-xs"
+                                            disabled="@(_inFlowCreateSaving || string.IsNullOrWhiteSpace(_inFlowConnectorDefinitionId) || string.IsNullOrWhiteSpace(_inFlowConnectionName))"
+                                            @onclick="CreateConnectionInFlowAsync">
+                                        Create connection
+                                    </button>
+                                    <button type="button"
+                                            class="btn btn-secondary text-xs"
+                                            @onclick="CancelInFlowConnectionCreate">
+                                        Cancel create
+                                    </button>
+                                </div>
+                            </div>
+                        }
+                        <div class="flex gap-2">
+                            <button type="button" class="btn btn-primary text-xs" @onclick="CreateBindingAsync" disabled="@(_bindingSaving || string.IsNullOrEmpty(_bindingSlot) || string.IsNullOrEmpty(_bindingConnectionId))">Add</button>
+                            @if (_canCreateConnections)
+                            {
+                                <button type="button"
+                                        class="btn btn-secondary text-xs"
+                                        @onclick="StartInFlowConnectionCreateAsync"
+                                        disabled="@_inFlowCreateSaving">
+                                    Create connection
+                                </button>
+                            }
+                            <button type="button" class="btn btn-secondary text-xs" @onclick="CancelAddBinding">Cancel</button>
+                        </div>
+                    </div>
+                }
+                else
+                {
+                    <button type="button" class="btn btn-secondary text-xs mt-2" @onclick="StartAddBinding">Add binding</button>
+                }
+            }
+        </ManagementSection>
+    }
+</div>
+
+<ConfirmActionDialog IsOpen="@(_pendingBindingRemoval is not null)"
+                     Title="Remove binding?"
+                     ConfirmLabel="Remove binding"
+                     Emphasis="ConfirmActionEmphasis.Caution"
+                     OnConfirm="RemovePendingBindingAsync"
+                     OnConfirmed="() => _pendingBindingRemoval = null"
+                     OnCancel="() => _pendingBindingRemoval = null">
+    <ChildContent>
+        Slot <strong>@(_pendingBindingRemoval?.SlotName ?? "")</strong> will no longer resolve a connection until it is bound again.
+    </ChildContent>
+</ConfirmActionDialog>
+
+@code {
+    [Parameter] public string IntegrationId { get; set; } = "";
+
+    private IntegrationDto? _integration;
+    private IntegrationReadinessDto? _readiness;
+    private IntegrationModuleSlotSummaryDto[]? _requiredSlots;
+    private IntegrationBindingSummaryDto[]? _bindingSummaries;
+    private IReadOnlyList<IntegrationBindingDto>? _bindings;
+    private IntegrationConfigurationDeclarationsDto? _declarations;
+    private IReadOnlyList<PlatformSettingResolvedDto>? _settingRows;
+    private IntegrationProcedureListDto? _procedureList;
+    private IReadOnlyList<ScheduleDto>? _schedules;
+    private readonly Dictionary<string, string> _connectionNames = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, string> _bindingVerificationByConnectionId = new(StringComparer.Ordinal);
+
+    private bool _capabilitiesLoaded;
+    private bool _canView;
+    private bool _canManage;
+    private bool _canCreateConnections;
+    private bool _showNotificationsTab;
+    private bool _loading = true;
+    private string? _actionMessage;
+    private PageMessageKind _actionFeedbackKind = PageMessageKind.Info;
+
+    private IntegrationBindingDto? _pendingBindingRemoval;
+
+    private bool _addingBinding;
+    private string _bindingSlot = "";
+    private string _bindingConnectionId = "";
+    private bool _bindingSaving;
+    private string? _bindingError;
+    private IReadOnlyList<ModuleSlotDto>? _moduleSlots;
+    private IReadOnlyList<EligibleConnectionDto>? _eligibleConnections;
+    private bool _addingConnectionInFlow;
+    private bool _inFlowCreateSaving;
+    private string _inFlowConnectorDefinitionId = "";
+    private string _inFlowConnectionName = "";
+    private string? _inFlowCreateError;
+    private IReadOnlyList<ConnectorDefinitionCatalogDto> _connectorDefinitions = Array.Empty<ConnectorDefinitionCatalogDto>();
+    private readonly Dictionary<string, string> _inFlowConfigValues = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, string> _inFlowSecretValues = new(StringComparer.Ordinal);
+
+    private ConnectorDefinitionCatalogDto? SelectedInFlowConnectorDefinition =>
+        _connectorDefinitions.FirstOrDefault(d => string.Equals(d.Id, _inFlowConnectorDefinitionId, StringComparison.Ordinal));
+
+    protected override async Task OnInitializedAsync()
+    {
+        var caps = await Capabilities.GetCapabilitiesAsync();
+        _canView = caps.CanViewIntegrations;
+        _canManage = caps.CanManageIntegrations;
+        _canCreateConnections = caps.CanCreateConnections;
+        _showNotificationsTab = caps.CanViewNotificationDefinitions;
+        _capabilitiesLoaded = true;
+
+        if (_canView)
+            await LoadAsync();
+        else
+            _loading = false;
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        try
+        {
+            var detail = await Client.GetIntegrationOperatorDetailAsync(IntegrationId);
+            if (detail is null)
+            {
+                _integration = null;
+                return;
+            }
+
+            _integration = new IntegrationDto(detail.Id, detail.DisplayName, detail.ModuleId, detail.ScopeKey, detail.State, detail.Settings, detail.CreatedAt, detail.UpdatedAt);
+            _readiness = detail.Readiness;
+            _requiredSlots = detail.RequiredSlots;
+            _bindingSummaries = detail.Bindings;
+            _bindings = detail.Bindings.Select(b => new IntegrationBindingDto(b.Id, IntegrationId, detail.ModuleId, b.SlotName, b.ContractType, b.ConnectionId, b.CapabilityId, b.State)).ToList();
+            _bindingVerificationByConnectionId.Clear();
+            foreach (var b in detail.Bindings)
+            {
+                if (!string.IsNullOrWhiteSpace(b.ConnectionId) && !string.IsNullOrWhiteSpace(b.ConnectionVerificationStatus))
+                    _bindingVerificationByConnectionId[b.ConnectionId] = b.ConnectionVerificationStatus;
+            }
+
+            try { _schedules = await Client.GetIntegrationSchedulesAsync(IntegrationId); }
+            catch (HttpRequestException) { _schedules = null; }
+
+            try { _procedureList = await Client.GetIntegrationProceduresAsync(IntegrationId); }
+            catch (HttpRequestException) { _procedureList = null; }
+
+            try { _declarations = await Client.GetIntegrationConfigurationDeclarationsAsync(IntegrationId); }
+            catch (HttpRequestException) { _declarations = null; }
+
+            try { _settingRows = await Client.ListIntegrationSettingsAsync(IntegrationId); }
+            catch (HttpRequestException) { _settingRows = null; }
+
+            var connectionIds = (_bindingSummaries ?? [])
+                .Select(b => b.ConnectionId)
+                .Where(id => !string.IsNullOrWhiteSpace(id))
+                .Distinct(StringComparer.Ordinal)
+                .ToList();
+            _connectionNames.Clear();
+            if (connectionIds.Count > 0)
+            {
+                try
+                {
+                    var connections = await Client.GetConnectionsAsync();
+                    foreach (var id in connectionIds)
+                    {
+                        var match = connections.FirstOrDefault(c => string.Equals(c.Id, id, StringComparison.Ordinal));
+                        if (match is not null)
+                            _connectionNames[id!] = match.Name;
+                    }
+                }
+                catch (HttpRequestException) { }
+            }
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private void SetActionFeedback(string message, PageMessageKind kind = PageMessageKind.Info)
+    {
+        _actionMessage = message;
+        _actionFeedbackKind = kind;
+    }
+
+    private async Task BindRequirementAsync(string requirementKey)
+    {
+        await StartAddBinding();
+        _bindingSlot = requirementKey;
+        await OnBindingSlotChanged();
+    }
+
+    private async Task UnbindSummaryBindingAsync(IntegrationBindingSummaryDto binding)
+    {
+        var dto = _bindings?.FirstOrDefault(b => string.Equals(b.Id, binding.Id, StringComparison.Ordinal));
+        if (dto is not null)
+            await RemoveBindingAsync(dto);
+    }
+
+    private async Task StartAddBinding()
+    {
+        _addingBinding = true;
+        _bindingSlot = "";
+        _bindingConnectionId = "";
+        _bindingError = null;
+        _addingConnectionInFlow = false;
+        _inFlowCreateError = null;
+        try { _moduleSlots = await Client.GetIntegrationModuleSlotsAsync(IntegrationId); _eligibleConnections = null; }
+        catch (HttpRequestException ex) { Toasts.Show(ToastSeverity.Error, ex.Message); }
+    }
+
+    private void CancelAddBinding()
+    {
+        _addingBinding = false;
+        _moduleSlots = null;
+        _eligibleConnections = null;
+        _bindingError = null;
+        _addingConnectionInFlow = false;
+        _inFlowCreateError = null;
+        _inFlowCreateSaving = false;
+    }
+
+    private async Task OnBindingSlotChanged()
+    {
+        _bindingConnectionId = "";
+        _bindingError = null;
+        _addingConnectionInFlow = false;
+        _inFlowCreateError = null;
+        if (string.IsNullOrEmpty(_bindingSlot)) { _eligibleConnections = null; return; }
+        var slot = _moduleSlots?.FirstOrDefault(s => s.SlotName == _bindingSlot);
+        if (slot is null) { _eligibleConnections = null; return; }
+        try { _eligibleConnections = await Client.GetIntegrationEligibleConnectionsAsync(IntegrationId, slot.SlotName, slot.ContractType); }
+        catch (HttpRequestException ex) { _eligibleConnections = null; Toasts.Show(ToastSeverity.Error, ex.Message); }
+    }
+
+    private async Task CreateBindingAsync()
+    {
+        if (!_canManage || string.IsNullOrEmpty(_bindingSlot) || string.IsNullOrEmpty(_bindingConnectionId)) return;
+        _bindingSaving = true;
+        _bindingError = null;
+        try
+        {
+            await Client.CreateIntegrationBindingAsync(IntegrationId, new CreateIntegrationBindingRequest(_bindingSlot, _moduleSlots?.First(s => s.SlotName == _bindingSlot).ContractType ?? "", _bindingConnectionId));
+            SetActionFeedback("Binding added.");
+            Toasts.Show(ToastSeverity.Success, "Binding added.");
+            _addingBinding = false;
+            await LoadAsync();
+        }
+        catch (HttpRequestException ex)
+        {
+            _bindingError = ex.StatusCode switch
+            {
+                System.Net.HttpStatusCode.Forbidden => "You do not have permission to create bindings (403).",
+                System.Net.HttpStatusCode.Conflict => "Binding failed due to eligibility/readiness conflict. Refresh and retry.",
+                _ => ex.Message
+            };
+            Toasts.Show(ToastSeverity.Error, _bindingError);
+        }
+        finally
+        {
+            _bindingSaving = false;
+        }
+    }
+
+    private async Task StartInFlowConnectionCreateAsync()
+    {
+        _addingConnectionInFlow = true;
+        _inFlowCreateError = null;
+        if (_connectorDefinitions.Count == 0)
+        {
+            try { _connectorDefinitions = await Client.GetConnectorDefinitionsAsync(); }
+            catch (HttpRequestException ex) { _inFlowCreateError = ex.Message; return; }
+        }
+        if (string.IsNullOrWhiteSpace(_inFlowConnectorDefinitionId))
+            _inFlowConnectorDefinitionId = _connectorDefinitions.FirstOrDefault()?.Id ?? "";
+        await OnInFlowConnectorDefinitionChangedAsync();
+    }
+
+    private Task OnInFlowConnectorDefinitionChangedAsync()
+    {
+        _inFlowConfigValues.Clear();
+        _inFlowSecretValues.Clear();
+        if (SelectedInFlowConnectorDefinition is null)
+            return Task.CompletedTask;
+        foreach (var field in SelectedInFlowConnectorDefinition.Fields)
+        {
+            if (field.IsSecret) _inFlowSecretValues[field.Key] = "";
+            else _inFlowConfigValues[field.Key] = "";
+        }
+        return Task.CompletedTask;
+    }
+
+    private void CancelInFlowConnectionCreate()
+    {
+        _addingConnectionInFlow = false;
+        _inFlowCreateError = null;
+        _inFlowCreateSaving = false;
+    }
+
+    private string GetInFlowFieldValueForValidation(ConnectionFieldCatalogDto field) =>
+        field.IsSecret
+            ? (_inFlowSecretValues.TryGetValue(field.Key, out var secret) ? secret : "")
+            : (_inFlowConfigValues.TryGetValue(field.Key, out var cfg) ? cfg : "");
+
+    private async Task CreateConnectionInFlowAsync()
+    {
+        if (SelectedInFlowConnectorDefinition is null) return;
+        _inFlowCreateError = null;
+        var missing = SelectedInFlowConnectorDefinition.Fields
+            .Where(f => f.IsRequired && string.IsNullOrWhiteSpace(GetInFlowFieldValueForValidation(f)))
+            .Select(f => f.DisplayName)
+            .ToArray();
+        if (missing.Length > 0)
+        {
+            _inFlowCreateError = $"Missing required fields: {string.Join(", ", missing)}.";
+            return;
+        }
+
+        _inFlowCreateSaving = true;
+        try
+        {
+            var secrets = _inFlowSecretValues.Where(kv => !string.IsNullOrWhiteSpace(kv.Value)).ToDictionary(kv => kv.Key, kv => kv.Value);
+            var created = await Client.CreateConnectionAsync(new CreateConnectionRequest(
+                _inFlowConnectorDefinitionId,
+                _inFlowConnectionName.Trim(),
+                _inFlowConfigValues.Where(kv => !string.IsNullOrWhiteSpace(kv.Value)).ToDictionary(kv => kv.Key, kv => kv.Value),
+                SecretRefs: new Dictionary<string, string>(),
+                SecretValues: secrets.Count > 0 ? secrets : null));
+
+            var slot = _moduleSlots?.FirstOrDefault(s => string.Equals(s.SlotName, _bindingSlot, StringComparison.Ordinal));
+            if (slot is not null)
+                _eligibleConnections = await Client.GetIntegrationEligibleConnectionsAsync(IntegrationId, slot.SlotName, slot.ContractType);
+
+            var nowEligible = _eligibleConnections?.FirstOrDefault(c => string.Equals(c.Id, created.Id, StringComparison.Ordinal));
+            if (nowEligible is not null)
+            {
+                _bindingConnectionId = nowEligible.Id;
+                _addingConnectionInFlow = false;
+                SetActionFeedback("Connection created and selected for binding.");
+                Toasts.Show(ToastSeverity.Success, "Connection created and selected for binding.");
+            }
+            else
+            {
+                _inFlowCreateError = "Connection was created, but it is not eligible for this slot. Select a compatible connector/contract and try again.";
+            }
+        }
+        catch (HttpRequestException ex)
+        {
+            _inFlowCreateError = ex.StatusCode == System.Net.HttpStatusCode.Forbidden
+                ? "You do not have permission to create connections (403)."
+                : ex.Message;
+        }
+        finally
+        {
+            _inFlowCreateSaving = false;
+        }
+    }
+
+    private void RequestRemoveBinding(IntegrationBindingDto b)
+    {
+        if (!_canManage) return;
+        _pendingBindingRemoval = b;
+    }
+
+    private async Task RemovePendingBindingAsync()
+    {
+        if (_pendingBindingRemoval is { } binding)
+            await RemoveBindingAsync(binding);
+    }
+
+    private async Task RemoveBindingAsync(IntegrationBindingDto b)
+    {
+        if (!_canManage) return;
+        await Client.DeleteIntegrationBindingAsync(IntegrationId, b.Id);
+        SetActionFeedback("Binding removed.");
+        Toasts.Show(ToastSeverity.Success, "Binding removed.");
+        await LoadAsync();
+    }
+}

@@ -15,6 +15,10 @@ public static class ManagementBreadcrumbResolver
         MatchIntegrationsNotificationsDefinitionNew,
         MatchIntegrationsScheduleDiagnostics,
         MatchIntegrationsNotifications,
+        MatchIntegrationsSettings,
+        MatchIntegrationsConnections,
+        MatchIntegrationsSchedules,
+        MatchIntegrationsRuns,
         MatchIntegrationsNew,
         MatchIntegrationsDetail,
         MatchConfigNotificationDefinitionEdit,
@@ -406,6 +410,53 @@ public static class ManagementBreadcrumbResolver
         c = Integrations(
             ("Integration", $"/integrations/{s[1]}"),
             ("Notifications", null));
+        return true;
+    }
+
+    // HUB-1: contextual Integration hub sections. "Integration" is the fixed route-derived label
+    // used throughout this resolver (no async entity-name lookups); the shell top bar's Title
+    // already carries the real display name via ShellOrientationService once the page loads it.
+    private static bool MatchIntegrationsSettings(string[] s, out IReadOnlyList<BreadcrumbItem>? c)
+    {
+        c = null;
+        if (!Matches(s, "integrations", "{id}", "settings"))
+            return false;
+        c = Integrations(
+            ("Integration", $"/integrations/{s[1]}"),
+            ("Configuration", null));
+        return true;
+    }
+
+    private static bool MatchIntegrationsConnections(string[] s, out IReadOnlyList<BreadcrumbItem>? c)
+    {
+        c = null;
+        if (!Matches(s, "integrations", "{id}", "connections"))
+            return false;
+        c = Integrations(
+            ("Integration", $"/integrations/{s[1]}"),
+            ("Connections", null));
+        return true;
+    }
+
+    private static bool MatchIntegrationsSchedules(string[] s, out IReadOnlyList<BreadcrumbItem>? c)
+    {
+        c = null;
+        if (!Matches(s, "integrations", "{id}", "schedules"))
+            return false;
+        c = Integrations(
+            ("Integration", $"/integrations/{s[1]}"),
+            ("Schedules", null));
+        return true;
+    }
+
+    private static bool MatchIntegrationsRuns(string[] s, out IReadOnlyList<BreadcrumbItem>? c)
+    {
+        c = null;
+        if (!Matches(s, "integrations", "{id}", "runs"))
+            return false;
+        c = Integrations(
+            ("Integration", $"/integrations/{s[1]}"),
+            ("Runs", null));
         return true;
     }
 

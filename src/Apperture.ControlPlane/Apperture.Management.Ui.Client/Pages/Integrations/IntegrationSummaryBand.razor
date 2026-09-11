@@ -75,6 +75,9 @@
     }
 
     <div class="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <ManagementSummaryCard Title="Connections"
+                               Description="Connection requirements and bindings for this integration."
+                               Href="@ConnectionsHref" />
         <ManagementSummaryCard Title="View runs"
                                Description="Execution history for this integration."
                                Href="@RunsHref" />
@@ -105,8 +108,9 @@
     [Parameter] public string? ConnectionsSummary { get; set; }
 
     private string ExecuteHref => $"/execute?integrationId={Uri.EscapeDataString(IntegrationId)}";
-    private string RunsHref => Epic33UiDisplayHelpers.GetRunsListIntegrationFilterHref(IntegrationId);
-    private string SchedulesHref => $"{IntegrationUiRoutes.Detail(IntegrationId)}#schedules";
+    private string RunsHref => IntegrationUiRoutes.Runs(IntegrationId);
+    private string ConnectionsHref => IntegrationUiRoutes.Connections(IntegrationId);
+    private string SchedulesHref => IntegrationUiRoutes.Schedules(IntegrationId);
     private string NotificationsHref => IntegrationUiRoutes.Notifications(IntegrationId);
     private string SettingsHref => IntegrationUiRoutes.Settings(IntegrationId);
 }

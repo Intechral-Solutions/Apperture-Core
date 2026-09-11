@@ -17,8 +17,6 @@
             <div class="mt-1 font-mono text-xs text-muted break-all">@IntegrationId</div>
         </ChildContent>
         <Toolbar>
-            <a href="@IntegrationUiRoutes.Detail(IntegrationId)" class="ui-toolbar-btn text-sm">Integration detail</a>
-            <a href="@IntegrationUiRoutes.Settings(IntegrationId)" class="ui-toolbar-btn text-sm">Settings</a>
             <a href="/integrations" class="ui-toolbar-btn text-sm">Back to fleet</a>
             <button type="button"
                     class="ui-toolbar-btn text-sm disabled:opacity-50"
@@ -28,6 +26,8 @@
             </button>
         </Toolbar>
     </PageHeader>
+    <IntegrationHubNav IntegrationId="@IntegrationId" ShowNotificationsTab="true" />
+    <p class="text-xs text-muted -mt-2">Diagnostics is a deep link, not a hub section — jump back to any tab above.</p>
 
     @if (!string.IsNullOrEmpty(_error))
     {
