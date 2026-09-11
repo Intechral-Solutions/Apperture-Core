@@ -100,4 +100,47 @@ public sealed class Epic33CrossNavigationTests
         href.Should().StartWith("/runs?correlationKey=");
         href.Should().Contain(Uri.EscapeDataString("schedule:s1"));
     }
+
+    [Fact]
+    public void BuildRunsListUrl_with_no_filters_returns_bare_runs()
+    {
+        Epic33UiDisplayHelpers.BuildRunsListUrl().Should().Be("/runs");
+    }
+
+    [Fact]
+    public void BuildRunsListUrl_changing_status_preserves_sibling_filters()
+    {
+        // Simulates the Runs status-facet dropdown: an operator arrived scoped to an integration
+        // and correlation key, then switches the status facet. The scope must survive.
+        var url = Epic33UiDisplayHelpers.BuildRunsListUrl(
+            correlationKey: "schedule:s1",
+            status: RunStatusFacets.Blocked,
+            integrationId: "int-1");
+
+        url.Should().Contain($"correlationKey={Uri.EscapeDataString("schedule:s1")}");
+        url.Should().Contain($"status={RunStatusFacets.Blocked}");
+        url.Should().Contain("integrationId=int-1");
+    }
+
+    [Fact]
+    public void BuildRunsListUrl_clearing_status_drops_only_status()
+    {
+        var url = Epic33UiDisplayHelpers.BuildRunsListUrl(
+            correlationKey: "schedule:s1",
+            status: null,
+            integrationId: "int-1",
+            moduleId: "m1");
+
+        url.Should().NotContain("status=");
+        url.Should().Contain($"correlationKey={Uri.EscapeDataString("schedule:s1")}");
+        url.Should().Contain("integrationId=int-1");
+        url.Should().Contain("moduleId=m1");
+    }
+
+    [Fact]
+    public void BuildRunsListUrl_escapes_values()
+    {
+        var url = Epic33UiDisplayHelpers.BuildRunsListUrl(correlationKey: "a b&c");
+        url.Should().Be($"/runs?correlationKey={Uri.EscapeDataString("a b&c")}");
+    }
 }

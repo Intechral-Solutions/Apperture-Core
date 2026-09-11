@@ -13,7 +13,8 @@ public sealed class PlatformSettingDefinitionRegistryTests
 
         var defs = sut.GetAll();
 
-        defs.Should().HaveCount(17);
+        // NTF-C removed Notifications.UsePlatformPipeline.Enabled from the registry (17 -> 16).
+        defs.Should().HaveCount(16);
         defs.Select(x => x.Key).Should().OnlyHaveUniqueItems();
         sut.TryGet(PlatformSettingKeys.PlatformEventsEnabled)!.InputKind.Should().Be(PlatformSettingInputKind.Toggle);
         sut.TryGet(PlatformSettingKeys.NotificationsDeliveryPollIntervalSeconds)!.InputKind.Should().Be(PlatformSettingInputKind.Number);

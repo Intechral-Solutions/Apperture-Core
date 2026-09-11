@@ -72,7 +72,71 @@ public sealed class InventoryQueryService : IInventoryQueryService
         var sorted = Sort(filtered, request.Sort);
         var take = NormalizeTake(request.Take);
 
-        return new InventoryQueryResult(sorted.Take(take).ToList(), availableTypes);
+        // When no explicit type filter is requested, a naive Take() can silently drop an entire
+        // authorized type behind higher-volume or more-recently-updated types sharing the same
+        // take budget (e.g. Modules disappearing behind Integrations/Connections). Guarantee at
+        // least one representative per available type survives truncation. An explicit type
+        // filter already returns every matching row regardless of take pressure from other
+        // types, since filtering happens before this step.
+        var page = string.IsNullOrWhiteSpace(request.Type)
+            ? EnsureTypeRepresentation(sorted, take)
+            : sorted.Take(take).ToList();
+
+        return new InventoryQueryResult(page, availableTypes);
+    }
+
+    /// <summary>
+    /// Ensures every distinct type present in <paramref name="sorted"/> has at least one item in
+    /// the returned page, displacing the lowest-ranked item of whichever type currently holds the
+    /// most page slots. Returned in the same relative order as <paramref name="sorted"/>.
+    /// </summary>
+    private static List<InventoryItemDto> EnsureTypeRepresentation(
+        IReadOnlyList<InventoryItemDto> sorted,
+        int take)
+    {
+        if (sorted.Count <= take)
+            return sorted.Take(take).ToList();
+
+        var pageIndexes = new List<int>(Enumerable.Range(0, take));
+        var pageTypes = new HashSet<string>(
+            pageIndexes.Select(i => sorted[i].Type),
+            StringComparer.Ordinal);
+
+        var missingTypes = sorted
+            .Select(i => i.Type)
+            .Distinct(StringComparer.Ordinal)
+            .Where(t => !pageTypes.Contains(t))
+            .ToList();
+
+        foreach (var type in missingTypes)
+        {
+            var representativeIndex = -1;
+            for (var i = 0; i < sorted.Count; i++)
+            {
+                if (!string.Equals(sorted[i].Type, type, StringComparison.Ordinal))
+                    continue;
+                representativeIndex = i;
+                break;
+            }
+            if (representativeIndex < 0)
+                continue;
+
+            var typeToDisplace = pageIndexes
+                .GroupBy(i => sorted[i].Type, StringComparer.Ordinal)
+                .OrderByDescending(g => g.Count())
+                .First()
+                .Key;
+            var displaceAt = pageIndexes
+                .Where(i => string.Equals(sorted[i].Type, typeToDisplace, StringComparison.Ordinal))
+                .Max();
+
+            pageIndexes.Remove(displaceAt);
+            pageIndexes.Add(representativeIndex);
+            pageTypes.Add(type);
+        }
+
+        pageIndexes.Sort();
+        return pageIndexes.Select(i => sorted[i]).ToList();
     }
 
     private async Task CollectResourcesAsync(
@@ -274,7 +338,7 @@ public sealed class InventoryQueryService : IInventoryQueryService
             status,
             label,
             $"/modules/{id}",
-            UpdatedAtUtc: null,
+            UpdatedAtUtc: row.UpdatedAtUtc,
             InventoryItemModes.Resource);
     }
 

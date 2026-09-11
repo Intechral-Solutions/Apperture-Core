@@ -139,4 +139,33 @@ public static class Epic33UiDisplayHelpers
     /// <summary>Runs list filtered by module id on execution definition (Epic 95).</summary>
     public static string GetRunsListModuleFilterHref(string moduleId) =>
         $"/runs?moduleId={Uri.EscapeDataString(moduleId)}";
+
+    /// <summary>
+    /// Builds a <c>/runs</c> URL preserving every supplied sibling filter. Used so changing one
+    /// filter (e.g. the status facet dropdown) never silently discards the others — a status
+    /// change alters only <paramref name="status"/>. Omit/blank a parameter to clear it.
+    /// </summary>
+    public static string BuildRunsListUrl(
+        string? correlationKey = null,
+        string? status = null,
+        string? createdFrom = null,
+        string? integrationId = null,
+        string? moduleId = null)
+    {
+        var parts = new List<string>(5);
+
+        void Add(string key, string? value)
+        {
+            if (!string.IsNullOrWhiteSpace(value))
+                parts.Add($"{key}={Uri.EscapeDataString(value)}");
+        }
+
+        Add("correlationKey", correlationKey);
+        Add("status", status);
+        Add("createdFrom", createdFrom);
+        Add("integrationId", integrationId);
+        Add("moduleId", moduleId);
+
+        return parts.Count == 0 ? "/runs" : $"/runs?{string.Join("&", parts)}";
+    }
 }

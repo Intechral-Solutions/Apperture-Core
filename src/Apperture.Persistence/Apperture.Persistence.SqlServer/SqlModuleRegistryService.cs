@@ -51,7 +51,8 @@ public sealed class SqlModuleRegistryService : IModuleRegistryService
                 Installed: true,
                 Enabled: install.Enabled,
                 EffectivelyActive: false,
-                ValidationIssues: [new ModuleLifecycleBlocker("descriptor_missing", $"Installed module '{install.ModuleId}' is not discoverable by this host.")]));
+                ValidationIssues: [new ModuleLifecycleBlocker("descriptor_missing", $"Installed module '{install.ModuleId}' is not discoverable by this host.")],
+                UpdatedAtUtc: install.UpdatedAt));
         }
 
         return list
@@ -306,7 +307,8 @@ public sealed class SqlModuleRegistryService : IModuleRegistryService
             Installed: true,
             Enabled: state.Enabled,
             EffectivelyActive: effectivelyActive,
-            ValidationIssues: issues);
+            ValidationIssues: issues,
+            UpdatedAtUtc: state.UpdatedAt);
     }
 
     private async ValueTask<IReadOnlyList<ModuleLifecycleBlocker>> GetEnableConflictBlockersAsync(

@@ -3,6 +3,7 @@ using Apperture.Core.Application.RuntimeComposition;
 using Apperture.ModuleSdk.Abstractions;
 using Apperture.Core.Domain.Operations;
 using Apperture.Core.Domain.Workflow;
+using Apperture.Management.Ui.Shared;
 using Apperture.Persistence.SqlServer;
 using Apperture.RuntimePlane.Abstractions;
 using FluentAssertions;
@@ -1040,6 +1041,124 @@ public sealed class RunQueryServiceTests
         var detail = await NewService(db).GetRunAsync(new OperationRunId("r1"));
         detail!.Error!.DetailsJson.Should().Contain("from-lifecycle");
         detail.Result!.DiagnosticsJson.Should().BeNull();
+    }
+
+    // --- Blocked status facet (NAV-1 stabilization: F-07) ---
+    // Blocked is a derived Runs facet (failed + RunFailureCapture.DeferredWorkBlockedPrefix on
+    // FailureSummary), never a persisted lifecycle status or database column. These tests pin
+    // recognition, non-blocked exclusion, and composition with sibling filters.
+
+    [Fact]
+    public async Task ListRunsAsync_StatusBlocked_ReturnsOnlyFailedRunsWithBlockedPrefix()
+    {
+        var db = NewDb();
+        AddWorkflowRun(db, "r-blocked", "wf.def", WorkflowLifecycleStatusNames.Failed,
+            failureSummary: RunFailureCapture.DeferredWorkBlockedPrefix + "Workflow definition is not effectively active");
+        AddWorkflowRun(db, "r-failed-plain", "wf.def", WorkflowLifecycleStatusNames.Failed,
+            failureSummary: "Some other failure, unrelated to blocked deferred work.");
+        AddWorkflowRun(db, "r-running", "wf.def", WorkflowLifecycleStatusNames.Running);
+        await db.SaveChangesAsync();
+
+        var service = NewService(db);
+        var result = await service.ListRunsAsync(new RunQueryFilter(Status: RunStatusFacets.Blocked));
+
+        result.Should().ContainSingle();
+        result[0].RunId.Should().Be("r-blocked");
+    }
+
+    [Fact]
+    public async Task ListRunsAsync_StatusBlocked_ExcludesFailedRunsWithoutBlockedPrefix()
+    {
+        var db = NewDb();
+        AddWorkflowRun(db, "r-failed-plain", "wf.def", WorkflowLifecycleStatusNames.Failed,
+            failureSummary: "Timed out calling downstream API.");
+        await db.SaveChangesAsync();
+
+        var service = NewService(db);
+        var result = await service.ListRunsAsync(new RunQueryFilter(Status: RunStatusFacets.Blocked));
+
+        result.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task ListRunsAsync_StatusBlocked_ExcludesFailedRunsWithNullFailureSummary()
+    {
+        var db = NewDb();
+        AddWorkflowRun(db, "r-failed-nosummary", "wf.def", WorkflowLifecycleStatusNames.Failed, failureSummary: null);
+        await db.SaveChangesAsync();
+
+        var service = NewService(db);
+        var result = await service.ListRunsAsync(new RunQueryFilter(Status: RunStatusFacets.Blocked));
+
+        result.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task ListRunsAsync_StatusBlocked_ComposesWithIntegrationIdFilter()
+    {
+        var db = NewDb();
+        AddWorkflowRun(db, "r-blocked-a", "wf.def", WorkflowLifecycleStatusNames.Failed,
+            failureSummary: RunFailureCapture.DeferredWorkBlockedPrefix + "reason", integrationId: "int-a");
+        AddWorkflowRun(db, "r-blocked-b", "wf.def", WorkflowLifecycleStatusNames.Failed,
+            failureSummary: RunFailureCapture.DeferredWorkBlockedPrefix + "reason", integrationId: "int-b");
+        await db.SaveChangesAsync();
+
+        var service = NewService(db);
+        var result = await service.ListRunsAsync(new RunQueryFilter(
+            Status: RunStatusFacets.Blocked,
+            IntegrationId: "int-a"));
+
+        result.Should().ContainSingle();
+        result[0].RunId.Should().Be("r-blocked-a");
+    }
+
+    [Fact]
+    public async Task ListRunsAsync_StatusBlocked_ComposesWithCorrelationKeyFilter()
+    {
+        var db = NewDb();
+        AddWorkflowRun(db, "r-blocked-a", "wf.def", WorkflowLifecycleStatusNames.Failed,
+            failureSummary: RunFailureCapture.DeferredWorkBlockedPrefix + "reason", correlationKey: "schedule:s1");
+        AddWorkflowRun(db, "r-blocked-b", "wf.def", WorkflowLifecycleStatusNames.Failed,
+            failureSummary: RunFailureCapture.DeferredWorkBlockedPrefix + "reason", correlationKey: "schedule:s2");
+        await db.SaveChangesAsync();
+
+        var service = NewService(db);
+        var result = await service.ListRunsAsync(new RunQueryFilter(
+            Status: RunStatusFacets.Blocked,
+            CorrelationKey: "schedule:s2"));
+
+        result.Should().ContainSingle();
+        result[0].RunId.Should().Be("r-blocked-b");
+    }
+
+    private static void AddWorkflowRun(
+        AppertureDbContext db,
+        string runId,
+        string definitionId,
+        string status,
+        string? failureSummary = null,
+        string? integrationId = null,
+        string? correlationKey = null)
+    {
+        db.OperationRuns.Add(new OperationRunEntity
+        {
+            Id = runId,
+            WorkflowInstanceId = $"i-{runId}",
+            DefinitionId = definitionId,
+            Status = status,
+            CreatedAt = DateTimeOffset.UtcNow,
+            FailureSummary = failureSummary,
+            IntegrationId = integrationId,
+            CorrelationKey = correlationKey
+        });
+        db.WorkflowStartRequests.Add(new WorkflowStartRequestEntity
+        {
+            RunId = runId,
+            WorkflowInstanceId = $"i-{runId}",
+            WorkflowDefinitionId = definitionId,
+            CreatedAt = DateTimeOffset.UtcNow,
+            Status = WorkflowLifecycleStatusNames.Requested
+        });
     }
 
     private static AppertureDbContext NewDb()

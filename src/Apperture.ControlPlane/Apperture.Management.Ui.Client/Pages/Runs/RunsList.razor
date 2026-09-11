@@ -330,9 +330,12 @@
     private void OnStatusFacetChanged(ChangeEventArgs e)
     {
         var next = e.Value?.ToString();
-        Nav.NavigateTo(string.IsNullOrWhiteSpace(next)
-            ? "/runs"
-            : $"/runs?status={Uri.EscapeDataString(next)}");
+        Nav.NavigateTo(Epic33UiDisplayHelpers.BuildRunsListUrl(
+            correlationKey: QueryCorrelationKey,
+            status: next,
+            createdFrom: QueryCreatedFromRaw,
+            integrationId: QueryIntegrationId,
+            moduleId: QueryModuleId));
     }
 
     private async Task LoadAsync()

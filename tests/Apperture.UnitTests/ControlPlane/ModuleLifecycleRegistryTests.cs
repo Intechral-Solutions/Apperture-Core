@@ -172,6 +172,37 @@ public sealed class ModuleLifecycleRegistryTests
         audit.Records.Should().Contain(x => x.Action == "module.lifecycle.uninstall");
     }
 
+    [Fact]
+    public async Task ListModules_reports_real_installation_state_timestamp_for_installed_modules()
+    {
+        await using var db = CreateDbContext();
+        var service = new SqlModuleRegistryService([new TestModule("M1")], db, new TestEnvironmentContext(), new InMemoryAuditService());
+
+        await service.InstallModuleAsync("M1");
+        var enable = await service.EnableModuleAsync("M1");
+        enable.Succeeded.Should().BeTrue();
+
+        var state = await db.ModuleInstallationStates.SingleAsync(x => x.ModuleId == "M1");
+
+        var modules = await service.ListModulesAsync();
+
+        var entry = modules.Should().ContainSingle().Subject;
+        entry.UpdatedAtUtc.Should().Be(state.UpdatedAt);
+    }
+
+    [Fact]
+    public async Task ListModules_reports_no_timestamp_for_discovered_but_never_installed_modules()
+    {
+        await using var db = CreateDbContext();
+        var service = new SqlModuleRegistryService([new TestModule("M1")], db, new TestEnvironmentContext(), new InMemoryAuditService());
+
+        var modules = await service.ListModulesAsync();
+
+        var entry = modules.Should().ContainSingle().Subject;
+        entry.Installed.Should().BeFalse();
+        entry.UpdatedAtUtc.Should().BeNull("no installation row exists to source a real timestamp from, and none should be fabricated");
+    }
+
     private static AppertureDbContext CreateDbContext()
     {
         var options = new DbContextOptionsBuilder<AppertureDbContext>()

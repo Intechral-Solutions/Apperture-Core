@@ -223,6 +223,98 @@ public sealed class InventoryQueryServiceTests
         result.Items.Select(i => i.Id).Should().Equal("i5", "i4");
     }
 
+    [Fact]
+    public async Task Module_surfaces_its_real_installation_state_timestamp()
+    {
+        var caps = Fixture.AllowAll();
+        var updatedAt = Now.AddDays(-3);
+        var modules = new Mock<IModuleRegistryService>();
+        modules.Setup(x => x.ListModulesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<ModuleCatalogEntry>
+            {
+                new(
+                    new ModuleDescriptor("hello", "Hello World", "1.0", null, null, null, []),
+                    ModuleLifecycleState.InstalledEnabled,
+                    Installed: true,
+                    Enabled: true,
+                    EffectivelyActive: true,
+                    ValidationIssues: [],
+                    UpdatedAtUtc: updatedAt)
+            });
+
+        var sut = Fixture.CreateSut(caps, modules: modules);
+        var result = await sut.QueryAsync(new InventoryQuery(), CancellationToken.None);
+
+        result.Items.Single(i => i.Type == InventoryTypeTokens.Module).UpdatedAtUtc.Should().Be(updatedAt);
+    }
+
+    [Fact]
+    public async Task Discovered_but_never_installed_module_has_no_fabricated_timestamp()
+    {
+        var caps = Fixture.AllowAll();
+        var modules = new Mock<IModuleRegistryService>();
+        modules.Setup(x => x.ListModulesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<ModuleCatalogEntry>
+            {
+                new(
+                    new ModuleDescriptor("hello", "Hello World", "1.0", null, null, null, []),
+                    ModuleLifecycleState.Discovered,
+                    Installed: false,
+                    Enabled: false,
+                    EffectivelyActive: false,
+                    ValidationIssues: [])
+            });
+
+        var sut = Fixture.CreateSut(caps, modules: modules);
+        var result = await sut.QueryAsync(new InventoryQuery(), CancellationToken.None);
+
+        result.Items.Single(i => i.Type == InventoryTypeTokens.Module).UpdatedAtUtc.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Explicit_module_type_filter_reliably_returns_modules_despite_truncation_elsewhere()
+    {
+        var caps = Fixture.AllowAll();
+        var modules = new Mock<IModuleRegistryService>();
+        modules.Setup(x => x.ListModulesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<ModuleCatalogEntry>
+            {
+                new(
+                    new ModuleDescriptor("hello", "Hello World", "1.0", null, null, null, []),
+                    ModuleLifecycleState.Discovered,
+                    Installed: false,
+                    Enabled: false,
+                    EffectivelyActive: false,
+                    ValidationIssues: [])
+            });
+
+        // Many more-recently-dated integrations than the take budget, so a naive Take() after
+        // sorting by "updated desc" would push an undated Module entirely out of the page.
+        var integrations = new Mock<IIntegrationManagementService>();
+        integrations.Setup(x => x.ListIntegrationsAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Enumerable.Range(1, 5).Select(i =>
+                new DomainIntegration(
+                    new IntegrationId($"i{i}"),
+                    $"Item {i}",
+                    "m",
+                    null,
+                    IntegrationState.Active,
+                    null,
+                    Now.AddMinutes(i),
+                    Now.AddMinutes(i))).ToList());
+
+        var sut = Fixture.CreateSut(caps, modules: modules, integrations: integrations);
+
+        var filtered = await sut.QueryAsync(
+            new InventoryQuery(Type: InventoryTypeTokens.Module, Take: 2),
+            CancellationToken.None);
+        filtered.Items.Should().ContainSingle(i => i.Type == InventoryTypeTokens.Module);
+
+        var unfiltered = await sut.QueryAsync(new InventoryQuery(Take: 2), CancellationToken.None);
+        unfiltered.Items.Should().Contain(i => i.Type == InventoryTypeTokens.Module,
+            "default cross-type browsing must not make an entire authorized resource family disappear behind higher-volume types");
+    }
+
     private sealed class Fixture
     {
         public required InventoryQueryService Sut { get; init; }

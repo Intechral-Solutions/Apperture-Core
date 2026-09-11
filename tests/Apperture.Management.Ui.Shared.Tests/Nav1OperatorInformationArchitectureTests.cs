@@ -160,6 +160,65 @@ public sealed class Nav1OperatorInformationArchitectureTests
     }
 
     [Fact]
+    public void Capability_filter_nulls_System_href_when_platform_settings_denied_but_keeps_other_children()
+    {
+        // Stabilization fix (independent-review F-02): System's own Href equals its
+        // "Platform settings" child's Href. When that specific capability is denied, System
+        // must not remain a clickable link to a destination the backend will refuse -- but it
+        // must still surface its other, non-gated-out children (Developer & internal, and any
+        // capability the operator does hold).
+        bool Has(string token) => token != DomainMenuCapabilityTokens.ViewPlatformSettings;
+
+        var filtered = DomainMenuCapabilityFilter.Apply(Menus(), Has);
+
+        var system = filtered[SectionOwnerConstants.Config].Items.Single(i => i.Text == "System");
+        system.Href.Should().BeNull("its canonical destination (Platform settings) was filtered out");
+        system.Children.Should().Contain(c => c.Text == "Developer & internal");
+        system.Children.Should().NotContain(c => c.Text == "Platform settings");
+        system.Children.Should().Contain(c => c.Text == "Modules");
+        system.Children.Should().Contain(c => c.Text == "Authentication");
+    }
+
+    [Fact]
+    public void Capability_filter_keeps_Attention_href_because_its_matching_child_is_never_gated()
+    {
+        // Attention's own Href equals "Operational teams", which has no RequiredCapability today
+        // (Epic 30/NAV-1: no view-only token exists for operational teams). The filter must not
+        // touch a parent/child href match that capability filtering never actually removed.
+        var filtered = DomainMenuCapabilityFilter.Apply(Menus(), _ => false);
+
+        var attention = filtered[SectionOwnerConstants.Config].Items.Single(i => i.Text == "Attention");
+        attention.Href.Should().Be("/attention/operational-teams");
+    }
+
+    [Fact]
+    public void Capability_filter_drops_parent_entirely_when_its_href_child_and_all_other_children_are_gated()
+    {
+        var menu = new DomainMenu
+        {
+            Items =
+            {
+                new DomainMenuItem
+                {
+                    Text = "Parent",
+                    Href = "/parent/leaf",
+                    Children =
+                    [
+                        new DomainMenuItem { Text = "Leaf", Href = "/parent/leaf", RequiredCapability = "Gated" }
+                    ]
+                },
+                new DomainMenuItem { Text = "Always visible", Href = "/always" }
+            }
+        };
+        var menus = new Dictionary<string, DomainMenu> { ["Domain"] = menu };
+
+        var filtered = DomainMenuCapabilityFilter.Apply(menus, _ => false);
+
+        filtered["Domain"].Items.Should().NotContain(i => i.Text == "Parent");
+        filtered["Domain"].Items.Should().Contain(i => i.Text == "Always visible");
+    }
+
+    [Fact]
     public void Blocked_runs_href_is_a_derived_facet_not_a_lifecycle_status()
     {
         RunStatusFacets.BlockedRunsHref.Should().Be("/runs?status=blocked");

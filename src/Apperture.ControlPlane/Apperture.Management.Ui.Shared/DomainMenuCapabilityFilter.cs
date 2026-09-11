@@ -48,15 +48,32 @@ public static class DomainMenuCapabilityFilter
                 && !hasCapability(item.RequiredCapability))
                 continue;
 
-            var children = FilterItems(item.Children, hasCapability);
-            if (children.Count == 0 && item.Children is { Count: > 0 } && string.IsNullOrWhiteSpace(item.Href))
+            var originalChildren = item.Children;
+            var children = FilterItems(originalChildren, hasCapability);
+            if (children.Count == 0 && originalChildren is { Count: > 0 } && string.IsNullOrWhiteSpace(item.Href))
                 continue;
+
+            var href = item.Href;
+            if (!string.IsNullOrWhiteSpace(href)
+                && originalChildren is { Count: > 0 }
+                && originalChildren.Any(c => string.Equals(c.Href, href, StringComparison.OrdinalIgnoreCase))
+                && !children.Any(c => string.Equals(c.Href, href, StringComparison.OrdinalIgnoreCase)))
+            {
+                // The parent's own destination was itself a capability-gated child that got
+                // filtered out (e.g. System -> Platform settings). Never leave the parent as a
+                // clickable link to a destination the backend will refuse. If other children
+                // still survived, keep the parent as an expandable node over them instead of
+                // dropping the whole branch; if nothing survived, drop it.
+                if (children.Count == 0)
+                    continue;
+                href = null;
+            }
 
             kept.Add(new DomainMenuItem
             {
                 Id = item.Id,
                 Text = item.Text,
-                Href = item.Href,
+                Href = href,
                 Icon = item.Icon,
                 RequiredCapability = item.RequiredCapability,
                 Children = children.Count > 0 ? children : null
