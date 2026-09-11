@@ -43,7 +43,7 @@ public sealed class NotificationRuleValidatorPhase4Tests
               "schemaVersion": "apperture.notification.rule/v1",
               "trigger": {
                 "eventTypes": ["apperture.schedule.expected_run.missing"],
-                "notificationKinds": ["activation", "escalation"]
+                "notificationKinds": ["activation", "bogus"]
               },
               "stages": [
                 {

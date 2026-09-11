@@ -21,9 +21,8 @@ public sealed class PlatformSettingsServiceValidationTests
             [
                 Resolved(PlatformSettingKeys.PlatformEventsEnabled, true),
                 Resolved(PlatformSettingKeys.NotificationsEvaluationEnabled, true),
-                Resolved(PlatformSettingKeys.NotificationsInstancesEnabled, true),
-                Resolved(PlatformSettingKeys.NotificationsDeliveryEnabled, false),
-                Resolved(PlatformSettingKeys.NotificationsUsePlatformPipelineEnabled, false)
+                Resolved(PlatformSettingKeys.NotificationsInstancesEnabled, false),
+                Resolved(PlatformSettingKeys.NotificationsDeliveryEnabled, false)
             ]);
         var principalContext = new Mock<IPrincipalContext>();
         var audit = new Mock<IAuditService>();
@@ -39,7 +38,7 @@ public sealed class PlatformSettingsServiceValidationTests
             audit.Object);
 
         var act = () => sut.SetAsync(
-            PlatformSettingKeys.NotificationsUsePlatformPipelineEnabled,
+            PlatformSettingKeys.NotificationsDeliveryEnabled,
             new PlatformSettingUpdatePayload { ScalarValue = "true" },
             null,
             CancellationToken.None);

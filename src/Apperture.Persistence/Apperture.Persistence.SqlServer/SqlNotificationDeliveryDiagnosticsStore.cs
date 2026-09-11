@@ -139,28 +139,17 @@ public sealed class SqlNotificationDeliveryDiagnosticsStore : INotificationDeliv
                 clampedTake,
                 cancellationToken)
             .ConfigureAwait(false);
-        if (instances.Count == 0)
-        {
-            var hasLedger = await _db.AttentionIncidentNotifications.AsNoTracking()
-                .AnyAsync(x => x.AttentionIncidentId == attentionIncidentId, cancellationToken)
-                .ConfigureAwait(false);
-            if (!hasLedger)
-                return null;
-        }
-
-        var integrationId = instances.FirstOrDefault()?.IntegrationId
-                            ?? await _db.AttentionIncidentNotifications.AsNoTracking()
-                                .Where(x => x.AttentionIncidentId == attentionIncidentId)
-                                .Select(x => x.IntegrationId)
-                                .FirstOrDefaultAsync(cancellationToken)
-                                .ConfigureAwait(false);
-
         var outbox = await ListOutboxForIncidentAsync(
                 attentionIncidentId,
                 notificationDefinitionId,
                 clampedTake,
                 cancellationToken)
             .ConfigureAwait(false);
+        if (instances.Count == 0 && outbox.Count == 0)
+            return null;
+
+        var integrationId = instances.FirstOrDefault()?.IntegrationId
+                            ?? outbox.FirstOrDefault()?.IntegrationId;
 
         var health = await GetHealthSummaryForIncidentAsync(
                 attentionIncidentId,
@@ -175,33 +164,6 @@ public sealed class SqlNotificationDeliveryDiagnosticsStore : INotificationDeliv
             health,
             instances,
             outbox);
-    }
-
-    public async ValueTask<IReadOnlyList<Epic69NotificationDiagnosticRow>> ListEpic69LedgerForIncidentAsync(
-        string attentionIncidentId,
-        int take,
-        CancellationToken cancellationToken = default)
-    {
-        var clampedTake = Math.Clamp(take, 1, 200);
-        var rows = await _db.AttentionIncidentNotifications.AsNoTracking()
-            .Where(x => x.AttentionIncidentId == attentionIncidentId)
-            .OrderByDescending(x => x.CreatedAtUtc)
-            .Take(clampedTake)
-            .ToListAsync(cancellationToken)
-            .ConfigureAwait(false);
-
-        return rows.Select(static e => new Epic69NotificationDiagnosticRow(
-            e.Id,
-            e.AttentionIncidentId,
-            e.IntegrationId,
-            e.NotificationKind,
-            e.Channel,
-            e.Recipient,
-            e.Status,
-            e.SuppressionReason,
-            e.CreatedAtUtc,
-            e.SentAtUtc,
-            e.RecipientResolvedFrom)).ToList();
     }
 
     public async ValueTask<IReadOnlyList<NotificationInstanceDiagnosticRow>> ListInstancesForIncidentAsync(

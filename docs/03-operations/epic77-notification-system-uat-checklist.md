@@ -2,7 +2,7 @@
 
 Operator acceptance checklist for the platform notification system (Phases 1–8C). Use in **dev/staging** unless noted. Record pass/fail, operator, date, and notes per row.
 
-**Related:** [Cutover runbook](./epic77-expected-run-missing-notification-cutover-runbook.md), [Backlog](./epic77-notification-system-backlog.md), [Implementation plan](../02-decisions/Epic77-Platform-Signals-and-Notification-System-Implementation-Plan.md).
+**Related:** [NTF-C closure](../01-architecture/transitions/ntf-c-legacy-removal/closure-report.md), [Backlog](./epic77-notification-system-backlog.md), [Implementation plan](../02-decisions/Epic77-Platform-Signals-and-Notification-System-Implementation-Plan.md). Historical cutover runbook: [epic77-expected-run-missing-notification-cutover-runbook.md](./epic77-expected-run-missing-notification-cutover-runbook.md) (completed).
 
 ---
 
@@ -32,12 +32,12 @@ Operator acceptance checklist for the platform notification system (Phases 1–8
 | A6 | Platform notification instance created for built-in definition `platform.schedule.expected_run_missing` | ☐ | Instances list or integration notifications |
 | A7 | Recipient snapshot shows deliverable/skipped; implicit attention-routing labeled separately | ☐ | Instance detail |
 | A8 | Outbox rows created (pending when delivery off) | ☐ | Instance detail / delivery page |
-| A9 | Parity diagnostics load (`GET …/parity`, `…/parity-acceptance`) | ☐ | Config → Diagnostics or integration notifications |
-| A10 | Cutover readiness panel loads (parity, flags, checklist) | ☐ | `/integrations/{id}/notifications#cutover-readiness` |
-| A11 | Operator sign-off can be recorded (`readyForCutover` / `notReady`) | ☐ | Requires manage + integration update |
-| A12 | Stale sign-off warning when parity/config changes after sign-off | ☐ | |
-| A13 | **`Notifications:Delivery:Enabled=true` in staging only** — live send verified | ☐ | Not production without runbook |
-| A14 | **`Notifications:UsePlatformPipeline=true` in staging only** — Epic 69 orchestrator skipped | ☐ | Manual config only; verify no dual-send |
+| A9 | Reminder instance created after the configured reminder interval | ☐ | Still-active observation |
+| A10 | Escalation instance created after `EscalationAfter` from incident start; recipients are the escalation team | ☐ | One instance per incident |
+| A11 | Acknowledgement suppresses escalation when routing says so | ☐ | Suppressed instance, no outbox |
+| A12 | Duplicate still-active observations do not create a second escalation instance | ☐ | Outbox retries remain on the same instance |
+| A13 | **`Notifications:Delivery:Enabled=true` in staging only** — live send verified | ☐ | Not production without SMTP |
+| A14 | Notification diagnostics show the instance / outbox lifecycle | ☐ | Config → Diagnostics or integration notifications |
 
 ---
 

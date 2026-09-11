@@ -19,7 +19,6 @@ public sealed class NotificationConfigurationSafetyHostedServiceTests
             Options.Create(new NotificationEvaluationOptions { Enabled = true }),
             Options.Create(new NotificationInstanceOptions { Enabled = true }),
             Options.Create(new NotificationDeliveryOptions { Enabled = false }),
-            Options.Create(new NotificationPipelineOptions { Enabled = false }),
             NullLogger<NotificationConfigurationSafetyHostedService>.Instance);
 
         await sut.Invoking(s => s.StartAsync(CancellationToken.None)).Should().NotThrowAsync();

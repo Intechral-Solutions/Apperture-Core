@@ -1,5 +1,4 @@
 using Apperture.ControlPlane.Security;
-using Apperture.Core.Application.Notifications.Cutover;
 using Apperture.Core.Application.Notifications.Diagnostics;
 using Apperture.Management.Client;
 using Microsoft.AspNetCore.Authorization;
@@ -91,22 +90,6 @@ public sealed class NotificationDiagnosticsController : ControllerBase
         }
     }
 
-    [HttpGet("cutover-status")]
-    [ProducesResponseType(typeof(NotificationPipelineCutoverStatusDto), StatusCodes.Status200OK)]
-    public async Task<ActionResult<NotificationPipelineCutoverStatusDto>> GetCutoverStatus(
-        CancellationToken cancellationToken = default)
-    {
-        try
-        {
-            var row = await _diagnostics.GetCutoverStatusAsync(cancellationToken).ConfigureAwait(false);
-            return Ok(ToCutoverStatusDto(row));
-        }
-        catch (UnauthorizedAccessException)
-        {
-            return Forbid();
-        }
-    }
-
     [HttpGet("health")]
     [ProducesResponseType(typeof(NotificationDeliveryHealthSummaryDto), StatusCodes.Status200OK)]
     public async Task<ActionResult<NotificationDeliveryHealthSummaryDto>> GetHealth(
@@ -170,88 +153,14 @@ public sealed class NotificationDiagnosticsController : ControllerBase
         }
     }
 
-    [HttpGet("expected-run-missing/parity-acceptance")]
-    [ProducesResponseType(typeof(ExpectedRunMissingParityAcceptanceSummaryDto), StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<ActionResult<ExpectedRunMissingParityAcceptanceSummaryDto>> GetExpectedRunMissingParityAcceptance(
-        [FromQuery] string integrationId,
-        [FromQuery] string? attentionIncidentId,
-        [FromQuery] int maxIncidents = 10,
-        [FromQuery] int takePerIncident = 50,
-        CancellationToken cancellationToken = default)
-    {
-        try
-        {
-            var row = await _diagnostics
-                .GetExpectedRunMissingParityAcceptanceAsync(
-                    integrationId,
-                    attentionIncidentId,
-                    maxIncidents,
-                    takePerIncident,
-                    cancellationToken)
-                .ConfigureAwait(false);
-            return row is null ? NotFound() : Ok(ToAcceptanceDto(row));
-        }
-        catch (UnauthorizedAccessException)
-        {
-            return Forbid();
-        }
-    }
-
-    [HttpGet("expected-run-missing/parity")]
-    [ProducesResponseType(typeof(ExpectedRunMissingParityDiagnosticsDto), StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<ActionResult<ExpectedRunMissingParityDiagnosticsDto>> GetExpectedRunMissingParity(
-        [FromQuery] string? integrationId,
-        [FromQuery] string? attentionIncidentId,
-        [FromQuery] int take = 50,
-        CancellationToken cancellationToken = default)
-    {
-        try
-        {
-            var row = await _diagnostics
-                .GetExpectedRunMissingParityAsync(integrationId, attentionIncidentId, take, cancellationToken)
-                .ConfigureAwait(false);
-            return row is null ? NotFound() : Ok(ToParityDto(row));
-        }
-        catch (UnauthorizedAccessException)
-        {
-            return Forbid();
-        }
-    }
-
     private static NotificationConfigurationDiagnosticsDto ToConfigurationDto(NotificationConfigurationDiagnostics c) =>
         new(
             c.PlatformEventsEnabled,
             c.EvaluationEnabled,
             c.InstancesEnabled,
             c.DeliveryEnabled,
-            c.UsePlatformPipelineEnabled,
             c.Warnings.Select(w => new NotificationConfigurationSafetyWarningDto(w.Code, w.Message)).ToList(),
             c.GeneratedAtUtc);
-
-    private static NotificationPipelineCutoverStatusDto ToCutoverStatusDto(NotificationPipelineCutoverStatus s) =>
-        new(
-            s.UsePlatformPipelineEnabled,
-            s.LegacyEpic69PathActive,
-            s.ActiveDeliveryPath,
-            s.ActiveDeliveryPathLabel,
-            s.OperatingModeLabels,
-            s.ExpectedRunMissingDefinitionExists,
-            s.ExpectedRunMissingDefinitionEnabled,
-            s.EmailTransportEnabled,
-            s.EmailSmtpHostConfigured,
-            s.EmailFromAddressConfigured,
-            s.EmailCredentialReferenceConfigured,
-            s.ManagementHostUrlConfigured,
-            s.PlatformEventsEnabled,
-            s.EvaluationEnabled,
-            s.InstancesEnabled,
-            s.DeliveryEnabled,
-            s.ConfigurationWarnings.Select(w => new NotificationConfigurationSafetyWarningDto(w.Code, w.Message)).ToList(),
-            s.PreflightChecks.Select(c => new NotificationPipelineCutoverPreflightCheckDto(c.Code, c.Label, c.Passed, c.Guidance)).ToList(),
-            s.CriticalPreflightPassed,
-            s.GeneratedAtUtc);
 
     private static NotificationDeliveryHealthSummaryDto ToHealthDto(NotificationDeliveryHealthSummary s) =>
         new(
@@ -279,32 +188,6 @@ public sealed class NotificationDiagnosticsController : ControllerBase
             ToHealthDto(d.Health),
             d.Instances.Select(ToInstanceDto).ToList(),
             d.OutboxRows.Select(ToOutboxDto).ToList());
-
-    private static ExpectedRunMissingParityDiagnosticsDto ToParityDto(ExpectedRunMissingParityDiagnostics p) =>
-        new(
-            p.IntegrationId,
-            p.AttentionIncidentId,
-            p.ByKind.Select(k => new ExpectedRunMissingKindParityDto(
-                k.NotificationKind,
-                k.DifferenceKind,
-                k.Summary,
-                k.Epic69Recipients,
-                k.PlatformRecipients,
-                k.RecipientComparisons.Select(r => new ParityRecipientComparisonDto(
-                    r.RecipientEmail,
-                    r.DifferenceKind,
-                    r.Epic69Status,
-                    r.Epic69SuppressionReason,
-                    r.PlatformInstanceStatus,
-                    r.PlatformOutboxStatus,
-                    r.PlatformRecipientSource)).ToList(),
-                k.Epic69AggregateStatus,
-                k.PlatformInstanceStatus,
-                k.PlatformInstanceSuppressionReason)).ToList(),
-            p.PlatformInstances.Select(ToInstanceDto).ToList(),
-            p.PlatformOutboxRows.Select(ToOutboxDto).ToList(),
-            p.Epic69LedgerRows.Select(ToEpic69Dto).ToList(),
-            p.GeneratedAtUtc);
 
     private static NotificationInstanceDiagnosticDto ToInstanceDto(NotificationInstanceDiagnosticRow i) =>
         new(
@@ -339,45 +222,6 @@ public sealed class NotificationDiagnosticsController : ControllerBase
             o.SentAtUtc,
             o.CreatedAtUtc,
             o.UpdatedAtUtc);
-
-    private static ExpectedRunMissingParityAcceptanceSummaryDto ToAcceptanceDto(
-        ExpectedRunMissingParityAcceptanceSummary s) =>
-        new(
-            s.IntegrationId,
-            s.IncidentsEvaluated,
-            s.KindComparisonsTotal,
-            s.KindsAligned,
-            s.KindsMissingInPlatform,
-            s.KindsExtraInPlatform,
-            s.KindsStatusMismatch,
-            s.KindsDeliveryFailedInPlatform,
-            s.KindsDeliverySucceededInPlatform,
-            s.KindsSuppressedEpic69Only,
-            s.KindsSuppressedPlatformOnly,
-            s.RecipientComparisonsTotal,
-            s.RecipientsAligned,
-            s.RecipientsMissingInPlatform,
-            s.RecipientsExtraInPlatform,
-            s.RecipientsDeliveryFailedInPlatform,
-            s.RecipientsPendingInPlatform,
-            s.BlockingFindings,
-            s.NonBlockingFindings,
-            s.LooksAcceptableForCutover,
-            s.GeneratedAtUtc);
-
-    private static Epic69NotificationDiagnosticDto ToEpic69Dto(Epic69NotificationDiagnosticRow n) =>
-        new(
-            n.Id,
-            n.AttentionIncidentId,
-            n.IntegrationId,
-            n.NotificationKind,
-            n.Channel,
-            n.Recipient,
-            n.Status,
-            n.SuppressionReason,
-            n.CreatedAtUtc,
-            n.SentAtUtc,
-            n.RecipientResolvedFrom);
 
     private static NotificationSmtpTestResultDto ToSmtpTestDto(NotificationSmtpTestResult r) =>
         new(

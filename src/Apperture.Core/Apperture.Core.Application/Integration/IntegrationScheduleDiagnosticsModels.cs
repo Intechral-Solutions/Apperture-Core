@@ -66,7 +66,6 @@ public sealed record IntegrationScheduleDiagnosticsProjection(
     DateTimeOffset? LastAuthorizedRunAt,
     IReadOnlyList<ExpectedFireDiagnosticEntry> RecentExpectedFires,
     IReadOnlyList<AttentionIncidentProjection> RecentAttentionIncidents,
-    IReadOnlyList<AttentionIncidentNotificationProjection> RecentAttentionIncidentNotifications,
     AttentionRoutingDiagnosticsSummary AttentionRouting,
     IReadOnlyList<NotificationInstanceDiagnosticRow> RecentPlatformNotificationInstances,
     IReadOnlyList<NotificationOutboxDiagnosticRow> RecentPlatformNotificationOutbox);

@@ -38,7 +38,7 @@ At least one of `eventTypes`, `incidentTransitions`:
       "apperture.schedule.expected_run.missing"
     ],
     "incidentTransitions": ["opened", "observedStillActive", "resolved"],
-    "notificationKinds": ["activation", "reminder", "resolved"]
+    "notificationKinds": ["activation", "reminder", "escalation", "resolved"]
   }
 }
 ```
@@ -47,7 +47,7 @@ At least one of `eventTypes`, `incidentTransitions`:
 |-------|-------------|
 | `eventTypes` | Platform event `type` values; must match the merged catalog on the Management Host (`IPlatformEventCatalog`), e.g. `apperture.schedule.expected_run.missing` and module types such as `apperture.module.sample.helloworld.demo.completed` |
 | `incidentTransitions` | Maps from `AttentionIncidentObserveTransition` + resolved |
-| `notificationKinds` | Sub-select for incident-driven templates (Epic 69 parity) |
+| `notificationKinds` | Sub-select for incident-driven templates (`activation`, `reminder`, `escalation`, `resolved`) |
 
 ## Stages
 
@@ -162,7 +162,7 @@ function Evaluate(event, incident, definition):
   return Match
 ```
 
-## Epic 69 parity rule (reference)
+## Built-in expected-run-missing rule (reference)
 
 Platform definition `platform.schedule.expected_run_missing`:
 
@@ -172,7 +172,7 @@ Platform definition `platform.schedule.expected_run_missing`:
   "trigger": {
     "eventTypes": ["apperture.schedule.expected_run.missing", "apperture.schedule.expected_run.cleared"],
     "incidentTransitions": ["opened", "observedStillActive", "resolved"],
-    "notificationKinds": ["activation", "reminder", "resolved"]
+    "notificationKinds": ["activation", "reminder", "escalation", "resolved"]
   },
   "stages": [
     {

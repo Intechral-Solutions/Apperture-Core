@@ -125,12 +125,6 @@ public sealed class IntegrationScheduleDiagnosticsTests
                 It.IsAny<int>(),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(Array.Empty<AttentionIncidentProjection>());
-        var ledger = new Mock<IAttentionIncidentNotificationLedger>();
-        ledger.Setup(x => x.ListRecentForIncidentsAsync(
-                It.IsAny<IReadOnlyList<string>>(),
-                It.IsAny<int>(),
-                It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Array.Empty<AttentionIncidentNotificationProjection>());
         var resolver = new Mock<IAttentionRecipientResolver>();
         resolver.Setup(x => x.ResolveAsync(It.IsAny<IntegrationId>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(
@@ -181,7 +175,6 @@ public sealed class IntegrationScheduleDiagnosticsTests
             scheduleRepo.Object,
             runQuery.Object,
             attention.Object,
-            ledger.Object,
             resolver.Object,
             platformDiag.Object,
             new FixedUtcTimeProvider(utcNow));

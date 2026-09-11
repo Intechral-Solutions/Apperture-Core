@@ -23,7 +23,7 @@ public sealed class Epic77UatDocumentationTests
         content.Should().Contain("User-created notification definition flow");
         content.Should().Contain("Subscription flow");
         content.Should().Contain("CanUpdateIntegrations");
-        content.Should().Contain("UsePlatformPipeline");
+        content.Should().Contain("Escalation instance created");
         content.Should().Contain("No retry-now");
     }
 
@@ -42,7 +42,7 @@ public sealed class Epic77UatDocumentationTests
         content.Should().Contain("digest");
         content.Should().Contain("escalation");
         content.Should().Contain("NotificationUiRoutes");
-        content.Should().Contain("production cutover");
+        content.Should().Contain("NTF-C");
     }
 
     [Fact]
@@ -56,7 +56,7 @@ public sealed class Epic77UatDocumentationTests
             "NotificationUiRoutes.cs");
         var content = File.ReadAllText(path);
         content.Should().Contain("DefinitionEdit");
-        content.Should().Contain("IntegrationCutoverReadiness");
+        content.Should().Contain("IntegrationNotifications");
         content.Should().Contain("IntegrationScheduleDiagnostics");
     }
 }

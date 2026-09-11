@@ -24,10 +24,3 @@ public sealed class NotificationDeliveryOptions
 
     public int MaxBackoffSeconds { get; set; } = 3600;
 }
-
-public sealed class NotificationPipelineOptions
-{
-    public const string SectionName = "Notifications:UsePlatformPipeline";
-
-    public bool Enabled { get; set; }
-}

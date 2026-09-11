@@ -78,7 +78,7 @@ public sealed class NotificationInstanceCoordinator : INotificationInstanceCoord
         }
 
         var kind = match.NotificationKind;
-        if (kind == NotificationKinds.Reminder
+        if (kind is NotificationKinds.Reminder or NotificationKinds.Escalation
             && evaluationContext.SourceKind != NotificationEvaluationSourceKind.IncidentTransition)
         {
             return;
@@ -154,6 +154,36 @@ public sealed class NotificationInstanceCoordinator : INotificationInstanceCoord
             }
         }
 
+        if (kind == NotificationKinds.Escalation)
+        {
+            if (string.IsNullOrWhiteSpace(incidentId) || string.IsNullOrWhiteSpace(integrationId))
+                return;
+
+            var escalationDecision = await EvaluateEscalationGateAsync(
+                    match.DefinitionId,
+                    integrationId,
+                    incidentId,
+                    observedAt,
+                    attentionRoute,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            if (escalationDecision == EscalationGateDecision.Skip)
+                return;
+            if (escalationDecision == EscalationGateDecision.SuppressAcknowledged)
+            {
+                await CreateSuppressedInstanceAsync(
+                    match,
+                    evaluationContext,
+                    envelope,
+                    incidentId,
+                    integrationId,
+                    dedupeKey: null,
+                    AttentionNotificationSuppressionReasons.EscalationSuppressedAcknowledged,
+                    cancellationToken).ConfigureAwait(false);
+                return;
+            }
+        }
+
         var dedupeKey = NotificationInstanceDedupeKeyBuilder.TryBuild(
             match.DefinitionId,
             kind,
@@ -192,14 +222,32 @@ public sealed class NotificationInstanceCoordinator : INotificationInstanceCoord
         if (!_redaction.AllowHtmlBody(template!))
             rendered = rendered with { BodyHtml = null };
 
-        var recipientPreview = await _recipientResolver
-            .ResolvePreviewAsync(match.DefinitionId, integrationId, cancellationToken)
-            .ConfigureAwait(false);
+        var recipientPreview = kind == NotificationKinds.Escalation && attentionRoute is not null
+            ? PreviewFromEscalationRecipients(attentionRoute)
+            : await _recipientResolver
+                .ResolvePreviewAsync(match.DefinitionId, integrationId, cancellationToken)
+                .ConfigureAwait(false);
 
         if (isBuiltInExpectedRunMissing)
         {
             if (kind == NotificationKinds.Reminder && recipientPreview.Deliverable.Count == 0)
                 return;
+
+            if (kind == NotificationKinds.Escalation && recipientPreview.Deliverable.Count == 0)
+            {
+                await CreateSuppressedInstanceAsync(
+                    match,
+                    evaluationContext,
+                    envelope,
+                    incidentId,
+                    integrationId,
+                    dedupeKey,
+                    AttentionNotificationSuppressionReasons.NoRouteConfigured,
+                    cancellationToken,
+                    rendered,
+                    recipientPreview).ConfigureAwait(false);
+                return;
+            }
 
             if ((kind == NotificationKinds.Activation || kind == NotificationKinds.Resolved)
                 && recipientPreview.Deliverable.Count == 0)
@@ -476,7 +524,7 @@ public sealed class NotificationInstanceCoordinator : INotificationInstanceCoord
                 return false;
         }
 
-        // Reminder interval parity: latest successful outbox send (activation or reminder), matching Epic 69 ledger timing.
+        // Reminder interval: latest successful outbox send (activation or reminder).
         var latestSent = await _deliveryOutbox
             .GetLatestSuccessfulActivationOrReminderSentUtcAsync(incidentId, definitionId, cancellationToken)
             .ConfigureAwait(false);
@@ -487,6 +535,76 @@ public sealed class NotificationInstanceCoordinator : INotificationInstanceCoord
             return false;
 
         return true;
+    }
+
+    private enum EscalationGateDecision
+    {
+        Continue,
+        Skip,
+        SuppressAcknowledged,
+    }
+
+    private async ValueTask<EscalationGateDecision> EvaluateEscalationGateAsync(
+        string definitionId,
+        string integrationId,
+        string incidentId,
+        DateTimeOffset observedAt,
+        AttentionRecipientResolution? cachedRoute,
+        CancellationToken cancellationToken)
+    {
+        if (!string.Equals(
+                definitionId,
+                NotificationDefinitionIds.PlatformScheduleExpectedRunMissing,
+                StringComparison.Ordinal))
+        {
+            return EscalationGateDecision.Continue;
+        }
+
+        var route = cachedRoute
+                    ?? await _attentionRecipientResolver
+                        .ResolveAsync(new IntegrationId(integrationId), AttentionConditionKeys.ExpectedRunMissing, cancellationToken)
+                        .ConfigureAwait(false);
+        if (!route.Enabled)
+            return EscalationGateDecision.Skip;
+
+        if (route.EscalationAfter is not { } after || after <= TimeSpan.Zero)
+            return EscalationGateDecision.Skip;
+
+        var incident = await _incidentTracker
+            .GetIncidentAsync(new IntegrationId(integrationId), incidentId, cancellationToken)
+            .ConfigureAwait(false);
+        if (incident is null)
+            return EscalationGateDecision.Skip;
+
+        if (observedAt - incident.StartedAtUtc < after)
+            return EscalationGateDecision.Skip;
+
+        if (route.SuppressEscalationWhenAcknowledged && incident.AcknowledgedAtUtc is not null)
+            return EscalationGateDecision.SuppressAcknowledged;
+
+        return EscalationGateDecision.Continue;
+    }
+
+    private static NotificationRecipientResolutionPreview PreviewFromEscalationRecipients(
+        AttentionRecipientResolution route)
+    {
+        var source = string.IsNullOrWhiteSpace(route.EscalationOperationalTeamId)
+            ? NotificationRecipientSources.AttentionRoutingIntegrationOverride
+            : NotificationRecipientSources.OperationalTeamMembership;
+        var deliverable = route.EscalationRecipients
+            .Where(email => !string.IsNullOrWhiteSpace(email))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Select(email => new ResolvedNotificationRecipient(
+                email.Trim(),
+                DisplayName: null,
+                UserId: null,
+                ManagedContactId: null,
+                NotificationUsabilityStatusValues.Deliverable,
+                source,
+                SubscriptionId: null,
+                NotificationRecipientKinds.OperationalTeam))
+            .ToList();
+        return new NotificationRecipientResolutionPreview(deliverable, []);
     }
 
     private static string? ResolveIncidentId(

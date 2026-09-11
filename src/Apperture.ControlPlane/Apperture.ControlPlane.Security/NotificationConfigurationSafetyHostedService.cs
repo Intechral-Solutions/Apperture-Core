@@ -9,8 +9,7 @@ using Microsoft.Extensions.Options;
 namespace Apperture.ControlPlane.Security;
 
 /// <summary>
-/// Logs warnings at startup for dangerous Epic 77 notification flag combinations.
-/// See docs/03-operations/epic77-expected-run-missing-notification-cutover-runbook.md.
+/// Logs warnings at startup for dangerous notification flag combinations.
 /// </summary>
 public sealed class NotificationConfigurationSafetyHostedService : IHostedService
 {
@@ -18,7 +17,6 @@ public sealed class NotificationConfigurationSafetyHostedService : IHostedServic
     private readonly IOptions<NotificationEvaluationOptions> _evaluation;
     private readonly IOptions<NotificationInstanceOptions> _instances;
     private readonly IOptions<NotificationDeliveryOptions> _delivery;
-    private readonly IOptions<NotificationPipelineOptions> _pipeline;
     private readonly ILogger<NotificationConfigurationSafetyHostedService> _logger;
 
     public NotificationConfigurationSafetyHostedService(
@@ -26,14 +24,12 @@ public sealed class NotificationConfigurationSafetyHostedService : IHostedServic
         IOptions<NotificationEvaluationOptions> evaluation,
         IOptions<NotificationInstanceOptions> instances,
         IOptions<NotificationDeliveryOptions> delivery,
-        IOptions<NotificationPipelineOptions> pipeline,
         ILogger<NotificationConfigurationSafetyHostedService> logger)
     {
         _platformEvents = platformEvents;
         _evaluation = evaluation;
         _instances = instances;
         _delivery = delivery;
-        _pipeline = pipeline;
         _logger = logger;
     }
 
@@ -43,8 +39,7 @@ public sealed class NotificationConfigurationSafetyHostedService : IHostedServic
             _platformEvents.Value.Enabled,
             _evaluation.Value.Enabled,
             _instances.Value.Enabled,
-            _delivery.Value.Enabled,
-            _pipeline.Value.Enabled);
+            _delivery.Value.Enabled);
 
         foreach (var warning in NotificationConfigurationSafetyValidator.Validate(snapshot))
         {

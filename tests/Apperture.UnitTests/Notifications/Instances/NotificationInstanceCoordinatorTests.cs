@@ -21,7 +21,7 @@ namespace Apperture.UnitTests.Notifications.Instances;
 
 public sealed class NotificationInstanceCoordinatorTests
 {
-    private static AppertureDbContext CreateDb()
+    public static AppertureDbContext CreateDb()
     {
         var opts = new DbContextOptionsBuilder<AppertureDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString("N"))
@@ -29,7 +29,7 @@ public sealed class NotificationInstanceCoordinatorTests
         return new AppertureDbContext(opts);
     }
 
-    private static async Task SeedBuiltInDefinitionAsync(AppertureDbContext db)
+    public static async Task SeedBuiltInDefinitionAsync(AppertureDbContext db)
     {
         var builtin = ExpectedRunMissingNotificationDefinitionSeed.BuiltIn(DateTimeOffset.UtcNow);
         db.NotificationDefinitions.Add(new NotificationDefinitionEntity
@@ -52,7 +52,7 @@ public sealed class NotificationInstanceCoordinatorTests
         await db.SaveChangesAsync();
     }
 
-    private static NotificationInstanceCoordinator CreateCoordinator(
+    public static NotificationInstanceCoordinator CreateCoordinator(
         AppertureDbContext db,
         IAttentionRecipientResolver? attentionResolver = null,
         IAttentionIncidentTracker? incidentTracker = null,
@@ -400,11 +400,28 @@ public sealed class NotificationInstanceCoordinatorTests
     {
         private readonly TimeSpan? _interval;
         private readonly bool _suppressWhenAck;
+        private readonly TimeSpan? _escalationAfter;
+        private readonly IReadOnlyList<string> _escalationRecipients;
+        private readonly IReadOnlyList<string> _primaryRecipients;
+        private readonly bool _suppressEscalationWhenAck;
+        private readonly bool _enabled;
 
-        public StubAttentionRecipientResolver(TimeSpan? interval = null, bool suppressWhenAck = false)
+        public StubAttentionRecipientResolver(
+            TimeSpan? interval = null,
+            bool suppressWhenAck = false,
+            TimeSpan? escalationAfter = null,
+            IReadOnlyList<string>? escalationRecipients = null,
+            IReadOnlyList<string>? primaryRecipients = null,
+            bool suppressEscalationWhenAck = false,
+            bool enabled = true)
         {
             _interval = interval ?? TimeSpan.FromHours(1);
             _suppressWhenAck = suppressWhenAck;
+            _escalationAfter = escalationAfter;
+            _escalationRecipients = escalationRecipients ?? [];
+            _primaryRecipients = primaryRecipients ?? [];
+            _suppressEscalationWhenAck = suppressEscalationWhenAck;
+            _enabled = enabled;
         }
 
         public ValueTask<AttentionRecipientResolution> ResolveInstanceDefaultsAsync(
@@ -419,28 +436,30 @@ public sealed class NotificationInstanceCoordinatorTests
             ValueTask.FromResult(
                 new AttentionRecipientResolution(
                     true,
-                    true,
-                    [],
+                    _enabled,
+                    _primaryRecipients,
                     AttentionRecipientSources.IntegrationOverride,
+                    _escalationRecipients,
+                    _escalationRecipients.Count > 0
+                        ? AttentionRecipientSources.IntegrationOverride
+                        : AttentionRecipientSources.None,
+                    null,
+                    null,
+                    null,
+                    null,
+                    _primaryRecipients.Count > 0,
+                    _escalationRecipients.Count > 0,
+                    null,
+                    _escalationRecipients.Count > 0 ? null : AttentionNoRouteReasons.NoTeamConfigured,
                     [],
-                    AttentionRecipientSources.None,
-                    null,
-                    null,
-                    null,
-                    null,
-                    false,
-                    false,
-                    null,
-                    null,
                     [],
-                    [],
-                    [],
-                    [],
-                    null,
+                    _primaryRecipients,
+                    _escalationRecipients,
+                    _escalationAfter,
                     _interval,
                     true,
                     _suppressWhenAck,
-                    false,
+                    _suppressEscalationWhenAck,
                     null,
                     null));
     }

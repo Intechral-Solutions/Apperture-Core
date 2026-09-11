@@ -31,21 +31,19 @@
   "PlatformEvents": {
     "Enabled": true
   },
-  "_Notifications_Comment": "Cutover runbook: docs/03-operations/epic77-expected-run-missing-notification-cutover-runbook.md",
+  "_Notifications_Comment": "Matches Management Host: evaluation, instances, and delivery enabled. SMTP remains empty until configured.",
   "Notifications": {
     "Evaluation": { "Enabled": true },
-    "Instances": { "Enabled": false },
+    "Instances": { "Enabled": true },
     "Delivery": {
-      "Enabled": false,
+      "Enabled": true,
       "PollIntervalSeconds": 30,
       "BatchSize": 20,
       "MaxAttempts": 5,
       "InitialBackoffSeconds": 60,
       "MaxBackoffSeconds": 3600
     },
-    "UsePlatformPipeline": { "Enabled": false },
     "Email": {
-      "_Comment": "Primary SMTP config (S8B). Legacy AttentionNotifications:ExpectedRunMissing SMTP fields merge when SmtpHost is empty.",
       "SmtpHost": "",
       "SmtpPort": 587,
       "SmtpUseSsl": true,
@@ -60,21 +58,6 @@
     "Observation": {
       "Enabled": true,
       "Interval": "00:05:00"
-    }
-  },
-  "AttentionNotifications": {
-    "ExpectedRunMissing": {
-      "Enabled": true,
-      "Recipients": [],
-      "SendResolvedNotification": true,
-      "ReminderInterval": null,
-      "SuppressRemindersWhenAcknowledged": true,
-      "SmtpHost": "",
-      "SmtpPort": 587,
-      "SmtpUseSsl": true,
-      "SmtpUser": "",
-      "SmtpPassword": "",
-      "FromAddress": ""
     }
   }
 }

@@ -28,7 +28,6 @@
   "Notifications": {
     "Evaluation": { "Enabled": false },
     "Instances": { "Enabled": false },
-    "Delivery": { "Enabled": false },
-    "UsePlatformPipeline": { "Enabled": false }
+    "Delivery": { "Enabled": false }
   }
 }

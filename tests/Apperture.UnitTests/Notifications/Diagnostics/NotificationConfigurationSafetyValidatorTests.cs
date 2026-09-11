@@ -14,8 +14,7 @@ public sealed class NotificationConfigurationSafetyValidatorTests
                 PlatformEventsEnabled: true,
                 EvaluationEnabled: true,
                 InstancesEnabled: true,
-                DeliveryEnabled: false,
-                UsePlatformPipelineEnabled: false));
+                DeliveryEnabled: false));
 
         warnings.Should().BeEmpty();
     }
@@ -24,36 +23,16 @@ public sealed class NotificationConfigurationSafetyValidatorTests
     public void Production_safe_defaults_emit_no_warnings()
     {
         var warnings = NotificationConfigurationSafetyValidator.Validate(
-            new NotificationConfigurationSnapshot(false, false, false, false, false));
+            new NotificationConfigurationSnapshot(false, false, false, false));
 
         warnings.Should().BeEmpty();
-    }
-
-    [Fact]
-    public void UsePlatformPipeline_without_delivery_warns()
-    {
-        var warnings = NotificationConfigurationSafetyValidator.Validate(
-            new NotificationConfigurationSnapshot(true, true, true, false, true));
-
-        warnings.Should().ContainSingle(w =>
-            w.Code == NotificationConfigurationSafetyValidator.UsePlatformPipelineWithoutDelivery);
-    }
-
-    [Fact]
-    public void Delivery_without_UsePlatformPipeline_warns_dual_send()
-    {
-        var warnings = NotificationConfigurationSafetyValidator.Validate(
-            new NotificationConfigurationSnapshot(true, true, true, true, false));
-
-        warnings.Should().ContainSingle(w =>
-            w.Code == NotificationConfigurationSafetyValidator.DualSendRisk);
     }
 
     [Fact]
     public void Delivery_without_instances_warns()
     {
         var warnings = NotificationConfigurationSafetyValidator.Validate(
-            new NotificationConfigurationSnapshot(true, true, false, true, false));
+            new NotificationConfigurationSnapshot(true, true, false, true));
 
         warnings.Should().ContainSingle(w =>
             w.Code == NotificationConfigurationSafetyValidator.DeliveryWithoutInstances);
@@ -63,7 +42,7 @@ public sealed class NotificationConfigurationSafetyValidatorTests
     public void Instances_without_platform_events_warns()
     {
         var warnings = NotificationConfigurationSafetyValidator.Validate(
-            new NotificationConfigurationSnapshot(false, true, true, false, false));
+            new NotificationConfigurationSnapshot(false, true, true, false));
 
         warnings.Should().ContainSingle(w =>
             w.Code == NotificationConfigurationSafetyValidator.PipelineWithoutPlatformEvents);

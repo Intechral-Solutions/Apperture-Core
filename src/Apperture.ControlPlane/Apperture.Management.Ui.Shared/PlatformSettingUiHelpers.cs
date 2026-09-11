@@ -188,8 +188,6 @@ public static class PlatformSettingUiHelpers
                 "Affects creation of notification instances and outbox rows when rules match.",
             "Notifications.Delivery.Enabled" =>
                 "When enabled, the delivery worker may send live notifications. Use with care in production.",
-            "Notifications.UsePlatformPipeline.Enabled" =>
-                "Changes how attention notifications are orchestrated relative to the legacy attention notification path.",
             "Notifications.Delivery.PollIntervalSeconds" or "Notifications.Delivery.BatchSize" =>
                 "Tuning for the notification delivery worker poll loop.",
             "Notifications.Email.SmtpPasswordRef" =>

@@ -1,6 +1,6 @@
 # S12 — Notification pipeline verification and legacy removal plan
 
-Status: Accepted  
+Status: Accepted (legacy removal completed later by NTF-C, 2026-09-10)  
 Date: 2026-07-03
 
 ## Context

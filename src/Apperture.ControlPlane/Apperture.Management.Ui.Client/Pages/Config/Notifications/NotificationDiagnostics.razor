@@ -1,7 +1,6 @@
 @page "/config/notifications/diagnostics"
 @layout ConfigLayout
 @using Apperture.Management.Client
-@using Apperture.Management.Ui.Client.Molecules
 @using Apperture.Management.Ui.Client.Organisms
 @using Apperture.Management.Ui.Client.Services
 @using Apperture.Management.Ui.Shared
@@ -12,7 +11,7 @@
 <div class="p-4 ui-page-stack">
     <PageHeader Eyebrow="Config — Notifications"
                 Title="Notification diagnostics"
-                Subtitle="Cutover preflight, parity acceptance, and admin pipeline verification tools." />
+                Subtitle="Delivery health and admin pipeline verification tools." />
 
     @if (!_capabilitiesLoaded)
     {
@@ -26,13 +25,6 @@
     }
     else
     {
-        @if (_cutoverStatus is not null)
-        {
-            <div class="mt-4">
-                <NotificationPipelineCutoverStatusCard Status="_cutoverStatus" />
-            </div>
-        }
-
         @if (_canManage)
         {
             <section class="ui-detail-block text-xs">
@@ -129,8 +121,8 @@
         }
 
         <section class="ui-detail-block text-xs">
-            <h2 class="text-sm font-semibold text-heading mb-2">Expected-run-missing cutover (instance)</h2>
-            <p class="text-muted mb-3">Read-only health and flag guidance. Per-integration readiness is on the integration notifications page.</p>
+            <h2 class="text-sm font-semibold text-heading mb-2">Instance notification health</h2>
+            <p class="text-muted mb-3">Read-only health and flag guidance. Per-integration diagnostics are on the integration notifications page.</p>
             <p class="text-muted mb-3">To edit notification/platform flags, use <a href="/config/platform-settings" class="underline">Platform settings</a>.</p>
             @if (_health is not null)
             {
@@ -145,36 +137,14 @@
             {
                 <p class="text-muted">Health summary unavailable.</p>
             }
-            @if (_configDiagnostics is not null)
+            @if (_configDiagnostics is not null && _configDiagnostics.Warnings.Count > 0)
             {
-                <ExpectedRunMissingCutoverConfigWarnings Configuration="_configDiagnostics" />
-            }
-            <div class="mt-3 flex flex-wrap items-end gap-2">
-                <label>
-                    Integration id (cutover readiness)
-                    <input class="ui-input font-mono" @bind="_parityIntegrationId" />
-                </label>
-                @if (!string.IsNullOrWhiteSpace(_parityIntegrationId))
-                {
-                    <a class="ui-toolbar-btn self-end"
-                       href="@($"/integrations/{Uri.EscapeDataString(_parityIntegrationId.Trim())}/notifications#cutover-readiness")">
-                        Open integration cutover readiness
-                    </a>
-                    <button type="button" class="ui-toolbar-btn self-end disabled:opacity-50" disabled="@_busy" @onclick="LoadCutoverSignOffAsync">Load sign-off</button>
-                }
-            </div>
-            @if (_cutoverSignOff is not null)
-            {
-                <p class="mt-3 text-xs">
-                    Latest sign-off: <span class="font-medium">@ExpectedRunMissingCutoverSignOffUi.GetStatusLabel(_cutoverSignOff.Status)</span>
-                    at @_cutoverSignOff.ReviewedAtUtc.UtcDateTime.ToString("u")
-                    by @(_cutoverSignOff.ReviewedByDisplayName ?? _cutoverSignOff.ReviewedByActorId).
-                    Parity at review: @(_cutoverSignOff.ParityAcceptableAtReview ? "acceptable" : "not acceptable").
-                </p>
-            }
-            else if (_cutoverSignOffLoaded)
-            {
-                <p class="mt-3 text-xs text-muted">No cutover sign-off on file for this integration.</p>
+                <ul class="mt-3 list-inside list-disc text-muted">
+                    @foreach (var w in _configDiagnostics.Warnings)
+                    {
+                        <li>@w.Message</li>
+                    }
+                </ul>
             }
         </section>
 
@@ -197,55 +167,6 @@
             }
         </div>
 
-        <div class="ui-detail-block text-xs">
-            <div class="font-semibold text-heading mb-2">Expected-run-missing parity acceptance</div>
-            <div class="flex flex-wrap items-end gap-2">
-                <label>
-                    Integration id *
-                    <input class="ui-input font-mono" @bind="_parityIntegrationId" />
-                </label>
-                <label>
-                    Incident id (optional)
-                    <input class="ui-input font-mono" @bind="_parityIncidentId" />
-                </label>
-                <label>
-                    Max incidents
-                    <input type="number" class="ui-input w-20" @bind="_maxIncidents" />
-                </label>
-                <button type="button" class="btn btn-secondary" disabled="@_busy" @onclick="RunAcceptanceAsync">Evaluate</button>
-            </div>
-            @if (_acceptance is not null)
-            {
-                <div class="mt-3 p-2 rounded @AcceptanceBadgeClass">
-                    <div class="font-semibold">@AcceptanceReadinessLabel</div>
-                    <p>Incidents evaluated: @_acceptance.IncidentsEvaluated · Kinds aligned: @_acceptance.KindsAligned / @_acceptance.KindComparisonsTotal</p>
-                    @if (_acceptance.BlockingFindings.Count > 0)
-                    {
-                        <ul class="mt-1 list-disc list-inside text-muted">
-                            @foreach (var f in _acceptance.BlockingFindings)
-                            {
-                                <li>@f</li>
-                            }
-                        </ul>
-                    }
-                </div>
-                <button type="button" class="mt-2 underline text-muted disabled:opacity-50" disabled="@_busy" @onclick="LoadFullParityAsync">Show full parity detail</button>
-            }
-            @if (_fullParity is not null)
-            {
-                <details class="mt-3">
-                    <summary class="cursor-pointer font-semibold">Full parity (@_fullParity.AttentionIncidentId)</summary>
-                    @foreach (var k in _fullParity.ByKind)
-                    {
-                        <div class="mt-2 border-t border-default pt-2">
-                            <div class="font-medium">@k.NotificationKind — @k.DifferenceKind</div>
-                            <p class="text-muted">@k.Summary</p>
-                        </div>
-                    }
-                </details>
-            }
-        </div>
-
         @if (!string.IsNullOrEmpty(_error))
         {
             <div class="mt-4">
@@ -263,37 +184,15 @@
     private string? _error;
     private string _integrationId = "";
     private string _definitionId = "";
-    private string _parityIntegrationId = "";
-    private string _parityIncidentId = "";
-    private int _maxIncidents = 10;
     private NotificationDeliveryHealthSummaryDto? _health;
     private NotificationIntegrationDiagnosticsDto? _integrationDiag;
     private NotificationConfigurationDiagnosticsDto? _configDiagnostics;
-    private NotificationPipelineCutoverStatusDto? _cutoverStatus;
-    private ExpectedRunMissingParityAcceptanceSummaryDto? _acceptance;
-    private ExpectedRunMissingParityDiagnosticsDto? _fullParity;
-    private ExpectedRunMissingCutoverSignOffDto? _cutoverSignOff;
-    private bool _cutoverSignOffLoaded;
-    private bool _parityEvaluated;
     private string _smtpTestRecipient = "";
     private string _pipelineTestIntegrationId = "";
     private bool _pipelineTestDryRun = true;
     private bool _pipelineTestDispatch;
     private NotificationSmtpTestResultDto? _smtpTestResult;
     private PlatformNotificationPipelineTestResultDto? _pipelineTestResult;
-
-    private string AcceptanceReadinessLabel =>
-        ExpectedRunMissingCutoverReadiness.GetLabel(
-            ExpectedRunMissingCutoverReadiness.ResolveState(_parityEvaluated, _acceptance));
-
-    private string AcceptanceBadgeClass =>
-        ExpectedRunMissingCutoverReadiness.ResolveState(_parityEvaluated, _acceptance) switch
-        {
-            ExpectedRunMissingCutoverReadinessState.LooksAcceptableForCutover => "bg-success-light",
-            ExpectedRunMissingCutoverReadinessState.NotReadyForCutover => "bg-message-error",
-            ExpectedRunMissingCutoverReadinessState.NeedsReview => "bg-message-warning",
-            _ => "bg-message-warning",
-        };
 
     protected override async Task OnInitializedAsync()
     {
@@ -308,7 +207,6 @@
         if (q.TryGetValue("integrationId", out var iid))
         {
             _integrationId = iid;
-            _parityIntegrationId = iid;
             _pipelineTestIntegrationId = iid;
         }
 
@@ -316,26 +214,8 @@
         {
             _health = await Client.GetNotificationDeliveryHealthAsync();
             _configDiagnostics = await Client.GetNotificationConfigurationDiagnosticsAsync();
-            _cutoverStatus = await Client.GetNotificationPipelineCutoverStatusAsync();
         }
         catch (Exception ex) { _error = ex.Message; }
-
-        if (!string.IsNullOrWhiteSpace(_parityIntegrationId))
-            await LoadCutoverSignOffAsync();
-    }
-
-    private async Task LoadCutoverSignOffAsync()
-    {
-        if (string.IsNullOrWhiteSpace(_parityIntegrationId)) return;
-        _busy = true;
-        _error = null;
-        try
-        {
-            _cutoverSignOff = await Client.GetExpectedRunMissingCutoverSignOffAsync(_parityIntegrationId.Trim());
-            _cutoverSignOffLoaded = true;
-        }
-        catch (Exception ex) { _error = ex.Message; }
-        finally { _busy = false; }
     }
 
     private async Task LoadIntegrationDiagAsync()
@@ -348,38 +228,6 @@
             _integrationDiag = await Client.GetNotificationIntegrationDiagnosticsAsync(
                 _integrationId.Trim(),
                 string.IsNullOrWhiteSpace(_definitionId) ? null : _definitionId.Trim());
-        }
-        catch (Exception ex) { _error = ex.Message; }
-        finally { _busy = false; }
-    }
-
-    private async Task RunAcceptanceAsync()
-    {
-        if (string.IsNullOrWhiteSpace(_parityIntegrationId)) return;
-        _busy = true;
-        _error = null;
-        _fullParity = null;
-        try
-        {
-            _acceptance = await Client.GetExpectedRunMissingParityAcceptanceAsync(
-                _parityIntegrationId.Trim(),
-                string.IsNullOrWhiteSpace(_parityIncidentId) ? null : _parityIncidentId.Trim(),
-                _maxIncidents);
-            _parityEvaluated = true;
-        }
-        catch (Exception ex) { _error = ex.Message; }
-        finally { _busy = false; }
-    }
-
-    private async Task LoadFullParityAsync()
-    {
-        if (string.IsNullOrWhiteSpace(_parityIntegrationId)) return;
-        _busy = true;
-        try
-        {
-            _fullParity = await Client.GetExpectedRunMissingParityAsync(
-                _parityIntegrationId.Trim(),
-                string.IsNullOrWhiteSpace(_parityIncidentId) ? null : _parityIncidentId.Trim());
         }
         catch (Exception ex) { _error = ex.Message; }
         finally { _busy = false; }

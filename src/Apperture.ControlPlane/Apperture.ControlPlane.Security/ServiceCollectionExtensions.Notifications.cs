@@ -1,5 +1,4 @@
 using Apperture.Core.Application.Notifications;
-using Apperture.Core.Application.Notifications.Cutover;
 using Apperture.Core.Application.Notifications.Inbox;
 using Apperture.Core.Application.Notifications.Diagnostics;
 using Apperture.Core.Application.Notifications.Delivery;
@@ -24,7 +23,6 @@ public static class NotificationsServiceCollectionExtensions
             services.Configure<NotificationEvaluationOptions>(configuration.GetSection(NotificationEvaluationOptions.SectionName));
             services.Configure<NotificationInstanceOptions>(configuration.GetSection(NotificationInstanceOptions.SectionName));
             services.Configure<NotificationDeliveryOptions>(configuration.GetSection(NotificationDeliveryOptions.SectionName));
-            services.Configure<NotificationPipelineOptions>(configuration.GetSection(NotificationPipelineOptions.SectionName));
             services.Configure<EmailNotificationOptions>(configuration.GetSection(EmailNotificationOptions.SectionName));
         }
 
@@ -62,9 +60,6 @@ public static class NotificationsServiceCollectionExtensions
         services.AddScoped<INotificationDeliveryDiagnosticsStore, SqlNotificationDeliveryDiagnosticsStore>();
         services.AddScoped<INotificationDeliveryDiagnosticsService, NotificationDeliveryDiagnosticsService>();
         services.AddScoped<INotificationPipelineTestService, NotificationPipelineTestService>();
-        services.AddScoped<IExpectedRunMissingCutoverSignOffStore, SqlExpectedRunMissingCutoverSignOffStore>();
-        services.AddScoped<IExpectedRunMissingCutoverSignOffService, ExpectedRunMissingCutoverSignOffService>();
-        services.AddScoped<IExpectedRunMissingCutoverValidationService, ExpectedRunMissingCutoverValidationService>();
         services.AddScoped<IEmailNotificationChannel, SmtpEmailNotificationChannel>();
         services.AddScoped<NotificationDispatchProcessor>();
         services.AddHostedService<NotificationDispatchHostedService>();

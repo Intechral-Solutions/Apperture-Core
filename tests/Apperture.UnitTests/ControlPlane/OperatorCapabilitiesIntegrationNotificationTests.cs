@@ -56,7 +56,7 @@ public sealed class OperatorCapabilitiesIntegrationNotificationTests
     }
 
     [Fact]
-    public async Task CutoverReadinessView_DoesNotRequireIntegrationUpdate()
+    public async Task IntegrationNotificationView_DoesNotRequireIntegrationUpdate()
     {
         var auth = new IntegrationNotificationAuthStub(
             integrationRead: true,

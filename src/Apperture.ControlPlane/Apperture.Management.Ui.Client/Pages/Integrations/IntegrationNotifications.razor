@@ -1,6 +1,5 @@
 @page "/integrations/{IntegrationId}/notifications"
 @using Apperture.Management.Client
-@using Apperture.Management.Ui.Client.Molecules
 @using Apperture.Management.Ui.Client.Organisms
 @using Apperture.Management.Ui.Client.Organisms.Notifications
 @using Apperture.Management.Ui.Client.Services
@@ -43,7 +42,7 @@
     }
     else
     {
-        <p class="mt-4 text-xs text-muted">Read-only cutover readiness and diagnostics. Enabling the platform pipeline or delivery is manual per the runbook — nothing on this page changes flags or sends mail.</p>
+        <p class="mt-4 text-xs text-muted">Notification definitions, subscriptions, instances, and outbox diagnostics for this integration. Nothing on this page sends mail.</p>
 
         <NotificationDefinitionPostCreatePrompt Visible="@_showPostCreatePrompt"
                                                 CanManageSubscriptions="@_canManageSubscriptions"
@@ -52,180 +51,6 @@
                                                 OnAddSubscription="FocusSubscriptionsAsync"
                                                 OnPreviewRecipients="PreviewPostCreateRecipientsAsync"
                                                 OnDismiss="DismissPostCreatePromptAsync" />
-
-        <section class="ui-detail-block mt-4" id="cutover-readiness">
-            <div class="flex flex-wrap items-start justify-between gap-2">
-                <h2 class="text-sm font-semibold text-heading">Expected-run-missing cutover readiness</h2>
-                <div class="flex flex-wrap gap-2 text-xs">
-                    <a class="underline" href="@ConfigDiagnosticsHref">Config diagnostics</a>
-                    <span class="text-muted">·</span>
-                    <span class="text-muted font-mono" title="Repository runbook path">@ExpectedRunMissingCutoverReadiness.RunbookDocPath</span>
-                </div>
-            </div>
-            <p class="mt-1 text-xs text-muted">
-                Compare Epic 69 attention notifications with the Epic 77 platform pipeline before setting
-                <code class="font-mono">Notifications:UsePlatformPipeline</code>. Cutover is not automatic.
-            </p>
-
-            <div class="mt-3 p-2 rounded text-sm @ReadinessBadgeClass">
-                <div class="font-semibold">@ReadinessLabel</div>
-                <p class="mt-1 text-xs">@IntegrationStatusSummary</p>
-            </div>
-
-            @if (_cutoverValidation is not null)
-            {
-                <div class="ui-detail-block text-xs">
-                    <div class="font-semibold text-heading">Staging cutover validation</div>
-                    <p class="mt-1 text-muted">Read-only — flags are not changed by this summary.</p>
-                    <ul class="mt-2 space-y-1">
-                        @foreach (var label in _cutoverValidation.OperatingModeLabels)
-                        {
-                            <li><span class="font-medium">Mode:</span> @label</li>
-                        }
-                    </ul>
-                    @if (_cutoverValidation.ReadinessBlockers.Count > 0)
-                    {
-                        <p class="mt-2 font-medium">Readiness blockers</p>
-                        <ul class="list-disc list-inside text-muted">
-                            @foreach (var b in _cutoverValidation.ReadinessBlockers) { <li>@b</li> }
-                        </ul>
-                    }
-                    @if (_cutoverValidation.HasRecipientParityGap)
-                    {
-                        <p class="mt-2 rounded border border-message-warning bg-message-warning p-2">
-                            Recipient parity gap: @_cutoverValidation.RecipientsMissingInPlatform recipient(s) appear in Epic 69 but not in platform subscriptions.
-                            Convert external operational-team emails to managed contacts before cutover.
-                        </p>
-                    }
-                    @if (_cutoverValidation.HasUnresolvedFailedOutbox)
-                    {
-                        <p class="mt-2 text-muted">@_cutoverValidation.RecentFailedOutboxCount failed platform outbox row(s) in the recent window.</p>
-                    }
-                    @if (_cutoverValidation.RecentSucceededOutboxCount > 0)
-                    {
-                        <p class="mt-1 text-muted">@_cutoverValidation.RecentSucceededOutboxCount recent succeeded platform delivery row(s).</p>
-                    }
-                </div>
-            }
-
-            @if (_configDiagnostics is not null)
-            {
-                <dl class="mt-3 grid grid-cols-2 md:grid-cols-5 gap-2 text-xs">
-                    <div><dt class="text-muted">Platform events</dt><dd>@FlagLabel(_configDiagnostics.PlatformEventsEnabled)</dd></div>
-                    <div><dt class="text-muted">Evaluation</dt><dd>@FlagLabel(_configDiagnostics.EvaluationEnabled)</dd></div>
-                    <div><dt class="text-muted">Instances</dt><dd>@FlagLabel(_configDiagnostics.InstancesEnabled)</dd></div>
-                    <div><dt class="text-muted">Delivery</dt><dd>@FlagLabel(_configDiagnostics.DeliveryEnabled)</dd></div>
-                    <div><dt class="text-muted">Use platform pipeline</dt><dd>@FlagLabel(_configDiagnostics.UsePlatformPipelineEnabled)</dd></div>
-                </dl>
-                <ExpectedRunMissingCutoverConfigWarnings Configuration="_configDiagnostics" />
-            }
-
-            @if (_parityEvaluated && _parityAcceptance is not null)
-            {
-                <div class="mt-3 text-xs">
-                    <p>
-                        Parity evaluated @_parityAcceptance.GeneratedAtUtc.UtcDateTime.ToString("u") —
-                        @_parityAcceptance.IncidentsEvaluated incident(s),
-                        kinds aligned @_parityAcceptance.KindsAligned / @_parityAcceptance.KindComparisonsTotal,
-                        recipients aligned @_parityAcceptance.RecipientsAligned / @_parityAcceptance.RecipientComparisonsTotal.
-                    </p>
-                    @if (_parityAcceptance.BlockingFindings.Count > 0)
-                    {
-                        <p class="mt-2 font-medium">Blocking findings</p>
-                        <ul class="list-disc list-inside text-muted">
-                            @foreach (var f in _parityAcceptance.BlockingFindings) { <li>@f</li> }
-                        </ul>
-                    }
-                    @if (_parityAcceptance.NonBlockingFindings.Count > 0)
-                    {
-                        <p class="mt-2 font-medium">Non-blocking findings</p>
-                        <ul class="list-disc list-inside text-muted">
-                            @foreach (var f in _parityAcceptance.NonBlockingFindings) { <li>@f</li> }
-                        </ul>
-                    }
-                </div>
-            }
-            else if (_parityEvaluated)
-            {
-                <p class="mt-3 text-xs text-muted">No recent expected-run-missing incidents with comparable Epic 69 and platform rows for this integration.</p>
-            }
-
-            <div class="mt-4 border-t border-default pt-3">
-                <div class="text-xs font-semibold mb-2">Operator sign-off</div>
-                <p class="text-xs text-muted mb-2">Sign-off records operator review for audit. It does not change configuration or enable cutover.</p>
-                @if (_latestSignOff is not null)
-                {
-                    <dl class="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
-                        <div><dt class="text-muted">Status</dt><dd class="font-medium">@ExpectedRunMissingCutoverSignOffUi.GetStatusLabel(_latestSignOff.Status)</dd></div>
-                        <div><dt class="text-muted">Reviewed</dt><dd>@_latestSignOff.ReviewedAtUtc.UtcDateTime.ToString("u") by @(_latestSignOff.ReviewedByDisplayName ?? _latestSignOff.ReviewedByActorId)</dd></div>
-                        <div><dt class="text-muted">Parity at sign-off</dt><dd>@(_latestSignOff.ParityAcceptableAtReview ? "Acceptable" : "Not acceptable")</dd></div>
-                        @if (!string.IsNullOrWhiteSpace(_latestSignOff.OperatorNote))
-                        {
-                            <div class="md:col-span-2"><dt class="text-muted">Note</dt><dd>@_latestSignOff.OperatorNote</dd></div>
-                        }
-                    </dl>
-                    @if (SignOffIsStale)
-                    {
-                        <p class="mt-2 text-xs text-warning">Current parity or configuration warnings differ from this sign-off — review again before cutover.</p>
-                    }
-                }
-                else
-                {
-                    <p class="text-xs text-muted">No sign-off recorded for this integration.</p>
-                }
-                @if (_canManageSubscriptions)
-                {
-                    <label class="mt-2 block text-xs">
-                        Operator note (optional)
-                        <textarea class="ui-input" rows="2" @bind="_signOffNote" disabled="@_busy"></textarea>
-                    </label>
-                    <div class="mt-2 flex flex-wrap gap-2">
-                        <button type="button" class="rounded bg-success-light px-3 py-1 text-xs disabled:opacity-50"
-                                disabled="@(_busy || !CanSignOffReady)" @onclick="SignOffReadyAsync">
-                            Sign off — ready for cutover
-                        </button>
-                        <button type="button" class="ui-toolbar-btn text-xs disabled:opacity-50"
-                                disabled="@_busy" @onclick="SignOffNotReadyAsync">
-                            Record not ready
-                        </button>
-                        @if (_latestSignOff is not null && _latestSignOff.Status is not "revoked")
-                        {
-                            <button type="button" class="rounded bg-message-warning px-3 py-1 text-xs disabled:opacity-50"
-                                    disabled="@_busy" @onclick="RevokeSignOffAsync">
-                                Revoke sign-off
-                            </button>
-                        }
-                    </div>
-                }
-            </div>
-
-            <div class="mt-3 flex flex-wrap gap-2 text-xs">
-                <button type="button" class="ui-toolbar-btn text-xs disabled:opacity-50" disabled="@_busy" @onclick="LoadCutoverReadinessAsync">Refresh readiness</button>
-                @if (_parityDetail is not null)
-                {
-                    <details>
-                        <summary class="cursor-pointer underline">Full parity detail</summary>
-                        @foreach (var k in _parityDetail.ByKind)
-                        {
-                            <div class="mt-2 border-t border-default pt-1">@k.NotificationKind — @k.DifferenceKind: @k.Summary</div>
-                        }
-                    </details>
-                }
-            </div>
-
-            <div class="mt-4 border-t border-default pt-3">
-                <div class="text-xs font-semibold mb-2">Cutover checklist (display only)</div>
-                <ul class="space-y-1 text-xs">
-                    @foreach (var item in CutoverChecklist)
-                    {
-                        <li class="flex gap-2">
-                            <span class="@(item.IsSatisfied ? "text-success" : "text-muted")">@(item.IsSatisfied ? "✓" : "○")</span>
-                            <span>@item.Label@if (item.IsManual) { <span class="text-muted"> (confirm manually)</span> }</span>
-                        </li>
-                    }
-                </ul>
-            </div>
-        </section>
 
         <section class="ui-detail-block mt-4">
             <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
@@ -296,7 +121,7 @@
 
         <section class="ui-detail-block mt-4">
             <h2 class="text-sm font-semibold text-heading mb-2">Implicit recipients (attention routing compatibility)</h2>
-            <p class="text-xs text-muted mb-2">Epic 69 attention routing — not platform notification subscriptions. Shown for parity only.</p>
+            <p class="text-xs text-muted mb-2">Attention routing recipients — not platform notification subscriptions.</p>
             @if (_attentionRouting is null)
             {
                 <p class="text-xs text-muted">No routing data.</p>
@@ -564,15 +389,6 @@
     private List<NotificationInstanceDiagnosticDto> _instances = [];
     private List<NotificationOutboxDiagnosticDto> _outboxRows = [];
     private AttentionRoutingEffectiveDto? _attentionRouting;
-    private ExpectedRunMissingParityAcceptanceSummaryDto? _parityAcceptance;
-    private ExpectedRunMissingParityDiagnosticsDto? _parityDetail;
-    private NotificationConfigurationDiagnosticsDto? _configDiagnostics;
-    private ExpectedRunMissingCutoverSignOffDto? _latestSignOff;
-    private ExpectedRunMissingCutoverValidationDto? _cutoverValidation;
-    private string _signOffNote = "";
-    private bool _parityEvaluated;
-    private int _recentPlatformInstanceCount;
-    private bool? _builtInDefinitionEnabled;
     private NotificationRecipientResolutionPreviewDto? _resolution;
     private string _addDefinitionId = BuiltInExpectedRunMissingDefinitionId;
     private string _previewDefinitionId = BuiltInExpectedRunMissingDefinitionId;
@@ -593,59 +409,6 @@
         string.IsNullOrWhiteSpace(_postCreateDefinitionId)
             ? "#"
             : NotificationUiRoutes.DefinitionDetail(_postCreateDefinitionId);
-
-    private ExpectedRunMissingCutoverReadinessState ReadinessState =>
-        ExpectedRunMissingCutoverReadiness.ResolveState(_parityEvaluated, _parityAcceptance);
-
-    private string ReadinessLabel => ExpectedRunMissingCutoverReadiness.GetLabel(ReadinessState);
-
-    private string ReadinessBadgeClass => ReadinessState switch
-    {
-        ExpectedRunMissingCutoverReadinessState.LooksAcceptableForCutover => "bg-success-light",
-        ExpectedRunMissingCutoverReadinessState.NotReadyForCutover => "bg-message-error",
-        ExpectedRunMissingCutoverReadinessState.NeedsReview => "bg-message-warning",
-        _ => "bg-surface-muted",
-    };
-
-    private string IntegrationStatusSummary =>
-        ExpectedRunMissingCutoverReadiness.GetIntegrationNotificationStatusSummary(
-            _builtInDefinitionEnabled,
-            _recentPlatformInstanceCount,
-            ReadinessState);
-
-    private bool CanSignOffReady =>
-        ReadinessState is ExpectedRunMissingCutoverReadinessState.LooksAcceptableForCutover
-        or ExpectedRunMissingCutoverReadinessState.NeedsReview;
-
-    private bool SignOffIsStale =>
-        _cutoverValidation?.SignOffIsStale == true
-        || (_latestSignOff is not null
-            && _configDiagnostics is not null
-            && ExpectedRunMissingCutoverSignOffUi.HasStaleness(_latestSignOff, _parityAcceptance, _configDiagnostics));
-
-    private IReadOnlyList<ChecklistItem> CutoverChecklist
-    {
-        get
-        {
-            var cfg = _configDiagnostics;
-            var parityOk = _parityAcceptance?.LooksAcceptableForCutover == true;
-            return
-            [
-                new("Platform events enabled", cfg?.PlatformEventsEnabled == true, false),
-                new("Notification evaluation enabled", cfg?.EvaluationEnabled == true, false),
-                new("Notification instances enabled", cfg?.InstancesEnabled == true, false),
-                new("Dry-run reviewed (delivery off or logs reviewed)", cfg?.DeliveryEnabled == false, true),
-                new("Parity acceptance reviewed", _parityEvaluated && parityOk, _parityAcceptance is null),
-                new("Delivery tested in dev/staging", false, true),
-                new("Operator sign-off completed",
-                    _latestSignOff?.Status == "readyForCutover",
-                    _latestSignOff is null),
-                new("UsePlatformPipeline only enabled after acceptance",
-                    cfg?.UsePlatformPipelineEnabled != true || parityOk,
-                    cfg?.UsePlatformPipelineEnabled == true && !parityOk),
-            ];
-        }
-    }
 
     private IEnumerable<(string Id, string Label)> RecipientOptions => _addKind switch
     {
@@ -696,7 +459,6 @@
             var merged = new Dictionary<string, NotificationDefinitionSummaryDto>(StringComparer.Ordinal);
             foreach (var d in scoped)
                 merged[d.Id] = d;
-            _builtInDefinitionEnabled = builtIn?.IsEnabled;
             if (builtIn is not null)
             {
                 merged[builtIn.Id] = new NotificationDefinitionSummaryDto(
@@ -715,7 +477,6 @@
 
             var diag = await Client.GetNotificationIntegrationDiagnosticsAsync(IntegrationId, take: 50);
             _instances = diag.RecentInstances.ToList();
-            _recentPlatformInstanceCount = _instances.Count;
             var listInstances = await Client.ListNotificationInstancesAsync(integrationId: IntegrationId, take: 100);
             var instanceCounts = listInstances
                 .GroupBy(i => i.NotificationDefinitionId)
@@ -759,7 +520,6 @@
                 _contacts = await Client.ListManagedContactsAsync(null, 200) ?? [];
             }
 
-            await LoadCutoverReadinessAsync();
             await ApplyPostCreateContextAsync();
         }
         catch (Exception ex)
@@ -792,104 +552,6 @@
         _showPostCreatePrompt = true;
         await ResolveRecipientsAsync();
     }
-
-    private async Task LoadCutoverReadinessAsync()
-    {
-        var wasBusy = _busy;
-        if (!wasBusy)
-        {
-            _busy = true;
-            _error = null;
-        }
-
-        try
-        {
-            try
-            {
-                _configDiagnostics = await Client.GetNotificationConfigurationDiagnosticsAsync();
-            }
-            catch
-            {
-                // Configuration diagnostics require platform notification read; page remains usable without flags.
-            }
-
-            _parityEvaluated = true;
-            _parityAcceptance = await Client.GetExpectedRunMissingParityAcceptanceAsync(IntegrationId, maxIncidents: 10);
-            if (_parityAcceptance is not null)
-                _parityDetail = await Client.GetExpectedRunMissingParityAsync(IntegrationId, take: 50);
-            else
-                _parityDetail = null;
-
-            try
-            {
-                _latestSignOff = await Client.GetExpectedRunMissingCutoverSignOffAsync(IntegrationId);
-            }
-            catch
-            {
-                _latestSignOff = null;
-            }
-
-            try
-            {
-                _cutoverValidation = await Client.GetExpectedRunMissingCutoverValidationAsync(IntegrationId);
-            }
-            catch
-            {
-                _cutoverValidation = null;
-            }
-        }
-        catch (Exception ex)
-        {
-            _error = ex.Message;
-        }
-        finally
-        {
-            if (!wasBusy)
-                _busy = false;
-        }
-    }
-
-    private async Task SignOffReadyAsync() =>
-        await SubmitSignOffAsync("readyForCutover");
-
-    private async Task SignOffNotReadyAsync() =>
-        await SubmitSignOffAsync("notReady");
-
-    private async Task SubmitSignOffAsync(string status)
-    {
-        if (!_canManageSubscriptions) return;
-        _busy = true;
-        _error = null;
-        try
-        {
-            _latestSignOff = await Client.CreateExpectedRunMissingCutoverSignOffAsync(
-                IntegrationId,
-                new CreateExpectedRunMissingCutoverSignOffRequestDto(status, string.IsNullOrWhiteSpace(_signOffNote) ? null : _signOffNote.Trim()));
-            _signOffNote = "";
-            await LoadCutoverReadinessAsync();
-        }
-        catch (Exception ex) { _error = ex.Message; }
-        finally { _busy = false; }
-    }
-
-    private async Task RevokeSignOffAsync()
-    {
-        if (!_canManageSubscriptions) return;
-        _busy = true;
-        _error = null;
-        try
-        {
-            _latestSignOff = await Client.RevokeExpectedRunMissingCutoverSignOffAsync(
-                IntegrationId,
-                new RevokeExpectedRunMissingCutoverSignOffRequestDto(string.IsNullOrWhiteSpace(_signOffNote) ? null : _signOffNote.Trim()));
-            _signOffNote = "";
-            await LoadCutoverReadinessAsync();
-        }
-        catch (Exception ex) { _error = ex.Message; }
-        finally { _busy = false; }
-    }
-
-    private static string FlagLabel(bool enabled) => enabled ? "Enabled" : "Disabled";
 
     private async Task ToggleDefinitionAsync(string definitionId, ChangeEventArgs e)
     {
@@ -1019,8 +681,8 @@
         if (string.Equals(definitionId, BuiltInExpectedRunMissingDefinitionId, StringComparison.Ordinal))
         {
             if (HasAttentionRoutingRecipients)
-                return "Epic 69 attention routing may still supply implicit compatibility recipients for this integration. Add explicit subscriptions for platform pipeline delivery.";
-            return "Add explicit subscriptions for platform pipeline delivery of expected-run-missing notifications.";
+                return "Attention routing may still supply implicit compatibility recipients for this integration. Add explicit subscriptions for platform delivery.";
+            return "Add explicit subscriptions for platform delivery of expected-run-missing notifications.";
         }
 
         if (string.Equals(row.Summary.Origin, "userCreated", StringComparison.OrdinalIgnoreCase))
@@ -1056,6 +718,4 @@
         NotificationDefinitionSummaryDto Summary,
         string Mutability,
         int RecentInstanceCount);
-
-    private sealed record ChecklistItem(string Label, bool IsSatisfied, bool IsManual);
 }

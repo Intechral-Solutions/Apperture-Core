@@ -3,7 +3,7 @@ using Apperture.Core.Domain.Notifications;
 
 namespace Apperture.Core.Application.Notifications;
 
-/// <summary>Built-in platform definition seed (Epic 69 parity; not wired to orchestrator).</summary>
+/// <summary>Built-in platform definition for expected-run-missing attention (activation, reminder, escalation, resolved).</summary>
 public static class ExpectedRunMissingNotificationDefinitionSeed
 {
     public const string RuleJson = """
@@ -15,7 +15,7 @@ public static class ExpectedRunMissingNotificationDefinitionSeed
               "apperture.schedule.expected_run.cleared"
             ],
             "incidentTransitions": ["opened", "observedStillActive", "resolved"],
-            "notificationKinds": ["activation", "reminder", "resolved"]
+            "notificationKinds": ["activation", "reminder", "resolved", "escalation"]
           },
           "stages": [
             {
@@ -62,6 +62,12 @@ public static class ExpectedRunMissingNotificationDefinitionSeed
             "resolved": {
               "subject": "[Apperture] Resolved: expected_run_missing ({{integration.id}})",
               "bodyText": "The expected_run_missing attention incident for integration {{integration.id}} has resolved (expectation cleared)."
+            },
+            "escalation": {
+              "subject": "[Apperture] Escalation: expected_run_missing ({{integration.id}})",
+              "bodyText": "Escalation: expected_run_missing remains active for integration {{integration.id}} since {{incident.startedAt}} (UTC).\n",
+              "actionText": "Review schedule diagnostics",
+              "actionUrl": "/integrations/{{integration.id}}/schedule-diagnostics"
             }
           }
         }

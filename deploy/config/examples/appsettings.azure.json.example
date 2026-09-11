@@ -34,8 +34,7 @@
   "Notifications": {
     "Evaluation": { "Enabled": false },
     "Instances": { "Enabled": false },
-    "Delivery": { "Enabled": false },
-    "UsePlatformPipeline": { "Enabled": false }
+    "Delivery": { "Enabled": false }
   },
   "_AzureAppService_EnvVarExamples": "Entra__TenantId, Entra__ClientId, Entra__ClientSecret, SqlServer__CredentialReference__Reference — use double underscore for nested keys"
 }

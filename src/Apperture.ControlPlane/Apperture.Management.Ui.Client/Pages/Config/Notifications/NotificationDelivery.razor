@@ -1,7 +1,6 @@
 @page "/config/notifications/delivery"
 @layout ConfigLayout
 @using Apperture.Management.Client
-@using Apperture.Management.Ui.Client.Molecules
 @using Apperture.Management.Ui.Client.Organisms
 @using Apperture.Management.Ui.Client.Services
 @using Apperture.Management.Ui.Shared
@@ -23,20 +22,14 @@
     }
     else
     {
-        @if (_cutoverStatus is not null)
-        {
-            <NotificationPipelineCutoverStatusCard Status="_cutoverStatus" />
-        }
-
         @if (_configDiagnostics is not null)
         {
             <ManagementSection Title="Platform pipeline configuration" Layer="@ManagementSection.UiLayer.Summary">
-                <dl class="grid grid-cols-2 gap-2 text-xs md:grid-cols-5">
+                <dl class="grid grid-cols-2 gap-2 text-xs md:grid-cols-4">
                     <div><dt class="text-muted">Platform events</dt><dd>@FlagLabel(_configDiagnostics.PlatformEventsEnabled)</dd></div>
                     <div><dt class="text-muted">Evaluation</dt><dd>@FlagLabel(_configDiagnostics.EvaluationEnabled)</dd></div>
                     <div><dt class="text-muted">Instances</dt><dd>@FlagLabel(_configDiagnostics.InstancesEnabled)</dd></div>
                     <div><dt class="text-muted">Delivery</dt><dd>@FlagLabel(_configDiagnostics.DeliveryEnabled)</dd></div>
-                    <div><dt class="text-muted">Use platform pipeline</dt><dd>@FlagLabel(_configDiagnostics.UsePlatformPipelineEnabled)</dd></div>
                 </dl>
                 @if (!_configDiagnostics.DeliveryEnabled)
                 {
@@ -111,7 +104,6 @@
     private string _selectedIntegrationId = "";
     private NotificationDeliveryHealthSummaryDto? _globalHealth;
     private NotificationConfigurationDiagnosticsDto? _configDiagnostics;
-    private NotificationPipelineCutoverStatusDto? _cutoverStatus;
     private NotificationIntegrationDiagnosticsDto? _integrationDiag;
     private IReadOnlyList<IntegrationDto> _integrations = [];
 
@@ -132,15 +124,6 @@
             catch
             {
                 _configDiagnostics = null;
-            }
-
-            try
-            {
-                _cutoverStatus = await Client.GetNotificationPipelineCutoverStatusAsync();
-            }
-            catch
-            {
-                _cutoverStatus = null;
             }
 
             if (caps.CanViewIntegrations)

@@ -58,35 +58,6 @@ public sealed record NotificationIncidentDiagnosticsDto(
     IReadOnlyList<NotificationInstanceDiagnosticDto> Instances,
     IReadOnlyList<NotificationOutboxDiagnosticDto> OutboxRows);
 
-public sealed record ParityRecipientComparisonDto(
-    string RecipientEmail,
-    string DifferenceKind,
-    string? Epic69Status,
-    string? Epic69SuppressionReason,
-    string? PlatformInstanceStatus,
-    string? PlatformOutboxStatus,
-    string? PlatformRecipientSource);
-
-public sealed record ExpectedRunMissingKindParityDto(
-    string NotificationKind,
-    string DifferenceKind,
-    string Summary,
-    IReadOnlyList<string> Epic69Recipients,
-    IReadOnlyList<string> PlatformRecipients,
-    IReadOnlyList<ParityRecipientComparisonDto> RecipientComparisons,
-    string? Epic69AggregateStatus,
-    string? PlatformInstanceStatus,
-    string? PlatformInstanceSuppressionReason);
-
-public sealed record ExpectedRunMissingParityDiagnosticsDto(
-    string IntegrationId,
-    string AttentionIncidentId,
-    IReadOnlyList<ExpectedRunMissingKindParityDto> ByKind,
-    IReadOnlyList<NotificationInstanceDiagnosticDto> PlatformInstances,
-    IReadOnlyList<NotificationOutboxDiagnosticDto> PlatformOutboxRows,
-    IReadOnlyList<Epic69NotificationDiagnosticDto> Epic69LedgerRows,
-    DateTimeOffset GeneratedAtUtc);
-
 public sealed record NotificationConfigurationSafetyWarningDto(string Code, string Message);
 
 public sealed record NotificationConfigurationDiagnosticsDto(
@@ -94,45 +65,8 @@ public sealed record NotificationConfigurationDiagnosticsDto(
     bool EvaluationEnabled,
     bool InstancesEnabled,
     bool DeliveryEnabled,
-    bool UsePlatformPipelineEnabled,
     IReadOnlyList<NotificationConfigurationSafetyWarningDto> Warnings,
     DateTimeOffset GeneratedAtUtc);
-
-public sealed record ExpectedRunMissingParityAcceptanceSummaryDto(
-    string IntegrationId,
-    int IncidentsEvaluated,
-    int KindComparisonsTotal,
-    int KindsAligned,
-    int KindsMissingInPlatform,
-    int KindsExtraInPlatform,
-    int KindsStatusMismatch,
-    int KindsDeliveryFailedInPlatform,
-    int KindsDeliverySucceededInPlatform,
-    int KindsSuppressedEpic69Only,
-    int KindsSuppressedPlatformOnly,
-    int RecipientComparisonsTotal,
-    int RecipientsAligned,
-    int RecipientsMissingInPlatform,
-    int RecipientsExtraInPlatform,
-    int RecipientsDeliveryFailedInPlatform,
-    int RecipientsPendingInPlatform,
-    IReadOnlyList<string> BlockingFindings,
-    IReadOnlyList<string> NonBlockingFindings,
-    bool LooksAcceptableForCutover,
-    DateTimeOffset GeneratedAtUtc);
-
-public sealed record Epic69NotificationDiagnosticDto(
-    string Id,
-    string AttentionIncidentId,
-    string IntegrationId,
-    string NotificationKind,
-    string Channel,
-    string Recipient,
-    string Status,
-    string? SuppressionReason,
-    DateTimeOffset CreatedAtUtc,
-    DateTimeOffset? SentAtUtc,
-    string? RecipientResolvedFrom);
 
 public sealed record PlatformNotificationInstanceDiagnosticDto(
     string Id,
@@ -154,34 +88,6 @@ public sealed record PlatformNotificationOutboxDiagnosticDto(
     string? LastError,
     DateTimeOffset? SentAtUtc,
     DateTimeOffset UpdatedAtUtc);
-
-public sealed record NotificationPipelineCutoverPreflightCheckDto(
-    string Code,
-    string Label,
-    bool Passed,
-    string? Guidance);
-
-public sealed record NotificationPipelineCutoverStatusDto(
-    bool UsePlatformPipelineEnabled,
-    bool LegacyEpic69PathActive,
-    string ActiveDeliveryPath,
-    string ActiveDeliveryPathLabel,
-    IReadOnlyList<string> OperatingModeLabels,
-    bool ExpectedRunMissingDefinitionExists,
-    bool ExpectedRunMissingDefinitionEnabled,
-    bool EmailTransportEnabled,
-    bool EmailSmtpHostConfigured,
-    bool EmailFromAddressConfigured,
-    bool EmailCredentialReferenceConfigured,
-    bool ManagementHostUrlConfigured,
-    bool PlatformEventsEnabled,
-    bool EvaluationEnabled,
-    bool InstancesEnabled,
-    bool DeliveryEnabled,
-    IReadOnlyList<NotificationConfigurationSafetyWarningDto> ConfigurationWarnings,
-    IReadOnlyList<NotificationPipelineCutoverPreflightCheckDto> PreflightChecks,
-    bool CriticalPreflightPassed,
-    DateTimeOffset GeneratedAtUtc);
 
 public sealed record NotificationSmtpTestRequestDto(string RecipientEmail);
 

@@ -89,7 +89,6 @@ public sealed class ManagementClientNotificationTests
             evaluationEnabled = true,
             instancesEnabled = true,
             deliveryEnabled = false,
-            usePlatformPipelineEnabled = false,
             warnings = Array.Empty<object>(),
             generatedAtUtc = DateTimeOffset.UtcNow
         });
@@ -101,106 +100,6 @@ public sealed class ManagementClientNotificationTests
         handler.LastUri!.AbsolutePath.Should().Contain("notification-diagnostics/configuration");
         result.PlatformEventsEnabled.Should().BeTrue();
         result.Warnings.Should().BeEmpty();
-    }
-
-    [Fact]
-    public async Task GetExpectedRunMissingCutoverValidationAsync_UsesValidationPath()
-    {
-        var json = JsonSerializer.Serialize(new
-        {
-            integrationId = "int-1",
-            operatingModes = new[] { "shadow_mode" },
-            operatingModeLabels = new[] { "Shadow mode" },
-            hasReadyForCutoverSignOff = false,
-            signOffIsRevoked = false,
-            signOffIsStale = false,
-            latestSignOffStatus = (string?)null,
-            latestSignOffReviewedAtUtc = (DateTimeOffset?)null,
-            parityCurrentlyAcceptable = true,
-            hasDangerousConfigurationWarnings = false,
-            configurationWarningCodes = Array.Empty<string>(),
-            recentFailedOutboxCount = 0,
-            recentSucceededOutboxCount = 1,
-            hasUnresolvedFailedOutbox = false,
-            hasRecipientParityGap = false,
-            recipientsMissingInPlatform = 0,
-            readinessBlockers = Array.Empty<string>(),
-            generatedAtUtc = DateTimeOffset.UtcNow
-        });
-        var handler = new CaptureHandler(HttpStatusCode.OK, json);
-        var client = new ManagementClient(new HttpClient(handler) { BaseAddress = new Uri("https://api.example/") });
-
-        var result = await client.GetExpectedRunMissingCutoverValidationAsync("int-1");
-
-        handler.LastUri!.AbsolutePath.Should().Contain("expected-run-missing/cutover-validation");
-        result.ParityCurrentlyAcceptable.Should().BeTrue();
-    }
-
-    [Fact]
-    public async Task GetExpectedRunMissingCutoverSignOffAsync_UsesIntegrationPath()
-    {
-        var json = JsonSerializer.Serialize(new
-        {
-            id = "so-1",
-            integrationId = "int-1",
-            notificationDefinitionId = "platform.schedule.expected_run_missing",
-            status = "readyForCutover",
-            reviewedAtUtc = DateTimeOffset.UtcNow,
-            reviewedByActorId = "user:1",
-            reviewedByDisplayName = "Op",
-            parityAcceptableAtReview = true,
-            configurationWarningCodes = Array.Empty<string>(),
-            blockingFindings = Array.Empty<string>(),
-            nonBlockingFindings = Array.Empty<string>(),
-            operatorNote = (string?)null,
-            createdAtUtc = DateTimeOffset.UtcNow,
-            updatedAtUtc = DateTimeOffset.UtcNow
-        });
-        var handler = new CaptureHandler(HttpStatusCode.OK, json);
-        var client = new ManagementClient(new HttpClient(handler) { BaseAddress = new Uri("https://api.example/") });
-
-        var result = await client.GetExpectedRunMissingCutoverSignOffAsync("int-1");
-
-        handler.LastUri!.AbsolutePath.Should().Contain("integrations/int-1/expected-run-missing/cutover-sign-off");
-        result!.Status.Should().Be("readyForCutover");
-    }
-
-    [Fact]
-    public async Task GetExpectedRunMissingParityAcceptanceAsync_BuildsQuery()
-    {
-        var json = JsonSerializer.Serialize(new
-        {
-            integrationId = "int-1",
-            incidentsEvaluated = 1,
-            kindComparisonsTotal = 1,
-            kindsAligned = 1,
-            kindsMissingInPlatform = 0,
-            kindsExtraInPlatform = 0,
-            kindsStatusMismatch = 0,
-            kindsDeliveryFailedInPlatform = 0,
-            kindsDeliverySucceededInPlatform = 0,
-            kindsSuppressedEpic69Only = 0,
-            kindsSuppressedPlatformOnly = 0,
-            recipientComparisonsTotal = 0,
-            recipientsAligned = 0,
-            recipientsMissingInPlatform = 0,
-            recipientsExtraInPlatform = 0,
-            recipientsDeliveryFailedInPlatform = 0,
-            recipientsPendingInPlatform = 0,
-            blockingFindings = Array.Empty<string>(),
-            nonBlockingFindings = Array.Empty<string>(),
-            looksAcceptableForCutover = true,
-            generatedAtUtc = DateTimeOffset.UtcNow
-        });
-        var handler = new CaptureHandler(HttpStatusCode.OK, json);
-        var client = new ManagementClient(new HttpClient(handler) { BaseAddress = new Uri("https://api.example/") });
-
-        var result = await client.GetExpectedRunMissingParityAcceptanceAsync("int-1", maxIncidents: 5);
-
-        handler.LastUri!.ToString().Should().Contain("expected-run-missing/parity-acceptance");
-        handler.LastUri.Query.Should().Contain("integrationId=int-1");
-        handler.LastUri.Query.Should().Contain("maxIncidents=5");
-        result!.LooksAcceptableForCutover.Should().BeTrue();
     }
 
     [Fact]

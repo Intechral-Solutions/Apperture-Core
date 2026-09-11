@@ -795,23 +795,7 @@ public interface IManagementClient
         int take = 50,
         CancellationToken cancellationToken = default);
 
-    Task<ExpectedRunMissingParityDiagnosticsDto?> GetExpectedRunMissingParityAsync(
-        string? integrationId = null,
-        string? attentionIncidentId = null,
-        int take = 50,
-        CancellationToken cancellationToken = default);
-
-    Task<ExpectedRunMissingParityAcceptanceSummaryDto?> GetExpectedRunMissingParityAcceptanceAsync(
-        string integrationId,
-        string? attentionIncidentId = null,
-        int maxIncidents = 10,
-        int takePerIncident = 50,
-        CancellationToken cancellationToken = default);
-
     Task<NotificationConfigurationDiagnosticsDto> GetNotificationConfigurationDiagnosticsAsync(
-        CancellationToken cancellationToken = default);
-
-    Task<NotificationPipelineCutoverStatusDto> GetNotificationPipelineCutoverStatusAsync(
         CancellationToken cancellationToken = default);
 
     Task<NotificationSmtpTestResultDto> SendNotificationSmtpTestAsync(
@@ -820,24 +804,6 @@ public interface IManagementClient
 
     Task<PlatformNotificationPipelineTestResultDto> RunPlatformNotificationPipelineTestAsync(
         PlatformNotificationPipelineTestRequestDto request,
-        CancellationToken cancellationToken = default);
-
-    Task<ExpectedRunMissingCutoverSignOffDto?> GetExpectedRunMissingCutoverSignOffAsync(
-        string integrationId,
-        CancellationToken cancellationToken = default);
-
-    Task<ExpectedRunMissingCutoverSignOffDto> CreateExpectedRunMissingCutoverSignOffAsync(
-        string integrationId,
-        CreateExpectedRunMissingCutoverSignOffRequestDto request,
-        CancellationToken cancellationToken = default);
-
-    Task<ExpectedRunMissingCutoverSignOffDto> RevokeExpectedRunMissingCutoverSignOffAsync(
-        string integrationId,
-        RevokeExpectedRunMissingCutoverSignOffRequestDto? request = null,
-        CancellationToken cancellationToken = default);
-
-    Task<ExpectedRunMissingCutoverValidationDto> GetExpectedRunMissingCutoverValidationAsync(
-        string integrationId,
         CancellationToken cancellationToken = default);
 
     // --- Governance admin (Epic 39/40) ---

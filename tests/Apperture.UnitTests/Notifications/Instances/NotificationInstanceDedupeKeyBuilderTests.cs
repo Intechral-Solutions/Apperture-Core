@@ -36,6 +36,19 @@ public sealed class NotificationInstanceDedupeKeyBuilderTests
     }
 
     [Fact]
+    public void Escalation_is_once_per_incident()
+    {
+        var key = NotificationInstanceDedupeKeyBuilder.TryBuild(
+            "def-1",
+            NotificationKinds.Escalation,
+            "inc-1",
+            "pevt-1",
+            DateTimeOffset.UtcNow,
+            reminderInterval: TimeSpan.FromHours(1));
+        key.Should().Be("def-1|inc-1|escalation");
+    }
+
+    [Fact]
     public void Fallback_uses_platform_event_when_no_incident()
     {
         var key = NotificationInstanceDedupeKeyBuilder.TryBuild(

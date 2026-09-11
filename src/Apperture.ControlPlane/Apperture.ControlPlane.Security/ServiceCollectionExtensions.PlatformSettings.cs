@@ -51,10 +51,8 @@ public static class PlatformSettingsServiceCollectionExtensions
         services.AddSingleton<IPostConfigureOptions<NotificationEvaluationOptions>, NotificationEvaluationOptionsPlatformSettingsPostConfigure>();
         services.AddSingleton<IPostConfigureOptions<NotificationInstanceOptions>, NotificationInstanceOptionsPlatformSettingsPostConfigure>();
         services.AddSingleton<IPostConfigureOptions<NotificationDeliveryOptions>, NotificationDeliveryOptionsPlatformSettingsPostConfigure>();
-        services.AddSingleton<IPostConfigureOptions<NotificationPipelineOptions>, NotificationPipelineOptionsPlatformSettingsPostConfigure>();
         services.AddSingleton<IPostConfigureOptions<PlatformEventsOptions>, PlatformEventsOptionsPlatformSettingsPostConfigure>();
         services.AddSingleton<IPostConfigureOptions<AttentionIncidentObservationOptions>, AttentionIncidentObservationOptionsPlatformSettingsPostConfigure>();
-        services.AddSingleton<IPostConfigureOptions<EmailNotificationOptions>, EmailNotificationOptionsLegacyMergePostConfigure>();
         services.AddSingleton<IPostConfigureOptions<EmailNotificationOptions>, EmailNotificationOptionsPlatformSettingsPostConfigure>();
 
         _ = configuration;

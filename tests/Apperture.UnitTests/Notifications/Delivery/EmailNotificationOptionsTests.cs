@@ -6,44 +6,12 @@ using Apperture.ControlPlane.Security;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.Extensions.Options;
 using Xunit;
 
 namespace Apperture.UnitTests.Notifications.Delivery;
 
 public sealed class EmailNotificationOptionsTests
 {
-    [Fact]
-    public void Legacy_merge_copies_smtp_when_email_section_empty()
-    {
-        var legacy = Options.Create(new AttentionNotificationOptions
-        {
-            SmtpHost = "smtp.legacy.test",
-            SmtpPort = 465,
-            SmtpUseSsl = true,
-            SmtpUser = "user",
-            SmtpPassword = "pass",
-            FromAddress = "noreply@legacy.test",
-        });
-        var sut = new EmailNotificationOptionsLegacyMergePostConfigure(legacy);
-        var email = new EmailNotificationOptions();
-        sut.PostConfigure(null, email);
-
-        email.SmtpHost.Should().Be("smtp.legacy.test");
-        email.SmtpPort.Should().Be(465);
-        email.FromAddress.Should().Be("noreply@legacy.test");
-    }
-
-    [Fact]
-    public void Legacy_merge_does_not_override_configured_email_section()
-    {
-        var legacy = Options.Create(new AttentionNotificationOptions { SmtpHost = "smtp.legacy.test" });
-        var sut = new EmailNotificationOptionsLegacyMergePostConfigure(legacy);
-        var email = new EmailNotificationOptions { SmtpHost = "smtp.new.test" };
-        sut.PostConfigure(null, email);
-        email.SmtpHost.Should().Be("smtp.new.test");
-    }
-
     [Fact]
     public void Platform_settings_overlay_applies_smtp_host()
     {

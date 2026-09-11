@@ -355,8 +355,7 @@ public sealed class PlatformSettingsService : IPlatformSettingsService
             GetBool(effective, PlatformSettingKeys.PlatformEventsEnabled),
             GetBool(effective, PlatformSettingKeys.NotificationsEvaluationEnabled),
             GetBool(effective, PlatformSettingKeys.NotificationsInstancesEnabled),
-            GetBool(effective, PlatformSettingKeys.NotificationsDeliveryEnabled),
-            GetBool(effective, PlatformSettingKeys.NotificationsUsePlatformPipelineEnabled));
+            GetBool(effective, PlatformSettingKeys.NotificationsDeliveryEnabled));
 
     private static bool GetBool(IReadOnlyDictionary<string, object> effective, string key) =>
         effective.TryGetValue(key, out var value) && value is bool b && b;

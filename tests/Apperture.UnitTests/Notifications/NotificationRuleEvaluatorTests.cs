@@ -82,6 +82,44 @@ public sealed class NotificationRuleEvaluatorTests
     }
 
     [Fact]
+    public async Task ObservedStillActive_evaluate_all_produces_reminder_and_escalation()
+    {
+        var def = ExpectedRunMissingNotificationDefinitionSeed.BuiltIn(DateTimeOffset.UtcNow);
+        var incident = new IncidentEvaluationContext(
+            "int-1",
+            AttentionIncidentObserveTransition.ObservedStillActive,
+            "inc-1",
+            NotificationEvaluationTestHelpers.SampleSnapshot(),
+            DateTimeOffset.Parse("2026-05-15T12:00:00Z"));
+        var context = new NotificationRuleEvaluationContext(
+            NotificationEvaluationSourceKind.IncidentTransition,
+            null,
+            incident,
+            incident.ObservedAtUtc);
+
+        var results = await _sut.EvaluateAllAsync([def], context);
+        results.Where(r => r.Status == NotificationMatchStatus.Matched)
+            .Select(r => r.NotificationKind)
+            .Should()
+            .BeEquivalentTo([NotificationKinds.Reminder, NotificationKinds.Escalation]);
+    }
+
+    [Fact]
+    public async Task Platform_event_append_does_not_produce_escalation()
+    {
+        var def = ExpectedRunMissingNotificationDefinitionSeed.BuiltIn(DateTimeOffset.UtcNow);
+        var envelope = NotificationEvaluationTestHelpers.SampleMissingEvent("int-1", "inc-1");
+        var context = new NotificationRuleEvaluationContext(
+            NotificationEvaluationSourceKind.PlatformEvent,
+            envelope,
+            null,
+            envelope.RecordedAtUtc);
+
+        var results = await _sut.EvaluateAllAsync([def], context);
+        results.Should().NotContain(r => r.NotificationKind == NotificationKinds.Escalation);
+    }
+
+    [Fact]
     public async Task RequiresIncident_fails_without_incident_id()
     {
         var def = ExpectedRunMissingNotificationDefinitionSeed.BuiltIn(DateTimeOffset.UtcNow);

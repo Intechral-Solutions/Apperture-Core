@@ -16,8 +16,8 @@ Concise backlog after Phases 1–8C and 9A UAT hardening. Items are **out of sco
 - Management UI: definitions, instances, delivery health, diagnostics, integration notifications
 - Definition authoring (create/edit, validate, render preview)
 - Post-create subscription prompt and recipient preview
-- Expected-run-missing cutover readiness, parity diagnostics, operator sign-off (audit only)
-- Read-only delivery; no UI flag changes
+- Expected-run-missing activation, reminder, escalation, and resolved on the **platform pipeline only** (NTF-C complete)
+- Read-only delivery diagnostics; no UI flag changes
 
 ---
 
@@ -29,11 +29,11 @@ Concise backlog after Phases 1–8C and 9A UAT hardening. Items are **out of sco
 | Rules | Property stage for user definitions; **no log-source or telemetry aggregate rules** |
 | Templates | Allowlisted variables; no arbitrary logic in user templates |
 | Digest / journal | Schema/future only; **no digest scheduler or in-app journal UI** |
-| Escalation | **No platform notification escalation** (Epic 69 attention escalation separate) |
+| Escalation | Platform `escalation` kind is implemented (once per incident; outbox retries delivery) |
 | User preferences | S9 shipped operator email preferences / opt-out at `/me/notifications` (not a full digests center) |
 | Operator actions | **No retry-now or send-now** buttons in UI |
-| Cutover | **Manual config only** — UI does not set `UsePlatformPipeline` or delivery flags |
-| Production | **No automated production cutover** — runbook + operator sign-off |
+| Cutover | **Completed (NTF-C)** — legacy Attention delivery path removed |
+| Production | Evaluation / Instances / Delivery remain independent operational flags |
 | Global subscriptions | **No global subscription management page** (per-definition / per-integration only) |
 | Integration permissions | Notification manage uses `CanUpdateIntegrations`; other integration UI uses `CanManageIntegrations` |
 | Event triggering | User-created definitions require matching platform events from runtime; UAT may skip if no emitter |
@@ -44,9 +44,7 @@ Concise backlog after Phases 1–8C and 9A UAT hardening. Items are **out of sco
 
 ### P0 — Production cutover execution
 
-- Production runbook execution checklist ownership
-- Post-cutover monitoring and rollback drills
-- Automated parity gate (optional CI/staging job)
+Completed in NTF-C. Historical notes remain in [NTF-C closure](../01-architecture/transitions/ntf-c-legacy-removal/closure-report.md).
 
 ### P1 — Operator delivery actions
 
@@ -68,7 +66,7 @@ Concise backlog after Phases 1–8C and 9A UAT hardening. Items are **out of sco
 
 ### P4 — Product features
 
-- Escalation policies on platform notifications
+- Richer escalation policies (repeat / multi-tier) beyond one occurrence per incident
 - Digest/journal scheduler and UI
 - Non-email channels
 - Global subscription management page
@@ -100,6 +98,5 @@ Centralized in `NotificationUiRoutes` (Management.Ui.Shared):
 | `IntegrationNotifications(id)` | `/integrations/{id}/notifications` |
 | `IntegrationDefinitionCreate(id)` | `/integrations/{id}/notifications/definitions/new` |
 | `IntegrationScheduleDiagnostics(id, incidentId?)` | `/integrations/{id}/schedule-diagnostics` |
-| `IntegrationCutoverReadiness(id)` | `/integrations/{id}/notifications#cutover-readiness` |
 
 Post-create navigation: `NotificationPostCreateNavigation` (`createdDefinitionId`, `integrationId` query params).

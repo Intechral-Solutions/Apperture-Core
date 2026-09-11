@@ -18,3 +18,4 @@ When the change is done: fold the outcome into an ADR and the real architecture 
 |-----|--------|
 | [nav-overhaul/](nav-overhaul/) | Management UI navigation — overhaul about to start |
 | [application-contexts/](application-contexts/) | Evidence snapshot of current surfaces before any Application/Context planning |
+| [ntf-c-legacy-removal/](ntf-c-legacy-removal/) | **Completed.** One platform notification pipeline; see [closure-report.md](ntf-c-legacy-removal/closure-report.md) |

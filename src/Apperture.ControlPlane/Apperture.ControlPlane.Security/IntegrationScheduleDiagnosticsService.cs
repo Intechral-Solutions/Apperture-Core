@@ -17,7 +17,6 @@ public sealed class IntegrationScheduleDiagnosticsService : IIntegrationSchedule
 {
     private const int RecentExpectedFiresCap = 10;
     private const int RecentAttentionIncidentsCap = 20;
-    private const int RecentAttentionIncidentNotificationsCap = 40;
     private const int RecentPlatformNotificationCap = 40;
     private static readonly TimeSpan TimelineSearchMaxLookback = TimeSpan.FromDays(30);
 
@@ -26,7 +25,6 @@ public sealed class IntegrationScheduleDiagnosticsService : IIntegrationSchedule
     private readonly IScheduleRepository _scheduleRepo;
     private readonly IRunQueryService _runQuery;
     private readonly IAttentionIncidentTracker _attentionIncidentTracker;
-    private readonly IAttentionIncidentNotificationLedger _attentionIncidentNotificationLedger;
     private readonly IAttentionRecipientResolver _attentionRecipientResolver;
     private readonly INotificationDeliveryDiagnosticsStore _platformNotificationDiagnostics;
     private readonly TimeProvider _timeProvider;
@@ -37,7 +35,6 @@ public sealed class IntegrationScheduleDiagnosticsService : IIntegrationSchedule
         IScheduleRepository scheduleRepo,
         IRunQueryService runQuery,
         IAttentionIncidentTracker attentionIncidentTracker,
-        IAttentionIncidentNotificationLedger attentionIncidentNotificationLedger,
         IAttentionRecipientResolver attentionRecipientResolver,
         INotificationDeliveryDiagnosticsStore platformNotificationDiagnostics,
         TimeProvider timeProvider)
@@ -47,7 +44,6 @@ public sealed class IntegrationScheduleDiagnosticsService : IIntegrationSchedule
         _scheduleRepo = scheduleRepo;
         _runQuery = runQuery;
         _attentionIncidentTracker = attentionIncidentTracker;
-        _attentionIncidentNotificationLedger = attentionIncidentNotificationLedger;
         _attentionRecipientResolver = attentionRecipientResolver;
         _platformNotificationDiagnostics = platformNotificationDiagnostics;
         _timeProvider = timeProvider;
@@ -201,11 +197,6 @@ public sealed class IntegrationScheduleDiagnosticsService : IIntegrationSchedule
                 cancellationToken)
             .ConfigureAwait(false);
 
-        var incidentIds = incidents.Select(i => i.Id).Distinct(StringComparer.Ordinal).ToList();
-        var notifications = await _attentionIncidentNotificationLedger
-            .ListRecentForIncidentsAsync(incidentIds, RecentAttentionIncidentNotificationsCap, cancellationToken)
-            .ConfigureAwait(false);
-
         var route = await _attentionRecipientResolver
             .ResolveAsync(integrationId, AttentionConditionKeys.ExpectedRunMissing, cancellationToken)
             .ConfigureAwait(false);
@@ -264,7 +255,6 @@ public sealed class IntegrationScheduleDiagnosticsService : IIntegrationSchedule
             lastAuthorizedRunAt,
             recentTimeline,
             incidents,
-            notifications,
             routingSummary,
             platformDiag.RecentInstances,
             platformDiag.RecentOutboxRows);

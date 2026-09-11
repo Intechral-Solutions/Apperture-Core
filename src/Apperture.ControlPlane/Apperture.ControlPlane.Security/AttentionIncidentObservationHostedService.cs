@@ -1,6 +1,5 @@
 using Apperture.Core.Application.Integration;
 using Apperture.Core.Application.Notifications;
-using Apperture.Core.Application.Notifications.Instances;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Governance;
 using Microsoft.Extensions.DependencyInjection;
@@ -11,8 +10,8 @@ using Microsoft.Extensions.Options;
 namespace Apperture.ControlPlane.Security;
 
 /// <summary>
-/// Epic 68: observes schedule expectation truth on an interval (not UI-driven) and persists <c>expected_run_missing</c> incidents.
-/// Epic 69: drives notification policy from incident transitions after each observation.
+/// Observes schedule expectation truth on an interval and persists <c>expected_run_missing</c> incidents.
+/// Still-active observations evaluate reminder and escalation through the platform notification pipeline.
 /// </summary>
 public sealed class AttentionIncidentObservationHostedService : BackgroundService
 {
@@ -72,10 +71,8 @@ public sealed class AttentionIncidentObservationHostedService : BackgroundServic
         var integrations = scope.ServiceProvider.GetRequiredService<IIntegrationRepository>();
         var readiness = scope.ServiceProvider.GetRequiredService<IIntegrationReadinessService>();
         var tracker = scope.ServiceProvider.GetRequiredService<IAttentionIncidentTracker>();
-        var notifier = scope.ServiceProvider.GetRequiredService<AttentionIncidentNotificationOrchestrator>();
         var platformEvents = scope.ServiceProvider.GetRequiredService<ScheduleExpectationPlatformEventDualEmitter>();
         var notificationEvaluation = scope.ServiceProvider.GetRequiredService<INotificationEvaluateOnlyCoordinator>();
-        var platformPipeline = scope.ServiceProvider.GetRequiredService<IOptions<NotificationPipelineOptions>>();
         var clock = scope.ServiceProvider.GetRequiredService<TimeProvider>();
         var observedAt = clock.GetUtcNow();
 
@@ -115,33 +112,9 @@ public sealed class AttentionIncidentObservationHostedService : BackgroundServic
                 {
                     _logger.LogWarning(
                         ex,
-                        "Notification evaluate-only reminder evaluation failed for integration {IntegrationId}.",
+                        "Notification reminder/escalation evaluation failed for integration {IntegrationId}.",
                         integration.Id.Value);
                 }
-            }
-
-            if (PlatformNotificationCutoverGate.ShouldInvokeEpic69Orchestrator(platformPipeline.Value))
-            {
-                try
-                {
-                    await notifier
-                        .HandleObserveResultAsync(integration.Id, observe, snapshot, cancellationToken)
-                        .ConfigureAwait(false);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(
-                        ex,
-                        "Attention incident notification handling failed for integration {IntegrationId} after transition {Transition}.",
-                        integration.Id.Value,
-                        observe.Transition);
-                }
-            }
-            else
-            {
-                _logger.LogDebug(
-                    "Skipping Epic 69 AttentionIncidentNotificationOrchestrator for integration {IntegrationId}; Notifications:UsePlatformPipeline=true.",
-                    integration.Id.Value);
             }
         }
     }

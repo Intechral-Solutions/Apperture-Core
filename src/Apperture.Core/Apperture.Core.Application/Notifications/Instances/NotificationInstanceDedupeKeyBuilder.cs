@@ -18,6 +18,7 @@ public static class NotificationInstanceDedupeKeyBuilder
             {
                 NotificationKinds.Activation => $"{definitionId}|{attentionIncidentId}|activation",
                 NotificationKinds.Resolved => $"{definitionId}|{attentionIncidentId}|resolved",
+                NotificationKinds.Escalation => $"{definitionId}|{attentionIncidentId}|escalation",
                 NotificationKinds.Reminder when reminderInterval is { } interval && interval > TimeSpan.Zero =>
                     $"{definitionId}|{attentionIncidentId}|reminder|{observedAtUtc.Ticks / interval.Ticks}",
                 NotificationKinds.Reminder => null,

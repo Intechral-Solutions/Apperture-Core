@@ -37,8 +37,22 @@ public sealed class NotificationRuleEvaluator : INotificationRuleEvaluator
             if (!definition.IsEnabled)
                 continue;
 
-            var evaluated = await EvaluateDefinitionAsync(definition, context, cancellationToken).ConfigureAwait(false);
-            results.Add(ToMatchResult(evaluated));
+            var kinds = NotificationKindMapper.MapNotificationKinds(context);
+            if (kinds.Count == 0)
+            {
+                var evaluated = await EvaluateDefinitionAsync(definition, context, cancellationToken)
+                    .ConfigureAwait(false);
+                results.Add(ToMatchResult(evaluated));
+                continue;
+            }
+
+            foreach (var kind in kinds)
+            {
+                var evaluated = await EvaluateDefinitionForKindAsync(
+                        definition, context, kind, cancellationToken)
+                    .ConfigureAwait(false);
+                results.Add(ToMatchResult(evaluated));
+            }
         }
 
         return results;
@@ -70,6 +84,46 @@ public sealed class NotificationRuleEvaluator : INotificationRuleEvaluator
         if (kind is null)
             return NoMatch(definition.Id.Value, diagnostics, "No notification kind mapping.");
 
+        return await CompleteMatchAsync(definition, context, rule, envelope, kind, diagnostics, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private async ValueTask<NotificationRuleEvaluationResult> EvaluateDefinitionForKindAsync(
+        NotificationDefinition definition,
+        NotificationRuleEvaluationContext context,
+        string kind,
+        CancellationToken cancellationToken)
+    {
+        var diagnostics = new List<string>();
+        if (!NotificationDocumentJson.TryDeserializeRule(definition.RuleJson, out var rule, out var parseError))
+            return NoMatch(definition.Id.Value, diagnostics, parseError ?? "Invalid rule JSON.");
+
+        if (rule!.SchemaVersion != NotificationSchemaVersions.RuleV1)
+            return NoMatch(definition.Id.Value, diagnostics, "Invalid schema version.");
+
+        if (!MatchesTrigger(rule, context, diagnostics))
+            return NoMatch(definition.Id.Value, diagnostics, "Trigger mismatch.");
+
+        var envelope = context.EffectivePlatformEvent;
+        if (!EvaluateStages(rule, envelope, context.EvaluatedAtUtc, diagnostics))
+            return NoMatch(definition.Id.Value, diagnostics, "Stage mismatch.");
+
+        if (rule.RequiresIncident == true && !HasIncident(context, envelope))
+            return NoMatch(definition.Id.Value, diagnostics, "requiresIncident: no incident available.");
+
+        return await CompleteMatchAsync(definition, context, rule, envelope, kind, diagnostics, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private async ValueTask<NotificationRuleEvaluationResult> CompleteMatchAsync(
+        NotificationDefinition definition,
+        NotificationRuleEvaluationContext context,
+        NotificationRuleDocument rule,
+        PlatformEventEnvelope envelope,
+        string kind,
+        List<string> diagnostics,
+        CancellationToken cancellationToken)
+    {
         if (!NotificationKindMapper.IsAllowedForSource(kind, context))
             return NoMatch(definition.Id.Value, diagnostics, "Notification kind not allowed for evaluation source.");
 

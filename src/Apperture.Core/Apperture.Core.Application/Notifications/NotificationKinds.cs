@@ -6,9 +6,10 @@ public static class NotificationKinds
     public const string Activation = "activation";
     public const string Reminder = "reminder";
     public const string Resolved = "resolved";
+    public const string Escalation = "escalation";
 
     public static readonly IReadOnlySet<string> All = new HashSet<string>(StringComparer.Ordinal)
     {
-        Activation, Reminder, Resolved,
+        Activation, Reminder, Resolved, Escalation,
     };
 }

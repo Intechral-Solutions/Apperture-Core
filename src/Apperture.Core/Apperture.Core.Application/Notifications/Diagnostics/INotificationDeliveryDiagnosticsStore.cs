@@ -19,11 +19,6 @@ public interface INotificationDeliveryDiagnosticsStore
         int take,
         CancellationToken cancellationToken = default);
 
-    ValueTask<IReadOnlyList<Epic69NotificationDiagnosticRow>> ListEpic69LedgerForIncidentAsync(
-        string attentionIncidentId,
-        int take,
-        CancellationToken cancellationToken = default);
-
     ValueTask<IReadOnlyList<NotificationInstanceDiagnosticRow>> ListInstancesForIncidentAsync(
         string attentionIncidentId,
         string? notificationDefinitionId,

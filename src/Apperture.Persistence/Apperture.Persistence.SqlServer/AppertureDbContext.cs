@@ -32,8 +32,6 @@ public class AppertureDbContext : DbContext
         Set<NotificationSubscriptionUserOverrideEntity>();
     public DbSet<NotificationInstanceEntity> NotificationInstances => Set<NotificationInstanceEntity>();
     public DbSet<NotificationDeliveryOutboxEntity> NotificationDeliveryOutbox => Set<NotificationDeliveryOutboxEntity>();
-    public DbSet<ExpectedRunMissingCutoverSignOffEntity> ExpectedRunMissingCutoverSignOffs =>
-        Set<ExpectedRunMissingCutoverSignOffEntity>();
     public DbSet<NotificationUserInboxItemEntity> NotificationUserInboxItems => Set<NotificationUserInboxItemEntity>();
     public DbSet<SecretDescriptorEntity> SecretDescriptors => Set<SecretDescriptorEntity>();
     public DbSet<SecretVersionEntity> SecretVersions => Set<SecretVersionEntity>();
@@ -64,7 +62,6 @@ public class AppertureDbContext : DbContext
     public DbSet<EntraAccessRequestEntity> EntraAccessRequests => Set<EntraAccessRequestEntity>();
     public DbSet<PlatformSettingValueEntity> PlatformSettingValues => Set<PlatformSettingValueEntity>();
     public DbSet<AttentionIncidentEntity> AttentionIncidents => Set<AttentionIncidentEntity>();
-    public DbSet<AttentionIncidentNotificationEntity> AttentionIncidentNotifications => Set<AttentionIncidentNotificationEntity>();
     public DbSet<InstanceAttentionRoutingEntity> InstanceAttentionRoutings => Set<InstanceAttentionRoutingEntity>();
     public DbSet<IntegrationAttentionRoutingEntity> IntegrationAttentionRoutings => Set<IntegrationAttentionRoutingEntity>();
     public DbSet<OperationalTeamEntity> OperationalTeams => Set<OperationalTeamEntity>();
@@ -476,20 +473,6 @@ public class AppertureDbContext : DbContext
             e.HasIndex(x => new { x.Status, x.NextAttemptAtUtc });
         });
 
-        modelBuilder.Entity<ExpectedRunMissingCutoverSignOffEntity>(e =>
-        {
-            e.ToTable("ExpectedRunMissingCutoverSignOffs");
-            e.HasKey(x => x.Id);
-            e.Property(x => x.Id).HasMaxLength(64);
-            e.Property(x => x.IntegrationId).HasMaxLength(64);
-            e.Property(x => x.NotificationDefinitionId).HasMaxLength(64);
-            e.Property(x => x.Status).HasMaxLength(32);
-            e.Property(x => x.ReviewedByActorId).HasMaxLength(64);
-            e.Property(x => x.ReviewedByDisplayName).HasMaxLength(256);
-            e.Property(x => x.OperatorNote).HasMaxLength(1024);
-            e.HasIndex(x => new { x.IntegrationId, x.NotificationDefinitionId, x.ReviewedAtUtc });
-        });
-
         modelBuilder.Entity<NotificationUserInboxItemEntity>(e =>
         {
             e.ToTable("NotificationUserInboxItems");
@@ -896,32 +879,6 @@ public class AppertureDbContext : DbContext
                 .IsUnique()
                 .HasFilter("[Status] = N'Active'");
         });
-        modelBuilder.Entity<AttentionIncidentNotificationEntity>(e =>
-        {
-            e.ToTable("AttentionIncidentNotifications");
-            e.HasKey(x => x.Id);
-            e.Property(x => x.Id).HasMaxLength(64);
-            e.Property(x => x.AttentionIncidentId).HasMaxLength(64);
-            e.Property(x => x.IntegrationId).HasMaxLength(64);
-            e.Property(x => x.ConditionKey).HasMaxLength(128);
-            e.Property(x => x.NotificationKind).HasMaxLength(32);
-            e.Property(x => x.Channel).HasMaxLength(32);
-            e.Property(x => x.Recipient).HasMaxLength(512);
-            e.Property(x => x.Status).HasMaxLength(32);
-            e.Property(x => x.SuppressionReason).HasMaxLength(256);
-            e.Property(x => x.FailureSummary).HasMaxLength(2048);
-            e.Property(x => x.ProviderMessageId).HasMaxLength(256);
-            e.Property(x => x.SubjectSnapshot).HasMaxLength(512);
-            e.Property(x => x.RecipientResolvedFrom).HasMaxLength(64);
-            e.Property(x => x.WasEscalation);
-            e.Property(x => x.EscalationThresholdApplied);
-            e.Property(x => x.SuppressedDueToAcknowledgment);
-            e.Property(x => x.OperationalTeamId).HasMaxLength(64);
-            e.Property(x => x.OperationalTeamNameSnapshot).HasMaxLength(256);
-            e.HasIndex(x => new { x.AttentionIncidentId, x.NotificationKind });
-            e.HasIndex(x => new { x.AttentionIncidentId, x.CreatedAtUtc });
-        });
-
         modelBuilder.Entity<InstanceAttentionRoutingEntity>(e =>
         {
             e.ToTable("InstanceAttentionRoutings");

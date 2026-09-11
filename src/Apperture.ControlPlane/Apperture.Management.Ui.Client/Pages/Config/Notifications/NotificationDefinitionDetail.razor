@@ -164,7 +164,7 @@
                 @if (_attentionRouting is not null && HasAttentionRoutingRecipients)
                 {
                     <p class="ui-detail-block text-xs">
-                        Implicit attention-routing compatibility recipients may apply for this integration (Epic 69 parity). They are not platform subscriptions.
+                        Implicit attention-routing recipients may apply for this integration. They are not platform subscriptions.
                     </p>
                 }
                 @if (_canManage)
@@ -730,7 +730,7 @@
         if (string.Equals(_detail.Id, "platform.schedule.expected_run_missing", StringComparison.Ordinal))
         {
             if (!string.IsNullOrWhiteSpace(_detail.IntegrationId))
-                return "Epic 69 attention routing may still supply implicit compatibility recipients on the integration notifications page. Add explicit subscriptions for platform pipeline delivery.";
+                return "Attention routing may still supply implicit recipients on the integration notifications page. Add explicit subscriptions when you want platform subscription control.";
             return "Add explicit subscriptions for platform pipeline delivery of expected-run-missing notifications.";
         }
 

@@ -45,7 +45,4 @@ public static class NotificationUiRoutes
 
     public static string DiagnosticsForDefinition(string definitionId) =>
         $"{DeliveryDiagnostics()}?definitionId={Uri.EscapeDataString(definitionId)}";
-
-    public static string IntegrationCutoverReadiness(string integrationId) =>
-        $"{IntegrationNotifications(integrationId)}#cutover-readiness";
 }

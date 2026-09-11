@@ -2,7 +2,7 @@ using System.Collections.Concurrent;
 
 namespace Apperture.Core.Application.Notifications;
 
-/// <summary>Process-scoped throttle tracking for evaluate-only Phase 4 (not the Epic 69 email ledger).</summary>
+/// <summary>Process-scoped throttle tracking for rule evaluation.</summary>
 public sealed class InMemoryNotificationThrottleStore : INotificationThrottleStore
 {
     private readonly ConcurrentDictionary<string, DateTimeOffset> _lastMatchUtc = new(StringComparer.Ordinal);

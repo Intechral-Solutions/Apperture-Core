@@ -767,12 +767,14 @@ Execution: `StartRequestWorker` polls start-request tables, processors claim (`C
 
 ## 7. Notification architecture
 
+> **Superseded for delivery path (2026-09-10):** NTF-C completed after this snapshot. There is now **one** production notification pipeline. See [NTF-C closure](../ntf-c-legacy-removal/closure-report.md). The rest of this section remains the pre-cutover inventory.
+
 ### Pipeline — CONFIRMED
 
 Two delivery paths currently coexist, gated by `Notifications:UsePlatformPipeline`:
 
 1. **Platform pipeline** — definitions → rule evaluation → instances → outbox → SMTP + in-app inbox.
-2. **Legacy Attention path** — `AttentionIncidentNotificationOrchestrator` writes `AttentionIncidentNotifications` and sends email directly. Invoked only when `PlatformNotificationCutoverGate.ShouldInvokeEpic69Orchestrator` is true (`Notifications:UsePlatformPipeline` **false**, default dual-path).
+2. **Legacy Attention path** — `AttentionIncidentNotificationOrchestrator` writes `AttentionIncidentNotifications` and sends email directly. Invoked only when `PlatformNotificationCutoverGate.ShouldInvokeEpic69Orchestrator` is true (`Notifications:UsePlatformPipeline` **false**). Code/definition default is false; committed Management Host `appsettings.json` sets the flag **true** (legacy skipped). See [NTF-C blocker report](../ntf-c-legacy-removal/blocker-report.md).
 
 Feature flags (`NotificationInstanceOptions`, `NotificationDeliveryOptions`, `NotificationEvaluationOptions`, `NotificationPipelineOptions`): Evaluation, Instances, Delivery, UsePlatformPipeline.
 
@@ -865,7 +867,7 @@ Integration schedule diagnostics also surface recent platform instances **and** 
 
 UI routes: see §1 Notifications.
 
-**SPECULATION:** whether any environment has fully enabled `UsePlatformPipeline` (code default is dual-path). Whether more `ConditionKey` values exist beyond `expected_run_missing` in production data. Digest/SMS/push: constants/UI exist for digest; **no digest dispatcher found**.
+**CONFIRMED defaults:** C# and platform-setting definition default `UsePlatformPipeline=false`. Management Host committed `appsettings.json` sets it **true**. WorkerHost does not host the pipeline. Escalation email exists **only** on the legacy orchestrator (`NotificationKinds` has no escalation). Digest/SMS/push: constants/UI exist for digest; **no digest dispatcher found**. Observed Attention `ConditionKey` in this path: `expected_run_missing`.
 
 ---
 

@@ -116,27 +116,6 @@ public sealed class NotificationDeliveryOptionsPlatformSettingsPostConfigure : I
     }
 }
 
-public sealed class NotificationPipelineOptionsPlatformSettingsPostConfigure : IPostConfigureOptions<NotificationPipelineOptions>
-{
-    private readonly IServiceScopeFactory _scopeFactory;
-    private readonly ILogger<NotificationPipelineOptionsPlatformSettingsPostConfigure> _logger;
-
-    public NotificationPipelineOptionsPlatformSettingsPostConfigure(
-        IServiceScopeFactory scopeFactory,
-        ILogger<NotificationPipelineOptionsPlatformSettingsPostConfigure> logger)
-    {
-        _scopeFactory = scopeFactory;
-        _logger = logger;
-    }
-
-    public void PostConfigure(string? name, NotificationPipelineOptions options) =>
-        PlatformSettingsOptionsOverlay.ApplyBool(
-            _scopeFactory,
-            _logger,
-            PlatformSettingKeys.NotificationsUsePlatformPipelineEnabled,
-            value => options.Enabled = value);
-}
-
 public sealed class PlatformEventsOptionsPlatformSettingsPostConfigure : IPostConfigureOptions<PlatformEventsOptions>
 {
     private readonly IServiceScopeFactory _scopeFactory;
