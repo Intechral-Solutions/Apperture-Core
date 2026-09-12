@@ -54,7 +54,8 @@ public sealed class PlatformEventEmitter : IPlatformEventEmitter
             request.ScheduleId,
             request.ActorId,
             request.CorrelationId,
-            request.CausationId);
+            request.CausationId,
+            request.ResourceContextId);
 
         return await _store.AppendAsync(envelope, cancellationToken).ConfigureAwait(false);
     }

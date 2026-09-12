@@ -11,7 +11,9 @@ public sealed record IncidentEvaluationContext(
     AttentionIncidentObserveTransition Transition,
     string? IncidentId,
     ScheduleExpectationSnapshot? Snapshot,
-    DateTimeOffset ObservedAtUtc)
+    DateTimeOffset ObservedAtUtc,
+    /// <summary>CTX-2: the incident's immutable ResourceContext snapshot from Open.</summary>
+    string? ResourceContextId = null)
 {
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -56,6 +58,7 @@ public sealed record IncidentEvaluationContext(
             ScheduleId: Snapshot?.ReferenceScheduleId,
             ActorId: null,
             CorrelationId: null,
-            CausationId: null);
+            CausationId: null,
+            ResourceContextId: ResourceContextId);
     }
 }

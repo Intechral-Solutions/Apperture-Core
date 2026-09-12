@@ -420,6 +420,8 @@ public sealed class IntegrationProcedureTestHost
         public string? ScheduleId => Identity.ScheduleId;
         public string? CorrelationId => Identity.CorrelationId;
         public string? CausationId => Identity.RunId;
+
+        public string? ResourceContextId => null;
         public IStepExecutionSignals Signals { get; }
         [Obsolete("Use Signals.Events (ADR-0038). PlatformEvents remains a compatibility alias only.")]
         public IModulePlatformEventEmitter PlatformEvents { get; }

@@ -38,6 +38,12 @@ public sealed class OperationStartDispatchService : IOperationStartDispatchServi
         if (definition is null)
             return null;
 
+        // CTX-2: resolve the occurrence's ResourceContext once, here, before any row is written.
+        // Never re-derived later from current ownership. A caller-supplied value (e.g. the firing
+        // Schedule's context) wins; otherwise derive from the Integration already being validated
+        // below — no extra query. Contextless (no Integration, no supplied value) stays null.
+        var resourceContextId = request.ResourceContextId;
+
         if (!string.IsNullOrWhiteSpace(request.IntegrationId))
         {
             var integ = await _db.Integrations.AsNoTracking()
@@ -48,6 +54,8 @@ public sealed class OperationStartDispatchService : IOperationStartDispatchServi
                 throw new InvalidOperationException("The integration's module does not match this operation's module.");
             if (integ.State != (int)Core.Domain.Integration.IntegrationState.Active)
                 throw new InvalidOperationException($"Integration '{request.IntegrationId}' is not active.");
+
+            resourceContextId ??= integ.ResourceContextId;
         }
 
         if (!string.IsNullOrWhiteSpace(request.IdempotencyKey))
@@ -88,7 +96,8 @@ public sealed class OperationStartDispatchService : IOperationStartDispatchServi
                     UpdatedAt = now,
                     CorrelationKey = request.CorrelationId,
                     CurrentStepName = null,
-                    Version = 0
+                    Version = 0,
+                    ResourceContextId = resourceContextId
                 });
 
                 _db.OperationRuns.Add(new OperationRunEntity
@@ -103,7 +112,8 @@ public sealed class OperationStartDispatchService : IOperationStartDispatchServi
                     RetryOfRunId = null,
                     IntegrationId = request.IntegrationId,
                     ProcedureId = request.ProcedureId,
-                    ExecutionOrigin = request.ExecutionOrigin
+                    ExecutionOrigin = request.ExecutionOrigin,
+                    ResourceContextId = resourceContextId
                 });
 
                 _db.OperationStartRequests.Add(new OperationStartRequestEntity
@@ -120,7 +130,8 @@ public sealed class OperationStartDispatchService : IOperationStartDispatchServi
                     Status = WorkflowLifecycleStatusNames.Requested,
                     ClaimedAt = null,
                     ClaimedBy = null,
-                    LastError = null
+                    LastError = null,
+                    ResourceContextId = resourceContextId
                 });
 
                 _db.OperationLifecycleEvents.Add(new OperationLifecycleEventEntity

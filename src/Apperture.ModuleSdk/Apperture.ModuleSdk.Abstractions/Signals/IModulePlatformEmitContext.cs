@@ -19,4 +19,10 @@ public interface IModulePlatformEmitContext
     string? CorrelationId { get; }
 
     string? CausationId { get; }
+
+    /// <summary>
+    /// CTX-2: immutable ResourceContext of the run/schedule this execution belongs to, snapshotted
+    /// at dispatch. Never re-resolved from current Integration ownership.
+    /// </summary>
+    string? ResourceContextId { get; }
 }

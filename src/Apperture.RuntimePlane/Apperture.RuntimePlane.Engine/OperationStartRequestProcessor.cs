@@ -287,7 +287,8 @@ WHERE RunId = {runId} AND (
                     ProcedureId: request.ProcedureId,
                     ScheduleId: scheduleId,
                     CorrelationId: request.CorrelationId,
-                    CausationId: PlatformEventScopeCorrelation.CausationFromRunId(run.Id));
+                    CausationId: PlatformEventScopeCorrelation.CausationFromRunId(run.Id),
+                    ResourceContextId: run.ResourceContextId);
 
                 var result = await _executor.ExecuteStepAsync(
                     fakeWorkflowDefinition,
@@ -458,6 +459,7 @@ WHERE RunId = {runId} AND (
                 ScheduleId: scheduleId,
                 CorrelationId: request.CorrelationId,
                 CausationId: PlatformEventScopeCorrelation.CausationFromRunId(run.Id),
+                ResourceContextId: run.ResourceContextId,
                 StartedAtUtc: run.CreatedAt,
                 CompletedAtUtc: run.CompletedAt ?? DateTimeOffset.UtcNow,
                 StepCount: 1,

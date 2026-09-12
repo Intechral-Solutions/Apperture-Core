@@ -87,6 +87,9 @@ public sealed class NotificationInstanceCoordinator : INotificationInstanceCoord
         var envelope = evaluationContext.EffectivePlatformEvent;
         var incidentId = ResolveIncidentId(evaluationContext, envelope);
         var integrationId = envelope.IntegrationId ?? evaluationContext.Incident?.IntegrationId;
+        // CTX-2 precedence: causal PlatformEvent, then causal AttentionIncident, else null. Never
+        // resolved from current Integration ownership merely because IntegrationId is present.
+        var resourceContextId = envelope.ResourceContextId ?? evaluationContext.Incident?.ResourceContextId;
         var observedAt = evaluationContext.EvaluatedAtUtc;
         var isBuiltInExpectedRunMissing = string.Equals(
             match.DefinitionId,
@@ -130,6 +133,7 @@ public sealed class NotificationInstanceCoordinator : INotificationInstanceCoord
                     envelope,
                     incidentId,
                     integrationId,
+                    resourceContextId,
                     dedupeKey: null,
                     suppression,
                     cancellationToken).ConfigureAwait(false);
@@ -177,6 +181,7 @@ public sealed class NotificationInstanceCoordinator : INotificationInstanceCoord
                     envelope,
                     incidentId,
                     integrationId,
+                    resourceContextId,
                     dedupeKey: null,
                     AttentionNotificationSuppressionReasons.EscalationSuppressedAcknowledged,
                     cancellationToken).ConfigureAwait(false);
@@ -241,6 +246,7 @@ public sealed class NotificationInstanceCoordinator : INotificationInstanceCoord
                     envelope,
                     incidentId,
                     integrationId,
+                    resourceContextId,
                     dedupeKey,
                     AttentionNotificationSuppressionReasons.NoRouteConfigured,
                     cancellationToken,
@@ -258,6 +264,7 @@ public sealed class NotificationInstanceCoordinator : INotificationInstanceCoord
                     envelope,
                     incidentId,
                     integrationId,
+                    resourceContextId,
                     dedupeKey,
                     AttentionNotificationSuppressionReasons.NoRouteConfigured,
                     cancellationToken,
@@ -276,6 +283,7 @@ public sealed class NotificationInstanceCoordinator : INotificationInstanceCoord
                 envelope,
                 incidentId,
                 integrationId,
+                resourceContextId,
                 dedupeKey,
                 AttentionNotificationSuppressionReasons.NoRouteConfigured,
                 cancellationToken,
@@ -289,6 +297,7 @@ public sealed class NotificationInstanceCoordinator : INotificationInstanceCoord
             envelope,
             incidentId,
             integrationId,
+            resourceContextId,
             dedupeKey,
             rendered,
             renderContext,
@@ -339,6 +348,7 @@ public sealed class NotificationInstanceCoordinator : INotificationInstanceCoord
         PlatformEventEnvelope envelope,
         string? incidentId,
         string? integrationId,
+        string? resourceContextId,
         string? dedupeKey,
         string suppressionReason,
         CancellationToken cancellationToken,
@@ -390,7 +400,8 @@ public sealed class NotificationInstanceCoordinator : INotificationInstanceCoord
                 templateHash,
                 renderContextJson,
                 recipientSnapshotJson,
-                suppressionReason),
+                suppressionReason,
+                resourceContextId),
             cancellationToken).ConfigureAwait(false);
 
         if (createResult.Created)
@@ -409,6 +420,7 @@ public sealed class NotificationInstanceCoordinator : INotificationInstanceCoord
         PlatformEventEnvelope envelope,
         string? incidentId,
         string? integrationId,
+        string? resourceContextId,
         string dedupeKey,
         RenderedNotificationSnapshot rendered,
         NotificationRenderContext renderContext,
@@ -443,7 +455,8 @@ public sealed class NotificationInstanceCoordinator : INotificationInstanceCoord
                 rendered.TemplateVersionHash,
                 renderContextJson,
                 recipientSnapshotJson,
-                SuppressionReason: null),
+                SuppressionReason: null,
+                ResourceContextId: resourceContextId),
             cancellationToken).ConfigureAwait(false);
 
         if (!createResult.Created)

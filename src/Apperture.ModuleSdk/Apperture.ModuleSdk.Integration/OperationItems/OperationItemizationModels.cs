@@ -18,7 +18,9 @@ public sealed record OperationGroup(
     string? SummaryJson,
     string? MetadataJson,
     DateTimeOffset CreatedAtUtc,
-    DateTimeOffset UpdatedAtUtc);
+    DateTimeOffset UpdatedAtUtc,
+    /// <summary>CTX-2: immutable ResourceContext snapshot copied from the owning OperationRun at creation.</summary>
+    string? ResourceContextId = null);
 
 public sealed record OperationItem(
     string OperationItemId,

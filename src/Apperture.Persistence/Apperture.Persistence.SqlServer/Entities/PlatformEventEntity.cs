@@ -22,4 +22,11 @@ public sealed class PlatformEventEntity
     public string? ActorId { get; set; }
     public string? CorrelationId { get; set; }
     public string? CausationId { get; set; }
+
+    /// <summary>
+    /// CTX-2: immutable ResourceContext snapshot inherited from the causal run/schedule/incident
+    /// snapshot at the moment this event was emitted. Never re-resolved from current Integration
+    /// ownership. Null for System/platform events with no owning resource.
+    /// </summary>
+    public string? ResourceContextId { get; set; }
 }

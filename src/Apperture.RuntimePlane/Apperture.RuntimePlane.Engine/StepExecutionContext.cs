@@ -57,6 +57,7 @@ public sealed class StepExecutionContext : IStepExecutionContext
         ScheduleId = correlation?.ScheduleId;
         CorrelationId = correlation?.CorrelationId;
         CausationId = correlation?.CausationId;
+        ResourceContextId = correlation?.ResourceContextId;
 
         var events = modulePlatformEventEmitter ?? NullModulePlatformEventEmitter.Instance;
         var tel = telemetry ?? NoOpModuleTelemetry.Instance;
@@ -92,6 +93,9 @@ public sealed class StepExecutionContext : IStepExecutionContext
 
     /// <inheritdoc />
     public string? CausationId { get; }
+
+    /// <inheritdoc />
+    public string? ResourceContextId { get; }
 
     /// <inheritdoc />
     public IStepExecutionSignals Signals { get; }

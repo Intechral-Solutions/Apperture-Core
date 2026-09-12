@@ -85,8 +85,10 @@ public sealed class AttentionIncidentObservationHostedService : BackgroundServic
             if (snapshot is null)
                 continue;
 
+            // CTX-2: the Integration is already loaded with its current ResourceContext; pass it
+            // through so the tracker snapshots it on Open without a second lookup.
             var observe = await tracker
-                .ObserveScheduleExpectationAsync(integration.Id, snapshot, observedAt, cancellationToken)
+                .ObserveScheduleExpectationAsync(integration.Id, snapshot, observedAt, integration.ResourceContextId.Value, cancellationToken)
                 .ConfigureAwait(false);
 
             await platformEvents
@@ -104,7 +106,8 @@ public sealed class AttentionIncidentObservationHostedService : BackgroundServic
                                 observe.Transition,
                                 observe.IncidentId,
                                 snapshot,
-                                observedAt),
+                                observedAt,
+                                observe.ResourceContextId),
                             cancellationToken)
                         .ConfigureAwait(false);
                 }

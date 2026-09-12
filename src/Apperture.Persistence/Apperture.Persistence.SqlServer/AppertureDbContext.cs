@@ -89,6 +89,8 @@ public class AppertureDbContext : DbContext
             e.Property(x => x.IntegrationId).HasMaxLength(64);
             e.Property(x => x.ProcedureId).HasMaxLength(128);
             e.Property(x => x.CurrentStepName).HasMaxLength(128);
+            // CTX-2: historical snapshot, not current ownership. No FK, no backfill of pre-CTX-2 rows.
+            e.Property(x => x.ResourceContextId).HasMaxLength(64);
             e.Property<byte[]>("RowVersion").IsRowVersion();
         });
 
@@ -122,7 +124,12 @@ public class AppertureDbContext : DbContext
             e.Property(x => x.FailureDiagnosticsJson).HasColumnType("nvarchar(max)");
             e.Property(x => x.FailureDiagnosticsStatus).HasMaxLength(32);
             e.Property(x => x.FailureDiagnosticsDisplayPolicy).HasMaxLength(32);
+            // CTX-2: historical snapshot resolved once at dispatch, not current ownership. No FK,
+            // no backfill of pre-CTX-2 rows. Indexed: OperationRuns is the canonical execution
+            // record and a strong candidate for context-filtered queries (CTX-3).
+            e.Property(x => x.ResourceContextId).HasMaxLength(64);
             e.HasIndex(x => x.RetryOfRunId);
+            e.HasIndex(x => x.ResourceContextId).HasDatabaseName("IX_OperationRuns_ResourceContextId");
         });
 
         modelBuilder.Entity<WorkflowLifecycleEventEntity>(e =>
@@ -158,6 +165,8 @@ public class AppertureDbContext : DbContext
             e.Property(x => x.Status).HasMaxLength(32);
             e.Property(x => x.ClaimedBy).HasMaxLength(128);
             e.Property(x => x.LastError).HasMaxLength(2048);
+            // CTX-2: historical snapshot, not current ownership. No FK, no backfill.
+            e.Property(x => x.ResourceContextId).HasMaxLength(64);
             e.Property<byte[]>("RowVersion").IsRowVersion();
             e.HasIndex(x => x.IdempotencyKey)
                 .IsUnique()
@@ -173,6 +182,8 @@ public class AppertureDbContext : DbContext
             e.Property(x => x.Status).HasMaxLength(32);
             e.Property(x => x.CorrelationKey).HasMaxLength(256);
             e.Property(x => x.CurrentStepName).HasMaxLength(128);
+            // CTX-2: historical snapshot, not current ownership. No FK, no backfill.
+            e.Property(x => x.ResourceContextId).HasMaxLength(64);
             e.Property<byte[]>("RowVersion").IsRowVersion();
         });
 
@@ -218,6 +229,8 @@ public class AppertureDbContext : DbContext
             e.Property(x => x.Status).HasMaxLength(32);
             e.Property(x => x.ClaimedBy).HasMaxLength(128);
             e.Property(x => x.LastError).HasMaxLength(2048);
+            // CTX-2: historical snapshot, not current ownership. No FK, no backfill.
+            e.Property(x => x.ResourceContextId).HasMaxLength(64);
             e.Property<byte[]>("RowVersion").IsRowVersion();
             e.HasIndex(x => x.IdempotencyKey)
                 .IsUnique()
@@ -293,11 +306,18 @@ public class AppertureDbContext : DbContext
             e.Property(x => x.ModuleId).HasMaxLength(128);
             e.Property(x => x.ScheduleId).HasMaxLength(128);
             e.Property(x => x.RunId).HasMaxLength(64);
+            // CTX-2: context of the resource this entry concerns, populated only where the caller
+            // already has it in hand. No FK, no backfill of pre-CTX-2 rows.
+            e.Property(x => x.ResourceContextId).HasMaxLength(64);
             e.HasIndex(x => new { x.At, x.Id }).IsDescending(true, true);
             e.HasIndex(x => new { x.Outcome, x.At }).HasFilter("[Outcome] IS NOT NULL").IsDescending(false, true);
             e.HasIndex(x => new { x.ModuleId, x.At }).HasFilter("[ModuleId] IS NOT NULL").IsDescending(false, true);
             e.HasIndex(x => new { x.ScheduleId, x.At }).HasFilter("[ScheduleId] IS NOT NULL").IsDescending(false, true);
             e.HasIndex(x => new { x.RunId, x.At }).HasFilter("[RunId] IS NOT NULL").IsDescending(false, true);
+            e.HasIndex(x => new { x.ResourceContextId, x.At })
+                .HasDatabaseName("IX_AuditLogs_ResourceContextId_At")
+                .HasFilter("[ResourceContextId] IS NOT NULL")
+                .IsDescending(false, true);
         });
 
         modelBuilder.Entity<TelemetryEventEntity>(e =>
@@ -330,7 +350,14 @@ public class AppertureDbContext : DbContext
             e.Property(x => x.ActorId).HasMaxLength(64);
             e.Property(x => x.CorrelationId).HasMaxLength(128);
             e.Property(x => x.CausationId).HasMaxLength(64);
+            // CTX-2: inherited from the causal run/schedule/incident snapshot at emission. No FK,
+            // no backfill of pre-CTX-2 rows.
+            e.Property(x => x.ResourceContextId).HasMaxLength(64);
             e.HasIndex(x => new { x.IntegrationId, x.OccurredAtUtc }).IsDescending(false, true);
+            e.HasIndex(x => new { x.ResourceContextId, x.OccurredAtUtc })
+                .HasDatabaseName("IX_PlatformEvents_ResourceContextId_OccurredAtUtc")
+                .HasFilter("[ResourceContextId] IS NOT NULL")
+                .IsDescending(false, true);
             e.HasIndex(x => new { x.ScheduleId, x.OccurredAtUtc })
                 .HasFilter("[ScheduleId] IS NOT NULL")
                 .IsDescending(false, true);
@@ -434,6 +461,8 @@ public class AppertureDbContext : DbContext
             e.Property(x => x.ModuleId).HasMaxLength(128);
             e.Property(x => x.RunId).HasMaxLength(64);
             e.Property(x => x.ScheduleId).HasMaxLength(64);
+            // CTX-2: inherited from the causal PlatformEvent/AttentionIncident. No FK, no backfill.
+            e.Property(x => x.ResourceContextId).HasMaxLength(64);
             e.Property(x => x.InstanceDedupeKey).HasMaxLength(256);
             e.Property(x => x.RenderedSubject).HasMaxLength(512);
             e.Property(x => x.RenderedSummary).HasMaxLength(1024);
@@ -453,6 +482,10 @@ public class AppertureDbContext : DbContext
             e.HasIndex(x => new { x.AttentionIncidentId, x.NotificationKind })
                 .HasFilter("[AttentionIncidentId] IS NOT NULL");
             e.HasIndex(x => x.PlatformEventId).HasFilter("[PlatformEventId] IS NOT NULL");
+            e.HasIndex(x => new { x.ResourceContextId, x.CreatedAtUtc })
+                .HasDatabaseName("IX_NotificationInstances_ResourceContextId_CreatedAtUtc")
+                .HasFilter("[ResourceContextId] IS NOT NULL")
+                .IsDescending(false, true);
         });
 
         modelBuilder.Entity<NotificationDeliveryOutboxEntity>(e =>
@@ -814,8 +847,12 @@ public class AppertureDbContext : DbContext
             e.Property(x => x.OutcomeReason).HasMaxLength(2048);
             e.Property(x => x.RunId).HasMaxLength(64);
             e.Property(x => x.ClaimedByHostId).HasMaxLength(128);
+            // CTX-2: snapshotted from ScheduleDefinition.ResourceContextId at claim time, immutable
+            // thereafter. No FK, no backfill of pre-CTX-2 rows.
+            e.Property(x => x.ResourceContextId).HasMaxLength(64);
             e.HasIndex(x => new { x.ScheduleId, x.FireTimeUtc }).IsUnique();
             e.HasIndex(x => x.AssignmentId);
+            e.HasIndex(x => x.ResourceContextId).HasDatabaseName("IX_ScheduleRuns_ResourceContextId");
         });
 
         modelBuilder.Entity<ScheduleStateEntity>(e =>
@@ -914,11 +951,16 @@ public class AppertureDbContext : DbContext
             e.Property(x => x.ResolutionReason).HasMaxLength(256);
             e.Property(x => x.AcknowledgedBy).HasMaxLength(64);
             e.Property(x => x.AcknowledgementNote).HasMaxLength(1024);
+            // CTX-2: snapshotted from the Integration's ResourceContext at open, immutable
+            // thereafter. No FK, no backfill of pre-CTX-2 rows. Uniqueness stays current-Integration
+            // scoped; ResourceContext existing is not a reason to widen it.
+            e.Property(x => x.ResourceContextId).HasMaxLength(64);
             e.HasIndex(x => new { x.IntegrationId, x.ConditionKey, x.Status });
             e.HasIndex(x => new { x.IntegrationId, x.ConditionKey, x.StartedAtUtc });
             e.HasIndex(x => new { x.IntegrationId, x.ConditionKey })
                 .IsUnique()
                 .HasFilter("[Status] = N'Active'");
+            e.HasIndex(x => x.ResourceContextId).HasDatabaseName("IX_AttentionIncidents_ResourceContextId");
         });
         modelBuilder.Entity<InstanceAttentionRoutingEntity>(e =>
         {
@@ -1050,6 +1092,10 @@ public class AppertureDbContext : DbContext
             e.Property(x => x.SummaryJson).HasMaxLength(2048);
             // SQL Server: nvarchar(n) allows n <= 4000; use max for 4096 logical cap.
             e.Property(x => x.MetadataJson).HasMaxLength(4096).HasColumnType("nvarchar(max)");
+            // CTX-2: copied from the owning OperationRun at group creation, immutable thereafter.
+            // No FK, no backfill of pre-CTX-2 rows. OperationItems derive through this group rather
+            // than carrying their own column (no query pattern justifies one; see ctx2-closure.md).
+            e.Property(x => x.ResourceContextId).HasMaxLength(64);
             e.HasIndex(x => x.RunId);
             e.HasMany(x => x.Items)
                 .WithOne(x => x.Group!)

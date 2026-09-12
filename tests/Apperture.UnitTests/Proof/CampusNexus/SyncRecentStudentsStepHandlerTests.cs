@@ -77,6 +77,8 @@ public sealed class SyncRecentStudentsStepHandlerTests
 
         public string? CausationId => null;
 
+        public string? ResourceContextId => null;
+
         public ValueTask<T?> ResolveSlotAsync<T>(string slotName, CancellationToken cancellationToken = default)
             where T : class
         {

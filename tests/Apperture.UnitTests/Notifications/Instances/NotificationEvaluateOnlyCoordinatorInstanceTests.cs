@@ -109,6 +109,7 @@ public sealed class NotificationEvaluateOnlyCoordinatorInstanceTests
             IntegrationId integrationId,
             ScheduleExpectationSnapshot snapshot,
             DateTimeOffset observedAtUtc,
+            string? resourceContextId = null,
             CancellationToken cancellationToken = default) =>
             throw new NotImplementedException();
 

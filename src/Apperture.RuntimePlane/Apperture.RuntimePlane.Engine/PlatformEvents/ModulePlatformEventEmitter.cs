@@ -84,7 +84,8 @@ public sealed class ModulePlatformEventEmitter : IModulePlatformEventEmitter
             RunId: context.RunId,
             ScheduleId: context.ScheduleId,
             CorrelationId: context.CorrelationId,
-            CausationId: context.CausationId);
+            CausationId: context.CausationId,
+            ResourceContextId: context.ResourceContextId);
 
         var envelope = await _emitter.EmitAsync(request, cancellationToken).ConfigureAwait(false);
         return new ModulePlatformEventEmitResult(

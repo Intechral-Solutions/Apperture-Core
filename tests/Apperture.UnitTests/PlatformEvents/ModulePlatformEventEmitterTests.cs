@@ -157,6 +157,8 @@ public sealed class ModulePlatformEventEmitterTests
         public string? ScheduleId { get; }
         public string? CorrelationId { get; }
         public string? CausationId { get; }
+
+        public string? ResourceContextId { get; }
     }
 }
 

@@ -18,4 +18,6 @@ public sealed record ExecutionLifecycleTerminalContext(
     string? FailedStepName = null,
     string? FailureSummary = null,
     string? FailureCode = null,
-    string? ExceptionType = null);
+    string? ExceptionType = null,
+    /// <summary>CTX-2: immutable ResourceContext snapshot read off the OperationRun row.</summary>
+    string? ResourceContextId = null);

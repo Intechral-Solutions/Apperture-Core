@@ -45,11 +45,11 @@ public sealed class ScheduleExpectationPlatformEventEmitter
             switch (observe.Transition)
             {
                 case AttentionIncidentObserveTransition.Opened when observe.IncidentId is { } openedId:
-                    await EmitMissingAsync(integrationId, snapshot, observedAtUtc, openedId, cancellationToken)
+                    await EmitMissingAsync(integrationId, snapshot, observedAtUtc, openedId, observe.ResourceContextId, cancellationToken)
                         .ConfigureAwait(false);
                     break;
                 case AttentionIncidentObserveTransition.Resolved when observe.IncidentId is { } resolvedId:
-                    await EmitClearedAsync(integrationId, snapshot, observedAtUtc, resolvedId, cancellationToken)
+                    await EmitClearedAsync(integrationId, snapshot, observedAtUtc, resolvedId, observe.ResourceContextId, cancellationToken)
                         .ConfigureAwait(false);
                     break;
                 case AttentionIncidentObserveTransition.NoChange:
@@ -73,6 +73,7 @@ public sealed class ScheduleExpectationPlatformEventEmitter
         ScheduleExpectationSnapshot snapshot,
         DateTimeOffset observedAtUtc,
         string incidentId,
+        string? resourceContextId,
         CancellationToken cancellationToken)
     {
         var ev = snapshot.Evaluation;
@@ -100,7 +101,8 @@ public sealed class ScheduleExpectationPlatformEventEmitter
             Subject: subject,
             DedupeKey: subject,
             IntegrationId: integrationId.Value,
-            ScheduleId: snapshot.ReferenceScheduleId);
+            ScheduleId: snapshot.ReferenceScheduleId,
+            ResourceContextId: resourceContextId);
 
         await _emitter.EmitAsync(request, cancellationToken).ConfigureAwait(false);
     }
@@ -110,6 +112,7 @@ public sealed class ScheduleExpectationPlatformEventEmitter
         ScheduleExpectationSnapshot snapshot,
         DateTimeOffset observedAtUtc,
         string incidentId,
+        string? resourceContextId,
         CancellationToken cancellationToken)
     {
         var data = new Dictionary<string, object?>
@@ -127,7 +130,8 @@ public sealed class ScheduleExpectationPlatformEventEmitter
             Severity: PlatformEventSeverities.Info,
             Subject: $"{integrationId.Value}:expected_run_missing:cleared",
             IntegrationId: integrationId.Value,
-            ScheduleId: snapshot.ReferenceScheduleId);
+            ScheduleId: snapshot.ReferenceScheduleId,
+            ResourceContextId: resourceContextId);
 
         await _emitter.EmitAsync(request, cancellationToken).ConfigureAwait(false);
     }

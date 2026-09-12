@@ -7,6 +7,13 @@ public sealed class AttentionIncidentEntity
 {
     public string Id { get; set; } = "";
     public string IntegrationId { get; set; } = "";
+
+    /// <summary>
+    /// CTX-2: immutable ResourceContext snapshot taken from the Integration's ResourceContext at
+    /// the moment this incident opened. Preserved for the incident's lifetime; never rewritten by
+    /// later observation, reminder, escalation or resolution. Null for pre-CTX-2 rows.
+    /// </summary>
+    public string? ResourceContextId { get; set; }
     public string ConditionKey { get; set; } = "";
     /// <summary>Active or Resolved.</summary>
     public string Status { get; set; } = "";

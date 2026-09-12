@@ -38,6 +38,7 @@ public sealed class SqlNotificationInstanceStore : INotificationInstanceStore
             ModuleId = command.ModuleId,
             RunId = command.RunId,
             ScheduleId = command.ScheduleId,
+            ResourceContextId = command.ResourceContextId,
             InstanceDedupeKey = command.InstanceDedupeKey,
             RenderedSubject = command.RenderedSubject,
             RenderedSummary = command.RenderedSummary,
@@ -234,7 +235,8 @@ public sealed class SqlNotificationInstanceStore : INotificationInstanceStore
             e.RecipientSnapshotJson,
             e.SuppressionReason,
             e.CreatedAtUtc,
-            e.UpdatedAtUtc);
+            e.UpdatedAtUtc,
+            e.ResourceContextId);
 
     private static NotificationDeliveryOutbox ToOutboxDomain(NotificationDeliveryOutboxEntity e) =>
         new(

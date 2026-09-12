@@ -26,7 +26,9 @@ public sealed record NotificationInstance(
     string? RecipientSnapshotJson,
     string? SuppressionReason,
     DateTimeOffset CreatedAtUtc,
-    DateTimeOffset UpdatedAtUtc);
+    DateTimeOffset UpdatedAtUtc,
+    /// <summary>CTX-2: causal ResourceContext (PlatformEvent, then AttentionIncident, then null).</summary>
+    string? ResourceContextId = null);
 
 public sealed record NotificationDeliveryOutbox(
     NotificationDeliveryOutboxId Id,
@@ -71,7 +73,9 @@ public sealed record NotificationInstanceCreateCommand(
     string TemplateVersionHash,
     string RenderContextJson,
     string? RecipientSnapshotJson,
-    string? SuppressionReason);
+    string? SuppressionReason,
+    /// <summary>CTX-2: causal ResourceContext (PlatformEvent, then AttentionIncident, then null).</summary>
+    string? ResourceContextId = null);
 
 public sealed record NotificationDeliveryOutboxCreateCommand(
     string RecipientEmail,

@@ -57,6 +57,25 @@ public interface IScheduleRepository
     ValueTask<bool> TryClaimFireAsync(string scheduleId, DateTimeOffset fireTimeUtc, string assignmentId, string hostId, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Claims a fire and snapshots <paramref name="resourceContextId"/> onto the ScheduleRun row at
+    /// claim time (not at successful dispatch). CTX-2: the caller resolves this once, from the
+    /// ScheduleDefinition's own ResourceContext; this method does not derive it. Never rewritten
+    /// after the row is written, including on stale-claim recovery.
+    /// </summary>
+    /// <remarks>
+    /// The default implementation exists only so in-memory test doubles keep working; it ignores
+    /// the context. The production implementation snapshots it.
+    /// </remarks>
+    async ValueTask<bool> TryClaimFireAsync(
+        string scheduleId,
+        DateTimeOffset fireTimeUtc,
+        string assignmentId,
+        string hostId,
+        string? resourceContextId,
+        CancellationToken cancellationToken = default) =>
+        await TryClaimFireAsync(scheduleId, fireTimeUtc, assignmentId, hostId, cancellationToken).ConfigureAwait(false);
+
+    /// <summary>
     /// Returns candidates for stale-claim recovery: InProgress runs with StartedAtUtc before cutoff, for assignments in the plane.
     /// Epic 36.
     /// </summary>

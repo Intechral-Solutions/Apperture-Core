@@ -12,6 +12,14 @@ public sealed class NotificationInstanceEntity
     public string? ModuleId { get; set; }
     public string? RunId { get; set; }
     public string? ScheduleId { get; set; }
+
+    /// <summary>
+    /// CTX-2: immutable ResourceContext snapshot inherited from the causal PlatformEvent or
+    /// AttentionIncident. Never re-resolved from current Integration ownership merely because
+    /// <see cref="IntegrationId"/> is present. Null for System/platform notifications with no
+    /// owning resource.
+    /// </summary>
+    public string? ResourceContextId { get; set; }
     public string InstanceDedupeKey { get; set; } = null!;
     public string RenderedSubject { get; set; } = null!;
     public string RenderedSummary { get; set; } = null!;

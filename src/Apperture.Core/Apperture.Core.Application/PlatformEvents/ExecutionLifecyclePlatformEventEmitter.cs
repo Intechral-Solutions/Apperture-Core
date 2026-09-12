@@ -67,7 +67,8 @@ public sealed class ExecutionLifecyclePlatformEventEmitter
                 RunId: context.RunId,
                 ScheduleId: context.ScheduleId,
                 CorrelationId: context.CorrelationId,
-                CausationId: context.CausationId);
+                CausationId: context.CausationId,
+                ResourceContextId: context.ResourceContextId);
 
             await _emitter.EmitAsync(request, cancellationToken).ConfigureAwait(false);
         }

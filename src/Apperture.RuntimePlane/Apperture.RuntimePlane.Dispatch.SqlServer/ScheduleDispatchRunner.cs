@@ -170,7 +170,20 @@ public sealed class ScheduleDispatchRunner : IScheduleDispatchRunner
         var recovered = false;
 
         if (allowNewClaims)
-            claimed = await _repo.TryClaimFireAsync(candidate.ScheduleId, candidate.FireTimeUtc, candidate.AssignmentId, hostId, ct);
+        {
+            // CTX-2: resolve the firing Schedule's own ResourceContext once, before the claim is
+            // written, and snapshot it onto the ScheduleRun. Never derived from the attached
+            // Integration's current ownership (CTX-1 already enforces they match when attached;
+            // standalone schedules have no Integration to derive from at all).
+            var definitionForClaim = await _repo.GetDefinitionAsync(new ScheduleId(candidate.ScheduleId), ct);
+            claimed = await _repo.TryClaimFireAsync(
+                candidate.ScheduleId,
+                candidate.FireTimeUtc,
+                candidate.AssignmentId,
+                hostId,
+                definitionForClaim?.ResourceContextId?.Value,
+                ct);
+        }
 
         if (!claimed)
         {
@@ -268,7 +281,8 @@ public sealed class ScheduleDispatchRunner : IScheduleDispatchRunner
             RetryOfRunId: null,
             IntegrationId: definition.IntegrationId?.Value,
             ProcedureId: procedureId,
-            ExecutionOrigin: RunExecutionOriginNames.Schedule);
+            ExecutionOrigin: RunExecutionOriginNames.Schedule,
+            ResourceContextId: definition.ResourceContextId?.Value);
 
         var result = await _workflowDispatch.StartAsync(request, ct);
         if (result is null)
@@ -366,7 +380,8 @@ public sealed class ScheduleDispatchRunner : IScheduleDispatchRunner
             CorrelationId: $"schedule:{candidate.ScheduleId}",
             IntegrationId: definition.IntegrationId?.Value,
             ProcedureId: procedureId,
-            ExecutionOrigin: RunExecutionOriginNames.Schedule);
+            ExecutionOrigin: RunExecutionOriginNames.Schedule,
+            ResourceContextId: definition.ResourceContextId?.Value);
 
         var result = await _operationDispatch.StartAsync(request, ct);
         if (result is null)

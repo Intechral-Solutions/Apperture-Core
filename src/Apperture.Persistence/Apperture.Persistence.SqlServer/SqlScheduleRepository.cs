@@ -119,7 +119,17 @@ public sealed class SqlScheduleRepository : IScheduleRepository
             .AnyAsync(x => x.ScheduleId == scheduleId && x.FireTimeUtc == instant, ct);
     }
 
-    public async ValueTask<bool> TryClaimFireAsync(string scheduleId, DateTimeOffset fireTimeUtc, string assignmentId, string hostId, CancellationToken ct = default)
+    public ValueTask<bool> TryClaimFireAsync(string scheduleId, DateTimeOffset fireTimeUtc, string assignmentId, string hostId, CancellationToken ct = default) =>
+        TryClaimFireAsync(scheduleId, fireTimeUtc, assignmentId, hostId, resourceContextId: null, ct);
+
+    /// <inheritdoc cref="IScheduleRepository.TryClaimFireAsync(string, DateTimeOffset, string, string, string?, CancellationToken)" />
+    public async ValueTask<bool> TryClaimFireAsync(
+        string scheduleId,
+        DateTimeOffset fireTimeUtc,
+        string assignmentId,
+        string hostId,
+        string? resourceContextId,
+        CancellationToken ct = default)
     {
         var instant = NormalizeFireTimeUtc(fireTimeUtc);
         // InMemory does not reliably enforce unique indexes on DateTimeOffset; treat existing row as lost claim race.
@@ -137,7 +147,10 @@ public sealed class SqlScheduleRepository : IScheduleRepository
                 Outcome = "InProgress",
                 OutcomeReason = null,
                 RunId = null,
-                ClaimedByHostId = hostId
+                ClaimedByHostId = hostId,
+                // CTX-2: snapshotted at claim time, not at successful dispatch. Retained even if
+                // dispatch subsequently fails — the fire still occurred in this ResourceContext.
+                ResourceContextId = resourceContextId
             });
             await _db.SaveChangesAsync(ct);
             return true;

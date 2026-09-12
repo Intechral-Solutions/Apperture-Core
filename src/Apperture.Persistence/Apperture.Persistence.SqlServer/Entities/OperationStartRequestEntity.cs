@@ -21,6 +21,13 @@ public sealed class OperationStartRequestEntity
     /// <summary>Module procedure that launched this request, when known (ADR-0029).</summary>
     public string? ProcedureId { get; set; }
 
+    /// <summary>
+    /// CTX-2: immutable ResourceContext snapshot resolved once at dispatch, before this row is
+    /// written. Never re-derived from current Integration/Schedule ownership. Null for pre-CTX-2
+    /// rows and for legitimately contextless (System) starts.
+    /// </summary>
+    public string? ResourceContextId { get; set; }
+
     public DateTimeOffset CreatedAt { get; set; }
 
     public string Status { get; set; } = WorkflowLifecycleStatusNames.Requested;

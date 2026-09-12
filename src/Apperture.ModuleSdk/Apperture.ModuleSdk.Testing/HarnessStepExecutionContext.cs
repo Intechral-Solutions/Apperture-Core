@@ -54,6 +54,8 @@ public sealed class HarnessStepExecutionContext : IStepExecutionContext
 
     public string? CausationId { get; }
 
+    public string? ResourceContextId { get; }
+
     public IStepExecutionSignals Signals { get; }
 
     [Obsolete("Use Signals.Events (ADR-0038). PlatformEvents remains a compatibility alias only.")]

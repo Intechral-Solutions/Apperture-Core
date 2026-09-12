@@ -17,11 +17,22 @@ public sealed class SqlOperationItemStore : IOperationItemStore
         OperationItemizationValidation.ValidateBegin(request);
 
         var now = request.StartedAtUtc ?? DateTimeOffset.UtcNow;
+        var runId = request.RunId.Trim();
+
+        // CTX-2: copy the owning OperationRun's immutable snapshot. Never query Integration
+        // ownership — the Run is the anchor, and this must not drift from it.
+        var resourceContextId = await _db.OperationRuns.AsNoTracking()
+            .Where(r => r.Id == runId)
+            .Select(r => r.ResourceContextId)
+            .FirstOrDefaultAsync(cancellationToken)
+            .ConfigureAwait(false);
+
         var entity = new OperationGroupEntity
         {
             Id = Guid.NewGuid().ToString("N"),
-            RunId = request.RunId.Trim(),
+            RunId = runId,
             IntegrationId = request.IntegrationId,
+            ResourceContextId = resourceContextId,
             ModuleId = request.ModuleId.Trim(),
             ProcedureId = request.ProcedureId,
             OperationKind = request.OperationKind.Trim(),
@@ -292,7 +303,8 @@ public sealed class SqlOperationItemStore : IOperationItemStore
             e.SummaryJson,
             e.MetadataJson,
             e.CreatedAtUtc,
-            e.UpdatedAtUtc);
+            e.UpdatedAtUtc,
+            e.ResourceContextId);
 
     private static OperationItem MapItem(OperationItemEntity e) =>
         new(

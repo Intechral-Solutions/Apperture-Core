@@ -139,6 +139,7 @@ public sealed class IntegrationReadinessServiceTests
                 It.IsAny<IntegrationId>(),
                 It.IsAny<ScheduleExpectationSnapshot>(),
                 It.IsAny<DateTimeOffset>(),
+                It.IsAny<string?>(),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(new AttentionIncidentObserveResult(AttentionIncidentObserveTransition.NoChange, null));
         return m.Object;

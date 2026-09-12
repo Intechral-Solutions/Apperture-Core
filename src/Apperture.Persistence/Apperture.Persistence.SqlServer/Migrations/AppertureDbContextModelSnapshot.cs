@@ -112,6 +112,10 @@ namespace Apperture.Persistence.SqlServer.Migrations
                     b.Property<DateTimeOffset?>("ResolvedAtUtc")
                         .HasColumnType("datetimeoffset");
 
+                    b.Property<string>("ResourceContextId")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
                     b.Property<DateTimeOffset>("StartedAtUtc")
                         .HasColumnType("datetimeoffset");
 
@@ -121,6 +125,9 @@ namespace Apperture.Persistence.SqlServer.Migrations
                         .HasColumnType("nvarchar(32)");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("ResourceContextId")
+                        .HasDatabaseName("IX_AttentionIncidents_ResourceContextId");
 
                     b.HasIndex("IntegrationId", "ConditionKey")
                         .IsUnique()
@@ -165,6 +172,10 @@ namespace Apperture.Persistence.SqlServer.Migrations
                         .HasMaxLength(64)
                         .HasColumnType("nvarchar(64)");
 
+                    b.Property<string>("ResourceContextId")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
                     b.Property<string>("RunId")
                         .HasMaxLength(64)
                         .HasColumnType("nvarchar(64)");
@@ -185,6 +196,11 @@ namespace Apperture.Persistence.SqlServer.Migrations
                     b.HasIndex("Outcome", "At")
                         .IsDescending(false, true)
                         .HasFilter("[Outcome] IS NOT NULL");
+
+                    b.HasIndex("ResourceContextId", "At")
+                        .IsDescending(false, true)
+                        .HasDatabaseName("IX_AuditLogs_ResourceContextId_At")
+                        .HasFilter("[ResourceContextId] IS NOT NULL");
 
                     b.HasIndex("RunId", "At")
                         .IsDescending(false, true)
@@ -1221,6 +1237,10 @@ namespace Apperture.Persistence.SqlServer.Migrations
                         .HasMaxLength(1024)
                         .HasColumnType("nvarchar(1024)");
 
+                    b.Property<string>("ResourceContextId")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
                     b.Property<string>("RunId")
                         .HasMaxLength(64)
                         .HasColumnType("nvarchar(64)");
@@ -1260,6 +1280,11 @@ namespace Apperture.Persistence.SqlServer.Migrations
 
                     b.HasIndex("NotificationDefinitionId", "InstanceDedupeKey")
                         .IsUnique();
+
+                    b.HasIndex("ResourceContextId", "CreatedAtUtc")
+                        .IsDescending(false, true)
+                        .HasDatabaseName("IX_NotificationInstances_ResourceContextId_CreatedAtUtc")
+                        .HasFilter("[ResourceContextId] IS NOT NULL");
 
                     b.ToTable("NotificationInstances", (string)null);
                 });
@@ -1496,6 +1521,10 @@ namespace Apperture.Persistence.SqlServer.Migrations
                         .HasMaxLength(128)
                         .HasColumnType("nvarchar(128)");
 
+                    b.Property<string>("ResourceContextId")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
                     b.Property<string>("RunId")
                         .IsRequired()
                         .HasMaxLength(64)
@@ -1557,6 +1586,10 @@ namespace Apperture.Persistence.SqlServer.Migrations
                         .IsRequired()
                         .HasMaxLength(128)
                         .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("ResourceContextId")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
 
                     b.Property<byte[]>("RowVersion")
                         .IsConcurrencyToken()
@@ -1952,6 +1985,10 @@ namespace Apperture.Persistence.SqlServer.Migrations
                         .HasMaxLength(128)
                         .HasColumnType("nvarchar(128)");
 
+                    b.Property<string>("ResourceContextId")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
                     b.Property<string>("RetryOfRunId")
                         .HasMaxLength(64)
                         .HasColumnType("nvarchar(64)");
@@ -1967,6 +2004,9 @@ namespace Apperture.Persistence.SqlServer.Migrations
                         .HasColumnType("nvarchar(64)");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("ResourceContextId")
+                        .HasDatabaseName("IX_OperationRuns_ResourceContextId");
 
                     b.HasIndex("RetryOfRunId");
 
@@ -2021,6 +2061,10 @@ namespace Apperture.Persistence.SqlServer.Migrations
                     b.Property<string>("ProcedureId")
                         .HasMaxLength(128)
                         .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("ResourceContextId")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
 
                     b.Property<byte[]>("RowVersion")
                         .IsConcurrencyToken()
@@ -2213,6 +2257,10 @@ namespace Apperture.Persistence.SqlServer.Migrations
                     b.Property<DateTimeOffset>("RecordedAtUtc")
                         .HasColumnType("datetimeoffset");
 
+                    b.Property<string>("ResourceContextId")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
                     b.Property<string>("RunId")
                         .HasMaxLength(64)
                         .HasColumnType("nvarchar(64)");
@@ -2259,6 +2307,11 @@ namespace Apperture.Persistence.SqlServer.Migrations
                     b.HasIndex("ModuleId", "OccurredAtUtc")
                         .IsDescending(false, true)
                         .HasFilter("[ModuleId] IS NOT NULL");
+
+                    b.HasIndex("ResourceContextId", "OccurredAtUtc")
+                        .IsDescending(false, true)
+                        .HasDatabaseName("IX_PlatformEvents_ResourceContextId_OccurredAtUtc")
+                        .HasFilter("[ResourceContextId] IS NOT NULL");
 
                     b.HasIndex("RunId", "OccurredAtUtc")
                         .IsDescending(false, true)
@@ -2638,6 +2691,10 @@ namespace Apperture.Persistence.SqlServer.Migrations
                         .HasMaxLength(2048)
                         .HasColumnType("nvarchar(2048)");
 
+                    b.Property<string>("ResourceContextId")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
                     b.Property<string>("RunId")
                         .HasMaxLength(64)
                         .HasColumnType("nvarchar(64)");
@@ -2653,6 +2710,9 @@ namespace Apperture.Persistence.SqlServer.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("AssignmentId");
+
+                    b.HasIndex("ResourceContextId")
+                        .HasDatabaseName("IX_ScheduleRuns_ResourceContextId");
 
                     b.HasIndex("ScheduleId", "FireTimeUtc")
                         .IsUnique();
@@ -3243,6 +3303,10 @@ namespace Apperture.Persistence.SqlServer.Migrations
                         .HasMaxLength(128)
                         .HasColumnType("nvarchar(128)");
 
+                    b.Property<string>("ResourceContextId")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
                     b.Property<byte[]>("RowVersion")
                         .IsConcurrencyToken()
                         .ValueGeneratedOnAddOrUpdate()
@@ -3361,6 +3425,10 @@ namespace Apperture.Persistence.SqlServer.Migrations
                     b.Property<string>("ProcedureId")
                         .HasMaxLength(128)
                         .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("ResourceContextId")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
 
                     b.Property<byte[]>("RowVersion")
                         .IsConcurrencyToken()

@@ -40,6 +40,12 @@ public sealed class WorkflowStartDispatchService : IWorkflowStartDispatchService
         if (definition is null)
             return null;
 
+        // CTX-2: resolve the occurrence's ResourceContext once, here, before any row is written.
+        // Never re-derived later from current ownership. A caller-supplied value (e.g. the firing
+        // Schedule's context) wins; otherwise derive from the Integration already being validated
+        // below — no extra query. Contextless (no Integration, no supplied value) stays null.
+        var resourceContextId = request.ResourceContextId;
+
         if (!string.IsNullOrWhiteSpace(request.IntegrationId))
         {
             var integ = await _db.Integrations.AsNoTracking()
@@ -50,6 +56,8 @@ public sealed class WorkflowStartDispatchService : IWorkflowStartDispatchService
                 throw new InvalidOperationException("The integration's module does not match this workflow's module.");
             if (integ.State != (int)Core.Domain.Integration.IntegrationState.Active)
                 throw new InvalidOperationException($"Integration '{request.IntegrationId}' is not active.");
+
+            resourceContextId ??= integ.ResourceContextId;
         }
 
         if (!string.IsNullOrWhiteSpace(request.IdempotencyKey))
@@ -93,7 +101,8 @@ public sealed class WorkflowStartDispatchService : IWorkflowStartDispatchService
                     IntegrationId = request.IntegrationId,
                     ProcedureId = request.ProcedureId,
                     CurrentStepName = null,
-                    Version = 0
+                    Version = 0,
+                    ResourceContextId = resourceContextId
                 });
 
                 _db.OperationRuns.Add(new OperationRunEntity
@@ -108,7 +117,8 @@ public sealed class WorkflowStartDispatchService : IWorkflowStartDispatchService
                     RetryOfRunId = request.RetryOfRunId,
                     IntegrationId = request.IntegrationId,
                     ProcedureId = request.ProcedureId,
-                    ExecutionOrigin = request.ExecutionOrigin
+                    ExecutionOrigin = request.ExecutionOrigin,
+                    ResourceContextId = resourceContextId
                 });
 
                 _db.WorkflowStartRequests.Add(new WorkflowStartRequestEntity
@@ -125,7 +135,8 @@ public sealed class WorkflowStartDispatchService : IWorkflowStartDispatchService
                     Status = WorkflowLifecycleStatusNames.Requested,
                     ClaimedAt = null,
                     ClaimedBy = null,
-                    LastError = null
+                    LastError = null,
+                    ResourceContextId = resourceContextId
                 });
 
                 _db.WorkflowLifecycleEvents.Add(new WorkflowLifecycleEventEntity

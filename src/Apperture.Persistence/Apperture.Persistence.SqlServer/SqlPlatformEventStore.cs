@@ -93,6 +93,7 @@ public sealed class SqlPlatformEventStore : IPlatformEventStore
             ActorId = e.ActorId,
             CorrelationId = e.CorrelationId,
             CausationId = e.CausationId,
+            ResourceContextId = e.ResourceContextId,
         };
 
     private static PlatformEventEnvelope ToEnvelope(PlatformEventEntity e) =>
@@ -115,7 +116,8 @@ public sealed class SqlPlatformEventStore : IPlatformEventStore
             e.ScheduleId,
             e.ActorId,
             e.CorrelationId,
-            e.CausationId);
+            e.CausationId,
+            e.ResourceContextId);
 
     private static bool IsDedupeViolation(DbUpdateException ex) =>
         ex.InnerException?.Message.Contains("IX_PlatformEvents_Source_Type_DedupeKey", StringComparison.OrdinalIgnoreCase) == true

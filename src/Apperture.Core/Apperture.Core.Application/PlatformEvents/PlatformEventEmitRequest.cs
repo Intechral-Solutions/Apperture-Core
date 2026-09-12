@@ -19,4 +19,6 @@ public sealed record PlatformEventEmitRequest(
     string? CausationId = null,
     string DataContentType = "application/json",
     string SpecVersion = "1.0",
-    PlatformEventId? Id = null);
+    PlatformEventId? Id = null,
+    /// <summary>CTX-2: immutable ResourceContext snapshot inherited from the causal run/schedule/incident.</summary>
+    string? ResourceContextId = null);

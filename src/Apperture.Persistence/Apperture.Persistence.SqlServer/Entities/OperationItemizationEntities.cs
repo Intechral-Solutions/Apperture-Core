@@ -5,6 +5,14 @@ public sealed class OperationGroupEntity
     public string Id { get; set; } = "";
     public string RunId { get; set; } = "";
     public string? IntegrationId { get; set; }
+
+    /// <summary>
+    /// CTX-2: immutable ResourceContext snapshot copied from the owning OperationRun at group
+    /// creation. Never re-derived from current Integration ownership. Null for pre-CTX-2 rows.
+    /// OperationItems derive execution context through this group rather than carrying their own
+    /// column.
+    /// </summary>
+    public string? ResourceContextId { get; set; }
     public string ModuleId { get; set; } = "";
     public string? ProcedureId { get; set; }
     public string OperationKind { get; set; } = "";

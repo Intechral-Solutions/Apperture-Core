@@ -22,4 +22,6 @@ public sealed record PlatformEventEnvelope(
     string? ScheduleId,
     string? ActorId,
     string? CorrelationId,
-    string? CausationId);
+    string? CausationId,
+    /// <summary>CTX-2: immutable ResourceContext snapshot inherited from the causal run/schedule/incident.</summary>
+    string? ResourceContextId = null);
