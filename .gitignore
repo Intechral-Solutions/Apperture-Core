@@ -104,3 +104,6 @@ debug-*.log
 *.debug.log
 
 .vs/
+
+# Subagent-driven-development scratch workspace (ledgers, briefs, review packages)
+.superpowers/
