@@ -8,7 +8,8 @@ public sealed record NotificationInstanceSummaryDto(
     string? IntegrationId,
     string? AttentionIncidentId,
     string? PlatformEventId,
-    DateTimeOffset CreatedAtUtc);
+    DateTimeOffset CreatedAtUtc,
+    string? ResourceContextId = null);
 
 public sealed record NotificationInstanceDetailDto(
     string Id,
@@ -34,7 +35,8 @@ public sealed record NotificationInstanceDetailDto(
     string? RecipientSnapshotJson,
     string? SuppressionReason,
     DateTimeOffset CreatedAtUtc,
-    DateTimeOffset UpdatedAtUtc);
+    DateTimeOffset UpdatedAtUtc,
+    string? ResourceContextId = null);
 
 public sealed record NotificationDeliveryOutboxDto(
     string Id,

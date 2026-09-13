@@ -86,7 +86,8 @@ public sealed class NotificationInstancesController : ControllerBase
             i.IntegrationId,
             i.AttentionIncidentId,
             i.PlatformEventId,
-            i.CreatedAtUtc);
+            i.CreatedAtUtc,
+            i.ResourceContextId);
 
     private static NotificationInstanceDetailDto ToDetailDto(NotificationInstance i) =>
         new(
@@ -113,7 +114,8 @@ public sealed class NotificationInstancesController : ControllerBase
             i.RecipientSnapshotJson,
             i.SuppressionReason,
             i.CreatedAtUtc,
-            i.UpdatedAtUtc);
+            i.UpdatedAtUtc,
+            i.ResourceContextId);
 
     private static NotificationDeliveryOutboxDto ToOutboxDto(NotificationDeliveryOutbox o) =>
         new(
