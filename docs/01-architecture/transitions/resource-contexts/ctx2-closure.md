@@ -1,7 +1,7 @@
 # CTX-2 closure — context-aware runtime & historical provenance
 
-Date: 2026-09-12
-Status: **Core invariant implemented and proven; scope trimmed under session budget (see §14).**
+Date: 2026-09-12 (core invariant); completion pass 2026-09-13
+Status: **Complete.** CTX-3 may begin.
 Branch: `ctx1-resource-context-foundation`
 Design basis: [`ctx-design-gate.md`](./ctx-design-gate.md), [`ctx1-closure.md`](./ctx1-closure.md)
 
@@ -15,12 +15,14 @@ Old history reads as `null` (unknown), never backfilled to Shared. This was prov
 level (dispatch, schedule claim, group derivation, immutability under simulated ownership change) and
 against real SQL Server (populated-database migration test).
 
-CTX-3 **should not begin from this closure alone** — several propagation paths described in the
-original brief (deep audit coverage, Run/Schedule-diagnostic DTO exposure, optional historical query
-filters) were deliberately deferred under this session's context budget and are listed in §14. The
-schema, dispatch resolution, WorkerHost propagation, ScheduleRun/OperationGroup snapshot, and
-Attention/Notification causal propagation are done and validated. Recommend a short follow-up pass on
-§14 before treating CTX-2 as fully closed, rather than starting CTX-3 immediately.
+The propagation paths deferred at the end of the original session (deep audit coverage, Run/Schedule-
+diagnostic DTO exposure, optional historical query filters) have now been closed in a follow-up
+completion pass — see §15. Audit call sites populate `ResourceContextId` wherever the caller already
+has authoritative context in hand (or, in one documented exception, via a single keyed lookup); Run,
+Schedule-claim, Attention, and Notification read contracts expose the historical snapshot; Runs gained
+the required SQL-side historical filter, and Audit/Notification/PlatformEvent query contracts gained
+the same filter where a structured query object already existed. Full regression validation (unit,
+UI-shared, arch, and SQL-Server-backed integration suites) is green. **CTX-3 may begin.**
 
 ---
 
@@ -239,5 +241,162 @@ None of these gaps compromise the load-bearing invariant (resolve-once-and-snaps
 they are unexposed/unpopulated surface area on top of a schema and dispatch path that are already
 correct and tested. CTX-3 does not strictly depend on any of them, but they should be finished before
 declaring CTX-2 fully done.
+
+CTX-3 was not started.
+
+---
+
+## 15. Completion pass (2026-09-13) — closing the §14 gaps
+
+Executed via `docs/superpowers/plans/2026-09-11-ctx2-completion.md`, 17 tasks, each implemented and
+task-reviewed independently (fresh implementer + fresh reviewer per task), plus this section's own
+validation sweep. The historical session-budget disclosure in §14 above is left as written — it is the
+honest record of what the original session traded off; this section records what closed those gaps.
+
+### Audit call-site coverage
+
+`AuditRecord` (`src/Apperture.Core/Apperture.Core.Domain/Audit/AuditRecord.cs`) gained a
+`ResourceContextId` field, threaded through `SqlAuditService`'s append/query/get-by-id paths. The
+following call-site families now populate it, each from data already in hand at the call site unless
+noted:
+
+* **`WorkflowStartRequestProcessor` / `OperationStartRequestProcessor`** — the "definition unavailable"
+  best-effort audit uses the already-loaded `OperationRunEntity.ResourceContextId`. No new query.
+* **`WorkflowRetryService`** — the retry-blocked audit uses the already-loaded `originalRun.ResourceContextId`.
+  No new query.
+* **`BulkOperationItemRetryService`** — both the "requested" and "completed" bulk-retry audit records use
+  the already-loaded `OperationGroupEntity.ResourceContextId`. No new query.
+* **`ScheduleDispatchRunner`** — all 10 audit call sites (dispatched/blocked/failed for both workflow and
+  operation targets, claim-recovered, blocked-by-readiness, blocked-by-lifecycle, legacy-no-integration)
+  now carry `ScheduleDefinition.ResourceContextId`. The stale-claim-recovery path was restructured to fetch
+  the `ScheduleDefinition` once and reuse it for the later unconditional fetch already present in that
+  method — a net-zero change in query count, verified path-by-path.
+* **`IntegrationSettingsService`** — a **documented exception** to the "no new query" rule: this service
+  never loaded an `Integration` entity for any reason before this pass. It gained a new
+  `IIntegrationRepository` dependency and resolves `ResourceContextId` via a single keyed-by-id lookup
+  inside its one `AppendAuditAsync` funnel point (all four mutating methods route through it), consistent
+  with the completion brief's explicit instruction to add this lookup.
+* **Integration/Connection/Binding create-update actions** — investigated and found to have **no existing
+  audit call site at all** in the current codebase (not merely unpopulated). Populating a call site that
+  doesn't exist is out of scope for this pass; flagged here as a finding for a future epic, not a gap in
+  this one.
+* **System/IAM audit call sites** (account/auth/bootstrap/module-registry/etc.) were surveyed and
+  confirmed to correctly stay `null` — none of them target a ResourceContext-owned resource.
+
+An optional, SQL-side `FilterByResourceContextId` was added to `AuditQuery`/`SqlAuditService.ApplyFilters`,
+matching the existing `ModuleId`/`ScheduleId`/`RunId` filter shape (added because a per-Application audit
+view is a plausible, central CTX-3 read).
+
+### Read-side exposure
+
+* **`RunSummaryDto` / `RunDetailDto`** (`IRunQueryService.cs`) — both gained `ResourceContextId`, mapped
+  from the `OperationRunEntity` at all four DTO-construction sites in `RunQueryService`. No
+  `ResourceContextRef`/join added, per the brief's instruction to keep Run exposure ID-only.
+* **`ScheduleDetailDto`** (`SchedulesController.cs`) — gained `ClaimResourceContextId`, the CTX-2
+  historical snapshot from the specific in-progress `ScheduleRun` claim, deliberately and explicitly
+  distinguished (by name and XML doc) from that same DTO's pre-existing `ResourceContextId`
+  (CTX-1 current Schedule ownership). This required extending `IScheduleRepository.GetInProgressRunClaimAsync`'s
+  return shape and `ScheduleInProgressClaim` to carry the value through. There is no other historical
+  per-`ScheduleRun` read surface in the codebase today (no run-history feed exists) — the in-progress
+  claim seam is the only place `ScheduleRun` data reaches an API caller, so that is what this pass
+  extended, per the brief's "do not redesign schedule APIs" constraint. Incidentally, the separate
+  `Apperture.Management.Client` copies of `ScheduleDto`/`ScheduleDetailDto` (used by `ManagementClient`/
+  the Razor UI) were found to be silently missing the CTX-1 `ResourceContextId`/`ResourceContextRef`
+  fields the API already returned; since this pass was already touching those exact records to add the
+  new field, it backfilled the missing CTX-1 fields too rather than ship a new field next to a known gap.
+* **`AttentionIncidentDto`** (`IntegrationScheduleDiagnosticsDtos.cs`) — gained `ResourceContextId`,
+  threaded from `AttentionIncidentProjection.ResourceContextId` (which already carried it) through
+  `IntegrationsController.ToDiagnosticsDto`.
+* **`NotificationInstanceSummaryDto` / `NotificationInstanceDetailDto`** (`NotificationInstanceDtos.cs`) —
+  both gained `ResourceContextId`, threaded from `NotificationInstance.ResourceContextId` (which already
+  carried it) through `NotificationInstancesController`'s `ToSummaryDto`/`ToDetailDto`.
+* **`PlatformEventEnvelope`** — already exposed `ResourceContextId` before this pass (confirmed by
+  research at the start of this pass); no DTO change was needed or made. This is a deliberate, verified
+  "already done" finding, not an oversight.
+
+### Filters
+
+Required (per the brief): **`RunQueryFilter.ResourceContextId`**, added with a SQL-side `.Where` clause
+in `RunQueryService.ListRunsAsync` composing as pure AND with `IntegrationId`/`Status`/the Blocked facet/
+`CorrelationKey`; an absent filter returns the identical prior set; a pre-CTX-2 `null` historical row
+never matches a specific context value. Wired as an optional `resourceContextId` query parameter on
+`RunsController` — API-contract preparation only, no UI wiring.
+
+Added because the brief's three-condition decision rule (structured query object already exists; SQL-side
+and small; plausibly useful to CTX-3) was satisfied for all three:
+
+* **`AuditQuery.FilterByResourceContextId`** (`SqlAuditService.ApplyFilters`).
+* **`NotificationInstanceListQuery.ResourceContextId`** (`SqlNotificationInstanceStore.ListAsync`), wired
+  as an optional query parameter on `NotificationInstancesController.List`.
+* **`PlatformEventQuery.ResourceContextId`** (`SqlPlatformEventStore.QueryAsync`), wired as an optional
+  query parameter on `PlatformEventsController.List`.
+
+Deliberately **not** added: an Attention-incident filter. No structured query object exists for Attention
+incidents today (`IAttentionIncidentTracker`'s list/get methods take positional scalar parameters, not a
+query record) — the brief's first condition (a structured filter object must already exist) is not met,
+so this was correctly left unbuilt rather than inventing a new query type solely for filter symmetry.
+
+None of the new filters were wired into any UI/Razor component in this pass.
+
+### Snapshot integrity
+
+`tests/Apperture.UnitTests/ResourceContexts/Ctx2HistoricalProvenanceTests.cs` (now 7 tests, up from the
+original 5) directly proves:
+
+* An `OperationRun`'s historical `ResourceContextId` stays `"app-a"` after the owning Integration's
+  current context is changed to `"app-b"` in controlled test setup (pre-existing test, unchanged).
+* **New:** execution audit uses the Run's own snapshot, not current Integration ownership, even when they
+  are made to deliberately differ. This test dispatches a real workflow, changes the Integration's current
+  context afterward, then drives the real `WorkflowStartRequestProcessor.ProcessClaimedAsync` code path
+  (not a hand-fed reflection call) into its `TryAuditDefinitionUnavailableAsync` catch branch, and asserts
+  the captured `AuditRecord.ResourceContextId` is the Run's stale-by-design snapshot (`"app-a"`), never the
+  Integration's now-current value (`"app-b"`) — independently traced through the production call site
+  during task review to confirm this is a genuine regression guard, not a parameter-pass-through test.
+* **New:** a `ScheduleRun` claim's historical `ResourceContextId` stays put after the owning
+  `ScheduleDefinition`'s current context is changed in controlled test setup, mirroring the Integration
+  test's pattern (seed definition → claim run → mutate definition → re-read run `AsNoTracking()` →
+  assert unchanged).
+
+No production move API was added for any of these tests; all ownership changes are direct, documented
+test-setup mutations, per the brief's constraint.
+
+### Validation
+
+Run directly (not delegated) as the final step of the completion pass, on 2026-09-13:
+
+| Suite / build | Result |
+|---|---|
+| Full solution build (`Apperture.slnx`) | **0 errors**, 4 pre-existing warnings unrelated to this pass |
+| `Apperture.UnitTests` (full, unfiltered) | **2027 passed**, 0 failed (1991 at original CTX-2 close + 36 new tests from this pass) |
+| `Apperture.Management.Ui.Shared.Tests` | **761 passed**, 0 failed (unchanged — no UI Shared code touched) |
+| `Apperture.ArchTests` | **38 passed**, 0 failed (unchanged) |
+| `Apperture.IntegrationTests` (SQL Server live at `127.0.0.1,14333`) | **201 passed**, 0 failed |
+| `Apperture.Management.Api` / `.Management.Host` / `WorkerHost` / `Persistence.SqlServer` / `.Management.Client` / `.Ui.Shared` / `.Ui.Client` builds | All OK, 0 errors |
+
+The SFTP-endpoint-dependent test named in the original CTX-1/CTX-2 closure reports
+(`Post_sftp_test_connect_persists_and_updates_readiness_across_unverified_success_failed`) no longer
+matches that name in the current `Apperture.IntegrationTests` suite — it appears to have been renamed or
+restructured in the time since those reports were written — and no environment-dependent failure was
+observed in this pass's full run. No production or test semantics were altered to hide any environment
+requirement; this is simply the result observed against a live, reachable SQL Server instance.
+
+### Process notes
+
+Each of the 17 tasks was implemented by a fresh subagent and reviewed by a fresh reviewer subagent before
+being marked complete, per `superpowers:subagent-driven-development`. Two tasks required one fix round
+each after their first review:
+
+* **Run query filter composition test** — the initial "composes with IntegrationId" test didn't actually
+  discriminate on that filter (both seeded rows shared the same IntegrationId); reworked to a genuinely
+  discriminating three-row setup, mutation-verified.
+* **PlatformEvent filter store-level coverage** — the initial pass added only a controller-level test;
+  review found this broke the actual sibling-filter precedent (IntegrationId/EventType/RunId/ModuleId all
+  have store-level SQL tests), so a matching store-level test was added.
+
+One controller ruling was made during review: the ScheduleRun immutability test's first draft (following
+this plan's own, buggy sketch) didn't actually simulate a ScheduleDefinition-side context change. Since
+the original CTX-2 completion brief explicitly requires this exact proof, the controller ruled it must be
+fixed rather than parked; it was reworked to genuinely seed a `ScheduleDefinition`, claim a `ScheduleRun`,
+mutate the definition's context, and confirm the run's snapshot survived.
 
 CTX-3 was not started.
