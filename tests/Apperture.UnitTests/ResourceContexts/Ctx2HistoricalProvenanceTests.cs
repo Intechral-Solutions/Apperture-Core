@@ -187,19 +187,36 @@ public sealed class Ctx2HistoricalProvenanceTests
     public async Task ScheduleRunClaim_StaysImmutable_WhenScheduleDefinitionsContextLaterChanges()
     {
         var db = NewDb();
-        var repo = new SqlScheduleRepository(db);
+        db.ScheduleDefinitions.Add(new ScheduleDefinitionEntity
+        {
+            Id = "sched-immut-1",
+            Name = "Immutability Check",
+            RecurrenceExpression = "0 * * * *",
+            TimeZone = "UTC",
+            Enabled = true,
+            TargetJobType = 0,
+            Version = 1,
+            ResourceContextId = "app-a"
+        });
+        await db.SaveChangesAsync();
 
+        var repo = new SqlScheduleRepository(db);
         var claimed = await repo.TryClaimFireAsync(
             "sched-immut-1", DateTimeOffset.UtcNow, "assign-immut-1", "host-1", resourceContextId: "app-a");
         claimed.Should().BeTrue();
 
-        // There is no ScheduleDefinition row backing this minimal claim call (TryClaimFireAsync takes
-        // the resourceContextId directly), so there is nothing upstream to mutate after the fact — the
-        // immutability guarantee here is that the claimed ScheduleRun keeps the context it was given at
-        // claim time and is never re-derived from any later lookup. Re-fetch untracked to rule out the
-        // assertion merely reading back the same tracked in-memory instance.
+        // Simulate the ScheduleDefinition's context changing later (no production move API exists;
+        // this is direct entity mutation purely for test setup, matching the pattern already used
+        // for Integrations in HistoricalSnapshot_IsImmutable_WhenCurrentOwnershipLaterChanges above).
+        var definition = await db.ScheduleDefinitions.SingleAsync(d => d.Id == "sched-immut-1");
+        definition.ResourceContextId = "app-b";
+        await db.SaveChangesAsync();
+
+        // Re-fetch untracked to rule out the assertion merely reading back the same tracked in-memory
+        // instance rather than what actually persisted.
         var run = await db.ScheduleRuns.AsNoTracking().SingleAsync(r => r.ScheduleId == "sched-immut-1");
-        run.ResourceContextId.Should().Be("app-a", "a ScheduleRun's snapshot must stay exactly what was recorded at claim time");
+        run.ResourceContextId.Should().Be("app-a", "a ScheduleRun's snapshot must never be re-derived from the ScheduleDefinition's current context");
+        run.ResourceContextId.Should().NotBe(definition.ResourceContextId, "this test deliberately makes them differ to prove the ScheduleRun snapshot doesn't track the ScheduleDefinition's later change");
     }
 
     private static async Task InvokeAudit(
