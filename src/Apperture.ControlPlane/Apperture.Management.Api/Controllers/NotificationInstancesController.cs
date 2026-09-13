@@ -22,13 +22,19 @@ public sealed class NotificationInstancesController : ControllerBase
         [FromQuery] string? definitionId,
         [FromQuery] string? incidentId,
         [FromQuery] int take = 50,
+        [FromQuery] string? resourceContextId = null,
         CancellationToken cancellationToken = default)
     {
         try
         {
             var rows = await _instances
                 .ListAsync(
-                    new NotificationInstanceListQuery(integrationId, definitionId, incidentId, take),
+                    new NotificationInstanceListQuery(
+                        integrationId,
+                        definitionId,
+                        incidentId,
+                        take,
+                        ResourceContextId: resourceContextId),
                     cancellationToken)
                 .ConfigureAwait(false);
             return Ok(rows.Select(ToSummaryDto).ToList());

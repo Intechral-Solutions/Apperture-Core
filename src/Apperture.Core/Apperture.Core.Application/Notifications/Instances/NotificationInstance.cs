@@ -50,7 +50,9 @@ public sealed record NotificationInstanceListQuery(
     string? IntegrationId = null,
     string? NotificationDefinitionId = null,
     string? AttentionIncidentId = null,
-    int Take = 50);
+    int Take = 50,
+    /// <summary>CTX-2: optional causal ResourceContext filter.</summary>
+    string? ResourceContextId = null);
 
 public sealed record NotificationInstanceCreateCommand(
     string NotificationDefinitionId,

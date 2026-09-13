@@ -147,6 +147,8 @@ public sealed class SqlNotificationInstanceStore : INotificationInstanceStore
             q = q.Where(x => x.NotificationDefinitionId == query.NotificationDefinitionId);
         if (!string.IsNullOrWhiteSpace(query.AttentionIncidentId))
             q = q.Where(x => x.AttentionIncidentId == query.AttentionIncidentId);
+        if (!string.IsNullOrWhiteSpace(query.ResourceContextId))
+            q = q.Where(x => x.ResourceContextId == query.ResourceContextId);
 
         var rows = await q
             .OrderByDescending(x => x.CreatedAtUtc)

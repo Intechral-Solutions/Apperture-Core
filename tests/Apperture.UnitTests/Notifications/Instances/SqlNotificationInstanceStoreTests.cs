@@ -101,4 +101,54 @@ public sealed class SqlNotificationInstanceStoreTests
         var latest = await sut.GetLatestActivationOrReminderCreatedUtcAsync("inc-1", "def-1");
         latest.Should().Be(newer);
     }
+
+    [Fact]
+    public async Task ListAsync_FiltersByResourceContextId_WhenSupplied()
+    {
+        await using var db = CreateDb();
+        var sut = new SqlNotificationInstanceStore(db);
+        var now = DateTimeOffset.UtcNow;
+
+        db.NotificationInstances.Add(new NotificationInstanceEntity
+        {
+            Id = "ninst_a",
+            NotificationDefinitionId = "def-1",
+            NotificationKind = NotificationKinds.Activation,
+            Status = NotificationInstanceStatuses.Pending,
+            IntegrationId = "int-1",
+            AttentionIncidentId = "inc-1",
+            ResourceContextId = "app-a",
+            InstanceDedupeKey = "k-a",
+            RenderedSubject = "s",
+            RenderedSummary = "s",
+            RenderedBodyText = "b",
+            TemplateVersionHash = "h",
+            RenderContextJson = "{}",
+            CreatedAtUtc = now,
+            UpdatedAtUtc = now,
+        });
+        db.NotificationInstances.Add(new NotificationInstanceEntity
+        {
+            Id = "ninst_b",
+            NotificationDefinitionId = "def-1",
+            NotificationKind = NotificationKinds.Activation,
+            Status = NotificationInstanceStatuses.Pending,
+            IntegrationId = "int-1",
+            AttentionIncidentId = "inc-1",
+            ResourceContextId = "app-b",
+            InstanceDedupeKey = "k-b",
+            RenderedSubject = "s",
+            RenderedSummary = "s",
+            RenderedBodyText = "b",
+            TemplateVersionHash = "h",
+            RenderContextJson = "{}",
+            CreatedAtUtc = now,
+            UpdatedAtUtc = now,
+        });
+        await db.SaveChangesAsync();
+
+        var results = await sut.ListAsync(new NotificationInstanceListQuery(ResourceContextId: "app-a"));
+
+        results.Should().ContainSingle(r => r.ResourceContextId == "app-a");
+    }
 }
