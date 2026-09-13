@@ -168,6 +168,7 @@ public sealed class ScheduleDispatchRunner : IScheduleDispatchRunner
     {
         var claimed = false;
         var recovered = false;
+        ScheduleDefinition? recoveredDefinition = null;
 
         if (allowNewClaims)
         {
@@ -191,6 +192,9 @@ public sealed class ScheduleDispatchRunner : IScheduleDispatchRunner
             if (claimed)
             {
                 recovered = true;
+                // Same lookup ProcessDueAsync always needs below once claimed; fetched here (not a
+                // new query in the net) so the recovery audit can carry the schedule's own context too.
+                recoveredDefinition = await _repo.GetDefinitionAsync(new ScheduleId(candidate.ScheduleId), ct);
                 try
                 {
                     await _audit.AppendAsync(new AuditRecord(
@@ -202,7 +206,8 @@ public sealed class ScheduleDispatchRunner : IScheduleDispatchRunner
                         Timestamp: DateTimeOffset.UtcNow,
                         new CorrelationId($"schedule:{candidate.ScheduleId}:{candidate.FireTimeUtc:O}"),
                         Details: $"schedule:{candidate.ScheduleId};fire={candidate.FireTimeUtc:O};recovered by host {hostId}",
-                        ScheduleId: candidate.ScheduleId
+                        ScheduleId: candidate.ScheduleId,
+                        ResourceContextId: recoveredDefinition?.ResourceContextId?.Value
                     ), ct);
                 }
                 catch { /* best-effort audit */ }
@@ -212,7 +217,7 @@ public sealed class ScheduleDispatchRunner : IScheduleDispatchRunner
         if (!claimed)
             return (CycleCandidateOutcome.Skipped, recovered);
 
-        var definition = await _repo.GetDefinitionAsync(new ScheduleId(candidate.ScheduleId), ct);
+        var definition = recoveredDefinition ?? await _repo.GetDefinitionAsync(new ScheduleId(candidate.ScheduleId), ct);
         if (definition is null)
         {
             await CompleteWithOutcomeAsync(candidate, "Failed", "Schedule definition not found", null, ct);
@@ -237,7 +242,7 @@ public sealed class ScheduleDispatchRunner : IScheduleDispatchRunner
 
     private async Task<CycleCandidateOutcome> ProcessWorkflowTargetAsync(ScheduleDefinition definition, ScheduleFireCandidate candidate, CancellationToken ct)
     {
-        if (!await EnsureIntegrationOperationalAsync(definition.IntegrationId, candidate, ct))
+        if (!await EnsureIntegrationOperationalAsync(definition.IntegrationId, definition.ResourceContextId?.Value, candidate, ct))
             return CycleCandidateOutcome.Claimed;
 
         var workflowId = ParseWorkflowDefinitionId(definition.Target.JobConfiguration);
@@ -248,7 +253,7 @@ public sealed class ScheduleDispatchRunner : IScheduleDispatchRunner
         }
 
         var procedureId = await ResolveProcedureIdAsync(definition, ProcedureLaunchKind.Workflow, workflowId.Value, ct).ConfigureAwait(false);
-        if (!await EnsureIntegrationReadyForDispatchAsync(definition.IntegrationId, procedureId, candidate, ct).ConfigureAwait(false))
+        if (!await EnsureIntegrationReadyForDispatchAsync(definition.IntegrationId, procedureId, definition.ResourceContextId?.Value, candidate, ct).ConfigureAwait(false))
             return CycleCandidateOutcome.Claimed;
 
         var canDispatch = await _guard.CanDispatchWorkflowAsync(workflowId, ct);
@@ -266,7 +271,8 @@ public sealed class ScheduleDispatchRunner : IScheduleDispatchRunner
                     Timestamp: DateTimeOffset.UtcNow,
                     new CorrelationId($"schedule:{candidate.ScheduleId}:{candidate.FireTimeUtc:O}"),
                     Details: $"schedule:{candidate.ScheduleId};Workflow {workflowId.Value} not executable (module disabled or unavailable)",
-                    ScheduleId: candidate.ScheduleId
+                    ScheduleId: candidate.ScheduleId,
+                    ResourceContextId: definition.ResourceContextId?.Value
                 ), ct);
             }
             catch { /* best-effort audit */ }
@@ -299,7 +305,8 @@ public sealed class ScheduleDispatchRunner : IScheduleDispatchRunner
                     Timestamp: DateTimeOffset.UtcNow,
                     new CorrelationId($"schedule:{candidate.ScheduleId}:{candidate.FireTimeUtc:O}"),
                     Details: $"schedule:{candidate.ScheduleId};Workflow start dispatch returned null",
-                    ScheduleId: candidate.ScheduleId
+                    ScheduleId: candidate.ScheduleId,
+                    ResourceContextId: definition.ResourceContextId?.Value
                 ), ct);
             }
             catch { /* best-effort audit */ }
@@ -319,7 +326,8 @@ public sealed class ScheduleDispatchRunner : IScheduleDispatchRunner
                 new CorrelationId($"schedule:{candidate.ScheduleId}:{candidate.FireTimeUtc:O}"),
                 Details: $"schedule:{candidate.ScheduleId};RunId={result.RunId.Value}",
                 ScheduleId: candidate.ScheduleId,
-                RunId: result.RunId.Value
+                RunId: result.RunId.Value,
+                ResourceContextId: definition.ResourceContextId?.Value
             ), ct);
         }
         catch { /* best-effort audit */ }
@@ -337,7 +345,7 @@ public sealed class ScheduleDispatchRunner : IScheduleDispatchRunner
 
     private async Task<CycleCandidateOutcome> ProcessOperationTargetAsync(ScheduleDefinition definition, ScheduleFireCandidate candidate, CancellationToken ct)
     {
-        if (!await EnsureIntegrationOperationalAsync(definition.IntegrationId, candidate, ct))
+        if (!await EnsureIntegrationOperationalAsync(definition.IntegrationId, definition.ResourceContextId?.Value, candidate, ct))
             return CycleCandidateOutcome.Claimed;
 
         var operationId = ParseOperationDefinitionId(definition.Target.JobConfiguration);
@@ -348,7 +356,7 @@ public sealed class ScheduleDispatchRunner : IScheduleDispatchRunner
         }
 
         var procedureId = await ResolveProcedureIdAsync(definition, ProcedureLaunchKind.Operation, operationId.Value, ct).ConfigureAwait(false);
-        if (!await EnsureIntegrationReadyForDispatchAsync(definition.IntegrationId, procedureId, candidate, ct).ConfigureAwait(false))
+        if (!await EnsureIntegrationReadyForDispatchAsync(definition.IntegrationId, procedureId, definition.ResourceContextId?.Value, candidate, ct).ConfigureAwait(false))
             return CycleCandidateOutcome.Claimed;
 
         var canDispatch = await _guard.CanDispatchOperationAsync(operationId, ct);
@@ -366,7 +374,8 @@ public sealed class ScheduleDispatchRunner : IScheduleDispatchRunner
                     Timestamp: DateTimeOffset.UtcNow,
                     new CorrelationId($"schedule:{candidate.ScheduleId}:{candidate.FireTimeUtc:O}"),
                     Details: $"schedule:{candidate.ScheduleId};Operation {operationId.Value} not executable (module disabled or unavailable)",
-                    ScheduleId: candidate.ScheduleId
+                    ScheduleId: candidate.ScheduleId,
+                    ResourceContextId: definition.ResourceContextId?.Value
                 ), ct);
             }
             catch { /* best-effort audit */ }
@@ -398,7 +407,8 @@ public sealed class ScheduleDispatchRunner : IScheduleDispatchRunner
                     Timestamp: DateTimeOffset.UtcNow,
                     new CorrelationId($"schedule:{candidate.ScheduleId}:{candidate.FireTimeUtc:O}"),
                     Details: $"schedule:{candidate.ScheduleId};Operation start dispatch returned null",
-                    ScheduleId: candidate.ScheduleId
+                    ScheduleId: candidate.ScheduleId,
+                    ResourceContextId: definition.ResourceContextId?.Value
                 ), ct);
             }
             catch { /* best-effort audit */ }
@@ -418,7 +428,8 @@ public sealed class ScheduleDispatchRunner : IScheduleDispatchRunner
                 new CorrelationId($"schedule:{candidate.ScheduleId}:{candidate.FireTimeUtc:O}"),
                 Details: $"schedule:{candidate.ScheduleId};RunId={result.RunId.Value}",
                 ScheduleId: candidate.ScheduleId,
-                RunId: result.RunId.Value
+                RunId: result.RunId.Value,
+                ResourceContextId: definition.ResourceContextId?.Value
             ), ct);
         }
         catch { /* best-effort audit */ }
@@ -437,6 +448,7 @@ public sealed class ScheduleDispatchRunner : IScheduleDispatchRunner
     private async Task<bool> EnsureIntegrationReadyForDispatchAsync(
         IntegrationId? integrationId,
         string? procedureId,
+        string? resourceContextId,
         ScheduleFireCandidate candidate,
         CancellationToken ct)
     {
@@ -450,7 +462,7 @@ public sealed class ScheduleDispatchRunner : IScheduleDispatchRunner
         {
             var missingReason = $"Integration '{integrationId.Value}' was not found.";
             await CompleteWithOutcomeAsync(candidate, "BlockedByReadiness", missingReason, null, ct);
-            await AuditBlockedByReadinessAsync(candidate, missingReason, ct).ConfigureAwait(false);
+            await AuditBlockedByReadinessAsync(candidate, missingReason, resourceContextId, ct).ConfigureAwait(false);
             return false;
         }
 
@@ -459,11 +471,12 @@ public sealed class ScheduleDispatchRunner : IScheduleDispatchRunner
 
         var reason = FormatReadinessBlockReason(readiness, procedureId);
         await CompleteWithOutcomeAsync(candidate, "BlockedByReadiness", reason, null, ct);
-        await AuditBlockedByReadinessAsync(candidate, reason, ct).ConfigureAwait(false);
+        await AuditBlockedByReadinessAsync(candidate, reason, resourceContextId, ct).ConfigureAwait(false);
         return false;
     }
 
-    private async Task AuditBlockedByReadinessAsync(ScheduleFireCandidate candidate, string reason, CancellationToken ct)
+    private async Task AuditBlockedByReadinessAsync(
+        ScheduleFireCandidate candidate, string reason, string? resourceContextId, CancellationToken ct)
     {
         try
         {
@@ -476,7 +489,8 @@ public sealed class ScheduleDispatchRunner : IScheduleDispatchRunner
                 Timestamp: DateTimeOffset.UtcNow,
                 new CorrelationId($"schedule:{candidate.ScheduleId}:{candidate.FireTimeUtc:O}"),
                 Details: $"schedule:{candidate.ScheduleId};{reason}",
-                ScheduleId: candidate.ScheduleId
+                ScheduleId: candidate.ScheduleId,
+                ResourceContextId: resourceContextId
             ), ct).ConfigureAwait(false);
         }
         catch
@@ -520,7 +534,8 @@ public sealed class ScheduleDispatchRunner : IScheduleDispatchRunner
         return procedure?.Id;
     }
 
-    private async Task<bool> EnsureIntegrationOperationalAsync(IntegrationId? integrationId, ScheduleFireCandidate candidate, CancellationToken ct)
+    private async Task<bool> EnsureIntegrationOperationalAsync(
+        IntegrationId? integrationId, string? resourceContextId, ScheduleFireCandidate candidate, CancellationToken ct)
     {
         if (integrationId is null)
         {
@@ -535,7 +550,8 @@ public sealed class ScheduleDispatchRunner : IScheduleDispatchRunner
                     Timestamp: DateTimeOffset.UtcNow,
                     new CorrelationId($"schedule:{candidate.ScheduleId}:{candidate.FireTimeUtc:O}"),
                     Details: $"schedule:{candidate.ScheduleId};legacy schedule has no IntegrationId; dispatch is temporarily allowed for backward compatibility.",
-                    ScheduleId: candidate.ScheduleId
+                    ScheduleId: candidate.ScheduleId,
+                    ResourceContextId: resourceContextId
                 ), ct);
             }
             catch
@@ -564,7 +580,8 @@ public sealed class ScheduleDispatchRunner : IScheduleDispatchRunner
                 Timestamp: DateTimeOffset.UtcNow,
                 new CorrelationId($"schedule:{candidate.ScheduleId}:{candidate.FireTimeUtc:O}"),
                 Details: $"schedule:{candidate.ScheduleId};{reason}",
-                ScheduleId: candidate.ScheduleId
+                ScheduleId: candidate.ScheduleId,
+                ResourceContextId: resourceContextId
             ), ct);
         }
         catch
