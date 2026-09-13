@@ -118,6 +118,8 @@ public sealed class SqlAuditService : IAuditService
             q = q.Where(x => x.ScheduleId != null && x.ScheduleId == query.FilterByScheduleId);
         if (!string.IsNullOrEmpty(query.FilterByRunId))
             q = q.Where(x => x.RunId != null && x.RunId == query.FilterByRunId);
+        if (!string.IsNullOrEmpty(query.FilterByResourceContextId))
+            q = q.Where(x => x.ResourceContextId != null && x.ResourceContextId == query.FilterByResourceContextId);
 
         if (forPaging
             && !string.IsNullOrEmpty(query.ContinuationToken)

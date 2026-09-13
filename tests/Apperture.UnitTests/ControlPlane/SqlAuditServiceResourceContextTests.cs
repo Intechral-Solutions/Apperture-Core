@@ -73,6 +73,31 @@ public sealed class SqlAuditServiceResourceContextTests
         byId!.ResourceContextId.Should().Be("app-b");
     }
 
+    [Fact]
+    public async Task QueryAsync_FiltersByResourceContextId_WhenSupplied()
+    {
+        var db = NewDb();
+        var svc = new SqlAuditService(db);
+        await svc.AppendAsync(NewRecord("app-a"));
+        await svc.AppendAsync(NewRecord("app-b"));
+
+        var page = await svc.QueryAsync(new Apperture.Core.Application.Services.AuditQuery(FilterByResourceContextId: "app-a"));
+
+        page.Items.Should().ContainSingle(r => r.ResourceContextId == "app-a");
+    }
+
+    private static AuditRecord NewRecord(string resourceContextId) =>
+        new(
+            new AuditRecordId(Guid.NewGuid().ToString("N")),
+            new ActorId("system"),
+            "test.action",
+            Resource: null,
+            Outcome: "success",
+            DateTimeOffset.UtcNow,
+            new CorrelationId(null),
+            Details: null,
+            ResourceContextId: resourceContextId);
+
     private static AppertureDbContext NewDb() =>
         new(new DbContextOptionsBuilder<AppertureDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString("N")).Options);
 }
