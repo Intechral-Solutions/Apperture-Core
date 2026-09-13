@@ -44,7 +44,8 @@ public sealed record AttentionIncidentDto(
     DateTimeOffset? LastExpectedFireAtUtc,
     DateTimeOffset? AcknowledgedAtUtc,
     string? AcknowledgedBy,
-    string? AcknowledgementNote);
+    string? AcknowledgementNote,
+    string? ResourceContextId = null);
 
 public sealed record AcknowledgeAttentionIncidentRequest(string? Note);
 

@@ -640,7 +640,8 @@ public sealed class IntegrationsController : ControllerBase
                 i.LastExpectedFireAtUtc,
                 i.AcknowledgedAtUtc,
                 i.AcknowledgedBy,
-                i.AcknowledgementNote)).ToList(),
+                i.AcknowledgementNote,
+                i.ResourceContextId)).ToList(),
             ToAttentionRoutingDto(p.AttentionRouting),
             p.RecentPlatformNotificationInstances.Select(i => new PlatformNotificationInstanceDiagnosticDto(
                 i.Id,
