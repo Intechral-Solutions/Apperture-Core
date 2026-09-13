@@ -236,8 +236,9 @@ public sealed class RunQueryServiceTests
         db.OperationRuns.AddRange(
             new OperationRunEntity
             {
-                Id = "r-comp-a",
-                WorkflowInstanceId = "i-comp-a",
+                // Matches both filter values — the only row that should be returned.
+                Id = "r-comp-both",
+                WorkflowInstanceId = "i-comp-both",
                 DefinitionId = "wf.def",
                 Status = WorkflowLifecycleStatusNames.Completed,
                 CreatedAt = DateTimeOffset.UtcNow,
@@ -246,15 +247,32 @@ public sealed class RunQueryServiceTests
             },
             new OperationRunEntity
             {
-                Id = "r-comp-b",
-                WorkflowInstanceId = "i-comp-b",
+                // Matches ResourceContextId only — must be excluded by the IntegrationId clause.
+                Id = "r-comp-ctx-only",
+                WorkflowInstanceId = "i-comp-ctx-only",
+                DefinitionId = "wf.def",
+                Status = WorkflowLifecycleStatusNames.Completed,
+                CreatedAt = DateTimeOffset.UtcNow,
+                IntegrationId = "int-2",
+                ResourceContextId = "app-a"
+            },
+            new OperationRunEntity
+            {
+                // Matches IntegrationId only — must be excluded by the ResourceContextId clause.
+                Id = "r-comp-int-only",
+                WorkflowInstanceId = "i-comp-int-only",
                 DefinitionId = "wf.def",
                 Status = WorkflowLifecycleStatusNames.Completed,
                 CreatedAt = DateTimeOffset.UtcNow,
                 IntegrationId = "int-1",
                 ResourceContextId = "app-b"
             });
-        foreach (var (runId, instId) in new[] { ("r-comp-a", "i-comp-a"), ("r-comp-b", "i-comp-b") })
+        foreach (var (runId, instId) in new[]
+                 {
+                     ("r-comp-both", "i-comp-both"),
+                     ("r-comp-ctx-only", "i-comp-ctx-only"),
+                     ("r-comp-int-only", "i-comp-int-only")
+                 })
         {
             db.WorkflowStartRequests.Add(new WorkflowStartRequestEntity
             {
@@ -270,8 +288,10 @@ public sealed class RunQueryServiceTests
         var service = NewService(db);
         var filtered = await service.ListRunsAsync(new RunQueryFilter(IntegrationId: "int-1", ResourceContextId: "app-a"));
 
+        // If either .Where clause were missing or broken, one of the single-match rows
+        // would leak into this result (or the "both" row would be wrongly excluded).
         filtered.Should().ContainSingle();
-        filtered[0].RunId.Should().Be("r-comp-a");
+        filtered[0].RunId.Should().Be("r-comp-both");
     }
 
     [Fact]
