@@ -2436,7 +2436,7 @@ Write a new section, inserted after the existing §14 (renumbering nothing else 
 - **Validation** — paste the exact final counts/results from Task 16 (full unit suite count, Ui.Shared.Tests count, ArchTests count, IntegrationTests result including the known SFTP dependency if it recurred, and full-solution build result).
 - **Pre-existing gap found and fixed incidentally** — the `Apperture.Management.Client` copies of `ScheduleDto`/`ScheduleDetailDto` were silently missing the CTX-1 `ResourceContextId`/`ResourceContextRef` fields the API already returned; Task 10 backfilled them since it was already touching those exact records to add the new CTX-2 field, and leaving the gap would have made the new field itself go unused by any client that deserializes into this type.
 
-- [ ] **Step 2: Commit**
+- [ ] **Step 4: Commit**
 
 ```bash
 git add docs/01-architecture/transitions/resource-contexts/ctx2-closure.md
