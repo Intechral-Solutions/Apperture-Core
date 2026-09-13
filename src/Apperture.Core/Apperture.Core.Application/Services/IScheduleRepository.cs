@@ -92,7 +92,7 @@ public interface IScheduleRepository
     /// (<c>Outcome = InProgress</c>). Returns null when no such row exists (including after
     /// <c>CompleteRunAsync</c>). Does not surface historical claim owners on completed runs. Epic 36.
     /// </summary>
-    ValueTask<(string ClaimedByHostId, DateTimeOffset StartedAtUtc)?> GetInProgressRunClaimAsync(string assignmentId, CancellationToken cancellationToken = default);
+    ValueTask<(string ClaimedByHostId, DateTimeOffset StartedAtUtc, string? ResourceContextId)?> GetInProgressRunClaimAsync(string assignmentId, CancellationToken cancellationToken = default);
 
     ValueTask CompleteRunAsync(string scheduleId, DateTimeOffset fireTimeUtc, string outcome, string? outcomeReason, string? runId, CancellationToken cancellationToken = default);
     ValueTask UpdateStateAsync(string assignmentId, ScheduleStateUpdate state, CancellationToken cancellationToken = default);

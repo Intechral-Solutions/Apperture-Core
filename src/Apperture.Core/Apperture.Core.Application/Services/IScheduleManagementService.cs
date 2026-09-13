@@ -108,4 +108,10 @@ public sealed record ScheduleWithExecutionState(
 public sealed record ScheduleInProgressClaim(
     string ClaimedByHostId,
     DateTimeOffset ClaimedAtUtc,
-    bool IsStale);
+    bool IsStale,
+    /// <summary>
+    /// CTX-2: immutable ResourceContext snapshot from the specific ScheduleRun this claim belongs to
+    /// (copied at claim time from ScheduleDefinition.ResourceContextId). Distinct from the Schedule's
+    /// current ownership, which the caller already has on hand as ScheduleDefinition.ResourceContextId.
+    /// </summary>
+    string? ResourceContextId = null);

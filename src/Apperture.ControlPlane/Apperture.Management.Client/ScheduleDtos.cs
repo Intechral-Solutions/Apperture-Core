@@ -1,3 +1,5 @@
+using Apperture.Core.Domain.ResourceContexts;
+
 namespace Apperture.Management.Client;
 
 /// <summary>Epic 50 / SWM-3: Create schedule for Integration. Null/blank TimeZone → platform Scheduling.DefaultTimeZoneId.</summary>
@@ -60,12 +62,17 @@ public sealed record ScheduleDto(
     DateTimeOffset? NextFireUtc = null,
     string? ScheduleTimeZoneId = null,
     string? HealthStatus = null,
-    IReadOnlyList<ScheduleStatusReasonDto>? StatusReasons = null);
+    IReadOnlyList<ScheduleStatusReasonDto>? StatusReasons = null,
+    /// <summary>CTX-1: Schedule's current owning ResourceContext. Backfilled here — the API has
+    /// exposed this since CTX-1 but this client-side DTO was silently dropping it.</summary>
+    string? ResourceContextId = null);
 
 /// <summary>
 /// Schedule with execution state for operator visibility. Epic 28, Epic 36 (claim visibility).
 /// Claim fields: populated only when a schedule run is <strong>in progress</strong> for this plane's assignment; absent once completed.
 /// SWM-10: additive next-fire / readiness projection fields (compute-only, not persisted).
+/// <see cref="ClaimResourceContextId"/>: CTX-2 historical snapshot from that same in-progress ScheduleRun —
+/// do not confuse with <see cref="ResourceContextId"/> above, which is the Schedule's current ownership (CTX-1).
 /// </summary>
 public sealed record ScheduleDetailDto(
     string Id,
@@ -88,4 +95,14 @@ public sealed record ScheduleDetailDto(
     DateTimeOffset? NextFireUtc = null,
     string? ScheduleTimeZoneId = null,
     string? HealthStatus = null,
-    IReadOnlyList<ScheduleStatusReasonDto>? StatusReasons = null);
+    IReadOnlyList<ScheduleStatusReasonDto>? StatusReasons = null,
+    /// <summary>CTX-1: Schedule's current owning ResourceContext id. Backfilled here — the API has
+    /// exposed this since CTX-1 but this client-side DTO was silently dropping it.</summary>
+    string? ResourceContextId = null,
+    /// <summary>CTX-1: compact ResourceContext reference (id/name/slug). Backfilled here alongside
+    /// <see cref="ResourceContextId"/> above.</summary>
+    ResourceContextRef? ResourceContext = null,
+    /// <summary>CTX-2: historical ResourceContext snapshot from the active in-progress ScheduleRun this
+    /// claim belongs to. Distinct from <see cref="ResourceContextId"/> above (current ownership, CTX-1).
+    /// Null whenever no in-progress claim exists.</summary>
+    string? ClaimResourceContextId = null);

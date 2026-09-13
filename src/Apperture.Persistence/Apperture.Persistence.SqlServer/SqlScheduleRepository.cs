@@ -233,7 +233,7 @@ public sealed class SqlScheduleRepository : IScheduleRepository
     }
 
     /// <inheritdoc cref="IScheduleRepository.GetInProgressRunClaimAsync"/>
-    public async ValueTask<(string ClaimedByHostId, DateTimeOffset StartedAtUtc)?> GetInProgressRunClaimAsync(string assignmentId, CancellationToken ct = default)
+    public async ValueTask<(string ClaimedByHostId, DateTimeOffset StartedAtUtc, string? ResourceContextId)?> GetInProgressRunClaimAsync(string assignmentId, CancellationToken ct = default)
     {
         var run = await _db.ScheduleRuns.AsNoTracking()
             .Where(r => r.AssignmentId == assignmentId && r.Outcome == "InProgress")
@@ -241,7 +241,7 @@ public sealed class SqlScheduleRepository : IScheduleRepository
             .FirstOrDefaultAsync(ct);
         if (run is null)
             return null;
-        return (run.ClaimedByHostId ?? "", run.StartedAtUtc);
+        return (run.ClaimedByHostId ?? "", run.StartedAtUtc, run.ResourceContextId);
     }
 
     public async ValueTask CompleteRunAsync(string scheduleId, DateTimeOffset fireTimeUtc, string outcome, string? outcomeReason, string? runId, CancellationToken ct = default)

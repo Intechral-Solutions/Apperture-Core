@@ -306,7 +306,7 @@ public sealed class RecoveryWorkflowRemediationSqlServerTests
         public ValueTask<bool> TryClaimFireAsync(string scheduleId, DateTimeOffset fireTimeUtc, string assignmentId, string hostId, CancellationToken ct = default) => ValueTask.FromResult(false);
         public ValueTask<IReadOnlyList<ScheduleFireCandidate>> GetRecoverableStaleCandidatesAsync(RuntimePlaneId planeId, DateTimeOffset staleCutoffUtc, CancellationToken ct = default) => ValueTask.FromResult<IReadOnlyList<ScheduleFireCandidate>>([]);
         public ValueTask<bool> TryRecoverStaleClaimAsync(string scheduleId, DateTimeOffset fireTimeUtc, string assignmentId, string hostId, DateTimeOffset staleCutoffUtc, CancellationToken ct = default) => ValueTask.FromResult(false);
-        public ValueTask<(string ClaimedByHostId, DateTimeOffset StartedAtUtc)?> GetInProgressRunClaimAsync(string assignmentId, CancellationToken ct = default) => ValueTask.FromResult<(string, DateTimeOffset)?>(null);
+        public ValueTask<(string ClaimedByHostId, DateTimeOffset StartedAtUtc, string? ResourceContextId)?> GetInProgressRunClaimAsync(string assignmentId, CancellationToken ct = default) => ValueTask.FromResult<(string, DateTimeOffset, string?)?>(null);
         public ValueTask CompleteRunAsync(string scheduleId, DateTimeOffset fireTimeUtc, string outcome, string? reason, string? runId, CancellationToken ct = default) => ValueTask.CompletedTask;
         public ValueTask UpdateStateAsync(string assignmentId, ScheduleStateUpdate state, CancellationToken ct = default) => ValueTask.CompletedTask;
         public ValueTask<ScheduleState?> GetStateAsync(string assignmentId, CancellationToken ct = default) => ValueTask.FromResult<ScheduleState?>(null);

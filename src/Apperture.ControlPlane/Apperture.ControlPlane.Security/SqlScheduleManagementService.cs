@@ -159,7 +159,8 @@ public sealed class SqlScheduleManagementService : IScheduleManagementService
             claim = new ScheduleInProgressClaim(
                 claimInfo.Value.ClaimedByHostId,
                 claimInfo.Value.StartedAtUtc,
-                claimInfo.Value.StartedAtUtc < cutoff);
+                claimInfo.Value.StartedAtUtc < cutoff,
+                claimInfo.Value.ResourceContextId);
         }
         return new ScheduleWithExecutionState(def, state, claim);
     }

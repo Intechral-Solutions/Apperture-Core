@@ -208,6 +208,23 @@ public sealed class Epic36MultiHostSchedulerTests
     }
 
     /// <summary>
+    /// CTX-2: the historical ResourceContext snapshotted onto the claiming ScheduleRun at claim time
+    /// is surfaced on the claim projection.
+    /// </summary>
+    [Fact]
+    public async Task GetInProgressRunClaimAsync_ExposesResourceContextId_FromTheClaimingScheduleRun()
+    {
+        var db = NewDb();
+        var repo = new SqlScheduleRepository(db);
+        await repo.TryClaimFireAsync("sched-ctx", DateTimeOffset.UtcNow, "assign-ctx", "host-1", resourceContextId: "app-a");
+
+        var claim = await repo.GetInProgressRunClaimAsync("assign-ctx");
+
+        claim.Should().NotBeNull();
+        claim!.Value.ResourceContextId.Should().Be("app-a");
+    }
+
+    /// <summary>
     /// Completed runs do not surface as an active claim (operator-safe: no confusion with historical owner).
     /// </summary>
     [Fact]

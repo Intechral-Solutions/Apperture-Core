@@ -315,7 +315,8 @@ public sealed class SchedulesController : ControllerBase
             clarity.HealthStatus,
             clarity.StatusReasons.Select(r => new ScheduleStatusReasonDto(r.Code, r.Message)).ToList(),
             d.ResourceContextId?.Value,
-            owningResourceContext?.ToRef());
+            owningResourceContext?.ToRef(),
+            claim?.ResourceContextId);
     }
 
     private void TryAppendWarningHeader(string value)
@@ -350,6 +351,8 @@ public sealed record ScheduleDto(
 /// <summary>
 /// Schedule with execution state for operator visibility. Epic 28, Epic 36 (claim visibility).
 /// <see cref="ClaimedByHostId"/> / <see cref="ClaimedAtUtc"/> / <see cref="IsClaimStale"/>: active in-progress claim only; not historical.
+/// <see cref="ClaimResourceContextId"/>: CTX-2 historical snapshot from that same in-progress ScheduleRun — do not
+/// confuse with <see cref="ResourceContextId"/> above, which is the Schedule's current ownership (CTX-1).
 /// SWM-10: additive next-fire / readiness projection (compute-only).
 /// </summary>
 public sealed record ScheduleDetailDto(
@@ -375,7 +378,13 @@ public sealed record ScheduleDetailDto(
     string? HealthStatus = null,
     IReadOnlyList<ScheduleStatusReasonDto>? StatusReasons = null,
     string? ResourceContextId = null,
-    ResourceContextRef? ResourceContext = null);
+    ResourceContextRef? ResourceContext = null,
+    /// <summary>
+    /// CTX-2: historical ResourceContext snapshot from the active in-progress ScheduleRun this claim
+    /// belongs to. Distinct from <see cref="ResourceContextId"/> above, which is the Schedule's current
+    /// ownership (CTX-1). Null whenever no in-progress claim exists.
+    /// </summary>
+    string? ClaimResourceContextId = null);
 
 /// <param name="ResourceContextId">
 /// Optional owning ResourceContext. For an Integration-attached schedule it must equal the
