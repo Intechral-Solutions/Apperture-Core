@@ -2,6 +2,7 @@ using Apperture.Core.Application.PlatformSettings;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Audit;
 using Apperture.Core.Domain.Governance;
+using Apperture.Core.Domain.Integration;
 using Apperture.Shared.Kernel;
 using Microsoft.EntityFrameworkCore;
 
@@ -18,6 +19,7 @@ public sealed class IntegrationSettingsService : IIntegrationSettingsService
     private readonly PlatformSettingSecretMaterialProvisioner _secretProvisioner;
     private readonly IPrincipalContext _principalContext;
     private readonly IAuditService _audit;
+    private readonly IIntegrationRepository _integrations;
 
     public IntegrationSettingsService(
         IIntegrationSettingDefinitionRegistry registry,
@@ -26,7 +28,8 @@ public sealed class IntegrationSettingsService : IIntegrationSettingsService
         PlatformSettingOptionProviderCoordinator optionProviderCoordinator,
         PlatformSettingSecretMaterialProvisioner secretProvisioner,
         IPrincipalContext principalContext,
-        IAuditService audit)
+        IAuditService audit,
+        IIntegrationRepository integrations)
     {
         _registry = registry;
         _repository = repository;
@@ -35,6 +38,7 @@ public sealed class IntegrationSettingsService : IIntegrationSettingsService
         _secretProvisioner = secretProvisioner;
         _principalContext = principalContext;
         _audit = audit;
+        _integrations = integrations;
     }
 
     public Task<IReadOnlyList<PlatformSettingResolvedValue>> ListAsync(
@@ -366,6 +370,12 @@ public sealed class IntegrationSettingsService : IIntegrationSettingsService
         }
     }
 
+    private async ValueTask<string?> ResolveResourceContextIdAsync(string integrationId, CancellationToken cancellationToken)
+    {
+        var integration = await _integrations.GetByIdAsync(new IntegrationId(integrationId), cancellationToken).ConfigureAwait(false);
+        return integration?.ResourceContextId.Value;
+    }
+
     private async ValueTask AppendAuditAsync(
         string action,
         string integrationId,
@@ -373,6 +383,7 @@ public sealed class IntegrationSettingsService : IIntegrationSettingsService
         string details,
         CancellationToken cancellationToken)
     {
+        var resourceContextId = await ResolveResourceContextIdAsync(integrationId, cancellationToken).ConfigureAwait(false);
         var record = new AuditRecord(
             new AuditRecordId(Guid.NewGuid().ToString("N")),
             actorId,
@@ -381,7 +392,8 @@ public sealed class IntegrationSettingsService : IIntegrationSettingsService
             AuditOutcome,
             DateTimeOffset.UtcNow,
             new CorrelationId(null),
-            details);
+            details,
+            ResourceContextId: resourceContextId);
         await _audit.AppendAsync(record, cancellationToken).ConfigureAwait(false);
     }
 

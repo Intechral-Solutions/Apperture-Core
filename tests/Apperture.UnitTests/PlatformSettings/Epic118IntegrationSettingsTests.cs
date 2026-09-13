@@ -4,6 +4,7 @@ using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Audit;
 using Apperture.Core.Domain.Governance;
 using Apperture.Core.Domain.Integration;
+using Apperture.Core.Domain.ResourceContexts;
 using Apperture.Core.Security.Secrets.Abstractions;
 using Apperture.Management.Api.Controllers;
 using Apperture.Management.Api.Models;
@@ -241,13 +242,56 @@ public sealed class Epic118IntegrationSettingsTests
         captured.Details.Should().Contain(PlatformSettingScopeConstants.IntegrationKind);
     }
 
+    [Fact]
+    public async Task SetAsync_AuditsWithTheIntegrationsCurrentResourceContextId()
+    {
+        var def = PlatformSettingTestDefinitions.IntegrationScopedSelectSample;
+        var audit = new Mock<IAuditService>();
+        string? capturedContext = null;
+        audit.Setup(x => x.AppendAsync(It.IsAny<AuditRecord>(), It.IsAny<CancellationToken>()))
+            .Callback<AuditRecord, CancellationToken>((record, _) => capturedContext = record.ResourceContextId)
+            .Returns(ValueTask.CompletedTask);
+
+        var integrations = new Mock<IIntegrationRepository>();
+        integrations.Setup(x => x.GetByIdAsync(new IntegrationId(IntegrationId), It.IsAny<CancellationToken>()))
+            .Returns((IntegrationId id, CancellationToken _) => ValueTask.FromResult<DomainIntegration?>(
+                new DomainIntegration(
+                    id,
+                    "Test Integration",
+                    "mod-1",
+                    null,
+                    IntegrationState.Active,
+                    null,
+                    DateTimeOffset.UtcNow,
+                    DateTimeOffset.UtcNow)
+                {
+                    ResourceContextId = new ResourceContextId("app-a")
+                }));
+
+        var service = CreateIntegrationSettingsService(
+            def,
+            new PlatformSettingRepositoryFake(),
+            new TestIntegrationOptionsOptionProvider(),
+            audit: audit,
+            integrations: integrations);
+
+        await service.SetAsync(
+            IntegrationId,
+            def.Key,
+            new PlatformSettingUpdatePayload { ScalarValue = $"{IntegrationId}:beta" },
+            null);
+
+        capturedContext.Should().Be("app-a");
+    }
+
     private static IntegrationSettingsService CreateIntegrationSettingsService(
         PlatformSettingDefinition def,
         IPlatformSettingValueRepository repo,
         IPlatformSettingOptionProvider provider,
-        Mock<IAuditService>? audit = null)
+        Mock<IAuditService>? audit = null,
+        Mock<IIntegrationRepository>? integrations = null)
     {
-        var integrations = CreateIntegrationRepository(integrationExists: true);
+        integrations ??= CreateIntegrationRepository(integrationExists: true);
         var coordinator = PlatformSettingOptionProviderTestHarness.CreateCoordinator(provider, integrations: integrations);
         var resolver = new IntegrationSettingsResolver(new TestIntegrationSettingDefinitionRegistry(), repo);
         var (principalContext, _, _) = PlatformSettingOptionProviderTestHarness.CreateDefaultAuthMocks();
@@ -260,7 +304,8 @@ public sealed class Epic118IntegrationSettingsTests
             coordinator,
             new PlatformSettingSecretMaterialProvisioner(Mock.Of<ISecretStore>()),
             principalContext.Object,
-            auditMock.Object);
+            auditMock.Object,
+            integrations.Object);
     }
 
     private static IntegrationSettingsController CreateIntegrationSettingsController(
@@ -290,7 +335,8 @@ public sealed class Epic118IntegrationSettingsTests
             coordinator,
             new PlatformSettingSecretMaterialProvisioner(Mock.Of<ISecretStore>()),
             principal.Object,
-            new Mock<IAuditService>().Object);
+            new Mock<IAuditService>().Object,
+            integrations.Object);
 
         var integrationAuth = new IntegrationSettingsAuthorization(
             principalContext.Object,
