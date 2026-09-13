@@ -1131,6 +1131,96 @@ public sealed class RunQueryServiceTests
         result[0].RunId.Should().Be("r-blocked-b");
     }
 
+    [Fact]
+    public async Task ListRunsAsync_ExposesResourceContextId()
+    {
+        var db = NewDb();
+        db.OperationRuns.Add(new OperationRunEntity
+        {
+            Id = "rop",
+            WorkflowInstanceId = "i-op",
+            DefinitionId = "op.def",
+            Status = WorkflowLifecycleStatusNames.Completed,
+            CreatedAt = DateTimeOffset.UtcNow,
+            ResourceContextId = "app-a"
+        });
+        db.OperationStartRequests.Add(new OperationStartRequestEntity
+        {
+            RunId = "rop",
+            OperationInstanceId = "i-op",
+            OperationDefinitionId = "op.def",
+            CreatedAt = DateTimeOffset.UtcNow,
+            Status = WorkflowLifecycleStatusNames.Requested
+        });
+        await db.SaveChangesAsync();
+
+        var service = NewService(db);
+        var list = await service.ListRunsAsync(new RunQueryFilter(ExecutionKind: "operation"));
+
+        list.Should().ContainSingle();
+        list[0].ResourceContextId.Should().Be("app-a");
+    }
+
+    [Fact]
+    public async Task GetRunAsync_ExposesResourceContextId()
+    {
+        var db = NewDb();
+        db.OperationRuns.Add(new OperationRunEntity
+        {
+            Id = "rop2",
+            WorkflowInstanceId = "i-op2",
+            DefinitionId = "op.def",
+            Status = WorkflowLifecycleStatusNames.Completed,
+            CreatedAt = DateTimeOffset.UtcNow,
+            ResourceContextId = "app-b"
+        });
+        db.OperationStartRequests.Add(new OperationStartRequestEntity
+        {
+            RunId = "rop2",
+            OperationInstanceId = "i-op2",
+            OperationDefinitionId = "op.def",
+            CreatedAt = DateTimeOffset.UtcNow,
+            Status = WorkflowLifecycleStatusNames.Requested
+        });
+        await db.SaveChangesAsync();
+
+        var service = NewService(db);
+        var detail = await service.GetRunAsync(new OperationRunId("rop2"));
+
+        detail.Should().NotBeNull();
+        detail!.ResourceContextId.Should().Be("app-b");
+    }
+
+    [Fact]
+    public async Task ListRunsAsync_ResourceContextId_IsNull_ForPreCtx2Rows()
+    {
+        var db = NewDb();
+        db.OperationRuns.Add(new OperationRunEntity
+        {
+            Id = "rop3",
+            WorkflowInstanceId = "i-op3",
+            DefinitionId = "op.def",
+            Status = WorkflowLifecycleStatusNames.Completed,
+            CreatedAt = DateTimeOffset.UtcNow
+            // ResourceContextId intentionally omitted — simulates a pre-CTX-2 row.
+        });
+        db.OperationStartRequests.Add(new OperationStartRequestEntity
+        {
+            RunId = "rop3",
+            OperationInstanceId = "i-op3",
+            OperationDefinitionId = "op.def",
+            CreatedAt = DateTimeOffset.UtcNow,
+            Status = WorkflowLifecycleStatusNames.Requested
+        });
+        await db.SaveChangesAsync();
+
+        var service = NewService(db);
+        var list = await service.ListRunsAsync(new RunQueryFilter(ExecutionKind: "operation"));
+
+        list.Should().ContainSingle();
+        list[0].ResourceContextId.Should().BeNull();
+    }
+
     private static void AddWorkflowRun(
         AppertureDbContext db,
         string runId,

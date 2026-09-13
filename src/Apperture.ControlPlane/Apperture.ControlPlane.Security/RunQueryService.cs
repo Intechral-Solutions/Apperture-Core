@@ -312,7 +312,8 @@ public sealed class RunQueryService : IRunQueryService
                     RunKindNames.Workflow,
                     r.IntegrationId,
                     r.ProcedureId,
-                    r.ExecutionOrigin);
+                    r.ExecutionOrigin,
+                    r.ResourceContextId);
             }
 
             if (string.Equals(filter?.ExecutionKind, RunKindNames.Workflow, StringComparison.OrdinalIgnoreCase))
@@ -338,7 +339,8 @@ public sealed class RunQueryService : IRunQueryService
                 RunKindNames.Operation,
                 r.IntegrationId,
                 r.ProcedureId,
-                r.ExecutionOrigin);
+                r.ExecutionOrigin,
+                r.ResourceContextId);
         }
         catch (UnauthorizedAccessException)
         {
@@ -452,7 +454,8 @@ public sealed class RunQueryService : IRunQueryService
                 forensic,
                 r.IntegrationId,
                 r.ProcedureId,
-                await TryGetOperationItemizationSummaryAsync(r.Id, cancellationToken).ConfigureAwait(false));
+                await TryGetOperationItemizationSummaryAsync(r.Id, cancellationToken).ConfigureAwait(false),
+                r.ResourceContextId);
         }
 
         var operationInstance = await _db.OperationInstances.AsNoTracking()
@@ -534,7 +537,8 @@ public sealed class RunQueryService : IRunQueryService
             opForensic,
             r.IntegrationId,
             r.ProcedureId,
-            await TryGetOperationItemizationSummaryAsync(r.Id, cancellationToken).ConfigureAwait(false));
+            await TryGetOperationItemizationSummaryAsync(r.Id, cancellationToken).ConfigureAwait(false),
+            r.ResourceContextId);
     }
 
     private async Task<RunOperationItemizationSummaryDto?> TryGetOperationItemizationSummaryAsync(
