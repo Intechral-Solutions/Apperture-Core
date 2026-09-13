@@ -31,7 +31,8 @@ public sealed class SqlAuditService : IAuditService
             Outcome = string.IsNullOrEmpty(record.Outcome) ? null : record.Outcome,
             ModuleId = record.ModuleId,
             ScheduleId = record.ScheduleId,
-            RunId = record.RunId
+            RunId = record.RunId,
+            ResourceContextId = record.ResourceContextId
         });
         await _db.SaveChangesAsync(cancellationToken);
     }
@@ -60,7 +61,8 @@ public sealed class SqlAuditService : IAuditService
             e.Details,
             ModuleId: e.ModuleId,
             ScheduleId: e.ScheduleId,
-            RunId: e.RunId)).ToList();
+            RunId: e.RunId,
+            ResourceContextId: e.ResourceContextId)).ToList();
 
         var nextToken = hasMore ? items[^1].Id.ToString() : null;
         return new AuditPage(records, nextToken);
@@ -92,7 +94,8 @@ public sealed class SqlAuditService : IAuditService
             entity.Details,
             ModuleId: entity.ModuleId,
             ScheduleId: entity.ScheduleId,
-            RunId: entity.RunId);
+            RunId: entity.RunId,
+            ResourceContextId: entity.ResourceContextId);
     }
 
     private IQueryable<AuditLogEntity> ApplyFilters(AuditQuery query, bool forPaging)
