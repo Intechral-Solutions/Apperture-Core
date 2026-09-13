@@ -430,7 +430,7 @@ WHERE RunId = {runId} AND (
             }
             catch (Exception ex)
             {
-                await TryAuditDefinitionUnavailableAsync(ex, runId, cancellationToken).ConfigureAwait(false);
+                await TryAuditDefinitionUnavailableAsync(ex, runId, run.ResourceContextId, cancellationToken).ConfigureAwait(false);
                 _logger?.LogError(ex, "Start request execution failed. RunId={RunId}", runId);
                 LogExecutionContractSignalForFailure(runId, ex);
                 var failureCapture = RunFailureCapture.TryCapture(ex);
@@ -712,7 +712,8 @@ WHERE RunId = {runId} AND (
         });
     }
 
-    private async ValueTask TryAuditDefinitionUnavailableAsync(Exception ex, string runId, CancellationToken cancellationToken)
+    private async ValueTask TryAuditDefinitionUnavailableAsync(
+        Exception ex, string runId, string? resourceContextId, CancellationToken cancellationToken)
     {
         if (_audit is null || ex is not DefinitionNotExecutableException dne)
             return;
@@ -729,7 +730,8 @@ WHERE RunId = {runId} AND (
                     Timestamp: DateTimeOffset.UtcNow,
                     new CorrelationId(runId),
                     $"runId={runId};definitionId={dne.DefinitionId};kind={dne.Kind};message={dne.Message}",
-                    RunId: runId),
+                    RunId: runId,
+                    ResourceContextId: resourceContextId),
                 cancellationToken).ConfigureAwait(false);
         }
         catch
