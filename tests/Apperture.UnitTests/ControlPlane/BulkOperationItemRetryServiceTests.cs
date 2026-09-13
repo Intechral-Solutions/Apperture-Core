@@ -185,6 +185,33 @@ public sealed class BulkOperationItemRetryServiceTests
     }
 
     [Fact]
+    public async Task BulkRetry_RequestedAndCompletedAudit_CarryGroupsResourceContextId()
+    {
+        var db = NewDb();
+        var innerItems = new InMemoryOperationItemStore();
+        var items = new ResourceContextStubStore(innerItems, "app-a");
+        var attempts = new InMemoryOperationItemRetryAttemptStore();
+        var (item, group) = await SeedFailedAsync(innerItems, "run-parent", sequence: 1, subject: "C-1", row: 1);
+        SeedRun(db, "run-parent", FileImportDef.Value);
+        await db.SaveChangesAsync();
+
+        var audit = new CapturingAudit();
+        var svc = CreateBulk(db, items, attempts, audit: audit);
+        await svc.BulkRetryAsync(
+            new OperationRunId("run-parent"),
+            group.OperationGroupId,
+            new BulkRetryOperationItemsRequest([item.OperationItemId], RequestId: "ctx-check"));
+
+        var requested = audit.Records.Should().ContainSingle(
+            r => r.Action == OperationItemResolutionAuditActions.BulkRetryRequested).Which;
+        requested.ResourceContextId.Should().Be("app-a");
+
+        var completed = audit.Records.Should().ContainSingle(
+            r => r.Action == OperationItemResolutionAuditActions.BulkRetryCompleted).Which;
+        completed.ResourceContextId.Should().Be("app-a");
+    }
+
+    [Fact]
     public void AttentionRules_acknowledgement_clears_attention_without_success()
     {
         OperationItemAttentionRules.NeedsAttention(OperationItemStatuses.Failed, hasActiveAcknowledgement: false, hasSucceededRetryAttempt: false)
@@ -212,7 +239,8 @@ public sealed class BulkOperationItemRetryServiceTests
         AppertureDbContext db,
         IOperationItemStore items,
         IOperationItemRetryAttemptStore attempts,
-        bool allowAuthz = true)
+        bool allowAuthz = true,
+        IAuditService? audit = null)
     {
         var itemRetry = CreateItemRetry(db, items, attempts, allowAuthz);
         return new BulkOperationItemRetryService(
@@ -221,7 +249,7 @@ public sealed class BulkOperationItemRetryServiceTests
             itemRetry,
             allowAuthz ? new AllowRetryAuthz() : new DenyRetryAuthz(),
             new StubPrincipal(),
-            new NullAudit(),
+            audit ?? new NullAudit(),
             NullLogger<BulkOperationItemRetryService>.Instance);
     }
 
@@ -354,5 +382,72 @@ public sealed class BulkOperationItemRetryServiceTests
 
         public ValueTask<AuditRecord?> GetByIdAsync(string id, CancellationToken cancellationToken = default) =>
             ValueTask.FromResult<AuditRecord?>(null);
+    }
+
+    /// <summary>Captures every appended <see cref="AuditRecord"/> so tests can assert on its fields.</summary>
+    private sealed class CapturingAudit : IAuditService
+    {
+        public List<AuditRecord> Records { get; } = [];
+
+        public AuditRecord? LastRecord => Records.Count > 0 ? Records[^1] : null;
+
+        public ValueTask AppendAsync(AuditRecord record, CancellationToken cancellationToken = default)
+        {
+            Records.Add(record);
+            return ValueTask.CompletedTask;
+        }
+
+        public ValueTask<AuditPage> QueryAsync(AuditQuery query, CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(new AuditPage([], null));
+
+        public ValueTask<int> CountAsync(AuditQuery query, CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(0);
+
+        public ValueTask<AuditRecord?> GetByIdAsync(string id, CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult<AuditRecord?>(null);
+    }
+
+    /// <summary>
+    /// CTX-2 test seam: <see cref="InMemoryOperationItemStore"/> has no owning-Run lookup, so it never
+    /// populates <see cref="OperationGroup.ResourceContextId"/> the way <c>SqlOperationItemStore</c> does.
+    /// This wraps an inner in-memory store and injects a fixed ResourceContextId onto groups returned
+    /// from <see cref="GetGroupAsync"/>, so tests can exercise "the group already carries a context id"
+    /// without duplicating the SQL store's Run-lookup plumbing.
+    /// </summary>
+    private sealed class ResourceContextStubStore(InMemoryOperationItemStore inner, string resourceContextId)
+        : IOperationItemStore
+    {
+        public Task<OperationGroup> BeginGroupAsync(BeginOperationGroupRequest request, CancellationToken cancellationToken = default) =>
+            inner.BeginGroupAsync(request, cancellationToken);
+
+        public Task<OperationItem> AppendItemAsync(AppendOperationItemRequest request, CancellationToken cancellationToken = default) =>
+            inner.AppendItemAsync(request, cancellationToken);
+
+        public Task<OperationGroup> CompleteGroupAsync(CompleteOperationGroupRequest request, CancellationToken cancellationToken = default) =>
+            inner.CompleteGroupAsync(request, cancellationToken);
+
+        public async Task<OperationGroup?> GetGroupAsync(string operationGroupId, CancellationToken cancellationToken = default)
+        {
+            var group = await inner.GetGroupAsync(operationGroupId, cancellationToken).ConfigureAwait(false);
+            return group is null ? null : group with { ResourceContextId = resourceContextId };
+        }
+
+        public Task<OperationItem?> GetItemAsync(string operationItemId, CancellationToken cancellationToken = default) =>
+            inner.GetItemAsync(operationItemId, cancellationToken);
+
+        public Task<OperationItem?> RecordRetryDispatchAsync(string operationItemId, DateTimeOffset attemptedAtUtc, CancellationToken cancellationToken = default) =>
+            inner.RecordRetryDispatchAsync(operationItemId, attemptedAtUtc, cancellationToken);
+
+        public Task<IReadOnlyList<OperationItem>> GetItemsByGroupAsync(string operationGroupId, CancellationToken cancellationToken = default) =>
+            inner.GetItemsByGroupAsync(operationGroupId, cancellationToken);
+
+        public Task<IReadOnlyList<OperationGroup>> GetGroupsByRunAsync(string runId, CancellationToken cancellationToken = default) =>
+            inner.GetGroupsByRunAsync(runId, cancellationToken);
+
+        public Task<OperationItemPage> QueryItemsByGroupAsync(string operationGroupId, OperationItemQuery query, CancellationToken cancellationToken = default) =>
+            inner.QueryItemsByGroupAsync(operationGroupId, query, cancellationToken);
+
+        public Task<OperationItemizationRunSummary> GetRunSummaryAsync(string runId, CancellationToken cancellationToken = default) =>
+            inner.GetRunSummaryAsync(runId, cancellationToken);
     }
 }

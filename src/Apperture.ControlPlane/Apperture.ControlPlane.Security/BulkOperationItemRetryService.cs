@@ -168,6 +168,7 @@ public sealed class BulkOperationItemRetryService : IBulkOperationItemRetryServi
                 requestedCount = orderedUnique.Count,
                 requestId,
             }),
+            group.ResourceContextId,
             cancellationToken).ConfigureAwait(false);
 
         var results = new List<BulkRetryOperationItemResult>(orderedUnique.Count);
@@ -330,6 +331,7 @@ public sealed class BulkOperationItemRetryService : IBulkOperationItemRetryServi
                 aggregate.SkippedCount,
                 aggregate.FailedCount,
             }),
+            group.ResourceContextId,
             cancellationToken).ConfigureAwait(false);
 
         _logger.LogInformation(
@@ -413,6 +415,7 @@ public sealed class BulkOperationItemRetryService : IBulkOperationItemRetryServi
         CorrelationId correlation,
         string runId,
         string details,
+        string? resourceContextId,
         CancellationToken cancellationToken)
     {
         try
@@ -429,7 +432,8 @@ public sealed class BulkOperationItemRetryService : IBulkOperationItemRetryServi
                     details,
                     ModuleId: null,
                     ScheduleId: null,
-                    RunId: runId),
+                    RunId: runId,
+                    ResourceContextId: resourceContextId),
                 cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex)
