@@ -29,6 +29,23 @@ public sealed class NotificationInstancesControllerTests
     }
 
     [Fact]
+    public async Task List_passes_resourceContextId_into_query()
+    {
+        NotificationInstanceListQuery? captured = null;
+        var instances = new Mock<INotificationInstanceQueryService>();
+        instances.Setup(x => x.ListAsync(It.IsAny<NotificationInstanceListQuery>(), It.IsAny<CancellationToken>()))
+            .Callback<NotificationInstanceListQuery, CancellationToken>((q, _) => captured = q)
+            .ReturnsAsync(Array.Empty<NotificationInstance>());
+        var controller = new NotificationInstancesController(instances.Object);
+
+        var result = await controller.List(null, null, null, resourceContextId: "app-a");
+
+        result.Result.Should().BeOfType<OkObjectResult>();
+        captured.Should().NotBeNull();
+        captured!.ResourceContextId.Should().Be("app-a");
+    }
+
+    [Fact]
     public async Task Get_ExposesResourceContextId_OnDetailDto()
     {
         var instances = new Mock<INotificationInstanceQueryService>();

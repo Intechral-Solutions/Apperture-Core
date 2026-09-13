@@ -80,10 +80,12 @@ public sealed class SqlAuditServiceResourceContextTests
         var svc = new SqlAuditService(db);
         await svc.AppendAsync(NewRecord("app-a"));
         await svc.AppendAsync(NewRecord("app-b"));
+        await svc.AppendAsync(NewRecord("app-a"));
 
         var page = await svc.QueryAsync(new Apperture.Core.Application.Services.AuditQuery(FilterByResourceContextId: "app-a"));
 
-        page.Items.Should().ContainSingle(r => r.ResourceContextId == "app-a");
+        page.Items.Should().HaveCount(2);
+        page.Items.Should().OnlyContain(r => r.ResourceContextId == "app-a");
     }
 
     private static AuditRecord NewRecord(string resourceContextId) =>

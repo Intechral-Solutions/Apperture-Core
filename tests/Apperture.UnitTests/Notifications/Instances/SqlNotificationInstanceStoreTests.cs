@@ -145,10 +145,29 @@ public sealed class SqlNotificationInstanceStoreTests
             CreatedAtUtc = now,
             UpdatedAtUtc = now,
         });
+        db.NotificationInstances.Add(new NotificationInstanceEntity
+        {
+            Id = "ninst_c",
+            NotificationDefinitionId = "def-1",
+            NotificationKind = NotificationKinds.Activation,
+            Status = NotificationInstanceStatuses.Pending,
+            IntegrationId = "int-1",
+            AttentionIncidentId = "inc-1",
+            ResourceContextId = "app-a",
+            InstanceDedupeKey = "k-c",
+            RenderedSubject = "s",
+            RenderedSummary = "s",
+            RenderedBodyText = "b",
+            TemplateVersionHash = "h",
+            RenderContextJson = "{}",
+            CreatedAtUtc = now,
+            UpdatedAtUtc = now,
+        });
         await db.SaveChangesAsync();
 
         var results = await sut.ListAsync(new NotificationInstanceListQuery(ResourceContextId: "app-a"));
 
-        results.Should().ContainSingle(r => r.ResourceContextId == "app-a");
+        results.Should().HaveCount(2);
+        results.Should().OnlyContain(r => r.ResourceContextId == "app-a");
     }
 }
