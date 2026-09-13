@@ -24,7 +24,7 @@ public sealed class RunsControllerTests
     {
         var controller = NewController(new StubRunQueryService(
             list: new[] { new RunSummaryDto("run-1", "inst-1", "wf-1", "requested", DateTimeOffset.UtcNow, null, null, null) }));
-        var result = await controller.GetRuns(null, null, null, null, null, null, null, null, null, CancellationToken.None);
+        var result = await controller.GetRuns(null, null, null, null, null, null, null, null, null, null, CancellationToken.None);
         result.Result.Should().BeOfType<OkObjectResult>();
     }
 
