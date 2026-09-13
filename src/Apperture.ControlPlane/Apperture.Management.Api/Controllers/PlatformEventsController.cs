@@ -41,7 +41,8 @@ public sealed class PlatformEventsController : ControllerBase
         [FromQuery] string? runId,
         [FromQuery] string? moduleId,
         [FromQuery] int take = 50,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        [FromQuery] string? resourceContextId = null)
     {
         if (!await CanReadAsync(integrationId, cancellationToken).ConfigureAwait(false))
             return Forbid();
@@ -56,7 +57,8 @@ public sealed class PlatformEventsController : ControllerBase
                     toOccurredAtUtc,
                     runId,
                     moduleId,
-                    take),
+                    take,
+                    resourceContextId),
                 cancellationToken)
             .ConfigureAwait(false);
         return Ok(page);

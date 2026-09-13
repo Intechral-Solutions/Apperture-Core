@@ -43,6 +43,37 @@ public sealed class PlatformEventsControllerTests
         captured.Take.Should().Be(30);
     }
 
+    [Fact]
+    public async Task List_passes_resourceContextId_into_query()
+    {
+        PlatformEventQuery? captured = null;
+        var store = new CapturingPlatformEventStore(q =>
+        {
+            captured = q;
+            return ValueTask.FromResult(new PlatformEventQueryPage([], false));
+        });
+
+        var sut = new PlatformEventsController(
+            store,
+            new StubPrincipalContext(),
+            new StubAuthorizationEvaluationService(true));
+
+        var action = await sut.List(
+            integrationId: null,
+            eventType: null,
+            fromOccurredAtUtc: null,
+            toOccurredAtUtc: null,
+            runId: null,
+            moduleId: null,
+            take: 50,
+            cancellationToken: CancellationToken.None,
+            resourceContextId: "app-a");
+
+        action.Result.Should().BeOfType<OkObjectResult>();
+        captured.Should().NotBeNull();
+        captured!.ResourceContextId.Should().Be("app-a");
+    }
+
     private sealed class StubPrincipalContext : IPrincipalContext
     {
         public ValueTask<IActor?> GetCurrentActorAsync(CancellationToken cancellationToken = default) =>

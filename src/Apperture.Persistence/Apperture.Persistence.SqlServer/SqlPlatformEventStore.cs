@@ -56,6 +56,8 @@ public sealed class SqlPlatformEventStore : IPlatformEventStore
             q = q.Where(e => e.RunId == query.RunId);
         if (!string.IsNullOrWhiteSpace(query.ModuleId))
             q = q.Where(e => e.ModuleId == query.ModuleId);
+        if (!string.IsNullOrWhiteSpace(query.ResourceContextId))
+            q = q.Where(e => e.ResourceContextId == query.ResourceContextId);
 
         var rows = await q
             .OrderByDescending(e => e.OccurredAtUtc)
