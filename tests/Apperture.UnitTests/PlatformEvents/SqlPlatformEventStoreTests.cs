@@ -22,7 +22,8 @@ public sealed class SqlPlatformEventStoreTests
         string integrationId,
         DateTimeOffset occurred,
         string? runId = null,
-        string? moduleId = null) =>
+        string? moduleId = null,
+        string? resourceContextId = null) =>
         new(
             new PlatformEventId(id),
             type,
@@ -42,7 +43,8 @@ public sealed class SqlPlatformEventStoreTests
             ScheduleId: "sch1",
             ActorId: null,
             CorrelationId: null,
-            CausationId: null);
+            CausationId: null,
+            ResourceContextId: resourceContextId);
 
     [Fact]
     public async Task Append_and_query_by_integration_and_type()
@@ -86,5 +88,20 @@ public sealed class SqlPlatformEventStoreTests
         var byModule = await sut.QueryAsync(new PlatformEventQuery(ModuleId: "Mod.A", Take: 10));
         byModule.Items.Should().HaveCount(2);
         byModule.Items.Should().OnlyContain(e => e.ModuleId == "Mod.A");
+    }
+
+    [Fact]
+    public async Task Query_filters_by_resourceContextId()
+    {
+        await using var db = CreateDb();
+        var sut = new SqlPlatformEventStore(db);
+        var t0 = DateTimeOffset.Parse("2026-05-15T10:00:00Z");
+        await sut.AppendAsync(SampleEnvelope("a", "t1", "int1", t0, resourceContextId: "app-a"));
+        await sut.AppendAsync(SampleEnvelope("b", "t1", "int1", t0.AddMinutes(1), resourceContextId: "app-b"));
+        await sut.AppendAsync(SampleEnvelope("c", "t1", "int1", t0.AddMinutes(2), resourceContextId: "app-a"));
+
+        var byResourceContext = await sut.QueryAsync(new PlatformEventQuery(ResourceContextId: "app-a", Take: 10));
+        byResourceContext.Items.Should().HaveCount(2);
+        byResourceContext.Items.Should().OnlyContain(e => e.ResourceContextId == "app-a");
     }
 }
